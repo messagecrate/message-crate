@@ -4,7 +4,6 @@ import Tab from "../components/Tab";
 import { canUseConvert } from "../lib/desktopFeatures";
 import { parseSelectKey } from "../lib/selectKey";
 import { isTauri } from "../lib/tauriCheck";
-import { useSettingsAccount } from "../lib/useSettingsAccount";
 import { AccountSettingsPanel } from "./settings/AccountSettingsPanel";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditTrailSection } from "./settings/AuditTrailSection";
@@ -14,6 +13,7 @@ import { useNameEdit } from "./settings/nameEdit";
 import { ProfileSettingsPanel } from "./settings/ProfileSettingsPanel";
 import { StorageSection } from "./settings/StorageSection";
 import { SystemSection } from "./settings/SystemSection";
+import { useSettingsAccount } from "./settings/useSettingsAccount";
 
 const ALL_TABS = [
   "account",

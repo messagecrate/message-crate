@@ -3,10 +3,10 @@ import Button from "../../components/Button";
 import { GearIcon } from "../../components/icons";
 import NavGlyphButton from "../../components/NavGlyphButton";
 import ScrollingTableCard from "../../components/ScrollingTableCard";
+import { type ManagedAccount, useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { formatDateTime } from "../../lib/formatDate";
 import { tdClass, tdMutedClass } from "../settings/apiTokensUtils";
 import { rowStripeClass, thClass, thSeparatorClass } from "./ownerTableStyles";
-import { type ManagedAccount, useOwnerAccounts } from "./useOwnerAccounts";
 
 /** Columns the table has, which the "no match" row spans. */
 const COLUMN_COUNT = 4;

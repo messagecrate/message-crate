@@ -19,17 +19,17 @@ const savedSearchState = vi.hoisted(() => ({
   savedSearches: [] as { id: number; name: string; query: string; kind: string }[],
 }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile }),
 }));
 
 vi.mock("../lib/authContext", () => authModule());
 
-vi.mock("../lib/useContactGroups", () => ({
+vi.mock("../hooks/useContactGroups", () => ({
   useContactGroups: () => ({ groups: [] }),
 }));
 
-vi.mock("../lib/useMessageTags", () => ({
+vi.mock("../hooks/useMessageTags", () => ({
   useMessageTags: () => ({ tags: [] }),
 }));
 
@@ -41,7 +41,7 @@ const importAttentionState = vi.hoisted(() => ({
   attention: null as "waiting" | "paused" | "failed" | null,
 }));
 
-vi.mock("../screens/import/useImportAttention", () => ({
+vi.mock("./useImportAttention", () => ({
   useImportAttention: () => importAttentionState.attention,
 }));
 

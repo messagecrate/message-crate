@@ -1,5 +1,6 @@
 import { type ReactNode, Suspense } from "react";
 import { Navigate } from "react-router-dom";
+import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useAuth } from "../lib/authContext";
 import {
   type ImportExportBlock,
@@ -8,7 +9,6 @@ import {
 } from "../lib/desktopFeatures";
 import { desktopJobRunningText } from "../lib/desktopJob";
 import { isTauri } from "../lib/tauriCheck";
-import { useAccountProfile } from "../lib/useAccountProfile";
 import { useImportRunState } from "../screens/import/importRunStore";
 import Button from "./Button";
 

@@ -7,6 +7,8 @@
 
 import { type ReactNode, useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useContactGroups } from "../hooks/useContactGroups";
+import { useMessageTags } from "../hooks/useMessageTags";
 import { groupFromSlug } from "../lib/contactGroups";
 import { tagFromSlug } from "../lib/messageTags";
 import {
@@ -22,8 +24,6 @@ import {
 import { useListQuery } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
-import { useContactGroups } from "../lib/useContactGroups";
-import { useMessageTags } from "../lib/useMessageTags";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
 import { type NavItem, useAppLayout, useLayoutNavItem, useLayoutSection } from "./appLayoutContext";

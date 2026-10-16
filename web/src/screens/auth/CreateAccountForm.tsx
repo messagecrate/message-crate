@@ -1,10 +1,10 @@
 import type { FormEvent } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
+import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import CredentialFields from "./CredentialFields";
 import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
-import { useCreateAccountForm } from "./useCreateAccountForm";
 import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**

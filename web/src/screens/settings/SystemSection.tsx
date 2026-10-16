@@ -5,6 +5,7 @@ import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { getBaseUrl } from "../../lib/api";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
@@ -24,7 +25,6 @@ import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware"
 import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
 import type { ToolName } from "../../lib/types";
 import { accentLinkClass } from "../../lib/uiStyles";
-import { useToolsStatus } from "../../lib/useToolsStatus";
 import { AccountStagingUsage } from "./StagingDirectoryUsage";
 
 const sectionHeadingClass =

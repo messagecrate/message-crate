@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { type ColumnResizeHandleProps, measureColumnWidth } from "../hooks/useColumnResize";
 import { Z_RESIZE_HANDLE } from "../lib/zLayers";
-import { type ColumnResizeHandleProps, measureColumnWidth } from "./useColumnResize";
 
 /**
  * Vertical grip on the right edge of a resizable panel (the left panel and the

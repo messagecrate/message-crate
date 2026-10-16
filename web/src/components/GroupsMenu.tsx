@@ -1,9 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDismissable } from "../hooks/useDismissable";
 import { errorLine } from "../lib/apiErrorMessage";
 import type { MembershipCheckState } from "../lib/membership";
 import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
 import { popupShadowClass } from "../lib/uiStyles";
-import { useDismissable } from "../lib/useDismissable";
 import { Z_POPOVER } from "../lib/zLayers";
 import Checkbox from "./Checkbox";
 import { ChevronDownIcon, PeopleGroupIcon } from "./icons";

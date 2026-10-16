@@ -13,7 +13,7 @@ import { type Identity, removeBody } from "./identities";
 
 const mutateAsync = vi.hoisted(() => vi.fn());
 const listAccountIdentities = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/useSettingsAccount", () => ({
+vi.mock("./useSettingsAccount", () => ({
   useUpdateSettingsProfile: () => ({ mutateAsync, isPending: false }),
 }));
 vi.mock("../../lib/authContext", () => authModule());

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
+import { useAccountProfile } from "../hooks/useAccountProfile";
 import { errorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
 import { conversationName } from "../lib/conversationName";
@@ -22,7 +23,6 @@ import {
   useRestoreConversation,
 } from "../lib/trash";
 import type { Conversation } from "../lib/types";
-import { useAccountProfile } from "../lib/useAccountProfile";
 
 /**
  * Trash holds two kinds of thing, and this pane is where both come back — or

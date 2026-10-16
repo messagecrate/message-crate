@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AuditTrailOf, auditTrailKey, auditTrailOf } from "./useAuditTrail";
+import { type AuditTrailOf, auditTrailKey, auditTrailOf } from "../../hooks/useAuditTrail";
 
 describe("auditTrailKey", () => {
   it("names each trail apart and reads it back, a live and a deleted account of one number included", () => {

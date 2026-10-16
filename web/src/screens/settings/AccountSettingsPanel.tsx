@@ -1,6 +1,5 @@
 import { textInputClass } from "../../components/TextField";
 import { fixedSettings } from "../../lib/account";
-import { useSettingsAccount } from "../../lib/useSettingsAccount";
 import { AccountActivitySection } from "./AccountActivitySection";
 import { AccountPermissionsSection } from "./AccountPermissionsSection";
 import { ApiTokensSection } from "./ApiTokensSection";
@@ -8,6 +7,7 @@ import { ChangePasswordSection } from "./ChangePasswordSection";
 import { ManagedApiTokensSection } from "./ManagedApiTokensSection";
 import { ProfileDangerZone } from "./ProfileDangerZone";
 import { sectionTitleClass } from "./profileStyles";
+import { useSettingsAccount } from "./useSettingsAccount";
 
 /**
  * Account settings: username, last login and app (an account the owner

@@ -1,4 +1,9 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import {
+  useAccountProfile,
+  useFetchAccountProfile,
+  useUpdateAccountProfile,
+} from "../hooks/useAccountProfile";
 import { phoneNumbers, profileAddresses } from "../lib/account";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
@@ -27,16 +32,6 @@ import {
 } from "../lib/systemSettings";
 import { isTauri } from "../lib/tauriCheck";
 import { useTimeZone } from "../lib/timeZone";
-import {
-  useAccountProfile,
-  useFetchAccountProfile,
-  useUpdateAccountProfile,
-} from "../lib/useAccountProfile";
-import {
-  useAndroidSmsPathStats,
-  useImessagePathStats,
-  useWhatsappPathStats,
-} from "../lib/useBackupPathStats";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { useDeleteClosedRunDirectories } from "./import/closedRunDirectories";
@@ -65,6 +60,11 @@ import {
 } from "./import/resumeDecision";
 import type { DiscardOutcome } from "./import/run/finish";
 import { parseStoredStagingSummary } from "./import/run/stagingSummary";
+import {
+  useAndroidSmsPathStats,
+  useImessagePathStats,
+  useWhatsappPathStats,
+} from "./import/useBackupPathStats";
 import { useImportJob } from "./import/useImportJob";
 
 /** The account's phones before they are read, and for a source that does not ask for them. */

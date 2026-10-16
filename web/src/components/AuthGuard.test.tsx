@@ -18,7 +18,7 @@ const profileState = vi.hoisted(() => ({
 const retry = vi.hoisted(() => vi.fn());
 const authState = vi.hoisted(() => ({ isAuthenticated: true }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({
     profile: profileState.profile,
     loading: profileState.loading,

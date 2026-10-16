@@ -20,6 +20,7 @@ import {
   Popover,
   Text,
 } from "react-aria-components";
+import { useDismissable } from "../hooks/useDismissable";
 import { lazyChunk } from "../lib/chunkLoad";
 import {
   clearRecentSearches,
@@ -35,18 +36,17 @@ import {
 } from "../lib/searchFields";
 import { removeToken } from "../lib/searchQuery";
 import { focusRingClass, popupShadowClass } from "../lib/uiStyles";
-import { useDismissable } from "../lib/useDismissable";
-import {
-  applySuggestionToQuery,
-  type Suggestion,
-  useSearchSuggestions,
-} from "../lib/useSearchSuggestions";
 import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import Button from "./Button";
 import ErrorBoundary from "./ErrorBoundary";
 import { ClockIcon, SearchFieldIcon, SlidersIcon } from "./icons";
 import PlainButton from "./PlainButton";
+import {
+  applySuggestionToQuery,
+  type Suggestion,
+  useSearchSuggestions,
+} from "./useSearchSuggestions";
 
 // The advanced form pulls in the date picker and calendar, about 150 kB of
 // the entry chunk that most visits never open. It loads when the panel does.

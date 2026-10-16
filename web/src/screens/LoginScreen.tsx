@@ -24,9 +24,6 @@ import {
   authScreenTitleClass,
   pageCenterClass,
 } from "../lib/uiStyles";
-import { useLocalServer } from "../lib/useLocalServer";
-import { useServerHealth } from "../lib/useServerHealth";
-import { useServerState } from "../lib/useServerState";
 import {
   type Connection,
   connectionReducer,
@@ -37,6 +34,9 @@ import ExploreDemoAccountButton from "./auth/ExploreDemoAccountButton";
 import LocalAuthTabs from "./auth/LocalAuthTabs";
 import ServerSettingsScreen from "./auth/ServerSettingsScreen";
 import ServerStatus, { type ServerConnection } from "./auth/ServerStatus";
+import { useLocalServer } from "./auth/useLocalServer";
+import { useServerHealth } from "./auth/useServerHealth";
+import { useServerState } from "./auth/useServerState";
 
 /** Placeholder shaped like the form, so the card does not flicker into shape. */
 function FormSkeleton() {

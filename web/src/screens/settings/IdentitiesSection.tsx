@@ -3,16 +3,16 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityDialogs from "../../components/IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
-import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
+import { useIdentityCountryPick } from "../../hooks/useIdentityCountryPick";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
-import { useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
+import { useUpdateSettingsProfile } from "./useSettingsAccount";
 
 /** Whether `list` has a row at `address` on `service`, both as the server lists them. */
 function listHolds(list: readonly Identity[], { address, service }: ListedIdentity): boolean {

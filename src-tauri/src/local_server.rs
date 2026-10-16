@@ -42,7 +42,7 @@
 //! watch is then left for a server the system would not put in a job. An
 //! app started again before that server is gone finds it answering and uses
 //! it. The screens ask for the state every three seconds while it is ready
-//! (`READY_POLL_MS` in `web/src/lib/useLocalServer.ts`), and the check that
+//! (`READY_POLL_MS` in `web/src/screens/auth/useLocalServer.ts`), and the check that
 //! finds the address free starts the app's own.
 //!
 //! The same checks ask the app's own server whether it still answers. One

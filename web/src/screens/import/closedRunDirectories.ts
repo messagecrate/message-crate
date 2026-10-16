@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useServerInfo } from "../../hooks/useServerInfo";
 import { useAuth } from "../../lib/authContext";
 import {
   type ClosedImportStatus,
@@ -10,7 +11,6 @@ import type { ImportStatus } from "../../lib/importRun";
 import { useRouteCache } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
-import { useServerInfo } from "../../lib/useServerInfo";
 
 /** What deleting the closed runs' directories reads and does. */
 export interface ClosedRunDirectories {

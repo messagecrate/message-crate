@@ -118,7 +118,7 @@ vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
 // The desktop app with a profile shows Export in the left panel.
 const desktop = vi.hoisted(() => ({ on: false }));
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: desktop.on ? {} : null, loading: false, error: "" }),
 }));
 const sets = vi.hoisted(() => ({
@@ -127,10 +127,10 @@ const sets = vi.hoisted(() => ({
   tags: [] as string[],
   tagsLoading: false,
 }));
-vi.mock("../lib/useContactGroups", () => ({
+vi.mock("../hooks/useContactGroups", () => ({
   useContactGroups: () => ({ groups: sets.groups, loading: sets.groupsLoading }),
 }));
-vi.mock("../lib/useMessageTags", () => ({
+vi.mock("../hooks/useMessageTags", () => ({
   useMessageTags: () => ({ tags: sets.tags, loading: sets.tagsLoading }),
 }));
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => desktop.on }));
@@ -138,7 +138,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),
 }));
-vi.mock("../screens/import/useImportAttention", () => ({
+vi.mock("./useImportAttention", () => ({
   useImportAttention: () => null,
 }));
 vi.mock("../lib/savedSearches", () => ({

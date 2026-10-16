@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useServerInfo } from "../../hooks/useServerInfo";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { invokeAccountStagingBytes, invokeAllStagingBytes } from "../../lib/desktop/staging";
@@ -6,7 +7,6 @@ import { canMeasureStagingDirectory } from "../../lib/desktopFeatures";
 import { formatBytes } from "../../lib/formatBytes";
 import { keys } from "../../lib/queryKeys";
 import { isTauri } from "../../lib/tauriCheck";
-import { useServerInfo } from "../../lib/useServerInfo";
 
 /**
  * How a measurement of the Staging Directory reads: measured once when the

@@ -29,7 +29,7 @@ vi.mock("../../lib/importRun", async (importOriginal) => ({
 
 vi.mock("../../lib/authContext", () => authModule(() => ({ accountId: 7, logout })));
 
-vi.mock("../owner/useOwnerAccounts", () => ({
+vi.mock("../../hooks/useOwnerAccounts", () => ({
   useDeleteAccount: () => ({ mutateAsync: vi.fn() }),
   useDeleteAccountMessages: () => ({ mutateAsync: vi.fn() }),
 }));

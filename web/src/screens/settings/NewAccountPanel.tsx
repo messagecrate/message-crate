@@ -2,9 +2,9 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
+import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache } from "../../lib/routeQuery";
-import { useCreateAccountForm } from "../auth/useCreateAccountForm";
 import { sectionTitleClass } from "./profileStyles";
 
 /**
