@@ -12,7 +12,7 @@ mms-parts = { path = "../mms-parts" }
 anyhow = { workspace = true }
 file-io = { workspace = true }
 base64 = "0.23.1"
-html-escape = "0.2.14"
+html-escape = "0.3.0"
 phone = { path = "../phone" }
 quick-xml = { workspace = true }
 serde = { workspace = true }
