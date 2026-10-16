@@ -104,8 +104,8 @@ struct ImportRunMode {
 ///
 /// The answer carries every issue and note the run recorded, which has no
 /// bound: a WhatsApp run can record 20,000 skipped files. So it waits as
-/// long as for a piece, `piece_wait` ([`piece_wait`]), not a fixed few
-/// seconds.
+/// long as a request that sends a piece does (the `piece_wait` argument,
+/// from [`piece_wait`]), not a fixed few seconds.
 ///
 /// # Errors
 ///
