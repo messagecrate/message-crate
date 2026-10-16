@@ -880,17 +880,7 @@ pub async fn add_copy_tapbacks(
         return Ok(0);
     }
     let columns = TAPBACK_COLUMNS.join(", ");
-    // Two statements on purpose: one prepared statement holds one command.
-    sqlx::query(AssertSqlSafe(format!(
-        "CREATE TEMP TABLE IF NOT EXISTS _copy_tapbacks ({columns})"
-    )))
-    .execute(&mut *conn)
-    .await
-    .context("create the copy's reaction table")?;
-    sqlx::query("DELETE FROM _copy_tapbacks")
-        .execute(&mut *conn)
-        .await
-        .context("empty the copy's reaction table")?;
+    reset_temp_table(conn, "_copy_tapbacks", &columns).await?;
     let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
     for chunk in rows.chunks(size) {
         let sql = format!(
@@ -919,26 +909,37 @@ pub async fn add_copy_tapbacks(
 // below fill in the order `imports_api::promote` calls them.
 
 /// Create, or empty, a temp table mapping staging ids to production ids,
-/// with the column definitions `extra_columns` after those two.
-/// Two statements on purpose: one prepared statement holds one command.
+/// with the column definitions `extra_columns` after those two
+/// ([`reset_temp_table`]).
 async fn reset_id_map(
     conn: &mut SqliteConnection,
     table: &str,
     extra_columns: &[&str],
 ) -> Result<()> {
     let extra: String = extra_columns.iter().map(|c| format!(", {c}")).collect();
-    let create = format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra})"
-    );
-    sqlx::query(AssertSqlSafe(create))
+    reset_temp_table(
+        conn,
+        table,
+        &format!("staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra}"),
+    )
+    .await
+    .context("reset a promotion id map")
+}
+
+/// Create the temp table `table` with the column definitions `columns`,
+/// or empty it when it exists. Two statements on purpose: one prepared
+/// statement holds one command.
+async fn reset_temp_table(conn: &mut SqliteConnection, table: &str, columns: &str) -> Result<()> {
+    sqlx::query(AssertSqlSafe(format!(
+        "CREATE TEMP TABLE IF NOT EXISTS {table} ({columns})"
+    )))
+    .execute(&mut *conn)
+    .await
+    .with_context(|| format!("create the temp table {table}"))?;
+    sqlx::query(AssertSqlSafe(format!("DELETE FROM {table}")))
         .execute(&mut *conn)
         .await
-        .context("create a promotion id map")?;
-    let clear = format!("DELETE FROM {table}");
-    sqlx::query(AssertSqlSafe(clear))
-        .execute(&mut *conn)
-        .await
-        .context("clear a promotion id map")?;
+        .with_context(|| format!("empty the temp table {table}"))?;
     Ok(())
 }
 
