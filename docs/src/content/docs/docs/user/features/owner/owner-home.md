@@ -122,7 +122,7 @@ The gear opens that account's settings.
 
 1. Select **Add account**. The **New account** form opens. Its **Profile** and **Storage** tabs can't be opened yet, because they belong to an account that exists.
 2. Enter a **Username**.
-3. Enter a **Password** and repeat it in **Confirm password**. The heading reads **Password (optional)**, because the form allows an account with no password. An account that holds real messages should have one.
+3. Enter a **Password** and repeat it in **Confirm password**. The heading reads **Password (optional)**, because the form allows an account with no password. An account that holds real messages should have one. A password is at most 128 characters.
 4. Select **Create**.
 
 The form reports **Invalid username.** when the username is already taken.

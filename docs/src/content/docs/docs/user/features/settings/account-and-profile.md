@@ -55,7 +55,7 @@ The form takes **New password** and **Confirm new password**.
 The server compares the two, and the form shows "New passwords do not match" when they differ.
 
 A password has no minimum length.
-The longest password the server accepts is 1,024 bytes.
+The longest password the server accepts is 128 characters.
 
 **Reset password** clears the password, so the account then logs in with an empty one.
 The screen confirms with "Password reset. This account now has no password, and its API Tokens were revoked."

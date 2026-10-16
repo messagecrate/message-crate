@@ -17,10 +17,17 @@ use tokio::sync::Semaphore;
 
 use crate::api_error::ApiError;
 use crate::db::{account_profile, api_tokens, session_tokens};
-use crate::text_caps::{MAX_USERNAME_CHARS, capped_text};
+use crate::text_caps::{MAX_USERNAME_CHARS, capped_text, capped_untrimmed};
 
-/// Max password bytes accepted before hashing (creation, login, change).
-pub(crate) const MAX_PASSWORD_BYTES: usize = 1024;
+/// Most characters in a password, counted as a username's are: in
+/// characters, not bytes. Checked at account creation, at login, and when a
+/// password is changed or sent to confirm a change.
+///
+/// Argon2 reduces a password to a fixed size before its costly work, so the
+/// cap is not for Argon2's sake: it keeps a client from sending a huge body
+/// as a password. NIST SP 800-63B asks a verifier to allow at least 64
+/// characters; 128 leaves room for any generated password or passphrase.
+pub(crate) const MAX_PASSWORD_CHARS: usize = 128;
 /// How long the server waits before it answers a refused credential: a login
 /// it refuses, or a wrong `current_password`.
 ///
@@ -217,7 +224,7 @@ pub(crate) async fn hash_owner_password(password: &str) -> Result<String, ApiErr
     if password.is_empty() {
         return Err(ApiError::validation("the owner must have a password"));
     }
-    require_hashable(password)?;
+    require_password_within_cap("password", password)?;
     let password = password.to_owned();
     run_argon2("password hash", move || hash_password(&password)).await
 }
@@ -228,16 +235,21 @@ pub(crate) async fn hash_user_password(password: &str) -> Result<Option<String>,
     if password.is_empty() {
         return Ok(None);
     }
-    require_hashable(password)?;
+    require_password_within_cap("password", password)?;
     let password = password.to_owned();
     run_argon2("password hash", move || hash_password(&password).map(Some)).await
 }
 
-/// Refuse a password longer than Argon2 should be asked to hash.
-fn require_hashable(password: &str) -> Result<(), ApiError> {
-    if password.len() > MAX_PASSWORD_BYTES {
-        return Err(ApiError::validation("password is too long"));
-    }
+/// Refuse a password over [`MAX_PASSWORD_CHARS`], naming `field`, the body
+/// field that sent it, in the wording of every length cap
+/// ([`capped_untrimmed`]). The password is not trimmed: a space at either
+/// end is part of it.
+///
+/// # Errors
+///
+/// `validation-failed` naming `field` and the cap when `password` is over it.
+pub(crate) fn require_password_within_cap(field: &str, password: &str) -> Result<(), ApiError> {
+    capped_untrimmed(field, password, MAX_PASSWORD_CHARS)?;
     Ok(())
 }
 
