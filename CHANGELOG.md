@@ -1569,6 +1569,13 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-16: **Making Previews and Thumbnails reads only an account's own
+  attachments.** When the server makes Previews and Thumbnails, it passes
+  over an Asset whose stored location points outside the account's
+  attachments in the Data Directory. It says so in its log, with the
+  account, the Asset and its stored location, and `process-assets` ends by
+  counting such Assets as a failure. Before, it read the file at that
+  location and made a Preview or Thumbnail of it (#2866).
 - 2026-10-16: **A download cut off by an error shows in the server's log.**
   When an attachment or a log file failed partway through its download, such
   as on a disk error, the server's log showed only the download's start,
