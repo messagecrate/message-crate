@@ -70,17 +70,6 @@ pub enum CountryError {
     Failed(#[from] anyhow::Error),
 }
 
-impl From<CountryError> for crate::api_error::ApiError {
-    fn from(error: CountryError) -> Self {
-        match error {
-            CountryError::Refused(message) => Self::validation(message),
-            CountryError::Exists { detail, holder } => Self::IdentityExists { detail, holder },
-            CountryError::Conflict(message) => Self::StateConflict(message),
-            CountryError::Failed(cause) => Self::Internal(cause),
-        }
-    }
-}
-
 /// Give the identity `request` names the `+` form its country gives it, and
 /// merge it into the identity already holding that form when the request
 /// says to. Runs in the caller's write transaction, stamping each contact it

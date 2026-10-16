@@ -24,6 +24,7 @@ use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole
 pub(crate) mod address_book;
 mod edit;
 
+pub(crate) use edit::ContactEditError;
 use edit::mutate_contact;
 
 /// An address to link, and the service to link it on.

@@ -626,7 +626,7 @@ impl UpdateAccountRequest {
 
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
-enum ProfileUpdateError {
+pub(crate) enum ProfileUpdateError {
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -641,16 +641,6 @@ enum ProfileUpdateError {
 impl From<sqlx::Error> for ProfileUpdateError {
     fn from(value: sqlx::Error) -> Self {
         Self::Db(value.into())
-    }
-}
-
-impl From<ProfileUpdateError> for ApiError {
-    fn from(e: ProfileUpdateError) -> Self {
-        match e {
-            err @ ProfileUpdateError::UnknownTimeZone(_) => Self::validation(err.to_string()),
-            ProfileUpdateError::Country(error) => error.into(),
-            ProfileUpdateError::Db(err) => Self::Internal(err),
-        }
     }
 }
 

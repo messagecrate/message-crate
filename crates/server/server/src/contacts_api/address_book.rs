@@ -14,7 +14,7 @@ use sqlx::SqlitePool;
 
 use crate::api_error::ApiError;
 use crate::auth::{FullAccess, refuse_for_demo_account};
-use crate::db::address_book::{self, LoadCounts, LoadError, LoadMode};
+use crate::db::address_book::{self, LoadCounts, LoadMode};
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts::read::contact_ids_matching;
 use crate::extract::{Json, Query};
@@ -86,15 +86,6 @@ const EXPORT_FILE_NAME: &str = "address-book.csv";
 pub(crate) struct CreateContactsQuery {
     #[serde(default)]
     mode: LoadMode,
-}
-
-impl From<LoadError> for ApiError {
-    fn from(error: LoadError) -> Self {
-        match error {
-            LoadError::Refused(reasons) => Self::ValidationFailed(reasons),
-            LoadError::Failed(cause) => Self::Internal(cause.context("load address book")),
-        }
-    }
 }
 
 /// Load an address book into this account. The body is the file itself:
