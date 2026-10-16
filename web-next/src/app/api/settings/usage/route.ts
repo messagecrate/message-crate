@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/** Attachment usage, from `GET /v1/account/storage`. */
+/** Attachment usage, from `GET /v1/accounts/{id}/storage`. */
 export async function GET() {
   try {
     return await withAccountHandler(async () => {

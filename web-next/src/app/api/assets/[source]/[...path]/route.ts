@@ -2,7 +2,7 @@ import {
   unauthorizedResponse,
   withAccountHandler,
 } from "@/lib/accountContext";
-import { qs, vaultFetch } from "@/lib/vault/client";
+import { vaultFetch } from "@/lib/vault/client";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -17,12 +17,13 @@ function authError(err: unknown): NextResponse | null {
 }
 
 /**
- * Attachment bytes, proxied from `GET /v1/assets/{sha256}`. The vault
+ * Attachment bytes, proxied from `GET /v1/assets/{sha256}`. The server
  * addresses assets by content hash, so the last path segment is the sha256
- * (`toAttachment` in `lib/vault/messages.ts` puts it in `assetsPath`).
+ * (`toAttachment` in `lib/vault/messages.ts` puts it in `assetsPath`). The
+ * `[source]` segment stays in the URL web-next builds; this route ignores it.
  */
 export async function GET(_req: Request, { params }: Params) {
-  const { source, path: parts } = await params;
+  const { path: parts } = await params;
   const sha256 = parts[parts.length - 1] ?? "";
   if (!/^[0-9a-f]{64}$/i.test(sha256)) {
     return NextResponse.json(
@@ -32,9 +33,7 @@ export async function GET(_req: Request, { params }: Params) {
   }
   try {
     return await withAccountHandler(async () => {
-      const upstream = await vaultFetch(
-        `/v1/assets/${sha256}${qs({ source })}`,
-      );
+      const upstream = await vaultFetch(`/v1/assets/${sha256}`);
       if (upstream.status === 401) return unauthorizedResponse();
       if (!upstream.ok) {
         return NextResponse.json(

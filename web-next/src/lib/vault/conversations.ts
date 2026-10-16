@@ -8,15 +8,16 @@
  */
 import type { GroupChatThread, GroupParticipant, GroupYearRow } from "@/lib/types";
 
+import { loadProfile } from "./account";
 import {
+  dayIn,
   dayOf,
   mapPool,
   memo,
-  qs,
   vaultAll,
-  vaultJson,
+  vaultCount,
   vaultJsonOrNull,
-  yearOf,
+  yearIn,
   type Schemas,
 } from "./client";
 import {
@@ -28,7 +29,7 @@ import {
 
 export type Conversation = Schemas["ConversationSummary"];
 export type Participant = Schemas["Participant"];
-export type ConversationSourceInfo = Schemas["ConversationSourceInfo"];
+export type ConversationSource = Schemas["ConversationSource"];
 
 const LIST_TTL_MS = 5_000;
 /** Concurrent per-year count calls when splitting a conversation by year. */
@@ -53,11 +54,8 @@ export async function getConversation(id: number): Promise<Conversation | null> 
 
 export async function conversationSources(
   id: number,
-): Promise<ConversationSourceInfo[]> {
-  const page = await vaultJson<Schemas["ConversationSourcesPage"]>(
-    `/v1/conversations/${id}/sources`,
-  );
-  return page.items;
+): Promise<ConversationSource[]> {
+  return vaultAll<ConversationSource>(`/v1/conversations/${id}/sources`);
 }
 
 /** Contact ids of every participant that has one. */
@@ -76,7 +74,7 @@ export function directContactId(c: Conversation): number | null {
 }
 
 export function toGroupParticipant(p: Participant): GroupParticipant {
-  const handle = p.handle ?? "";
+  const handle = p.identity ?? "";
   return {
     name: p.name,
     handle,
@@ -91,7 +89,7 @@ export function groupTitle(c: Conversation): {
   titleFull: string;
   namedTitle: string | null;
 } {
-  const label = c.label?.trim() || null;
+  const label = c.shown_title?.trim() || null;
   const people = formatPeopleTitle(c.participants.map((p) => p.name));
   if (label && !isGenericGroupTitle(label)) {
     return { title: label, titleFull: people.full || label, namedTitle: label };
@@ -100,10 +98,14 @@ export function groupTitle(c: Conversation): {
   return { title: fallback, titleFull: people.full || fallback, namedTitle: null };
 }
 
-/** Calendar years a conversation's messages span, oldest first. */
-export function conversationYears(c: Conversation): number[] {
-  const start = yearOf(c.date_range_start) ?? yearOf(c.last_message_at);
-  const end = yearOf(c.date_range_end) ?? yearOf(c.last_message_at);
+/**
+ * Calendar years a conversation's messages span, oldest first, in the
+ * account's time zone: the zone the server reads `date:YYYY` in.
+ */
+export function conversationYears(c: Conversation, timeZone: string): number[] {
+  const start =
+    yearIn(c.first_message_at, timeZone) ?? yearIn(c.last_message_at, timeZone);
+  const end = yearIn(c.last_message_at, timeZone);
   if (start == null || end == null) return [];
   const years: number[] = [];
   for (let y = Math.min(start, end); y <= Math.max(start, end); y += 1) {
@@ -112,20 +114,27 @@ export function conversationYears(c: Conversation): number[] {
   return years;
 }
 
-export type YearCount = { messages: number; attachments: number };
+/**
+ * The search for one conversation's messages in one year. A search leaves
+ * the trash out unless asked, and a trashed conversation can still be
+ * opened, so the query asks (`trashed:any`), as web/ does.
+ */
+export function conversationYearQuery(conversationId: number, year: number): string {
+  return `in:#${conversationId} trashed:any date:${year}`;
+}
 
 /**
- * Messages and attachments of one conversation in one year, from
- * `GET /v1/export/messages/count?q=in:#id date:YYYY`.
+ * Messages of one conversation in one year that also match `extra`: the
+ * `total` of `GET /v1/messages` for {@link conversationYearQuery}.
  */
 export async function countConversationYear(
   conversationId: number,
   year: number,
-): Promise<YearCount> {
-  const count = await vaultJson<Schemas["ExportCountResponse"]>(
-    `/v1/export/messages/count${qs({ q: `in:#${conversationId} date:${year}` })}`,
-  );
-  return { messages: count.messages, attachments: count.attachments };
+  extra = "",
+): Promise<number> {
+  return vaultCount("/v1/messages", {
+    q: `${conversationYearQuery(conversationId, year)} ${extra}`.trim(),
+  });
 }
 
 /**
@@ -135,27 +144,38 @@ export async function countConversationYear(
  */
 export async function yearCounts(
   c: Conversation,
-): Promise<Array<{ year: number } & YearCount>> {
-  const years = conversationYears(c);
+  timeZone: string,
+): Promise<Array<{ year: number; messages: number }>> {
+  const years = conversationYears(c, timeZone);
   if (years.length === 0) return [];
   if (years.length === 1) {
-    return [{ year: years[0]!, messages: c.message_count, attachments: 0 }];
+    return [{ year: years[0]!, messages: c.message_count }];
   }
   const counts = await mapPool(years, COUNT_POOL, (year) =>
     countConversationYear(c.id, year),
   );
   return years
-    .map((year, i) => ({ year, ...counts[i]! }))
+    .map((year, i) => ({ year, messages: counts[i]! }))
     .filter((row) => row.messages > 0);
 }
 
-/** Clip a conversation's date range to one calendar year. */
-function yearRange(
+/** The day of a conversation's first message, else of its last, in the zone. */
+export function conversationStartDay(c: Conversation, timeZone: string): string {
+  return dayIn(c.first_message_at, timeZone) || dayIn(c.last_message_at, timeZone);
+}
+
+/**
+ * Clip a conversation's date range to one calendar year. Days are read in
+ * the same zone as the years ({@link conversationYears}), so a range never
+ * ends before it starts.
+ */
+export function yearRange(
   c: Conversation,
   year: number,
+  timeZone: string,
 ): { dateStart: string; dateEnd: string } {
-  const start = dayOf(c.date_range_start) || dayOf(c.last_message_at);
-  const end = dayOf(c.date_range_end) || dayOf(c.last_message_at);
+  const start = conversationStartDay(c, timeZone);
+  const end = dayIn(c.last_message_at, timeZone);
   const first = `${year}-01-01`;
   const last = `${year}-12-31`;
   return {
@@ -167,12 +187,13 @@ function yearRange(
 function groupYearRow(
   c: Conversation,
   year: number,
-  count: YearCount,
+  messages: number,
   years: number[],
+  timeZone: string,
 ): GroupYearRow {
   const { title, titleFull, namedTitle } = groupTitle(c);
   const participants = c.participants.map(toGroupParticipant);
-  const { dateStart, dateEnd } = yearRange(c, year);
+  const { dateStart, dateEnd } = yearRange(c, year, timeZone);
   return {
     id: c.id,
     year,
@@ -183,11 +204,11 @@ function groupYearRow(
     participantNames: participants.map((p) => p.name),
     participantHandles: participants.map((p) => p.handle),
     participants,
-    messageCount: count.messages,
+    messageCount: messages,
     dateStart,
     dateEnd,
-    conversationDateStart: dayOf(c.date_range_start) || dateStart,
-    conversationDateEnd: dayOf(c.date_range_end) || dateEnd,
+    conversationDateStart: conversationStartDay(c, timeZone) || dateStart,
+    conversationDateEnd: dayIn(c.last_message_at, timeZone) || dateEnd,
     spansMultipleYears: years.length > 1,
   };
 }
@@ -196,12 +217,16 @@ function groupYearRow(
 export async function listGroupYearRows(
   section: ConversationSection = "active",
 ): Promise<GroupYearRow[]> {
-  const groups = (await allConversations(section)).filter((c) => c.is_group);
+  const [conversations, profile] = await Promise.all([
+    allConversations(section),
+    loadProfile(),
+  ]);
+  const groups = conversations.filter((c) => c.is_group);
   const rows = await mapPool(groups, COUNT_POOL, async (c) => {
-    const years = conversationYears(c);
-    const counts = await yearCounts(c);
+    const years = conversationYears(c, profile.time_zone);
+    const counts = await yearCounts(c, profile.time_zone);
     return counts.map((count) =>
-      groupYearRow(c, count.year, count, years),
+      groupYearRow(c, count.year, count.messages, years, profile.time_zone),
     );
   });
   return rows
@@ -209,11 +234,17 @@ export async function listGroupYearRows(
     .sort((a, b) => b.dateEnd.localeCompare(a.dateEnd) || b.id - a.id);
 }
 
-/** One group conversation as the contact page lists it (newest year). */
-export function groupChatThread(c: Conversation): GroupChatThread {
+/**
+ * One group conversation as the contact page lists it (newest year). Its year
+ * and days are read in the account's time zone, the zone `date:YYYY` is.
+ */
+export function groupChatThread(
+  c: Conversation,
+  timeZone: string,
+): GroupChatThread {
   const { title, titleFull, namedTitle } = groupTitle(c);
   const participants = c.participants.map(toGroupParticipant);
-  const year = yearOf(c.last_message_at) ?? new Date().getFullYear();
+  const year = yearIn(c.last_message_at, timeZone) ?? new Date().getFullYear();
   return {
     conversationId: c.id,
     conversationIds: [c.id],
@@ -226,8 +257,8 @@ export function groupChatThread(c: Conversation): GroupChatThread {
     participants,
     year,
     messageCount: c.message_count,
-    dateStart: dayOf(c.date_range_start) || dayOf(c.last_message_at),
-    dateEnd: dayOf(c.date_range_end) || dayOf(c.last_message_at),
+    dateStart: conversationStartDay(c, timeZone),
+    dateEnd: dayIn(c.last_message_at, timeZone),
   };
 }
 
@@ -237,13 +268,17 @@ export async function groupChatsContainingContacts(
 ): Promise<GroupChatThread[]> {
   const wanted = [...new Set(contactIds.filter((id) => Number.isFinite(id)))];
   if (!wanted.length) return [];
-  const groups = (await allConversations()).filter((c) => c.is_group);
+  const [conversations, profile] = await Promise.all([
+    allConversations(),
+    loadProfile(),
+  ]);
+  const groups = conversations.filter((c) => c.is_group);
   return groups
     .filter((c) => {
       const present = new Set(participantContactIds(c));
       return wanted.every((id) => present.has(id));
     })
-    .map(groupChatThread)
+    .map((c) => groupChatThread(c, profile.time_zone))
     .sort((a, b) => b.dateEnd.localeCompare(a.dateEnd));
 }
 
@@ -285,8 +320,8 @@ export async function contactStats(): Promise<Map<number, ContactStats>> {
       const s = entry(id);
       s.messageCount += c.message_count;
       s.directConversationIds.push(c.id);
-      const start = dayOf(c.date_range_start);
-      const end = dayOf(c.date_range_end) || dayOf(c.last_message_at);
+      const start = dayOf(c.first_message_at);
+      const end = dayOf(c.last_message_at);
       if (start && (!s.dateStart || start < s.dateStart)) s.dateStart = start;
       if (end && (!s.dateEnd || end > s.dateEnd)) s.dateEnd = end;
     }

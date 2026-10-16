@@ -3,13 +3,18 @@ import {
   accountCookieOptions,
   sessionCookieOptions,
 } from "@/lib/session";
-import { clearMemo, vaultFetch, type Schemas } from "@/lib/vault/client";
+import {
+  clearMemo,
+  failureMessage,
+  vaultFetch,
+  type Schemas,
+} from "@/lib/vault/client";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/** Sign in through `POST /v1/auth/login`; the session token goes in a cookie. */
+/** Sign in through `POST /v1/session`; the session token goes in a cookie. */
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
   try {
@@ -27,7 +32,7 @@ export async function POST(req: Request) {
 
   let res: Response;
   try {
-    res = await vaultFetch("/v1/auth/login", {
+    res = await vaultFetch("/v1/session", {
       method: "POST",
       body: { username, password },
       token: null,
@@ -43,20 +48,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
   }
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    try {
-      const json = (await res.json()) as { error?: string };
-      if (json.error) message = json.error;
-    } catch {
-      /* not JSON */
-    }
-    return NextResponse.json({ error: message }, { status: res.status });
+    return NextResponse.json(
+      { error: await failureMessage(res) },
+      { status: res.status },
+    );
   }
 
-  const session = (await res.json()) as Schemas["AuthTokenResponse"];
+  const session = (await res.json()) as Schemas["CreateSessionResponse"];
   clearMemo();
   const store = await cookies();
-  store.set(accountCookieOptions(session.account_id));
+  store.set(accountCookieOptions(String(session.account_id)));
   store.set(sessionCookieOptions(session.token));
 
   return NextResponse.json({
