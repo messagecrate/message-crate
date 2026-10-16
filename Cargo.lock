@@ -464,7 +464,7 @@ dependencies = [
  "plist",
  "rusqlite",
  "sha1 0.11.0",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -629,7 +629,7 @@ dependencies = [
  "plist",
  "rusqlite",
  "sha1 0.11.0",
- "sha2 0.11.0",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -913,7 +913,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -942,7 +942,7 @@ dependencies = [
  "anyhow",
  "hex",
  "libc",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -1599,7 +1599,7 @@ dependencies = [
  "message-crate-csv",
  "phone",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "staging",
  "tempfile",
 ]
@@ -1735,7 +1735,7 @@ dependencies = [
  "phone",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -1753,7 +1753,7 @@ dependencies = [
  "obfuscate",
  "phone",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -2043,7 +2043,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serve-protocol",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sqlx",
  "tempfile",
  "thiserror 2.0.21",
@@ -2186,7 +2186,7 @@ dependencies = [
  "phone",
  "rand",
  "regex",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tempfile",
 ]
 
@@ -2224,7 +2224,7 @@ dependencies = [
  "message-crate-csv",
  "phone",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "staging",
  "tempfile",
 ]
@@ -2352,7 +2352,7 @@ dependencies = [
  "hex",
  "regex",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -3039,9 +3039,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
@@ -3127,7 +3127,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "staging",
  "tempfile",
 ]
@@ -3286,7 +3286,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "sha1 0.11.0",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sqlx-core",
  "thiserror 2.0.21",
  "tracing",
@@ -3318,7 +3318,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "smallvec",
  "sqlx-core",
  "stringprep",
