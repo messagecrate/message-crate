@@ -27,8 +27,8 @@ pub struct DecryptedDomain {
 /// Decrypt every file of `domain` in the encrypted iPhone backup at
 /// `backup_root` into `<out_dir>/<domain>/`, keeping each file's path inside
 /// the domain. Log lines and progress counts go to `sinks`. Setting
-/// `sinks.cancel` kills the `imessage-reader` program, even while the
-/// program is decrypting and sends nothing (#3034).
+/// `sinks.cancel` kills the Apple Messages Reader (`imessage-reader`), even
+/// while the Reader is decrypting and sends nothing (#3034).
 ///
 /// Before anything is written, `check` gets the bytes the domain's files
 /// hold, as the backup's manifest records them, so the caller can refuse a
