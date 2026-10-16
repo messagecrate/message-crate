@@ -622,8 +622,9 @@ async fn a_batch_path_naming_a_file_in_the_asset_store_stores_no_asset() {
 #[tokio::test]
 async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
     let (state, _fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let id = import_id_of(&path).to_string();
+    let run = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(run);
+    let id = run.to_string();
     post_json::<serde_json::Value>(
         &state,
         &format!("/v1/imports/{id}/discard"),
@@ -652,8 +653,8 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
 #[tokio::test]
 async fn a_batch_into_a_run_discarded_while_it_uploads_is_a_state_conflict() {
     let (state, fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let id = import_id_of(&path);
+    let id = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(id);
 
     let mut other_conn = fixture.conn().await;
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
@@ -953,8 +954,7 @@ async fn account_row_exists(fixture: &TestFixture, account_id: i64) -> bool {
 #[tokio::test]
 async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back() {
     let (state, fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "imessage").await;
-    let import_id = import_id_of(&path);
+    let import_id = start_run(&state, &token, "imessage").await;
     let mut conn = fixture.conn().await;
     let account = crate::auth::resolve_auth_on_conn(
         &mut conn,
@@ -1058,7 +1058,7 @@ struct BatchBehindTheLock {
 /// post a one-message batch to the run through the handler, polling it
 /// until the batch waits for the lock.
 async fn batch_behind_the_lock(state: &crate::server::AppState, token: &str) -> BatchBehindTheLock {
-    let import_id = import_id_of(&batches_path(state, token, "imessage").await);
+    let import_id = start_run(state, token, "imessage").await;
     let mut conn = state.db.acquire().await.unwrap();
     let auth = crate::auth::resolve_auth_on_conn(
         &mut conn,

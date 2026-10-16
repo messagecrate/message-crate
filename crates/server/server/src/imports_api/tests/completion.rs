@@ -59,8 +59,8 @@ async fn shortcuts(
 #[tokio::test]
 async fn completing_an_import_with_messages_creates_its_saved_search_and_contact_group() {
     let (state, _fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let import_id = import_id_of(&path);
+    let import_id = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(import_id);
     let (status, text) = crate::test_support::post_raw(
         &state,
         &path,
@@ -130,8 +130,8 @@ async fn completing_an_import_with_messages_creates_its_saved_search_and_contact
 #[tokio::test]
 async fn completing_a_run_counts_its_messages_whatever_the_body_says() {
     let (state, _fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let import_id = import_id_of(&path);
+    let import_id = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(import_id);
     let (status, text) = crate::test_support::post_raw(
         &state,
         &path,
@@ -246,8 +246,8 @@ async fn two_import_runs_from_one_source_on_one_day_make_two_contact_groups() {
 #[tokio::test]
 async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
     let (state, _fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let import_id = import_id_of(&path);
+    let import_id = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(import_id);
     let account = run_account(&state, import_id).await;
     let (status, text) = crate::test_support::post_raw(
         &state,
