@@ -115,9 +115,9 @@ fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Op
         .filter(|(_, document)| document.messages.iter().any(Message::is_sms_or_mms))
         .map(|(index, document)| (index, with_messages(document, Vec::new())))
         .collect();
-    let mut docs: Vec<&mut ConversationDocument> =
+    let mut written_documents: Vec<&mut ConversationDocument> =
         written.iter_mut().map(|(_, document)| document).collect();
-    give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
+    give_each_document_its_own_file(&mut written_documents).map_err(anyhow::Error::msg)?;
     let mut directories = vec![None; documents.len()];
     for (index, document) in written {
         directories[index] = Some(filename_stem(&document));

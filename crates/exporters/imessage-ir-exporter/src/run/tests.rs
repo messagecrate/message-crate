@@ -770,7 +770,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         *issues.lock().unwrap(),
         [message_crate_core::RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
-            step: "attachments".into(),
+            step: message_crate_core::RunIssueStep::Attachments,
             item: "/backup/IMG_0001.MOV".into(),
             reason: "This attachment could not be decrypted: write the decrypted file: No space \
                      left on device"

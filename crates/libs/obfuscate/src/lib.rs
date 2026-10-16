@@ -511,11 +511,12 @@ pub fn resolve_obfuscator_with_log(
         let mut seed = [0u8; OBFUSCATE_SEED_BYTES];
         rand::rng().fill_bytes(&mut seed);
         let hex_key = hex::encode(seed);
-        let msg = format!("obfuscate-seed: {hex_key}  (save to reproduce; not written to output)");
+        let message =
+            format!("obfuscate-seed: {hex_key}  (save to reproduce; not written to output)");
         match log {
-            Some(emit) => emit(&msg),
+            Some(emit) => emit(&message),
             None => {
-                let _ = writeln!(std::io::stderr(), "{msg}");
+                let _ = writeln!(std::io::stderr(), "{message}");
             }
         }
         key_from_seed_bytes(&seed)

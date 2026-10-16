@@ -200,7 +200,7 @@ fn convert_export(
         // so only the others are counted.
         report.conversations = documents
             .iter()
-            .filter(|doc| doc.messages.iter().any(Message::is_sms_or_mms))
+            .filter(|document| document.messages.iter().any(Message::is_sms_or_mms))
             .count() as u64;
     }
     for document in documents {
@@ -280,8 +280,8 @@ fn stage_again(
 fn missing_reasons(documents: &[ConversationDocument]) -> Vec<Option<String>> {
     documents
         .iter()
-        .flat_map(|doc| doc.messages.iter())
-        .flat_map(|msg| msg.attachments.iter())
+        .flat_map(|document| document.messages.iter())
+        .flat_map(|message| message.attachments.iter())
         .map(|att| att.missing_reason.clone())
         .collect()
 }
@@ -298,8 +298,8 @@ fn keep_missing_reasons(
     let mut missing = 0;
     for (att, reason) in documents
         .iter_mut()
-        .flat_map(|doc| doc.messages.iter_mut())
-        .flat_map(|msg| msg.attachments.iter_mut())
+        .flat_map(|document| document.messages.iter_mut())
+        .flat_map(|message| message.attachments.iter_mut())
         .zip(reasons)
     {
         if att.missing_reason.as_deref() == Some(missing_reason::FILE_MISSING) {

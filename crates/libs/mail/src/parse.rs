@@ -236,9 +236,9 @@ pub fn mail_messages_from_mbox(path: &Path) -> Result<Vec<MailMessage>> {
     let records = split_mboxrd(&text);
     let mut out = Vec::with_capacity(records.len());
     for (i, eml) in records.iter().enumerate() {
-        let msg = mail_message_from_eml_bytes(eml)
+        let message = mail_message_from_eml_bytes(eml)
             .with_context(|| format!("parse mbox record {} in {}", i + 1, path.display()))?;
-        out.push(msg);
+        out.push(message);
     }
     Ok(out)
 }
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn roundtrip_eml_headers_and_body() {
         let base = base_sms();
-        let msg = MailMessage {
+        let message = MailMessage {
             owner_display_name: Some("Me".into()),
             message: Message {
                 direction: Direction::Outgoing,
@@ -509,7 +509,7 @@ mod tests {
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let bytes = fs::read(&path).unwrap();
         let parsed = mail_message_from_eml_bytes(&bytes).unwrap();
         assert_eq!(parsed.message.text, "hello roundtrip");
@@ -586,7 +586,7 @@ mod tests {
             tapback_action: Some("add".into()),
         };
         let base = base_sms();
-        let msg = MailMessage {
+        let message = MailMessage {
             chat_identifier: "chat-group1".into(),
             conversation_type: "group".into(),
             group_title: Some("Family".into()),
@@ -641,7 +641,7 @@ mod tests {
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let bytes = fs::read(&path).unwrap();
         let parsed = mail_message_from_eml_bytes(&bytes).unwrap();
 
@@ -778,19 +778,20 @@ mod tests {
     /// after it was paired with the text file's name.
     #[test]
     fn eml_roundtrip_keeps_the_bytes_of_text_attachments() {
-        let msg = message_with_text_and_binary_attachments();
+        let message = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let parsed = mail_message_from_eml_bytes(&fs::read(&path).unwrap()).unwrap();
         assert_text_and_binary_attachments(&parsed);
     }
 
     #[test]
     fn mbox_roundtrip_keeps_the_bytes_of_text_attachments() {
-        let msg = message_with_text_and_binary_attachments();
+        let message = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_conversation_mbox(&tmp.path().join("c.mbox"), std::slice::from_ref(&msg))
-            .unwrap();
+        let path =
+            write_conversation_mbox(&tmp.path().join("c.mbox"), std::slice::from_ref(&message))
+                .unwrap();
         let parsed = mail_messages_from_mbox(&path).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_text_and_binary_attachments(&parsed[0]);

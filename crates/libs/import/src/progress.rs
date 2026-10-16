@@ -69,13 +69,12 @@ pub enum ProgressEvent {
         /// How it ended.
         status: FileStatus,
     },
-    /// Structured skip/error for Import Errors (e.g. oversized attachment).
+    /// Structured skip/error for Import Errors (e.g. oversized attachment),
+    /// raised by the Upload.
     Issue {
         /// [`RunIssueKind::Skip`] when the item was left out,
         /// [`RunIssueKind::Error`] when it failed.
         kind: RunIssueKind,
-        /// The Stage that raised it, e.g. `upload`.
-        step: String,
         /// What was affected: an attachment path or a conversation file.
         item: String,
         /// Why, in one sentence.
@@ -128,10 +127,12 @@ impl LogWriter {
         Ok(Self { file })
     }
 
-    /// Write `msg` at `level`, stamped with the time, and flush so a crash
+    /// Write `message` at `level`, stamped with the time, and flush so a crash
     /// still leaves the last message on disk.
-    fn line(&mut self, level: RunLogLevel, msg: &str) {
-        let _ = self.file.write_all(format_run_log(level, msg).as_bytes());
+    fn line(&mut self, level: RunLogLevel, message: &str) {
+        let _ = self
+            .file
+            .write_all(format_run_log(level, message).as_bytes());
         let _ = self.file.flush();
     }
 }
@@ -369,7 +370,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
             );
             self.event(ProgressEvent::Issue {
                 kind: RunIssueKind::Skip,
-                step: "upload".into(),
                 item: skip.item.clone(),
                 reason: skip.reason.clone(),
                 conversation: skip.conversation.clone(),
@@ -397,7 +397,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
             };
             self.event(ProgressEvent::Issue {
                 kind,
-                step: "upload".into(),
                 item: result.file.clone(),
                 reason: result.error.clone().unwrap_or_else(|| fallback.to_string()),
                 conversation: result.file.clone(),

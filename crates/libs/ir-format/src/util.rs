@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// Give `doc` back the stem suffix its file was written with.
+/// Give `document` back the stem suffix its file was written with.
 ///
 /// An exporter chooses the suffix, such as one per source app so two apps'
 /// chats with one person land in two files, and the suffix is never written
@@ -15,14 +15,14 @@ use std::path::Path;
 /// without one, when that starts with `__`. This crate knows no suffix by
 /// name. A document that already has a suffix, or a file renamed so its
 /// stem no longer starts with the document's own, is left as it is.
-pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Option<&OsStr>) {
-    if doc.packaging_stem_suffix.is_some() {
+pub(crate) fn recover_stem_suffix(document: &mut ConversationDocument, file_stem: Option<&OsStr>) {
+    if document.packaging_stem_suffix.is_some() {
         return;
     }
     let Some(file_stem) = file_stem.and_then(OsStr::to_str) else {
         return;
     };
-    let base = crate::filename_stem(doc);
+    let base = crate::filename_stem(document);
     if base.is_empty() {
         return;
     }
@@ -30,7 +30,7 @@ pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Opt
         && rest.len() > 2
         && rest.starts_with("__")
     {
-        doc.packaging_stem_suffix = Some(rest.to_string());
+        document.packaging_stem_suffix = Some(rest.to_string());
     }
 }
 

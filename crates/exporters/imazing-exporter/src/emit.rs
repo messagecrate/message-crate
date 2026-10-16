@@ -618,8 +618,8 @@ impl Ingest {
             self.report.skipped_invalid_date += 1;
             return None;
         };
-        let is_notification = is_notification(&row.msg_type);
-        let is_from_me = !is_notification && is_outgoing(&row.msg_type);
+        let is_notification = is_notification(&row.message_type);
+        let is_from_me = !is_notification && is_outgoing(&row.message_type);
         let (sender_identity, sender_display_name) =
             resolve_sender(row, is_from_me, is_notification, session);
         let (attachments, attachment_extra) =
@@ -642,7 +642,7 @@ impl Ingest {
         extra.insert("contact_name".into(), session.contact_name.clone());
         extra.insert("service".into(), service);
         extra.insert("imazing_status".into(), row.status.clone());
-        extra.insert("imazing_type".into(), row.msg_type.clone());
+        extra.insert("imazing_type".into(), row.message_type.clone());
         extra.insert("forwarded".into(), row.forwarded.clone());
         extra.insert("attachment_info".into(), row.attachment_info.clone());
         extra.insert("delivered_date".into(), row.delivered_date.clone());

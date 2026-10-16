@@ -210,16 +210,16 @@ pub(crate) fn prepare_file(
 ) -> Result<PreparedFile> {
     let total_started = Instant::now();
     let read_started = Instant::now();
-    let (doc, message_lines) = read_conversation_jsonl_with_lines(path)?;
+    let (document, message_lines) = read_conversation_jsonl_with_lines(path)?;
     let mut profile = UploadProfile {
         read_ms: elapsed_ms(read_started),
         ..UploadProfile::default()
     };
-    let header = ConversationHeader::from_document(&doc);
+    let header = ConversationHeader::from_document(&document);
     let source = project::validate_header(&header)?;
 
     let scan_started = Instant::now();
-    let scan = scan_attachments(ctx, name, &doc.messages)?;
+    let scan = scan_attachments(ctx, name, &document.messages)?;
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
@@ -240,7 +240,7 @@ pub(crate) fn prepare_file(
     });
     log_lines.extend(uploaded.log_lines);
 
-    let chunks = build_import_chunks(ctx, name, &doc, &message_lines, &scan.projections)?;
+    let chunks = build_import_chunks(ctx, name, &document, &message_lines, &scan.projections)?;
     Ok(PreparedFile {
         source,
         chunks,
@@ -288,9 +288,9 @@ fn scan_attachments(
         skips: Vec::new(),
         warnings: Vec::new(),
     };
-    for msg in messages {
-        let mut projections = Vec::with_capacity(msg.attachments.len());
-        for (index, att) in msg.attachments.iter().enumerate() {
+    for message in messages {
+        let mut projections = Vec::with_capacity(message.attachments.len());
+        for (index, att) in message.attachments.iter().enumerate() {
             scan.count += 1;
             projections.push(scan_one_attachment(ctx, name, att, index, &mut scan)?);
         }
@@ -408,19 +408,19 @@ fn scan_one_attachment(
 fn build_import_chunks(
     ctx: &PrepareContext<'_>,
     name: &str,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     message_lines: &[usize],
     projections: &[Vec<AttachmentProjection>],
 ) -> Result<Vec<ImportChunk>> {
     let mut builder = ChunkBuilder::new(
-        project::document_header_line(doc)?,
+        project::document_header_line(document)?,
         ctx.batch_size,
         MAX_IMPORT_BATCH_BYTES,
     );
-    for (i, msg) in doc.messages.iter().enumerate() {
+    for (i, message) in document.messages.iter().enumerate() {
         ctx.session.check_stop()?;
         // Rewrite attachment fields to uploaded digests or missing placeholders.
-        let (line, guid) = project::message_line(msg, &projections[i])?;
+        let (line, guid) = project::message_line(message, &projections[i])?;
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
             // Already imported this message id on a previous successful Upload.
             continue;
@@ -577,18 +577,20 @@ impl DigestResolver {
         if let Some(claimed_digest) = claimed.as_deref()
             && claimed_digest != disk_digest
         {
-            let mut msg = format!(
+            let mut message = format!(
                 "{name}: attachment {rel} hashes to {disk_digest}, \
                  not the {claimed_digest} its conversation file records"
             );
             if let Some(cs) = claimed_size
                 && cs != disk_size
             {
-                msg.push_str(&format!(
+                message.push_str(&format!(
                     ". Its size changed from {cs} to {disk_size} bytes"
                 ));
             }
-            warn(format!("{msg}. The Upload names it Asset {disk_digest}"));
+            warn(format!(
+                "{message}. The Upload names it Asset {disk_digest}"
+            ));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)

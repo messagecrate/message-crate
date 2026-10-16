@@ -82,7 +82,7 @@ fn parse_android_type(s: &str) -> Option<i32> {
 /// title is stored as data only; filenames do not use it.
 pub fn android_vendor_fields(
     conversation: &PendingConversation,
-    msg: &PendingMessage,
+    message: &PendingMessage,
     mut fields: Map<String, Value>,
 ) -> VendorFields {
     if let Some(title) = conversation
@@ -96,7 +96,7 @@ pub fn android_vendor_fields(
         );
     }
     VendorFields {
-        android_type: parse_android_type(msg.extra_str("android_type")),
+        android_type: parse_android_type(message.extra_str("android_type")),
         fields,
     }
 }
