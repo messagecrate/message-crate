@@ -5795,7 +5795,11 @@ export interface components {
             can_export?: boolean | null;
             /** @description Allow or forbid import. */
             can_import?: boolean | null;
-            /** @description Disable or re-enable login. */
+            /**
+             * @description Disable or enable the account. A disabled account may not log in,
+             *     and its API tokens are refused while it stays disabled. Disabling it
+             *     also ends its Session, so enabling it again takes a new login.
+             */
             disabled?: boolean | null;
             /** @description Identities to link onto the account profile. */
             identities?: components["schemas"]["LinkAccountIdentityRequest"][];

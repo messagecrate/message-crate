@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- IANA time zone (for example America/New_York) every message time, day and year is
     -- read in. Chosen at profile setup; a message records only the instant it arrived.
     time_zone TEXT NOT NULL DEFAULT 'UTC',
-    -- 1 = may not log in and existing sessions are refused; 0 = active.
+    -- 1 = disabled: the account may not log in, and its API tokens are
+    -- refused while it stays disabled. Disabling it ends its Session, so
+    -- enabling it again takes a new login. 0 = active.
     disabled INTEGER NOT NULL DEFAULT 0,
     -- 1 = the account holder has not set up their profile yet, so the session
     -- owes profile setup before it goes anywhere; cleared on the first save.

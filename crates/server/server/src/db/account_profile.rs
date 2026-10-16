@@ -591,7 +591,8 @@ pub async fn is_claimed(conn: &mut SqliteConnection) -> Result<bool> {
 /// and its permissions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountAuth {
-    /// May not log in; existing sessions are refused.
+    /// May not log in, and its API tokens are refused. Disabling the account
+    /// ended its Session.
     pub disabled: bool,
     /// The holder has not set up their profile; they must before going on.
     pub must_set_up_profile: bool,

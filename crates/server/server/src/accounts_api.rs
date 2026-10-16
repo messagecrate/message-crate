@@ -549,7 +549,9 @@ pub struct UpdateAccountRequest {
     /// nothing.
     #[serde(default)]
     pub set_identity_country: Option<crate::identity_country::SetIdentityCountryRequest>,
-    /// Disable or re-enable login.
+    /// Disable or enable the account. A disabled account may not log in,
+    /// and its API tokens are refused while it stays disabled. Disabling it
+    /// also ends its Session, so enabling it again takes a new login.
     #[serde(default)]
     pub disabled: Option<bool>,
     /// Allow or forbid import.
