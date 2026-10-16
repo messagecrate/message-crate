@@ -851,6 +851,14 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **A batch the Upload stopped waiting for no longer holds up
+  its next try.** When the Upload gave up on a batch, such as after its
+  ten-minute wait, the server deleted the batch's file but kept the batch
+  in line behind the account's running import. When its turn came it
+  failed on the missing file, and the Upload's next try of the same batch
+  waited behind it. A batch whose Upload stopped waiting before its import
+  started is now dropped at once. One already importing still finishes,
+  with its file intact (#2090).
 - 2026-10-15: **What an import went on without is a warning in its log.**
   An attachment that could not be read or decrypted, a contacts database
   that could not be read, a message left out, and each record a backup's

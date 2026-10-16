@@ -27,6 +27,11 @@ pub(crate) struct KeyedLocks {
     /// a sleep.
     #[cfg(test)]
     waiting: Arc<tokio::sync::watch::Sender<HashMap<String, usize>>>,
+    /// How many tasks that found each key's mutex held have since taken
+    /// it, so a test can act once a waiting task holds a key rather than
+    /// after a sleep.
+    #[cfg(test)]
+    taken_after_waiting: Arc<tokio::sync::watch::Sender<HashMap<String, usize>>>,
 }
 
 /// Holds the key's mutex until dropped.
@@ -50,7 +55,11 @@ impl KeyedLocks {
                 #[cfg(test)]
                 self.waiting
                     .send_modify(|keys| *keys.entry(key.clone()).or_default() += 1);
-                mutex.lock_owned().await
+                let guard = mutex.lock_owned().await;
+                #[cfg(test)]
+                self.taken_after_waiting
+                    .send_modify(|keys| *keys.entry(key.clone()).or_default() += 1);
+                guard
             }
         };
         KeyedLockGuard {
@@ -74,17 +83,25 @@ impl KeyedLocks {
     /// for another.
     #[cfg(test)]
     pub(crate) async fn a_task_waits(&self, key: &str) {
-        let mut waited = self.waiting.subscribe();
-        // The sender lives in `self`, so the wait cannot see it dropped.
-        let _ = waited.wait_for(|keys| keys.contains_key(key)).await;
-        self.waiting.send_modify(|keys| {
-            if let Some(count) = keys.get_mut(key) {
-                *count -= 1;
-                if *count == 0 {
-                    keys.remove(key);
-                }
-            }
-        });
+        take_one_count(&self.waiting, key).await;
+    }
+
+    /// Wait until a task that found the mutex for `key` held has taken it.
+    /// Each such task is counted once, so the next call waits for another.
+    #[cfg(test)]
+    pub(crate) async fn a_waiting_task_takes(&self, key: &str) {
+        take_one_count(&self.taken_after_waiting, key).await;
+    }
+
+    /// How many tasks that found the mutex for `key` held have taken it
+    /// since [`Self::a_waiting_task_takes`] last counted one.
+    #[cfg(test)]
+    pub(crate) fn waiting_tasks_that_took(&self, key: &str) -> usize {
+        self.taken_after_waiting
+            .borrow()
+            .get(key)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Number of keys currently known. Tests use it to show the map shrinks.
@@ -92,6 +109,23 @@ impl KeyedLocks {
     pub(crate) fn len(&self) -> usize {
         self.map_guard().len()
     }
+}
+
+/// Wait until `counts` holds `key`, then count one off it.
+#[cfg(test)]
+async fn take_one_count(counts: &tokio::sync::watch::Sender<HashMap<String, usize>>, key: &str) {
+    let mut seen = counts.subscribe();
+    // The sender lives in the `KeyedLocks`, which outlives the wait, so the
+    // wait cannot see it dropped.
+    let _ = seen.wait_for(|keys| keys.contains_key(key)).await;
+    counts.send_modify(|keys| {
+        if let Some(count) = keys.get_mut(key) {
+            *count -= 1;
+            if *count == 0 {
+                keys.remove(key);
+            }
+        }
+    });
 }
 
 impl Drop for KeyedLockGuard {
