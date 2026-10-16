@@ -706,7 +706,10 @@ none of its answer for the body stall time is closed. In detail:
   `crates/server/server/src/connections.rs`). The wait counts only while a
   write waits on the client, and starts again with every byte the client
   takes, so a download that is still moving, however slowly, is never cut
-  off, and an answer the server is still making is not timed. Nothing limits
+  off, and an answer the server is still making is not timed. The close is
+  written to the server's log at `INFO`, so the limit firing shows at the
+  default level and reads apart from a client that hung up, which is
+  written at `DEBUG`. Nothing limits
   how long a whole answer takes to send: an export download or a large
   attachment takes as long as the client's link needs.
 

@@ -154,7 +154,12 @@ async fn serve_one<I>(
         }
     };
     if let Err(error) = ended {
-        tracing::debug!("A connection closed with an error: {error}");
+        // A stall close is the answer limit at work, which the person
+        // running the server should be able to see at the default level.
+        match answer_stalled(&error) {
+            Some(stalled) => tracing::info!("The server closed a connection: {stalled}"),
+            None => tracing::debug!("A connection closed with an error: {error}"),
+        }
     }
 }
 
@@ -201,18 +206,25 @@ impl<I> AnswerStall<I> {
             .get_or_insert_with(|| Box::pin(tokio::time::sleep(stall)));
         ready!(deadline.as_mut().poll(cx));
         self.deadline = None;
-        tracing::info!(
-            "The server closed a connection whose client took none of its answer for {} seconds",
-            stall.as_secs()
-        );
         Poll::Ready(Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
-            format!(
-                "the client read none of the answer for {} seconds",
-                stall.as_secs()
-            ),
+            AnswerStalled(stall),
         )))
     }
+}
+
+/// The error a write fails with in [`AnswerStall`], which `serve_one`
+/// finds under hyper's error to log the close at `INFO`.
+#[derive(Debug, thiserror::Error)]
+#[error("the client took none of the answer for {} seconds", .0.as_secs())]
+struct AnswerStalled(Duration);
+
+/// The [`AnswerStalled`] a connection's error carries, if it closed for one.
+fn answer_stalled(error: &hyper::Error) -> Option<&AnswerStalled> {
+    std::error::Error::source(error)?
+        .downcast_ref::<std::io::Error>()?
+        .get_ref()?
+        .downcast_ref::<AnswerStalled>()
 }
 
 impl<I: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for AnswerStall<I> {
