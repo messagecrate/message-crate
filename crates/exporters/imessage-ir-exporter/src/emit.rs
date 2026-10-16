@@ -412,11 +412,14 @@ fn message_to_ir(
             });
             (identity, name, None)
         }
-        Direction::Incoming => (
-            record.sender_identity,
-            record.sender_display_name,
-            known_country(record.sender_country),
-        ),
+        Direction::Incoming => match record.sender {
+            Some(sender) => (
+                Some(sender.identity),
+                Some(sender.display_name),
+                known_country(sender.country),
+            ),
+            None => (None, None, None),
+        },
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -977,6 +980,7 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use imessage_reader_protocol::Sender;
     use ir::TimePrecision;
     use ir::testutil::sample_attachment;
     use message_crate_core::ProgressSink;
@@ -1136,23 +1140,19 @@ mod tests {
     /// known one is kept.
     #[test]
     fn a_country_message_crate_does_not_know_names_no_country() {
-        let mut record = message_record("07700 900123", "g-1", false);
-        record.sender_country = Some("UK".into());
-        assert_eq!(
-            message_to_ir(record, AttachmentEmbed::Disabled, false)
-                .0
-                .sender_country,
-            None
-        );
-        let mut record = message_record("07700 900123", "g-2", false);
-        record.sender_country = Some("GB".into());
-        assert_eq!(
+        let country_in_file = |country: &str| {
+            let mut record = message_record("07700 900123", "g-1", false);
+            record
+                .sender
+                .as_mut()
+                .expect("an incoming record has a sender")
+                .country = Some(country.into());
             message_to_ir(record, AttachmentEmbed::Disabled, false)
                 .0
                 .sender_country
-                .as_deref(),
-            Some("GB")
-        );
+        };
+        assert_eq!(country_in_file("UK"), None);
+        assert_eq!(country_in_file("GB").as_deref(), Some("GB"));
         let chat = chat_from_record(ConversationRecord {
             chat_identifier: "07700 900123".into(),
             conversation_type: "one-to-one".into(),
@@ -1175,9 +1175,11 @@ mod tests {
             outgoing,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_identity: (!outgoing).then(|| "+15555550122".to_string()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: (!outgoing).then(|| Sender {
+                identity: "+15555550122".into(),
+                display_name: "+15555550122".into(),
+                country: None,
+            }),
             subject: None,
             text: "hi".into(),
             reactions: Vec::new(),

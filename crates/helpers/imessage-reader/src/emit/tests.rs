@@ -8,6 +8,11 @@ use chat_db_fixture::{
 use imessage_reader_protocol::AttachmentSource;
 use std::collections::HashMap;
 
+/// The sender of a received record that names one.
+fn sender(record: &MessageRecord) -> &Sender {
+    record.sender.as_ref().expect("the record names a sender")
+}
+
 /// The handles of a roster, in roster order.
 fn handles_of(participants: &[Participant]) -> Vec<&str> {
     participants.iter().map(|p| p.identity.as_str()).collect()
@@ -174,8 +179,8 @@ fn every_fixture_row_builds_a_record() {
     assert!(!photo.outgoing);
     assert_eq!(photo.message_kind, "imessage");
     assert_eq!(photo.service, "iMessage");
-    assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
-    assert_eq!(photo.sender_display_name.as_deref(), Some("Sam Example"));
+    assert_eq!(sender(&photo).identity, FRIEND_PHONE);
+    assert_eq!(sender(&photo).display_name, "Sam Example");
     assert_eq!(photo.owner_identity, OWNER);
     assert_eq!(photo.owner_display_name.as_deref(), Some(OWNER));
     assert_eq!(photo.attachments.len(), 1);
@@ -195,7 +200,7 @@ fn every_fixture_row_builds_a_record() {
     let (_, reply) = build_record(&session, &messages[1]).unwrap();
     assert!(reply.outgoing);
     assert_eq!(reply.text, "Nice");
-    assert_eq!(reply.sender_identity, None);
+    assert_eq!(reply.sender, None);
     let fields = reply.imessage.expect("the parsed body is one part");
     assert_eq!(
         fields.parts,
@@ -218,7 +223,7 @@ fn every_fixture_row_builds_a_record() {
     handles.sort_unstable();
     assert_eq!(handles, vec![FRIEND_PHONE, FRIEND_EMAIL]);
     assert_eq!(message.text, "Saturday works");
-    assert_eq!(message.sender_display_name.as_deref(), Some("Robin"));
+    assert_eq!(sender(&message).display_name, "Robin");
 }
 
 /// Apple's `chat.style` says what a chat is: 43 a group, 45 one-to-one.
@@ -288,12 +293,9 @@ fn a_phone_and_email_of_one_person_stay_two_addresses() {
 
     let (direct, photo) = build_record(&session, &messages[0]).unwrap();
     assert_eq!(handles_of(&direct.participants), vec![FRIEND_PHONE]);
-    assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
+    assert_eq!(sender(&photo).identity, FRIEND_PHONE);
     let (_, new_address) = build_record(&session, &messages[6]).unwrap();
-    assert_eq!(
-        new_address.sender_identity.as_deref(),
-        Some(FRIEND_PHONE_EMAIL)
-    );
+    assert_eq!(sender(&new_address).identity, FRIEND_PHONE_EMAIL);
 
     let mut heart = FixtureDb::messages(&session).remove(6);
     heart.associated_message_type = Some(2000);
@@ -325,14 +327,12 @@ fn handle_zero_on_a_received_row_is_no_sender() {
     let (_, in_group) = build_record(&session, &messages[8]).unwrap();
     assert_eq!(in_group.text, "No sender");
     assert!(!in_group.outgoing);
-    assert_eq!(in_group.sender_identity, None);
-    assert_eq!(in_group.sender_display_name, None);
+    assert_eq!(in_group.sender, None);
 
     let mut in_direct = FixtureDb::messages(&session).remove(0);
     in_direct.handle_id = Some(0);
     let (_, record) = build_record(&session, &in_direct).unwrap();
-    assert_eq!(record.sender_identity, None, "not inferred from the chat");
-    assert_eq!(record.sender_display_name, None);
+    assert_eq!(record.sender, None, "not inferred from the chat");
 }
 
 /// Apple lists the owner's own handle among a group's members. The
@@ -369,7 +369,7 @@ fn a_chat_with_no_handle_rows_takes_the_country_of_its_address() {
     let (chat, record) = build_record(&session, &messages[6]).unwrap();
     assert_eq!(chat.chat_identifier, FRIEND_PHONE_EMAIL);
     assert_eq!(chat.participants[0].country.as_deref(), Some("GB"));
-    assert_eq!(record.sender_country.as_deref(), Some("GB"));
+    assert_eq!(sender(&record).country.as_deref(), Some("GB"));
 }
 
 /// A chat with no `chat_handle_join` rows keeps its own identifier, and
@@ -393,7 +393,7 @@ fn a_chat_with_no_handle_rows_keeps_its_identifier() {
 
     let (lost, record) = build_record(&session, &messages[11]).unwrap();
     assert_eq!(lost.chat_identifier, format!("orphaned:{FRIEND_EMAIL}"));
-    assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
+    assert_eq!(sender(&record).identity, FRIEND_EMAIL);
 
     // A group with no handle rows lists nobody; its sender is still named.
     rusqlite::Connection::open(&fixture.db_path)
@@ -405,7 +405,7 @@ fn a_chat_with_no_handle_rows_keeps_its_identifier() {
     assert_eq!(shrunk.chat_identifier, SHRUNK_GROUP_IDENTIFIER);
     assert_eq!(shrunk.conversation_type, "group");
     assert!(shrunk.participants.is_empty());
-    assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
+    assert_eq!(sender(&record).identity, FRIEND_EMAIL);
 }
 
 /// The owner's chat with the owner's own number keeps that identifier
@@ -494,7 +494,7 @@ fn the_owner_address_on_a_row_is_the_bare_caller_id_or_nothing() {
     );
     assert!(from_mac.outgoing);
     assert_eq!(from_mac.text, "From my Mac");
-    assert_eq!(from_mac.sender_identity, None);
+    assert_eq!(from_mac.sender, None);
     assert_eq!(from_mac.owner_identity, OWNER_EMAIL);
     assert_eq!(from_mac.owner_display_name.as_deref(), Some(OWNER_EMAIL));
 
@@ -502,7 +502,7 @@ fn the_owner_address_on_a_row_is_the_bare_caller_id_or_nothing() {
     assert_eq!(conversation.chat_identifier, FRIEND_PHONE);
     assert!(still_me.outgoing);
     assert_eq!(still_me.text, "Still me");
-    assert_eq!(still_me.sender_identity, None);
+    assert_eq!(still_me.sender, None);
     assert_eq!(still_me.owner_identity, "", "NULL comes through as empty");
     assert_eq!(still_me.owner_display_name.as_deref(), Some(ME));
 }
@@ -615,8 +615,7 @@ fn orphaned_rows_sit_with_the_person_they_name_in_either_direction() {
     // handle places the row with Robin without making Robin its sender.
     let sent = orphaned(1, Some(2));
     assert!(sent.is_from_me);
-    assert_eq!(sent.sender_identity, None);
-    assert_eq!(sent.sender_display_name, None);
+    assert_eq!(sent.sender, None);
     let sent_to_robin = sent.conversation;
     // Message 3 is received from Robin.
     let from_robin = orphaned(2, None).conversation;
