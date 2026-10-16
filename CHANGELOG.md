@@ -491,6 +491,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-16: **A group with no name reads the same everywhere.** A
+  group conversation without a title was named after everyone in it in the
+  conversation list, such as "Ann, Bob, Cy", but as "3 participants" in its
+  header and in Trash's delete dialog. The header and Trash now name it
+  after everyone in it too (#2517).
 - 2026-10-15: **Adding or removing an identity that is neither a number
   nor an email address is now checked.** Settings confirmed an identity
   removed by looking for it among the account's numbers and email addresses,
@@ -913,6 +918,14 @@ carry their date on the heading.
   which iMazing names "You". A reaction now keeps its emoji alone, and a
   sticker reaction shows as a sticker. A line saying a reaction was
   removed adds no reaction (#2045).
+- 2026-10-16: **A closed Import Run's directory no longer stays on disk.**
+  When a discard reached the server only after the app had read the run as
+  still running, the run's directory, staged photos and videos included,
+  stayed in the Staging Directory with nothing to delete it. Opening Import
+  now deletes the directory of each of your Import Runs on this computer
+  that Message Crate reports as completed, failed or canceled, and the run's
+  log says so. A running run keeps its directory, and so does every run when
+  Message Crate does not answer (#2822).
 - 2026-10-15: **An Apple Messages import stops when its identity check
   cannot run.** Before an import, Message Crate reads which addresses the
   backup's phone sent from and compares them with your profile. When the

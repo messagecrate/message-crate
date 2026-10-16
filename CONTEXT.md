@@ -557,7 +557,11 @@ desktop app prepares a backup for import. A run's directory is deleted when
 the run ends, whether it succeeded, failed or was cancelled, the resume
 journal and run record with it; the run's log is in the Logs Directory and
 stays. An Import Run that can still be resumed, paused or waiting at a
-Review, keeps it, since the staged files are what Resume reads. A run's
+Review, keeps it, since the staged files are what Resume reads. A directory
+that outlives its run, as when a discard reaches the server only after the
+app read the run as still running, is deleted the next time the run's
+account opens Import on that computer and the server reports the run as
+closed; the run's log says so. A run's
 directory has no term of its own: on screen it is "this Import Run's
 directory". Exports and Converts never use it; they work in the Export
 Directory. It is `staging` in the Message Crate Directory unless Settings

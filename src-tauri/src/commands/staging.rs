@@ -36,7 +36,9 @@ use super::events;
 use super::events::{ImportProgressEvent, Step};
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
-use crate::run_directories::{self, RunDirectories, StagingRoot};
+use crate::run_directories::{
+    self, ClosedRun, DirectoryOfRun, RunDirectories, SignedIn, StagingRoot,
+};
 use crate::state::{AppState, JobName};
 use crate::tool_downloads::{Program, ToolDownloads};
 
@@ -340,6 +342,37 @@ pub fn delete_run_dir(
     args: RunDirArgs,
 ) -> Result<(), String> {
     directories.delete(&args.run_dir)
+}
+
+/// The run directories on this computer of the signed-in account's Import
+/// Runs on the Message Crate it is signed in to, each with its run's id, so
+/// Import can ask the server how each run stands (#2822).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn list_account_run_dirs(
+    directories: tauri::State<'_, RunDirectories>,
+    args: SignedIn,
+) -> Result<Vec<DirectoryOfRun>, String> {
+    directories.runs_of(&args)
+}
+
+/// Delete the directory of an Import Run the server reports as closed, and
+/// write one line in the run's log naming the run and the directory. Returns
+/// whether a directory was removed.
+///
+/// # Errors
+///
+/// Returns an error when the directory is not the run's, or cannot be
+/// deleted.
+#[tauri::command(async)]
+pub fn delete_closed_run_dir(
+    directories: tauri::State<'_, RunDirectories>,
+    args: ClosedRun,
+) -> Result<bool, String> {
+    directories.delete_closed(&args)
 }
 
 /// File in a run directory holding the Import Run's record so far: the

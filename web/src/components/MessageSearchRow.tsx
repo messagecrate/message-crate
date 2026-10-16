@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
+import { conversationName } from "../lib/conversationName";
 import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
 import { type MatchRange, matchRanges, snippet } from "../lib/messageMatch";
-import { messageConversationName, messageRowText, messageSenderName } from "../lib/messageRowText";
+import { messageRowText, messageSenderName } from "../lib/messageRowText";
 import { countOf } from "../lib/plural";
 import { useTimeZone } from "../lib/timeZone";
 import { listRowDividerClass } from "../lib/tw";
@@ -144,7 +145,7 @@ export default function MessageSearchRow({
     >
       <span className="flex min-w-0 items-baseline justify-between gap-2">
         <span className="min-w-0 flex-1 truncate text-[0.875rem] font-medium leading-[1.35] text-text">
-          {messageConversationName(message.conversation)}
+          {conversationName(message.conversation)}
         </span>
         <span className="shrink-0 text-[0.75rem] text-muted">
           {formatDay(message.timestamp, zone)}

@@ -267,6 +267,18 @@ fn is_run_log_name(name: &str) -> bool {
         && name != ".."
 }
 
+/// The account line of the log at `path`: which Import Run the log is of,
+/// for which account, on which Message Crate. `None` when the log is not
+/// there, cannot be read, or names no account.
+pub fn account_of(path: &Path) -> Option<RunLogAccount> {
+    // Not `is_file`, which follows a symbolic link: a link named like a run
+    // log would tie a directory to whatever it points at.
+    if !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return None;
+    }
+    head_of(path).ok()?.account
+}
+
 /// What a log's first and last lines say: the account the first name, if
 /// they name one, and whether any of them has a time and a level.
 struct Head {
