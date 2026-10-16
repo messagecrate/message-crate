@@ -19,7 +19,7 @@
 // Every test is told when what it waits for has happened: a fake settles a
 // promise the test awaits, or the test awaits the logout or the run itself.
 
-import { act, renderHook, screen } from "@testing-library/react";
+import { renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthShell from "../../components/AuthShell";
 import { ApiError, getAccountId, getBaseUrl, getToken } from "../../lib/api";
@@ -27,6 +27,7 @@ import { useAuth } from "../../lib/authContext";
 import type { DesktopJobResult } from "../../lib/desktop/job";
 import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { isUploadRunning } from "../../lib/runningUpload";
+import { act } from "../../test/act";
 import { deferred } from "../../test/deferred";
 import { advanceTimersAndSettle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";

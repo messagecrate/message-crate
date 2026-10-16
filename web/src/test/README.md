@@ -288,6 +288,26 @@ await user.click(screen.getByRole("button", { name: "Log out" }));
 await act(() => cancelAsked.promise);
 ```
 
+### A held call awaited inside `act`
+
+A test that awaits a call the test holds inside `act` takes `act` from
+`act.ts` in this directory, not from Testing Library. A held call is a
+`deferred()` promise, or an action whose answer waits on one. React counts the
+`act` scopes open across the file, and a render waits for every scope to
+close. If such a test times out, Testing Library's `act` leaves its scope
+open, and every later `render` and `renderHook` in the file draws nothing, so
+one hung test fails the whole file. The `act` in `act.ts` gives up the call
+when Vitest aborts the test's signal, which it does when the test times out,
+so the failure stays with that test. `useImportJob.test.tsx`,
+`logoutDuringUpload.test.tsx`, `ImportScreen.test.tsx`,
+`useConversationMessages.test.tsx` and `namedSetWiring.test.tsx` use it.
+
+```tsx
+import { act } from "../test/act";
+
+await act(() => createAsked.promise);
+```
+
 ### A hook rendered with `renderHook`
 
 A hook test is told the same way as a screen test, and reads `result.current`

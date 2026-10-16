@@ -14,7 +14,7 @@
 // through approve first, because there is no other way to reach it.
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, renderHook, act as rtlAct, screen } from "@testing-library/react";
+import { render, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
@@ -36,6 +36,7 @@ import type {
   ImportIssueEvent,
   ImportProgressEvent,
 } from "../../lib/types";
+import { act } from "../../test/act";
 import { account } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { importForm } from "../../test/importForm";
@@ -236,32 +237,7 @@ function renderJob() {
   return renderHook(() => useImportJob(service), { wrapper: Providers });
 }
 
-/** Rejects when the test running now times out. */
-let testTimedOut: Promise<never> = new Promise(() => {});
-
-/**
- * Testing Library's `act`, given up when the test times out. React counts the
- * `act` scopes open across the file, and renders inside a scope wait for every
- * scope to close. A test that times out while it awaits a held call inside
- * `act` would leave its scope open, and every later test's `renderHook` would
- * then draw nothing. Racing the call against the test's signal closes the
- * scope when the test times out, so that failure stays with that test.
- */
-function act<T>(callback: () => Promise<T>): Promise<T>;
-function act(callback: () => void): void;
-function act(callback: () => unknown): unknown {
-  return rtlAct(() => {
-    const done = callback();
-    return done instanceof Promise ? Promise.race([done, testTimedOut]) : done;
-  });
-}
-
-beforeEach(({ signal }) => {
-  testTimedOut = new Promise<never>((_, reject) => {
-    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-  });
-  // A test that times out outside `act` has no race to take the rejection.
-  testTimedOut.catch(() => {});
+beforeEach(() => {
   service = createImportRunService(fakeDeps(importRunStore));
   // `setProfile` writes the profile with no observer, and the hook reads it
   // only through `fetchQuery` when an import starts. `keepUnread` holds the
