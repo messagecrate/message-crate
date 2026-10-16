@@ -37,12 +37,6 @@ impl AttachmentPaths {
     }
 }
 
-impl Extend<Option<PathBuf>> for AttachmentPaths {
-    fn extend<I: IntoIterator<Item = Option<PathBuf>>>(&mut self, paths: I) {
-        self.0.extend(paths);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,7 +84,8 @@ mod tests {
         let first = dir.path().join("a.jpg");
         std::fs::write(&first, [0u8; 3]).unwrap();
         let mut paths = AttachmentPaths::default();
-        paths.extend([None, Some(first.clone())]);
+        paths.push(None);
+        paths.push(Some(first.clone()));
         let (source, size) = paths.next_source(&attachment(Some(5)));
         assert!(matches!(source, AttachmentSource::Missing));
         assert_eq!(size, Some(5));

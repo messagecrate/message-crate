@@ -211,7 +211,9 @@ impl Project for ImazingDocuments {
         };
         let chat_id = pending.chat_id.clone();
         let document = project_conversation(&chat_id, &mut pending, &hooks, report)?;
-        self.sources.extend(hooks.sources.into_inner());
+        for source in hooks.sources.into_inner() {
+            self.sources.push(source);
+        }
         Some(document)
     }
 
