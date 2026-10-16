@@ -25,6 +25,7 @@ use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
 use sqlx::{SqliteConnection, SqlitePool};
+use tokio_util::sync::CancellationToken;
 
 use crate::api_error::{ApiError, run_blocking};
 use crate::auth::{ImportAccess, resolve_import_account};
@@ -634,13 +635,35 @@ pub(crate) async fn create_import_batch(
         // The import pipeline does blocking file IO (JSONL parse, asset
         // hashing and copies). Run it off the async workers so a large
         // import cannot stall unrelated requests.
+        //
+        // The server drops this handler when its client stops waiting (the
+        // Upload's request timeout, a closed connection), but a blocking
+        // task cannot be cancelled, so the batch follows one rule from here
+        // (#2090):
+        //
+        // 1. The batch file lives as long as the work that reads it: `temp`
+        //    moves into the task, so a dropped handler never deletes a file
+        //    a waiting or running import still needs.
+        // 2. A batch nobody waits for is dropped before it starts: dropping
+        //    the handler cancels `client_gone`, and an import that has not
+        //    yet taken the account's import lock gives up its slot and
+        //    writes nothing ([`run_import_path`]).
+        // 3. A batch already importing finishes: once the import holds the
+        //    account's lock it runs to the end, client or not, so no import
+        //    stops part-way.
+        //
+        // The task holds the slot until the batch file is gone (locals drop
+        // in reverse order), so no more batch files are on disk than there
+        // are slots.
+        let client_gone = CancellationToken::new();
+        let _cancel_when_dropped = client_gone.clone().drop_guard();
         let handle = tokio::runtime::Handle::current();
-        let response = run_blocking("import", move || {
-            handle.block_on(run_import_path(importer, permit, context, jsonl_path))
+        return run_blocking("import", move || {
+            let _slot = permit;
+            let _batch_file = temp;
+            handle.block_on(run_import_path(importer, context, jsonl_path, client_gone))
         })
         .await;
-        drop(temp);
-        return response;
     }
 
     // Only JSON Lines is an import body. Attachments never travel with it:

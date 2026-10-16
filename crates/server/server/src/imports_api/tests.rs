@@ -130,6 +130,22 @@ async fn importer() -> (
     (state, fixture, account.token)
 }
 
+/// Create an Import Run for `source` and hand back its id.
+pub(super) async fn start_run(state: &crate::server::AppState, token: &str, source: &str) -> i64 {
+    let (run, _) = crate::test_support::start_import_run(
+        state,
+        token,
+        serde_json::json!({ "source": source }),
+    )
+    .await;
+    run
+}
+
+/// The path the batches of the Import Run `import_id` are posted to.
+pub(super) fn batches_path_of(import_id: i64) -> String {
+    format!("/v1/imports/{import_id}/batches")
+}
+
 /// Create an Import Run for `source` and hand back the path its batches
 /// are posted to.
 pub(super) async fn batches_path(
@@ -137,13 +153,7 @@ pub(super) async fn batches_path(
     token: &str,
     source: &str,
 ) -> String {
-    let (run, _) = crate::test_support::start_import_run(
-        state,
-        token,
-        serde_json::json!({ "source": source }),
-    )
-    .await;
-    format!("/v1/imports/{run}/batches")
+    batches_path_of(start_run(state, token, source).await)
 }
 
 /// One `source` conversation with `+15555550107`, one message per guid. The
@@ -262,12 +272,8 @@ async fn posted_run(
     source: &str,
     body: String,
 ) -> i64 {
-    let path = batches_path(state, token, source).await;
-    let import_id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let import_id = start_run(state, token, source).await;
+    let path = batches_path_of(import_id);
     let (status, text) =
         crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
     assert_eq!(status, axum::http::StatusCode::OK, "{text}");

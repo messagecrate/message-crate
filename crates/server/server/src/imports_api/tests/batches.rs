@@ -622,11 +622,9 @@ async fn a_batch_path_naming_a_file_in_the_asset_store_stores_no_asset() {
 #[tokio::test]
 async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
     let (state, _fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let id = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .to_string();
+    let run = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(run);
+    let id = run.to_string();
     post_json::<serde_json::Value>(
         &state,
         &format!("/v1/imports/{id}/discard"),
@@ -655,12 +653,8 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
 #[tokio::test]
 async fn a_batch_into_a_run_discarded_while_it_uploads_is_a_state_conflict() {
     let (state, fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "whatsapp").await;
-    let id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let id = start_run(&state, &token, "whatsapp").await;
+    let path = batches_path_of(id);
 
     let mut other_conn = fixture.conn().await;
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
@@ -960,12 +954,7 @@ async fn account_row_exists(fixture: &TestFixture, account_id: i64) -> bool {
 #[tokio::test]
 async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back() {
     let (state, fixture, token) = importer().await;
-    let path = batches_path(&state, &token, "imessage").await;
-    let import_id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let import_id = start_run(&state, &token, "imessage").await;
     let mut conn = fixture.conn().await;
     let account = crate::auth::resolve_auth_on_conn(
         &mut conn,
@@ -993,10 +982,14 @@ async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back()
 
     let dir = TempDir::new().unwrap();
     let jsonl = write_jsonl(dir.path(), "batch.jsonl", &one_message_batch());
-    let permit = take_import_slot(&state.imports).await.unwrap();
-    let err = run_import_path(Importer::from_ref(&state), permit, context, jsonl)
-        .await
-        .expect_err("the deleted account's batch must be refused");
+    let err = run_import_path(
+        Importer::from_ref(&state),
+        context,
+        jsonl,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .expect_err("the deleted account's batch must be refused");
 
     assert!(matches!(err, ApiError::TokenRefused(_)), "{err:?}");
     assert!(
@@ -1044,5 +1037,162 @@ async fn an_import_run_for_a_deleted_account_brings_no_account_back() {
     assert!(
         !account_row_exists(&fixture, account).await,
         "the refused run put the deleted account's row back"
+    );
+}
+
+/// A one-message batch waiting for its account's import lock, which the
+/// test holds in place of another batch of the account.
+struct BatchBehindTheLock {
+    /// The account's key in the import locks.
+    key: String,
+    /// The account's import lock, held by the test.
+    running_batch: crate::keyed_locks::KeyedLockGuard,
+    /// The `create_import_batch` handler future itself, so the test can
+    /// drop it as the server drops a handler whose client stopped waiting.
+    handler: std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Json<CreateImportBatchResponse>, ApiError>>>,
+    >,
+}
+
+/// Start an Import Run as `token`, take its account's import lock, and
+/// post a one-message batch to the run through the handler, polling it
+/// until the batch waits for the lock.
+async fn batch_behind_the_lock(state: &crate::server::AppState, token: &str) -> BatchBehindTheLock {
+    let import_id = start_run(state, token, "imessage").await;
+    let mut conn = state.db.acquire().await.unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    drop(conn);
+    let key = auth.account_id.to_string();
+    let running_batch = state.imports.account_locks.lock(key.clone()).await;
+
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/jsonl"),
+    );
+    let request = axum::extract::Request::new(axum::body::Body::from(one_message_batch()));
+    let mut handler = Box::pin(create_import_batch(
+        axum::extract::State(Importer::from_ref(state)),
+        ImportAccess(auth),
+        crate::extract::Path(import_id),
+        headers,
+        request,
+    ));
+    tokio::select! {
+        () = state.imports.account_locks.a_task_waits(&key) => {}
+        answer = &mut handler => panic!(
+            "the batch answered ({answer:?}) while another batch held the account's lock"
+        ),
+    }
+    BatchBehindTheLock {
+        key,
+        running_batch,
+        handler,
+    }
+}
+
+/// Wait until every one of `state`'s import slots is free, which is when
+/// each batch that took one has ended, and hold them.
+async fn every_slot_back(state: &crate::server::AppState) -> tokio::sync::SemaphorePermit<'_> {
+    state
+        .imports
+        .slots
+        .acquire_many(MAX_CONCURRENT_IMPORTS as u32)
+        .await
+        .expect("the import slots are open")
+}
+
+/// The batch bodies on disk under `state`'s Data Directory.
+fn batch_bodies_on_disk(state: &crate::server::AppState) -> Vec<PathBuf> {
+    let root = crate::imports_api::batch_bodies::root(&state.cfg.paths.data_dir);
+    match fs::read_dir(&root) {
+        Ok(entries) => entries.map(|entry| entry.unwrap().path()).collect(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("list {}: {error}", root.display()),
+    }
+}
+
+/// A batch whose client stops waiting while the batch waits for the
+/// account's import lock does not start (#2090). Once the lock is free it
+/// neither takes it nor imports, gives its import slot back, and leaves no
+/// body on disk. Before, the handler deleted the batch's file when it was
+/// dropped, and the import still took the lock afterwards and failed on
+/// the missing file, holding the lock and a slot for a batch nobody waited
+/// for.
+#[tokio::test]
+async fn a_batch_whose_client_went_while_it_waited_for_the_account_lock_does_not_start() {
+    let (state, _fixture, token) = importer().await;
+    let batch = batch_behind_the_lock(&state, &token).await;
+
+    // The client stops waiting, so the server drops the handler.
+    drop(batch.handler);
+    drop(batch.running_batch);
+
+    let _every_slot = every_slot_back(&state).await;
+    assert_eq!(
+        state
+            .imports
+            .account_locks
+            .waiting_tasks_that_took(&batch.key),
+        0,
+        "the dropped batch took the account's lock once it was free"
+    );
+    assert_eq!(
+        stored_messages(&state).await,
+        0,
+        "the dropped batch imported"
+    );
+    assert_eq!(
+        batch_bodies_on_disk(&state),
+        Vec::<PathBuf>::new(),
+        "the dropped batch left its body on disk"
+    );
+}
+
+/// A batch whose client stops waiting after the batch has taken the
+/// account's import lock runs to the end with its file intact (#2090).
+/// Before, the handler deleted the batch's file when it was dropped, so an
+/// import that had not yet read the file failed on it. The test pauses the
+/// batch after it takes the lock and before it reads the file, and drops
+/// the handler there.
+#[tokio::test]
+async fn a_batch_whose_client_went_after_it_took_the_account_lock_imports_in_full() {
+    let (state, _fixture, token) = importer().await;
+    let batch = batch_behind_the_lock(&state, &token).await;
+    let paused = state.imports.after_account_lock.write().await;
+    drop(batch.running_batch);
+    state
+        .imports
+        .account_locks
+        .a_waiting_task_takes(&batch.key)
+        .await;
+    // The client stops waiting, so the server drops the handler.
+    drop(batch.handler);
+
+    let bodies = batch_bodies_on_disk(&state);
+    assert_eq!(bodies.len(), 1, "one batch body on disk: {bodies:?}");
+    assert!(
+        bodies[0].join("_import.jsonl").is_file(),
+        "dropping the handler deleted the file of the batch that holds the lock"
+    );
+    drop(paused);
+
+    let _every_slot = every_slot_back(&state).await;
+    assert_eq!(
+        stored_messages(&state).await,
+        1,
+        "the batch that held the lock did not import in full"
+    );
+    assert_eq!(
+        batch_bodies_on_disk(&state),
+        Vec::<PathBuf>::new(),
+        "the batch left its body on disk"
     );
 }
