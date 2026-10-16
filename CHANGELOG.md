@@ -1504,6 +1504,12 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-16: **An Edit address book load erases what it removed from the
+  database's files.** An **Edit** load deletes for good the identities its
+  file no longer lists that nothing else uses, but left them readable in the
+  write-ahead log beside the database, so a copy of the files made right
+  after the load still held them. The server now clears the log after an
+  Edit load, as it does after any other delete for good (#2981).
 - 2026-10-15: **A number from an Apple Messages backup keeps the country
   the phone read it in.** A number written without its country code, such
   as `07700 900123`, was stored with its country unknown, though the backup
