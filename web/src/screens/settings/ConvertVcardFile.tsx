@@ -42,7 +42,16 @@ export function ConvertVcardFile() {
         setError("That file is larger than 64 MB.");
         return;
       }
-      const csv = await convertVcardToAddressBook(await file.text(), country || null);
+      // `file.text()` would turn bytes that are not UTF-8 into U+FFFD, so a
+      // name in another encoding would arrive changed with no word.
+      let text: string;
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+      } catch {
+        setError("That file is not UTF-8 text. Save it from the contacts app as UTF-8.");
+        return;
+      }
+      const csv = await convertVcardToAddressBook(text, country || null);
       setSaved(await saveFile(FILE_NAME, new Blob([csv], { type: "text/csv" })));
     } catch (err) {
       setError(errorLine(err, "Could not convert that vCard file."));

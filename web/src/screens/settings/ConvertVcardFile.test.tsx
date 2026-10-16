@@ -86,6 +86,18 @@ describe("ConvertVcardFile", () => {
     expect(convert).not.toHaveBeenCalled();
   });
 
+  it("refuses a file that is not UTF-8 without asking the server", async () => {
+    render(<ConvertVcardFile />);
+    const input = screen.getByLabelText("vCard file") as HTMLInputElement;
+    // "FN:M\xfcller" in Windows-1252, as Outlook writes it.
+    const bytes = new Uint8Array([0x46, 0x4e, 0x3a, 0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72]);
+    fireEvent.change(input, { target: { files: [new File([bytes], "outlook.vcf")] } });
+
+    await settle();
+    expect(screen.getByRole("alert").textContent).toContain("not UTF-8");
+    expect(convert).not.toHaveBeenCalled();
+  });
+
   it("says why when the server refuses the file, and saves nothing", async () => {
     convert.mockRejectedValue(
       new ApiError(422, "the file holds no vCard: it has no BEGIN:VCARD line", {
