@@ -20,6 +20,7 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
@@ -76,6 +77,23 @@ pub struct DirectoryOfRun {
     pub import_run_id: i64,
 }
 
+/// The directory of a closed Import Run, and the run as its log names it.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClosedRun {
+    /// The run's directory, as [`RunDirectories::runs_of`] gave it.
+    pub run_dir: String,
+    /// The Import Run's id on the Message Crate it imported into.
+    pub import_run_id: i64,
+    /// The account that ran it.
+    pub account_id: i64,
+    /// The id of the Message Crate it imported into, as `GET /v1/server`
+    /// answers it.
+    pub message_crate_id: String,
+    /// How the server reports the run ended.
+    pub status: ClosedStatus,
+}
+
 /// How a closed Import Run ended, in the words the server's `status` uses.
 /// `running` is not one of them, so a running run's directory cannot be
 /// handed to [`RunDirectories::delete_closed`].
@@ -113,6 +131,11 @@ pub struct RunDirectories {
     /// name whose log is there is not given to a new run, so two runs never
     /// share a log.
     logs: PathBuf,
+    /// Held for the whole of each delete, so two deletes of one directory in
+    /// this process, such as a discard and the clean-up when Import opens,
+    /// run one after the other. The second then finds the directory gone,
+    /// instead of failing on a file the first removed under it.
+    deleting: Mutex<()>,
 }
 
 impl RunDirectories {
@@ -124,6 +147,7 @@ impl RunDirectories {
             file,
             default_root,
             logs,
+            deleting: Mutex::new(()),
         }
     }
 
@@ -349,6 +373,19 @@ impl RunDirectories {
     /// Returns an error when the directory fails [`RunDirectories::directory`]'s
     /// checks, cannot be removed, or the record cannot be saved.
     pub fn delete(&self, dir: &str) -> Result<(), String> {
+        let _deleting = self.one_delete_at_a_time();
+        self.delete_now(dir)
+    }
+
+    /// The lock that runs this process's deletes one at a time. A delete that
+    /// panicked left nothing the next one relies on, so a poisoned lock is
+    /// taken as it is.
+    fn one_delete_at_a_time(&self) -> MutexGuard<'_, ()> {
+        self.deleting.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The work of [`RunDirectories::delete`], with the delete lock held.
+    fn delete_now(&self, dir: &str) -> Result<(), String> {
         let path = require_absolute(dir)?;
         let made = self
             .read()?
@@ -402,33 +439,39 @@ impl RunDirectories {
             .collect())
     }
 
-    /// Delete the directory `dir` of Import Run `import_run_id`, which the
-    /// server reports as `status`, and say so in the run's log, naming the run
-    /// and the directory. A closed run's files are never read again. Returns
-    /// whether a directory was removed: one already gone is only forgotten,
-    /// and the log says nothing.
+    /// Delete the directory of the closed Import Run `closed` names, and say
+    /// so in the run's log, naming the run and the directory. A closed run's
+    /// files are never read again. Returns whether a directory was removed:
+    /// one already gone is only forgotten, and the log says nothing.
     ///
     /// # Errors
     ///
-    /// Returns an error when the run's log does not name `import_run_id`, so
-    /// the directory is not tied to that run, or when
-    /// [`RunDirectories::delete`] fails.
-    pub fn delete_closed(
-        &self,
-        dir: &str,
-        import_run_id: i64,
-        status: ClosedStatus,
-    ) -> Result<bool, String> {
-        let path = require_absolute(dir)?;
-        let log = import_run_log(&self.logs, &path);
-        if account_of(&log).map(|account| account.import_run_id) != Some(import_run_id) {
+    /// Returns an error when the run's log does not name that run, account
+    /// and Message Crate, so the directory is not tied to that run, or when
+    /// the delete fails as [`RunDirectories::delete`] does.
+    pub fn delete_closed(&self, closed: &ClosedRun) -> Result<bool, String> {
+        let path = require_absolute(&closed.run_dir)?;
+        let import_run_id = closed.import_run_id;
+        // Import Run ids are counted per Message Crate, so the run's id alone
+        // could name another Message Crate's run, still running there.
+        let tied = account_of(&import_run_log(&self.logs, &path)).is_some_and(|account| {
+            account.import_run_id == import_run_id
+                && account.account_id == closed.account_id
+                && account.message_crate_id == closed.message_crate_id
+        });
+        if !tied {
             return Err(format!(
                 "{} is not the directory of Import Run {import_run_id}",
                 path.display()
             ));
         }
-        let on_disk = std::fs::symlink_metadata(&path).is_ok();
-        self.delete(dir)?;
+        let on_disk = {
+            let _deleting = self.one_delete_at_a_time();
+            let on_disk = std::fs::symlink_metadata(&path).is_ok();
+            self.delete_now(&closed.run_dir)?;
+            on_disk
+        };
+        let status = closed.status;
         if on_disk {
             RunLog::open(&self.logs, &path).line(&format!(
                 "Deleted the directory of Import Run {import_run_id}, {}, because the server reports the run as {}",
@@ -958,6 +1001,18 @@ mod tests {
         });
     }
 
+    /// Import Run `id` by account 7 on [`CRATE`], whose directory is `run`,
+    /// closed as `status`.
+    fn closed(run: &Path, id: i64, status: ClosedStatus) -> ClosedRun {
+        ClosedRun {
+            run_dir: run.display().to_string(),
+            import_run_id: id,
+            account_id: 7,
+            message_crate_id: CRATE.to_string(),
+            status,
+        }
+    }
+
     #[test]
     fn the_runs_of_an_account_are_its_own_directories_on_that_message_crate() {
         // #2822: Import cleans up only the directories it can tie to the
@@ -991,7 +1046,7 @@ mod tests {
 
         let deleted = scratch
             .reopen()
-            .delete_closed(run.to_str().unwrap(), 42, ClosedStatus::Cancelled)
+            .delete_closed(&closed(&run, 42, ClosedStatus::Cancelled))
             .unwrap();
 
         assert!(deleted);
@@ -1020,7 +1075,7 @@ mod tests {
 
         let deleted = scratch
             .directories
-            .delete_closed(run.to_str().unwrap(), 42, ClosedStatus::Completed)
+            .delete_closed(&closed(&run, 42, ClosedStatus::Completed))
             .unwrap();
 
         assert!(!deleted);
@@ -1037,18 +1092,52 @@ mod tests {
 
         let err = scratch
             .directories
-            .delete_closed(run.to_str().unwrap(), 41, ClosedStatus::Failed)
+            .delete_closed(&closed(&run, 41, ClosedStatus::Failed))
             .unwrap_err();
         assert!(err.contains("not the directory of Import Run 41"), "{err}");
         assert!(
             scratch
                 .directories
-                .delete_closed(untied.to_str().unwrap(), 42, ClosedStatus::Failed)
+                .delete_closed(&closed(&untied, 42, ClosedStatus::Failed))
                 .is_err()
         );
 
         assert!(run.exists());
         assert!(untied.exists());
+    }
+
+    #[test]
+    fn a_run_of_the_same_id_on_another_message_crate_keeps_its_directory() {
+        // Import Run ids are counted per Message Crate. Run 42 on another
+        // Message Crate may still be running there, whatever this one says
+        // about its own run 42.
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, "another");
+
+        let err = scratch
+            .directories
+            .delete_closed(&closed(&run, 42, ClosedStatus::Cancelled))
+            .unwrap_err();
+
+        assert!(err.contains("not the directory of Import Run 42"), "{err}");
+        assert!(run.exists());
+    }
+
+    #[test]
+    fn a_closed_status_is_written_in_the_log_as_the_server_writes_it() {
+        for status in [
+            ClosedStatus::Completed,
+            ClosedStatus::CompletedWithIssues,
+            ClosedStatus::Failed,
+            ClosedStatus::Cancelled,
+        ] {
+            let quoted = format!("\"{}\"", status.as_str());
+            assert_eq!(
+                serde_json::from_str::<ClosedStatus>(&quoted).unwrap(),
+                status
+            );
+        }
     }
 
     #[test]
