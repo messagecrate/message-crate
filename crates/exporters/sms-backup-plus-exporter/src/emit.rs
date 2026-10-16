@@ -1047,13 +1047,13 @@ mod tests {
             text: "Happy birthday!".into(),
             ..parsed(timestamp_secs, true, "")
         };
-        let (msgs, report) = project(vec![
+        let (messages, report) = project(vec![
             group("+15555550111", 1_600_000_000.1),
             group("+15555550122", 1_600_000_000.6),
         ]);
-        assert_eq!(msgs.len(), 2);
+        assert_eq!(messages.len(), 2);
         assert_eq!(report.duplicates_dropped, 0);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     /// SMS Backup+ reads milliseconds from `X-smssync-date` and whole
@@ -1076,12 +1076,12 @@ mod tests {
     /// the same text sent twice 300 ms apart.
     #[test]
     fn two_millisecond_copies_at_different_times_are_two_messages() {
-        let (msgs, _) = project(vec![
+        let (messages, _) = project(vec![
             parsed(1_609_459_200.1, true, "a.eml"),
             parsed(1_609_459_200.4, true, "b.eml"),
         ]);
-        assert_eq!(msgs.len(), 2);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_eq!(messages.len(), 2);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     /// Between two copies the backup cannot tell apart, the one that carries
@@ -1096,9 +1096,12 @@ mod tests {
             vec![with_id.clone(), without_id.clone()],
             vec![without_id, with_id],
         ] {
-            let (msgs, _) = project(order);
-            assert_eq!(msgs.len(), 1);
-            assert_eq!(msgs[0].source.as_ref().unwrap().fields["smssync_id"], "276");
+            let (messages, _) = project(order);
+            assert_eq!(messages.len(), 1);
+            assert_eq!(
+                messages[0].source.as_ref().unwrap().fields["smssync_id"],
+                "276"
+            );
         }
     }
 }

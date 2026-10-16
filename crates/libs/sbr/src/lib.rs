@@ -131,8 +131,8 @@ impl SbrBackupWriter {
     /// # Errors
     ///
     /// Returns an error when the body write fails.
-    pub fn write_message(&mut self, msg: &SbrMessage) -> Result<()> {
-        match msg {
+    pub fn write_message(&mut self, message: &SbrMessage) -> Result<()> {
+        match message {
             SbrMessage::Sms { attrs } => {
                 self.characters_left_out += write_empty_element(&mut self.body, "sms", attrs)?;
             }

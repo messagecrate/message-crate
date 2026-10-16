@@ -134,8 +134,8 @@ fn each_message_keeps_its_owner_and_a_split_conversation_names_none_in_the_heade
         [Some("+15555550100"), Some("me@example.com"), None]
     );
 
-    let doc = build_document("imessage", &by_phone, messages, 0);
-    assert_eq!(doc.export.owner_identity, None);
+    let document = build_document("imessage", &by_phone, messages, 0);
+    assert_eq!(document.export.owner_identity, None);
 }
 
 /// RFC 3339, whole seconds and milliseconds all land on the same instant,
@@ -165,13 +165,13 @@ fn parses_each_timestamp_form_to_the_exact_millisecond() {
 /// under the person who reacted.
 #[test]
 fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
-    let mut msg = seed_message_with_participant(sam());
-    msg.timestamp = "1426183522250".into();
-    msg.reply_to = Some(api_types::ReplyTo {
+    let mut message = seed_message_with_participant(sam());
+    message.timestamp = "1426183522250".into();
+    message.reply_to = Some(api_types::ReplyTo {
         guid: Some("origin-guid".into()),
         part_index: Some(2),
     });
-    msg.tapbacks = vec![
+    message.tapbacks = vec![
         Tapback {
             part_index: 0,
             kind: "loved".into(),
@@ -198,7 +198,7 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
         },
     ];
 
-    let ir = to_ir_message(&msg, false).unwrap();
+    let ir = to_ir_message(&message, false).unwrap();
 
     assert_eq!(ir.timestamp_unix_ms, 1_426_183_522_250);
     assert_eq!(
@@ -260,9 +260,9 @@ fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
     let with_files = to_ir_message(&sms, false).unwrap();
     assert_eq!(with_files.message_kind, MessageKind::Mms);
 
-    let doc = build_document("sms", &sms, vec![with_files, plain], 0);
-    assert_eq!(doc.conversation.stats.attachment_count, 3);
-    assert_eq!(doc.conversation.stats.message_count, 2);
+    let document = build_document("sms", &sms, vec![with_files, plain], 0);
+    assert_eq!(document.conversation.stats.attachment_count, 3);
+    assert_eq!(document.conversation.stats.message_count, 2);
 }
 
 /// Each message of a conversation stored from two backups is written with
@@ -273,11 +273,11 @@ fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
 #[test]
 fn each_message_keeps_its_own_backup_date_and_the_file_its_export_date() {
     let dated = |id: i64, at: Option<&str>| {
-        let mut msg = seed_message_with_participant(sam());
-        msg.id = id;
-        msg.guid = format!("guid-{id}");
-        msg.backup_taken_at = at.map(str::to_string);
-        msg
+        let mut message = seed_message_with_participant(sam());
+        message.id = id;
+        message.guid = format!("guid-{id}");
+        message.backup_taken_at = at.map(str::to_string);
+        message
     };
     let rows = [
         dated(1, Some("2026-09-01T10:00:00.000Z")),
@@ -288,24 +288,25 @@ fn each_message_keeps_its_own_backup_date_and_the_file_its_export_date() {
         .iter()
         .map(|row| to_ir_message(row, true).unwrap())
         .collect();
-    let doc = build_document("imessage", &rows[0], messages, 1_791_000_000_000);
+    let document = build_document("imessage", &rows[0], messages, 1_791_000_000_000);
     assert_eq!(
-        doc.messages
+        document
+            .messages
             .iter()
             .map(|m| m.backup_taken_at_unix_ms)
             .collect::<Vec<_>>(),
         vec![Some(1_788_256_800_000), Some(1_790_793_912_000), None]
     );
-    assert_eq!(doc.export.exported_at_unix_ms, Some(1_791_000_000_000));
+    assert_eq!(document.export.exported_at_unix_ms, Some(1_791_000_000_000));
 }
 
 /// A stored backup date the Export Run cannot read fails the message, never
 /// writes it as a message without a date.
 #[test]
 fn a_backup_date_that_is_not_a_time_is_refused() {
-    let mut msg = seed_message_with_participant(sam());
-    msg.backup_taken_at = Some("yesterday".into());
-    let err = to_ir_message(&msg, true).unwrap_err();
+    let mut message = seed_message_with_participant(sam());
+    message.backup_taken_at = Some("yesterday".into());
+    let err = to_ir_message(&message, true).unwrap_err();
     assert!(format!("{err:#}").contains("backup date"), "{err:#}");
 }
 
@@ -316,16 +317,19 @@ fn a_document_is_a_group_when_the_server_says_so() {
     let mut seed = seed_message_with_participant(sam());
     seed.conversation.conversation_type = " group ".into();
     seed.conversation.is_group = false;
-    let doc = build_document("imessage", &seed, vec![], 0);
+    let document = build_document("imessage", &seed, vec![], 0);
     assert_eq!(
-        doc.conversation.conversation_type,
+        document.conversation.conversation_type,
         ConversationType::OneToOne
     );
 
     seed.conversation.conversation_type = "one-to-one".into();
     seed.conversation.is_group = true;
-    let doc = build_document("imessage", &seed, vec![], 0);
-    assert_eq!(doc.conversation.conversation_type, ConversationType::Group);
+    let document = build_document("imessage", &seed, vec![], 0);
+    assert_eq!(
+        document.conversation.conversation_type,
+        ConversationType::Group
+    );
 }
 
 /// A conversation of orphaned messages is exported as one, so importing
@@ -340,9 +344,9 @@ fn a_document_of_orphaned_messages_stays_orphaned() {
     });
     seed.conversation.chat_identifier = "orphaned:+15555550154".into();
     seed.conversation.conversation_type = "orphaned".into();
-    let doc = build_document("imessage", &seed, vec![], 0);
+    let document = build_document("imessage", &seed, vec![], 0);
     assert_eq!(
-        doc.conversation.conversation_type,
+        document.conversation.conversation_type,
         ConversationType::Orphaned
     );
 }
@@ -350,11 +354,11 @@ fn a_document_of_orphaned_messages_stays_orphaned() {
 /// An announcement keeps its text; one with no text carries nothing.
 #[test]
 fn an_announcement_keeps_its_text() {
-    let mut msg = seed_message_with_participant(sam());
-    msg.is_announcement = true;
-    msg.text = Some("Sam named the conversation \"Book Club\"".into());
+    let mut message = seed_message_with_participant(sam());
+    message.is_announcement = true;
+    message.text = Some("Sam named the conversation \"Book Club\"".into());
 
-    let ir = to_ir_message(&msg, false).unwrap();
+    let ir = to_ir_message(&message, false).unwrap();
 
     assert_eq!(ir.message_kind, MessageKind::Announcement);
     let imessage = ir
@@ -366,8 +370,8 @@ fn an_announcement_keeps_its_text() {
     );
     assert!(ir.reactions.is_empty());
 
-    msg.text = None;
-    let ir = to_ir_message(&msg, false).unwrap();
+    message.text = None;
+    let ir = to_ir_message(&message, false).unwrap();
     assert!(ir.imessage.is_none());
 }
 
@@ -376,8 +380,8 @@ fn an_announcement_keeps_its_text() {
 /// millisecond time that ends in `.000` as milliseconds.
 #[test]
 fn a_message_keeps_the_precision_the_server_stored() {
-    let mut msg = seed_message_with_participant(sam());
-    msg.timestamp = "2015-03-12T18:05:22.000Z".into();
+    let mut message = seed_message_with_participant(sam());
+    message.timestamp = "2015-03-12T18:05:22.000Z".into();
     for (stored, written) in [
         (api_types::TimePrecision::Seconds, TimePrecision::Seconds),
         (
@@ -385,8 +389,8 @@ fn a_message_keeps_the_precision_the_server_stored() {
             TimePrecision::Milliseconds,
         ),
     ] {
-        msg.time_precision = stored;
-        let ir = to_ir_message(&msg, false).unwrap();
+        message.time_precision = stored;
+        let ir = to_ir_message(&message, false).unwrap();
         assert_eq!(ir.timestamp_unix_ms, 1_426_183_522_000);
         assert_eq!(ir.time_precision, written);
     }
@@ -394,11 +398,11 @@ fn a_message_keeps_the_precision_the_server_stored() {
 
 #[test]
 fn maps_basic_message() {
-    let mut msg = seed_message_with_participant(sam());
-    msg.guid = "basic-guid".into();
-    msg.text = Some("hello".into());
-    msg.service = Some("iMessage".into());
-    let ir = to_ir_message(&msg, false).unwrap();
+    let mut message = seed_message_with_participant(sam());
+    message.guid = "basic-guid".into();
+    message.text = Some("hello".into());
+    message.service = Some("iMessage".into());
+    let ir = to_ir_message(&message, false).unwrap();
     assert_eq!(ir.guid, "basic-guid");
     assert_eq!(ir.text, "hello");
     assert_eq!(ir.service, Transport::IMessage);
@@ -423,8 +427,8 @@ fn every_mark_has_a_counterpart_spelled_the_same() {
 /// the same mark, and a message with none carries none.
 #[test]
 fn a_deletion_mark_is_exported_as_the_same_mark() {
-    let mut msg = seed_message_with_participant(sam());
-    assert_eq!(to_ir_message(&msg, false).unwrap().deletion, None);
+    let mut message = seed_message_with_participant(sam());
+    assert_eq!(to_ir_message(&message, false).unwrap().deletion, None);
     for (api, ir) in [
         (
             api_types::Deletion::DeletedInSourceApp,
@@ -432,8 +436,8 @@ fn a_deletion_mark_is_exported_as_the_same_mark() {
         ),
         (api_types::Deletion::Unsent, ir::Deletion::Unsent),
     ] {
-        msg.deletion = Some(api);
-        assert_eq!(to_ir_message(&msg, false).unwrap().deletion, Some(ir));
+        message.deletion = Some(api);
+        assert_eq!(to_ir_message(&message, false).unwrap().deletion, Some(ir));
     }
 }
 
@@ -441,9 +445,9 @@ fn a_deletion_mark_is_exported_as_the_same_mark() {
 /// message with its part, text and time, in the order the server gave.
 #[test]
 fn earlier_versions_are_exported_with_their_times() {
-    let mut msg = seed_message_with_participant(sam());
-    assert!(to_ir_message(&msg, false).unwrap().edits.is_empty());
-    msg.earlier_versions = vec![
+    let mut message = seed_message_with_participant(sam());
+    assert!(to_ir_message(&message, false).unwrap().edits.is_empty());
+    message.earlier_versions = vec![
         api_types::EarlierVersion {
             part_index: 0,
             text: Some("helo".into()),
@@ -466,7 +470,7 @@ fn earlier_versions_are_exported_with_their_times() {
         },
     ];
     assert_eq!(
-        to_ir_message(&msg, false).unwrap().edits,
+        to_ir_message(&message, false).unwrap().edits,
         vec![
             EarlierVersion {
                 part_index: 0,

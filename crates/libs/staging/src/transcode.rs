@@ -226,18 +226,18 @@ pub fn transcode_staged(
     let mut done = 0usize;
     for jsonl in &files {
         check_cancel(cancel)?;
-        let mut doc = read_conversation_jsonl(jsonl)?;
-        let work = pending_in(run_dir, &doc, options.mode)?;
+        let mut document = read_conversation_jsonl(jsonl)?;
+        let work = pending_in(run_dir, &document, options.mode)?;
         for item in work {
             check_cancel(cancel)?;
             // An earlier attempt could not convert this file, and this one
             // settles it now, however: the earlier row no longer holds. A
             // new failure sends a fresh row after this one.
             let recorded_rel = item.recorded_rel();
-            if had_convert_failure(&doc, recorded_rel) {
+            if had_convert_failure(&document, recorded_rel) {
                 issues.emit(media_issue(
                     jsonl,
-                    &doc,
+                    &document,
                     recorded_rel,
                     recorded_rel,
                     RunIssueKind::Resolved,
@@ -259,7 +259,7 @@ pub fn transcode_staged(
                     };
                     let hevc_failure = apply_transcode(
                         &target,
-                        &mut doc,
+                        &mut document,
                         options,
                         tools,
                         cancel,
@@ -274,12 +274,18 @@ pub fn transcode_staged(
                     recorded_rel,
                     derivative,
                 } => {
-                    apply_repoint(jsonl, &mut doc, &recorded_rel, &derivative, &mut report)?;
+                    apply_repoint(
+                        jsonl,
+                        &mut document,
+                        &recorded_rel,
+                        &derivative,
+                        &mut report,
+                    )?;
                 }
                 PendingWork::DroppedTooLarge { recorded_rel, size } => {
                     apply_too_large(
                         jsonl,
-                        &mut doc,
+                        &mut document,
                         &recorded_rel,
                         &recorded_rel,
                         size,
@@ -288,7 +294,7 @@ pub fn transcode_staged(
                     )?;
                 }
                 PendingWork::Unrecoverable { recorded_rel } => {
-                    apply_unrecoverable(jsonl, &mut doc, &recorded_rel, issues, &mut report)?;
+                    apply_unrecoverable(jsonl, &mut document, &recorded_rel, issues, &mut report)?;
                 }
             }
             done += 1;
@@ -317,8 +323,8 @@ pub(crate) fn conversation_files(run_dir: &Path) -> Result<Vec<PathBuf>> {
 fn count_remaining(run_dir: &Path, files: &[PathBuf], mode: MediaMode) -> Result<usize> {
     let mut total = 0usize;
     for jsonl in files {
-        let doc = read_conversation_jsonl(jsonl)?;
-        total += pending_in(run_dir, &doc, mode)?.len();
+        let document = read_conversation_jsonl(jsonl)?;
+        total += pending_in(run_dir, &document, mode)?.len();
     }
     Ok(total)
 }
@@ -365,20 +371,20 @@ enum PendingWork {
     Unrecoverable { recorded_rel: String },
 }
 
-/// Attachments in `doc` still needing the Media stage, deduplicated by
+/// Attachments in `document` still needing the Media stage, deduplicated by
 /// recorded path.
 ///
 /// See the module docs for the pending rule, the crash-heal rule, and the
 /// aliasing repoint rule.
 fn pending_in(
     run_dir: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     mode: MediaMode,
 ) -> Result<Vec<PendingWork>> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for msg in &doc.messages {
-        for att in &msg.attachments {
+    for message in &document.messages {
+        for att in &message.attachments {
             let Some(rel) = att.path.as_deref() else {
                 continue;
             };
@@ -588,7 +594,7 @@ fn read_too_large_note(original: &Path) -> Option<u64> {
         .ok()
 }
 
-/// `attachments/{file name of path}`: the doc-relative form every patch
+/// `attachments/{file name of path}`: the document-relative form every patch
 /// records.
 fn attachment_rel(path: &Path) -> Result<String> {
     let name = path
@@ -598,18 +604,18 @@ fn attachment_rel(path: &Path) -> Result<String> {
     Ok(format!("attachments/{name}"))
 }
 
-/// Apply `patch` to every attachment across `doc` recorded at `recorded_rel`.
+/// Apply `patch` to every attachment across `document` recorded at `recorded_rel`.
 ///
 /// Content-addressed staging means more than one attachment in the same
 /// document can legitimately share a path. Every one of them must move
 /// together, as the module docs explain.
 fn patch_all_matching(
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
     patch: impl Fn(&mut Attachment),
 ) {
-    for msg in &mut doc.messages {
-        for att in &mut msg.attachments {
+    for message in &mut document.messages {
+        for att in &mut message.attachments {
             if att.path.as_deref() == Some(recorded_rel) {
                 patch(att);
             }
@@ -618,7 +624,7 @@ fn patch_all_matching(
 }
 
 /// What a repoint writes into every matching attachment: the target file's
-/// doc-relative path, digest, size, and MIME type, read fresh off disk.
+/// document-relative path, digest, size, and MIME type, read fresh off disk.
 struct DiskAttachmentFields {
     rel: String,
     digest: String,
@@ -677,7 +683,7 @@ struct TranscodeTarget<'a> {
 /// canceled rather than recording the file as one that failed.
 fn apply_transcode(
     target: &TranscodeTarget<'_>,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     options: &TranscodeOptions,
     tools: &dyn MediaTools,
     cancel: &CancelFlag,
@@ -720,7 +726,7 @@ fn apply_transcode(
             check_cancel(cancel)?;
             issues.emit(media_issue(
                 jsonl,
-                doc,
+                document,
                 recorded_rel,
                 &item_rel,
                 RunIssueKind::Skip,
@@ -738,7 +744,7 @@ fn apply_transcode(
                 // recovered original first, exactly like the `Skipped` heal
                 // arm below, then record the failure on it.
                 let r = disk_attachment_fields(src)?;
-                patch_all_matching(doc, recorded_rel, |att| {
+                patch_all_matching(document, recorded_rel, |att| {
                     att.path = Some(r.rel.clone());
                     att.digest_sha256 = Some(r.digest.clone());
                     att.size_bytes = Some(r.size);
@@ -752,29 +758,29 @@ fn apply_transcode(
                 // `pending_in` (which skips `path == None`) would never
                 // retry it. So only the reason changes, and everything else
                 // (path, digest, size, mime) stays exactly as recorded.
-                patch_all_matching(doc, recorded_rel, |att| {
+                patch_all_matching(document, recorded_rel, |att| {
                     att.missing_reason = Some(reason.clone());
                 });
             }
-            write_conversation_jsonl_to(jsonl, doc)?;
+            write_conversation_jsonl_to(jsonl, document)?;
             report.failed += 1;
             Ok(None)
         }
         Ok(TranscodeOutcome::Skipped) => {
             if is_heal {
-                // The doc currently points at a phantom `-mv` name that
+                // The document currently points at a phantom `-mv` name that
                 // nothing will ever produce, because the Media stage declined
                 // this file. Repoint it back at the recovered original so a
                 // resume does not chase a name that can never exist.
                 let r = disk_attachment_fields(src)?;
-                patch_all_matching(doc, recorded_rel, |att| {
+                patch_all_matching(document, recorded_rel, |att| {
                     att.path = Some(r.rel.clone());
                     att.digest_sha256 = Some(r.digest.clone());
                     att.size_bytes = Some(r.size);
                     att.mime_type.clone_from(&r.mime);
                     att.missing_reason = None;
                 });
-                write_conversation_jsonl_to(jsonl, doc)?;
+                write_conversation_jsonl_to(jsonl, document)?;
             }
             report.skipped += 1;
             Ok(None)
@@ -796,7 +802,7 @@ fn apply_transcode(
                     .with_context(|| format!("write {}", note.display()))?;
                 apply_too_large(
                     jsonl,
-                    doc,
+                    document,
                     recorded_rel,
                     &item_rel,
                     produced_len,
@@ -812,14 +818,14 @@ fn apply_transcode(
             let digest = file_io::file_sha256(&marker)?;
             let rel = attachment_rel(&final_path)?;
             let mime = mime_for_rel(&rel);
-            patch_all_matching(doc, recorded_rel, |att| {
+            patch_all_matching(document, recorded_rel, |att| {
                 att.path = Some(rel.clone());
                 att.digest_sha256 = Some(digest.clone());
                 att.size_bytes = Some(produced_len);
                 att.mime_type.clone_from(&mime);
                 att.missing_reason = None;
             });
-            write_conversation_jsonl_to(jsonl, doc)?;
+            write_conversation_jsonl_to(jsonl, document)?;
             // The `-mv` suffix in `final_derivative_name` makes this
             // structurally impossible, but a future naming change must fail
             // loudly here rather than silently destroy the original before
@@ -846,21 +852,22 @@ fn apply_transcode(
     }
 }
 
-/// The attachments in `doc` recorded at `recorded_rel`.
+/// The attachments in `document` recorded at `recorded_rel`.
 fn recorded_at<'a>(
-    doc: &'a ConversationDocument,
+    document: &'a ConversationDocument,
     recorded_rel: &'a str,
 ) -> impl Iterator<Item = &'a Attachment> + 'a {
-    doc.messages
+    document
+        .messages
         .iter()
-        .flat_map(|msg| &msg.attachments)
+        .flat_map(|message| &message.attachments)
         .filter(move |att| att.path.as_deref() == Some(recorded_rel))
 }
 
 /// True when an earlier attempt recorded that it could not convert the file at
 /// `recorded_rel`.
-fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
-    recorded_at(doc, recorded_rel).any(|att| {
+fn had_convert_failure(document: &ConversationDocument, recorded_rel: &str) -> bool {
+    recorded_at(document, recorded_rel).any(|att| {
         att.missing_reason
             .as_deref()
             .is_some_and(missing_reason::is_convert_failed)
@@ -874,14 +881,14 @@ fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
 /// original name, when it has one, and goes on with `what`.
 fn media_issue(
     jsonl: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
     kind: RunIssueKind,
     what: &str,
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-    let name = recorded_at(doc, recorded_rel)
+    let name = recorded_at(document, recorded_rel)
         .find_map(|att| att.original_name.as_deref().and_then(ir::trimmed))
         .unwrap_or("The attachment");
     RunIssue {
@@ -898,14 +905,14 @@ fn media_issue(
 /// `size` bytes, over the server's attachment size limit.
 fn too_large_issue(
     jsonl: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
     size: u64,
 ) -> RunIssue {
     media_issue(
         jsonl,
-        doc,
+        document,
         recorded_rel,
         item_rel,
         RunIssueKind::Skip,
@@ -922,20 +929,20 @@ fn too_large_issue(
 /// attachment already converted and deleted the shared original.
 fn apply_repoint(
     jsonl: &Path,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
     derivative: &Path,
     report: &mut TranscodeReport,
 ) -> Result<()> {
     let r = disk_attachment_fields(derivative)?;
-    patch_all_matching(doc, recorded_rel, |att| {
+    patch_all_matching(document, recorded_rel, |att| {
         att.path = Some(r.rel.clone());
         att.digest_sha256 = Some(r.digest.clone());
         att.size_bytes = Some(r.size);
         att.mime_type.clone_from(&r.mime);
         att.missing_reason = None;
     });
-    write_conversation_jsonl_to(jsonl, doc)?;
+    write_conversation_jsonl_to(jsonl, document)?;
     report.repointed += 1;
     Ok(())
 }
@@ -945,21 +952,27 @@ fn apply_repoint(
 /// over the limit and the Media stage dropped the shared original.
 fn apply_too_large(
     jsonl: &Path,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
     size: u64,
     issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
-    issues.emit(too_large_issue(jsonl, doc, recorded_rel, item_rel, size));
-    patch_all_matching(doc, recorded_rel, |att| {
+    issues.emit(too_large_issue(
+        jsonl,
+        document,
+        recorded_rel,
+        item_rel,
+        size,
+    ));
+    patch_all_matching(document, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
         att.missing_reason = Some(missing_reason::TOO_LARGE.to_string());
         att.size_bytes = Some(size);
     });
-    write_conversation_jsonl_to(jsonl, doc)?;
+    write_conversation_jsonl_to(jsonl, document)?;
     report.too_large += 1;
     Ok(())
 }
@@ -969,26 +982,26 @@ fn apply_too_large(
 /// recover.
 fn apply_unrecoverable(
     jsonl: &Path,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
     issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
     issues.emit(media_issue(
         jsonl,
-        doc,
+        document,
         recorded_rel,
         recorded_rel,
         RunIssueKind::Skip,
         "was lost when an earlier Media Stage stopped partway, so it was left out",
     ));
-    patch_all_matching(doc, recorded_rel, |att| {
+    patch_all_matching(document, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
         att.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
         att.size_bytes = None;
     });
-    write_conversation_jsonl_to(jsonl, doc)?;
+    write_conversation_jsonl_to(jsonl, document)?;
     report.missing += 1;
     Ok(())
 }

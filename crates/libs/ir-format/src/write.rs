@@ -84,15 +84,17 @@ pub const CSV_HEADERS: &[&str] = &[
 pub fn write_format(
     output_dir: &Path,
     format: OutputFormat,
-    mut doc: ConversationDocument,
+    mut document: ConversationDocument,
 ) -> Result<PathBuf> {
-    doc.finalize_stats();
+    document.finalize_stats();
     match format {
-        OutputFormat::Csv => write_conversation_csv(output_dir, &doc),
-        OutputFormat::Json => write_conversation_json(output_dir, &doc),
-        OutputFormat::Jsonl => write_conversation_jsonl(output_dir, &doc),
-        OutputFormat::Eml => write_conversation_mail(output_dir, &doc, MailPackage::EmlDirectories),
-        OutputFormat::Mbox => write_conversation_mail(output_dir, &doc, MailPackage::Mbox),
+        OutputFormat::Csv => write_conversation_csv(output_dir, &document),
+        OutputFormat::Json => write_conversation_json(output_dir, &document),
+        OutputFormat::Jsonl => write_conversation_jsonl(output_dir, &document),
+        OutputFormat::Eml => {
+            write_conversation_mail(output_dir, &document, MailPackage::EmlDirectories)
+        }
+        OutputFormat::Mbox => write_conversation_mail(output_dir, &document, MailPackage::Mbox),
         OutputFormat::Xml | OutputFormat::SmsBackupPlus => anyhow::bail!(
             "{} is written by the crate that owns it: supply its merged archive to \
              FormatSink instead of writing one conversation",
@@ -102,9 +104,9 @@ pub fn write_format(
 }
 
 /// Per-conversation JSON artifact (`<stem>.json`).
-fn write_conversation_json(output_dir: &Path, doc: &ConversationDocument) -> Result<PathBuf> {
-    let path = output_dir.join(format!("{}.json", crate::filename_stem(doc)));
-    let json = serde_json::to_vec_pretty(doc).context("serialize ConversationDocument")?;
+fn write_conversation_json(output_dir: &Path, document: &ConversationDocument) -> Result<PathBuf> {
+    let path = output_dir.join(format!("{}.json", crate::filename_stem(document)));
+    let json = serde_json::to_vec_pretty(document).context("serialize ConversationDocument")?;
     file_io::write_atomic(&path, |out| {
         out.write_all(&json)?;
         out.write_all(b"\n")?;
@@ -113,7 +115,7 @@ fn write_conversation_json(output_dir: &Path, doc: &ConversationDocument) -> Res
     Ok(path)
 }
 
-/// Write `doc` as JSON Lines to exactly `path`, atomically.
+/// Write `document` as JSON Lines to exactly `path`, atomically.
 ///
 /// Unlike the export writers this does not derive the file name from the
 /// document: a caller patching a file it already read must write back to the
@@ -123,27 +125,30 @@ fn write_conversation_json(output_dir: &Path, doc: &ConversationDocument) -> Res
 /// # Errors
 ///
 /// Returns an error when the file cannot be created, serialized, or renamed.
-pub fn write_conversation_jsonl_to(path: &Path, doc: &ConversationDocument) -> Result<()> {
+pub fn write_conversation_jsonl_to(path: &Path, document: &ConversationDocument) -> Result<()> {
     file_io::write_atomic(path, |out| {
-        let header = ConversationHeader::from_document(doc);
+        let header = ConversationHeader::from_document(document);
         serde_json::to_writer(&mut *out, &header).context("serialize JSONL header")?;
         out.write_all(b"\n")?;
-        for msg in &doc.messages {
-            serde_json::to_writer(&mut *out, msg).context("serialize JSONL message")?;
+        for message in &document.messages {
+            serde_json::to_writer(&mut *out, message).context("serialize JSONL message")?;
             out.write_all(b"\n")?;
         }
         Ok(())
     })
 }
 
-/// Write `doc` as `<stem>.jsonl` under `output_dir` and return that path.
+/// Write `document` as `<stem>.jsonl` under `output_dir` and return that path.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be created or written.
-pub fn write_conversation_jsonl(output_dir: &Path, doc: &ConversationDocument) -> Result<PathBuf> {
-    let path = output_dir.join(format!("{}.jsonl", crate::filename_stem(doc)));
-    write_conversation_jsonl_to(&path, doc)?;
+pub fn write_conversation_jsonl(
+    output_dir: &Path,
+    document: &ConversationDocument,
+) -> Result<PathBuf> {
+    let path = output_dir.join(format!("{}.jsonl", crate::filename_stem(document)));
+    write_conversation_jsonl_to(&path, document)?;
     Ok(path)
 }
 
@@ -212,11 +217,12 @@ fn sender_identity_type_cell(sender_identity: Option<&str>, service: Transport) 
 /// file cannot be written.
 pub(crate) fn write_conversation_csv(
     output_dir: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
 ) -> Result<PathBuf> {
-    let path = output_dir.join(format!("{}.csv", crate::filename_stem(doc)));
+    let path = output_dir.join(format!("{}.csv", crate::filename_stem(document)));
     let participants_json = json_cell(
-        &doc.conversation
+        &document
+            .conversation
             .participants
             .iter()
             .map(|p| ParticipantCell {
@@ -225,7 +231,7 @@ pub(crate) fn write_conversation_csv(
             })
             .collect::<Vec<_>>(),
     );
-    let exported_at = doc
+    let exported_at = document
         .export
         .exported_at_unix_ms
         .map(|ms| ms.to_string())
@@ -235,13 +241,13 @@ pub(crate) fn write_conversation_csv(
         let mut wtr = csv::Writer::from_writer(out);
         wtr.write_record(CSV_HEADERS)
             .with_context(|| format!("write header {}", path.display()))?;
-        for msg in &doc.messages {
-            let cells = MessageCells::new(msg)?;
+        for message in &document.messages {
+            let cells = MessageCells::new(message)?;
             // Every cell goes through `written_cell`, so a spreadsheet shows a
             // message that starts with `=` as text rather than running it.
             write_guarded_record(
                 &mut wtr,
-                csv_record(doc, &participants_json, &exported_at, msg, &cells),
+                csv_record(document, &participants_json, &exported_at, message, &cells),
             )
             .with_context(|| format!("write row {}", path.display()))?;
         }
@@ -274,12 +280,12 @@ impl MessageCells {
     /// # Errors
     ///
     /// Returns an error when the timestamp is outside the representable range.
-    fn new(msg: &Message) -> Result<Self> {
-        let secs = msg.timestamp_unix_ms.div_euclid(1000);
+    fn new(message: &Message) -> Result<Self> {
+        let secs = message.timestamp_unix_ms.div_euclid(1000);
         let (ts_local, ts_utc, ts_display) = format_local_ts(secs).ok_or_else(|| {
-            anyhow::anyhow!("invalid timestamp_unix_ms {}", msg.timestamp_unix_ms)
+            anyhow::anyhow!("invalid timestamp_unix_ms {}", message.timestamp_unix_ms)
         })?;
-        let attachment_cells: Vec<AttachmentCell> = msg
+        let attachment_cells: Vec<AttachmentCell> = message
             .attachments
             .iter()
             .map(|a| AttachmentCell {
@@ -293,36 +299,36 @@ impl MessageCells {
             ts_local,
             ts_utc,
             ts_display,
-            timestamp_unix_ms: msg.timestamp_unix_ms.to_string(),
-            backup_taken_at: msg
+            timestamp_unix_ms: message.timestamp_unix_ms.to_string(),
+            backup_taken_at: message
                 .backup_taken_at_unix_ms
                 .map(|ms| ms.to_string())
                 .unwrap_or_default(),
             attachments_json: json_cell(&attachment_cells),
-            reactions_json: if msg.reactions.is_empty() {
+            reactions_json: if message.reactions.is_empty() {
                 String::new()
             } else {
-                json_cell(&msg.reactions)
+                json_cell(&message.reactions)
             },
-            earlier_versions_json: if msg.edits.is_empty() {
+            earlier_versions_json: if message.edits.is_empty() {
                 String::new()
             } else {
-                json_cell(&msg.edits)
+                json_cell(&message.edits)
             },
-            reply_to_part: number_cell(msg.reply_to.as_ref().and_then(|r| r.part_index)),
-            android_type: msg
+            reply_to_part: number_cell(message.reply_to.as_ref().and_then(|r| r.part_index)),
+            android_type: message
                 .source
                 .as_ref()
                 .and_then(|s| s.android_type)
                 .map(|n| n.to_string())
                 .unwrap_or_default(),
-            source_fields_json: msg
+            source_fields_json: message
                 .source
                 .as_ref()
                 .filter(|s| !s.fields.is_empty())
                 .map(|s| serde_json::to_string(&s.fields).unwrap_or_default())
                 .unwrap_or_default(),
-            imessage: ImessageCells::new(&msg.text, msg.imessage.as_ref()),
+            imessage: ImessageCells::new(&message.text, message.imessage.as_ref()),
         })
     }
 }
@@ -391,56 +397,57 @@ fn bool_cell(value: bool) -> &'static str {
 
 /// One CSV row in [`CSV_HEADERS`] order.
 fn csv_record<'a>(
-    doc: &'a ConversationDocument,
+    document: &'a ConversationDocument,
     participants_json: &'a str,
     exported_at: &'a str,
-    msg: &'a Message,
+    message: &'a Message,
     cells: &'a MessageCells,
 ) -> [&'a str; 49] {
     let im = &cells.imessage;
     [
-        doc.conversation.chat_identifier.as_str(),
-        doc.conversation.conversation_type.as_str(),
-        doc.conversation.group_title.as_deref().unwrap_or(""),
+        document.conversation.chat_identifier.as_str(),
+        document.conversation.conversation_type.as_str(),
+        document.conversation.group_title.as_deref().unwrap_or(""),
         participants_json,
-        msg.guid.as_str(),
+        message.guid.as_str(),
         cells.ts_local.as_str(),
         cells.ts_utc.as_str(),
         cells.ts_display.as_str(),
         cells.timestamp_unix_ms.as_str(),
-        msg.time_precision.as_str(),
-        msg.direction.as_str(),
-        msg.service.as_str(),
-        msg.sender_identity.as_deref().unwrap_or(""),
-        msg.sender_display_name.as_deref().unwrap_or(""),
-        sender_identity_type_cell(msg.sender_identity.as_deref(), msg.service),
-        msg.subject.as_deref().unwrap_or(""),
-        msg.text.as_str(),
+        message.time_precision.as_str(),
+        message.direction.as_str(),
+        message.service.as_str(),
+        message.sender_identity.as_deref().unwrap_or(""),
+        message.sender_display_name.as_deref().unwrap_or(""),
+        sender_identity_type_cell(message.sender_identity.as_deref(), message.service),
+        message.subject.as_deref().unwrap_or(""),
+        message.text.as_str(),
         cells.attachments_json.as_str(),
         cells.reactions_json.as_str(),
-        msg.deletion.map_or("", Deletion::as_str),
+        message.deletion.map_or("", Deletion::as_str),
         cells.earlier_versions_json.as_str(),
-        bool_cell(msg.reply_to.is_some()),
-        msg.reply_to
+        bool_cell(message.reply_to.is_some()),
+        message
+            .reply_to
             .as_ref()
             .and_then(|r| r.guid.as_deref())
             .unwrap_or(""),
         cells.reply_to_part.as_str(),
-        msg.message_kind.as_str(),
-        doc.export.source.as_str(),
-        doc.export.tool.as_str(),
-        doc.export.tool_version.as_str(),
-        doc.export.owner_identity.as_deref().unwrap_or(""),
-        doc.export.owner_display_name.as_deref().unwrap_or(""),
+        message.message_kind.as_str(),
+        document.export.source.as_str(),
+        document.export.tool.as_str(),
+        document.export.tool_version.as_str(),
+        document.export.owner_identity.as_deref().unwrap_or(""),
+        document.export.owner_display_name.as_deref().unwrap_or(""),
         cells.backup_taken_at.as_str(),
         exported_at,
-        msg.owner_identity.as_deref().unwrap_or(""),
+        message.owner_identity.as_deref().unwrap_or(""),
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
         im.read_receipt.as_str(),
         im.send_effect.as_str(),
         im.shared_location.as_str(),
-        bool_cell(msg.message_kind == MessageKind::Announcement),
+        bool_cell(message.message_kind == MessageKind::Announcement),
         im.announcement.as_str(),
         im.parts_json.as_str(),
         im.app_json.as_str(),
@@ -457,14 +464,19 @@ fn csv_record<'a>(
 /// Write a conversation as EML files or one mbox, by `package`.
 fn write_conversation_mail(
     output_dir: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     package: MailPackage,
 ) -> Result<PathBuf> {
-    let messages = document_to_mail_messages(doc, output_dir)?;
+    let messages = document_to_mail_messages(document, output_dir)?;
     if messages.is_empty() {
         bail!("conversation has no messages");
     }
-    write_mail_package(output_dir, &crate::filename_stem(doc), package, &messages)
+    write_mail_package(
+        output_dir,
+        &crate::filename_stem(document),
+        package,
+        &messages,
+    )
 }
 
 /// Build [`MailMessage`] list from IR (reads attachment bytes from disk when missing).
@@ -473,10 +485,10 @@ fn write_conversation_mail(
 ///
 /// Returns an error when an attachment file cannot be read from disk.
 pub fn document_to_mail_messages(
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     output_dir: &Path,
 ) -> Result<Vec<MailMessage>> {
-    let participants: Vec<Participant> = doc
+    let participants: Vec<Participant> = document
         .conversation
         .participants
         .iter()
@@ -486,10 +498,10 @@ pub fn document_to_mail_messages(
         })
         .collect();
 
-    let mut out = Vec::with_capacity(doc.messages.len());
-    for msg in &doc.messages {
-        let mut attachments = Vec::with_capacity(msg.attachments.len());
-        for a in &msg.attachments {
+    let mut out = Vec::with_capacity(document.messages.len());
+    for message in &document.messages {
+        let mut attachments = Vec::with_capacity(message.attachments.len());
+        for a in &message.attachments {
             let bytes = util::load_attachment_bytes(a, output_dir)?;
             attachments.push(MailAttachment {
                 bytes,
@@ -501,17 +513,17 @@ pub fn document_to_mail_messages(
         }
 
         out.push(MailMessage {
-            chat_identifier: doc.conversation.chat_identifier.clone(),
-            conversation_type: doc.conversation.conversation_type.as_str().to_string(),
-            group_title: doc.conversation.group_title.clone(),
+            chat_identifier: document.conversation.chat_identifier.clone(),
+            conversation_type: document.conversation.conversation_type.as_str().to_string(),
+            group_title: document.conversation.group_title.clone(),
             participants: participants.clone(),
-            owner_identity: doc.export.owner_identity.clone().unwrap_or_default(),
-            owner_display_name: doc.export.owner_display_name.clone(),
-            export_source: doc.export.source.clone(),
-            export_tool: doc.export.tool.clone(),
-            export_tool_version: doc.export.tool_version.clone(),
-            exported_at_unix_ms: doc.export.exported_at_unix_ms,
-            message: msg.clone(),
+            owner_identity: document.export.owner_identity.clone().unwrap_or_default(),
+            owner_display_name: document.export.owner_display_name.clone(),
+            export_source: document.export.source.clone(),
+            export_tool: document.export.tool.clone(),
+            export_tool_version: document.export.tool_version.clone(),
+            exported_at_unix_ms: document.export.exported_at_unix_ms,
+            message: message.clone(),
             attachments,
         });
     }

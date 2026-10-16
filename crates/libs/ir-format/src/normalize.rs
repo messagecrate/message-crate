@@ -10,34 +10,37 @@ use ir::{ImessageExtensions, VendorFields};
 /// Clears the packaging stem suffix and attachment bytes, which are not part
 /// of the JSON content.
 #[cfg(test)]
-pub(crate) fn normalize_document_for_compare(doc: &mut ConversationDocument) {
-    for msg in &mut doc.messages {
-        if let Some(source) = msg.source.take() {
-            msg.source = source.into_option();
+pub(crate) fn normalize_document_for_compare(document: &mut ConversationDocument) {
+    for message in &mut document.messages {
+        if let Some(source) = message.source.take() {
+            message.source = source.into_option();
         }
-        if let Some(mut imessage) = msg.imessage.take() {
+        if let Some(mut imessage) = message.imessage.take() {
             // CSV packaging omits a single text/run part that equals `text`.
-            if crate::write::parts_are_trivial_text_duplicate(&msg.text, imessage.parts.as_ref()) {
+            if crate::write::parts_are_trivial_text_duplicate(
+                &message.text,
+                imessage.parts.as_ref(),
+            ) {
                 imessage.parts = None;
             }
-            msg.imessage = imessage.into_option();
+            message.imessage = imessage.into_option();
         }
-        for att in &mut msg.attachments {
+        for att in &mut message.attachments {
             clear_attachment_ephemera(att);
         }
-        empty_to_none(&mut msg.sender_identity);
-        empty_to_none(&mut msg.sender_display_name);
-        empty_to_none(&mut msg.subject);
+        empty_to_none(&mut message.sender_identity);
+        empty_to_none(&mut message.sender_display_name);
+        empty_to_none(&mut message.subject);
     }
-    empty_to_none(&mut doc.export.owner_identity);
-    empty_to_none(&mut doc.export.owner_display_name);
-    empty_to_none(&mut doc.conversation.group_title);
-    for p in &mut doc.conversation.participants {
+    empty_to_none(&mut document.export.owner_identity);
+    empty_to_none(&mut document.export.owner_display_name);
+    empty_to_none(&mut document.conversation.group_title);
+    for p in &mut document.conversation.participants {
         empty_to_none(&mut p.display_name);
     }
-    doc.packaging_stem_suffix = None;
-    doc.schema_version = ir::SCHEMA_VERSION;
-    doc.finalize_stats();
+    document.packaging_stem_suffix = None;
+    document.schema_version = ir::SCHEMA_VERSION;
+    document.finalize_stats();
 }
 
 /// Drop fields that exist only while packaging (bytes, empty strings).
