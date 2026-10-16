@@ -42,11 +42,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Every job reads the repository and nothing else. The one job that writes,
-# github-release, asks for contents: write on its own. The Docker image goes
-# to Docker Hub with its own secret, not to GitHub Packages, so no job needs
-# packages: write. Any other job that needs more asks for it in its own
-# permissions block, which says why.
+# Jobs read the repository by default. A job that needs more, such as
+# github-release (contents: write) or docker (attestations), asks for it in
+# its own permissions block, which says why. The Docker image goes to Docker
+# Hub with its own secret, not to GitHub Packages, so no job needs
+# packages: write.
 permissions:
   contents: read
 

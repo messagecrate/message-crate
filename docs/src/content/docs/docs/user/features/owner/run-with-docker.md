@@ -22,7 +22,8 @@ The server is published as a Docker image.
 ## Check the image
 
 This step is optional.
-The image carries a build provenance attestation, the same signed record as an installer, which [Install the desktop app](/docs/user/try/install-the-desktop-app/#check-the-download) explains.
+The image carries a build provenance attestation, the same kind of signed record an installer carries, which [Install the desktop app](/docs/user/try/install-the-desktop-app/#check-the-download) explains.
+Images from 0.11.0 on carry one. Earlier images don't.
 The GitHub CLI checks the image the `latest` tag names:
 
 ```bash
