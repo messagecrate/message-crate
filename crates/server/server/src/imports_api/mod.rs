@@ -39,7 +39,7 @@ use crate::request_body::{
 };
 use crate::server::Created;
 use crate::text_caps::{
-    MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_path, capped_text,
+    MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_text, capped_untrimmed,
     too_long_sentences,
 };
 
@@ -255,7 +255,7 @@ pub(crate) async fn create_import(
     let run_dir = body
         .run_dir
         .as_deref()
-        .map(|dir| capped_path("run_dir", dir, MAX_PATH_CHARS))
+        .map(|dir| capped_untrimmed("run_dir", dir, MAX_PATH_CHARS))
         .transpose();
     let device_id = body
         .device_id

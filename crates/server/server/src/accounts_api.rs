@@ -30,7 +30,7 @@ use crate::config::Config;
 use crate::credentials::RefusalWait;
 use crate::credentials::{
     change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
-    require_username_free, require_valid_username,
+    require_password_within_cap, require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
 use crate::db::handles::{self, ApiIdentityService, Identity};
@@ -287,15 +287,20 @@ pub async fn list_accounts(
 }
 
 /// Body for creating an account, by the owner or by a stranger.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountRequest {
     /// Login username, which the server trims: 1 to 128 characters, each a
     /// letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
     /// `422 Unprocessable Entity`.
     pub username: String,
-    /// Local password, of any length. Absent or empty opens an account with
-    /// no password.
+    /// Local password: no minimum length, at most 128 characters, counted
+    /// as characters rather than bytes and not trimmed. Over 128 is refused
+    /// with `422 Unprocessable Entity`. Absent or empty opens an account
+    /// with no password.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub password: Option<String>,
     /// Display name shown in Message Crate, trimmed. Over 200 characters is
     /// refused with `422 Unprocessable Entity`.
@@ -926,12 +931,17 @@ pub async fn update_account(
 
 /// Confirmation flag and the current password when one is set: the body an
 /// account sends to delete itself. The owner sends none.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct DeleteAccountRequest {
     /// Must be `true`; anything else is rejected.
     pub confirm: bool,
-    /// Required when the account's `has_password` is true.
+    /// Required when the account's `has_password` is true. A password is at
+    /// most 128 characters, so a longer one is refused with
+    /// `422 Unprocessable Entity` before it is checked.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub current_password: Option<String>,
 }
 
@@ -1059,6 +1069,10 @@ pub async fn delete_account(
 /// `invalid-credentials`: an open session must not be a way to guess the
 /// password faster than the login allows.
 ///
+/// A current password over the cap is refused as a login refuses one, as
+/// `validation-failed` before any check: no password the server accepts is
+/// that long.
+///
 /// Argon2 runs on the blocking thread pool. The caller holds no database
 /// connection across this call, so neither the check nor the wait holds
 /// one.
@@ -1067,6 +1081,7 @@ async fn require_current_password(
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
+    require_password_within_cap("current_password", current)?;
     if !passwords_match(password_hash, current).await? {
         return Err(refusal_wait.refuse("current password is incorrect").await);
     }
@@ -1074,19 +1089,28 @@ async fn require_current_password(
 }
 
 /// The new password.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReplaceAccountPasswordRequest {
-    /// The new password. Empty clears a user account's password; the
-    /// owner's must be one character or more.
+    /// The new password: no minimum length for a user account, where empty
+    /// clears it, and one character or more for the owner's. At most 128
+    /// characters, counted as characters rather than bytes and not trimmed;
+    /// over 128 is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 128)]
     pub password: String,
     /// The new password typed a second time. The server, not the screen,
     /// refuses a pair that differs, so the checks run in one fixed order:
     /// current password, then the pair, then that the new one differs from the
     /// current one.
+    #[schema(max_length = 128)]
     pub password_confirmation: String,
     /// The password being replaced. Required when the owner changes its
-    /// own; nobody else sends it.
+    /// own; nobody else sends it. A password is at most 128 characters, so a
+    /// longer one is refused with `422 Unprocessable Entity` before it is
+    /// checked.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub current_password: Option<String>,
 }
 

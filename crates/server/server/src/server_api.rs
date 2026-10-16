@@ -106,13 +106,18 @@ pub struct Server {
 }
 
 /// Body for claiming a Message Crate.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ClaimServerRequest {
     /// Login username for the owner, which the server trims: 1 to 128
     /// characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
     /// is refused with `422 Unprocessable Entity`.
     pub username: String,
-    /// Password for the owner. Must satisfy the server's password policy.
+    /// Password for the owner: one character or more, at most 128
+    /// characters, counted as characters rather than bytes and not trimmed.
+    /// Empty or over 128 is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 128)]
     pub password: String,
 }
 
