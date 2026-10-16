@@ -180,7 +180,7 @@ fn every_fixture_row_builds_a_record() {
     assert_eq!(photo.message_kind, "imessage");
     assert_eq!(photo.service, "iMessage");
     assert_eq!(sender(&photo).identity, FRIEND_PHONE);
-    assert_eq!(sender(&photo).display_name.as_deref(), Some("Sam Example"));
+    assert_eq!(sender(&photo).display_name, "Sam Example");
     assert_eq!(photo.owner_identity, OWNER);
     assert_eq!(photo.owner_display_name.as_deref(), Some(OWNER));
     assert_eq!(photo.attachments.len(), 1);
@@ -223,7 +223,7 @@ fn every_fixture_row_builds_a_record() {
     handles.sort_unstable();
     assert_eq!(handles, vec![FRIEND_PHONE, FRIEND_EMAIL]);
     assert_eq!(message.text, "Saturday works");
-    assert_eq!(sender(&message).display_name.as_deref(), Some("Robin"));
+    assert_eq!(sender(&message).display_name, "Robin");
 }
 
 /// Apple's `chat.style` says what a chat is: 43 a group, 45 one-to-one.

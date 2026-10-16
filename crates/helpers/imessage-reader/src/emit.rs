@@ -188,12 +188,17 @@ fn display_name_for(session: &MailSession, handle_id: i32) -> Option<String> {
 }
 
 /// The sender of a received row with this `handle_id`: the handle's address,
-/// its contact name and its country. `None` when the handle names no address,
+/// its contact name (else its address) and its country. `None` when the handle
+/// names no address,
 /// as handle 0 never does.
 fn sender(session: &MailSession, handle_id: i32) -> Option<Sender> {
+    let identity = raw_handle(session, handle_id)?;
     Some(Sender {
-        identity: raw_handle(session, handle_id)?,
-        display_name: display_name_for(session, handle_id),
+        display_name: session
+            .handle_name(handle_id)
+            .unwrap_or(&identity)
+            .to_string(),
+        identity,
         country: session.handle_country(handle_id).map(str::to_string),
     })
 }

@@ -410,16 +410,16 @@ pub struct Participant {
     pub country: Option<String>,
 }
 
-/// The person who sent an incoming message, read from the row's `handle`
-/// row. Every fact about a sender travels in this one value, so a new one is
-/// added here and nowhere else in the protocol.
+/// The person who sent an incoming message, read from the `handle` row the
+/// message row names. Every fact about a sender travels in this one value, so
+/// a new fact is added here and nowhere else in the protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sender {
     /// Phone number or email address as Messages stores it: the `handle`
     /// row's `id`.
     pub identity: String,
     /// The contact name, when the address book knows one, else the address.
-    pub display_name: Option<String>,
+    pub display_name: String,
     /// The country Messages read the identity in, as [`Participant::country`]
     /// says.
     pub country: Option<String>,

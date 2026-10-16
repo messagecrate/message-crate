@@ -400,7 +400,7 @@ fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) ->
             message_kind: "imessage".into(),
             sender: Some(imessage_reader_protocol::Sender {
                 identity: "+15555550122".into(),
-                display_name: None,
+                display_name: "+15555550122".into(),
                 country: None,
             }),
             subject: None,
@@ -566,7 +566,7 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
             message_kind: "imessage".into(),
             sender: Some(imessage_reader_protocol::Sender {
                 identity: "+15555550122".into(),
-                display_name: None,
+                display_name: "+15555550122".into(),
                 country: None,
             }),
             subject: None,
@@ -657,7 +657,7 @@ fn encrypted_export_script(dir: &Path, video: &str, photo: &str) -> String {
             message_kind: "imessage".into(),
             sender: Some(imessage_reader_protocol::Sender {
                 identity: "+15555550122".into(),
-                display_name: None,
+                display_name: "+15555550122".into(),
                 country: None,
             }),
             subject: None,

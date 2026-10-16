@@ -415,7 +415,7 @@ fn message_to_ir(
         Direction::Incoming => match record.sender {
             Some(sender) => (
                 Some(sender.identity),
-                sender.display_name,
+                Some(sender.display_name),
                 known_country(sender.country),
             ),
             None => (None, None, None),
@@ -1140,31 +1140,19 @@ mod tests {
     /// known one is kept.
     #[test]
     fn a_country_message_crate_does_not_know_names_no_country() {
-        let mut record = message_record("07700 900123", "g-1", false);
-        record
-            .sender
-            .as_mut()
-            .expect("an incoming record has a sender")
-            .country = Some("UK".into());
-        assert_eq!(
-            message_to_ir(record, AttachmentEmbed::Disabled, false)
-                .0
-                .sender_country,
-            None
-        );
-        let mut record = message_record("07700 900123", "g-2", false);
-        record
-            .sender
-            .as_mut()
-            .expect("an incoming record has a sender")
-            .country = Some("GB".into());
-        assert_eq!(
+        let country_in_file = |country: &str| {
+            let mut record = message_record("07700 900123", "g-1", false);
+            record
+                .sender
+                .as_mut()
+                .expect("an incoming record has a sender")
+                .country = Some(country.into());
             message_to_ir(record, AttachmentEmbed::Disabled, false)
                 .0
                 .sender_country
-                .as_deref(),
-            Some("GB")
-        );
+        };
+        assert_eq!(country_in_file("UK"), None);
+        assert_eq!(country_in_file("GB").as_deref(), Some("GB"));
         let chat = chat_from_record(ConversationRecord {
             chat_identifier: "07700 900123".into(),
             conversation_type: "one-to-one".into(),
@@ -1189,7 +1177,7 @@ mod tests {
             message_kind: "imessage".into(),
             sender: (!outgoing).then(|| Sender {
                 identity: "+15555550122".into(),
-                display_name: None,
+                display_name: "+15555550122".into(),
                 country: None,
             }),
             subject: None,
