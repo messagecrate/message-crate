@@ -62,6 +62,12 @@ leaves its suppression unused, and `check-pr.sh` and CI lint that file with
 `--error-on-warnings`, so the unused suppression fails them. A form added to
 the plugin gets a line in the canary.
 
+The other plugin in `web/biome-plugins/`, `noTauriMocksOutsideDesktop.grit`,
+refuses a mock of Tauri's packages outside `src/lib/desktop/` (#3188). It has
+its own canary in this directory, `noTauriMocksOutsideDesktop.canary.ts`,
+linted the same way, and the same rule holds: a form added to that plugin gets
+a line in its canary.
+
 ## The setup
 
 `startFakeClock()` puts the test on Vitest's fake clock. `setTimeout`,
