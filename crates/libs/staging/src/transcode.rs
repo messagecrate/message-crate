@@ -97,7 +97,8 @@ use anyhow::{Context, Result};
 use ir::{Attachment, ConversationDocument, missing_reason};
 use media::{CompressOptions, HevcFallback, MediaMode, MediaTools, TranscodeOutcome};
 use message_crate_core::{
-    CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
+    CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, RunIssueStep, check_cancel,
+    mime_for_rel,
 };
 
 use ir_format::read_conversation_jsonl;
@@ -893,7 +894,7 @@ fn media_issue(
         .unwrap_or("The attachment");
     RunIssue {
         kind,
-        step: "media".into(),
+        step: RunIssueStep::Media,
         item: format!("{conversation}:{item_rel}"),
         reason: format!("{name} {what}"),
         // Media rows are settled by a `resolved` row, not by their conversation.

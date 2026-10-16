@@ -37,7 +37,7 @@ pub fn finish_run(output: &OutputConfig, report: &ExportReport) -> RunResult {
 mod tests {
     use super::*;
     use crate::config::{AttachmentFiles, MediaConfig, ObfuscateConfig, OutputFormat};
-    use crate::pipeline::{IssueSink, RunIssue, RunIssueKind};
+    use crate::pipeline::{IssueSink, RunIssue, RunIssueKind, RunIssueStep};
     use std::sync::{Arc, Mutex};
 
     fn output(files: AttachmentFiles, obfuscate: bool) -> OutputConfig {
@@ -75,7 +75,7 @@ mod tests {
             assert!(Arc::ptr_eq(&run.cancel, &context.cancel));
             run.issues.emit(RunIssue {
                 kind: RunIssueKind::Error,
-                step: "parse".into(),
+                step: RunIssueStep::Parse,
                 item: "a.txt".into(),
                 reason: "unreadable".into(),
                 conversation: None,
