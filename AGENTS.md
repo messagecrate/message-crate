@@ -429,10 +429,11 @@ mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DI
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh
-# gitleaks, for ./scripts/check-secrets.sh: the version and the archive SHA-256 the secrets job in ci.yml pins
-curl -sSfLO https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
-echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz" | sha256sum -c -
-mkdir -p ~/.local/bin && tar -xzf gitleaks_8.30.1_linux_x64.tar.gz -C ~/.local/bin gitleaks
+# gitleaks for ./scripts/check-secrets.sh, at the version and archive SHA-256 that
+# ci.yml's secrets job pins. Run from the clone (step 5), which holds ci.yml.
+v=$(sed -n 's/^ *GITLEAKS_VERSION: //p' .github/workflows/ci.yml); sum=$(sed -n 's/^ *GITLEAKS_SHA256: //p' .github/workflows/ci.yml); d=$(mktemp -d)
+curl -sSfL -o "$d/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_x64.tar.gz"
+echo "${sum}  $d/gitleaks.tar.gz" | sha256sum -c - && mkdir -p ~/.local/bin && tar -xzf "$d/gitleaks.tar.gz" -C ~/.local/bin gitleaks && rm -r "$d"
 ```
 
 **5. Clone and install the frontend**
