@@ -38,6 +38,10 @@ const LEVEL_CLASS: Record<LogLevel, string> = {
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
 
+/** Said when the search for a request's id finds no line. */
+export const REQUEST_NOT_IN_LOG =
+  "The server's log holds no line of this request. Either its oldest files were deleted as the log grew, or the log's level left the request's lines out.";
+
 /**
  * One log, read: a level filter (opens at warnings and up), a search that
  * reads as it is typed, a download of the log as it is, and the lines newest
@@ -47,11 +51,18 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
  * Owner Home's Logs panel shows the server's log and the Import Run logs on
  * this computer through it, and an Import Run's row in Settings → Storage
  * shows that run's log, so every log reads the same way.
+ *
+ * Given `request`, it opens at every level with the request's id in the
+ * search, so only that request's lines show. Every request leaves a line at
+ * `INFO`, so finding none means the log was rotated past it or `RUST_LOG`
+ * leaves out its `INFO` lines, as `RUST_LOG=warn` does. The viewer says so
+ * rather than that no line matches.
  */
 export default function LogViewer({
   source,
   downloads,
   unreadable,
+  request,
 }: {
   source: LogSource;
   /** The files the log downloads as. */
@@ -61,9 +72,11 @@ export default function LogViewer({
    * level, so the empty list does not blame the filter or the search.
    */
   unreadable?: string;
+  /** The id of the request whose lines to open on, from an Audit Trail entry. */
+  request?: string;
 }) {
-  const [level, setLevel] = useState<LevelFilter>("warn");
-  const [typed, setTyped] = useState("");
+  const [level, setLevel] = useState<LevelFilter>(request ? "all" : "warn");
+  const [typed, setTyped] = useState(request ?? "");
   const text = useDebouncedValue(typed.trim(), SEARCH_DELAY_MS);
 
   const lines = useRouteInfiniteQuery<LogLinesPage, number | undefined>(
@@ -144,7 +157,11 @@ export default function LogViewer({
         </p>
       ) : items.length === 0 ? (
         <p className="m-0 text-[0.813rem] text-muted">
-          {text ? "No line matches the search" : "No line at this level"}
+          {request && text === request && level === "all"
+            ? REQUEST_NOT_IN_LOG
+            : text
+              ? "No line matches the search"
+              : "No line at this level"}
         </p>
       ) : (
         <div

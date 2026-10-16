@@ -43,10 +43,12 @@ function alreadyListed(
  * and the address. The contact drawer and the Profile tab open the same
  * dialog, so an identity is added the same way wherever it is added.
  *
- * A value that is not a number or an address, or one already in `existing`
- * on the same service, is refused here before anyone is asked. The same
- * number on Text Message and on WhatsApp is two identities, so it is not a
- * duplicate.
+ * A value under Email that is not an email address, or one already in
+ * `existing` on the same service, is refused here before anyone is asked.
+ * Text Message and WhatsApp take any value, as the server does: one that is
+ * not a number, such as a WhatsApp internal id, is stored as type other. The
+ * same number on Text Message and on WhatsApp is two identities, so it is not
+ * a duplicate.
  */
 export default function AddIdentityDialog({
   open,

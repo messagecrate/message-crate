@@ -217,7 +217,7 @@ There is no **Danger zone**, because the Owner can't be deleted.
 
 ## Audit Trail
 
-**Audit Trail** lists what each user did on the Message Crate, and when, newest first: logins and how each session ended, refused logins, Import Runs and Export Runs, and every change to an account.
+**Audit Trail** lists what each user did on the Message Crate, and when, newest first: logins and how each Session ended, refused logins, Import Runs and Export Runs, and every change to an account.
 The **Account** column names the account each entry is about.
 **Account** at the top narrows the list to one account, the entries its holder reads in the **Audit Trail** tab of their [Settings](/docs/user/features/settings/audit-trail/).
 
@@ -228,6 +228,10 @@ Picking one narrows the list to the entries and runs that account left.
 Another account given the same username, before or after, keeps its own entries apart.
 Opening and closing the Message Crate to new accounts is recorded too, under no account, and so is each change to the attachment size limit, with the new limit.
 Adding the Demo Account is recorded under no account, and resetting it under the Demo Account it replaced, each with the set of Demo Data asked for.
+
+**View in log** on an entry opens [Logs](#logs) on the server's log with **Show** at **Everything** and the id of the request that made the entry in **Search the log**, so only that request's lines show.
+If the server's log holds no line of the request, Logs says so: either its oldest files were deleted as it grew, or `RUST_LOG` leaves out its `INFO` lines, as `RUST_LOG=warn` does.
+An entry made outside a request, such as one a server command made, an Import Run, an Export Run, or a Session that ran out, has no **View in log**.
 
 ## Logs
 

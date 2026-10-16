@@ -1,7 +1,9 @@
+import { Link } from "react-router-dom";
 import ScrollingTableCard from "../../components/ScrollingTableCard";
 import { AUDIT_TRAIL_PAGE_SIZE } from "../../hooks/useAuditTrail";
 import { type AuditEntry, auditActorLabel, describeAuditEntry } from "../../lib/auditTrail";
 import { formatDateTime } from "../../lib/formatDate";
+import { accentLinkClass } from "../../lib/uiStyles";
 import PageControl from "../settings/storage/PageControl";
 import {
   sectionHintClass,
@@ -30,6 +32,10 @@ function accountCell(entry: AuditEntry) {
  * the account each entry is about when the table lists more than one
  * account. Every entry says what happened and how much, never what a message
  * said.
+ *
+ * Given `logHref`, an entry written in a request links to that request's
+ * lines in the server's log. Only Owner Home passes it: a holder reading
+ * their own Audit Trail in Settings cannot read the log.
  */
 export default function AuditTrailTable({
   entries,
@@ -37,6 +43,7 @@ export default function AuditTrailTable({
   page,
   onPageChange,
   showAccount,
+  logHref,
 }: {
   /** The entries on this page. */
   entries: AuditEntry[];
@@ -46,6 +53,8 @@ export default function AuditTrailTable({
   onPageChange: (page: number) => void;
   /** Show the Account column: the owner's list of every account. */
   showAccount: boolean;
+  /** Where an entry's request's lines in the server's log are read, by its `request_id`. */
+  logHref?: (requestId: string) => string;
 }) {
   if (total === 0) {
     return <p className={`${sectionHintClass} mt-3`}>Nothing recorded yet</p>;
@@ -60,6 +69,11 @@ export default function AuditTrailTable({
               {showAccount ? <th className={thClass}>Account</th> : null}
               <th className={thClass}>What happened</th>
               <th className={thClass}>By</th>
+              {logHref ? (
+                <th className={thClass}>
+                  <span className="sr-only">Log</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -73,6 +87,17 @@ export default function AuditTrailTable({
                   <div className="max-w-[30rem]">{describeAuditEntry(entry)}</div>
                 </td>
                 <td className={`${tdClass} whitespace-nowrap`}>{auditActorLabel(entry.actor)}</td>
+                {logHref ? (
+                  <td className={`${tdClass} whitespace-nowrap`}>
+                    {/* An entry written by a server command, a run or a
+                        Session that ran out has no request. */}
+                    {entry.request_id ? (
+                      <Link to={logHref(entry.request_id)} className={accentLinkClass}>
+                        View in log
+                      </Link>
+                    ) : null}
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>

@@ -36,10 +36,6 @@ use crate::transcode::{COMMITTED_SUFFIX, TranscodeOptions, conversation_files};
 use ir_format::read_conversation_jsonl;
 
 /// How often [`summarize_staging`] reports progress, over attachments.
-///
-/// Matches the media crate's own cadence (its private `MEDIA_PROGRESS_EVERY`
-/// is 100 too) so a summary and the Media Stage over the same directory feel
-/// the same to whatever is watching progress.
 const SUMMARY_PROGRESS_EVERY: usize = 100;
 
 /// One attachment the user should see before approving.
@@ -167,8 +163,8 @@ pub struct SummaryProgress {
 /// every reference, but a shared file's bytes, verdict, and forecast row are
 /// each counted exactly once, on the first reference to its recorded path.
 ///
-/// `on_progress` reports [`SummaryProgress`] over attachments at the same
-/// cadence the media crate uses (every 100) plus a final call. It counts
+/// `on_progress` reports [`SummaryProgress`] over attachments every
+/// [`SUMMARY_PROGRESS_EVERY`] plus a final call. It counts
 /// every reference, aliased or not, since that is the count the caller sees
 /// growing.
 ///
