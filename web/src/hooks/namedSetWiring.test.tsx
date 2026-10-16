@@ -5,12 +5,11 @@
  *
  * `useNameCollectionActions.test.tsx` builds its own collection with
  * `groupsOver()`, a hand-written copy of the configuration in
- * `contactGroups.ts`. That tests the
- * engine, and tests it well, but it means the configuration itself has no
- * test. Two parts of it are worth pinning: the lists that show a name are
- * stale after a write, so no screen keeps a group name that was just renamed,
- * and the chip targets decide where a ticked box shows before the server
- * answers.
+ * `contactGroups.ts`. That tests the engine, and tests it well, but it means
+ * the configuration itself has no test. Two parts of it are worth pinning:
+ * the lists that show a name are stale after a write, so no screen keeps a
+ * group name that was just renamed, and the chip targets decide where a
+ * ticked box shows before the server answers.
  *
  * These import `contactGroups` and `messageTags` themselves. Only the server
  * routes are faked, at the same boundary the rest of the suite uses.
