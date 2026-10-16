@@ -19,6 +19,20 @@ The server is published as a Docker image.
 
 `docker --version` in a terminal prints a version number once Docker is installed.
 
+## Check the image
+
+This step is optional.
+The image carries a build provenance attestation: a signed record, kept by GitHub, that ties it to the run of Message Crate's release workflow that built it.
+Releases from 0.11.0 on carry one. Earlier releases don't.
+The [GitHub CLI](https://cli.github.com/) checks it, once `gh auth login` has logged it in to a GitHub account:
+
+```bash
+gh attestation verify oci://docker.io/bitrealm/message-crate:latest --repo messagecrate/message-crate
+```
+
+It reports that verification succeeded, and names the workflow and the tag, when the image is one that workflow built.
+A version tag in place of `latest`, such as `0.11.0`, checks that release.
+
 ## Start the server
 
 ```bash title="Start a Message Crate"

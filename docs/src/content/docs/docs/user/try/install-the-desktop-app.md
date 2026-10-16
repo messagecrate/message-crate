@@ -19,6 +19,33 @@ The installers are on the [latest release on GitHub](https://github.com/messagec
 
 There is no build for a Mac with an Intel processor, and none for Linux on ARM.
 
+## Check the download
+
+This step is optional.
+It shows that the installer is the one Message Crate's release built, unchanged on the way.
+Releases from 0.11.0 on carry what it needs. Earlier releases don't.
+
+Each release lists a `SHA256SUMS` file under **Assets**, with the SHA-256 of every installer.
+On Linux, with `SHA256SUMS` saved in the same directory as the installer, this command prints the installer's name followed by `OK`:
+
+```bash
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+On macOS, `shasum -a 256 <file>.dmg` prints the SHA-256, which must match the line for that file in `SHA256SUMS`.
+On Windows, PowerShell's `Get-FileHash <file>.msi` prints it in capital letters, and the comparison ignores case.
+
+`SHA256SUMS` sits on the same download page as the installers, so it can only show that a download arrived whole.
+A build provenance attestation goes further.
+It is a signed record, kept by GitHub, that ties each installer to the run of Message Crate's release workflow that built it from the release's tag.
+The [GitHub CLI](https://cli.github.com/) checks it on every system, once `gh auth login` has logged it in to a GitHub account:
+
+```bash
+gh attestation verify <file> --repo messagecrate/message-crate
+```
+
+It reports that verification succeeded, and names the workflow and the tag, when the file is one that workflow built.
+
 ## Install
 
 The installers are not code-signed yet, so Windows and macOS warn before the first run.

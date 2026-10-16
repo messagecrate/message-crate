@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **Check that a download is the one the release built.** Each
+  release now lists a `SHA256SUMS` file beside the installers, and every
+  installer and the Docker image carry a signed record of the release run
+  that built them. The GitHub CLI checks that record. The install pages say
+  how to check a download on each system (#2096).
 - 2026-10-15: **Log in on the website for one visit only.** The login card
   has a **Keep me logged in** box, ticked to start with. Untick it on a
   shared or borrowed computer, and the browser forgets the Session when the
