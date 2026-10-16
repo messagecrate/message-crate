@@ -5,6 +5,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
 import { errorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
+import { conversationName } from "../lib/conversationName";
 import { isNearEnd } from "../lib/listPaging";
 import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
@@ -219,12 +220,8 @@ export default function TrashScreen() {
   // rest of it.
   const offerEmptyTrash = !nothingInTrash || searching;
 
-  const selectedName =
-    selected?.shown_title ||
-    (selected?.is_group
-      ? countOf(selected.participants.length, "participant")
-      : selected?.participants[0]?.name) ||
-    "this conversation";
+  // The selected conversation's name, for its panel and the delete dialog alike.
+  const selectedName = selected ? conversationName(selected) : null;
 
   const confirmDelete = () => {
     if (pending === null) return;
@@ -299,7 +296,7 @@ export default function TrashScreen() {
             {selectedId !== null ? (
               selectedLoading ? (
                 <div className="text-[0.875rem] text-muted">Loading…</div>
-              ) : selected ? (
+              ) : selected && selectedName !== null ? (
                 // Keyed by the selection, so a Restore error or a Restore still
                 // answering for the last conversation selected stays with it.
                 <SelectedConversation
@@ -499,7 +496,10 @@ function SelectedConversation({
   const restoreConversation = useRestoreConversation();
   return (
     <div className="rounded border border-border bg-elevated p-4">
-      <div className="mb-1 text-[0.938rem] font-semibold text-text">{name}</div>
+      {/* Clamped as the conversation list clamps a group's names, since an untitled group is named after everyone in it. */}
+      <div className="mb-1 line-clamp-2 break-words text-[0.938rem] font-semibold text-text">
+        {name}
+      </div>
       <div className="mb-3 text-[0.75rem] text-muted">
         {countOf(conversation.message_count, "message")}
       </div>

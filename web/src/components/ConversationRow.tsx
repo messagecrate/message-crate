@@ -38,16 +38,7 @@ function titleContent(conv: Conversation): ReactNode {
   if (!conv.shown_title && conv.is_group && conv.participants.length > 0) {
     return <GroupNames conv={conv} />;
   }
-  return conversationTitleText(conv);
-}
-
-/** Plain-text form of the row title, for the checkbox's accessible name. */
-function conversationTitleText(conv: Conversation): string {
-  return conversationName({
-    title: conv.shown_title,
-    isGroup: conv.is_group,
-    participants: conv.participants,
-  });
+  return conversationName(conv);
 }
 
 function GroupParticipantCount({ count }: { count: number }) {
@@ -130,7 +121,7 @@ export default function ConversationRow({
       */}
       <Checkbox
         checked={checked || false}
-        aria-label={`Select ${conversationTitleText(conversation)}`}
+        aria-label={`Select ${conversationName(conversation)}`}
         onChange={() => onCheckChange(conversation.id)}
         labelClassName="-my-[0.7rem] -mr-2 -ml-[0.85rem] shrink-0 items-center self-stretch pr-2 pl-[0.85rem]"
       />

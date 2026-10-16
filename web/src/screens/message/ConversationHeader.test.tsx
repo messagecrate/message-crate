@@ -237,6 +237,21 @@ describe("ConversationHeader", () => {
     expect(screen.getByText("3 messages")).toBeInTheDocument();
   });
 
+  it("names an untitled group after everyone in it, as the conversation list does", () => {
+    renderHeader(
+      conversation({
+        is_group: true,
+        shown_title: null,
+        participants: [
+          participant({ name: "Ann", identity: "+15550101" }),
+          participant({ name: "Bob", identity: "+15550102" }),
+          participant({ name: "Cy", identity: "+15550103" }),
+        ],
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "Ann, Bob, Cy" })).toBeInTheDocument();
+  });
+
   it("offers Newest and every year, newest first, under Jump to", async () => {
     const onJumpToNewest = vi.fn();
     const onJumpToYear = vi.fn();
