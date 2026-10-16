@@ -108,6 +108,8 @@ describe("NavEntityList current row", () => {
 
   it.each([
     ["/group/Family", "Family"],
+    // The page opens a set whose slug differs only in case, so its row is current too.
+    ["/group/family", "Family"],
     ["/unknown", "Unknown"],
     ["/no-group", "No Contact Group"],
   ])("marks the open Contact Group row at %s, and no other", (path, row) => {
@@ -117,6 +119,7 @@ describe("NavEntityList current row", () => {
 
   it.each([
     ["/tag/Receipts", "Receipts"],
+    ["/tag/receipts", "Receipts"],
     ["/no-tag", "No Message Tag"],
   ])("marks the open Message Tag row at %s, and no other", (path, row) => {
     renderTags(path, ["Receipts", "Travel"]);

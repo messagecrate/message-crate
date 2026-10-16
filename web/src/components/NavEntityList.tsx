@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { errorLine } from "../lib/apiErrorMessage";
-import { slugFromPath, slugPath } from "../lib/contactGroups";
+import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
 import { type NameCollection, useNameCollectionActions } from "../lib/nameCollection";
 import type { NavEntityCopy } from "../lib/namedSetCopy";
 import ConfirmDialog from "./ConfirmDialog";
@@ -12,6 +12,7 @@ import NavGlyphButton from "./NavGlyphButton";
 import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navCurrent,
   navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
@@ -49,6 +50,9 @@ export default function NavEntityList({
   // The slug of the set whose page is open, decoded, so a name with spaces
   // or other escaped characters compares as itself.
   const openSlug = slugFromPath(location.pathname, copy.routeBase);
+  // The set whose page is open, found the way the page finds it, so a slug
+  // in another case still marks its row.
+  const openName = openSlug === null ? null : groupFromSlug(openSlug, names);
   const permanentOpen = location.pathname === copy.permanentRoute;
   const emptyOpen = location.pathname === copy.emptyRoute;
 
@@ -113,7 +117,7 @@ export default function NavEntityList({
           <PlainButton
             onPress={() => navigate(copy.permanentRoute as string)}
             className={navGlyphButtonRowClass(permanentOpen)}
-            aria-current={permanentOpen ? "page" : undefined}
+            aria-current={navCurrent(permanentOpen)}
           >
             <span className={NAV_NESTED_ROW_CLASS}>
               <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>
@@ -123,14 +127,14 @@ export default function NavEntityList({
         ) : null}
         {names.map((name) => {
           const href = slugPath(copy.routeBase, slug(name));
-          const active = openSlug === slug(name);
+          const active = name === openName;
           return (
             <div key={name} className="relative w-full">
               <div className={navGlyphRowClass(active)}>
                 <PlainButton
                   onPress={() => navigate(href)}
                   className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
-                  aria-current={active ? "page" : undefined}
+                  aria-current={navCurrent(active)}
                 >
                   <span className={NAV_LEADING_GLYPH_CLASS}>{icon}</span>
                   <span className="min-w-0 truncate">{name}</span>
@@ -176,7 +180,7 @@ export default function NavEntityList({
         <PlainButton
           onPress={() => navigate(copy.emptyRoute)}
           className={navGlyphButtonRowClass(emptyOpen)}
-          aria-current={emptyOpen ? "page" : undefined}
+          aria-current={navCurrent(emptyOpen)}
         >
           <span className={NAV_NESTED_ROW_CLASS}>
             <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>

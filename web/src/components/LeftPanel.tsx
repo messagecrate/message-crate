@@ -40,6 +40,7 @@ import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_LEADING_ROW_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navCurrent,
   navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
@@ -125,7 +126,7 @@ export default function LeftPanel({
    */
   const itemRow = (item: NavItem, rowClass: (active: boolean) => string) => {
     const active = navItem === item;
-    return { className: rowClass(active), "aria-current": active ? ("page" as const) : undefined };
+    return { className: rowClass(active), "aria-current": navCurrent(active) };
   };
 
   const { savedSearches: groups } = useSavedSearches();
@@ -279,7 +280,7 @@ export default function LeftPanel({
                     <PlainButton
                       onPress={() => navigate(`/?q=${encodeURIComponent(g.query)}`)}
                       className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
-                      aria-current={active ? "page" : undefined}
+                      aria-current={navCurrent(active)}
                     >
                       <span className={NAV_LEADING_GLYPH_CLASS}>
                         <SearchIcon size={15} className="shrink-0" />
