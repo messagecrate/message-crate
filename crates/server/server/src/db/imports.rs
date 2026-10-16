@@ -405,11 +405,10 @@ pub struct StartImportArgs<'a> {
 }
 
 impl<'a> StartImportArgs<'a> {
-    /// A run with nothing recorded
-    /// about the client: no run directory, device, form snapshot,
-    /// fingerprint, or identities. The CLI importer and most tests start
-    /// here; a caller with more to record uses struct update syntax on
-    /// top of it.
+    /// Arguments for a run with nothing recorded about the client: no run
+    /// directory, device, form snapshot, fingerprint, or identities. The
+    /// server's `import` command and most tests start here; a caller with
+    /// more to record uses struct update syntax on top of it.
     pub fn new(account_id: i64, source: &'a str, mode: &'a str, tool: Option<&'a str>) -> Self {
         Self {
             account_id,
