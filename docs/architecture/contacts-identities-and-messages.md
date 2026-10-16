@@ -748,10 +748,9 @@ and WhatsApp writes one when the backup does not name who reacted. Why: two
 people's reactions with the same emoji are the same row once the reactor is
 gone, so matching them field for field kept one of them
 ([#3112](https://github.com/messagecrate/message-crate/issues/3112)).
-The rule is the same in one import as across
-several, in any file order (`copy_mark_sql` for the mark and
-`later_backup_sql` for the text in `db/staging.rs`, `add_staged_copy` in
-`imports_api/staging.rs`). Why: a person recovers a deleted message and
+The rule is the same in one import as across several, in any file order
+(`copy_mark_sql` for the mark and `later_backup_sql` for the text in
+`db/staging.rs`, `add_staged_copy` in `imports_api/staging.rs`). Why: a person recovers a deleted message and
 unsends or edits a sent one between two backups, and only the backup's own
 date says which state is the newer; the message's own times record when it
 was written, not when a part was unsent, so they cannot tell
