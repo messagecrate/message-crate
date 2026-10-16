@@ -78,7 +78,7 @@ pub struct PendingReply {
     pub quoted_key: Option<String>,
 }
 
-/// Per-exporter deltas of the shared [`pending_to_document`] projection.
+/// Per-exporter deltas of the shared [`project_pending`] projection.
 ///
 /// Only [`export`](Self::export), [`service`](Self::service),
 /// [`vendor_fields`](Self::vendor_fields), and
@@ -276,7 +276,7 @@ struct Prepared {
     vendor_key: Option<String>,
 }
 
-/// What [`pending_to_document`] made of one pending conversation.
+/// What [`project_pending`] made of one pending conversation.
 #[derive(Debug, Clone)]
 pub struct Projection {
     /// The conversation's document.
@@ -303,7 +303,7 @@ pub struct Projection {
 /// Returns the document, a [`ProjectionTally`] for the caller to fold into
 /// its report, and the pending message each of the document's messages was
 /// made from.
-pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
+pub fn project_pending<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
     conversation: &PendingConversation,
     hooks: &H,
@@ -318,8 +318,9 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         .map(|message| {
             let (timestamp_unix_ms, precision) = message_time(message, unit);
             Prepared {
-                sender: (!message.sender_identity.is_empty())
-                    .then(|| hooks.normalize_handle(&message.sender_identity)),
+                sender: message
+                    .sender_identity()
+                    .map(|identity| hooks.normalize_handle(identity)),
                 timestamp_unix_ms,
                 precision,
                 attachment_digests: hooks.attachment_digests(message),
@@ -395,8 +396,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         } else {
             Sender {
                 identity: p.sender.clone(),
-                display_name: message.sender_display_name.clone(),
-                country: None,
+                ..message.sender.clone()
             }
         };
         let attachments: Vec<Attachment> = message
@@ -482,10 +482,11 @@ pub fn display_names_for_handles(
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for message in &conversation.messages {
-        if !message.sender_identity.is_empty() {
-            let handle = normalize_handle(&message.sender_identity);
+        if let Some(identity) = message.sender_identity() {
+            let handle = normalize_handle(identity);
             if let Some(name) = message
-                .sender_display_name
+                .sender
+                .display_name
                 .as_deref()
                 .and_then(crate::trimmed)
             {
@@ -640,12 +641,11 @@ mod tests {
         PendingMessage {
             sort_key: secs,
             is_from_me: from_me,
-            sender_identity: if from_me {
-                String::new()
-            } else {
-                "+15555550122".into()
+            sender: Sender {
+                identity: (!from_me).then(|| "+15555550122".to_string()),
+                display_name: (!from_me).then(|| "Peer".to_string()),
+                country: None,
             },
-            sender_display_name: (!from_me).then(|| "Peer".to_string()),
             text: text.into(),
             attachments: Vec::new(),
             extra: BTreeMap::new(),
@@ -717,7 +717,7 @@ mod tests {
             keyed(1_609_459_207, "itself", "K7", Some("K7")),
         ];
 
-        let document = pending_to_document("+15555550122", &conversation, &KeyedHooks).document;
+        let document = project_pending("+15555550122", &conversation, &KeyedHooks).document;
         let reply_of = |text: &str| {
             document
                 .messages
@@ -752,7 +752,7 @@ mod tests {
             pending_message(1_609_459_260, true, "yo"),
         ];
 
-        let projection = pending_to_document("+15555550122", &conversation, &TestHooks);
+        let projection = project_pending("+15555550122", &conversation, &TestHooks);
         assert_eq!(projection.tally.duplicates, 1);
         let texts: Vec<_> = projection
             .document
@@ -775,7 +775,7 @@ mod tests {
 
         let Projection {
             document, tally, ..
-        } = pending_to_document("+15555550122", &conversation, &TestHooks);
+        } = project_pending("+15555550122", &conversation, &TestHooks);
         assert_eq!(tally.messages, 2);
         assert_eq!(tally.sent, 1);
         assert_eq!(tally.received, 1);
@@ -811,12 +811,11 @@ mod tests {
     fn single_peer_fallback_uses_chat_id_and_contact_name() {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         let mut m = pending_message(1_609_459_200, false, "hi");
-        m.sender_identity = String::new();
-        m.sender_display_name = None;
+        m.sender = Sender::default();
         m.extra.insert("contact_name".into(), "Bob".into());
         conversation.messages = vec![m];
 
-        let document = pending_to_document("+15555550122", &conversation, &TestHooks).document;
+        let document = project_pending("+15555550122", &conversation, &TestHooks).document;
         assert_eq!(document.conversation.participants.len(), 1);
         assert_eq!(
             document.conversation.participants[0].identity.as_deref(),
@@ -837,11 +836,10 @@ mod tests {
         let mut conversation =
             PendingConversation::new(crate::NAMELESS_CHAT_ID, false, None, Vec::new());
         let mut m = pending_message(1_609_459_200, true, "hi");
-        m.sender_identity = String::new();
+        m.sender.identity = None;
         conversation.messages = vec![m];
 
-        let document =
-            pending_to_document(crate::NAMELESS_CHAT_ID, &conversation, &TestHooks).document;
+        let document = project_pending(crate::NAMELESS_CHAT_ID, &conversation, &TestHooks).document;
         assert!(
             document.conversation.participants.is_empty(),
             "{:?}",
@@ -947,8 +945,7 @@ mod tests {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = vec![pending_message(1_609_459_200_123, false, "hi")];
 
-        let document =
-            pending_to_document("+15555550122", &conversation, &MillisecondHooks).document;
+        let document = project_pending("+15555550122", &conversation, &MillisecondHooks).document;
         assert_eq!(document.messages[0].timestamp_unix_ms, 1_609_459_200_123);
         // The GUID is built from the message's millisecond.
         let guid = MessageGuid::new(&MessageIdentity {
@@ -984,7 +981,7 @@ mod tests {
             conversation.messages = order;
             let Projection {
                 document, tally, ..
-            } = pending_to_document("+15555550122", &conversation, &TestHooks);
+            } = project_pending("+15555550122", &conversation, &TestHooks);
             assert_eq!(document.messages.len(), 1);
             assert_eq!(tally.duplicates, 1);
             assert_eq!(tally.messages, 1);
@@ -1009,7 +1006,7 @@ mod tests {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = vec![photo(&"a".repeat(64)), photo(&"b".repeat(64))];
 
-        let document = pending_to_document("+15555550122", &conversation, &TestHooks).document;
+        let document = project_pending("+15555550122", &conversation, &TestHooks).document;
         assert_ne!(document.messages[0].guid, document.messages[1].guid);
     }
 
@@ -1017,11 +1014,11 @@ mod tests {
     fn p1_1_two_senders_same_second_same_text_get_their_own_guids() {
         let mut conversation = PendingConversation::new("group-1", true, None, Vec::new());
         let mut alice = pending_message(1_609_459_200, false, "lol");
-        alice.sender_identity = "+15555550122".into();
+        alice.sender.identity = Some("+15555550122".into());
         let mut bob = pending_message(1_609_459_200, false, "lol");
-        bob.sender_identity = "+15555550133".into();
+        bob.sender.identity = Some("+15555550133".into());
         conversation.messages = vec![alice, bob];
-        let document = pending_to_document("group-1", &conversation, &TestHooks).document;
+        let document = project_pending("group-1", &conversation, &TestHooks).document;
         assert_eq!(document.messages.len(), 2);
         assert_ne!(
             document.messages[0].guid, document.messages[1].guid,
@@ -1035,7 +1032,7 @@ mod tests {
     fn p1_2_child_print_guid() {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = vec![pending_message(1_609_459_200, false, "hi")];
-        let document = pending_to_document("+15555550122", &conversation, &TestHooks).document;
+        let document = project_pending("+15555550122", &conversation, &TestHooks).document;
         println!("GUID={}", document.messages[0].guid);
     }
 

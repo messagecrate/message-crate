@@ -43,8 +43,7 @@ fn digests_of(attachments: Vec<PendingAttachment>) -> Vec<String> {
     attachment_digests(&PendingMessage {
         sort_key: 0,
         is_from_me: false,
-        sender_identity: String::new(),
-        sender_display_name: None,
+        sender: ir::Sender::default(),
         text: String::new(),
         attachments,
         extra: BTreeMap::new(),

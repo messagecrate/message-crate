@@ -193,8 +193,11 @@ fn pending_from_parsed(
     PendingMessage {
         sort_key: message.timestamp_secs as i64,
         is_from_me: message.is_from_me,
-        sender_identity: message.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: message.name_alias,
+        sender: ir::Sender {
+            identity: message.sender.map(Handle::into_key),
+            display_name: message.name_alias,
+            country: None,
+        },
         text: message.text,
         attachments: pending_atts,
         extra: {
@@ -243,7 +246,7 @@ fn add_message(
         .push(pending_from_parsed(message, pending_atts));
 }
 
-/// SMS Backup+ deltas of the shared [`ir::pending_to_document`] projection.
+/// SMS Backup+ deltas of the shared [`ir::project_pending`] projection.
 struct SbpProjection {
     export: ExportMeta,
     /// Every message's Backup Date.

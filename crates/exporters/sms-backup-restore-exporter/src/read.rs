@@ -5,7 +5,7 @@ use anyhow::{Result, bail};
 use ir::{
     ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
     PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
-    pending_to_document, prepare_conversation,
+    prepare_conversation, project_pending,
 };
 use message_crate_core::{
     AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
@@ -465,8 +465,11 @@ fn add_record(
         // extra (`ir::message_time`).
         sort_key: record.timestamp_secs as i64,
         is_from_me: record.is_from_me,
-        sender_identity: record.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: record.sender_display_name,
+        sender: ir::Sender {
+            identity: record.sender.map(Handle::into_key),
+            display_name: record.sender_display_name,
+            country: None,
+        },
         text: record.text,
         attachments,
         extra,
@@ -474,7 +477,7 @@ fn add_record(
     Ok(())
 }
 
-/// SMS Backup & Restore deltas of the shared [`pending_to_document`] projection,
+/// SMS Backup & Restore deltas of the shared [`project_pending`] projection,
 /// for one conversation.
 struct SbrProjection<'a> {
     export: &'a ExportMeta,
@@ -498,14 +501,12 @@ impl SbrProjection<'_> {
     fn names_by_handle(&self, conversation: &PendingConversation) -> HashMap<String, String> {
         let mut names = HashMap::new();
         for message in &conversation.messages {
-            if let Some(name) = message
-                .sender_display_name
-                .as_deref()
-                .and_then(ir::trimmed)
-                .filter(|_| !message.sender_identity.is_empty())
+            if let Some((identity, name)) = message
+                .sender_identity()
+                .zip(message.sender.display_name.as_deref().and_then(ir::trimmed))
             {
                 names
-                    .entry(message.sender_identity.clone())
+                    .entry(identity.to_string())
                     .or_insert_with(|| name.to_string());
             }
             if let Some(name) = sbr::contact_name(&self.row(message).contact_name, self.kind) {
@@ -609,7 +610,7 @@ fn to_document(
         mut document,
         tally,
         kept,
-    } = pending_to_document(&pending.chat_id, &pending, &hooks);
+    } = project_pending(&pending.chat_id, &pending, &hooks);
     report.sent += tally.sent;
     report.received += tally.received;
     report.duplicates_dropped += tally.duplicates;

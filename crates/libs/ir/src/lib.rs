@@ -37,7 +37,7 @@ pub use identity::{
 pub use projection::{
     PendingReply, ProjectedRole, Projection, ProjectionHooks, ProjectionTally, SortKeyUnit,
     default_message_kind, default_participants, display_names_for_handles, ensure_conversation,
-    message_time, pending_to_document, prepare_conversation,
+    message_time, prepare_conversation, project_pending,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
@@ -901,7 +901,7 @@ impl ConversationHeader {
 /// Intermediate message before conversion to [`Message`].
 ///
 /// Exporters parse vendor formats into these, then convert to
-/// [`ConversationDocument`] through the shared [`pending_to_document`].
+/// [`ConversationDocument`] through the shared [`project_pending`].
 /// Exporter-specific metadata goes in [`Self::extra`].
 #[derive(Debug, Clone)]
 pub struct PendingMessage {
@@ -909,10 +909,10 @@ pub struct PendingMessage {
     pub sort_key: i64,
     /// Whether the owner sent the message.
     pub is_from_me: bool,
-    /// Identity of the sender (the owner's identity when `is_from_me`).
-    pub sender_identity: String,
-    /// Display name of the sender; `None` when the source has none.
-    pub sender_display_name: Option<String>,
+    /// Who sent the message, as the source names them. The projection
+    /// gives an outgoing message the owner as its sender, so an exporter
+    /// leaves this empty for one.
+    pub sender: Sender,
     /// Plain-text body; never includes attachment data.
     pub text: String,
     /// Relative paths to staged attachment files.
@@ -922,6 +922,15 @@ pub struct PendingMessage {
 }
 
 impl PendingMessage {
+    /// The sender's identity, or `None` when the source names none or an
+    /// empty one.
+    pub fn sender_identity(&self) -> Option<&str> {
+        self.sender
+            .identity
+            .as_deref()
+            .filter(|identity| !identity.is_empty())
+    }
+
     /// Read an exporter-specific string field from [`Self::extra`].
     pub fn extra_str(&self, key: &str) -> &str {
         self.extra.get(key).map_or("", String::as_str)
@@ -1174,8 +1183,7 @@ mod pending_message_tests {
         let message = PendingMessage {
             sort_key: 0,
             is_from_me: false,
-            sender_identity: String::new(),
-            sender_display_name: None,
+            sender: crate::Sender::default(),
             text: String::new(),
             attachments: Vec::new(),
             extra: BTreeMap::from([
