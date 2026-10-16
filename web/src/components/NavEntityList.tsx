@@ -80,7 +80,7 @@ export default function NavEntityList({
     try {
       const next = await actions.rename(from, to);
       setRenameFor(null);
-      if (openSlug === slug(from)) {
+      if (openName === from) {
         navigate(slugPath(copy.routeBase, slug(next)));
       }
     } catch (err) {
@@ -93,7 +93,7 @@ export default function NavEntityList({
     try {
       await actions.remove(name);
       setDeleteFor(null);
-      if (openSlug === slug(name)) {
+      if (openName === name) {
         navigate(copy.fallbackRoute);
       }
     } catch (err) {

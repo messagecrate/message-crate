@@ -164,6 +164,19 @@ describe("NavEntityList navigation", () => {
     expect(screen.getByTestId("location").textContent).toBe("/contacts");
   });
 
+  it("falls back after deleting the group being viewed at a slug in another case", async () => {
+    routes.deleteContactGroup.mockResolvedValue(undefined);
+    const user = setupUser();
+    renderGroups("/group/family", ["Family"]);
+
+    await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await settle();
+    expect(screen.getByTestId("location").textContent).toBe("/contacts");
+  });
+
   it("follows a renamed tag to its new slug when viewing that tag's page", async () => {
     routes.updateMessageTag.mockResolvedValue({ id: 1, name: "Vacation" });
     const user = setupUser();
