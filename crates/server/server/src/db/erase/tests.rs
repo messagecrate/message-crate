@@ -291,9 +291,9 @@ async fn deleting_an_account_leaves_no_deleted_text_in_the_file_or_its_log() {
 }
 
 /// An Edit load deletes for good an identity its file no longer lists and
-/// nothing else uses, then clears the log (#2981). Clearing the log also
-/// takes out the name the same load replaced, which an Append load's rename
-/// leaves there: a rename is not a delete for good.
+/// nothing else uses, then clears the log, which also takes out the name the
+/// same load replaced (#2981). The test checks both. An Append load's rename
+/// leaves the old name in the log, because a rename is not a delete for good.
 #[tokio::test]
 async fn an_edit_load_leaves_no_trace_of_an_identity_it_removed_or_a_name_it_replaced() {
     const OLD_NAME: &str = "Qzoldnameocelot";

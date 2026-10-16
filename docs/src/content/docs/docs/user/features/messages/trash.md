@@ -94,12 +94,13 @@ The button is disabled on the `demo` account.
 
 Deleting a conversation or a contact from Trash, **Empty Trash**, **Delete all messages**, deleting an account, and an **Edit** load of an [address book](/docs/user/features/settings/account-and-profile/#address-book) each erase the deleted text from the database's files, not only from the screens.
 The server writes zeros over the deleted rows and the space they freed and clears the write-ahead log, the `messagecrate.db-wal` file beside the database.
-When the delete removes messages, it also writes the search index again without their words.
+Each of them except deleting a contact from Trash and an **Edit** load also writes the search index again without the deleted words.
 A copy of the database's files made afterwards holds none of the deleted text.
 
 Does deleting take longer on a large Message Crate?
 
-A delete that removes messages takes up to about a second longer on a Message Crate of 636,000 messages, because the search index is written again whole each time.
+Yes, by up to about a second on a Message Crate of 636,000 messages, because the search index is written again whole each time.
+Deleting a contact from Trash and an **Edit** load leave the search index as it is, so they take no longer.
 
 When another request is reading the database at that moment, the write-ahead log can't be cleared at once.
 The server tries again every 30 seconds until it is cleared, and stopping the server clears it as well.
