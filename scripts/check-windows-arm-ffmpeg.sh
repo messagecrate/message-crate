@@ -10,9 +10,10 @@
 # its SHA-256, unpacks it and checks the program's SHA-256, as
 # src-tauri/src/tool_downloads/fetch.rs does. Then it asks ffprobe about
 # VIDEO with the arguments of probe_media in crates/libs/media/src/probe.rs,
-# converts VIDEO with ffmpeg the two ways the media pass encodes a video in
-# crates/libs/media/src/process.rs (H.264 for Convert, HEVC for Compress),
-# and asks ffprobe what each wrote. Those arguments are copies: a change to
+# converts VIDEO with ffmpeg the way the Media Stage encodes a video for
+# Convert media (convert_video in crates/libs/media/src/process.rs, H.264)
+# and for Convert & Compress media (compress_video, HEVC), and asks ffprobe
+# what each wrote. Those arguments are copies: a change to
 # them there is a change here too, and the comments beside them say so.
 #
 # Usage: scripts/check-windows-arm-ffmpeg.sh VIDEO
@@ -105,7 +106,7 @@ fetch "$ffprobe_asset" "$ffprobe_gz_sha" "$ffprobe_sha" "$work/ffprobe.exe"
 "$work/ffmpeg.exe" -hide_banner -version | head -n 1
 "$work/ffprobe.exe" -hide_banner -version | head -n 1
 
-# The question the media pass asks about a video before it converts it.
+# The question the Media Stage asks about a video before it converts it.
 probe() {
   "$work/ffprobe.exe" -v error -select_streams v:0 \
     -show_entries stream=codec_name,width,height,avg_frame_rate,bit_rate \
@@ -132,11 +133,12 @@ convert() {
   esac
 }
 
-# Convert's re-encode (convert_video): H.264 at 30 frames a second, AAC.
+# Convert media's re-encode (convert_video): H.264 at 30 frames a second, AAC.
 convert converted h264 -vf fps=30 -c:v libx264 -crf 23 -preset medium \
   -c:a aac -b:a 128k -movflags +faststart
 
-# Compress's encode (compress_video) at its 720p setting: HEVC, AAC.
+# Convert & Compress media's encode (compress_video) at its 720p setting:
+# HEVC, AAC. Its H.264 fallback uses the libx264 encoder checked above.
 convert compressed hevc \
   -vf "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'" \
   -c:v libx265 -crf 22 -preset medium -tag:v hvc1 -c:a aac -b:a 128k \

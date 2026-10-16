@@ -143,7 +143,7 @@ jobs:
   # (src-tauri/src/tool_downloads/pins.rs), which Windows runs under
   # emulation. The script downloads exactly those files, checks their pinned
   # SHA-256 as the app does, asks ffprobe about a committed video and
-  # converts it with ffmpeg the two ways the media pass encodes video.
+  # converts it with ffmpeg the way the Media Stage does, to H.264 and HEVC.
   windows-arm-ffmpeg:
     name: ffmpeg on Windows on ARM
     needs: changed
