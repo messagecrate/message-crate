@@ -28,10 +28,10 @@ function resolveAttachmentMedia(
   mimeType: string | null;
 } {
   const preferConverted = mediaVariant() === "converted";
-  if (preferConverted && a.derivedAssetsPath) {
+  if (preferConverted && a.previewAssetsPath) {
     return {
-      url: `/api/assets_converted/${encodeURIComponent(source)}/${a.derivedAssetsPath}`,
-      mimeType: a.derivedMimeType ?? a.mimeType,
+      url: `/api/assets_converted/${encodeURIComponent(source)}/${a.previewAssetsPath}`,
+      mimeType: a.previewMimeType ?? a.mimeType,
     };
   }
   if (a.assetsPath) {
