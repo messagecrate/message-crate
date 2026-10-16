@@ -124,7 +124,7 @@ fn a_config_with_no_settings_loads_the_documented_defaults() {
     assert_eq!(server.bind, "127.0.0.1:8080");
     assert_eq!(server.asset_part_size, 16_777_216);
     assert_eq!(server.body_stall_secs, 60);
-    assert_eq!(server.body_piece_secs, 300);
+    assert_eq!(server.body_total_secs, 300);
     assert!(!server.openapi_ui);
     assert!(server.cors_origins.is_empty());
     assert_eq!(server.transcode_stall_secs, 120);
@@ -210,20 +210,20 @@ fn a_config_that_still_sets_asset_max_bytes_is_refused_and_told_where_the_limit_
 #[test]
 fn a_config_sets_the_body_time_limits() {
     let cfg = load_text(
-        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nbody_stall_secs = 7\nbody_piece_secs = 45\n",
+        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nbody_stall_secs = 7\nbody_total_secs = 45\n",
     )
     .unwrap();
 
     let server = cfg.require_server().unwrap();
     assert_eq!(server.body_stall_secs, 7);
-    assert_eq!(server.body_piece_secs, 45);
+    assert_eq!(server.body_total_secs, 45);
 }
 
 /// A limit of 0 would refuse every upload at once, so the server refuses
 /// the file, naming the key.
 #[test]
 fn a_body_time_limit_of_zero_is_refused_naming_the_key() {
-    for key in ["body_stall_secs", "body_piece_secs"] {
+    for key in ["body_stall_secs", "body_total_secs"] {
         let cfg = load_text(&format!(
             "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\n{key} = 0\n"
         ))

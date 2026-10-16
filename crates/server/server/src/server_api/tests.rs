@@ -470,13 +470,13 @@ async fn the_server_states_its_body_time_limits() {
     let mut state = fixture.state.clone();
     state.body_time_limits = crate::request_body::BodyTimeLimits {
         stall: std::time::Duration::from_secs(7),
-        piece: std::time::Duration::from_secs(45),
+        total: std::time::Duration::from_secs(45),
     };
 
     let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
 
     assert_eq!(server["body_stall_secs"], 7);
-    assert_eq!(server["body_piece_secs"], 45);
+    assert_eq!(server["body_total_secs"], 45);
 }
 
 /// The owner changes the limit, and `GET /v1/server` reports the new number

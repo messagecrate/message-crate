@@ -100,9 +100,9 @@ pub struct Server {
     /// Seconds a whole request body may take to arrive, from the start of
     /// the read, before the server stops reading it and answers
     /// `408 Request Timeout` (`body-stalled`): the config file's
-    /// `[server] body_piece_secs`, 300 unless it sets one. The desktop
+    /// `[server] body_total_secs`, 300 unless it sets one. The desktop
     /// app's Upload sizes its wait for each upload from it.
-    pub body_piece_secs: u64,
+    pub body_total_secs: u64,
 }
 
 /// Body for claiming a Message Crate.
@@ -157,7 +157,7 @@ pub async fn get_server(
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
         body_stall_secs: body_time_limits.stall.as_secs(),
-        body_piece_secs: body_time_limits.piece.as_secs(),
+        body_total_secs: body_time_limits.total.as_secs(),
     }))
 }
 

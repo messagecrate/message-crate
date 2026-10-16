@@ -31,7 +31,7 @@ assets_converted_dir = "assets_converted"
 [server]
 bind = "127.0.0.1:8080"
 # Largest multipart part. Default 16 MiB, so a whole part arrives inside the
-# default body_piece_secs at about 0.45 Mbit/s (keep under ~100 MB for
+# default body_total_secs at about 0.45 Mbit/s (keep under ~100 MB for
 # Cloudflare). The attachment size limit has no key here: the owner sets it
 # under Server Settings in the app (512 MiB until then). When the limit is
 # smaller than this part size, the server uses parts the size of the limit.
@@ -41,11 +41,11 @@ bind = "127.0.0.1:8080"
 # arriving, and seconds for the whole body. Every body is held to them. A
 # body that meets either is refused (408 Request Timeout, body-stalled), and
 # sending the request again can succeed. For an upload, running the import
-# again continues it. An attachment upload nothing has been written to for body_stall_secs, with no request to
-# it running, is abandoned, and the server removes it. Each must be greater
-# than 0.
+# again continues it. An attachment upload nothing has been written to for
+# body_stall_secs, with no request to it running, is abandoned, and the
+# server removes it. Each must be greater than 0.
 # body_stall_secs = 60
-# body_piece_secs = 300
+# body_total_secs = 300
 
 # Seconds a video or audio conversion may go without moving forward in the
 # file before ffmpeg is stopped. Default 120. Must be greater than 0.

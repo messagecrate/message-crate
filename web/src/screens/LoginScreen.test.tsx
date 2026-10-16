@@ -133,7 +133,7 @@ function serveAt(answer: (address: string) => Answer) {
       schema_fingerprint: 1,
       asset_max_bytes: 1024,
       body_stall_secs: 60,
-      body_piece_secs: 300,
+      body_total_secs: 300,
     };
   });
 }

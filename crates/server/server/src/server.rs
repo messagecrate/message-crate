@@ -59,8 +59,8 @@ pub struct AppState {
     pub(crate) imports: ImportState,
     /// What an attachment upload holds: the per-file lock and the part size.
     pub(crate) assets: AssetState,
-    /// How long an upload body may go with no byte arriving, and may take in
-    /// all, from `[server] body_stall_secs` and `body_piece_secs`.
+    /// How long a request body may go with no byte arriving, and may take in
+    /// all, from `[server] body_stall_secs` and `body_total_secs`.
     /// `GET /v1/server` states them, so the Upload sizes its own wait from
     /// what the server holds.
     pub(crate) body_time_limits: BodyTimeLimits,

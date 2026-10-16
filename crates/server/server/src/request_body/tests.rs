@@ -102,7 +102,7 @@ async fn a_limited_body_streamed_to_a_file_over_the_cap_is_too_large() {
 /// configured limits are the ones applied.
 const TEST_BODY_TIMES: BodyTimeLimits = BodyTimeLimits {
     stall: std::time::Duration::from_secs(7),
-    piece: std::time::Duration::from_secs(45),
+    total: std::time::Duration::from_secs(45),
 };
 
 /// The defaults are the ones `config-and-accounts.md` states, and an
@@ -111,11 +111,11 @@ const TEST_BODY_TIMES: BodyTimeLimits = BodyTimeLimits {
 fn the_body_time_limits_come_from_the_server_section() {
     let defaults = BodyTimeLimits::of(&crate::config::ServerConfig::default());
     assert_eq!(defaults.stall.as_secs(), 60);
-    assert_eq!(defaults.piece.as_secs(), 300);
+    assert_eq!(defaults.total.as_secs(), 300);
 
     let set = crate::config::ServerConfig {
         body_stall_secs: 7,
-        body_piece_secs: 45,
+        body_total_secs: 45,
         ..crate::config::ServerConfig::default()
     };
     assert_eq!(BodyTimeLimits::of(&set), TEST_BODY_TIMES);
@@ -162,7 +162,7 @@ async fn a_body_that_stops_arriving_is_body_stalled_at_the_stall_limit() {
 /// cannot hold an import slot for good either. Time is paused, so each wait
 /// passes as soon as nothing else can run.
 #[tokio::test(start_paused = true)]
-async fn a_body_that_trickles_is_body_stalled_at_the_piece_limit() {
+async fn a_body_that_trickles_is_body_stalled_at_the_total_limit() {
     let dir = TempDir::new().unwrap();
     let trickle = futures_util::stream::unfold((), |()| async {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -177,7 +177,7 @@ async fn a_body_that_trickles_is_body_stalled_at_the_piece_limit() {
         .await
         .unwrap_err();
 
-    assert_eq!(started.elapsed(), TEST_BODY_TIMES.piece);
+    assert_eq!(started.elapsed(), TEST_BODY_TIMES.total);
     assert_eq!(
         error.problem_type(),
         Some(ProblemType::BodyStalled),
@@ -225,7 +225,7 @@ async fn every_bounded_read_answers_body_stalled() {
 /// Send `request` through the server's layers around `routes`, with the
 /// test's body time limits, and return the answer's status and text, and
 /// how long the answer took on the paused clock.
-async fn answer_with_test_upload_times(
+async fn answer_with_test_body_times(
     routes: Router<AppState>,
     request: axum::http::Request<axum::body::Body>,
 ) -> (StatusCode, String, std::time::Duration) {
@@ -247,15 +247,15 @@ async fn answer_with_test_upload_times(
             response.into_body().collect().await.unwrap().to_bytes(),
         )
     };
-    let (status, bytes) = tokio::time::timeout(TEST_BODY_TIMES.piece * 4, answer)
+    let (status, bytes) = tokio::time::timeout(TEST_BODY_TIMES.total * 4, answer)
         .await
         .expect("the server was still reading the body long after every limit");
     let took = started.elapsed();
     (status, String::from_utf8(bytes.to_vec()).unwrap(), took)
 }
 
-/// A JSON body that stops arriving part-way is held to the upload time
-/// limits as an upload's is, and answers `body-stalled` at the stall limit
+/// A JSON body that stops arriving part-way is held to the body time
+/// limits, as an upload's body is, and answers `body-stalled` at the stall limit
 /// (#2100). Before, any body but an upload's could take as long as its
 /// client liked, holding its connection all the while. Time is paused, so
 /// the limit passes as soon as nothing else can run.
@@ -273,7 +273,7 @@ async fn a_json_body_that_stops_arriving_is_body_stalled_at_the_stall_limit() {
         .body(axum::body::Body::from_stream(stalled))
         .unwrap();
 
-    let (status, text, took) = answer_with_test_upload_times(routes, request).await;
+    let (status, text, took) = answer_with_test_body_times(routes, request).await;
 
     // The timer wheel counts whole milliseconds, and the clock was paused
     // part-way through one.
@@ -300,7 +300,7 @@ async fn an_import_batch_body_is_timed_from_its_own_read_not_its_arrival() {
     let routes = Router::new().route(
         "/v1/imports/{id}/batches",
         axum::routing::post(|request: axum::extract::Request| async move {
-            tokio::time::sleep(TEST_BODY_TIMES.piece * 2).await;
+            tokio::time::sleep(TEST_BODY_TIMES.total * 2).await;
             read_body_limited(request.into_body(), 1024)
                 .await
                 .map(|body| body.len().to_string())
@@ -316,7 +316,7 @@ async fn an_import_batch_body_is_timed_from_its_own_read_not_its_arrival() {
         .body(axum::body::Body::from_stream(line))
         .unwrap();
 
-    let (status, text, _) = answer_with_test_upload_times(routes, request).await;
+    let (status, text, _) = answer_with_test_body_times(routes, request).await;
 
     assert_eq!(status, StatusCode::OK, "{text}");
     assert_eq!(text, "3");

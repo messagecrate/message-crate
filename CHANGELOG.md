@@ -1081,7 +1081,7 @@ carry their date on the heading.
   after a minute with nothing arriving, as before, or after 5 minutes in
   all, down from 10, so a stalled import holds up other imports for less
   time. The owner can change both times in the server's config file with
-  `body_stall_secs` and `body_piece_secs`, and the desktop app waits as
+  `body_stall_secs` and `body_total_secs`, and the desktop app waits as
   long as the server it imports into says. The same limits hold for
   attachments, which now go up in parts of 16 MiB, down from 64 MiB, so a
   large photo or video arrives in time on the same slow connection a part of
@@ -1618,7 +1618,7 @@ carry their date on the heading.
   good, and any number of such connections could pile up. The server now
   closes a connection that sends no request for 30 seconds, holds at most
   256 open at once, and stops reading any request that stalls or runs past
-  the time limits `body_stall_secs` and `body_piece_secs` set, not only an
+  the time limits `body_stall_secs` and `body_total_secs` set, not only an
   upload. This guards against a misbehaving device on your network. It does
   not make the server safe to put on the internet (#2100).
 - 2026-10-12: **Deleting for good erases the text from the database's

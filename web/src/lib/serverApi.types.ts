@@ -5531,21 +5531,21 @@ export interface components {
             asset_max_bytes: number;
             /**
              * Format: int64
-             * @description Seconds a whole request body may take to arrive, from the start of
-             *     the read, before the server stops reading it and answers
-             *     `408 Request Timeout` (`body-stalled`): the config file's
-             *     `[server] body_piece_secs`, 300 unless it sets one. The desktop
-             *     app's Upload sizes its wait for each upload from it.
-             */
-            body_piece_secs: number;
-            /**
-             * Format: int64
              * @description Seconds a request body, such as an import batch, an attachment, or a
              *     part of one, may go with no byte arriving before the server stops
              *     reading it and answers `408 Request Timeout` (`body-stalled`): the config
              *     file's `[server] body_stall_secs`, 60 unless it sets one.
              */
             body_stall_secs: number;
+            /**
+             * Format: int64
+             * @description Seconds a whole request body may take to arrive, from the start of
+             *     the read, before the server stops reading it and answers
+             *     `408 Request Timeout` (`body-stalled`): the config file's
+             *     `[server] body_total_secs`, 300 unless it sets one. The desktop
+             *     app's Upload sizes its wait for each upload from it.
+             */
+            body_total_secs: number;
             /**
              * @description Whether the Demo Account exists and is not being built. While it
              *     does, the screen offers a way into it beside whatever `state` shows:

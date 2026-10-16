@@ -20105,7 +20105,7 @@
           "schema_fingerprint",
           "asset_max_bytes",
           "body_stall_secs",
-          "body_piece_secs"
+          "body_total_secs"
         ],
         "properties": {
           "asset_max_bytes": {
@@ -20114,16 +20114,16 @@
             "description": "The attachment size limit, in bytes: the largest asset the server\naccepts, as one `PUT` or as the declared total of a multipart upload.\nThe owner sets it in the server settings. An app reads it here before\nit prepares attachments for upload.",
             "minimum": 0
           },
-          "body_piece_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Seconds a whole request body may take to arrive, from the start of\nthe read, before the server stops reading it and answers\n`408 Request Timeout` (`body-stalled`): the config file's\n`[server] body_piece_secs`, 300 unless it sets one. The desktop\napp's Upload sizes its wait for each upload from it.",
-            "minimum": 0
-          },
           "body_stall_secs": {
             "type": "integer",
             "format": "int64",
             "description": "Seconds a request body, such as an import batch, an attachment, or a\npart of one, may go with no byte arriving before the server stops\nreading it and answers `408 Request Timeout` (`body-stalled`): the config\nfile's `[server] body_stall_secs`, 60 unless it sets one.",
+            "minimum": 0
+          },
+          "body_total_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds a whole request body may take to arrive, from the start of\nthe read, before the server stops reading it and answers\n`408 Request Timeout` (`body-stalled`): the config file's\n`[server] body_total_secs`, 300 unless it sets one. The desktop\napp's Upload sizes its wait for each upload from it.",
             "minimum": 0
           },
           "demo_account": {

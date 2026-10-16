@@ -262,7 +262,7 @@ current one, because that account reaches every other.
 - A body that the server stopped reading because it took too long is
   `408 Request Timeout` (`body-stalled`): a body that went `[server]
   body_stall_secs` (60) with no byte arriving, or was still arriving
-  `body_piece_secs` (300) after the read started. Every body is held to
+  `body_total_secs` (300) after the read started. Every body is held to
   the limits ([Connections](#connections)). Why: the connection failed, not the data, and
   `malformed-body` told the person their data was bad. The client is still
   there to read the answer, so the answer says that running the import
@@ -690,7 +690,7 @@ longer read once the body time limits pass. In detail:
   process gets by default, which the connections share with the database and
   the upload files.
 - Every request body is held to the body time limits, `[server]
-  body_stall_secs` (60) with no byte arriving and `body_piece_secs` (300)
+  body_stall_secs` (60) with no byte arriving and `body_total_secs` (300)
   for the whole body, and one that meets either answers `408 Request Timeout`
   (`body-stalled`). An import batch, an attachment and a part of one hold
   their bodies to the limits themselves, from when they start reading. The
@@ -1072,7 +1072,7 @@ What each reaches:
   body, and writes the body under the Data Directory
   (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
   that goes `[server] body_stall_secs` (60) with no byte arriving, or is
-  still arriving `body_piece_secs` (300) after the read started, ends the
+  still arriving `body_total_secs` (300) after the read started, ends the
   read with `408 Request Timeout` (`body-stalled`), which frees the slot.
   An attachment body and a part of one are held to the same two limits,
   though they take no slot, because each holds a connection and a file
@@ -1092,9 +1092,9 @@ What each reaches:
   a whole body held a slot that long
   ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
 - `GET /v1/server` states the two body time limits, in seconds, as
-  `body_stall_secs` and `body_piece_secs`, to any client. The desktop
+  `body_stall_secs` and `body_total_secs`, to any client. The desktop
   app's Upload reads them once it has logged in, and waits for the answer to
-  each batch, attachment or part for `body_piece_secs` plus 5 minutes for
+  each batch, attachment or part for `body_total_secs` plus 5 minutes for
   the server's wait for a slot and its save. Why: the limits are config
   keys, and an Upload that kept its own copy, as it once kept a 10-minute
   timeout written beside the server's, drifts from them. They are stated

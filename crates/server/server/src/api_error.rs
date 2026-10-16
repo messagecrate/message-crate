@@ -110,7 +110,7 @@ pub enum ApiError {
         /// The file's length in bytes.
         length: u64,
     },
-    /// `408 Request Timeout`: an upload body stopped arriving, or took too long to arrive.
+    /// `408 Request Timeout`: a request body stopped arriving, or took too long to arrive.
     BodyStalled(String),
     /// `503 Service Unavailable`: the server is stopping and refused work it had not started.
     ServerStopping(String),
