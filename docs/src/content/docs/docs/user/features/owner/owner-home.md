@@ -45,7 +45,7 @@ The Owner's row reads zero, because the Owner holds no messages.
 
 ## Server Settings
 
-**Server Settings** holds one switch, the attachment size limit, the space Import Runs take on this computer in the desktop app, the Demo Account, and three facts about the server.
+**Server Settings** holds one switch, the attachment size limit, the space the Staging Directory takes on this computer in the desktop app, the Demo Account, and three facts about the server.
 
 The switch is **Let anyone who can reach this server create their own account**.
 
@@ -67,10 +67,11 @@ An Import Run already under way keeps the limit it started with, so its Staging 
 
 ### Staging Directory on this computer
 
-In the desktop app, **Staging Directory on this computer** says how much disk space the Import Runs of every account take in the Staging Directory of the computer running the app.
+In the desktop app, **Staging Directory on this computer** says how much disk space the whole Staging Directory takes on the computer running the app.
+That is everything in the directory **Settings → System** names, the Import Runs of every account that imports from this computer included, into this Message Crate or another, and any run still staged under an earlier setting.
 The Staging Directory is on that computer, so a browser doesn't show it.
 The size is measured when Server Settings opens.
-Each account sees its own share under [Settings → System](/docs/user/features/settings/system/#space-used).
+Each account sees what its own Import Runs take under [Settings → System](/docs/user/features/settings/system/#space-used).
 
 ### Demo Account
 

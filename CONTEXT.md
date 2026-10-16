@@ -565,8 +565,8 @@ closed; the run's log says so. A run's
 directory has no term of its own: on screen it is "this Import Run's
 directory". Exports and Converts never use it; they work in the Export
 Directory. Settings → System shows an account the space its own runs take in
-it on that computer, and Server Settings shows the owner the space every
-account's runs take. It is `staging` in the Message Crate Directory unless Settings
+it on that computer, and Server Settings shows the owner the space the whole
+directory takes. It is `staging` in the Message Crate Directory unless Settings
 name another directory.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
 

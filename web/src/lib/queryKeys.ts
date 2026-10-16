@@ -209,14 +209,19 @@ export const keys = {
   /** The Staging Directory and its default, from the desktop process; used as it is, like `desktopToolsStatus`. */
   desktopStagingDirectory: { all: ["desktop", "staging-directory"] as const },
   /**
-   * The disk space Import Runs take in the Staging Directory on this
-   * computer: one account's on one Message Crate, or every run's. Named with
-   * the account and the Message Crate themselves, since the desktop process
-   * answers for whichever the window names.
+   * The disk space the Staging Directory takes on this computer, from the
+   * desktop process. It belongs to this computer, so it is used as it is,
+   * like `desktopToolsStatus` (ADR 0002). `of` is one account's Import Runs
+   * on one Message Crate, named with the account and the Message Crate
+   * themselves, since the desktop process answers for whichever the window
+   * names. `unknown` holds nothing: it is the key while the window does not
+   * yet know which account on which Message Crate it is, so no entry looks
+   * like one an account asked for. `all` is the whole directory.
    */
   desktopStagingBytes: {
     of: (accountId: number, messageCrateId: string) =>
       ["desktop", "staging-bytes", accountId, messageCrateId] as const,
+    unknown: ["desktop", "staging-bytes", "unknown"] as const,
     all: ["desktop", "staging-bytes", "all"] as const,
   },
   /**

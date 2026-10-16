@@ -50,22 +50,30 @@ function UsageLine({
  * The disk space the signed-in account's Import Runs take in the Staging
  * Directory on this computer. Desktop app only: the directory is on the
  * computer running the app, and a browser cannot see it.
+ *
+ * Which runs are the account's depends on the Message Crate it is signed in
+ * to, so a server that does not say which it is leaves nothing to measure,
+ * and the line says why.
  */
 export function AccountStagingUsage({ className }: { className: string }) {
   const { accountId } = useAuth();
-  const messageCrateId = useServerInfo().data?.id;
+  const server = useServerInfo();
+  const messageCrateId = server.data?.id;
   const desktop = canMeasureStagingDirectory(isTauri());
+  const known = accountId !== null && messageCrateId !== undefined;
   const usage = useQuery({
-    queryKey: keys.desktopStagingBytes.of(accountId ?? 0, messageCrateId ?? ""),
-    queryFn: () => invokeAccountStagingBytes(accountId ?? 0, messageCrateId ?? ""),
-    enabled: desktop && accountId !== null && messageCrateId !== undefined,
+    queryKey: known
+      ? keys.desktopStagingBytes.of(accountId, messageCrateId)
+      : keys.desktopStagingBytes.unknown,
+    queryFn: () => (known ? invokeAccountStagingBytes(accountId, messageCrateId) : 0),
+    enabled: desktop && known,
     ...MEASURED_ONCE,
   });
   if (!desktop) return null;
   return (
     <UsageLine
       bytes={usage.data}
-      error={usage.error}
+      error={usage.error ?? server.error}
       says={(size) => `Your Import Runs on this computer take up ${size}.`}
       className={className}
     />
@@ -73,10 +81,11 @@ export function AccountStagingUsage({ className }: { className: string }) {
 }
 
 /**
- * The disk space every Import Run on this computer takes in the Staging
- * Directory, for every account, for the owner. Desktop app only.
+ * The disk space the whole Staging Directory takes on this computer, for
+ * the owner on Server Settings: every account's Import Runs, and anything
+ * else in it. Desktop app only.
  */
-export function AllStagingUsage({ className }: { className: string }) {
+export function AllStagingUsage() {
   const desktop = canMeasureStagingDirectory(isTauri());
   const usage = useQuery({
     queryKey: keys.desktopStagingBytes.all,
@@ -86,11 +95,21 @@ export function AllStagingUsage({ className }: { className: string }) {
   });
   if (!desktop) return null;
   return (
-    <UsageLine
-      bytes={usage.data}
-      error={usage.error}
-      says={(size) => `Import Runs of every account take up ${size} on this computer.`}
-      className={className}
-    />
+    <section className="mt-4 rounded-xl border border-border bg-elevated p-4">
+      <h4 className="m-0 text-[0.875rem] font-semibold text-text">
+        Staging Directory on this computer
+      </h4>
+      <UsageLine
+        bytes={usage.data}
+        error={usage.error}
+        says={(size) => `The Staging Directory takes up ${size} on this computer.`}
+        className="mt-2 text-[0.813rem]"
+      />
+      <p className="mt-2 mb-0 text-[0.75rem] text-muted">
+        It holds the Import Runs of every account that imports from this computer, into this Message
+        Crate or another. Measured when this page opens. Each account sees what its own Import Runs
+        take in Settings → System.
+      </p>
+    </section>
   );
 }

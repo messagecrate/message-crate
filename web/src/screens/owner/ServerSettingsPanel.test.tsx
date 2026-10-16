@@ -142,9 +142,10 @@ describe("ServerSettingsPanel attachment size limit", () => {
 });
 
 describe("ServerSettingsPanel Staging Directory", () => {
-  // #3087: the owner sees how much space every account's Import Runs take
-  // in the Staging Directory on the computer running the desktop app.
-  it("says how much space every account's Import Runs take on this computer", async () => {
+  // #3087: the owner sees how much space the whole Staging Directory takes,
+  // every account's Import Runs included, on the computer running the
+  // desktop app.
+  it("says how much space the whole Staging Directory takes on this computer", async () => {
     desktop.isTauri = true;
     allStagingBytes.mockResolvedValue(3 * 1024 * MIB);
     renderPanel();
@@ -152,7 +153,7 @@ describe("ServerSettingsPanel Staging Directory", () => {
 
     expect(screen.getByText("Staging Directory on this computer")).toBeTruthy();
     expect(
-      screen.getByText("Import Runs of every account take up 3.0 GB on this computer."),
+      screen.getByText("The Staging Directory takes up 3.0 GB on this computer."),
     ).toBeTruthy();
   });
 

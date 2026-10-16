@@ -373,9 +373,9 @@ pub fn account_staging_bytes(
     directories.bytes_of(&args)
 }
 
-/// The disk space every Import Run on this computer takes in the Staging
-/// Directory, for every account, in bytes, measured now. Owner Home shows it
-/// (#3087).
+/// The disk space the whole Staging Directory takes on this computer, in
+/// bytes, measured now ([`RunDirectories::bytes_of_all`]). Server Settings
+/// shows it to the owner (#3087).
 ///
 /// # Errors
 ///

@@ -30,6 +30,8 @@ const desktopStaging = vi.hoisted(() => ({
 const setStagingDirectory = vi.hoisted(() => vi.fn());
 /** What the desktop process measures for the signed-in account's Import Runs. */
 const accountStagingBytes = vi.hoisted(() => vi.fn());
+/** What `GET /v1/server` answers. */
+const serverState = vi.hoisted(() => vi.fn());
 const invokeOpenMessageCrateDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
@@ -44,7 +46,7 @@ vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
-  getServerState: async () => ({ id: "3f2a9c" }),
+  getServerState: () => serverState(),
 }));
 
 vi.mock("../../lib/tauriCheck", () => ({
@@ -95,6 +97,8 @@ beforeEach(() => {
   desktopStaging.readError = null;
   accountStagingBytes.mockReset();
   accountStagingBytes.mockResolvedValue(0);
+  serverState.mockReset();
+  serverState.mockResolvedValue({ id: "3f2a9c" });
   setStagingDirectory.mockReset();
   setStagingDirectory.mockImplementation(async (root: string) => {
     // The desktop process refuses a relative directory, as resolve_staging_root does.
@@ -135,6 +139,16 @@ describe("SystemSection", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Could not measure the Staging Directory. Could not read staging.json",
     );
+  });
+
+  it("says why nothing is measured when the server does not say which Message Crate it is", async () => {
+    serverState.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<SystemSection />);
+    await settle();
+
+    expect(accountStagingBytes).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not measure the Staging Directory.");
+    expect(screen.queryByText("Measuring…")).toBeNull();
   });
 
   it("measures nothing in a browser", async () => {
