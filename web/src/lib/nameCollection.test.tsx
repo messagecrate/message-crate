@@ -182,6 +182,34 @@ describe("useNameCollectionActions", () => {
     expect(routes.create).not.toHaveBeenCalled();
   });
 
+  // The server folds ASCII letters only (`to_ascii_lowercase` in
+  // `named_membership.rs`), so `UNKNOWN` with the Kelvin sign (U+212A) in
+  // place of `K` is a name it accepts. The form must not refuse it.
+  it("folds only ASCII letters before checking a reserved name, as the server does", async () => {
+    const routes = fakeRoutes();
+    const kelvin = "UNKNOWN";
+    routes.create.mockResolvedValue({ id: 4, name: kelvin });
+    const collection = createNameCollection({
+      routes,
+      key: keys.contactGroups.all,
+      chips: [],
+      label: "group",
+      forName: (name) => `group:${name}`,
+      reserved: {
+        label: "Contact Group",
+        reserved: ["unknown"],
+        special: [{ name: "unknown", message: "Unknown is reserved" }],
+      },
+    });
+    expect(collection.isReserved("UNKNOWN")).toBe(true);
+    expect(collection.reservedError("UNKNOWN")).toBe("Unknown is reserved");
+    expect(collection.isReserved(kelvin)).toBe(false);
+    expect(collection.reservedError(kelvin)).toBe(`"${kelvin}" is a reserved Contact Group`);
+    const { result } = renderHook(() => useNameCollectionActions(collection), { wrapper });
+    await expect(result.current.create(kelvin)).resolves.toBe(kelvin);
+    expect(routes.create).toHaveBeenCalledWith({ name: kelvin });
+  });
+
   it("answers the created name and marks its own list stale", async () => {
     const routes = fakeRoutes();
     routes.create.mockResolvedValue({ id: 3, name: "Work" });

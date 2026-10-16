@@ -518,6 +518,12 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-16: **A Contact Group or Message Tag name the server takes is no
+  longer refused by the form.** The form lower-cased every letter before it
+  checked a name against the reserved names, while the server lower-cases
+  only the letters A to Z. So a name such as `UNKNOWN` written with the
+  Kelvin sign in place of `K` was refused as reserved on the website and
+  taken by the server. Both now lower-case the same way (#3037).
 - 2026-10-16: **A display name the server refuses after you leave Settings
   says so.** A display name typed on Settings → Profile, or on an account's
   Profile in Owner Home, saves when you leave Settings for another screen.

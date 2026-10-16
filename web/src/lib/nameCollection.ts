@@ -98,12 +98,23 @@ export type NameCollection = {
   listQuery: (name: string | "none" | null, search: string) => string;
 };
 
+/**
+ * The key a name is looked up by among the reserved names: trimmed, with
+ * ASCII letters lower-cased and every other character as it is. The server
+ * folds the same way (`to_ascii_lowercase` in `named_membership.rs`), so a
+ * name such as `UNKNOWN` spelled with the Kelvin sign (U+212A), which
+ * `toLowerCase` would turn into `unknown`, is refused by neither side.
+ */
+function reservedKey(name: string): string {
+  return name.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+
 export function createNameCollection(config: NameCollectionConfig): NameCollection {
   const reservedSet = new Set(config.reserved.reserved);
-  const isReserved = (name: string) => reservedSet.has(name.trim().toLowerCase());
+  const isReserved = (name: string) => reservedSet.has(reservedKey(name));
   // The sentence the server answers for a reserved name, word for word.
   const reservedError = (name: string) => {
-    const key = name.trim().toLowerCase();
+    const key = reservedKey(name);
     const special = config.reserved.special.find((s) => s.name === key);
     return special?.message ?? `"${name.trim()}" is a reserved ${config.reserved.label}`;
   };
