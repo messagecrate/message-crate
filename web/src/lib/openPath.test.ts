@@ -20,8 +20,6 @@ describe("openPathInExplorer", () => {
   });
 
   it("asks the desktop app to open the trimmed path alone", async () => {
-    // The desktop process checks the path against the run directories it
-    // made; a root from the window would be the setting as it is now.
     const { openPathInExplorer } = await import("./openPath");
     await openPathInExplorer("  /home/sam/message-crate/staging ");
     expect(invokeOpenPath).toHaveBeenCalledExactlyOnceWith("/home/sam/message-crate/staging");

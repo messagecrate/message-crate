@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { nth } from "../../test/nth";
-import { invokeOpenPath, invokeSaveDownload, invokeSaveFile } from "./fs";
+import { invokeOpenPath, invokeSaveDownload, invokeSaveFile, pickPath } from "./fs";
 
 const invoke = vi.fn();
+const openDialog = vi.fn();
+const saveDialog = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
+}));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: (...args: unknown[]) => openDialog(...args),
+  save: (...args: unknown[]) => saveDialog(...args),
 }));
 
 describe("invokeSaveDownload", () => {
@@ -49,6 +55,7 @@ describe("invokeOpenPath", () => {
 describe("invokeSaveFile", () => {
   beforeEach(() => {
     invoke.mockReset();
+    saveDialog.mockReset();
   });
 
   it("sends the bytes as the raw body and the name as a header, with no path", async () => {
@@ -63,6 +70,8 @@ describe("invokeSaveFile", () => {
     expect(body).toBeInstanceOf(Uint8Array);
     expect([...(body as Uint8Array)]).toEqual([1, 2, 255]);
     expect(options).toEqual({ headers: { "file-name": '"Caf\\u00e9 photo.jpg"' } });
+    // The desktop app shows the Save dialog itself; the window opens none.
+    expect(saveDialog).not.toHaveBeenCalled();
   });
 
   it("escapes a name outside ASCII, an emoji's two halves included, so it fits in a header", async () => {
@@ -79,5 +88,46 @@ describe("invokeSaveFile", () => {
     invoke.mockResolvedValue(false);
 
     await expect(invokeSaveFile(new Uint8Array([1]), "address-book.csv")).resolves.toBe(false);
+  });
+});
+
+describe("pickPath", () => {
+  beforeEach(() => {
+    openDialog.mockReset();
+  });
+
+  it("asks the dialog for one directory when directory is set", async () => {
+    openDialog.mockResolvedValue("/backups");
+
+    await expect(pickPath({ directory: true })).resolves.toBe("/backups");
+
+    expect(openDialog).toHaveBeenCalledExactlyOnceWith({ directory: true, multiple: false });
+  });
+
+  it("asks the dialog for one file with the given filters", async () => {
+    openDialog.mockResolvedValue("/backups/chat.db");
+    const filters = [{ name: "Messages database", extensions: ["db"] }];
+
+    await expect(pickPath({ filters })).resolves.toBe("/backups/chat.db");
+
+    expect(openDialog).toHaveBeenCalledExactlyOnceWith({ multiple: false, filters });
+  });
+
+  it("resolves null when the dialog is closed without a choice", async () => {
+    openDialog.mockResolvedValue(null);
+
+    await expect(pickPath({})).resolves.toBeNull();
+  });
+
+  it("resolves null when the dialog answers with anything but one path", async () => {
+    openDialog.mockResolvedValue(["/a", "/b"]);
+
+    await expect(pickPath({})).resolves.toBeNull();
+  });
+
+  it("passes the dialog's rejection on", async () => {
+    openDialog.mockRejectedValue("dialog unavailable");
+
+    await expect(pickPath({})).rejects.toBe("dialog unavailable");
   });
 });
