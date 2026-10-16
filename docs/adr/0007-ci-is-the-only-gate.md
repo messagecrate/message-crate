@@ -30,8 +30,7 @@ jobs read them:
 | `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires eleven of them: every job but `windows-config` and
-`secrets`. Whether it should require `windows-config` too is open in #2788.
+The ruleset requires twelve of them: every job but `secrets`.
 `secrets` joins the required checks once it has run green (#3093). GitHub's
 own secret scanning and push protection are on for the repository as well.
 They block a provider token at `git push`, and the gitleaks job finds what
@@ -61,9 +60,11 @@ check that keeps the website directory and the Data Directory apart
 target that comes back verbatim (`\\?\C:\...`), and a short name
 (`WEBSIT~1`) that stands for a long one. Every other job that runs on a pull
 request runs on Linux. A Windows build is not worth its time on a pull request
-that cannot change these paths. On a push, a tag or a manual run it runs like
-every other job, and the `docker` and `release` jobs need it, so a release
-waits for it (#2683).
+that cannot change these paths. The ruleset requires the job all the same
+(#2788). A required job that its `if:` skips counts as passed, so the job
+holds back only a pull request whose Windows config tests fail. On a push, a
+tag or a manual run it runs like every other job, and the `docker` and
+`release` jobs need it, so a release waits for it (#2683).
 
 `src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
 because its build needs the webkit and gtk system packages that job already
