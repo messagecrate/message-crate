@@ -50,7 +50,7 @@ commands again. They are, and that is not the question.
 ## Amendment: a helper process is not a command line
 
 `imessage-reader` (`crates/helpers/imessage-reader`) is a program, and this
-decision still holds. It exists for a licence reason and no other: it links
+decision still holds. It exists for a license reason and no other: it links
 `imessage-database` and `crabapple`, which are GPL-3.0-or-later, and the rest
 of the repository is under the Fair Core License, which the GPL does not let
 a single binary combine with. The desktop app therefore starts the reader as

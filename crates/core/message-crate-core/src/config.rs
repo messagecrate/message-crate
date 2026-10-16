@@ -101,7 +101,7 @@ pub struct RunContext {
     /// app's directories, so the app names it here.
     pub scratch_dir: PathBuf,
     /// Shared cancel flag for in-process jobs. A run that cannot be
-    /// cancelled holds `CancelFlag::default()`, which nobody sets.
+    /// canceled holds `CancelFlag::default()`, which nobody sets.
     pub cancel: CancelFlag,
     /// Human-readable mid-run notes and warnings. The desktop app sets a sink
     /// and shows the lines in its log panel.
@@ -214,7 +214,7 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// either shares it, so a cancel set on the [`RunContext`] reaches the run.
 ///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
-/// cancelled, does not resume, sends its rows nowhere, names an empty
+/// canceled, does not resume, sends its rows nowhere, names an empty
 /// Scratch Directory, so a test whose run spools sets `scratch_dir`, and
 /// writes no Export Date.
 #[derive(Debug, Clone, Default)]

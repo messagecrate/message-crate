@@ -23,10 +23,10 @@ ignore = []
 # graph must not meet the GPL entries at all, so an unused entry is not a
 # finding.
 unused-allowed-license = "allow"
-# Permissive licences only, for every crate in the graph. The repository's
+# Permissive licenses only, for every crate in the graph. The repository's
 # own Fair Core License is on the list so the workspace crates pass; the two
 # permissive texts the protocol crate offers are covered by MIT and
-# Apache-2.0. A copyleft licence anywhere else fails the check, and the
+# Apache-2.0. A copyleft license anywhere else fails the check, and the
 # `exceptions` below are the whole list of where one is allowed.
 allow = [
     "LicenseRef-FCL-1.0-ALv2",
@@ -65,7 +65,7 @@ multiple-versions = "allow"
 wildcards = "allow"
 # The GPL readers may be depended on by the helper program only. A Fair Core
 # License crate that adds either one as a dependency fails here, whatever
-# the licence check says.
+# the license check says.
 deny = [
     { crate = "imessage-database", wrappers = ["imessage-reader"] },
     { crate = "crabapple", wrappers = ["imessage-reader"] },

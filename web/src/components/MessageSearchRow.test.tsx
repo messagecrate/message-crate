@@ -115,7 +115,7 @@ describe("MessageSearchRow", () => {
     expect(row).not.toHaveTextContent("Unsent");
   });
 
-  it('shows "Unsent" in place of the text of an Unsent message, in the muted colour', () => {
+  it('shows "Unsent" in place of the text of an Unsent message, in the muted color', () => {
     renderRow(
       message({
         deletion: "unsent",

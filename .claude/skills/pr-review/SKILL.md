@@ -122,7 +122,7 @@ brief ends with the same output rule:
   from the baseline you see, quoting the hunk (`judgement`). A repo rule
   overrides the baseline. Skip what tooling enforces."
 - **Spec**: the issue text. "Report requirements the spec asked for that are
-  missing or partial, behaviour the spec did not ask for, and requirements that
+  missing or partial, behavior the spec did not ask for, and requirements that
   look implemented but wrong (`spec`). Quote the spec line for each."
 - **Correctness**: "Find inputs or states that make this change produce a wrong
   result, crash, or lose data. Each finding names the concrete failing scenario:
@@ -193,7 +193,7 @@ the run is rerun.
 Done when the CI run on the commit you pushed ended in `success`, the PR is
 not `CONFLICTING`, and it is still the PR head (_Another session's commits_).
 
-### 7. Summarise and merge
+### 7. Summarize and merge
 
 Check the PR against its base once more (AGENTS.md step 5). On `CONFLICTING`,
 merge the base (with the merge review), push, and return to step 6. A PR that

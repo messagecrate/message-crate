@@ -199,7 +199,7 @@ impl std::str::FromStr for ImportMode {
 /// run did something with it worth knowing that is not a failure, and
 /// `resolved` when an earlier row about the same item no longer holds.
 // Every crate that sends or reads a row (the exporters, Media, the Upload,
-// the desktop app and the server) takes this type, so a misspelt kind does
+// the desktop app and the server) takes this type, so a misspelled kind does
 // not compile. `message-crate-core` re-exports it beside its `RunIssue`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]

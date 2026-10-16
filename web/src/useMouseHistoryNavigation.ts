@@ -25,13 +25,13 @@ export function useMouseHistoryNavigation(): void {
       if (event.button !== BACK_BUTTON && event.button !== FORWARD_BUTTON) {
         return;
       }
-      // Cancelling keeps a webview that maps these buttons itself from stepping
+      // Canceling keeps a webview that maps these buttons itself from stepping
       // through history a second time on top of the navigate below.
       event.preventDefault();
       navigate(event.button === BACK_BUTTON ? -1 : 1);
     }
 
-    // The click that follows the press is cancelled as well, so nothing further
+    // The click that follows the press is canceled as well, so nothing further
     // down the page mistakes it for a plain auxiliary click.
     function onAuxClick(event: MouseEvent) {
       if (event.button === BACK_BUTTON || event.button === FORWARD_BUTTON) {

@@ -120,9 +120,9 @@ Moving the Staging Directory to a disk with more room in **Settings → System**
 The Scratch Directory is `~/message-crate/scratch`, so it can't be moved.
 The import can still start with the line showing.
 
-### A WhatsApp import doesn't stop when cancelled
+### A WhatsApp import doesn't stop when canceled
 
-A run can't be cancelled while `wtsexporter` is working. It ends when the program finishes.
+A run can't be canceled while `wtsexporter` is working. It ends when the program finishes.
 [WhatsApp](/docs/user/import-sources/whatsapp/#limits) lists this with the other limits.
 
 ## ffmpeg, ffprobe and wtsexporter

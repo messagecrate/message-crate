@@ -10,7 +10,7 @@
 //! One [`Helper`] is one process and one request. It relays the program's
 //! log lines to the run's [`LogSink`] and its counts to the run's
 //! [`ProgressSink`], hands back every other event to the caller, and kills
-//! the process when dropped, so a cancelled run leaves no orphan behind.
+//! the process when dropped, so a canceled run leaves no orphan behind.
 //!
 //! The program's stdout is read on a thread of its own, which sends each
 //! line over a channel. A wait for the next line wakes every
@@ -384,7 +384,7 @@ impl Helper {
 impl Drop for Helper {
     fn drop(&mut self) {
         // Already exited: kill is a no-op error and wait reaps it. Still
-        // running (a cancelled or failed run): kill so no orphan keeps the
+        // running (a canceled or failed run): kill so no orphan keeps the
         // backup open.
         let _ = self.child.kill();
         let _ = self.child.wait();

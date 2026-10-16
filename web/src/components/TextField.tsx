@@ -14,7 +14,7 @@ export const textInputClass =
 
 /**
  * Position of a decorative glyph inside a field, left of the text. `flex` is
- * what centres it: as an inline span the box is as tall as the line box, not
+ * what centers it: as an inline span the box is as tall as the line box, not
  * as the glyph, so the icon inside it sat low against the field's own text.
  * Laying the span out as a flex box shrinks it to the glyph, and only then
  * does centring on the field's midpoint put the glyph there.

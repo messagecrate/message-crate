@@ -40,7 +40,7 @@ import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serv
  *
  * - `paused`: an Upload that did not send every conversation, by Pause or
  *   by failure (`importOutcome`). It posts no `/complete`.
- * - `skipComplete`: a cancelled Staging or Media stage, and a stage change
+ * - `skipComplete`: a canceled Staging or Media stage, and a stage change
  *   the server did not record. Both resume from what is on disk; posting
  *   `/complete` would free the run's slot and strand the directory.
  * - A `/complete` the server refuses: the server still holds the run as
@@ -266,7 +266,7 @@ async function outcomeOfFailedDiscard(
 
 /**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
- * paused run: close it on the server as cancelled, with the Import Errors and
+ * paused run: close it on the server as canceled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
  * its run directory.
  *

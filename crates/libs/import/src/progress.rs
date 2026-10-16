@@ -564,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn conversation_issues_cover_failed_and_cancelled_files_only() {
+    fn conversation_issues_cover_failed_and_canceled_files_only() {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("import.log");
         let mut seen = Vec::new();

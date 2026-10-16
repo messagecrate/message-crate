@@ -39,7 +39,7 @@ use crate::server::{AppState, Created, DemoState, WalError};
 
 /// Run `read`, a blocking read of the server's log files, off the async
 /// threads, and answer an I/O failure as a `500 Internal Server Error` with `what` as
-/// its cause. A read that panics or is cancelled is a `500 Internal Server Error`
+/// its cause. A read that panics or is canceled is a `500 Internal Server Error`
 /// too, through `run_blocking`, naming the task "log read".
 async fn read_log<T: Send + 'static>(
     what: &'static str,
@@ -551,10 +551,10 @@ struct DemoBuildShared {
     state: std::sync::Mutex<DemoBuildState>,
     /// The task running the build, for shutdown to wait on.
     task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Cancelled when the server stops.
+    /// Canceled when the server stops.
     stopping: tokio_util::sync::CancellationToken,
     /// Set when the server stops, so the ffmpeg a build runs is killed: the
-    /// build runs it to its end without an `await`, so cancelling the task
+    /// build runs it to its end without an `await`, so canceling the task
     /// alone waits for the conversion (#1729).
     conversions_stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Told each time the state is set, so `DemoBuild::ended` looks again.

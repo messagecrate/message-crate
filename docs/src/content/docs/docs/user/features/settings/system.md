@@ -43,7 +43,7 @@ The Owner sees the size of the whole Staging Directory under [Server Settings](/
 A change applies to the Import Runs started after it.
 An import already staged keeps the directory it was staged in, so it can still be resumed, discarded or cleaned up after the setting moves.
 
-When Message Crate can't delete the directory of a finished, cancelled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
+When Message Crate can't delete the directory of a finished, canceled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
 
 ### Remember importer paths
 
@@ -105,7 +105,7 @@ It downloads its own copies into the Tools Directory instead, and nothing needs 
 **Exports** names the Export Directory and opens it.
 Each [Export](/docs/user/features/messages/export/), and each [Convert](/docs/user/features/settings/convert/) with no output directory chosen, gets a directory of its own there, named for what it is, when it started and its format, such as `export-2026-10-04-1430-mbox` or `convert-2026-10-04-1502-csv`.
 The result is written there unless the Export form names another directory.
-The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it, and one the app did not see to its end is deleted the next time the app starts.
+The directory holds only the result once the run finishes; a run that fails or is canceled deletes it, and one the app did not see to its end is deleted the next time the app starts.
 
 The Export Directory is `exports` in the Message Crate Directory, such as `/home/sam/message-crate/exports` on Linux.
 Message Crate never deletes a finished export from it.

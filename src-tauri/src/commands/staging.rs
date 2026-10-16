@@ -204,11 +204,11 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
 /// a cancel flag of its own, the Media stage runs on a background thread, and
 /// progress/log/finished go back as `desktop-job:*` events so the UI reuses
-/// one progress view. A cancelled Media stage is reported through
+/// one progress view. A canceled Media stage is reported through
 /// `desktop-job:error` the same way any other failure is. That is exactly how
-/// a cancelled `extract` run already behaves (`extract` never special-cases
+/// a canceled `extract` run already behaves (`extract` never special-cases
 /// its own cancellation either; `spawn_job`'s generic `Err` handling covers
-/// both). An earlier version of this command ended a cancelled Media stage
+/// both). An earlier version of this command ended a canceled Media stage
 /// quietly instead (a `desktop-job:log` line, `Ok(())`, no
 /// `desktop-job:error`); that left `awaitDesktopJob`'s promise on the web
 /// side permanently unsettled (no `desktop-job:finished`, no
@@ -293,7 +293,7 @@ pub fn transcode_staging(
 
         // A cancellation is just another `Err` here. `spawn_job` reports it
         // as `desktop-job:error` with the error chain as `detail`, the same
-        // generic path a cancelled `extract` run already goes through. See
+        // generic path a canceled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel
         // special case was removed.
         let report = outcome.inspect_err(|error| run_log.error(error))?;

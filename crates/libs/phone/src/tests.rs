@@ -7,7 +7,7 @@
 //!   "Numbering Resources - 555 Line Numbers"
 //!   (<https://www.nationalnanpa.com/number_resource_info/555_numbers.html>).
 //!   A seven-digit 555-01xx, with or without a leading 1, is no one's
-//!   either, since it takes its area code from where it is dialled.
+//!   either, since it takes its area code from where it is dialed.
 //!   A test that needs a number outside that range puts it under an area
 //!   code starting with 0 or 1, as the `demo-seed` test of its fiction check
 //!   does with 015. An area code starts with 2 to 9, never 0 or 1. Source:

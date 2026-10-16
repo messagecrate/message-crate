@@ -16,8 +16,8 @@ on:
 permissions:
   contents: read
 
-# One group for every deploy, never cancelled: a second tag or a manual run
-# queues behind the one in flight instead of cancelling a production deploy.
+# One group for every deploy, never canceled: a second tag or a manual run
+# queues behind the one in flight instead of canceling a production deploy.
 concurrency:
   group: pages
   cancel-in-progress: false

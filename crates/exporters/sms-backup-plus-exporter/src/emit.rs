@@ -1011,7 +1011,7 @@ mod tests {
     /// A worker that saw the cancel flag stops the scan with the typed
     /// `Cancelled`, so a caller tells a cancel from a failure by its type.
     #[test]
-    fn a_cancelled_parse_stops_the_scan_with_cancelled() {
+    fn a_canceled_parse_stops_the_scan_with_canceled() {
         let mut ingest = EmlIngest::new(None, 1, ExportReport::default());
         let error = ingest.absorb(ParsedEmlKind::Cancelled).unwrap_err();
         assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");

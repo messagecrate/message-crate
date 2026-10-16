@@ -308,7 +308,7 @@ describe("TrashScreen", () => {
 
     it("restores a contact from its row and drops it from the list", async () => {
       const user = setupUser();
-      // The server, modelled: restoring takes the contact out of the trash, so
+      // The server, modeled: restoring takes the contact out of the trash, so
       // the refetch the mutation triggers answers with an empty page.
       let trashed = [contact(7, "Grace Hopper")];
       listContactsMock.mockImplementation(async () => contactPage(trashed));

@@ -4008,7 +4008,7 @@ mod name_keyed_conversation {
     use super::*;
 
     #[tokio::test]
-    async fn is_found_and_labelled_by_the_name_not_the_key() {
+    async fn is_found_and_labeled_by_the_name_not_the_key() {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;

@@ -84,7 +84,7 @@ export function createImportRunService(deps: ImportRunDeps) {
    *
    * A store already the account's is left as it is. A run another account
    * started is stopped and let settle first, so nothing it does afterwards
-   * lands in the new run: its stage is cancelled, which leaves the run open on
+   * lands in the new run: its stage is canceled, which leaves the run open on
    * the server for that account to resume from its run directory. Then the
    * store goes back to a fresh form, named with `accountId` (#1085).
    */

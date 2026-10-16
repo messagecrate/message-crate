@@ -14,7 +14,7 @@ import {
  *
  * Once `write` has written the result, the desktop finishes the directory,
  * which leaves only the result in it, or deletes it when the result went to
- * `chosen`. A `write` that fails or is cancelled deletes the directory, and
+ * `chosen`. A `write` that fails or is canceled deletes the directory, and
  * with it any copy of the messages; a directory that cannot be deleted is
  * named through `onLog` rather than failing a second time. A finish that
  * fails after the result is written keeps the directory, and its error says

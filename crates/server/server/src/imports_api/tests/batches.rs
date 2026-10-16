@@ -647,7 +647,7 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
 }
 
 /// A run discarded while a batch uploads: the batch passed the check before
-/// its body, and its messages were then stored under a cancelled run. The
+/// its body, and its messages were then stored under a canceled run. The
 /// run is checked again inside the import's write transaction, and the batch
 /// is refused the same way.
 #[tokio::test]

@@ -35,7 +35,7 @@ export function AccountPermissionsSection({
   const fixed = fixedSettings(profile).statusAndPermissions;
   const managed = managedAccountId !== undefined && !fixed;
   // Not locked while a change is sent: the server answers in a moment, and
-  // greying all four controls for that moment reads as a flash.
+  // graying all four controls for that moment reads as a flash.
   const locked = !managed;
 
   const change = (changes: ManagedAccountChanges) => {

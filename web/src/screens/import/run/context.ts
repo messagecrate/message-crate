@@ -95,7 +95,7 @@ export type RunContext = ImportRunDeps & {
   queuedRecordWrite: RecordWrite | null;
   /**
    * What the Import screen's actions are doing now, whichever account started
-   * them: a stage, a probe, a Review being cancelled. Settles once they stop.
+   * them: a stage, a probe, a Review being canceled. Settles once they stop.
    */
   work: Promise<void> | null;
 };

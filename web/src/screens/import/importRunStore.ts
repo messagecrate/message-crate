@@ -81,7 +81,7 @@ export type ImportRunState = {
    */
   reviewError: string | null;
   /**
-   * True only while a not-cancellable summarize call is in flight: the
+   * True only while a not-cancelable summarize call is in flight: the
    * review renders once the summary resolves, and until then the run
    * view stays up with Cancel disabled, since there is nothing to stop.
    */
@@ -89,7 +89,7 @@ export type ImportRunState = {
   sourceIdentities: string[] | null;
   /**
    * A run directory Message Crate could not delete, and why: from a
-   * discarded or cancelled run, or the cleanup after a finished one. Shown
+   * discarded or canceled run, or the cleanup after a finished one. Shown
    * until the person dismisses it or a later delete of the directory succeeds,
    * so a directory of several gigabytes is never left behind unsaid.
    */
@@ -159,7 +159,7 @@ export const importRunStore = createImportRunStore(initialImportRunState([]));
 
 /**
  * True from the run's first stage to its end: while a stage runs and while
- * the run waits at a review. Ended (`done`), cancelled, discarded or never
+ * the run waits at a review. Ended (`done`), canceled, discarded or never
  * started (`form`), and the identity stop before any stage, are not.
  *
  * A review holds it only for the account that started the run. The desktop
@@ -178,7 +178,7 @@ function holdsDesktop(state: ImportRunState): boolean {
  * included. Each stage's job holds it too, but only while that job runs, so
  * without this a Convert could start between two stages and the desktop
  * would refuse the run's next one (#1407). Following the run releases it
- * however the run ends: finished, failed, paused, cancelled or discarded.
+ * however the run ends: finished, failed, paused, canceled or discarded.
  */
 let releaseDesktop: (() => void) | null = null;
 function followRun(): void {

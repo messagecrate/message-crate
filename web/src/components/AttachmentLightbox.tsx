@@ -10,7 +10,7 @@ import PlainButton from "./PlainButton";
 
 /**
  * What the viewer holds: the photo on screen, in full and as its Thumbnail,
- * and its neighbours in full, so stepping to the next or previous photo finds
+ * and its neighbors in full, so stepping to the next or previous photo finds
  * it loaded. A photo with no version a browser can show asks for none.
  */
 function viewerRequests(items: MessageAttachment[], currentIndex: number): AssetRequest[] {

@@ -636,7 +636,7 @@ pub(crate) async fn create_import_batch(
         //
         // The server drops this handler when its client stops waiting (the
         // Upload's request timeout, a closed connection), but a blocking
-        // task cannot be cancelled, so the batch follows one rule from here
+        // task cannot be canceled, so the batch follows one rule from here
         // (#2090):
         //
         // 1. The batch file lives as long as the work that reads it: `temp`

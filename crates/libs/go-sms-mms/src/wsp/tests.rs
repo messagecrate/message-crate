@@ -106,7 +106,7 @@ fn decode_text_follows_the_charset() {
 fn well_known_content_types_are_at_their_assigned_numbers() {
     // The table has 0x00 through 0x4b. A missing row shifts every id after
     // it: with 0x04 to 0x0a absent, 0x33 read as cert-response and no
-    // multipart was ever recognised.
+    // multipart was ever recognized.
     assert_eq!(WELL_KNOWN_CONTENT_TYPES.len(), 0x4c);
     assert_eq!(WELL_KNOWN_CONTENT_TYPES[0x03], "text/plain");
     assert_eq!(WELL_KNOWN_CONTENT_TYPES[0x0a], "text/vnd.wap.wta-event");

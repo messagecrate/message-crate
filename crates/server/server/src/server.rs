@@ -106,7 +106,7 @@ pub(crate) struct ImportState {
     /// so imports can never drain the connection pool. Held here, not in a
     /// static, so tests in one binary cannot wait on each other's imports.
     pub(crate) slots: Arc<tokio::sync::Semaphore>,
-    /// Cancelled the moment the server is told to stop
+    /// Canceled the moment the server is told to stop
     /// ([`AppState::on_stop_signal`]), so an import batch still reading its
     /// body stops reading and is refused with `server-stopping` at once,
     /// rather than making the stop wait for the rest of the body (#2878).

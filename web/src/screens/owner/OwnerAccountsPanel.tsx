@@ -74,7 +74,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {/* The gear column has no heading; each gear is labelled with its account. */}
+              {/* The gear column has no heading; each gear is labeled with its account. */}
               <td className="w-6 py-2 pl-3" />
               <th className={thClass}>User</th>
               <th className={`${thClass} ${thSeparatorClass}`}>Status</th>

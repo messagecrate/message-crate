@@ -110,7 +110,7 @@ takes minutes, so `docker-build` in `ci.yml` leaves it out. It gates
 nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports
-by opening an issue labelled `bug`, or by commenting on that issue while it is
+by opening an issue labeled `bug`, or by commenting on that issue while it is
 open, rather than by a check on a pull request.
 
 The docs build on a pull request is the `docs` job in `ci.yml`, not a trigger
@@ -124,7 +124,7 @@ product people can install, and between releases that is the tagged version,
 not the tip of `main`; a page that documents a screen nobody can download yet
 is wrong for every reader who arrives from the download link. Publishing on
 merge also did real work for nothing: a burst of twelve squash merges on
-2026-09-05 produced twelve Pages runs, eleven of them cancelled by the next,
+2026-09-05 produced twelve Pages runs, eleven of them canceled by the next,
 each after a full `cargo doc`. `workflow_dispatch` stays for a docs-only
 correction that should not wait for the next tag.
 
@@ -323,8 +323,8 @@ request whose review finds `main` red on the same job stops and says so
 
 `ci.yml` cancels an in-progress run only for a `pull_request` event, never for
 a push to `main` or a tag, so a run on `main` that has started keeps its
-verdict. Before this, a burst of squash merges cancelled every `main` run but
-the last. Twelve merges on 2026-09-05 left eleven cancelled runs and one
+verdict. Before this, a burst of squash merges canceled every `main` run but
+the last. Twelve merges on 2026-09-05 left eleven canceled runs and one
 result.
 
 GitHub still keeps only one waiting run per concurrency group, so a merge that
@@ -349,7 +349,7 @@ conversations do not already make.
 The `pr-review` skill (`.claude/skills/pr-review/`) is that review. Three
 sub-agents read the diff with fresh context, one each for the repo's
 standards, the issue it implements, and correctness, so one axis cannot mask
-another. Every finding is posted, judgement calls included, and closes as
+another. Every finding is posted, judgment calls included, and closes as
 fixed, declined with evidence, or deferred to a filed issue, so nothing the
 review raised is dropped without a record. The fix commits get one more
 Standards and Correctness pass. Its comments carry a `<!-- pr-review -->`

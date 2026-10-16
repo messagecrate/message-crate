@@ -223,7 +223,7 @@ fn a_wrong_password_is_refused_in_the_readers_words() {
 }
 
 /// A run that fails after the reader has decrypted the Messages database,
-/// here because it is cancelled the moment the database is seen in the
+/// here because it is canceled the moment the database is seen in the
 /// scratch directory, deletes that directory all the same (#1386).
 #[test]
 fn a_run_that_fails_after_decrypting_leaves_no_scratch_directory() {

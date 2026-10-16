@@ -457,7 +457,7 @@ describe("ImportScreen entering Import", () => {
 
   it("also deletes the run directory when discarding a this-device run", async () => {
     // cancelRun already deletes the run directory when a review is
-    // cancelled -- a panel discard is the same operation reached
+    // canceled -- a panel discard is the same operation reached
     // through a different button, and used to only call
     // discardImportRun, orphaning a potentially multi-GB directory.
     const user = setupUser();

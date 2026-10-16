@@ -301,7 +301,7 @@ export async function runImport(
     }
   } catch (e: unknown) {
     if (await leaveIfRefused(ctx, e, runId)) return;
-    // A cancelled Staging is not a failure: the conversations already
+    // A canceled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
     // run at `write` is what lets the next Import visit offer that. A
     // `write` stage the server did not record stops the run where the server

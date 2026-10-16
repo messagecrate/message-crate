@@ -100,7 +100,7 @@ word, the same as typed text, and the person edits it once.
   emitter. The web's suggestions, the docs page, and the refusal messages
   read that registry, so they cannot drift from what compiles.
 - The web sends `sort` as a request parameter and no longer embeds it in the
-  query string. Its operator-sniffing regexes are deleted in favour of
+  query string. Its operator-sniffing regexes are deleted in favor of
   `GET /v1/search-fields/{list}`.
 - Saved Searches written in spellings the language does not have fail as
   unknown words.

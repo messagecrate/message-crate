@@ -19,7 +19,7 @@ Two lines under it give four counts: messages, attachments, conversations, and c
 ## Import history
 
 **Import history** lists the account's Import Runs, newest first.
-A run is listed whether it completed, failed, or was cancelled, and a person can't delete one.
+A run is listed whether it completed, failed, or was canceled, and a person can't delete one.
 
 The list shows 50 runs to a page.
 **Back** and **Next** move between pages.
@@ -101,7 +101,7 @@ The list shows 50 runs to a page.
 |---|---|
 | **Date** | When the run finished, or when it started if it has not finished |
 | **Scope** | What was asked for |
-| **Status** | **Running**, **Completed**, **Failed**, or **Cancelled** |
+| **Status** | **Running**, **Completed**, **Failed**, or **Canceled** |
 | **Messages** | Messages that matched when the run started |
 | **Delivered** | Messages the run handed over |
 | **Attachments** | Distinct attachments among the matching messages |

@@ -3,7 +3,7 @@ name = "imessage-reader"
 version = "0.1.0"
 edition = "2024"
 # GPL because it links imessage-database and crabapple, both GPL-3.0-or-later.
-# This is the only crate in the repository under a copyleft licence, and the
+# This is the only crate in the repository under a copyleft license, and the
 # desktop app never links it: it runs the built binary as a separate process
 # and talks to it over pipes (see crates/helpers/imessage-reader-protocol).
 # Why: docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.

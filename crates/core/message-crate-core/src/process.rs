@@ -9,7 +9,7 @@ use crate::progress::ProgressSink;
 
 /// Shared cancel flag for cooperative in-process jobs.
 /// `CancelFlag::default()` is a flag nobody sets, for a run that cannot be
-/// cancelled.
+/// canceled.
 pub type CancelFlag = Arc<AtomicBool>;
 
 /// A callback that receives one line of text at a time.

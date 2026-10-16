@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarise one or more cargo-mutants runs as Markdown.
+"""Summarize one or more cargo-mutants runs as Markdown.
 
     mutants-summary.py target/mutants/mutants.out                 # headline, per-file table, every missed mutant
     mutants-summary.py shard-*/mutants.out --summary              # headline and per-file table only

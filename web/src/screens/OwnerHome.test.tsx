@@ -104,7 +104,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  // jsdom has no matchMedia, and the theme reads the system colour scheme from it.
+  // jsdom has no matchMedia, and the theme reads the system color scheme from it.
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener: () => {},

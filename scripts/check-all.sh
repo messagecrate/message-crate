@@ -7,7 +7,7 @@
 # Stops on the first failure. Starts with ./scripts/check-pr.sh (format and
 # lint), then builds and tests the workspace and src-tauri, and runs the
 # license, Docker-context, secret-scan, version-lockstep and generated-API-type
-# checks, cargo-deny (advisories, licences and bans on the workspace, licences
+# checks, cargo-deny (advisories, licenses and bans on the workspace, licenses
 # and bans on src-tauri), and the web and docs test/build/audit steps. CI runs
 # the same set in parallel; this exists so nobody types nine commands by hand.
 # Why the split from check-pr.sh: docs/adr/0007-ci-is-the-only-gate.md.
@@ -41,7 +41,7 @@ if cargo deny --version >/dev/null 2>&1; then
   cargo deny check advisories licenses bans
   cargo deny --manifest-path src-tauri/Cargo.toml --config deny.toml check licenses bans
 else
-  echo "cargo-deny not installed; skipping advisory and licence checks (CI enforces them)" >&2
+  echo "cargo-deny not installed; skipping advisory and license checks (CI enforces them)" >&2
 fi
 
 echo "==> cargo build --workspace"

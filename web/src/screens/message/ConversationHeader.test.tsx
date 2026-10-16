@@ -176,7 +176,7 @@ describe("ConversationHeader", () => {
     });
 
     it("creates the group and adds everyone but the owner and the contact-less", async () => {
-      // The server, modelled: once created, the group is in the list the
+      // The server, modeled: once created, the group is in the list the
       // members call looks the id up in.
       let groups: { id: number; name: string }[] = [];
       listContactGroupsMock.mockImplementation(async () => groups);

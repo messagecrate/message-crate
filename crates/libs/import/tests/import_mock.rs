@@ -2334,7 +2334,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
 /// Guards the cancel check before each batch POST. Without it, the batch
 /// already packed when the cancel arrived still goes out.
 #[test]
-fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
+fn a_canceled_import_sends_no_further_batch_and_resumes_later() {
     let server = mock_server();
     let _auth = mock_session(&server);
     let mut import = server.mock(|when, then| {
@@ -2370,7 +2370,7 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
     };
     let report = run(&cfg, Some(&mut on_progress)).unwrap();
 
-    assert!(!report.ok, "a cancelled import is not ok");
+    assert!(!report.ok, "a canceled import is not ok");
     assert!(
         report.cancelled,
         "the report says the cancel flag stopped it"
@@ -2400,14 +2400,14 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
     assert_eq!(resumed_import.calls(), 2);
 }
 
-/// Every conversation of a cancelled import is in one category of the report:
+/// Every conversation of a canceled import is in one category of the report:
 /// `ok + failed + skipped + cancelled = total`, with one result row per file.
 ///
 /// Guards the report of a paused Upload. Without a result for each file the
 /// pause left unsent, the counts add up to less than the total and nothing in
 /// the report names those files.
 #[test]
-fn a_cancelled_import_reports_every_conversation_in_one_category() {
+fn a_canceled_import_reports_every_conversation_in_one_category() {
     let server = mock_server();
     let _auth = mock_session(&server);
     let _import = server.mock(|when, then| {
@@ -2464,20 +2464,20 @@ fn a_cancelled_import_reports_every_conversation_in_one_category() {
     assert_eq!(cancelled.len(), 3, "{:?}", report.results);
     assert!(
         cancelled.iter().all(|file| file.ends_with(".jsonl")),
-        "each cancelled row names its file: {cancelled:?}"
+        "each canceled row names its file: {cancelled:?}"
     );
     assert_eq!(journal_events(dir.path(), "file_ok").len(), 1);
 }
 
 /// A conversation whose messages were partly queued when the stop came is
-/// counted as cancelled, and the journal does not mark it done, so a resumed
+/// counted as canceled, and the journal does not mark it done, so a resumed
 /// import sends the rest of it.
 ///
 /// Guards the `Abort` path in `consume_result`, which returns before the
 /// file's result is written: without a result the file falls out of every
 /// count, and journalling it as done would lose its unsent messages.
 #[test]
-fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
+fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_canceled() {
     let server = mock_server();
     let _auth = mock_session(&server);
     // The delay keeps the first batch in flight long enough to cancel while
@@ -2538,7 +2538,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
 /// every conversation still lands, so the Upload completed.
 ///
 /// Guards #1903: the run took the cancel flag alone as a stop, so it reported
-/// the Upload as cancelled and not `ok`, although no conversation was left
+/// the Upload as canceled and not `ok`, although no conversation was left
 /// for the next Upload.
 #[test]
 fn a_cancel_after_the_last_request_leaves_a_completed_upload() {

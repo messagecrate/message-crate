@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS message_tag_members (
 -- One message a running Export Run matched when it was created. The run's
 -- pages read these rows rather than its scope, so an import, a trash, or a
 -- new day between pages cannot move what the run hands over. The rows are
--- deleted when the run completes or is cancelled.
+-- deleted when the run completes or is canceled.
 CREATE TABLE IF NOT EXISTS export_messages (
     -- Export Run (`exports.id`).
     export_id INTEGER NOT NULL REFERENCES exports(id) ON DELETE CASCADE,

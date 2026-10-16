@@ -56,7 +56,7 @@ pub enum ExportKind {
 }
 
 impl ExportKind {
-    /// Every kind, for recognising a name.
+    /// Every kind, for recognizing a name.
     const ALL: [Self; 2] = [Self::Export, Self::Convert];
 
     /// The first part of the directory's name.
@@ -316,7 +316,7 @@ impl ExportDirectories {
     }
 
     /// Delete the directory `dir` and everything in it, after its Export or
-    /// Convert failed or was cancelled. A directory already gone is not an
+    /// Convert failed or was canceled. A directory already gone is not an
     /// error.
     ///
     /// # Errors

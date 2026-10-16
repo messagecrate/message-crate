@@ -134,7 +134,7 @@ Two levels of nesting. The multipart upload,
 three. `/health` is the only route outside `/v1`. Path segments are
 kebab-case; every field and query parameter on the wire is snake_case.
 
-Rejected: no verbs at all. Modelling every action as a field write turns
+Rejected: no verbs at all. Modeling every action as a field write turns
 trashing into `PATCH {"trashed": true}`, and trash is the only door to
 permanent deletion, which `POST .../trash` says and a field write does not.
 
@@ -177,7 +177,7 @@ around a file base64-encodes it for nothing. Rejected: `?format=csv` on
 idea in another coat; `Accept: text/csv` on the list, which makes one list
 negotiate where every other answers JSON.
 
-Behaviour that differs by caller lives inside one handler, not in two routes.
+Behavior that differs by caller lives inside one handler, not in two routes.
 `PUT /v1/accounts/{id}/password` is one route: the owner sets another
 account's password without the current one, a user account changes its own on
 its session alone, and the owner changing its own must supply the
@@ -1236,7 +1236,7 @@ username typed and the password are never written
 ## Runs
 
 An Import Run and an Export Run are recorded permanently, whether they
-completed, failed or were cancelled, and outlive the account that ran them, as
+completed, failed or were canceled, and outlive the account that ran them, as
 the rest of the Audit Trail does. Each run records what started it: a Session
 with the app it named, or an API token by its label and hint as they were
 then. The client closes a run: a run's
@@ -1250,12 +1250,12 @@ There is no sessionless import and no unrecorded export.
 gave up. A run an error stopped is closed with `complete` as `failed`, never
 with `cancel`. Why: the Audit Trail and the export history show `cancelled` as
 the person's own choice, so a failed run recorded that way lies the same way
-a cancelled run marked completed would (#2069).
+a canceled run marked completed would (#2069).
 
 A run that has finished answers `409 Conflict` to `complete`, `discard`,
 `cancel`, a batch, and a change of stage; its record is never rewritten. Its
 outcome is stated once, as `status`. Why: the finished record is the history
-the person reads, and a cancelled run marked completed afterwards would lie. A
+the person reads, and a canceled run marked completed afterwards would lie. A
 program unsure how a run ended reads it with `GET` rather than repeating the
 call.
 

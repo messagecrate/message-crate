@@ -735,7 +735,7 @@ pub async fn discard_import(
         .await
         .map_err(failed("begin a write transaction"))?;
     // The status check is in the update, so a run that completed after the
-    // caller read it keeps its record instead of being rewritten as cancelled.
+    // caller read it keeps its record instead of being rewritten as canceled.
     let updated = sqlx::query(
         "UPDATE imports
          SET status = 'cancelled', stage = NULL, finished_at = $1
@@ -1285,7 +1285,7 @@ pub async fn top_attachments_by_size(
                 size_bytes,
                 conversation_id: Some(conversation_id),
                 group_title,
-                // A conversation keyed by a name is labelled with the name,
+                // A conversation keyed by a name is labeled with the name,
                 // not with its `name:` key.
                 chat_identifier: Some(
                     message_ir::name_of_chat_id(&chat_identifier)

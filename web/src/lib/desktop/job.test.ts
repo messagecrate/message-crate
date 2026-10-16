@@ -95,7 +95,7 @@ describe("parseDesktopJobResult", () => {
   // transcode_staging's payload: TranscodeReport has no serde derive, so
   // staging.rs hand-builds the finished payload with these fields flat
   // alongside `summary`, snake_case, not nested under a `report` key. A
-  // client that doesn't recognise this shape falls through to
+  // client that doesn't recognize this shape falls through to
   // `{ summary: <the raw JSON string> }`, which would render raw JSON
   // wherever the finished summary is displayed.
   it("recognizes the transcode-finished payload and returns typed counts, not raw JSON", () => {

@@ -89,7 +89,7 @@ fn known_answers_for_a_fixed_key() {
         assert_eq!(handles.obfuscate_handle(raw), expected, "handle {raw:?}");
     }
 
-    // Message text keeps its structured spans recognisable — the phone is
+    // Message text keeps its structured spans recognizable — the phone is
     // still a phone, the address still an address — and scrambles the
     // prose around them.
     let mut text = Obfuscator::new(key(KEY));
