@@ -979,6 +979,14 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **A later iMazing export keeps a second reaction with the
+  same emoji.** iMazing reactions keep only their emoji, so two people's 👍
+  on one message looked alike. When an export holding Bob's 👍 was imported
+  and a later one holding Bob's and Ana's 👍 followed, the message kept one
+  👍. A copy of a message now adds as many of these reactions as it holds
+  above what the message has, so the message shows 👍 ×2, whether the two
+  exports come in separate imports or in one. A copy with fewer removes
+  none (#3112).
 - 2026-10-16: **A file that could not be converted reads the same each
   time.** The short reason on an attachment ffmpeg could not convert quoted
   ffmpeg's line with a memory address in each tag, such as

@@ -858,11 +858,14 @@ pub async fn add_copy_attachments(
 }
 
 /// Add the tapbacks `rows` of another copy of a staged message from the
-/// same import to that message, skipping any the message holds field for
-/// field, by the rule promotion adds a copy's tapbacks to a stored message
+/// same import to that message, skipping any the message holds already, by
+/// the rule promotion adds a copy's tapbacks to a stored message
 /// ([`insert_new_tapbacks_sql`]). Every row's `message_id` is the staged
 /// message's. Returns how many were inserted. The caller passes one copy
-/// at a time, as for [`add_copy_attachments`].
+/// at a time, as for [`add_copy_attachments`]. Reactions with no reactor
+/// are counted within one statement, so a copy split over two chunks would
+/// count its second chunk against its first; one message's reactions fit
+/// one chunk, which holds thousands.
 ///
 /// # Errors
 ///
@@ -1983,34 +1986,72 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> SqlStr {
     .into_sql_str()
 }
 
-/// The statement that inserts into `held` each tapback row of `copies`
-/// that `held` does not hold field for field, where `copies` is a table
-/// or `(SELECT ...)` with the [`TAPBACK_COLUMNS`] whose `message_id` is a
-/// row of `held`'s message. The one rule for when another copy of a
-/// reaction is new, for a stored message ([`promote_tapbacks`]) and for
-/// two copies staged in one import ([`add_copy_tapbacks`]).
+/// The statement that inserts into `held` the tapback rows of `copies`
+/// that `held` does not hold yet, where `copies` is a table or
+/// `(SELECT ...)` with the [`TAPBACK_COLUMNS`] whose `message_id` is a row
+/// of `held`'s message. The one rule for when another copy of a reaction
+/// is new, for a stored message ([`promote_tapbacks`]) and for two copies
+/// staged in one import ([`add_copy_tapbacks`]).
+///
+/// A reaction that names its reactor (a handle, a display name, or the
+/// account holder) is new when no row of `held` matches it field for field.
+/// A reaction with no reactor, which only iMazing writes, cannot be told
+/// from another person's reaction with the same emoji, so those are
+/// counted instead: per message, part, kind and emoji, the copy adds as
+/// many as it holds above the count `held` has. A copy with fewer adds
+/// none and removes none (#3112). `seq` keeps the rows in the order
+/// `copies` gives them, so they are inserted in it and readers that sort
+/// by id see the source's order.
 fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
     let columns = TAPBACK_COLUMNS.join(", ");
     AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
         SELECT {columns}
-        FROM {copies} AS st
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM {held} t
-            WHERE t.message_id = st.message_id
-              AND t.part_index = st.part_index
-              AND t.kind = st.kind
-              AND t.emoji IS NOT DISTINCT FROM st.emoji
-              AND t.is_from_me = st.is_from_me
-              AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
-              AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name
-        )
+        FROM (
+            SELECT {columns},
+                   seq,
+                   {NO_REACTOR} AS no_reactor,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY message_id, part_index, kind, emoji, {NO_REACTOR}
+                       ORDER BY seq
+                   ) AS nth
+            FROM (SELECT {columns}, ROW_NUMBER() OVER () AS seq FROM {copies})
+        ) AS st
+        WHERE CASE
+            WHEN st.no_reactor THEN st.nth > (
+                SELECT COUNT(*)
+                FROM {held} t
+                WHERE t.message_id = st.message_id
+                  AND t.part_index = st.part_index
+                  AND t.kind = st.kind
+                  AND t.emoji IS NOT DISTINCT FROM st.emoji
+                  AND t.is_from_me = 0
+                  AND t.sender_handle_id IS NULL
+                  AND t.sender_display_name IS NULL
+            )
+            ELSE NOT EXISTS (
+                SELECT 1
+                FROM {held} t
+                WHERE t.message_id = st.message_id
+                  AND t.part_index = st.part_index
+                  AND t.kind = st.kind
+                  AND t.emoji IS NOT DISTINCT FROM st.emoji
+                  AND t.is_from_me = st.is_from_me
+                  AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
+                  AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name
+            )
+        END
+        ORDER BY st.seq
         "
     ))
     .into_sql_str()
 }
+
+/// True in SQL for a tapback row that names no reactor: not the account
+/// holder's, with no handle and no display name ([`insert_new_tapbacks_sql`]).
+const NO_REACTOR: &str =
+    "(is_from_me = 0 AND sender_handle_id IS NULL AND sender_display_name IS NULL)";
 
 /// The rows of the staging table `table`, whose columns are `columns`
 /// (such as [`ATTACHMENT_COLUMNS`]), each under its production message as
@@ -2081,7 +2122,7 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any
-/// row production already has ([`insert_new_tapbacks_sql`]). Returns how
+/// production already holds ([`insert_new_tapbacks_sql`]). Returns how
 /// many were inserted.
 ///
 /// # Errors

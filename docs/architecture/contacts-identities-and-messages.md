@@ -738,7 +738,15 @@ later import, or a re-import of an export, would then judge it by that date,
 so the order the files were read in decided the result
 ([#1989](https://github.com/messagecrate/message-crate/issues/1989)).
 Attachments and reactions add from either copy, because a backup that lacks
-one does not say it is gone. The rule is the same in one import as across
+one does not say it is gone. A reaction that names its reactor is added when
+the message holds none that matches it in every field. A reaction that names
+no reactor (no identity, no display name, not the account holder's), which
+only iMazing writes, is counted instead: per part, kind and emoji, a copy
+adds as many as it holds above what the message has, and a copy with fewer
+removes none (`insert_new_tapbacks_sql`). Why: two people's reactions with
+the same emoji are the same row once the reactor is gone, so matching them
+field for field kept one of them
+([#3112](https://github.com/messagecrate/message-crate/issues/3112)). The rule is the same in one import as across
 several, in any file order (`copy_mark_sql` for the mark and
 `later_backup_sql` for the text in `db/staging.rs`, `add_staged_copy` in
 `imports_api/staging.rs`). Why: a person recovers a deleted message and
