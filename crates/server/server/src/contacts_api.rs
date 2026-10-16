@@ -22,8 +22,9 @@ use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, 
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
 
 pub(crate) mod address_book;
-pub(crate) mod edit;
+mod edit;
 
+pub(crate) use edit::ContactEditError;
 use edit::mutate_contact;
 
 /// An address to link, and the service to link it on.

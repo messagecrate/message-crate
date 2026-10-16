@@ -599,9 +599,9 @@ impl From<crate::accounts_api::ProfileUpdateError> for ApiError {
     }
 }
 
-impl From<crate::contacts_api::edit::ContactEditError> for ApiError {
-    fn from(e: crate::contacts_api::edit::ContactEditError) -> Self {
-        use crate::contacts_api::edit::ContactEditError;
+impl From<crate::contacts_api::ContactEditError> for ApiError {
+    fn from(e: crate::contacts_api::ContactEditError) -> Self {
+        use crate::contacts_api::ContactEditError;
         match e {
             ContactEditError::Refused(message) => Self::validation(message),
             ContactEditError::Country(error) => error.into(),
