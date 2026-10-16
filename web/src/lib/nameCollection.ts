@@ -101,9 +101,12 @@ export type NameCollection = {
 /**
  * The key a name is looked up by among the reserved names: trimmed, with
  * ASCII letters lower-cased and every other character as it is. The server
- * folds the same way (`to_ascii_lowercase` in `named_membership.rs`), so a
- * name such as `UNKNOWN` spelled with the Kelvin sign (U+212A), which
- * `toLowerCase` would turn into `unknown`, is refused by neither side.
+ * lower-cases letters the same way here (`to_ascii_lowercase` in
+ * `named_membership.rs`), so a name such as `UNKNOWN` spelled with the Kelvin
+ * sign (U+212A), which `toLowerCase` would turn into `unknown`, is refused by
+ * neither side. Matching a name against the account's own sets is another
+ * rule: the server compares those with its Unicode `lower()`, which is why
+ * `useIdOf` and `ensure` use `toLowerCase`.
  */
 function reservedKey(name: string): string {
   return name.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());

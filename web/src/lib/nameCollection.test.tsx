@@ -187,7 +187,7 @@ describe("useNameCollectionActions", () => {
   // place of `K` is a name it accepts. The form must not refuse it.
   it("folds only ASCII letters before checking a reserved name, as the server does", async () => {
     const routes = fakeRoutes();
-    const kelvin = "UNKNOWN";
+    const kelvin = "UN\u212ANOWN";
     routes.create.mockResolvedValue({ id: 4, name: kelvin });
     const collection = createNameCollection({
       routes,
