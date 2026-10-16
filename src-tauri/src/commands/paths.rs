@@ -189,8 +189,7 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// next request cleans if this one is killed.
 ///
 /// The check runs before any Import Run exists, so it has no run log: the
-/// Reader's log lines go to the desktop app's log ([`reader_log_line`]),
-/// its warnings as warnings.
+/// Reader's warnings go to the desktop app's log ([`identity_check_log`]).
 #[tauri::command]
 pub async fn imessage_backup_identities(
     app: AppHandle,
@@ -201,14 +200,7 @@ pub async fn imessage_backup_identities(
     let scratch_root = scratch_dir(&app).join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
-        let backup = path.trim().to_string();
-        let warnings = backup.clone();
-        let log = message_crate_core::LogSink::new(move |line: &str| {
-            crate::app_log::info(&reader_log_line(line, &backup));
-        })
-        .with_warnings(move |line: &str| {
-            crate::app_log::warn(&reader_log_line(line, &warnings));
-        });
+        let log = identity_check_log(path.trim().to_string(), crate::app_log::warn);
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root, log)
             .map_err(|e| format!("{e:#}"))
     })
@@ -216,12 +208,28 @@ pub async fn imessage_backup_identities(
     .map_err(|e| e.to_string())?
 }
 
-/// The desktop app's log's line for one line the Apple Messages Reader
-/// logged while the Import screen's identity check ran, with the backup's
+/// Where the Apple Messages Reader logs during the identity check of the
+/// backup at `backup`: each warning goes to `warn`, as [`reader_log_line`]
+/// writes it, and every other line is dropped. Why: the Reader's other lines
+/// say how far it got, and one of them, "Decrypted iOS backup", names the
+/// phone, which usually names the person whose phone it is. The desktop
+/// app's log is offered to the owner of every Message Crate the app signs in
+/// to (`docs/architecture/import-run-logs.md`, "The desktop app's log").
+fn identity_check_log(
+    backup: String,
+    warn: impl Fn(&str) + Send + Sync + 'static,
+) -> message_crate_core::LogSink {
+    message_crate_core::LogSink::none()
+        .with_warnings(move |line: &str| warn(&reader_log_line(line, &backup)))
+}
+
+/// The desktop app's log's line for one warning the Apple Messages Reader
+/// wrote while the Import screen's identity check ran, with the backup's
 /// path, `backup`, written as "the backup". Why: the desktop app's log names
 /// only paths inside Message Crate's own directories, and a backup's path
-/// can name the person whose phone it is
-/// (`docs/architecture/import-run-logs.md`, "The desktop app's log").
+/// can name the person whose phone it is. The path is hidden as the window
+/// gave it, which is the form the Reader names it in: the Reader is handed
+/// that path and resolves nothing.
 fn reader_log_line(line: &str, backup: &str) -> String {
     let line = if backup.is_empty() {
         line.to_string()
@@ -543,6 +551,29 @@ mod tests {
         assert_eq!(
             reader_log_line("opening chat.db", "/Users/sam/Backup/00008030"),
             "The Apple Messages Reader logged during the identity check: opening chat.db"
+        );
+    }
+
+    /// The Reader's lines from the identity check are dropped, and only its
+    /// warnings reach the desktop app's log, with the backup's path hidden:
+    /// the line "Decrypted iOS backup" names the phone (#2185).
+    #[test]
+    fn the_identity_check_logs_the_reader_s_warnings_alone() {
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = identity_check_log("/Users/sam/Backup/00008030".to_string(), {
+            let written = std::sync::Arc::clone(&written);
+            move |line: &str| written.lock().unwrap().push(line.to_string())
+        });
+
+        log.emit("Decrypted iOS backup: Sam's iPhone (version 17.5)");
+        log.warn("The temporary copy at /Users/sam/Backup/00008030/x could not be removed");
+
+        assert_eq!(
+            *written.lock().unwrap(),
+            [
+                "The Apple Messages Reader logged during the identity check: The temporary copy \
+              at the backup/x could not be removed"
+            ]
         );
     }
 

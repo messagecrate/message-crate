@@ -91,10 +91,10 @@ written several ways (`localhost` or `127.0.0.1`), so nothing compares it.
 What the desktop app does and fails at outside an Import Run goes to one
 log of its own, `desktop-app.log` in the Logs Directory: an event no window
 received, a program in the Tools Directory whose record could not be
-written, a server whose processes will not end with it, and the lines the
-Apple Messages Reader writes during the Import screen's identity check,
+written, a server whose processes will not end with it, and the warnings
+the Apple Messages Reader writes during the Import screen's identity check,
 which runs before any Import Run exists. Its lines are in the format below,
-at `WARN` for what the app went on without and `INFO` for what it did.
+at `WARN`, because each is something the app went on without.
 Nothing deletes it, and every start of the app writes on into it. It is
 made when its first line is written, so an app with nothing to say has
 none.
@@ -118,10 +118,13 @@ without Message Crate ("A filter, not a guard", below).
 
 A line of it names only paths inside Message Crate's own directories, such
 as the Tools Directory and the Scratch Directory. The path of a backup the
-identity check reads is written as "the backup". Why: the log is offered to
-the owner of whichever Message Crate the app is signed in to, and a
-backup's path, such as the name of the directory a phone's backup was
-copied into, can name the person whose phone it is.
+identity check reads is written as "the backup", in the form the window
+gave it, which is the form the Reader names it in. The Reader's other lines
+from the identity check are not written at all: they say how far it got,
+and one of them names the phone, such as "Decrypted iOS backup: Sam's
+iPhone". Why: the log is offered to the owner of whichever Message Crate
+the app is signed in to, and a backup's path or a phone's name can name the
+person whose phone it is.
 
 ## One line per event, with its time and level
 

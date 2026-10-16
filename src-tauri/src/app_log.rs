@@ -46,11 +46,6 @@ pub fn warn(text: &str) {
     write(RunLogLevel::Warn, text);
 }
 
-/// Add `text` to the app's log as something the app did.
-pub fn info(text: &str) {
-    write(RunLogLevel::Info, text);
-}
-
 /// Add `text` at `level` to the app's log, or to standard error before
 /// [`init`].
 fn write(level: RunLogLevel, text: &str) {
@@ -134,10 +129,7 @@ mod tests {
             RunLogLevel::Warn,
             "The server's processes will not end with it",
         );
-        log.write(
-            RunLogLevel::Info,
-            "The Apple Messages Reader logged: Building cache...",
-        );
+        log.write(RunLogLevel::Info, "The desktop app started its server");
 
         assert_eq!(log.path(), logs.join(DESKTOP_APP_LOG));
         assert_eq!(
@@ -149,7 +141,7 @@ mod tests {
                 ),
                 (
                     RunLogLevel::Info,
-                    "The Apple Messages Reader logged: Building cache...".to_string()
+                    "The desktop app started its server".to_string()
                 ),
             ]
         );
