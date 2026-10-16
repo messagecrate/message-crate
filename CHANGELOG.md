@@ -528,6 +528,14 @@ carry their date on the heading.
   server that crashed gets the line too, saying **The server stopped.
   Restarting it…**. If it cannot be started, the line says why and offers
   **Try again** (#2695).
+- 2026-10-16: **The website no longer refuses a Contact Group or Message
+  Tag name the server accepts.** A name written with a letter that only looks
+  like a plain one, such as the Kelvin sign in place of `K` in `UNKNOWN`, was
+  refused as reserved when you created or renamed a Contact Group or Message
+  Tag on the website, though the server would have taken it. And a name
+  typed with `İ` or a capital `Σ` now finds the Contact Group or Message Tag
+  the server holds under that name, such as `istanbul` for `İstanbul`,
+  where the website used to say it was not found (#3037).
 - 2026-10-16: **The website has an icon.** The website named no icon, so
   the browser asked for one on every page, logged an error in its console,
   and showed a blank tab icon. The browser tab now shows the website's icon

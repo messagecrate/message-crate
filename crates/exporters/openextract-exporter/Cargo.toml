@@ -9,20 +9,18 @@ autotests = false
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
-csv = { workspace = true }
 hex = { workspace = true }
 message-crate-csv = { path = "../../libs/csv" }
 message-crate-core = { path = "../../core/message-crate-core" }
 ir = { path = "../../libs/ir" }
-ir-format = { path = "../../libs/ir-format" }
 staging = { path = "../../libs/staging" }
-media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
+ir-format = { path = "../../libs/ir-format" }
 tempfile = { workspace = true }
 
 [lints]

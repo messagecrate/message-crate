@@ -179,6 +179,24 @@ async fn a_contact_group_cannot_take_a_computed_groups_name() {
         .unwrap();
 }
 
+// The reserved names are matched after folding ASCII letters only, the same
+// way the website folds them (`reservedKey` in `web/src/lib/nameCollection.ts`).
+// `UNKNOWN` with the Kelvin sign (U+212A) in place of `K` lower-cases to
+// `unknown` under a full Unicode fold, so this pins that both sides take it.
+#[tokio::test]
+async fn a_reserved_name_is_matched_after_folding_ascii_letters_only() {
+    let kelvin = "UN\u{212A}NOWN";
+    assert!(is_reserved(group_spec(), "UNKNOWN"));
+    assert!(!is_reserved(group_spec(), kelvin));
+    let fixture = crate::test_support::test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    let created = create_set(group_spec(), &mut conn, account, kelvin)
+        .await
+        .unwrap();
+    assert_eq!(created.name, kelvin);
+}
+
 // The search reads `tag:none`, quoted or not, as "no tag", so a Message Tag
 // stored under that name would list the untagged conversations on its page.
 #[tokio::test]
