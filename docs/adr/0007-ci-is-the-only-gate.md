@@ -61,9 +61,10 @@ target that comes back verbatim (`\\?\C:\...`), and a short name
 (`WEBSIT~1`) that stands for a long one. Every other job that runs on a pull
 request runs on Linux. A Windows build is not worth its time on a pull request
 that cannot change these paths. The ruleset requires the job all the same
-(#2788). A required job that its `if:` skips counts as passed, so the job
-holds back only a pull request whose Windows config tests fail. On a push, a
-tag or a manual run it runs like every other job, and the `docker` and
+(#2788). When the job's `if:` skips it, GitHub counts the required check as
+passed. So the job holds back only a pull request that changes the config
+paths or a workflow, and only until its Windows config tests pass. On a push,
+a tag or a manual run it runs like every other job, and the `docker` and
 `release` jobs need it, so a release waits for it (#2683).
 
 `src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
