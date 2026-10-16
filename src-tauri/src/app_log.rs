@@ -5,7 +5,7 @@
 //! A desktop launches the app with standard error thrown away, so a line
 //! written only there is lost. Every line goes here instead, in the line
 //! format of the server's log and the Import Run logs
-//! (`message-crate-log-lines`), so the Logs panel reads it with the same
+//! (`log-lines`), so the Logs panel reads it with the same
 //! viewer, as "Desktop app". Rules: `docs/architecture/import-run-logs.md`,
 //! "The desktop app's log".
 //!

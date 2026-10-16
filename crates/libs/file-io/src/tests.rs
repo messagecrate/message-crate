@@ -4,7 +4,7 @@
 //! and transcode, and `sha256_hex` gives the same fingerprint for bytes already
 //! in memory. A change to either silently re-keys everything already in a
 //! database, so both are pinned to values computed outside Rust (Python's
-//! `hashlib`). The message id's known answers are in `message-ir`'s
+//! `hashlib`). The message id's known answers are in `ir`'s
 //! `identity.rs`.
 
 #[cfg(unix)]

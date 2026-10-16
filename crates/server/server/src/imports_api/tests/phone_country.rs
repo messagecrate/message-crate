@@ -6,7 +6,7 @@
 use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{expect_problem, patch_json_raw};
-use message_crate_api_types::IdentityHolder;
+use api_types::IdentityHolder;
 
 /// One person's UK mobile, written in national form and with its `+` code.
 const NATIONAL: &str = "07700 900123";

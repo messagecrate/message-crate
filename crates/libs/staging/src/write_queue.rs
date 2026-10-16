@@ -32,16 +32,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Context, Result};
+use ir::{Attachment, ConversationDocument};
+use ir_format::{filename_stem, give_each_document_its_own_file};
 use message_crate_core::{
     AttachmentFiles, AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, Counter,
     LoadError, LogSink, OutputFormat, ProgressEvent, ProgressSink, Sinks, WriteStatus,
     attachment_size_hint, check_cancel, run_attachment_jobs,
 };
-use message_ir::{Attachment, ConversationDocument};
-use message_ir_format::{filename_stem, give_each_document_its_own_file};
 
 use crate::headroom::{Disk, bytes_to_copy, check_headroom};
-use message_ir_format::{is_complete_file, write_format};
+use ir_format::{is_complete_file, write_format};
 
 /// Where a unit's attachment bytes come from at write time.
 #[derive(Debug, Default)]
@@ -107,10 +107,7 @@ impl ConversationUnit {
     /// out with `att.bytes.take()` instead of copying them.
     pub fn from_doc(
         mut doc: ConversationDocument,
-        mut source_for: impl FnMut(
-            usize,
-            &mut message_ir::Attachment,
-        ) -> (AttachmentSource, Option<u64>),
+        mut source_for: impl FnMut(usize, &mut ir::Attachment) -> (AttachmentSource, Option<u64>),
     ) -> Self {
         let mut attachments = Vec::new();
         let mut flat = 0usize;
@@ -752,7 +749,7 @@ fn write_one_unit(
         .count();
     drop(jobs);
 
-    message_ir_format::clear_attachments_when_skipped(&mut doc, options.files);
+    ir_format::clear_attachments_when_skipped(&mut doc, options.files);
     for msg in &mut doc.messages {
         for att in &mut msg.attachments {
             att.bytes = None;

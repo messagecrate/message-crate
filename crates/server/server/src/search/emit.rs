@@ -15,7 +15,7 @@ use super::fts;
 use super::parse::{Expr, FieldTerm, TextTerm};
 use super::value::{Cmp, DateCmp, Value, utc_instant};
 use super::{Filter, ListKind};
-use message_ir::{ConversationType, Deletion};
+use ir::{ConversationType, Deletion};
 
 /// Compile a parsed query into one parenthesised WHERE fragment.
 ///
@@ -661,7 +661,7 @@ fn conversation_identity_text() -> String {
         "coalesce((SELECT CASE WHEN {} THEN substr(hc.raw, {}) WHEN {} THEN '' \
            ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
         is_a_name_key("hc.raw"),
-        message_ir::NAME_CHAT_ID_PREFIX.len() + 1,
+        ir::NAME_CHAT_ID_PREFIX.len() + 1,
         chat_handle_is_a_key("c", "hc.raw")
     )
 }
@@ -691,28 +691,28 @@ fn chat_handle_is_a_key(conv: &str, raw_col: &str) -> String {
 fn is_a_key_raw(raw_col: &str) -> String {
     format!(
         "({} OR {} OR {} OR {})",
-        starts_with_prefix(raw_col, message_ir::GROUP_CHAT_ID_PREFIX),
+        starts_with_prefix(raw_col, ir::GROUP_CHAT_ID_PREFIX),
         is_a_name_key(raw_col),
         is_the_nameless_key(raw_col),
-        starts_with_prefix(raw_col, message_ir::ORPHANED_CHAT_ID_PREFIX)
+        starts_with_prefix(raw_col, ir::ORPHANED_CHAT_ID_PREFIX)
     )
 }
 
 /// SQL that holds when the handle text `raw_col` is a `name:` key.
 fn is_a_name_key(raw_col: &str) -> String {
-    starts_with_prefix(raw_col, message_ir::NAME_CHAT_ID_PREFIX)
+    starts_with_prefix(raw_col, ir::NAME_CHAT_ID_PREFIX)
 }
 
 /// SQL that holds when the handle text `raw_col` starts with the key prefix
 /// `prefix`, compared as written: the exporters write the prefixes from the
-/// `message_ir` constants.
+/// `ir` constants.
 fn starts_with_prefix(raw_col: &str, prefix: &str) -> String {
     format!("substr({raw_col}, 1, {}) = '{prefix}'", prefix.len())
 }
 
 /// SQL that holds when the handle text `raw_col` is the `nameless:` key.
 fn is_the_nameless_key(raw_col: &str) -> String {
-    format!("{raw_col} = '{}'", message_ir::NAMELESS_CHAT_ID)
+    format!("{raw_col} = '{}'", ir::NAMELESS_CHAT_ID)
 }
 
 /// Some party to conversation `c` is `v`: its chat handle when that is an

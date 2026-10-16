@@ -4,13 +4,13 @@
 use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
+use ir::ConversationDocument;
+use ir_format::MergedArchive;
 use message_crate_core::{
     ConvertRun, DUPLICATES_DROPPED, ExportReport, IssueSink, ItemKind, OutputFormat,
     SKIPPED_INVALID_DATE, unreadable_parts_note,
 };
-use message_ir::ConversationDocument;
-use message_ir_format::MergedArchive;
-use message_staging::{Project, ReadBackup, WriterSetup, convert_backup};
+use staging::{Project, ReadBackup, WriterSetup, convert_backup};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,

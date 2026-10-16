@@ -25,7 +25,7 @@
 //! every line.
 
 #[cfg(unix)]
-use message_crate_serve_protocol::PARENT_CHECK_INTERVAL;
+use serve_protocol::PARENT_CHECK_INTERVAL;
 use tokio::sync::oneshot;
 
 /// A watch on the process that started the server, begun by [`Self::start`].

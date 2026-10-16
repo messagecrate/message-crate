@@ -7,10 +7,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
-// `message_crate_api_types` and `message_ir` both name a `Message` and an
+// `api_types` and `ir` both name a `Message` and an
 // `Attachment`; the conversation file's are imported here as `IrMessage` and
 // `IrAttachment`.
-use message_ir::{
+use ir::{
     Attachment as IrAttachment, ConversationDocument, ConversationMeta, ConversationStats,
     ConversationType, Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions,
     Message as IrMessage, MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION,
@@ -18,7 +18,7 @@ use message_ir::{
 };
 use serde_json::json;
 
-use message_crate_api_types::{Attachment, Message, Tapback};
+use api_types::{Attachment, Message, Tapback};
 
 /// Grouping key so messages from the same chat and backup source stay together.
 pub fn conversation_key(msg: &Message) -> String {
@@ -174,9 +174,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
 
 /// One earlier version the server stores, as the conversation file writes
 /// it: its time back in milliseconds.
-fn earlier_version_from_api(
-    version: &message_crate_api_types::EarlierVersion,
-) -> Result<EarlierVersion> {
+fn earlier_version_from_api(version: &api_types::EarlierVersion) -> Result<EarlierVersion> {
     Ok(EarlierVersion {
         part_index: u32::try_from(version.part_index)
             .with_context(|| format!("part index {}", version.part_index))?,
@@ -190,18 +188,18 @@ fn earlier_version_from_api(
 }
 
 /// The precision the server stored, as the conversation file writes it.
-fn time_precision_from_api(precision: message_crate_api_types::TimePrecision) -> TimePrecision {
+fn time_precision_from_api(precision: api_types::TimePrecision) -> TimePrecision {
     match precision {
-        message_crate_api_types::TimePrecision::Seconds => TimePrecision::Seconds,
-        message_crate_api_types::TimePrecision::Milliseconds => TimePrecision::Milliseconds,
+        api_types::TimePrecision::Seconds => TimePrecision::Seconds,
+        api_types::TimePrecision::Milliseconds => TimePrecision::Milliseconds,
     }
 }
 
 /// The mark a server message carries, as the conversation file writes it.
-fn deletion_from_api(deletion: message_crate_api_types::Deletion) -> Deletion {
+fn deletion_from_api(deletion: api_types::Deletion) -> Deletion {
     match deletion {
-        message_crate_api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
-        message_crate_api_types::Deletion::Unsent => Deletion::Unsent,
+        api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
+        api_types::Deletion::Unsent => Deletion::Unsent,
     }
 }
 
@@ -254,16 +252,16 @@ pub struct ExportPath {
 /// The server's path is input: an import that reuses a stored fingerprint
 /// never read the file, so the server can hold `../x` or an absolute path.
 /// Joined onto the output directory, such a path writes outside it, so it goes
-/// through [`message_ir::safe_attachment_path`] like every other reader of an
+/// through [`ir::safe_attachment_path`] like every other reader of an
 /// attachment path. A refused path is not used: the attachment falls back to
 /// `attachments/{sha256}`, the name an attachment with no path gets.
 pub fn export_path(att: &Attachment) -> ExportPath {
     let by_fingerprint = att
         .sha256
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .map(|sha| format!("attachments/{sha}"));
-    let Some(path) = att.path.as_deref().and_then(message_ir::trimmed) else {
+    let Some(path) = att.path.as_deref().and_then(ir::trimmed) else {
         return ExportPath {
             rel: by_fingerprint,
             refused: None,
@@ -271,7 +269,7 @@ pub fn export_path(att: &Attachment) -> ExportPath {
     };
     // The base is empty because only the verdict matters here: the caller
     // joins the accepted path onto the output directory itself.
-    if message_ir::safe_attachment_path(Path::new(""), path).is_ok() {
+    if ir::safe_attachment_path(Path::new(""), path).is_ok() {
         ExportPath {
             rel: Some(path.to_string()),
             refused: None,

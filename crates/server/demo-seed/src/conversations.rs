@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use message_ir::{
+use ir::{
     Attachment, ConversationHeader, ConversationMeta, ConversationStats, ConversationType,
     Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message, MessageKind,
     Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, orphaned_chat_id,

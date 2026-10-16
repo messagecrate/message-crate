@@ -35,7 +35,7 @@ pub async fn import_jsonl_text(
     body: &str,
 ) -> crate::imports_api::pipeline::ImportCounts {
     use crate::imports_api::pipeline::{FixedImportArgs, ImportOptions};
-    use message_crate_api_types::ImportMode;
+    use api_types::ImportMode;
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("conversation.jsonl");
     std::fs::write(&path, body).unwrap();
@@ -114,7 +114,7 @@ pub async fn assert_every_person_is_on_a_contact(conn: &mut sqlx::SqliteConnecti
 
 /// A conversation file an exporter wrote and the tests keep in
 /// `tests/fixtures/`, `contents`, with its header's `schema_version` set to
-/// [`message_ir::SCHEMA_VERSION`]. A schema version bump then reaches the
+/// [`ir::SCHEMA_VERSION`]. A schema version bump then reaches the
 /// committed files the way it reaches [`conversation_header`], with no file
 /// edited by hand (#1855). Only the header line is rewritten. Every message
 /// line stays as the exporter wrote it.
@@ -124,6 +124,6 @@ pub fn at_current_schema_version(contents: &str) -> String {
         .expect("a conversation file opens with its header line");
     let mut header: serde_json::Value =
         serde_json::from_str(header).expect("the header line is JSON");
-    header["schema_version"] = message_ir::SCHEMA_VERSION.into();
+    header["schema_version"] = ir::SCHEMA_VERSION.into();
     format!("{header}\n{messages}")
 }

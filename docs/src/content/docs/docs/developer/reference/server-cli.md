@@ -36,7 +36,7 @@ Import and view messages in SQLite
 
 ###### **Subcommands:**
 
-* `import` — Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+* `import` — Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
 * `imports` — Work on an account's Import Runs (`discard` clears a stranded one)
 * `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source, or once in whole seconds beside its millisecond copy in one source
 * `reset-demo` — Rebuild the Demo Account: generate Demo Data, clear the account, import, and process assets. Adds the account when it is not there
@@ -54,7 +54,7 @@ Import and view messages in SQLite
 
 ## `message-crate-server import`
 
-Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
 
 **Usage:** `message-crate-server import [OPTIONS] --input <INPUT> --account <ACCOUNT>`
 

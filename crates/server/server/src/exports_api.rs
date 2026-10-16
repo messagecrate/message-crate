@@ -10,10 +10,8 @@
 //! started, so every read of message data by a program leaves a record.
 
 use crate::extract::{Json, Path as AxumPath, Query};
+use api_types::{CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, ExportStatus};
 use axum::extract::State;
-use message_crate_api_types::{
-    CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, ExportStatus,
-};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
@@ -368,7 +366,7 @@ pub(crate) async fn create_export(
     Json(body): Json<CreateExportRequest>,
 ) -> Result<Created<ExportRun>, ApiError> {
     let account = auth.account_id;
-    let tool = body.tool.as_deref().and_then(message_ir::trimmed);
+    let tool = body.tool.as_deref().and_then(ir::trimmed);
     let mut conn = db.acquire().await?;
     let now = chrono::Utc::now();
     let clock = crate::db::account_profile::account_clock(&mut conn, account, now).await?;

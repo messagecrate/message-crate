@@ -9192,7 +9192,7 @@
         "tags": [
           "Import"
         ],
-        "summary": "Import one message-ir JSONL body.",
+        "summary": "Import one JSONL conversation file body.",
         "description": "Every message needs a non-empty `guid`. A batch with a message without\none is refused with `422`, naming its lines, and nothing in it is stored.\nA message whose `guid` the source already holds is skipped, so a batch\nsent again after its answer was lost stores nothing twice. A batch hides\nno duplicates: the run's completion or discard hides them, once for the\nwhole run.",
         "operationId": "create_import_batch",
         "parameters": [
@@ -9208,7 +9208,7 @@
           }
         ],
         "requestBody": {
-          "description": "message-ir JSONL as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets.",
+          "description": "A JSONL conversation file as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets.",
           "content": {
             "application/jsonl": {},
             "application/x-ndjson": {}
@@ -15278,7 +15278,7 @@
               "string",
               "null"
             ],
-            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run trimmed. Null when the\nrequest leaves it out, or blank. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
+            "description": "Name of the program that runs the import, such as\n`import`, stored on the run trimmed. Null when the\nrequest leaves it out, or blank. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
             "maxLength": 64
           }
         }

@@ -2,9 +2,9 @@
 
 use anyhow::Result;
 use go_sms_mms::ParsedPdu;
+use ir::PendingAttachment;
 use message_crate_core::digest_prefix;
-use message_ir::PendingAttachment;
-use message_staging::AttachmentSpool;
+use staging::AttachmentSpool;
 
 /// Queue PDU attachment parts as metadata, each with its payload's size
 /// whether or not the run copies it. With a `spool`, each payload is

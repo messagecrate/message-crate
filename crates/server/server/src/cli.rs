@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
+use api_types::ImportMode;
 use clap::{Args, Command, CommandFactory, Parser, Subcommand};
-use message_crate_api_types::ImportMode;
 
 use crate::config::{Config, ServeFlags, validate_source_id};
 use crate::dedupe::DedupeStats;
@@ -33,7 +33,7 @@ pub struct Cli {
 /// One subcommand per CLI operation: import, serve, and maintenance.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+    /// Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
     Import(ImportArgs),
 
     /// Work on an account's Import Runs (`discard` clears a stranded one)
@@ -261,7 +261,7 @@ pub struct ServeArgs {
     /// The desktop app passes its own id, so a server it started does not
     /// outlive a crash of the app. Without it the server runs until it is
     /// stopped
-    #[arg(long = message_crate_serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
+    #[arg(long = serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
     pub exit_with_parent: Option<u32>,
 }
 
@@ -342,14 +342,14 @@ pub async fn run(cli: Cli) -> Result<()> {
 /// [`OPERATION_LOCK_HELD_EXIT_CODE`] when another server, or reset-demo, holds
 /// the database `serve` was asked to open; 1 for every other failure.
 ///
-/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
 #[must_use]
 pub fn exit_code(error: &anyhow::Error) -> u8 {
     if error
         .downcast_ref::<crate::operation_lock::OperationLockHeld>()
         .is_some()
     {
-        message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
+        serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
     } else {
         1
     }

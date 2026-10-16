@@ -296,7 +296,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         .expect("expected .json");
     let raw = fs::read_to_string(&json_path).unwrap();
     let document: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(document["schema_version"], message_ir::SCHEMA_VERSION);
+    assert_eq!(document["schema_version"], ir::SCHEMA_VERSION);
     assert!(
         document["conversation"]["stats"]["message_count"]
             .as_u64()
@@ -344,7 +344,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     let body = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = body.lines();
     let header: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], message_ir::SCHEMA_VERSION);
+    assert_eq!(header["schema_version"], ir::SCHEMA_VERSION);
     assert!(header.get("messages").is_none());
     assert!(
         header["conversation"]["stats"]["message_count"]

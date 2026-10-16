@@ -1,13 +1,13 @@
-# message-csv
+# message-crate-csv
 
 CSV helpers shared by converters: the attachment and participant JSON cells, CSV reading helpers, and the `'` that keeps a spreadsheet from running a cell as a formula (`written_cell`, `read_cell`).
 
-`message-ir-format` and several exporters use this crate.
+`ir-format` and several exporters use this crate.
 
 ## Build and test
 
 ```bash
-cargo test -p message-csv
+cargo test -p message-crate-csv
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).

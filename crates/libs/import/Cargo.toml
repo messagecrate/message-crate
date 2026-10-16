@@ -1,8 +1,8 @@
 [package]
-name = "message-crate-import"
+name = "import"
 version = "0.1.0"
 edition = "2024"
-description = "Import message-ir JSONL exports into a running Message Crate"
+description = "Import JSONL conversation files into a running Message Crate"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
@@ -12,17 +12,17 @@ message-crate-http = { path = "../../libs/http" }
 message-crate-core = { path = "../../core/message-crate-core" }
 media = { path = "../media" }
 file-io = { workspace = true }
-message-ir = { path = "../../libs/ir" }
-message-ir-format = { path = "../../libs/ir-format" }
+ir = { path = "../../libs/ir" }
+ir-format = { path = "../../libs/ir-format" }
 reqwest = { workspace = true, features = ["blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-message-crate-api-types = { version = "0.1.0", path = "../api-types" }
+api-types = { version = "0.1.0", path = "../api-types" }
 
 [dev-dependencies]
 # `testutil` reads an Import Run log back as level and text pairs.
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
-message-ir = { path = "../../libs/ir", features = ["testutil"] }
+ir = { path = "../../libs/ir", features = ["testutil"] }
 tempfile = { workspace = true }
 httpmock = "0.8"
 

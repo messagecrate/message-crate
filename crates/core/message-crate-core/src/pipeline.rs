@@ -11,8 +11,8 @@ use crate::counter::{
     error_and_note_lines, item_line, item_reason,
 };
 use anyhow::{Context, bail};
-pub use message_crate_api_types::RunIssueKind;
-use message_ir::{
+pub use api_types::RunIssueKind;
+use ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
     pending_to_document, prepare_conversation,
 };
@@ -432,17 +432,17 @@ pub fn prepare_outputs(
 
 /// Standard export metadata: source / tool / version and the owner
 /// identity. The Export Date is left for the convert step to stamp
-/// (`message_staging::convert_backup`), which is given it by its caller; each
+/// (`staging::convert_backup`), which is given it by its caller; each
 /// message's Backup Date is the exporter's
-/// [`ProjectionHooks::backup_taken_at_unix_ms`](message_ir::ProjectionHooks::backup_taken_at_unix_ms).
+/// [`ProjectionHooks::backup_taken_at_unix_ms`](ir::ProjectionHooks::backup_taken_at_unix_ms).
 pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
     owner_identity: Option<String>,
     owner_display_name: Option<String>,
-) -> message_ir::ExportMeta {
-    message_ir::ExportMeta {
+) -> ir::ExportMeta {
+    ir::ExportMeta {
         source: source.to_string(),
         tool: tool.to_string(),
         tool_version: tool_version.to_string(),

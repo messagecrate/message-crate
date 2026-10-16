@@ -88,7 +88,7 @@ fn convert_messages_keys_the_chat_by_its_number() {
 /// four cells is a vendor leftover any more.
 #[test]
 fn reactions_replies_deletions_and_edits_reach_the_message() {
-    use message_ir::{Deletion, EarlierVersion, Reaction, ReplyTo};
+    use ir::{Deletion, EarlierVersion, Reaction, ReplyTo};
 
     let messages = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/messages.csv");
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -99,7 +99,7 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
         convert_run: ConvertRun::default(),
     })
     .expect("convert");
-    let document = message_ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
+    let document = ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
         .expect("read the conversation back");
     let by_text = |text: &str| {
         document

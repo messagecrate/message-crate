@@ -263,3 +263,9 @@ request, with the reason in the commit message. A crate under a GPL-family
 license needs a second process, on the pattern above, or a different crate;
 there is no third option. Manifest and `LICENSE` file must agree for every
 crate that is not FCL, and `scripts/check-license.sh` must know about it.
+
+## Amended 2026-10-16: crates take their directory's name
+
+The text above is kept as it was decided. Since #2192, a crate's package
+name is its directory's name, so the crate it names has a new name: `message-ir` is `ir`.
+The directories did not move, and nothing else in this decision changed.

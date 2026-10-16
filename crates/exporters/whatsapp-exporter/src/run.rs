@@ -13,7 +13,7 @@ use message_crate_core::{
     ConvertRun, OutputConfig, RunContext, RunResult, ScratchDir, WHATSAPP_DIRECTORY,
     WhatsappConfig, WhatsappPlatform as CorePlatform, prepare_outputs,
 };
-use message_staging::{Disk, check_headroom};
+use staging::{Disk, check_headroom};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -276,7 +276,7 @@ fn mark_output_and_make_work_directory(
     output: &OutputConfig,
 ) -> Result<ScratchDir> {
     if !output.resume {
-        message_ir_format::mark_export_directory(&output.directory)?;
+        ir_format::mark_export_directory(&output.directory)?;
     }
     ScratchDir::create(&context.scratch_dir.join(WHATSAPP_DIRECTORY))
 }
@@ -375,11 +375,11 @@ mod tests {
         assert_eq!(work.path().parent(), Some(root.as_path()));
         assert_eq!(
             entries(&output),
-            [message_ir_format::EXPORT_SENTINEL.to_string()],
+            [ir_format::EXPORT_SENTINEL.to_string()],
             "only the mark is in the output"
         );
         fs::write(output.join("wtsexporter_result.json"), "{}").unwrap();
-        message_ir_format::clean_previous_ir_output(&output).unwrap();
+        ir_format::clean_previous_ir_output(&output).unwrap();
 
         let path = work.path().to_path_buf();
         drop(work);
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn making_the_work_directory_keeps_an_earlier_export() {
         let (_tmp, output, test_run) = empty_whatsapp_output();
-        message_ir_format::mark_export_directory(&output).unwrap();
+        ir_format::mark_export_directory(&output).unwrap();
         fs::write(output.join("earlier.jsonl"), "{}").unwrap();
 
         let _work = super::mark_output_and_make_work_directory(&test_run.context, &test_run.output)

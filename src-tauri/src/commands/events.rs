@@ -168,15 +168,15 @@ impl ImportProgressEvent {
 }
 
 /// The staging summary's count of attachments, on `check`.
-impl From<message_staging::SummaryProgress> for ImportProgressEvent {
-    fn from(progress: message_staging::SummaryProgress) -> Self {
+impl From<staging::SummaryProgress> for ImportProgressEvent {
+    fn from(progress: staging::SummaryProgress) -> Self {
         Self::counts(Step::Check, progress.done, progress.total)
     }
 }
 
 /// The Media Stage's count of files, on `media`.
-impl From<message_staging::TranscodeProgress> for ImportProgressEvent {
-    fn from(progress: message_staging::TranscodeProgress) -> Self {
+impl From<staging::TranscodeProgress> for ImportProgressEvent {
+    fn from(progress: staging::TranscodeProgress) -> Self {
         Self::counts(Step::Media, progress.done, progress.total)
     }
 }
@@ -258,7 +258,7 @@ pub struct ImportFileDoneEvent {
 
 impl ImportFileDoneEvent {
     /// The Upload's word for what it did with `file`.
-    pub(crate) fn new(file: String, status: message_crate_import::FileStatus) -> Self {
+    pub(crate) fn new(file: String, status: import::FileStatus) -> Self {
         Self {
             file,
             status: status.as_str().into(),
@@ -344,8 +344,8 @@ fn user_message(err: &anyhow::Error) -> Option<&'static str> {
     if message_crate_http::is_session_refused(err) {
         return Some(message_crate_http::SESSION_REFUSED);
     }
-    if message_crate_export::is_run_canceled_on_server(err) {
-        return Some(message_crate_export::RUN_CANCELED_ON_SERVER);
+    if export::is_run_canceled_on_server(err) {
+        return Some(export::RUN_CANCELED_ON_SERVER);
     }
     let io = err
         .chain()
@@ -447,9 +447,9 @@ mod tests {
             ),
             (
                 anyhow::anyhow!("Export Run 7 page failed (HTTP 409 Conflict)")
-                    .context(message_crate_export::RunCanceledOnServer)
+                    .context(export::RunCanceledOnServer)
                     .context("export the account"),
-                message_crate_export::RUN_CANCELED_ON_SERVER,
+                export::RUN_CANCELED_ON_SERVER,
             ),
         ];
         for (error, sentence) in cases {
@@ -587,16 +587,18 @@ mod tests {
     #[test]
     fn the_staging_summary_media_stage_and_upload_count_on_their_steps() {
         assert_eq!(
-            serde_json::to_value(ImportProgressEvent::from(
-                message_staging::SummaryProgress { done: 2, total: 9 }
-            ))
+            serde_json::to_value(ImportProgressEvent::from(staging::SummaryProgress {
+                done: 2,
+                total: 9
+            }))
             .unwrap(),
             serde_json::json!({ "step": "check", "done": 2, "total": 9 })
         );
         assert_eq!(
-            serde_json::to_value(ImportProgressEvent::from(
-                message_staging::TranscodeProgress { done: 1, total: 4 }
-            ))
+            serde_json::to_value(ImportProgressEvent::from(staging::TranscodeProgress {
+                done: 1,
+                total: 4
+            }))
             .unwrap(),
             serde_json::json!({ "step": "media", "done": 1, "total": 4 })
         );

@@ -1,9 +1,9 @@
 use super::*;
+use ir::TimePrecision;
 use message_crate_core::{
     AppleConfig, OutputFormat,
     testutil::{TestRun, names_in},
 };
-use message_ir::TimePrecision;
 use std::{fs, path::Path};
 
 fn apple_cfg(input: &Path, apple: AppleConfig) -> TestRun<AppleConfig> {
@@ -475,7 +475,7 @@ fn run_one_message(
 #[test]
 fn inline_and_missing_attachments_reach_a_file_backed_export() {
     use imessage_reader_protocol::AttachmentSource;
-    use message_ir_format::read_conversation_json;
+    use ir_format::read_conversation_json;
 
     const SVG: &str = "<svg></svg>";
     let dir = tempfile::tempdir().unwrap();

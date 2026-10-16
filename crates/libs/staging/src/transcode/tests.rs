@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 ///
 /// Writes `attachments/<name>` with `bytes`, and one `.jsonl` whose
 /// single message has non-empty text and one attachment pointing at
-/// `attachments/<name>`. Built with `message_ir::testutil::sample_document`
+/// `attachments/<name>`. Built with `ir::testutil::sample_document`
 /// and written with `write_conversation_jsonl_to`, so the fixture and the
 /// code under test agree on the on-disk shape.
 ///
@@ -20,13 +20,13 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     let original = dir.path().join(&rel);
     std::fs::write(&original, bytes).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("hello from the fixture");
+    let mut doc = ir::testutil::sample_document("hello from the fixture");
     doc.messages[0].attachments = vec![Attachment {
         path: Some(rel),
         original_name: Some(name.to_string()),
         mime_type: None,
         size_bytes: Some(bytes.len() as u64),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc.finalize_stats();
 
@@ -841,7 +841,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     // A second, independent conversation staged in the same directory whose
     // attachment happens to record the identical path — two different
     // chats that received the same bytes.
-    let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
+    let mut doc_b = ir::testutil::sample_document("second conversation, same photo");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
     doc_b.messages[0].attachments = vec![Attachment {
@@ -849,7 +849,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
         original_name: Some("shared.png".into()),
         mime_type: None,
         size_bytes: Some(PNG_1X1_RGB.len() as u64),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
     let jsonl_b = conversation_file(dir.path(), &doc_b);
@@ -990,7 +990,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
     );
     let (dir, jsonl_a, original) = staged_one("shared.jpg", &bytes);
 
-    let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
+    let mut doc_b = ir::testutil::sample_document("second conversation, same photo");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
     doc_b.messages[0].attachments = vec![Attachment {
@@ -998,7 +998,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
         original_name: Some("shared.jpg".into()),
         mime_type: None,
         size_bytes: Some(bytes.len() as u64),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
     let jsonl_b = conversation_file(dir.path(), &doc_b);
@@ -1081,7 +1081,7 @@ fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
 ///
 /// Returns the second conversation file's path.
 fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
-    let mut doc_b = message_ir::testutil::sample_document("second conversation, same file");
+    let mut doc_b = ir::testutil::sample_document("second conversation, same file");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
     doc_b.messages[0].attachments = vec![Attachment {
@@ -1089,7 +1089,7 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
         original_name: Some("shared.png".into()),
         mime_type: None,
         size_bytes: Some(size),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
     let jsonl_b = conversation_file(dir, &doc_b);

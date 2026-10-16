@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
+use ir::Attachment;
 use message_crate_core::{ATTACHMENT_SPOOL_DIRECTORY, ScratchDir};
-use message_ir::Attachment;
 
 use crate::headroom::{Disk, check_headroom};
 use crate::write_queue::AttachmentSource;
@@ -152,8 +152,8 @@ impl AttachmentSpool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ir::testutil::sample_attachment;
     use message_crate_core::testutil::names_in;
-    use message_ir::testutil::sample_attachment;
 
     #[test]
     fn a_payload_is_on_disk_under_its_digest_until_the_spool_is_dropped() {

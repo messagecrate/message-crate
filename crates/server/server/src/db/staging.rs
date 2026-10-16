@@ -209,7 +209,7 @@ pub struct StagingMessage<'a> {
     /// RFC 3339 UTC instant the message was sent.
     pub timestamp: &'a StoredTime,
     /// Whether the source recorded `timestamp` to the millisecond.
-    pub time_precision: message_ir::TimePrecision,
+    pub time_precision: ir::TimePrecision,
     /// 1 when the account holder sent it.
     pub is_from_me: i64,
     /// Sender's handle id; `None` when unknown.
@@ -231,7 +231,7 @@ pub struct StagingMessage<'a> {
     /// The part of the quoted message a reply answers.
     pub reply_to_part: Option<i64>,
     /// Deleted in the source app, Unsent, or `None` for neither.
-    pub deletion: Option<message_ir::Deletion>,
+    pub deletion: Option<ir::Deletion>,
     /// Stable order within the conversation when timestamps collide.
     pub sort_order: i64,
     /// Import run that staged the row.
@@ -426,14 +426,14 @@ pub async fn insert_messages(
             .bind(row.is_reply)
             .bind(row.reply_to_guid)
             .bind(row.reply_to_part)
-            .bind(row.deletion.map(message_ir::Deletion::as_str))
+            .bind(row.deletion.map(ir::Deletion::as_str))
             .bind(row.sort_order)
             .bind(row.import_id)
             .bind(row.backup_taken_at)
             .bind(
                 row.deletion
                     .filter(|_| row.backup_taken_at.is_none())
-                    .map(message_ir::Deletion::as_str),
+                    .map(ir::Deletion::as_str),
             )
             .bind(row.backup_taken_at.is_none());
     }
@@ -654,7 +654,7 @@ pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<Sta
 pub async fn add_staged_copy_mark(
     conn: &mut SqliteConnection,
     staged: i64,
-    deletion: Option<message_ir::Deletion>,
+    deletion: Option<ir::Deletion>,
     backup_taken_at: Option<&StoredTime>,
 ) -> Result<()> {
     let undated_deletion = deletion.filter(|_| backup_taken_at.is_none());
@@ -680,8 +680,8 @@ pub async fn add_staged_copy_mark(
     );
     sqlx::query(AssertSqlSafe(sql))
         .bind(backup_taken_at)
-        .bind(deletion.map(message_ir::Deletion::as_str))
-        .bind(undated_deletion.map(message_ir::Deletion::as_str))
+        .bind(deletion.map(ir::Deletion::as_str))
+        .bind(undated_deletion.map(ir::Deletion::as_str))
         .bind(staged)
         .execute(&mut *conn)
         .await
@@ -1667,7 +1667,7 @@ pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<()> {
           AND sm.timestamp = messages.timestamp
         ",
     )
-    .bind(message_ir::TimePrecision::Milliseconds.as_str())
+    .bind(ir::TimePrecision::Milliseconds.as_str())
     .execute(&mut *conn)
     .await
     .context("promote the millisecond time precision")?;
@@ -1688,7 +1688,7 @@ pub async fn add_staged_copy_milliseconds(
     timestamp: &StoredTime,
 ) -> Result<()> {
     sqlx::query("UPDATE staging_messages SET time_precision = $1 WHERE id = $2 AND timestamp = $3")
-        .bind(message_ir::TimePrecision::Milliseconds.as_str())
+        .bind(ir::TimePrecision::Milliseconds.as_str())
         .bind(staged)
         .bind(timestamp)
         .execute(&mut *conn)

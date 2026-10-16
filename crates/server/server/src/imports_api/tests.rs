@@ -21,7 +21,7 @@ use crate::test_support::{
     get_json, import_ada_conversation, import_jsonl_text, message_line, patch_json,
     post_created_json, post_json, test_fixture,
 };
-use message_ir::{
+use ir::{
     Attachment, Deletion, EarlierVersion, ImessageExtensions, MessageKind, Reaction, Transport,
 };
 use tempfile::TempDir;

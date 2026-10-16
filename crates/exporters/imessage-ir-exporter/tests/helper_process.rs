@@ -23,8 +23,8 @@ use chat_db_fixture::{
     set_message_date, write_chat_db,
 };
 use common::{config, helper_binary};
-use message_ir::{ConversationDocument, Deletion, Direction, Message, TimePrecision};
-use message_ir_format::{
+use ir::{ConversationDocument, Deletion, Direction, Message, TimePrecision};
+use ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_jsonl,
     read_conversation_mbox,
 };

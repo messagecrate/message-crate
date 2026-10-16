@@ -10,7 +10,7 @@ use crate::chat_directory::regular_files;
 use crate::read::RawRow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
-use message_csv::AttachmentCell;
+use message_crate_csv::AttachmentCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -342,7 +342,7 @@ fn with_ordinal(stem: &str, extension: Option<&str>, ordinal: usize) -> String {
 /// `file_missing`.
 pub(crate) fn attachment_cell(csv_name: &str, attachment_type: &str) -> AttachmentCell {
     AttachmentCell {
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some(csv_name.to_string()),
             mime_type: mime_hint(attachment_type, csv_name),
@@ -389,10 +389,10 @@ pub(crate) fn mime_hint(attachment_type: &str, filename: &str) -> Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ir::Attachment;
     use message_crate_core::{
         AttachmentFiles, AttachmentJob, CancelFlag, LogSink, run_attachment_jobs,
     };
-    use message_ir::Attachment;
     use std::fs;
 
     /// The attachment-type column names the type when iMazing filled it in;

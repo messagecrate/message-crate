@@ -17,7 +17,7 @@
 //!
 //! The lines are read the way the server's log is read
 //! (`docs/architecture/server-log.md`), with the same reader
-//! (`message-crate-log-lines`): newest first, walking back from the id of the
+//! (`log-lines`): newest first, walking back from the id of the
 //! last line held a chunk at a time, filtered by level and text. A line's id
 //! is its byte offset in the file, which never moves, because a log is only
 //! ever appended to. A line still being written, with no line break yet, is
@@ -28,8 +28,8 @@ use std::io::{self, Read as _, Seek as _, SeekFrom};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
+use log_lines::{LineFilter, lines_backward, parse_line};
 use message_crate_core::{RunLogAccount, RunLogLevel, RunLogLine, parse_run_log_line};
-use message_crate_log_lines::{LineFilter, lines_backward, parse_line};
 
 use crate::app_log::DESKTOP_APP_LOG;
 use serde::{Deserialize, Serialize};

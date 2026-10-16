@@ -1,8 +1,8 @@
 use super::*;
 use chrono::TimeZone;
+use ir::testutil::{sample_document, sample_imessage_document};
+use ir::{Attachment, ConversationType, Direction, MessageKind, Participant};
 use mailparse::{MailHeaderMap, parse_mail};
-use message_ir::testutil::{sample_document, sample_imessage_document};
-use message_ir::{Attachment, ConversationType, Direction, MessageKind, Participant};
 use std::fs;
 
 const BACKUP_TIME_MS: i64 = 1_791_000_000_000;
@@ -14,7 +14,7 @@ fn archive() -> SmsBackupPlusArchive {
 fn photo(bytes: &[u8]) -> Attachment {
     Attachment {
         bytes: Some(bytes.to_vec()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
@@ -37,7 +37,7 @@ fn mails(dir: &Path, directory: &str) -> Vec<(String, Vec<u8>)> {
 /// Run a fresh SMS Backup+ export of `documents` into `dir`: the export
 /// directory is prepared first, then each document is written.
 fn export_fresh(dir: &Path, documents: Vec<ConversationDocument>) {
-    let (mut sink, _) = message_ir_format::FormatSink::open_prepared(
+    let (mut sink, _) = ir_format::FormatSink::open_prepared(
         dir,
         message_crate_core::OutputFormat::SmsBackupPlus,
         message_crate_core::ExportTransforms::none(),
@@ -231,7 +231,7 @@ fn a_group_lists_every_peer_and_names_the_sender() {
         )
         .unwrap();
 
-    let written = mails(tmp.path(), &message_ir_format::filename_stem(&document));
+    let written = mails(tmp.path(), &ir_format::filename_stem(&document));
     let raw = &written[0].1;
     assert_eq!(
         header(raw, "X-smssync-address").unwrap(),
@@ -252,7 +252,7 @@ fn only_sms_and_mms_are_written_and_the_rest_are_counted() {
     imessage.conversation.chat_identifier = "+15555550102".into();
     let mut whatsapp = sample_document("a whatsapp message");
     whatsapp.conversation.chat_identifier = "+15555550103".into();
-    whatsapp.messages[0].service = message_ir::Transport::Whatsapp;
+    whatsapp.messages[0].service = ir::Transport::Whatsapp;
     let tmp = tempfile::tempdir().unwrap();
     let mut report = ExportReport::default();
 
@@ -349,8 +349,8 @@ fn a_conversation_with_an_empty_chat_id_writes_into_a_directory_a_fresh_export_r
 #[test]
 fn a_message_of_unknown_service_and_sms_kind_is_written() {
     let mut document = sample_document("an sms of unknown service");
-    document.messages[0].service = message_ir::Transport::Unknown;
-    document.messages[0].message_kind = message_ir::MessageKind::Sms;
+    document.messages[0].service = ir::Transport::Unknown;
+    document.messages[0].message_kind = ir::MessageKind::Sms;
     let tmp = tempfile::tempdir().unwrap();
     let mut report = ExportReport::default();
 
@@ -390,7 +390,7 @@ fn the_owner_under_another_spelling_is_not_a_peer() {
         )
         .unwrap();
 
-    let written = mails(tmp.path(), &message_ir_format::filename_stem(&document));
+    let written = mails(tmp.path(), &ir_format::filename_stem(&document));
     assert_eq!(
         header(&written[0].1, "X-smssync-address").unwrap(),
         "+15555550101"
@@ -443,7 +443,7 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
             )
             .unwrap();
         header(
-            &mails(tmp.path(), &message_ir_format::filename_stem(&document))[0].1,
+            &mails(tmp.path(), &ir_format::filename_stem(&document))[0].1,
             "Subject",
         )
         .unwrap()
@@ -463,8 +463,7 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
 #[test]
 fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
     let mut document = sample_document("hi");
-    document.conversation.chat_identifier =
-        message_ir::ConversationKey::NameOnly("Alice".into()).chat_id();
+    document.conversation.chat_identifier = ir::ConversationKey::NameOnly("Alice".into()).chat_id();
     document.conversation.participants = vec![Participant {
         identity: None,
         display_name: Some("Alice".into()),
@@ -481,7 +480,7 @@ fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
         )
         .unwrap();
 
-    let written = mails(tmp.path(), &message_ir_format::filename_stem(&document));
+    let written = mails(tmp.path(), &ir_format::filename_stem(&document));
     let raw = &written[0].1;
     assert_eq!(header(raw, "X-smssync-address").unwrap_or_default(), "");
     assert_eq!(header(raw, "Subject").unwrap(), "SMS with Alice");

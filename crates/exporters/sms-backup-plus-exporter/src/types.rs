@@ -1,7 +1,7 @@
 //! Shared parsed message types for SMS Backup+ EML conversion.
 
 use crate::email_numbers::EmailNumber;
-use message_ir::ConversationType;
+use ir::ConversationType;
 use phone::Handle;
 
 #[derive(Debug, Clone, Default)]

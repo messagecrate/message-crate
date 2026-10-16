@@ -21,9 +21,9 @@
 //!   in one.
 //! - `batch_bodies` says where a batch's body is written while it is read.
 
+use api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
-use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
 use sqlx::{SqliteConnection, SqlitePool};
 use tokio_util::sync::CancellationToken;
 
@@ -545,7 +545,7 @@ pub(crate) async fn discard_import(
     import_run(&mut conn, row).await.map(Json)
 }
 
-/// Import one message-ir JSONL body.
+/// Import one JSONL conversation file body.
 ///
 /// Every message needs a non-empty `guid`. A batch with a message without
 /// one is refused with `422`, naming its lines, and nothing in it is stored.
@@ -564,7 +564,7 @@ pub(crate) async fn discard_import(
             ("application/x-ndjson"),
             ("application/jsonl")
         ),
-        description = "message-ir JSONL as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets."
+        description = "A JSONL conversation file as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets."
     ),
     responses(
         (status = 200, body = CreateImportBatchResponse),

@@ -143,7 +143,7 @@ fn convert_to_documents(
     json: &serde_json::Value,
 ) -> (
     message_crate_core::ExportReport,
-    std::collections::BTreeMap<String, message_ir::ConversationDocument>,
+    std::collections::BTreeMap<String, ir::ConversationDocument>,
 ) {
     convert_with_owner(json, None)
 }
@@ -154,7 +154,7 @@ fn convert_with_owner(
     owner_identity: Option<&str>,
 ) -> (
     message_crate_core::ExportReport,
-    std::collections::BTreeMap<String, message_ir::ConversationDocument>,
+    std::collections::BTreeMap<String, ir::ConversationDocument>,
 ) {
     let dir = tempfile::tempdir().expect("tempdir");
     let json_path = dir.path().join("result.json");
@@ -173,7 +173,7 @@ fn convert_with_owner(
         .expect("out")
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .map(|path| message_ir_format::read_conversation_json(&path).expect("read back"))
+        .map(|path| ir_format::read_conversation_json(&path).expect("read back"))
         .map(|document| (document.conversation.chat_identifier.clone(), document))
         .collect();
     (report, documents)
@@ -249,7 +249,7 @@ fn messages_keep_their_time_and_their_identity() {
         document
             .messages
             .iter()
-            .all(|m| m.time_precision == message_ir::TimePrecision::Milliseconds),
+            .all(|m| m.time_precision == ir::TimePrecision::Milliseconds),
         "{:?}",
         document
             .messages
@@ -265,7 +265,7 @@ fn messages_keep_their_time_and_their_identity() {
 
 /// `tests/fixtures/senders.json`, converted with the owner `+15555550100`,
 /// keyed by chat identifier.
-fn senders_fixture() -> std::collections::BTreeMap<String, message_ir::ConversationDocument> {
+fn senders_fixture() -> std::collections::BTreeMap<String, ir::ConversationDocument> {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/senders.json");
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
@@ -274,7 +274,7 @@ fn senders_fixture() -> std::collections::BTreeMap<String, message_ir::Conversat
 }
 
 /// Each participant as (identity, name).
-fn roster(document: &message_ir::ConversationDocument) -> Vec<(Option<&str>, Option<&str>)> {
+fn roster(document: &ir::ConversationDocument) -> Vec<(Option<&str>, Option<&str>)> {
     document
         .conversation
         .participants
@@ -286,7 +286,7 @@ fn roster(document: &message_ir::ConversationDocument) -> Vec<(Option<&str>, Opt
 /// The message in `document` whose text is `text`, as (sender identity, sender
 /// name).
 fn sender_of<'a>(
-    document: &'a message_ir::ConversationDocument,
+    document: &'a ir::ConversationDocument,
     text: &str,
 ) -> (Option<&'a str>, Option<&'a str>) {
     let message = message_of(document, text);
@@ -595,7 +595,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);
-    let found = message_ir_format::read_conversation_json(&out.join("+15555550122__whatsapp.json"))
+    let found = ir_format::read_conversation_json(&out.join("+15555550122__whatsapp.json"))
         .expect("read back");
     let found = &found.messages[0];
     assert_eq!(found.attachments[0].missing_reason, None);
@@ -661,15 +661,12 @@ fn status_updates_and_channel_posts_are_skipped_and_counted() {
 }
 
 /// The guid of the message in `document` whose text is `text`.
-fn guid_of<'a>(document: &'a message_ir::ConversationDocument, text: &str) -> &'a str {
+fn guid_of<'a>(document: &'a ir::ConversationDocument, text: &str) -> &'a str {
     &message_of(document, text).guid
 }
 
 /// The message in `document` whose text is `text`.
-fn message_of<'a>(
-    document: &'a message_ir::ConversationDocument,
-    text: &str,
-) -> &'a message_ir::Message {
+fn message_of<'a>(document: &'a ir::ConversationDocument, text: &str) -> &'a ir::Message {
     document
         .messages
         .iter()
@@ -698,7 +695,7 @@ fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
     assert_eq!(message_of(sam, "Or Saturday").reply_to, None);
     assert_eq!(
         message_of(sam, "Saturday works").reply_to,
-        Some(message_ir::ReplyTo {
+        Some(ir::ReplyTo {
             guid: Some(saturday.to_string()),
             part_index: None,
         }),
@@ -717,7 +714,7 @@ fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
         vec!["jid", "key_id"],
         "reply_to records the reply, so source.fields carries no copy of it"
     );
-    let no_link = Some(message_ir::ReplyTo {
+    let no_link = Some(ir::ReplyTo {
         guid: None,
         part_index: None,
     });
@@ -748,7 +745,7 @@ fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
 /// no longer copied into `source.fields`.
 #[test]
 fn reactions_are_on_the_message_under_the_reactors_id() {
-    use message_ir::Reaction;
+    use ir::Reaction;
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reactions.json");
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
@@ -820,7 +817,7 @@ fn reactions_are_on_the_message_under_the_reactors_id() {
 /// `data` as its text.
 #[test]
 fn a_group_event_with_a_text_is_an_announcement() {
-    use message_ir::{Direction, MessageKind};
+    use ir::{Direction, MessageKind};
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/group-events.json");
     let json: serde_json::Value =
@@ -832,7 +829,7 @@ fn a_group_event_with_a_text_is_an_announcement() {
         .values()
         .find(|document| document.conversation.group_title.as_deref() == Some("Book club"))
         .expect("the group");
-    let named_id = |message: &message_ir::Message| {
+    let named_id = |message: &ir::Message| {
         message
             .source
             .as_ref()

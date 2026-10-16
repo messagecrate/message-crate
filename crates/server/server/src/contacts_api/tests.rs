@@ -2,7 +2,7 @@ use super::*;
 use crate::db::contacts::read::DEFAULT_CONTACT_SORT;
 use crate::paging::{FIRST_PAGE, PageParams, parse_sort};
 use edit::ContactEditError;
-use message_ir::IdentityType;
+use ir::IdentityType;
 
 use crate::db::account_profile;
 use crate::problem::ProblemType;
@@ -1309,7 +1309,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     let (orphaned_chat, _) = handles::upsert_handle_row(
         &mut conn,
         account,
-        &message_ir::orphaned_chat_id(Some("+15555550123")),
+        &ir::orphaned_chat_id(Some("+15555550123")),
         IdentityType::Other,
         None,
     )
@@ -1413,7 +1413,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     let (orphaned_chat, _) = handles::upsert_handle_row(
         &mut conn,
         account,
-        &message_ir::orphaned_chat_id(None),
+        &ir::orphaned_chat_id(None),
         IdentityType::Other,
         None,
     )

@@ -2,14 +2,14 @@
 
 use crate::util;
 use anyhow::{Context, Result, bail};
-use mail::{MailAttachment, MailMessage, MailPackage, Participant, write_mail_package};
-use message_crate_core::OutputFormat;
-use message_csv::{
-    AttachmentCell, ParticipantCell, format_local_ts, json_cell, write_guarded_record,
-};
-use message_ir::{
+use ir::{
     ConversationDocument, ConversationHeader, Deletion, IdentityService, ImessageExtensions,
     Message, MessageKind, Transport,
+};
+use mail::{MailAttachment, MailMessage, MailPackage, Participant, write_mail_package};
+use message_crate_core::OutputFormat;
+use message_crate_csv::{
+    AttachmentCell, ParticipantCell, format_local_ts, json_cell, write_guarded_record,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};

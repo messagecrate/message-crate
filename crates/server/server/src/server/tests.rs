@@ -11,8 +11,8 @@ use crate::imports_api::{
 };
 use crate::problem::ProblemType;
 use crate::test_support::{ImportingAccount, expect_problem, test_fixture};
+use api_types::ImportMode;
 use axum::extract::{FromRef, State};
-use message_crate_api_types::ImportMode;
 
 /// The account's running Import Run through `GET /v1/imports?status=running`,
 /// as the desktop app finds it.
@@ -104,13 +104,13 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
         })),
         issues: vec![
             ImportIssueRequest {
-                kind: message_crate_api_types::ImportErrorKind::Skip,
+                kind: api_types::ImportErrorKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             },
             ImportIssueRequest {
-                kind: message_crate_api_types::ImportErrorKind::Error,
+                kind: api_types::ImportErrorKind::Error,
                 stage: crate::db::imports::ImportIssueStage::Upload,
                 item: "archive.zip".into(),
                 reason: "upload failed".into(),
@@ -149,18 +149,12 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     assert_eq!(value.run.upload_ms, Some(8_000));
     assert_eq!(value.run.summary["parse"]["messages"], 10);
     assert_eq!(value.issues.len(), 2);
-    assert_eq!(
-        value.issues[0].kind,
-        message_crate_api_types::ImportErrorKind::Skip
-    );
+    assert_eq!(value.issues[0].kind, api_types::ImportErrorKind::Skip);
     assert_eq!(
         value.issues[0].stage,
         crate::db::imports::ImportIssueStage::Media
     );
-    assert_eq!(
-        value.issues[1].kind,
-        message_crate_api_types::ImportErrorKind::Error
-    );
+    assert_eq!(value.issues[1].kind, api_types::ImportErrorKind::Error);
     assert_eq!(
         value.issues[1].stage,
         crate::db::imports::ImportIssueStage::Upload

@@ -1,5 +1,5 @@
 //! Convert a GO SMS Pro backup into the shared conversation structure
-//! ([`message_ir::ConversationDocument`]) every exporter writes, then write the chosen
+//! ([`ir::ConversationDocument`]) every exporter writes, then write the chosen
 //! output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_pdu_attachments;
@@ -7,17 +7,17 @@ use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_
 use android_fields::android_vendor_fields;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
+use ir::{
+    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, Transport, VendorFields, ensure_conversation,
+};
 use message_crate_core::{
     ConvertRun, Counter, ExportReport, ItemKind, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
     prepare_outputs, project_conversation,
 };
-use message_csv::write_guarded_record;
-use message_ir::{
-    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
-    ProjectionHooks, Transport, VendorFields, ensure_conversation,
-};
-use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_csv::write_guarded_record;
 use phone::{Handle, OwnerHandleSet};
+use staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -379,7 +379,7 @@ fn is_pdu_file(p: &Path) -> bool {
         .is_some_and(|n| (n.starts_with("I_") || n.starts_with("S_")) && n.ends_with(".pdu"))
 }
 
-/// GO SMS Pro deltas of the shared [`message_ir::pending_to_document`] projection.
+/// GO SMS Pro deltas of the shared [`ir::pending_to_document`] projection.
 struct GoSmsProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -448,7 +448,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
-/// ([`message_ir::ConversationDocument`]), then write the chosen output format.
+/// ([`ir::ConversationDocument`]), then write the chosen output format.
 ///
 /// Cancellation is checked between XML files, between PDU files, and
 /// between conversations. A canceled run returns
@@ -683,7 +683,7 @@ fn remove_if_exists(path: &Path) {
 /// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
 /// of `details`. When `more` entries were left out, a last row says so in its final column,
 /// padded with empty columns to the header's width. Every detail row's cells go through
-/// [`message_csv::written_cell`], because the addresses and text come from the backup and a
+/// [`message_crate_csv::written_cell`], because the addresses and text come from the backup and a
 /// spreadsheet would run one that starts with `=` as a formula.
 fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
     output_dir: &Path,
@@ -826,7 +826,7 @@ mod tests {
     }
 
     /// The messages of one conversation as the shared projection writes them.
-    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::Message>, ExportReport) {
+    fn project(messages: Vec<PendingMessage>) -> (Vec<ir::Message>, ExportReport) {
         let hooks = GoSmsProjection {
             export: message_crate_core::export_meta(
                 EXPORT_SOURCE,

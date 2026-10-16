@@ -17,8 +17,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use message_csv::{read_cell, write_guarded_record};
-use message_ir::{IdentityService, IdentityType};
+use ir::{IdentityService, IdentityType};
+use message_crate_csv::{read_cell, write_guarded_record};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -1058,7 +1058,7 @@ pub(crate) fn contact_ids_of(text: &str) -> Vec<String> {
 }
 
 /// The address book file of `rows`, each in the order of [`COLUMNS`], under
-/// the header, with every cell written as [`message_csv::written_cell`]
+/// the header, with every cell written as [`message_crate_csv::written_cell`]
 /// writes it.
 fn write_book(rows: impl IntoIterator<Item = [String; 5]>) -> Result<String> {
     let mut writer = csv::Writer::from_writer(Vec::new());

@@ -12,6 +12,7 @@ mod parse;
 
 use anyhow::{Context, Result, bail};
 use chrono::{Local, TimeZone, Utc};
+use ir::{Direction, Message};
 use mail_builder::MessageBuilder;
 use mail_builder::encoders::{Base64Encoder, QuotedPrintableEncoder};
 use mail_builder::headers::address::Address;
@@ -19,7 +20,6 @@ use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::date::Date;
 use mail_builder::headers::raw::Raw;
 use mail_builder::mime::MimePart;
-use message_ir::{Direction, Message};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -51,7 +51,7 @@ pub struct MailAttachment {
     pub bytes: Vec<u8>,
     /// Shared attachment metadata (`path` is never serialized to the EML; readers
     /// restore the IR path separately).
-    pub meta: message_ir::AttachmentMeta,
+    pub meta: ir::AttachmentMeta,
     /// Sticker flag serialized in the attachment meta JSON.
     pub is_sticker: bool,
     /// OCR/transcription text serialized in the attachment meta JSON.
@@ -60,7 +60,7 @@ pub struct MailAttachment {
     pub sticker_effect: Option<String>,
 }
 
-impl From<&MailAttachment> for message_ir::Attachment {
+impl From<&MailAttachment> for ir::Attachment {
     fn from(a: &MailAttachment) -> Self {
         Self {
             path: None,
@@ -90,7 +90,7 @@ pub enum MailPackage {
 /// context the headers need, plus the IR message itself.
 ///
 /// The message-level fields (guid, timestamp, direction, text, the iMessage
-/// extension bag, the Android source bag) live in [`message_ir::Message`];
+/// extension bag, the Android source bag) live in [`ir::Message`];
 /// the writer reads them straight from the IR instead of a flattened copy.
 #[derive(Debug, Clone)]
 pub struct MailMessage {
@@ -128,7 +128,7 @@ pub struct MailMessage {
 
 impl MailMessage {
     /// The iMessage extension bag, when present.
-    fn im(&self) -> Option<&message_ir::ImessageExtensions> {
+    fn im(&self) -> Option<&ir::ImessageExtensions> {
         self.message.imessage.as_ref()
     }
 }
@@ -320,8 +320,8 @@ fn envelope_sender(msg: &MailMessage) -> String {
             .message
             .sender_identity
             .as_deref()
-            .and_then(message_ir::trimmed)
-            .or_else(|| peer_identity(msg).and_then(message_ir::trimmed))
+            .and_then(ir::trimmed)
+            .or_else(|| peer_identity(msg).and_then(ir::trimmed))
             .unwrap_or("unknown"),
         Direction::Outgoing => {
             let owner = msg.owner_identity.trim();
@@ -399,7 +399,7 @@ fn guid_file_name_part(guid: &str) -> String {
 
 /// Synthetic RFC5322 address for an identity, with its display name.
 fn synthetic_address(identity: &str, display_name: Option<&str>) -> Address<'static> {
-    let name = display_name.and_then(message_ir::nonempty);
+    let name = display_name.and_then(ir::nonempty);
     Address::new_address(name, synthetic_email(identity))
 }
 
@@ -454,7 +454,7 @@ fn owner_address(msg: &MailMessage) -> Address<'static> {
     let display = msg
         .owner_display_name
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .unwrap_or(OWNER_DISPLAY_NAME);
     synthetic_address(identity, Some(display))
 }
@@ -465,7 +465,7 @@ fn conversation_address(msg: &MailMessage) -> Address<'static> {
     let display = msg
         .group_title
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .unwrap_or_else(|| {
             let id = msg.chat_identifier.trim();
             if id.is_empty() { "group" } else { id }
@@ -488,12 +488,12 @@ fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
         .iter()
         .find(|p| p.identity == peer)
         .and_then(|p| p.display_name.as_deref())
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .or_else(|| {
             msg.message
                 .sender_display_name
                 .as_deref()
-                .and_then(message_ir::trimmed)
+                .and_then(ir::trimmed)
                 .filter(|_| {
                     msg.message
                         .sender_identity
@@ -806,7 +806,7 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
                     .message
                     .sender_identity
                     .as_deref()
-                    .and_then(message_ir::trimmed)
+                    .and_then(ir::trimmed)
                     .unwrap_or("unknown");
                 synthetic_address(sender, msg.message.sender_display_name.as_deref())
             }
@@ -814,12 +814,10 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
         };
         return (from, conversation_address(msg));
     }
-    let peer = peer_identity(msg)
-        .and_then(message_ir::trimmed)
-        .unwrap_or_else(|| {
-            let id = msg.chat_identifier.trim();
-            if id.is_empty() { "unknown" } else { id }
-        });
+    let peer = peer_identity(msg).and_then(ir::trimmed).unwrap_or_else(|| {
+        let id = msg.chat_identifier.trim();
+        if id.is_empty() { "unknown" } else { id }
+    });
     let peer_name = peer_display_name(msg, peer);
     match msg.message.direction {
         Direction::Incoming => (
@@ -1023,7 +1021,7 @@ fn mail_subject(msg: &MailMessage) -> String {
 /// or the peer.
 fn conversation_subject_label(msg: &MailMessage) -> String {
     if msg.conversation_type.eq_ignore_ascii_case("group") {
-        if let Some(t) = msg.group_title.as_deref().and_then(message_ir::trimmed) {
+        if let Some(t) = msg.group_title.as_deref().and_then(ir::trimmed) {
             return t.to_string();
         }
         let id = msg.chat_identifier.trim();
@@ -1033,7 +1031,7 @@ fn conversation_subject_label(msg: &MailMessage) -> String {
         return "group".to_string();
     }
 
-    if let Some(peer) = peer_identity(msg).and_then(message_ir::trimmed) {
+    if let Some(peer) = peer_identity(msg).and_then(ir::trimmed) {
         if let Some(n) = peer_display_name(msg, peer) {
             return n.to_string();
         }

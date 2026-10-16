@@ -468,7 +468,7 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
         &crate::test_support::message_line("g-1", &"a".repeat(4096))
             .at(1_700_000_000_000)
             .sms()
-            .service(message_ir::Transport::Whatsapp)
+            .service(ir::Transport::Whatsapp)
             .sender("+15555550107")
             .line(),
     );

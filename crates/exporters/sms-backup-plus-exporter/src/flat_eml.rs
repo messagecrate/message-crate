@@ -3,8 +3,8 @@
 use crate::assets::extract_body;
 use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
+use ir::{ConversationType, IdentityType};
 use mailparse::{MailHeaderMap, ParsedMail};
-use message_ir::{ConversationType, IdentityType};
 use phone::{Country, Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};

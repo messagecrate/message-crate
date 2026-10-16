@@ -255,7 +255,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
 /// SMS Backup+ takes that header from the Android message id, which is unique
 /// only within one device's database and is reused after a wipe or a restore,
 /// so a mailbox holding two backups easily carries the same id on unrelated
-/// messages. The shared dedupe step (`message_ir::one_copy_per_message`)
+/// messages. The shared dedupe step (`ir::one_copy_per_message`)
 /// never reads the header for exactly that reason, and this test puts two
 /// colliding files through the exporter, so a change that started keying on
 /// the id would fail here rather than drop one of every colliding pair. `flat_smssync_276_alex.eml` and `flat_smssync_276_sam.eml` were
@@ -375,15 +375,11 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     })
     .unwrap();
 
-    let attachments: Vec<message_ir::Attachment> = fs::read_dir(output.path())
+    let attachments: Vec<ir::Attachment> = fs::read_dir(output.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
-        .flat_map(|path| {
-            message_ir_format::read_conversation_jsonl(&path)
-                .unwrap()
-                .messages
-        })
+        .flat_map(|path| ir_format::read_conversation_jsonl(&path).unwrap().messages)
         .flat_map(|message| message.attachments)
         .collect();
     let picture = attachments

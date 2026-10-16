@@ -18,7 +18,7 @@ Discovery walks the selected path recursively without following directory symbol
 
 ## Output policy
 
-- Pipeline: iMazing CSV → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) Import writes JSON Lines; the other formats come from [Convert](/docs/developer/formats/convert/). Shared header: [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs) / [CSV columns](/docs/developer/reference/csv-columns/).
+- Pipeline: iMazing CSV → `ConversationDocument` → [`ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) Import writes JSON Lines; the other formats come from [Convert](/docs/developer/formats/convert/). Shared header: [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs) / [CSV columns](/docs/developer/reference/csv-columns/).
 - SMS + iMessage for the same peer merge into one conversation (Messages family).
 - WhatsApp for the same peer is a **separate** file (`…__whatsapp.csv` / matching stem suffix for other formats).
 - Notification rows keep `imazing_type=Notification` in `source_fields_json`; direction is emitted as `incoming`.
@@ -28,7 +28,7 @@ Discovery walks the selected path recursively without following directory symbol
   `Replying to`, `Deleted Date` and `Edited Date` cells are the message's own fields instead
   (see "Reactions, replies, deletions and edits").
 - `participants_json` is always written (unified header).
-- The shared dedupe step (`message_ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
+- The shared dedupe step (`ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
   Rows of one conversation and one second that name one file, and that iMazing wrote different files for (`image0.jpg`, `image0 2.jpg`), are compared by the SHA-256 of each file instead, because their cell is the same.
   Different pictures are then two messages, each with its own picture, and two copies of one picture are one message.
   A group is hashed only when one CSV holds two or more of its rows with different files, and its rows from every CSV are then hashed, so a second export of the chat still repeats the same messages.
@@ -58,7 +58,7 @@ Discovery walks the selected path recursively without following directory symbol
 
 ## Conversation identity and participants
 
-Each chat session has a `message_ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
+Each chat session has a `ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
 The key's chat id is the conversation's `chat_identifier`: the address, `group:` and the group's id, or `name:` and the whole trimmed name.
 Each kind other than an address has a prefix of its own, so a name never takes an address's or a group's key.
 The rows of one session in one CSV are one conversation.
@@ -181,4 +181,4 @@ A cell whose date no row has, or that two kept rows share, is a reply with no li
 ## Related docs
 
 - Input format and source limitations: [iMazing input format](/docs/developer/formats/imazing/input/)
-- Shared model and output contracts: [message-ir architecture](/docs/developer/architecture/common-message/), [export structure](/docs/developer/reference/export-structure/), [CSV columns](/docs/developer/reference/csv-columns/)
+- Shared model and output contracts: [common message architecture](/docs/developer/architecture/common-message/), [export structure](/docs/developer/reference/export-structure/), [CSV columns](/docs/developer/reference/csv-columns/)

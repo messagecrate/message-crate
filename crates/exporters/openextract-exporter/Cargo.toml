@@ -11,11 +11,11 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 hex = { workspace = true }
-message-csv = { path = "../../libs/csv" }
+message-crate-csv = { path = "../../libs/csv" }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../../libs/ir" }
-message-ir-format = { path = "../../libs/ir-format" }
-message-staging = { path = "../../libs/staging" }
+ir = { path = "../../libs/ir" }
+ir-format = { path = "../../libs/ir-format" }
+staging = { path = "../../libs/staging" }
 media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 serde_json = { workspace = true }

@@ -6,7 +6,7 @@
 //! keys it: a phone number, an email address, or a sender name.
 //! [`IdentityType`] is the type of an identity: phone, email, username, or
 //! other. It is defined
-//! here, and `message-ir` re-exports it for the conversation file, so this
+//! here, and `ir` re-exports it for the conversation file, so this
 //! crate does not depend on the conversation model.
 //!
 //! A number carries its country only when that is certain: written with its

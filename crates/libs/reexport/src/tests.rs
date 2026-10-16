@@ -1,8 +1,8 @@
 use super::*;
+use ir::Attachment;
+use ir_format::{read_conversation_csv, read_conversation_json};
 use message_crate_core::testutil::{RecordedLog, TestRun, recorded_log};
 use message_crate_core::{ObfuscateConfig, RunLogLevel};
-use message_ir::Attachment;
-use message_ir_format::{read_conversation_csv, read_conversation_json};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
     fs::create_dir_all(dir).unwrap();
@@ -11,7 +11,7 @@ fn write_fixture(dir: &Path, format: OutputFormat) {
     if format == OutputFormat::Xml {
         sink = sink.with_archive(Box::new(SbrArchive));
     }
-    sink.write_document(message_ir::testutil::sample_document("hello reexport"))
+    sink.write_document(ir::testutil::sample_document("hello reexport"))
         .unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
 }
@@ -76,7 +76,7 @@ fn attachment(name: &str, path: Option<&str>) -> Attachment {
         path: path.map(str::to_string),
         original_name: Some(name.to_string()),
         mime_type: Some("text/plain".to_string()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
@@ -157,15 +157,15 @@ fn convert_json_to_xml() {
 fn xml_writes_only_sms_and_mms_and_the_log_names_what_was_left_out() {
     let source = tempfile::tempdir().unwrap();
     clean_previous_ir_output(source.path()).unwrap();
-    let mut imessage = message_ir::testutil::sample_imessage_document();
+    let mut imessage = ir::testutil::sample_imessage_document();
     imessage.conversation.chat_identifier = "+15555550103".into();
     imessage.conversation.participants[0].identity = Some("+15555550103".into());
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     for doc in [
-        message_ir::testutil::sample_document("hello sms"),
+        ir::testutil::sample_document("hello sms"),
         imessage,
-        message_ir::testutil::sample_whatsapp_document("hello whatsapp"),
+        ir::testutil::sample_whatsapp_document("hello whatsapp"),
     ] {
         sink.write_document(doc).unwrap();
     }
@@ -364,7 +364,7 @@ fn mixed_formats_error() {
     write_fixture(source.path(), OutputFormat::Json);
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
-    sink.write_document(message_ir::testutil::sample_document("hello reexport"))
+    sink.write_document(ir::testutil::sample_document("hello reexport"))
         .unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     let error = detect_ir_export(source.path()).unwrap_err().to_string();
@@ -640,7 +640,7 @@ fn looks_like_ir_jsonl_accepts_a_header_line_without_messages() {
         &whole_document,
         format!(
             r#"{{"schema_version":{},"export":{{}},"conversation":{{}},"messages":[]}}"#,
-            message_ir::SCHEMA_VERSION
+            ir::SCHEMA_VERSION
         ),
     )
     .unwrap();
@@ -786,7 +786,7 @@ fn copy_dir_recursive_refuses_a_missing_source() {
 fn a_json_that_is_not_an_ir_export_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let partial = serde_json::json!({
-        "schema_version": message_ir::SCHEMA_VERSION,
+        "schema_version": ir::SCHEMA_VERSION,
         "export": {},
         "messages": [],
     })
@@ -825,7 +825,7 @@ fn a_json_that_is_not_an_ir_export_is_refused() {
 fn a_jsonl_whose_first_line_is_not_a_conversation_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let conversation = serde_json::json!({
-        "schema_version": message_ir::SCHEMA_VERSION,
+        "schema_version": ir::SCHEMA_VERSION,
         "export": {},
         "conversation": {},
         "messages": [],
@@ -915,7 +915,7 @@ fn an_xml_that_is_not_an_smses_export_is_refused() {
 fn every_kind_of_sidecar_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
     let ir_json = serde_json::json!({
-        "schema_version": message_ir::SCHEMA_VERSION,
+        "schema_version": ir::SCHEMA_VERSION,
         "export": {},
         "conversation": {},
         "messages": [],
@@ -1137,7 +1137,7 @@ fn write_version_3_copy(dir: &Path, format: OutputFormat, name: &str) {
         _ => (current.as_str(), ""),
     };
     let mut header: serde_json::Value = serde_json::from_str(header).unwrap();
-    assert_eq!(header["schema_version"], message_ir::SCHEMA_VERSION);
+    assert_eq!(header["schema_version"], ir::SCHEMA_VERSION);
     header["schema_version"] = 3.into();
     let separator = if rest.is_empty() { "" } else { "\n" };
     fs::write(dir.join(name), format!("{header}{separator}{rest}")).unwrap();
@@ -1165,7 +1165,7 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
         assert!(
             message.contains(&format!(
                 "this file is schema version 3; Message Crate reads version {}",
-                message_ir::SCHEMA_VERSION
+                ir::SCHEMA_VERSION
             )),
             "{message}"
         );
@@ -1197,7 +1197,7 @@ fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     assert!(
         message.contains(&format!(
             "this file is schema version 3; Message Crate reads version {}",
-            message_ir::SCHEMA_VERSION
+            ir::SCHEMA_VERSION
         )),
         "{message}"
     );
@@ -1242,8 +1242,8 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
     for chat in ["chat-one", "chat-two"] {
-        let mut doc = message_ir::testutil::sample_document("hello group");
-        doc.conversation.conversation_type = message_ir::ConversationType::Group;
+        let mut doc = ir::testutil::sample_document("hello group");
+        doc.conversation.conversation_type = ir::ConversationType::Group;
         doc.conversation.group_title = Some("Family".into());
         doc.conversation.chat_identifier = chat.into();
         sink.write_document(doc).unwrap();
@@ -1270,7 +1270,7 @@ fn write_mail_fixture(dir: &Path, format: OutputFormat, with_unsent: bool) {
     clean_previous_ir_output(dir).unwrap();
     fs::create_dir_all(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments/note.txt"), b"hello attachment").unwrap();
-    let mut document = message_ir::testutil::sample_document("with a note");
+    let mut document = ir::testutil::sample_document("with a note");
     document.messages[0].attachments = vec![attachment("note.txt", Some("attachments/note.txt"))];
     if with_unsent {
         let mut unsent = attachment("unsent.txt", None);
@@ -1408,16 +1408,16 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     clean_previous_ir_output(source.path()).unwrap();
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(message_ir::testutil::sample_document("an sms"))
+    sink.write_document(ir::testutil::sample_document("an sms"))
         .unwrap();
-    let mut imessage = message_ir::testutil::sample_imessage_document();
+    let mut imessage = ir::testutil::sample_imessage_document();
     imessage.conversation.chat_identifier = "+15555550102".into();
     imessage.conversation.participants[0].identity = Some("+15555550102".into());
     sink.write_document(imessage).unwrap();
-    let mut whatsapp = message_ir::testutil::sample_document("a whatsapp message");
+    let mut whatsapp = ir::testutil::sample_document("a whatsapp message");
     whatsapp.conversation.chat_identifier = "+15555550103".into();
     whatsapp.conversation.participants[0].identity = Some("+15555550103".into());
-    whatsapp.messages[0].service = message_ir::Transport::Whatsapp;
+    whatsapp.messages[0].service = ir::Transport::Whatsapp;
     sink.write_document(whatsapp).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     let destination = tempfile::tempdir().unwrap();
@@ -1479,7 +1479,7 @@ fn sms_backup_plus_mail_records_the_export_runs_start() {
     clean_previous_ir_output(source.path()).unwrap();
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(message_ir::testutil::sample_document("an sms"))
+    sink.write_document(ir::testutil::sample_document("an sms"))
         .unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     let destination = tempfile::tempdir().unwrap();
@@ -1536,7 +1536,7 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
     let source = tempfile::tempdir().unwrap();
     fs::create_dir_all(source.path()).unwrap();
     clean_previous_ir_output(source.path()).unwrap();
-    let mut doc = message_ir::testutil::sample_document("a huge video");
+    let mut doc = ir::testutil::sample_document("a huge video");
     let mut video = attachment("video.mov", Some("attachments/video.mov"));
     video.size_bytes = Some(u64::MAX / 2);
     doc.messages[0].attachments = vec![video];
@@ -1608,7 +1608,7 @@ fn assert_writes_each_attachment_once(source: &Path) {
 fn a_conversion_writes_each_attachment_once() {
     let source = tempfile::tempdir().unwrap();
     clean_previous_ir_output(source.path()).unwrap();
-    let mut doc = message_ir::testutil::sample_document("a photo");
+    let mut doc = ir::testutil::sample_document("a photo");
     let mut photo = attachment("photo.png", Some("attachments/photo.png"));
     photo.mime_type = Some("image/png".into());
     doc.messages[0].attachments = vec![photo];
@@ -1653,7 +1653,7 @@ fn a_converted_sms_backup_writes_each_attachment_once() {
 fn write_huge_attachments_with_no_file(dir: &Path, reason: &str) {
     fs::create_dir_all(dir).unwrap();
     clean_previous_ir_output(dir).unwrap();
-    let mut doc = message_ir::testutil::sample_document("two huge videos");
+    let mut doc = ir::testutil::sample_document("two huge videos");
     let mut gone = attachment("gone.mov", Some("attachments/gone.mov"));
     gone.size_bytes = Some(u64::MAX / 2);
     let mut marked = attachment("marked.mov", None);
@@ -1676,7 +1676,7 @@ fn an_earlier_conversion_s_attachments_count_as_free() {
     fs::write(output.path().join("attachments/nested/b.mov"), [0u8; 5]).unwrap();
     assert_eq!(previous_attachment_bytes(output.path()), 0, "no mark");
 
-    fs::write(output.path().join(message_ir_format::EXPORT_SENTINEL), b"").unwrap();
+    fs::write(output.path().join(ir_format::EXPORT_SENTINEL), b"").unwrap();
     assert_eq!(previous_attachment_bytes(output.path()), 15);
 }
 
@@ -1695,7 +1695,7 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
         bytes: bytes.map(<[u8]>::to_vec),
         ..attachment(name, path)
     };
-    let mut document = message_ir::testutil::sample_document("with attachments");
+    let mut document = ir::testutil::sample_document("with attachments");
     // The real attachment comes first, so the first event is sent before
     // the run reaches a missing one and could take its size off.
     document.messages[0].attachments = vec![
@@ -1779,7 +1779,7 @@ fn a_backup_s_attachments_are_staged_into_the_run_s_log_and_progress() {
 
     let logged = texts(&logged);
     for path in &gone {
-        let line = message_staging::unreadable_attachment_line(path, "no file there");
+        let line = staging::unreadable_attachment_line(path, "no file there");
         assert_eq!(
             logged.iter().filter(|logged| **logged == line).count(),
             1,

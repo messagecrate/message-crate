@@ -15,20 +15,20 @@ use crate::row_marks;
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use crate::zone::Zone;
 use anyhow::Result;
-use message_crate_core::{
-    ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
-};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta,
     Participant, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
     ProjectedRole, ProjectionHooks, Reaction, Transport, VendorFields,
 };
-use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_core::{
+    ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
+};
 use serde_json::Map;
 use session::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
     parse_message_date, resolve_sender, session_key,
 };
+use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -926,7 +926,7 @@ fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
     }
 }
 
-/// iMazing deltas of the shared [`message_ir::pending_to_document`]
+/// iMazing deltas of the shared [`ir::pending_to_document`]
 /// projection, for one conversation.
 struct ImazingProjection<'a> {
     export: &'a ExportMeta,

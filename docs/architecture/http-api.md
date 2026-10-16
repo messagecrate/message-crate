@@ -1062,7 +1062,7 @@ What each reaches:
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
 - An import batch body is held to 16 MiB, the most the desktop app's Upload
-  packs into one (`MAX_IMPORT_BATCH_BYTES` in `message-crate-api-types`, the
+  packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the
   one figure both sides read), and a larger one answers
   `413 Payload Too Large`. Why 16 MiB: the server saves a batch in one write
   transaction, and every other writer, a login included, waits 15 seconds
@@ -1082,7 +1082,7 @@ What each reaches:
   ([Connections](#connections)). At 16 MiB, a full batch arrives inside 5 minutes at about
   0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
   asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
-  (`MAX_PROXY_BODY_BYTES` in `message-crate-import`), so an attachment
+  (`MAX_PROXY_BODY_BYTES` in `import`), so an attachment
   arrives at the same speed a batch does. Why: the server accepted eight
   times what its client sends, and held a batch's whole text in memory
   beside its parsed records (#2075); every batch waiting for a slot held its
@@ -1469,7 +1469,7 @@ A wire type whose Rust name would clash with a shared crate's type, or with
 the `db/` struct it carries whole, takes the `Api` prefix in Rust and keeps
 its wire name through `#[schema(as = …)]`:
 `ApiIdentityService` in `db/handles.rs` is `IdentityService` on the wire,
-beside the conversation file's `message_ir::IdentityService`, and
+beside the conversation file's `ir::IdentityService`, and
 `ApiServerSettings` in `server_api.rs` is `ServerSettings` on the wire,
 carrying `db/server_settings.rs`'s `ServerSettings` and the database's
 journal. Why: two types
@@ -1530,7 +1530,7 @@ answers with the read's own struct. That struct derives `Serialize` and
 hands it on unchanged: `list_saved_searches` answers
 `Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
 reads. A struct that a client crate reads too lives in
-`message-crate-api-types`, and the `db/` read returns that struct:
+`api-types`, and the `db/` read returns that struct:
 `ExportRun` from `db/exports.rs`, `Message` from `db/conversation_messages.rs`.
 Why: one struct cannot drift from itself, and a copy beside it would be a
 second place to change for every column.

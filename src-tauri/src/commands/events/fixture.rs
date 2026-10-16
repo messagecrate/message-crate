@@ -18,8 +18,8 @@
 
 use std::path::PathBuf;
 
+use import::FileStatus;
 use message_crate_core::{Canceled, ProgressEvent, RunIssue, RunIssueKind, WriteStatus};
-use message_crate_import::FileStatus;
 use serde_json::Value;
 
 use super::{

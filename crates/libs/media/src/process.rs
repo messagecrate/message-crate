@@ -24,7 +24,7 @@ pub struct MediaReport {
     /// writers. [`process_attachment_files`] puts one `path: error` line
     /// here for each file it could not convert or compress, with the whole
     /// error. Staging's own Media pass (`run_media_post_pass` in
-    /// `message-staging`) puts one sentence counting the files it could not
+    /// `staging`) puts one sentence counting the files it could not
     /// convert instead, since each one's conversation entry already says
     /// why.
     pub errors: Vec<String>,
@@ -914,7 +914,7 @@ fn changed(output_dir: &Path, old_rel: &str, new_path: &Path) -> Result<Outcome>
     // Always report Changed, even when the relative path is unchanged (e.g. JPG
     // recompressed in place). Callers must invalidate digest_sha256 for remapped
     // paths; treating same-path rewrites as Skipped left stale fingerprints in
-    // JSON Lines files and caused message-crate-import sha256 mismatches after upload.
+    // JSON Lines files and caused `import` sha256 mismatches after upload.
     Ok(Outcome::Changed {
         old_rel: old_rel.to_string(),
         new_rel,

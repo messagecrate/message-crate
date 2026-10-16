@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
 
-pub use message_crate_api_types::Participant;
+pub use api_types::Participant;
 
 use crate::db::sql::group_rows_by_id;
 use crate::db::trash::not_trashed_contact;

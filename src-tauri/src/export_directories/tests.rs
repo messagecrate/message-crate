@@ -3,7 +3,7 @@ use message_crate_core::{
 };
 use std::path::{Path, PathBuf};
 
-use message_ir_format::{EXPORT_SENTINEL, FormatSink};
+use ir_format::{EXPORT_SENTINEL, FormatSink};
 
 use super::{CONVERTING, EXPORT_DIRECTORY_NAME, EXPORTED, ExportDirectories, ExportKind, sweep};
 
@@ -27,17 +27,17 @@ fn names(dir: &Path) -> Vec<String> {
 /// Write one conversation into `dir` as JSON Lines, as an Export does.
 fn export_into(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap();
-    message_ir_format::mark_export_directory(dir).unwrap();
+    ir_format::mark_export_directory(dir).unwrap();
     let mut sink = FormatSink::open(dir, OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(message_ir::testutil::sample_document("hello export"))
+    sink.write_document(ir::testutil::sample_document("hello export"))
         .unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
-    std::fs::write(dir.join(message_crate_export::EXPORT_JOURNAL_NAME), "{}\n").unwrap();
+    std::fs::write(dir.join(export::EXPORT_JOURNAL_NAME), "{}\n").unwrap();
 }
 
 /// Convert `input` into `output` as CSV, as Export's format step does.
 fn convert(input: &Path, output: &Path, cache: &Path) {
-    message_reexport::run(
+    reexport::run(
         &RunContext::new(cache),
         &OutputConfig::new(output, OutputFormat::Csv),
         &[input.to_path_buf()],
@@ -76,7 +76,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
     assert!(
         !left.iter().any(|name| name == EXPORTED
             || name == CONVERTING
-            || name == message_crate_export::EXPORT_JOURNAL_NAME
+            || name == export::EXPORT_JOURNAL_NAME
             || name.ends_with(".jsonl")),
         "only the result is left: {left:?}"
     );
@@ -100,9 +100,7 @@ fn a_json_lines_export_keeps_its_files_and_drops_the_export_journal() {
     let left = names(Path::new(&made.dir));
     assert!(left.iter().any(|name| name.ends_with(".jsonl")), "{left:?}");
     assert!(
-        !left
-            .iter()
-            .any(|name| name == message_crate_export::EXPORT_JOURNAL_NAME),
+        !left.iter().any(|name| name == export::EXPORT_JOURNAL_NAME),
         "{left:?}"
     );
 }

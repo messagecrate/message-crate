@@ -22,7 +22,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
+use ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
 use crate::app_directories::{RunLog, import_run_log};
 use crate::commands::paths::{require_absolute, resolve_openable_path, resolve_staging_root};

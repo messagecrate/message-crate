@@ -1,11 +1,11 @@
 //! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
+use import::ImportMode;
 use message_crate_core::CancelFlag;
-use message_crate_import::ImportMode;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use message_crate_import::{FileStatus, ImportConfig, ProgressEvent, run as run_import};
+use import::{FileStatus, ImportConfig, ProgressEvent, run as run_import};
 
 use super::events;
 use super::events::ImportProgressEvent;
@@ -21,7 +21,7 @@ fn as_usize(value: u64) -> usize {
 
 /// Progress bar update and finished JSON payload after an Upload completes.
 fn finished_upload_events(
-    report: &message_crate_import::ImportReport,
+    report: &import::ImportReport,
 ) -> (ImportProgressEvent, serde_json::Value) {
     let total = as_usize(report.conversations_total);
     let progress = ImportProgressEvent::upload_count(total, total);
@@ -110,11 +110,11 @@ pub fn upload(
 }
 
 /// The Upload settings the desktop app uses. They differ from the
-/// `message_crate_import::DEFAULT_*` constants because desktop imports are many
+/// `import::DEFAULT_*` constants because desktop imports are many
 /// small files over a local network; each number says why.
 ///
 /// The attachment size limit comes from the media settings Staging recorded
-/// in the directory ([`message_staging::read_media_settings`]): the number the
+/// in the directory ([`staging::read_media_settings`]): the number the
 /// Staging Review forecast against, read from the one place that holds it
 /// after Staging.
 ///
@@ -128,7 +128,7 @@ pub fn upload(
 /// because its Staging never finished.
 fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConfig> {
     let input = PathBuf::from(&args.input_dir);
-    let recorded = message_staging::read_media_settings(&input)?;
+    let recorded = staging::read_media_settings(&input)?;
     let log_path = Some(import_run_log(logs_dir, &input));
     Ok(ImportConfig {
         input,
@@ -139,15 +139,15 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // already recorded as sent.
         force: false,
         max_retries: 3,
-        // Pack until message_crate_api_types::MAX_IMPORT_BATCH_BYTES (16 MiB); do not stop at a message count.
-        batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
+        // Pack until api_types::MAX_IMPORT_BATCH_BYTES (16 MiB); do not stop at a message count.
+        batch_size: import::NO_MESSAGE_COUNT_LIMIT,
         // Above DEFAULT_ASSET_UPLOAD_WORKERS (8): desktop imports are often many small files.
         asset_upload_workers: 16,
         // Above DEFAULT_PREPARE_AHEAD (3): hide more hashing behind in-flight imports.
         prepare_ahead: 8,
         // Above DEFAULT_PREPARE_WORKERS (2): more of the prepare-ahead queue runs at once.
         prepare_workers: 4,
-        // Below message_crate_import::MAX_PROXY_BODY_BYTES (16 MiB):
+        // Below import::MAX_PROXY_BODY_BYTES (16 MiB):
         // desktop uploads switch to multipart sooner so a large attachment
         // moves in small parts instead of one long PUT.
         asset_multipart_threshold: 5 * 1024 * 1024,
@@ -231,8 +231,8 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
 mod tests {
     use super::*;
     use httpmock::prelude::*;
-    use message_crate_import::{FileResult, ImportReport};
-    use message_ir::testutil::sample_document;
+    use import::{FileResult, ImportReport};
+    use ir::testutil::sample_document;
     use serde_json::json;
 
     /// Each conversation's lines are sentences, with no "Starting:" or
@@ -261,9 +261,9 @@ mod tests {
     /// attachment size limit `asset_max_bytes`.
     fn staged_directory(asset_max_bytes: u64) -> tempfile::TempDir {
         let run_dir = tempfile::tempdir().unwrap();
-        message_staging::write_media_settings(
+        staging::write_media_settings(
             run_dir.path(),
-            &message_staging::TranscodeOptions {
+            &staging::TranscodeOptions {
                 mode: media::MediaMode::Clone,
                 compress: media::CompressOptions::default(),
                 asset_max_bytes,
@@ -367,11 +367,7 @@ mod tests {
 
     /// What the Import screen sends for an Upload of `run_dir` to `server`,
     /// first time and resumed, with the run's log in `logs`.
-    fn upload_to(
-        server: &MockServer,
-        run_dir: &Path,
-        logs: &Path,
-    ) -> message_crate_import::ImportReport {
+    fn upload_to(server: &MockServer, run_dir: &Path, logs: &Path) -> import::ImportReport {
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
             "token": "mc_test",
@@ -416,7 +412,7 @@ mod tests {
         let report = upload_to(&server, run_dir.path(), logs.path());
         assert!(report.ok, "{:?}", report.results);
         assert!(
-            !run_dir.path().join(message_crate_import::LOG_NAME).exists(),
+            !run_dir.path().join(import::LOG_NAME).exists(),
             "no log in the run's directory"
         );
         run_dir.close().unwrap();

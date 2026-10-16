@@ -360,7 +360,7 @@ async fn created<T: DeserializeOwned>(
 
 /// The problem document a failure answered, or a panic naming the body
 /// that was not one.
-pub fn problem(text: &str) -> message_crate_api_types::Problem {
+pub fn problem(text: &str) -> api_types::Problem {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("not a problem document ({e}): {text}"))
 }
 
@@ -370,7 +370,7 @@ pub fn expect_problem(
     status: StatusCode,
     text: &str,
     kind: crate::problem::ProblemType,
-) -> message_crate_api_types::Problem {
+) -> api_types::Problem {
     check_problem(status, text, kind, text)
 }
 
@@ -382,7 +382,7 @@ pub fn expect_problem_for(
     status: StatusCode,
     text: &str,
     kind: crate::problem::ProblemType,
-) -> message_crate_api_types::Problem {
+) -> api_types::Problem {
     check_problem(status, text, kind, &format!("{what}: {text}"))
 }
 
@@ -392,7 +392,7 @@ fn check_problem(
     text: &str,
     kind: crate::problem::ProblemType,
     context: &str,
-) -> message_crate_api_types::Problem {
+) -> api_types::Problem {
     let problem = problem(text);
     assert_eq!(status, kind.status(), "{context}");
     assert_eq!(problem.status, kind.status().as_u16(), "{context}");
@@ -406,7 +406,7 @@ fn check_problem(
 pub async fn expect_problem_response(
     response: reqwest::Response,
     kind: crate::problem::ProblemType,
-) -> message_crate_api_types::Problem {
+) -> api_types::Problem {
     let status = response.status();
     let text = response.text().await.unwrap();
     expect_problem(status, &text, kind)
@@ -414,7 +414,7 @@ pub async fn expect_problem_response(
 
 /// Assert a failure is the `500 Internal Server Error` problem, which has no
 /// [`ProblemType`](crate::problem::ProblemType) for [`expect_problem`] to take.
-pub fn expect_internal_problem(status: StatusCode, text: &str) -> message_crate_api_types::Problem {
+pub fn expect_internal_problem(status: StatusCode, text: &str) -> api_types::Problem {
     let problem = problem(text);
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{text}");
     assert_eq!(problem.status, 500, "{text}");

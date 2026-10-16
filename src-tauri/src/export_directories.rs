@@ -300,7 +300,7 @@ impl ExportDirectories {
         }
         // The journal lets a later Export into the same directory skip what it
         // fetched. Nothing exports into this directory again.
-        let journal = dir.join(message_crate_export::EXPORT_JOURNAL_NAME);
+        let journal = dir.join(export::EXPORT_JOURNAL_NAME);
         if journal.exists() {
             std::fs::remove_file(&journal).map_err(|e| left_over(&journal, e))?;
         }

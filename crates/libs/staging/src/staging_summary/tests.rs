@@ -1,9 +1,9 @@
 use super::*;
 use crate::write_queue::conversation_file;
+use ir::{Attachment, Participant};
+use ir_format::write_conversation_jsonl_to;
 use media::CompressOptions;
 use media::testutil::FakeTools;
-use message_ir::{Attachment, Participant};
-use message_ir_format::write_conversation_jsonl_to;
 
 fn summary_options() -> TranscodeOptions {
     TranscodeOptions {
@@ -28,7 +28,7 @@ fn staged_fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("attachments")).unwrap();
 
-    let mut doc_a = message_ir::testutil::sample_document("hi from conversation A");
+    let mut doc_a = ir::testutil::sample_document("hi from conversation A");
     doc_a.conversation.chat_identifier = "+15550101".into();
     doc_a.conversation.participants = vec![Participant {
         identity: Some("+15550101".into()),
@@ -48,7 +48,7 @@ fn staged_fixture() -> tempfile::TempDir {
         // Deliberately stale: the reader must measure the file on disk,
         // never trust this.
         size_bytes: Some(1),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc_a.messages.push(second);
     doc_a.messages.push(third);
@@ -56,7 +56,7 @@ fn staged_fixture() -> tempfile::TempDir {
     let jsonl_a = conversation_file(dir.path(), &doc_a);
     write_conversation_jsonl_to(&jsonl_a, &doc_a).unwrap();
 
-    let mut doc_b = message_ir::testutil::sample_document("hi from conversation B");
+    let mut doc_b = ir::testutil::sample_document("hi from conversation B");
     doc_b.conversation.chat_identifier = "+15550100".into();
     doc_b.conversation.participants = vec![
         Participant {
@@ -92,14 +92,14 @@ fn staged_fixture_with_missing_reason(reason: &str) -> tempfile::TempDir {
     let attachment = dir.path().join("attachments/broken.png");
     std::fs::write(&attachment, vec![9u8; 2048]).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("hello");
+    let mut doc = ir::testutil::sample_document("hello");
     doc.messages[0].attachments = vec![Attachment {
         path: Some("attachments/broken.png".into()),
         original_name: Some("broken.png".into()),
         mime_type: None,
         size_bytes: Some(2048),
         missing_reason: Some(reason.to_string()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc.finalize_stats();
     let jsonl = conversation_file(dir.path(), &doc);
@@ -116,7 +116,7 @@ fn staged_fixture_with_sizes(specs: &[(&str, u64)]) -> tempfile::TempDir {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("attachments only");
+    let mut doc = ir::testutil::sample_document("attachments only");
     doc.messages[0].attachments = specs
         .iter()
         .map(|(name, size)| {
@@ -127,7 +127,7 @@ fn staged_fixture_with_sizes(specs: &[(&str, u64)]) -> tempfile::TempDir {
                 original_name: Some((*name).to_string()),
                 mime_type: None,
                 size_bytes: Some(*size),
-                ..message_ir::testutil::sample_attachment()
+                ..ir::testutil::sample_attachment()
             }
         })
         .collect();
@@ -154,17 +154,17 @@ fn staged_fixture_with_aliased_attachment(size: u64) -> tempfile::TempDir {
         original_name: Some("shared.png".into()),
         mime_type: None,
         size_bytes: Some(size),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     };
 
-    let mut doc_a = message_ir::testutil::sample_document("conversation A, shared photo");
+    let mut doc_a = ir::testutil::sample_document("conversation A, shared photo");
     doc_a.conversation.chat_identifier = "+15550100".into();
     doc_a.messages[0].attachments = vec![shared_attachment()];
     doc_a.finalize_stats();
     let jsonl_a = conversation_file(dir.path(), &doc_a);
     write_conversation_jsonl_to(&jsonl_a, &doc_a).unwrap();
 
-    let mut doc_b = message_ir::testutil::sample_document("conversation B, same photo");
+    let mut doc_b = ir::testutil::sample_document("conversation B, same photo");
     doc_b.conversation.chat_identifier = "+15550199".into();
     doc_b.messages[0].attachments = vec![shared_attachment()];
     doc_b.finalize_stats();
@@ -181,7 +181,7 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("lots of attachments");
+    let mut doc = ir::testutil::sample_document("lots of attachments");
     doc.messages[0].attachments = (0..count)
         .map(|i| {
             let name = format!("f{i:04}.bin");
@@ -194,7 +194,7 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
                 original_name: Some(name),
                 mime_type: None,
                 size_bytes: Some(10),
-                ..message_ir::testutil::sample_attachment()
+                ..ir::testutil::sample_attachment()
             }
         })
         .collect();
@@ -416,10 +416,10 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
         original_name: Some("shared.png".into()),
         mime_type: None,
         size_bytes: Some(900 * 1024 * 1024),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     };
 
-    let mut doc = message_ir::testutil::sample_document("one conversation, two references");
+    let mut doc = ir::testutil::sample_document("one conversation, two references");
     doc.messages[0].attachments = vec![shared_attachment()];
     let mut second = doc.messages[0].clone();
     second.guid = "second-message-guid".into();
@@ -507,22 +507,20 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
     let dir = tempfile::tempdir().unwrap();
     // The one incoming message has no address of its own, so it counts as
     // received at the export's owner, +15555550100.
-    let mut doc = message_ir::testutil::sample_document("received at the export's owner");
+    let mut doc = ir::testutil::sample_document("received at the export's owner");
     let template = doc.messages[0].clone();
-    let message = |guid: &str,
-                   direction: message_ir::Direction,
-                   sender: Option<&str>,
-                   owner: Option<&str>| {
-        let mut msg = template.clone();
-        msg.guid = guid.into();
-        msg.direction = direction;
-        if direction == message_ir::Direction::Outgoing {
-            msg.sender_identity = sender.map(str::to_string);
-        }
-        msg.owner_identity = owner.map(str::to_string);
-        msg
-    };
-    use message_ir::Direction::{Incoming, Outgoing};
+    let message =
+        |guid: &str, direction: ir::Direction, sender: Option<&str>, owner: Option<&str>| {
+            let mut msg = template.clone();
+            msg.guid = guid.into();
+            msg.direction = direction;
+            if direction == ir::Direction::Outgoing {
+                msg.sender_identity = sender.map(str::to_string);
+            }
+            msg.owner_identity = owner.map(str::to_string);
+            msg
+        };
+    use ir::Direction::{Incoming, Outgoing};
     doc.messages.extend([
         message("out-1", Outgoing, Some("owner@example.com"), None),
         message("out-2", Outgoing, Some("+15555550100"), None),

@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use message_crate_api_types::{Problem, problem_slug};
+use api_types::{Problem, problem_slug};
 
 use crate::AuthError;
 

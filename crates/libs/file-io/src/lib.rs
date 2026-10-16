@@ -18,7 +18,7 @@
 //!
 //! They live in a leaf crate so attachment staging, media conversion, the
 //! journal, the export and import crates, the server and the desktop app share
-//! one copy without depending on the conversation model in `message-ir`.
+//! one copy without depending on the conversation model in `ir`.
 
 use sha2::{Digest, Sha256};
 use std::io::{self, Read};

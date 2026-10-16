@@ -982,7 +982,7 @@ for a sent message whose recipient it records
 ([#1778](https://github.com/messagecrate/message-crate/issues/1778)).
 
 Each is keyed `orphaned:` and the person's address, or `orphaned:` alone for
-the one that names nobody (`message_ir::orphaned_chat_id`), so it never takes
+the one that names nobody (`ir::orphaned_chat_id`), so it never takes
 the key of the person's one-to-one conversation, and its type is `orphaned`.
 The key is the conversation's own and nobody's address: it gets no contact,
 and search reads it as no text, as it does a group's id. Every title says

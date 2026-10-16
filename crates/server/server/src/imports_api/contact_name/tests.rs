@@ -468,7 +468,7 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         crate::imports_api::pipeline::FixedImportArgs {
             assets_dir: &assets,
             asset_root: Some(tmp.path()),
-            mode: message_crate_api_types::ImportMode::Append,
+            mode: api_types::ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
             import_id: None,

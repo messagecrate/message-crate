@@ -498,7 +498,7 @@ async fn rejects_attachment_path_traversal() {
     .await
     .unwrap_err();
     assert!(
-        err.to_string().contains(message_ir::UNSAFE_ATTACHMENT_PATH),
+        err.to_string().contains(ir::UNSAFE_ATTACHMENT_PATH),
         "expected path rejection, got: {err}"
     );
 }
@@ -520,7 +520,7 @@ async fn import_photo_stating(on_disk: &[u8], stated: &str) -> String {
             conversation_header("imessage", "+15555550123").participant("+15555550123", None),
             message_line("g-photo", "x")
                 .sender("+15555550123")
-                .attachment(message_ir::Attachment {
+                .attachment(ir::Attachment {
                     digest_sha256: Some(stated.to_string()),
                     ..attachment("photo.bin", "photo.bin", "application/octet-stream")
                 }),

@@ -5,7 +5,7 @@ description: "How SyncTech SMS and MMS fields become the shared conversation str
 
 How SyncTech `<sms>` and `<mms>` elements become `ConversationDocument` values, including validation, skipped records, and the source-specific data retained for later output.
 
-Input structure and attribute meanings: [input format](/docs/developer/formats/sms-backup-restore/input/). Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/).
+Input structure and attribute meanings: [input format](/docs/developer/formats/sms-backup-restore/input/). Shared model: [the common message](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/).
 
 ## Pipeline
 

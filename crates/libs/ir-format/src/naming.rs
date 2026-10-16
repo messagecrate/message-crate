@@ -3,7 +3,7 @@
 //! files, `<stem>.mbox`), and the suffix that keeps two conversations from
 //! sharing one file.
 
-use message_ir::{ConversationDocument, trimmed};
+use ir::{ConversationDocument, trimmed};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 

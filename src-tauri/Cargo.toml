@@ -26,11 +26,11 @@ chrono = { version = "0.4.44", default-features = false, features = ["clock", "s
 dirs = "7"
 open = "5"
 message-crate-core = { path = "../crates/core/message-crate-core" }
-message-crate-log-lines = { path = "../crates/libs/log-lines" }
-message-ir-format = { path = "../crates/libs/ir-format" }
-message-staging = { path = "../crates/libs/staging" }
+log-lines = { path = "../crates/libs/log-lines" }
+ir-format = { path = "../crates/libs/ir-format" }
+staging = { path = "../crates/libs/staging" }
 media = { path = "../crates/libs/media" }
-message-ir = { path = "../crates/libs/ir" }
+ir = { path = "../crates/libs/ir" }
 file-io = { path = "../crates/libs/file-io" }
 sms-backup-restore-exporter = { path = "../crates/exporters/sms-backup-restore-exporter", default-features = false }
 go-sms-pro-exporter = { path = "../crates/exporters/go-sms-pro-exporter", default-features = false }
@@ -40,11 +40,11 @@ imazing-exporter = { path = "../crates/exporters/imazing-exporter", default-feat
 whatsapp-exporter = { path = "../crates/exporters/whatsapp-exporter", default-features = false }
 imessage-ir-exporter = { path = "../crates/exporters/imessage-ir-exporter", default-features = false }
 ios-backup = { path = "../crates/libs/ios-backup" }
-message-reexport = { path = "../crates/libs/reexport" }
-message-crate-import = { path = "../crates/libs/import" }
-message-crate-export = { path = "../crates/libs/export" }
+reexport = { path = "../crates/libs/reexport" }
+import = { path = "../crates/libs/import" }
+export = { path = "../crates/libs/export" }
 message-crate-http = { path = "../crates/libs/http" }
-message-crate-serve-protocol = { path = "../crates/libs/serve-protocol" }
+serve-protocol = { path = "../crates/libs/serve-protocol" }
 # The temporary file an attachment download is written to before it is
 # renamed onto the file the person chose (`commands::download`).
 tempfile = "3"
@@ -71,7 +71,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 # `testutil` reads an Import Run log back as level and text pairs.
 message-crate-core = { path = "../crates/core/message-crate-core", features = ["testutil"] }
 # `testutil` builds the sample conversation the Export Directory tests write.
-message-ir = { path = "../crates/libs/ir", features = ["testutil"] }
+ir = { path = "../crates/libs/ir", features = ["testutil"] }
 # `testutil` gives the lock a test holds while it names a Tools Directory,
 # and tells a test whether this account may read any file.
 media = { path = "../crates/libs/media", features = ["testutil"] }

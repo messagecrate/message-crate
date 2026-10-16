@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::{ImessageExtensions, UnsupportedSchemaVersion};
+use ir::{ImessageExtensions, UnsupportedSchemaVersion};
 
 use crate::test_support::{MessageLine, conversation_header, message_line};
 

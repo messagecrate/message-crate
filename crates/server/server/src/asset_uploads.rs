@@ -19,7 +19,7 @@ use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 /// Default part size advertised to clients: the largest import batch, so an
 /// attachment arrives at the speed a batch does
 /// (`docs/architecture/http-api.md`, "Credentials and reach").
-pub const DEFAULT_PART_SIZE: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+pub const DEFAULT_PART_SIZE: usize = api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// How many multipart uploads one account may have open at once. An open
 /// upload keeps its parts on disk until it is completed, aborted, or
@@ -395,7 +395,7 @@ fn start_upload_with(
         return Err(AssetError::Invalid(format!(
             "object exceeds {} byte server limit ({} MiB)",
             limits.max_bytes,
-            limits.max_bytes / message_ir::MIB
+            limits.max_bytes / ir::MIB
         )));
     }
     if let Some(existing) = assets_api::lookup_by_sha256(assets_root, sha) {

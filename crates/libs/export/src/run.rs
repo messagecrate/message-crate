@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use ir_format::mark_export_directory;
 use message_crate_core::{
     CancelFlag, Canceled, check_cancel, count_of, is_canceled, parallel_for_each,
 };
@@ -18,16 +19,13 @@ use message_crate_http::{
     RetryKind, auth_check as authenticate, classify_retry, is_session_refused, with_retries,
     with_retries_until,
 };
-use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
-use message_crate_api_types::{
-    CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, Message,
-};
+use api_types::{CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, Message};
 
 /// Page size for `GET /v1/exports/{id}/messages`; the server's maximum.
 pub const DEFAULT_PAGE_LIMIT: usize = 500;
@@ -44,7 +42,7 @@ pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
 /// minutes, so ten minutes leaves the hour room.
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(10 * 60);
 
-/// Extra tries for transient HTTP failures, matching the message-crate-import default.
+/// Extra tries for transient HTTP failures, matching the `import` default.
 const MAX_RETRIES: u32 = 3;
 
 /// Run `op`, retrying a transient failure, until the person cancels the
@@ -341,7 +339,7 @@ fn missing_assets_line(count: usize) -> String {
 /// conversation, the attachments they reference, and the running count.
 struct Fetched {
     /// Conversation key → (first message as the metadata seed, converted messages).
-    by_conv: BTreeMap<String, (Message, Vec<message_ir::Message>)>,
+    by_conv: BTreeMap<String, (Message, Vec<ir::Message>)>,
     /// sha256 → relative path under the output directory.
     assets: HashMap<String, String>,
     /// sha256 → every other path a message names for the same bytes. The
@@ -719,7 +717,7 @@ impl<'a> Export<'a> {
 
     /// Write one JSON Lines file per conversation and return how many.
     ///
-    /// The stem comes from [`message_ir_format::filename_stem`],
+    /// The stem comes from [`ir_format::filename_stem`],
     /// which appends `packaging_stem_suffix` (the sanitized source, set here
     /// so the same chat from two sources lands in two files). The write is
     /// atomic: ir-format writes a `.tmp` sibling and renames it, so a crash
@@ -730,9 +728,9 @@ impl<'a> Export<'a> {
     /// Returns an error when a file cannot be created, serialized, or renamed.
     fn write_conversations(
         &self,
-        by_conv: BTreeMap<String, (Message, Vec<message_ir::Message>)>,
+        by_conv: BTreeMap<String, (Message, Vec<ir::Message>)>,
     ) -> Result<u64> {
-        let mut docs: Vec<message_ir::ConversationDocument> = by_conv
+        let mut docs: Vec<ir::ConversationDocument> = by_conv
             .into_values()
             .map(|(seed, messages)| {
                 let mut doc =
@@ -746,11 +744,10 @@ impl<'a> Export<'a> {
             })
             .collect();
         // Two groups from one source can still share a title or their people.
-        let mut names: Vec<&mut message_ir::ConversationDocument> = docs.iter_mut().collect();
-        message_ir_format::give_each_document_its_own_file(&mut names)
-            .map_err(anyhow::Error::msg)?;
+        let mut names: Vec<&mut ir::ConversationDocument> = docs.iter_mut().collect();
+        ir_format::give_each_document_its_own_file(&mut names).map_err(anyhow::Error::msg)?;
         for doc in &docs {
-            message_ir_format::write_conversation_jsonl(&self.cfg.out_dir, doc)?;
+            ir_format::write_conversation_jsonl(&self.cfg.out_dir, doc)?;
         }
         Ok(docs.len() as u64)
     }
@@ -816,7 +813,7 @@ impl<'a> Export<'a> {
 /// file once the run's log is gone. The path and fingerprint stay, so a next
 /// Export into the same directory still knows what to fetch.
 fn mark_unfetched(
-    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::Message>)>,
+    by_conv: &mut BTreeMap<String, (Message, Vec<ir::Message>)>,
     failed: &[AssetFailure],
 ) {
     if failed.is_empty() {
@@ -834,7 +831,7 @@ fn mark_unfetched(
             .and_then(asset_key)
             .is_some_and(|sha| failed.contains(sha.as_str()));
         if unfetched {
-            att.missing_reason = Some(message_ir::missing_reason::NOT_FETCHED.to_string());
+            att.missing_reason = Some(ir::missing_reason::NOT_FETCHED.to_string());
         }
     }
 }
@@ -844,7 +841,7 @@ fn mark_unfetched(
 /// two fetches writing one temporary file on a case-insensitive file system.
 /// `None` for a blank fingerprint.
 fn asset_key(sha256: &str) -> Option<String> {
-    message_ir::trimmed(sha256).map(str::to_ascii_lowercase)
+    ir::trimmed(sha256).map(str::to_ascii_lowercase)
 }
 
 /// Remember where each attachment a message references should land on disk,
@@ -1184,7 +1181,7 @@ mod paging_tests {
 #[cfg(test)]
 mod out_dir_tests {
     use super::*;
-    use message_ir_format::EXPORT_SENTINEL;
+    use ir_format::EXPORT_SENTINEL;
 
     #[test]
     fn marks_the_directory_as_an_export() {

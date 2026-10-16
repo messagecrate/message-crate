@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use message_ir::IdentityType;
+use ir::IdentityType;
 use serde::{Deserialize, Serialize};
 
 use crate::personas::{OWNER_EMAIL, OWNER_PHONE};

@@ -10,15 +10,15 @@ use crate::read::{
     load_chat_store, media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
-use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
-use message_csv::format_local_ts;
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ExportMeta, IdentityType, MessageKind, Participant,
     PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectionHooks,
     Reaction, SortKeyUnit, Transport, VendorFields,
 };
-use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
+use message_crate_csv::format_local_ts;
 use serde_json::Map;
+use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -209,7 +209,7 @@ fn ingest_chat(
 ) -> Option<(String, PendingConversation, Vec<Participant>)> {
     let group = is_group_jid(jid);
     let chat_id = chat_id_from_jid(jid);
-    let chat_name = chat.name.as_deref().and_then(message_ir::nonempty);
+    let chat_name = chat.name.as_deref().and_then(ir::nonempty);
     let group_title = if group { chat_name.clone() } else { None };
 
     let mut roster = Roster::new(owner);
@@ -287,10 +287,8 @@ fn ingest_chat(
                 if announcement.is_some() {
                     e.insert(IS_ANNOUNCEMENT.into(), "true".into());
                 }
-                if let Some(named_member_jid) = message
-                    .group_action_jid
-                    .as_deref()
-                    .and_then(message_ir::trimmed)
+                if let Some(named_member_jid) =
+                    message.group_action_jid.as_deref().and_then(ir::trimmed)
                 {
                     e.insert(GROUP_ACTION_JID.into(), named_member_jid.to_string());
                 }
@@ -340,7 +338,7 @@ struct Person {
 
 impl Person {
     fn new(jid: Option<&str>, name: Option<String>) -> Self {
-        let jid = jid.and_then(message_ir::nonempty);
+        let jid = jid.and_then(ir::nonempty);
         let identity = jid.as_deref().map(|jid| match phone_id_to_e164(jid) {
             Some(number) => (number, IdentityType::Phone),
             None => (jid.to_string(), IdentityType::Other),
@@ -380,7 +378,7 @@ impl Person {
 
 /// The first of `names` that is not blank, trimmed.
 fn first_name<const N: usize>(names: [Option<&str>; N]) -> Option<String> {
-    names.into_iter().flatten().find_map(message_ir::nonempty)
+    names.into_iter().flatten().find_map(ir::nonempty)
 }
 
 /// True when wtsexporter's `sender` holds a name rather than an id or the
@@ -559,7 +557,7 @@ fn resolve_media_file(
     let mut candidates: Vec<PathBuf> = Vec::new();
     if hint.is_absolute() {
         candidates.push(hint.to_path_buf());
-    } else if let Some(base) = media_base.and_then(message_ir::trimmed) {
+    } else if let Some(base) = media_base.and_then(ir::trimmed) {
         let base_path = Path::new(base);
         if base_path.is_absolute() {
             candidates.push(base_path.join(hint));
@@ -584,7 +582,7 @@ fn resolve_media_file(
 /// Allowed roots for media path checks (search roots plus an absolute `media_base`).
 fn allowed_media_roots(media_base: Option<&str>, media_search_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = media_search_roots.to_vec();
-    if let Some(base) = media_base.and_then(message_ir::trimmed) {
+    if let Some(base) = media_base.and_then(ir::trimmed) {
         let base_path = Path::new(base);
         if base_path.is_absolute() {
             roots.push(base_path.to_path_buf());
@@ -636,7 +634,7 @@ fn reactions_json(message: &MessageJson) -> Option<String> {
 /// name is not an identity. The fork leaves a withdrawn reaction out, so an
 /// entry with no emoji is malformed and is dropped.
 fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
-    let emoji = reaction.emoji.as_deref().and_then(message_ir::trimmed)?;
+    let emoji = reaction.emoji.as_deref().and_then(ir::trimmed)?;
     let reactor_identity = if reaction.from_me {
         None
     } else {
@@ -654,7 +652,7 @@ fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
     })
 }
 
-/// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
+/// WhatsApp deltas of the shared [`ir::pending_to_document`] projection.
 struct WhatsappProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -687,7 +685,7 @@ impl ProjectionHooks for WhatsappProjection {
         if message.extra_flag(IS_ANNOUNCEMENT) {
             MessageKind::Announcement
         } else {
-            message_ir::default_message_kind(message)
+            ir::default_message_kind(message)
         }
     }
 
@@ -707,14 +705,14 @@ impl ProjectionHooks for WhatsappProjection {
     /// `key_id`: it tells WhatsApp messages apart, including same-millisecond
     /// messages with identical text.
     fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
-        message_ir::trimmed(message.extra_str("key_id")).map(str::to_string)
+        ir::trimmed(message.extra_str("key_id")).map(str::to_string)
     }
 
     /// `full_key_id`, the whole id a reply names in its `reply_key_id`.
     /// `key_id` is not used: on an iPhone it is a 17-character prefix that
     /// two messages can share.
     fn reply_key(&self, message: &PendingMessage) -> Option<String> {
-        message_ir::trimmed(message.extra_str("full_key_id")).map(str::to_string)
+        ir::trimmed(message.extra_str("full_key_id")).map(str::to_string)
     }
 
     /// A message that quotes another, linked by `reply_key_id` to the message
@@ -722,7 +720,7 @@ impl ProjectionHooks for WhatsappProjection {
     /// with no `reply_key_id` is still a reply, with no link.
     fn reply(&self, message: &PendingMessage) -> Option<PendingReply> {
         (message.extra_str("is_reply") == "true").then(|| PendingReply {
-            quoted_key: message_ir::trimmed(message.extra_str("reply_key_id")).map(str::to_string),
+            quoted_key: ir::trimmed(message.extra_str("reply_key_id")).map(str::to_string),
         })
     }
 

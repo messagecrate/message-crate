@@ -90,7 +90,7 @@ pub enum ApiError {
         /// The sentence, naming the number, its `+` form and who holds it.
         detail: String,
         /// Who holds the `+` form.
-        holder: message_crate_api_types::IdentityHolder,
+        holder: api_types::IdentityHolder,
     },
     /// `422 Unprocessable Entity`: a part, upload id or completion does not match the upload.
     AssetUploadInvalid(String),

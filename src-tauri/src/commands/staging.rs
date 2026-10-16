@@ -13,7 +13,7 @@
 //!
 //! `summarize_staging` and `transcode_staging` take only the directory. They
 //! read the run's media settings from it, where `extract` recorded them
-//! ([`message_staging::read_media_settings`]), so a summary, the Media stage it
+//! ([`staging::read_media_settings`]), so a summary, the Media stage it
 //! forecasts, and the Staging before them all work to the one set of values
 //! the Import Run was started with.
 //!
@@ -30,7 +30,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use message_staging::{StagingSummary, TranscodeOptions, TranscodeReport};
+use staging::{StagingSummary, TranscodeOptions, TranscodeReport};
 
 use super::events;
 use super::events::{ImportProgressEvent, Step};
@@ -117,8 +117,7 @@ fn staged_directory(
     run_dir: &str,
 ) -> Result<(PathBuf, TranscodeOptions), String> {
     let run_dir = directories.directory(run_dir)?;
-    let options =
-        message_staging::read_media_settings(&run_dir).map_err(|error| format!("{error:#}"))?;
+    let options = staging::read_media_settings(&run_dir).map_err(|error| format!("{error:#}"))?;
     Ok((run_dir, options))
 }
 
@@ -146,7 +145,7 @@ pub async fn summarize_staging(
     let progress_app = app.clone();
     let installed = installed.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        message_staging::summarize_staging(&run_dir, &options, &installed, &mut |progress| {
+        staging::summarize_staging(&run_dir, &options, &installed, &mut |progress| {
             events::emit(
                 &progress_app,
                 events::PROGRESS,
@@ -275,7 +274,7 @@ pub fn transcode_staging(
         // `&self`), so it borrows the one clone above rather than needing a
         // second. The same handle is still available by reference below,
         // once this borrow ends at the end of the `transcode_staged` call.
-        let outcome = message_staging::transcode_staged(
+        let outcome = staging::transcode_staged(
             &run_dir,
             &options,
             &installed,
@@ -411,7 +410,7 @@ pub fn delete_closed_run_dir(
 /// it finally posts covers the whole run. The leading dot keeps it out of
 /// every listing of conversation files, and it is deleted with the directory.
 /// It has no `.json` extension, for the reason the media settings file has
-/// none (`message_staging::MEDIA_SETTINGS_FILE`): a fresh export into the
+/// none (`staging::MEDIA_SETTINGS_FILE`): a fresh export into the
 /// directory would delete it as an earlier run's output.
 pub const RUN_RECORD_NAME: &str = ".message-crate-run";
 
@@ -524,7 +523,7 @@ mod tests {
             },
             asset_max_bytes: 123_456_789,
         };
-        message_staging::write_media_settings(&made.run, &recorded).unwrap();
+        staging::write_media_settings(&made.run, &recorded).unwrap();
 
         let (dir, options) =
             staged_directory(&made.directories, made.run.to_str().unwrap()).unwrap();
@@ -544,7 +543,7 @@ mod tests {
             compress: media::CompressOptions::default(),
             asset_max_bytes: 1,
         };
-        message_staging::write_media_settings(&made.run, &options).unwrap();
+        staging::write_media_settings(&made.run, &options).unwrap();
         let record = serde_json::json!({ "phase": "staging_review" });
         save_run_record(&made.run, &record).unwrap();
         let elsewhere = tempfile::tempdir().unwrap();

@@ -16,7 +16,7 @@ File helpers that know nothing about conversations:
 
 They sit in a leaf crate so `media`, the journal, the export and import
 crates and the desktop app share one copy without depending on the
-conversation model in `message-ir`.
+conversation model in `ir`.
 
 ## Build and test
 

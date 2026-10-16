@@ -1,8 +1,8 @@
 use super::*;
+use ir::{Attachment, ConversationDocument};
+use ir_format::read_conversation_jsonl;
 use message_crate_core::testutil::{level_of, recorded_log};
 use message_crate_core::{AttachmentFiles, CancelFlag, LogSink, ProgressSink, RunLogLevel, Sinks};
-use message_ir::{Attachment, ConversationDocument};
-use message_ir_format::read_conversation_jsonl;
 use std::fs;
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -22,14 +22,14 @@ fn no_sinks() -> Sinks<'static> {
 fn att(name: &str) -> Attachment {
     Attachment {
         original_name: Some(name.into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
 /// A one-message document with `count` attachments, keyed by `who` so
 /// each unit lands on its own conversation file.
 fn doc_with(who: &str, count: usize) -> ConversationDocument {
-    let mut doc = message_ir::testutil::sample_document("hello");
+    let mut doc = ir::testutil::sample_document("hello");
     doc.conversation.chat_identifier = who.into();
     doc.conversation.participants[0].identity = Some(who.into());
     doc.messages[0].attachments = (0..count).map(|i| att(&format!("f{i}.jpg"))).collect();
@@ -921,9 +921,9 @@ fn take_bytes_moves_the_bytes_out_of_the_attachment() {
 /// A group conversation with its own chat identifier, titled or not, whose
 /// only message says `text`.
 fn group(chat_id: &str, title: Option<&str>, text: &str) -> ConversationDocument {
-    let mut doc = message_ir::testutil::sample_document(text);
+    let mut doc = ir::testutil::sample_document(text);
     doc.conversation.chat_identifier = chat_id.into();
-    doc.conversation.conversation_type = message_ir::ConversationType::Group;
+    doc.conversation.conversation_type = ir::ConversationType::Group;
     doc.conversation.group_title = title.map(str::to_string);
     doc
 }

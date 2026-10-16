@@ -156,7 +156,7 @@ describe("ConvertSection", () => {
   });
 
   it("refuses the same directory for input and output and says so", async () => {
-    // message-reexport would reject this anyway, but only after the job had
+    // The `reexport` crate would reject this anyway, but only after the job had
     // started; the screen states the rule before the button is live.
     const user = await fillDirectories("/home/demo/export", "/home/demo/export/");
 

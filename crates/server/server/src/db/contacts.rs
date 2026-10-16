@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use message_ir::IdentityService;
+use ir::IdentityService;
 use sqlx::SqliteConnection;
 
 use crate::db::trash::{not_trashed_contact, not_trashed_contact_id};

@@ -417,7 +417,7 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
         &mut conn,
         &crate::db::exports::StartExportArgs {
             account_id: alice,
-            scope: &message_crate_api_types::ExportScope::Everything,
+            scope: &api_types::ExportScope::Everything,
             tool: None,
         },
         crate::test_support::fixed_instant(),
@@ -530,7 +530,7 @@ async fn each_run_table_records_its_own_runs_credential() {
         &mut conn,
         &crate::db::exports::StartExportArgs {
             account_id: account,
-            scope: &message_crate_api_types::ExportScope::Everything,
+            scope: &api_types::ExportScope::Everything,
             tool: None,
         },
         crate::test_support::fixed_instant(),

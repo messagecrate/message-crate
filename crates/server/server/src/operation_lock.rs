@@ -22,7 +22,7 @@ pub(crate) struct OperationLock {
 
 /// Another server, or reset-demo, holds the operation lock of the database
 /// `serve` was asked to open. `main` exits with
-/// [`OPERATION_LOCK_HELD_EXIT_CODE`](message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE)
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`](serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE)
 /// when a command fails with it, which is how the desktop app tells the
 /// server of a second window from a failed start (#1416).
 #[derive(Debug, thiserror::Error)]

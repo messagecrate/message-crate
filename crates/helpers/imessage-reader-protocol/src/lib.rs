@@ -37,7 +37,7 @@
 //!
 //! [`Reaction`], [`Deletion`] and [`EarlierVersion`] are defined here and
 //! nowhere else. Each is the shape the conversation file carries too
-//! (`message_ir` re-exports them), for every source, and this is the one
+//! (`ir` re-exports them), for every source, and this is the one
 //! crate both the GPL reader and the app may link.
 
 use std::path::PathBuf;
@@ -560,7 +560,7 @@ impl TimePrecision {
 ///
 /// Every source writes the same two marks, so the type is defined here, the
 /// one crate the Apple Messages Reader and the rest of Message Crate may both
-/// link, and `message-ir` re-exports it.
+/// link, and `ir` re-exports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Deletion {
@@ -594,7 +594,7 @@ impl Deletion {
 /// A message's own text is its final version, so a list of these holds only
 /// the versions before it, oldest first within each part. Every source that
 /// records edits writes the same shape, so the type is defined here beside
-/// [`Reaction`] and `message-ir` re-exports it. Apple Messages keeps each
+/// [`Reaction`] and `ir` re-exports it. Apple Messages keeps each
 /// version's text. iMazing records only that a message was edited, and when,
 /// so its version has no text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -618,7 +618,7 @@ pub struct EarlierVersion {
 /// whether or not the quoted message can be named.
 ///
 /// Every source that records replies writes the same shape, so the type is
-/// defined here beside [`Reaction`] and `message-ir` re-exports it.
+/// defined here beside [`Reaction`] and `ir` re-exports it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReplyTo {
     /// The quoted message's GUID, as the source names it; `None` when the

@@ -21,7 +21,7 @@ pub const MAX_LIST_OFFSET: usize = 50_000;
 /// `IN` list stays under SQLite's variable cap.
 pub const MAX_CONTACT_SUMMARY_IDS: usize = 500;
 
-pub use message_crate_api_types::Page;
+pub use api_types::Page;
 
 /// The page a list answers: the rows read for `params`, the count of every
 /// row the query matches, and the `limit` and `offset` they were read with.

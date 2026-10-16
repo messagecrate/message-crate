@@ -7,7 +7,7 @@ use crate::test_support::{
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
     message_line, register_via_api, seed_conversation, stored_time,
 };
-use message_ir::{Attachment, ImessageExtensions, Reaction, Transport};
+use ir::{Attachment, ImessageExtensions, Reaction, Transport};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -404,7 +404,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             crate::imports_api::pipeline::FixedImportArgs {
                 assets_dir: &assets,
                 asset_root: Some(&dir),
-                mode: message_crate_api_types::ImportMode::Append,
+                mode: api_types::ImportMode::Append,
                 source: "imessage",
                 account_id,
                 import_id: None,
@@ -492,7 +492,7 @@ async fn import_conversation_file(
             crate::imports_api::pipeline::FixedImportArgs {
                 assets_dir: &assets,
                 asset_root: Some(&dir),
-                mode: message_crate_api_types::ImportMode::Append,
+                mode: api_types::ImportMode::Append,
                 source,
                 account_id,
                 import_id: None,
@@ -597,7 +597,7 @@ async fn deleted_and_unsent_each_find_only_their_own_mark() {
 /// sent about the lighthouse under the subject "Weekend plans" with a map of
 /// the harbour attached, marked `deletion`, and a reply that mentions none
 /// of them.
-fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
+fn lighthouse_file(deletion: Option<ir::Deletion>) -> String {
     let header = conversation_header("imessage", "+15555550107")
         .owner("+15555550106", None)
         .participant("+15555550107", None);
@@ -673,7 +673,7 @@ async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() 
         assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
     }
 
-    let later = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    let later = lighthouse_file(Some(ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
 
     for q in HIDDEN_TEXT_QUERIES {
@@ -713,7 +713,7 @@ async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() 
 #[tokio::test]
 async fn a_message_unsent_in_its_first_import_is_not_found_by_its_text() {
     let (fixture, alice) = fixture_with_account().await;
-    let file = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    let file = lighthouse_file(Some(ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "only", &file, "imessage").await;
 
     for q in HIDDEN_TEXT_QUERIES {
@@ -730,7 +730,7 @@ async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text()
     let (fixture, alice) = fixture_with_account().await;
     let first = lighthouse_file(None);
     import_conversation_file(&fixture, alice.account_id, "first", &first, "imessage").await;
-    let later = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
+    let later = lighthouse_file(Some(ir::Deletion::DeletedInSourceApp));
     import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
     for q in HIDDEN_TEXT_QUERIES {
         assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
@@ -744,9 +744,9 @@ async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text()
 #[tokio::test]
 async fn an_unsent_message_a_later_import_marks_deleted_is_found_by_its_text_again() {
     let (fixture, alice) = fixture_with_account().await;
-    let unsent = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    let unsent = lighthouse_file(Some(ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "unsent", &unsent, "imessage").await;
-    let deleted = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
+    let deleted = lighthouse_file(Some(ir::Deletion::DeletedInSourceApp));
     import_conversation_file(&fixture, alice.account_id, "deleted", &deleted, "imessage").await;
     for q in HIDDEN_TEXT_QUERIES {
         assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
@@ -908,7 +908,7 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
 /// twice was edited a third time, from the bakery to the park, and the
 /// message never edited has been edited once, from "Nothing changed here".
 ///
-/// The message lines are read into `message_ir::Message` and changed by
+/// The message lines are read into `ir::Message` and changed by
 /// field, so the change holds whatever order or spacing the exporter wrote
 /// the fixture's fields in (#1899). The header line is kept as it is.
 fn later_apple_messages_edits() -> String {
@@ -919,8 +919,8 @@ fn later_apple_messages_edits() -> String {
     let mut edited = Vec::new();
     let mut later = format!("{header}\n");
     for line in messages.lines() {
-        let mut message: message_ir::Message =
-            serde_json::from_str(line).expect("each message line is message-ir");
+        let mut message: ir::Message =
+            serde_json::from_str(line).expect("each message line is a conversation file message");
         let (was, now, edited_at) = match message.guid.as_str() {
             "guid-edited-twice" => ("Meet at the bakery", "Meet at the park", 1_578_309_090_000),
             "guid-never-edited" => (
@@ -935,7 +935,7 @@ fn later_apple_messages_edits() -> String {
             }
         };
         assert_eq!(message.text, was, "{} before the later edit", message.guid);
-        message.edits.push(message_ir::EarlierVersion {
+        message.edits.push(ir::EarlierVersion {
             part_index: 0,
             text: Some(std::mem::replace(&mut message.text, now.to_string())),
             edited_at_unix_ms: Some(edited_at),

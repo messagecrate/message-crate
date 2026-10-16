@@ -3,7 +3,7 @@
 use crate::ios_backup::DecryptedWhatsapp;
 use anyhow::{Context, Result, bail};
 use message_crate_core::LogSink;
-use message_staging::scratch_disk_full;
+use staging::scratch_disk_full;
 use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -458,7 +458,7 @@ fn resolve_forwarded_paths(args: &WtsexporterArgs) -> Result<ForwardedPaths> {
     let key = if backup.is_none() {
         None
     } else {
-        match args.key.as_deref().and_then(message_ir::trimmed) {
+        match args.key.as_deref().and_then(ir::trimmed) {
             Some(k) if looks_like_path(k) => {
                 let path = absolutize(Path::new(k))?;
                 Some(path.to_string_lossy().into_owned())

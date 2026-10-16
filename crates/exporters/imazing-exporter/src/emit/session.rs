@@ -5,7 +5,7 @@ use super::TransportFamily;
 use crate::read::{RawRow, SourceKind};
 use crate::zone::Zone;
 use chrono::NaiveDateTime;
-use message_ir::{ConversationKey, IdentityType, Participant};
+use ir::{ConversationKey, IdentityType, Participant};
 use phone::Handle;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};

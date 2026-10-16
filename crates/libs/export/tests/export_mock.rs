@@ -6,7 +6,7 @@
 //! `POST /v1/exports`, `GET /v1/exports/{id}/messages`,
 //! `POST /v1/exports/{id}/complete` (with `completed` or `failed`) or
 //! `/cancel`, and `GET /v1/assets/{sha256}`
-//! — with the JSON the server serializes (`message-crate-api-types`,
+//! — with the JSON the server serializes (`api-types`,
 //! `docs/src/assets/openapi.json`). Every request derives from
 //! `ExportConfig::base_url`, so the mock's address is the only seam.
 
@@ -17,13 +17,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use httpmock::prelude::*;
-use message_crate_export::{
+use export::{
     AssetFailure, ExportConfig, ExportJournalState, ExportQueryList, ExportReport, ProgressEvent,
     journal, run,
 };
-use message_ir::{Deletion, EarlierVersion, Reaction};
-use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
+use httpmock::prelude::*;
+use ir::{Deletion, EarlierVersion, Reaction};
+use ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
@@ -133,7 +133,7 @@ fn mock_auth(server: &MockServer) -> httpmock::Mock<'_> {
     })
 }
 
-/// `POST /v1/exports` for exactly `scope`, recorded as `message-crate-export`'s run.
+/// `POST /v1/exports` for exactly `scope`, recorded as `export`'s run.
 fn mock_create<'a>(server: &'a MockServer, scope: Value) -> httpmock::Mock<'a> {
     let body = json!({ "scope": scope.clone(), "tool": "message-crate-export" });
     server.mock(move |when, then| {
@@ -1054,7 +1054,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     for menu in menus {
         assert_eq!(
             menu.missing_reason.as_deref(),
-            Some(message_ir::missing_reason::NOT_FETCHED),
+            Some(ir::missing_reason::NOT_FETCHED),
             "the conversation file says the Export could not fetch the menu"
         );
     }
@@ -1206,11 +1206,8 @@ fn a_page_of_a_run_the_server_closed_says_the_export_was_canceled() {
 
     let error = run(&config(&out, server.base_url()), None).unwrap_err();
 
-    assert_eq!(
-        error.to_string(),
-        message_crate_export::RUN_CANCELED_ON_SERVER
-    );
-    assert!(message_crate_export::is_run_canceled_on_server(&error));
+    assert_eq!(error.to_string(), export::RUN_CANCELED_ON_SERVER);
+    assert!(export::is_run_canceled_on_server(&error));
     assert_eq!(page.calls(), 1, "a 409 Conflict is not retried");
     create.assert();
     assert_eq!(fail.calls(), 0);
@@ -1670,7 +1667,7 @@ fn an_exported_message_keeps_its_earlier_versions() {
 /// httpmock runs no code of the test's when a request arrives, so a test
 /// built on it could press Cancel only after the answer, racing the retry.
 /// The Upload's tests use a server of the same shape for the same reason
-/// (`serve_answering_batches_with` in `message-crate-import`).
+/// (`serve_answering_batches_with` in `import`).
 fn serve_by_hand(
     answer: impl Fn(&str) -> String + Send + 'static,
 ) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {

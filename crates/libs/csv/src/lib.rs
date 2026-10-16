@@ -11,7 +11,7 @@ use std::path::Path;
 pub struct AttachmentCell {
     /// Shared attachment metadata (serialized inline, same JSON shape as before).
     #[serde(flatten)]
-    pub meta: message_ir::AttachmentMeta,
+    pub meta: ir::AttachmentMeta,
     /// Sticker flag.
     #[serde(default)]
     pub is_sticker: bool,
@@ -22,7 +22,7 @@ pub struct AttachmentCell {
     pub sticker_effect: Option<String>,
 }
 
-impl From<AttachmentCell> for message_ir::Attachment {
+impl From<AttachmentCell> for ir::Attachment {
     fn from(cell: AttachmentCell) -> Self {
         let AttachmentCell {
             meta,
@@ -56,9 +56,9 @@ pub struct ParticipantCell {
     pub display_name: String,
 }
 
-/// Timestamp formatting (defined in `message-ir`, where the shared
+/// Timestamp formatting (defined in `ir`, where the shared
 /// projection uses it; re-exported here for existing callers).
-pub use message_ir::format_local_ts;
+pub use ir::format_local_ts;
 
 /// Serialize a value for a CSV JSON cell (`null` on failure).
 pub fn json_cell(value: &impl Serialize) -> String {

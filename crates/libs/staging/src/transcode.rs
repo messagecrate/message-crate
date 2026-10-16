@@ -94,14 +94,14 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use ir::{Attachment, ConversationDocument, missing_reason};
 use media::{CompressOptions, HevcFallback, MediaMode, MediaTools, TranscodeOutcome};
 use message_crate_core::{
     CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
 };
-use message_ir::{Attachment, ConversationDocument, missing_reason};
 
-use message_ir_format::read_conversation_jsonl;
-use message_ir_format::write_conversation_jsonl_to;
+use ir_format::read_conversation_jsonl;
+use ir_format::write_conversation_jsonl_to;
 
 /// Suffix on a derivative that is written but not yet committed.
 ///
@@ -387,7 +387,7 @@ fn pending_in(
                 // the same path in this document.
                 continue;
             }
-            let abs = message_ir::safe_attachment_path(run_dir, rel)?;
+            let abs = ir::safe_attachment_path(run_dir, rel)?;
             let stem = abs.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let committed = stem.ends_with(COMMITTED_SUFFIX);
 
@@ -882,7 +882,7 @@ fn media_issue(
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
     let name = recorded_at(doc, recorded_rel)
-        .find_map(|att| att.original_name.as_deref().and_then(message_ir::trimmed))
+        .find_map(|att| att.original_name.as_deref().and_then(ir::trimmed))
         .unwrap_or("The attachment");
     RunIssue {
         kind,
@@ -912,7 +912,7 @@ fn too_large_issue(
         &format!(
             "is {size} bytes ({} MiB) after conversion, over the attachment size limit, so it \
              was left out",
-            size / message_ir::MIB
+            size / ir::MIB
         ),
     )
 }

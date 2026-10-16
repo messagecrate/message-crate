@@ -2,23 +2,23 @@
 
 use anyhow::{Result, bail};
 
+use ir::{
+    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
+    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
+    prepare_conversation, project_pending,
+};
 use message_crate_core::{
     AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
     SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
     Sinks, check_cancel, document_messages, import_error_lines, item_line,
 };
-use message_csv::format_local_ts;
-use message_ir::{
-    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
-    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
-    prepare_conversation, project_pending,
-};
-use message_staging::{
-    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
-};
+use message_crate_csv::format_local_ts;
 use phone::{Handle, OwnerHandleSet};
 use sbr::{
     AttachmentBytes, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
+};
+use staging::{
+    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -443,7 +443,7 @@ fn add_record(
         .unwrap_or_default();
     let extra = BTreeMap::from([
         (ROW.to_string(), conversation.rows.len().to_string()),
-        // Read by the shared `message_ir::message_time`.
+        // Read by the shared `ir::message_time`.
         ("date_ms".to_string(), record.date_ms),
     ]);
     conversation.rows.push(MessageRow {
@@ -462,7 +462,7 @@ fn add_record(
         // Whole seconds, for the shared check that the time can be
         // represented; the order is the parser's own seconds
         // (`SbrProjection::message_order`) and the time the `date_ms`
-        // extra (`message_ir::message_time`).
+        // extra (`ir::message_time`).
         sort_key: record.timestamp_secs as i64,
         is_from_me: record.is_from_me,
         sender_identity: record.sender.map(Handle::into_key).unwrap_or_default(),
@@ -501,7 +501,7 @@ impl SbrProjection<'_> {
             if let Some(name) = message
                 .sender_display_name
                 .as_deref()
-                .and_then(message_ir::trimmed)
+                .and_then(ir::trimmed)
                 .filter(|_| !message.sender_identity.is_empty())
             {
                 names

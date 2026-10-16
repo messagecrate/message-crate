@@ -1,12 +1,12 @@
 //! Write [`ConversationDocument`] messages as SMS Backup & Restore XML.
 
 use anyhow::{Context, Result};
-use message_crate_core::{Counter, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationType, Direction, Message, MessageKind,
     Participant, nonempty, trimmed,
 };
-use message_ir_format::{MergedArchive, load_attachment_bytes};
+use ir_format::{MergedArchive, load_attachment_bytes};
+use message_crate_core::{Counter, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use phone::OwnerHandleSet;
 use sbr::{
     SbrBackupWriter, SbrMessage, SourceFields, default_backup_path, encode_part_data, ensure_attr,

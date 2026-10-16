@@ -5,7 +5,7 @@
 //! [`crate::ProgressEvent::Finished`]. Everything here is plain data with no
 //! I/O so the desktop app and tests can build and inspect reports directly.
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use message_crate_core::count_of;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 

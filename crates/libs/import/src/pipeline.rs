@@ -26,7 +26,7 @@ use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
 use crate::run::{ImportConfig, Session};
-use message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+use api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// If the pending message batch is at least this many messages, start its HTTP
 /// import now instead of waiting until the next chat is prepared.
@@ -505,7 +505,7 @@ impl<'a> ImportPipeline<'a> {
                 batch,
                 request_ms,
                 messages_per_second: message_count as f64 / seconds,
-                mebibytes_per_second: body_bytes as f64 / message_ir::MIB as f64 / seconds,
+                mebibytes_per_second: body_bytes as f64 / ir::MIB as f64 / seconds,
                 body_bytes,
                 message_count,
                 response,

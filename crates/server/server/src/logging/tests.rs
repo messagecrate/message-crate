@@ -208,7 +208,7 @@ fn the_subscriber_writes_lines_the_reader_reads_back() {
 }
 
 /// The desktop app writes each Import Run's log with
-/// `message_crate_log_lines::format_lines`: a line it writes is the line the
+/// `log_lines::format_lines`: a line it writes is the line the
 /// subscriber writes for the same time, level and text, and the server's
 /// reader reads it back.
 #[test]
@@ -220,13 +220,13 @@ fn a_line_the_desktop_app_writes_is_a_line_the_subscriber_writes() {
     });
     let number = file_numbers(tmp.path()).unwrap()[0];
     let written = std::fs::read_to_string(tmp.path().join(file_name(number))).unwrap();
-    let parsed = message_crate_log_lines::parse_line(written.trim_end()).unwrap();
+    let parsed = log_lines::parse_line(written.trim_end()).unwrap();
     assert_eq!(
-        message_crate_log_lines::format_lines(parsed.time, parsed.level, parsed.text),
+        log_lines::format_lines(parsed.time, parsed.level, parsed.text),
         written
     );
 
-    let run_log = message_crate_log_lines::format_lines(
+    let run_log = log_lines::format_lines(
         "2026-10-08T12:00:00.123456Z",
         LogLevel::Error,
         "chat.jsonl failed: the server refused it",

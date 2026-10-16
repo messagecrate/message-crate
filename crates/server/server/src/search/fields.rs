@@ -153,7 +153,7 @@ pub(crate) static FIELDS: &[FieldSpec] = &[
         lists: &[V, M],
         // The id each exporter writes into `export.source`, as written, which
         // the import stamps on every message it writes.
-        values: message_crate_api_types::SOURCE_IDS,
+        values: api_types::SOURCE_IDS,
         help: "the kind of backup it was imported from",
         example: "source:whatsapp",
     },

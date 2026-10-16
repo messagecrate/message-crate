@@ -486,7 +486,7 @@ Choice: `imessage`, `whatsapp`, `sms-backup-restore`, `imazing`,
 `openextract`, `go-sms-pro`, `sms-backup-plus`. Each value is the id an
 exporter writes into `export.source`, which the import stamps on every message
 it writes, so the word compares the stored id with no mapping. A backup type's
-id is a constant in `message_crate_api_types::source_id`, which
+id is a constant in `api_types::source_id`, which
 `Exporter::source_id` in `message-crate-core` returns and its exporter writes.
 Search reads `SOURCE_IDS`, and a test in `message-crate-core` fails when
 `SOURCE_IDS` and the backup types' ids differ. Why: a person whose messages came

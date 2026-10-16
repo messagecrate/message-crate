@@ -16,7 +16,7 @@ use message_crate_core::{
     AppleConfig, ApplePlatform, ConvertRun, IMESSAGE_READER_DIRECTORY, LogSink, OutputConfig,
     ProgressSink, RunContext, RunResult, ScratchDir, Sinks, prepare_outputs,
 };
-use message_staging::{Disk, check_headroom};
+use staging::{Disk, check_headroom};
 
 use crate::emit;
 

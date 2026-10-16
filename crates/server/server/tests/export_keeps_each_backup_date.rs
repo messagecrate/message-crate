@@ -115,29 +115,28 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
 
     // An Export Run writes each message's stored date into one file.
     let exported = root.path().join("exported");
-    let config = message_crate_export::ExportConfig {
+    let config = export::ExportConfig {
         out_dir: exported.clone(),
         base_url: first.clone(),
         token: first_token.clone(),
         query: String::new(),
-        list: message_crate_export::ExportQueryList::Messages,
+        list: export::ExportQueryList::Messages,
         skip_attachments: true,
-        page_limit: message_crate_export::DEFAULT_PAGE_LIMIT,
+        page_limit: export::DEFAULT_PAGE_LIMIT,
         cancel: Default::default(),
         asset_fetch_workers: 1,
         exported_at_unix_ms: EXPORTED_AT,
     };
     #[allow(clippy::disallowed_methods)]
-    tokio::task::spawn_blocking(move || message_crate_export::run(&config, None))
+    tokio::task::spawn_blocking(move || export::run(&config, None))
         .await
         .unwrap()
         .unwrap();
     let text =
         std::fs::read_to_string(exported.join("+15555550123__sms-backup-restore.jsonl")).unwrap();
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
-    let header: message_ir::ConversationHeader =
-        serde_json::from_str(lines.next().unwrap()).unwrap();
-    let messages: Vec<message_ir::Message> = lines
+    let header: ir::ConversationHeader = serde_json::from_str(lines.next().unwrap()).unwrap();
+    let messages: Vec<ir::Message> = lines
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert_eq!(header.export.exported_at_unix_ms, Some(EXPORTED_AT));

@@ -3,7 +3,7 @@
 //!
 //! Each line is written and read in the format of the server's own log
 //! (`docs/architecture/server-log.md`), defined once in
-//! `message-crate-log-lines`, so one viewer reads both and the level filter
+//! `log-lines`, so one viewer reads both and the level filter
 //! means the same thing in each. A run log uses three of its levels.
 //!
 //! The first line of a log the desktop app starts says which account ran the
@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use message_crate_log_lines::{LogLevel, ParsedLine, format_lines, parse_line, time_now};
+use log_lines::{LogLevel, ParsedLine, format_lines, parse_line, time_now};
 
 use crate::RunIssueKind;
 
@@ -74,7 +74,7 @@ impl fmt::Display for RunLogLevel {
 }
 
 /// `text` at `level` as the lines of a run log, each ending in a line break,
-/// stamped with the time now ([`message_crate_log_lines::format_lines`]).
+/// stamped with the time now ([`log_lines::format_lines`]).
 /// Empty when `text` holds nothing but white space, so a blank spacer line is
 /// not written.
 pub fn format_run_log(level: RunLogLevel, text: &str) -> String {

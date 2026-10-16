@@ -59,7 +59,7 @@ export async function invokeAllStagingBytes(): Promise<number> {
 
 /**
  * One sentence for each disk that holds the Staging Directory or the Scratch
- * Directory with less free than `LOW_DISK_SPACE_BYTES` in `message-staging`,
+ * Directory with less free than `LOW_DISK_SPACE_BYTES` in `staging`,
  * naming the disk, the directory and the space free. Empty when every disk
  * has more, or cannot say how much it has.
  */
@@ -127,7 +127,7 @@ export async function invokeTranscodeStaging(config: RunDirConfig): Promise<void
 
 /**
  * What `transcode_staging`'s job did, from its `desktop-job:finished` payload.
- * `TranscodeReport` (`message-staging`) has no serde derive: `transcode_staging`
+ * `TranscodeReport` (`staging`) has no serde derive: `transcode_staging`
  * (`src-tauri/src/commands/staging.rs`) hand-builds the payload with these
  * fields flat at the top level, alongside `summary` — not nested under a
  * `report` key — so this mirrors the wire shape exactly, snake_case included.

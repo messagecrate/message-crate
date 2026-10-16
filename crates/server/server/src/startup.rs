@@ -94,8 +94,8 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     let upload_limits = state.assets.upload_limits(&state.db).await?;
     tracing::info!(
         "An attachment may be up to {} MiB, and is uploaded in parts of {} MiB",
-        upload_limits.max_bytes / message_ir::MIB,
-        upload_limits.part_size as u64 / message_ir::MIB
+        upload_limits.max_bytes / ir::MIB,
+        upload_limits.part_size as u64 / ir::MIB
     );
 
     let demo_build = state.demo.build.clone();
@@ -120,7 +120,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         let _ = writeln!(
             std::io::stderr(),
             "{}http://{}",
-            message_crate_serve_protocol::LISTENING_LINE,
+            serve_protocol::LISTENING_LINE,
             listener.local_addr()?
         );
     }

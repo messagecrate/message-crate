@@ -31,11 +31,11 @@ async fn import_slots_belong_to_one_server() {
 
 /// The Upload pauses for a server that is stopping or busy, rather than
 /// failing the batch, by reading these types' slugs from
-/// `message_crate_api_types::problem_slug`. A type renamed here alone would
+/// `api_types::problem_slug`. A type renamed here alone would
 /// turn every stop into "could not be reached" with no other test failing.
 #[test]
 fn the_upload_reads_the_stopping_and_busy_types_by_their_slugs() {
-    use message_crate_api_types::problem_slug;
+    use api_types::problem_slug;
     assert_eq!(
         crate::problem::ProblemType::ServerStopping.slug(),
         problem_slug::SERVER_STOPPING
@@ -245,7 +245,7 @@ async fn a_batch_refused_after_taking_its_slot_gives_the_slot_back() {
 async fn a_batch_one_byte_over_the_cap_is_payload_too_large() {
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "imessage").await;
-    let body = vec![b'\n'; message_crate_api_types::MAX_IMPORT_BATCH_BYTES + 1];
+    let body = vec![b'\n'; api_types::MAX_IMPORT_BATCH_BYTES + 1];
 
     let (status, text) =
         crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await;
@@ -264,7 +264,7 @@ async fn a_streamed_batch_over_the_cap_is_payload_too_large() {
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "imessage").await;
     let mib = vec![b'\n'; 1024 * 1024];
-    let chunks = message_crate_api_types::MAX_IMPORT_BATCH_BYTES / mib.len();
+    let chunks = api_types::MAX_IMPORT_BATCH_BYTES / mib.len();
     let body = futures_util::stream::iter(0..chunks)
         .map(move |_| Ok::<_, std::io::Error>(axum::body::Bytes::from(mib.clone())))
         .chain(futures_util::stream::iter([Ok(
@@ -350,7 +350,7 @@ async fn http_import_of_a_schema_4_file_is_a_422_naming_both_versions() {
         problem.errors.unwrap(),
         vec![format!(
             "this file is schema version 4; Message Crate reads version {} (line 1 of the batch)",
-            message_ir::SCHEMA_VERSION
+            ir::SCHEMA_VERSION
         )]
     );
     assert_eq!(problem.line, Some(1), "{text}");
@@ -438,7 +438,7 @@ async fn a_batch_whose_header_has_the_wrong_fields_is_a_422_naming_the_line() {
     // The builder writes only valid headers, so this one is written out; its
     // version is the current one, so the fields are what it breaks.
     let header = serde_json::json!({
-        "schema_version": message_ir::SCHEMA_VERSION,
+        "schema_version": ir::SCHEMA_VERSION,
         "export": {"source": "whatsapp"},
         "conversation": {"chat_identifier": 7},
     });
@@ -539,7 +539,7 @@ async fn a_blank_attachment_path_is_refused_even_with_a_stored_fingerprint() {
     );
     assert_eq!(problem.line, Some(2), "{text}");
     assert!(
-        problem.errors.unwrap()[0].contains(message_ir::UNSAFE_ATTACHMENT_PATH),
+        problem.errors.unwrap()[0].contains(ir::UNSAFE_ATTACHMENT_PATH),
         "refused as an unsafe path, as `.` is: {text}"
     );
     let rows: i64 = sqlx::query_scalar(
@@ -843,7 +843,7 @@ async fn a_batch_posted_again_after_a_gateway_timeout_stores_each_message_once()
 
 /// The import body is JSON Lines and nothing else. `multipart/form-data`
 /// used to be accepted (a `jsonl` field plus `file` parts) but nothing
-/// sent it: message-crate-import posts JSON Lines and uploads attachments through
+/// sent it: the `import` crate posts JSON Lines and uploads attachments through
 /// `/v1/assets`. The wrong media type is a 415, not a 400: the request is
 /// well formed, it is simply not something this route reads.
 #[tokio::test]

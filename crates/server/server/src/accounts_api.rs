@@ -20,7 +20,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use message_ir::IdentityService;
+use ir::IdentityService;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
@@ -365,13 +365,13 @@ pub async fn create_account(
         .as_deref()
         .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS))
         .transpose()?
-        .and_then(message_ir::nonempty);
+        .and_then(ir::nonempty);
     let phone = req
         .phone
         .as_deref()
         .map(|phone| capped_text("phone", phone, MAX_IDENTITY_ADDRESS_CHARS))
         .transpose()?
-        .and_then(message_ir::nonempty);
+        .and_then(ir::nonempty);
 
     // A stranger is refused on a closed server before the password is hashed,
     // so a refusal costs no Argon2 work. This read takes no lock, so the
@@ -1438,7 +1438,7 @@ pub(crate) enum AccountImportRun {
 #[serde(untagged)]
 pub(crate) enum AccountExportRuns {
     /// The account's own runs.
-    Own(Page<message_crate_api_types::ExportRun>),
+    Own(Page<api_types::ExportRun>),
     /// Another account's runs, as the owner reads them.
     Owner(Page<OwnerExportRun>),
 }
@@ -1525,7 +1525,7 @@ pub(crate) async fn get_account_import(
     security(("session" = [])),
     params(
         ("id" = i64, Path, description = "Account id"),
-        ("status" = Option<message_crate_api_types::ExportStatus>, Query, description = "Only the runs with this status"),
+        ("status" = Option<api_types::ExportStatus>, Query, description = "Only the runs with this status"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
         ("offset" = Option<usize>, Query, description = "Rows to skip, at most 50000"),
         ("sort" = Option<String>, Query, description = "`started_at` or `-started_at`. Default `-started_at`, newest first.")

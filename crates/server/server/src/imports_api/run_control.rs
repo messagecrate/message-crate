@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use sqlx::SqliteConnection;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio_util::sync::CancellationToken;

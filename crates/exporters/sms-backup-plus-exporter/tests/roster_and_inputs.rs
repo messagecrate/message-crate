@@ -6,9 +6,9 @@
 //! header with no image data.
 
 use crate::emit::{ConvertExportArgs, convert_export};
+use ir::ConversationDocument;
+use ir_format::read_conversation_jsonl;
 use message_crate_core::{ConvertRun, ExportReport, LogSink, OutputFormat};
-use message_ir::ConversationDocument;
-use message_ir_format::read_conversation_jsonl;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

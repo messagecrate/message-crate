@@ -1,7 +1,7 @@
 //! The request and response types of the `/v1/imports` routes, and the
 //! checks that turn a request's fields into what the database records.
 
-use message_crate_api_types::{ImportErrorKind, ImportMode};
+use api_types::{ImportErrorKind, ImportMode};
 use serde::{Deserialize, Serialize};
 
 use super::pipeline::ImportCounts;
@@ -51,7 +51,7 @@ pub(crate) struct CreateImportRequest {
     #[serde(default)]
     pub(crate) phone_country: Option<String>,
     /// Name of the program that runs the import, such as
-    /// `message-crate-import`, stored on the run trimmed. Null when the
+    /// `import`, stored on the run trimmed. Null when the
     /// request leaves it out, or blank. Over 64 characters is refused with
     /// `422 Unprocessable Entity`.
     #[serde(default)]

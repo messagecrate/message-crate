@@ -9,7 +9,7 @@
 //! reaction keeps its emoji alone, a reply is linked by its date within the
 //! chat, and an edit is a version with no text (#2030, #2045).
 
-use message_ir::{Deletion, EarlierVersion, Reaction};
+use ir::{Deletion, EarlierVersion, Reaction};
 
 /// What a reaction line writes between the reactor's name and the emoji.
 const REACTED_WITH: &str = " reacted with ";

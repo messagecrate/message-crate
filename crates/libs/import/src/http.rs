@@ -113,7 +113,7 @@ fn payload_too_large_message(kind: &str, bytes: Option<usize>) -> String {
     let size = bytes
         .map(|n| format!(" (request was {n} bytes)"))
         .unwrap_or_default();
-    let batch_mib = message_crate_api_types::MAX_IMPORT_BATCH_BYTES / (1024 * 1024);
+    let batch_mib = api_types::MAX_IMPORT_BATCH_BYTES / (1024 * 1024);
     format!(
         "{kind} rejected: HTTP 413 Payload Too Large{size}. \
          Cloudflare Free/Pro caps proxied uploads at ~100 MB. \
