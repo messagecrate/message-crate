@@ -15,6 +15,7 @@ import {
   LEFT_PANEL_WIDTH_VAR,
   leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
+import NameRefusalNotice from "./NameRefusalNotice";
 import SearchBar from "./SearchBar";
 import VersionNotice from "./VersionNotice";
 
@@ -153,6 +154,9 @@ export default function AppHeader({
         </div>
       </header>
       <VersionNotice />
+      {/* Here, in the frame of the message shell and of Owner Home alike, so
+          it outlives the Settings screen a refused name was typed on. */}
+      <NameRefusalNotice />
     </>
   );
 }
