@@ -290,6 +290,71 @@ async fn deleting_an_account_leaves_no_deleted_text_in_the_file_or_its_log() {
     assert_only_the_kept_text_is_left(&mut conn).await;
 }
 
+/// An Edit load deletes for good an identity its file no longer lists and
+/// nothing else uses, then clears the log, which also takes out the name the
+/// same load replaced (#2981). The test checks both. An Append load's rename
+/// leaves the old name in the log, because a rename is not a delete for good.
+#[tokio::test]
+async fn an_edit_load_leaves_no_trace_of_an_identity_it_removed_or_a_name_it_replaced() {
+    const OLD_NAME: &str = "Qzoldnameocelot";
+    const NEW_NAME: &str = "Newname";
+    const REMOVED: &str = "+15555550987";
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT, "a").await;
+    let mut conn = fixture.conn().await;
+    let first = format!(
+        "contact_id,display_name,service,identity,groups\n\
+         a,{OLD_NAME},Text Message,+15555550100,\n\
+         a,{OLD_NAME},Text Message,{REMOVED},\n"
+    );
+    crate::db::address_book::load(
+        &mut conn,
+        ACCOUNT,
+        &first,
+        crate::db::address_book::LoadMode::Append,
+        fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let contact_id: i64 =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1 AND preferred_name = $2")
+            .bind(ACCOUNT)
+            .bind(OLD_NAME)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    for word in [OLD_NAME, REMOVED] {
+        assert!(
+            either_holds(&mut conn, word).await,
+            "{word} is in neither file before the load"
+        );
+    }
+
+    let edited = format!(
+        "contact_id,display_name,service,identity,groups\n\
+         {contact_id},{NEW_NAME},Text Message,+15555550100,\n"
+    );
+    let counts = crate::db::address_book::load(
+        &mut conn,
+        ACCOUNT,
+        &edited,
+        crate::db::address_book::LoadMode::Edit,
+        fixed_instant(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(counts.identities_removed, 1);
+
+    assert_eq!(
+        traces(&mut conn, &[OLD_NAME, REMOVED]).await,
+        Vec::<String>::new()
+    );
+    assert!(
+        either_holds(&mut conn, NEW_NAME).await,
+        "the name the file carries is still readable"
+    );
+}
+
 /// Another connection still reading keeps the log from being cleared at
 /// once. The database is remembered, and the next retry, once the read has
 /// ended, clears the log.

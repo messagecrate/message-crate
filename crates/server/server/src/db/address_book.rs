@@ -908,6 +908,14 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
 /// whole, with one sentence for each bad row, and nothing is written. Each
 /// contact the load changes is stamped `now`.
 ///
+/// An Edit load deletes for good the identities the file no longer lists
+/// that nothing else uses, so after it commits the write-ahead log is
+/// cleared of them ([`crate::db::erase`]). An Append load deletes no text
+/// for good: the only rows it deletes are nameless contacts its moves leave
+/// without an identity, which hold none. It leaves the log as it is, so a
+/// name it replaces stays in the log until a later checkpoint; a rename is
+/// not a delete for good.
+///
 /// # Errors
 ///
 /// [`LoadError::Refused`] when the file breaks a rule; [`LoadError::Failed`]
@@ -930,6 +938,9 @@ pub async fn load(
     let file = plan(&rows, &snapshot).map_err(LoadError::Refused)?;
     let counts = apply(&mut tx, account_id, &snapshot, &file, mode, now).await?;
     tx.commit().await.context("commit the address book load")?;
+    if mode == LoadMode::Edit {
+        crate::db::erase::clear_write_ahead_log(conn).await;
+    }
     Ok(counts)
 }
 
