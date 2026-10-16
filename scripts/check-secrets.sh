@@ -3,9 +3,10 @@
 #
 #   ./scripts/check-secrets.sh [<base>]
 #
-# Reads every commit in <base>..HEAD (default origin/main), with the default
-# gitleaks rules plus the Message Crate token rule and the test-vector
-# allowlists in .gitleaks.toml. Read-only. Prints each finding with the secret
+# Reads every commit in <base>..HEAD (default origin/main), merge commits
+# included (`git log -m`), so a secret added while resolving a conflict is
+# found too. It uses the default gitleaks rules plus the Message Crate token
+# rule and the test-vector allowlists in .gitleaks.toml. Read-only. Prints each finding with the secret
 # redacted, because CI logs on this repository are public, and exits 1 when
 # there is one. Runs in CI ("Secret scan (gitleaks)") and in check-all.sh.
 # Why: docs/adr/0007-ci-is-the-only-gate.md.
@@ -23,4 +24,4 @@ if ! command -v gitleaks >/dev/null 2>&1; then
 fi
 
 gitleaks git --config .gitleaks.toml --redact --no-banner --verbose \
-  --log-opts="${base}..HEAD" .
+  --log-opts="-m ${base}..HEAD" .
