@@ -307,17 +307,17 @@ export async function runImport(
     // `write` stage the server did not record stops the run where the server
     // has it, so it is not completed either. A genuine failure still
     // completes: a broken backup must not lock the account out of importing.
-    const cancelled = e instanceof CanceledError;
+    const canceled = e instanceof CanceledError;
     const stageNotRecorded = e instanceof StageNotRecordedError;
-    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
+    if (!canceled) recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
     failActiveStep(ctx);
     store.set({ computingSummary: false });
     await finishImport(ctx, {
       runId,
-      status: cancelled ? "cancelled" : "failed",
+      status: canceled ? "canceled" : "failed",
       uploadReport: null,
       uploadMs: null,
-      skipComplete: cancelled || stageNotRecorded,
+      skipComplete: canceled || stageNotRecorded,
     });
   }
 }

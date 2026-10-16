@@ -311,7 +311,7 @@ fn rows_the_program_skipped_are_counted_in_the_run_result() {
 fn cancel_stops_a_run_whose_program_has_gone_quiet() {
     use imessage_reader_protocol::PROTOCOL_VERSION;
     use ios_backup::testutil::{fake_helper, source_line};
-    use message_crate_core::Cancelled;
+    use message_crate_core::Canceled;
     use std::sync::{Arc, atomic::Ordering};
 
     let dir = tempfile::tempdir().unwrap();
@@ -340,7 +340,7 @@ fn cancel_stops_a_run_whose_program_has_gone_quiet() {
         Helper::spawn_at(&program, request, log, progress)
     })
     .unwrap_err();
-    assert!(err.downcast_ref::<Cancelled>().is_some(), "{err:#}");
+    assert!(err.downcast_ref::<Canceled>().is_some(), "{err:#}");
 }
 
 #[cfg(unix)]

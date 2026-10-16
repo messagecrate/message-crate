@@ -53,7 +53,7 @@ describe("run directory command wrappers name only the directory", () => {
     await invokeDeleteClosedRunDir(
       { runDir: run, importRunId: 42 },
       { accountId: 7, messageCrateId: "3f2a9c" },
-      "cancelled",
+      "canceled",
     );
 
     expect(invoke.mock.calls).toEqual([
@@ -66,7 +66,7 @@ describe("run directory command wrappers name only the directory", () => {
             importRunId: 42,
             accountId: 7,
             messageCrateId: "3f2a9c",
-            status: "cancelled",
+            status: "canceled",
           },
         },
       ],

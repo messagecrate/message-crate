@@ -503,7 +503,7 @@ pub(crate) async fn update_import(
 }
 
 /// Discard a running Import Run, freeing the account's single slot. The
-/// answer is the run, now `cancelled`, with the issues the request carried.
+/// answer is the run, now `canceled`, with the issues the request carried.
 ///
 /// The messages the run's batches brought stay in the account, and once it
 /// has discarded the run the server hides the duplicates of the whole

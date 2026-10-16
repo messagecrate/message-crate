@@ -246,7 +246,7 @@ pub(crate) struct ImportPipeline<'a> {
     /// One slot per conversation file, filled once its chunks are queued.
     trackers: Vec<Option<FileTracker>>,
     /// One slot per conversation file, filled as each one finishes, is
-    /// skipped, or is left unsent by a stop ([`Self::record_cancelled`]).
+    /// skipped, or is left unsent by a stop ([`Self::record_canceled`]).
     results: Vec<Option<FileResult>>,
     accounting: MessageAccounting,
 }
@@ -275,14 +275,14 @@ impl<'a> ImportPipeline<'a> {
         }
     }
 
-    /// Give every file still without a result a `cancelled` one.
+    /// Give every file still without a result a `canceled` one.
     ///
     /// Only a stopped run leaves such files: the ones it never took up, and
     /// the one whose messages were partly queued when the stop came. A
     /// canceled file is not journalled as done, so a later run sends it
     /// again; any of its messages that did reach the server are already in
     /// the journal and are not sent twice.
-    pub(crate) fn record_cancelled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
+    pub(crate) fn record_canceled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
         for (idx, path) in files.iter().enumerate() {
             if self.results[idx].is_some() {
                 continue;
@@ -292,14 +292,14 @@ impl<'a> ImportPipeline<'a> {
                     tracker.profile.total_ms = elapsed_ms(tracker.total_started);
                     FileResult {
                         file: tracker.name.clone(),
-                        status: "cancelled".into(),
+                        status: "canceled".into(),
                         error: None,
                         messages: tracker.successful_messages,
                         attachments: tracker.attachments,
                         profile: Some(tracker.profile.clone()),
                     }
                 }
-                None => FileResult::cancelled(&file_label(path)),
+                None => FileResult::canceled(&file_label(path)),
             };
             out.log(&format!(
                 "Canceled {} with {} uploaded",

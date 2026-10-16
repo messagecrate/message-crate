@@ -956,7 +956,7 @@ async fn a_discard_records_the_issues_it_carries() {
     )
     .await;
 
-    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    assert_eq!(discarded["status"], "canceled", "{discarded}");
     let issues = discarded["issues"].as_array().expect("issues");
     assert_eq!(issues.len(), 1, "{discarded}");
     assert_eq!(issues[0]["kind"], "skip");
@@ -1036,7 +1036,7 @@ async fn a_discard_records_the_notes_it_carries() {
     )
     .await;
 
-    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    assert_eq!(discarded["status"], "canceled", "{discarded}");
     assert_eq!(discarded["notes"], serde_json::json!([note]), "{discarded}");
 }
 
@@ -1134,7 +1134,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
         serde_json::json!({ "issues": [], "notes": [] }),
     )
     .await;
-    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    assert_eq!(discarded["status"], "canceled", "{discarded}");
 
     let page: serde_json::Value = get_json(state, "/v1/imports", token).await;
     for (id, answered) in [(completed_id, &completed), (discarded_id, &discarded)] {

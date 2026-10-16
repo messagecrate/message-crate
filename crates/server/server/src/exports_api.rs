@@ -3,7 +3,7 @@
 //! that list, and `complete` (as `completed` or `failed`) or `cancel` closes
 //! the run and drops the list (`docs/architecture/http-api.md`, "Runs").
 //! An account has one running run: a new start, or an hour with no page
-//! read, closes it as `cancelled`.
+//! read, closes it as `canceled`.
 //!
 //! Every route here takes the `export` scope on a session or an API token.
 //! A program with an export token reads messages only through a run it
@@ -94,7 +94,7 @@ impl From<ExportRun> for OwnerExportRun {
 /// the credential that started it, all in one transaction. The run's pages
 /// read that list, never the scope again, so what a run hands over is fixed
 /// when it is created. The run starts at `now`, and the account's running
-/// run, when it has one, is closed as `cancelled` in the same transaction
+/// run, when it has one, is closed as `canceled` in the same transaction
 /// ([`exports::start_export`]).
 ///
 /// # Errors
@@ -344,7 +344,7 @@ async fn close_export(
 /// matches now, and record the run as `running`. Read that list at
 /// `GET /v1/exports/{id}/messages`, then close the run with `complete` or
 /// `cancel`. An account has one running run: starting one closes the one
-/// already running as `cancelled`, and a run with no page read for an hour
+/// already running as `canceled`, and a run with no page read for an hour
 /// is closed the same way. Either way its pages then answer
 /// `409 Conflict`.
 #[utoipa::path(
@@ -578,7 +578,7 @@ pub(crate) async fn cancel_export(
     ExportAccess(auth): ExportAccess,
     AxumPath(export_id): AxumPath<i64>,
 ) -> Result<Json<ExportRun>, ApiError> {
-    close_export(&db, auth.account_id, export_id, ExportStatus::Cancelled).await
+    close_export(&db, auth.account_id, export_id, ExportStatus::Canceled).await
 }
 
 #[cfg(test)]

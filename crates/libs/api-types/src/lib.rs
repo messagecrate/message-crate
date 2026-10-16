@@ -509,17 +509,12 @@ pub enum ExportStatus {
     /// Ended without finishing.
     Failed,
     /// Closed by the person before it finished.
-    Cancelled,
+    Canceled,
 }
 
 impl ExportStatus {
     /// Every status, in the order the documentation lists them.
-    pub const ALL: [Self; 4] = [
-        Self::Running,
-        Self::Completed,
-        Self::Failed,
-        Self::Cancelled,
-    ];
+    pub const ALL: [Self; 4] = [Self::Running, Self::Completed, Self::Failed, Self::Canceled];
 
     /// The value as the wire and the database spell it.
     #[must_use]
@@ -528,7 +523,7 @@ impl ExportStatus {
             Self::Running => "running",
             Self::Completed => "completed",
             Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
+            Self::Canceled => "canceled",
         }
     }
 
@@ -917,8 +912,8 @@ mod tests {
             );
             assert_eq!(ExportStatus::parse(status.as_str()), Some(status));
         }
-        assert_eq!(ExportStatus::Cancelled.as_str(), "cancelled");
-        assert_eq!(ExportStatus::parse("canceled"), None);
+        assert_eq!(ExportStatus::Canceled.as_str(), "canceled");
+        assert_eq!(ExportStatus::parse("cancelled"), None);
     }
 
     /// The rule this module states, checked rather than trusted: a value

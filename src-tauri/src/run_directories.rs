@@ -120,7 +120,7 @@ pub enum ClosedStatus {
     Completed,
     CompletedWithIssues,
     Failed,
-    Cancelled,
+    Canceled,
 }
 
 impl ClosedStatus {
@@ -130,7 +130,7 @@ impl ClosedStatus {
             Self::Completed => "completed",
             Self::CompletedWithIssues => "completed_with_issues",
             Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
+            Self::Canceled => "canceled",
         }
     }
 }
@@ -1270,7 +1270,7 @@ mod tests {
 
         let deleted = scratch
             .reopen()
-            .delete_closed(&closed(&run, 42, ClosedStatus::Cancelled))
+            .delete_closed(&closed(&run, 42, ClosedStatus::Canceled))
             .unwrap();
 
         assert!(deleted);
@@ -1281,7 +1281,7 @@ mod tests {
         assert!(last.contains(" INFO "), "{last}");
         assert!(
             last.contains(&format!(
-                "Deleted the directory of Import Run 42, {}, because the server reports the run as cancelled",
+                "Deleted the directory of Import Run 42, {}, because the server reports the run as canceled",
                 run.display()
             )),
             "{last}"
@@ -1341,7 +1341,7 @@ mod tests {
 
         let err = scratch
             .directories
-            .delete_closed(&closed(&run, 42, ClosedStatus::Cancelled))
+            .delete_closed(&closed(&run, 42, ClosedStatus::Canceled))
             .unwrap_err();
 
         assert!(err.contains("not the directory of Import Run 42"), "{err}");
@@ -1354,7 +1354,7 @@ mod tests {
             ClosedStatus::Completed,
             ClosedStatus::CompletedWithIssues,
             ClosedStatus::Failed,
-            ClosedStatus::Cancelled,
+            ClosedStatus::Canceled,
         ] {
             let quoted = format!("\"{}\"", status.as_str());
             assert_eq!(

@@ -229,7 +229,7 @@ function isRunError(issue: ImportIssue): boolean {
 /**
  * What this part's Upload said of each conversation: the files it finished
  * as they finished, and every file its report lists, which adds the ones a
- * pause left unsent (`cancelled`).
+ * pause left unsent (`canceled`).
  */
 function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   const statuses = new Map(part.conversations);
@@ -239,7 +239,7 @@ function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   return statuses;
 }
 
-const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "cancelled"];
+const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "canceled"];
 
 /** A report's status for a conversation, as one the record knows. */
 function isConversationStatus(status: string): status is ConversationStatus {

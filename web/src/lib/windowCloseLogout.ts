@@ -18,7 +18,7 @@ export function useLogoutOnWindowClose(revokeSession: () => Promise<void>): void
     if (!isTauri()) return;
 
     let unlisten: (() => void) | undefined;
-    let cancelled = false;
+    let canceled = false;
 
     void (async () => {
       try {
@@ -34,7 +34,7 @@ export function useLogoutOnWindowClose(revokeSession: () => Promise<void>): void
             closingRef.current = false;
           }
         });
-        if (cancelled) {
+        if (canceled) {
           unlisten();
           unlisten = undefined;
         }
@@ -44,7 +44,7 @@ export function useLogoutOnWindowClose(revokeSession: () => Promise<void>): void
     })();
 
     return () => {
-      cancelled = true;
+      canceled = true;
       unlisten?.();
     };
   }, [revokeSession]);

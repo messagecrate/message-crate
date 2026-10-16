@@ -174,7 +174,7 @@ fn mock_cancel(server: &MockServer) -> httpmock::Mock<'_> {
         when.method(POST)
             .path(format!("/v1/exports/{EXPORT_ID}/cancel"));
         then.status(200)
-            .json_body(export_run(json!({ "kind": "everything" }), "cancelled"));
+            .json_body(export_run(json!({ "kind": "everything" }), "canceled"));
     })
 }
 
@@ -1198,7 +1198,7 @@ fn a_page_of_a_run_the_server_closed_says_the_export_was_canceled() {
             "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
             "title": "State conflict",
             "status": 409,
-            "detail": "export 7 is not running (status=cancelled)"
+            "detail": "export 7 is not running (status=canceled)"
         }));
     });
     let dir = tempdir().unwrap();
@@ -1832,7 +1832,7 @@ fn a_cancel_while_an_asset_fetch_fails_makes_no_further_retry_and_cancels_the_ru
             } else if request.starts_with(&format!("POST /v1/exports/{EXPORT_ID}/cancel")) {
                 response(
                     "200 OK",
-                    &export_run(json!({ "kind": "everything" }), "cancelled"),
+                    &export_run(json!({ "kind": "everything" }), "canceled"),
                 )
             } else {
                 if request.starts_with("GET /v1/assets/") {
@@ -1891,7 +1891,7 @@ fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
 
 /// A Cancel pressed while the close of a finished run is failing does not
 /// cut its retries short: the server closes a run left running only as
-/// `cancelled`, an hour later, so the run would be recorded as something
+/// `canceled`, an hour later, so the run would be recorded as something
 /// the person did not choose. The close is tried again and the run is
 /// recorded as completed. The retry takes the real first backoff, about half
 /// a second; nothing here depends on its length.

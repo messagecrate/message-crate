@@ -32,9 +32,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use imessage_reader_protocol::{
     AttachmentFile, Event, HELPER_NAME, PROTOCOL_VERSION, Progress, Request,
 };
-use message_crate_core::{
-    CancelFlag, Cancelled, LogSink, ProgressEvent, ProgressSink, is_cancelled,
-};
+use message_crate_core::{CancelFlag, Canceled, LogSink, ProgressEvent, ProgressSink, is_canceled};
 
 /// How often a wait for the program's next line looks at the cancel flag.
 /// It bounds how long Cancel takes, not how long the program may stay
@@ -199,7 +197,7 @@ impl Helper {
     }
 
     /// The same helper, stopped by `cancel`: once the flag is set, the next
-    /// wait for the program kills it and returns [`Cancelled`], whether or
+    /// wait for the program kills it and returns [`Canceled`], whether or
     /// not the program is sending anything.
     #[must_use]
     pub fn cancel_on(mut self, cancel: CancelFlag) -> Self {
@@ -213,7 +211,7 @@ impl Helper {
     ///
     /// # Errors
     ///
-    /// Returns [`Cancelled`] when the run's cancel flag is set, having killed
+    /// Returns [`Canceled`] when the run's cancel flag is set, having killed
     /// the program. Returns an error when the program reports one, sends
     /// something that is not an event, or exits before answering.
     pub fn next_event(&mut self) -> Result<Event> {
@@ -258,14 +256,14 @@ impl Helper {
     ///
     /// # Errors
     ///
-    /// Returns [`Cancelled`] once the flag is set, after killing the program
+    /// Returns [`Canceled`] once the flag is set, after killing the program
     /// and waiting for it, so it no longer holds the backup open.
     fn next_line(&mut self) -> Result<Option<io::Result<String>>> {
         loop {
-            if is_cancelled(&self.cancel) {
+            if is_canceled(&self.cancel) {
                 let _ = self.child.kill();
                 let _ = self.child.wait();
-                return Err(Cancelled.into());
+                return Err(Canceled.into());
             }
             match self.stdout.recv_timeout(CANCEL_CHECK) {
                 Ok(line) => return Ok(Some(line)),

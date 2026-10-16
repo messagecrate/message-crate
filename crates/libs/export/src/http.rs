@@ -434,7 +434,7 @@ mod tests {
                     "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
                     "title": "State conflict",
                     "status": 409,
-                    "detail": "export 7 is not running (status=cancelled)"
+                    "detail": "export 7 is not running (status=canceled)"
                 }));
         });
         let http = HttpSession::new().unwrap();
@@ -454,7 +454,7 @@ mod tests {
             format!("{err:#}"),
             format!(
                 "{RUN_CANCELED_ON_SERVER}: Export Run 7 page failed (HTTP 409 Conflict): \
-                 export 7 is not running (status=cancelled)"
+                 export 7 is not running (status=canceled)"
             )
         );
         assert_eq!(

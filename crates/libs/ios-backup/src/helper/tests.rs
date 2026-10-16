@@ -361,7 +361,7 @@ mod cancel {
     };
 
     use imessage_reader_protocol::{Event, PROTOCOL_VERSION};
-    use message_crate_core::{CancelFlag, Cancelled, LogSink, ProgressSink};
+    use message_crate_core::{CancelFlag, Canceled, LogSink, ProgressSink};
 
     use super::faults_request;
     use crate::testutil::{fake_helper, source_line};
@@ -370,7 +370,7 @@ mod cancel {
     /// a long silent step, or a program stuck on a backup that went away.
     /// Cancel is set when the log line arrives, so it is set while the
     /// program is running and has nothing more to send. `next_event` must
-    /// return [`Cancelled`] rather than wait for a line that never comes,
+    /// return [`Canceled`] rather than wait for a line that never comes,
     /// and the program must be gone: killed, not left holding the backup.
     #[test]
     fn cancel_stops_a_read_the_program_never_answers_and_kills_it() {
@@ -398,7 +398,7 @@ mod cancel {
 
         assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
         let err = helper.next_event().unwrap_err();
-        assert!(err.downcast_ref::<Cancelled>().is_some(), "{err:#}");
+        assert!(err.downcast_ref::<Canceled>().is_some(), "{err:#}");
         let status = helper
             .child
             .try_wait()

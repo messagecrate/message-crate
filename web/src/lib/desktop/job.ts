@@ -125,7 +125,7 @@ function isUploadFinishedReport(value: unknown): value is UploadFinishedReport {
   if (!isRecord(value)) return false;
   return (
     typeof value.ok === "boolean" &&
-    typeof value.cancelled === "boolean" &&
+    typeof value.canceled === "boolean" &&
     typeof value.session_refused === "boolean" &&
     typeof value.messages_attempted === "number" &&
     typeof value.messages_inserted === "number" &&
@@ -137,7 +137,7 @@ function isUploadFinishedReport(value: unknown): value is UploadFinishedReport {
     typeof value.conversations_total === "number" &&
     typeof value.conversations_failed === "number" &&
     typeof value.conversations_skipped === "number" &&
-    typeof value.conversations_cancelled === "number"
+    typeof value.conversations_canceled === "number"
   );
 }
 

@@ -11,7 +11,7 @@
 //! [`DesktopJobErrorEvent`].
 
 use message_crate_core::{
-    Cancelled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
+    Canceled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -323,7 +323,7 @@ const NOT_FOUND_TEXT: &str =
 /// alone carries it, and the window says it in its own words.
 impl From<anyhow::Error> for DesktopJobErrorEvent {
     fn from(err: anyhow::Error) -> Self {
-        let canceled = err.chain().any(|e| e.is::<Cancelled>());
+        let canceled = err.chain().any(|e| e.is::<Canceled>());
         Self {
             detail: format!("{err:#}"),
             user_message: (!canceled)
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn a_cancel_under_context_is_still_a_cancel() {
         let event = DesktopJobErrorEvent::from(
-            anyhow::Error::from(Cancelled).context("write a conversation"),
+            anyhow::Error::from(Canceled).context("write a conversation"),
         );
         assert!(event.canceled);
         assert_eq!(event.user_message, None);

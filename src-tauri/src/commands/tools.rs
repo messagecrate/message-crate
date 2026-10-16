@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
 use media::{InstalledTools, MediaTools};
-use message_crate_core::{CancelFlag, Cancelled};
+use message_crate_core::{CancelFlag, Canceled};
 use tauri::AppHandle;
 
 use super::events::{self, ImportProgressEvent, Step};
@@ -201,7 +201,7 @@ const WAITING_STEP_BYTES: u64 = 256 * 1024;
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is canceled while it waits, and the
+/// Returns [`Canceled`] when the run is canceled while it waits, and the
 /// failed download's reason when a download waited for fails.
 pub(crate) fn wait_for_downloads(
     app: &AppHandle,
@@ -229,7 +229,7 @@ pub(crate) fn wait_for_downloads(
             },
         )
         .map_err(|err| match err {
-            WaitError::Cancelled => anyhow::Error::new(Cancelled),
+            WaitError::Canceled => anyhow::Error::new(Canceled),
             failed @ WaitError::Failed { .. } => anyhow::Error::new(failed),
         })
 }

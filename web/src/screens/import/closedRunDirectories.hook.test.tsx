@@ -61,13 +61,13 @@ afterEach(() => {
 
 describe("opening Import", () => {
   it("deletes a closed run's directory and keeps a running run's", async () => {
-    serverReports({ 41: "cancelled", 42: "running" });
+    serverReports({ 41: "canceled", 42: "running" });
 
     await openImport();
 
     expect(list).toHaveBeenCalledWith(7, "3f2a9c");
     expect(deleteClosed.mock.calls).toEqual([
-      [closedRun, { accountId: 7, messageCrateId: "3f2a9c" }, "cancelled"],
+      [closedRun, { accountId: 7, messageCrateId: "3f2a9c" }, "canceled"],
     ]);
   });
 
@@ -81,7 +81,7 @@ describe("opening Import", () => {
 
   it("looks at no directory in a browser", async () => {
     desktop.isTauri = false;
-    serverReports({ 41: "cancelled", 42: "running" });
+    serverReports({ 41: "canceled", 42: "running" });
 
     await openImport();
 

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
-    CancelFlag, Cancelled, check_cancel, count_of, is_cancelled, parallel_for_each,
+    CancelFlag, Canceled, check_cancel, count_of, is_canceled, parallel_for_each,
 };
 use message_crate_http::{
     RetryKind, auth_check as authenticate, classify_retry, is_session_refused, with_retries,
@@ -53,13 +53,13 @@ const MAX_RETRIES: u32 = 3;
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] for a transient failure once the run is
+/// Returns [`Canceled`] for a transient failure once the run is
 /// canceled: a later try might have passed, so the run is closed as
 /// canceled rather than failed. Any other failure is returned as it is.
 fn retried_until_canceled<T>(cancel: &CancelFlag, op: impl FnMut() -> Result<T>) -> Result<T> {
-    with_retries_until(MAX_RETRIES, || is_cancelled(cancel), op).map_err(|error| {
-        if is_cancelled(cancel) && classify_retry(&error) == RetryKind::Transient {
-            Cancelled.into()
+    with_retries_until(MAX_RETRIES, || is_canceled(cancel), op).map_err(|error| {
+        if is_canceled(cancel) && classify_retry(&error) == RetryKind::Transient {
+            Canceled.into()
         } else {
             error
         }
@@ -318,7 +318,7 @@ fn close_action<T>(outcome: &Result<T>) -> Option<CloseAction> {
     match outcome {
         Ok(_) => Some(CloseAction::Complete(CompleteExportStatus::Completed)),
         Err(error) if crate::http::is_run_canceled_on_server(error) => None,
-        Err(error) if error.is::<Cancelled>() => Some(CloseAction::Cancel),
+        Err(error) if error.is::<Canceled>() => Some(CloseAction::Cancel),
         Err(_) => Some(CloseAction::Complete(CompleteExportStatus::Failed)),
     }
 }
@@ -495,8 +495,8 @@ impl<'a> Export<'a> {
     /// server that is away: a run whose close fails is closed by the server
     /// once no page of it is read for an hour. A completed or failed run
     /// keeps every retry even when Cancel is pressed during its close, so
-    /// the server records how it ended rather than `cancelled`. A failed
-    /// close is returned as it is, never as [`Cancelled`]: the caller logs
+    /// the server records how it ended rather than `canceled`. A failed
+    /// close is returned as it is, never as [`Canceled`]: the caller logs
     /// it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
@@ -1051,7 +1051,7 @@ struct FetchAssetsParallelArgs<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is canceled,
+/// Returns [`Canceled`] when the run is canceled,
 /// [`RunCanceledOnServer`](crate::http::RunCanceledOnServer) when a
 /// keep-alive read finds the run closed on the server, and the server's
 /// refusal when it refuses the session (`401 Unauthorized`): every other
@@ -1119,7 +1119,7 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         result
     });
 
-    let mut cancelled = None;
+    let mut canceled = None;
     let mut closed = None;
     let mut refused = None;
     for (job, result) in jobs.iter().zip(results) {
@@ -1128,8 +1128,8 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
                 stats.bytes = stats.bytes.saturating_add(bytes);
                 stats.fetched += 1;
             }
-            Err(error) if error.is::<Cancelled>() => {
-                cancelled.get_or_insert(error);
+            Err(error) if error.is::<Canceled>() => {
+                canceled.get_or_insert(error);
             }
             Err(error) if crate::http::is_run_canceled_on_server(&error) => {
                 closed.get_or_insert(error);
@@ -1146,9 +1146,9 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         }
     }
     // A cancel wins over a run closed on the server and a refused session,
-    // so a run the person stopped is closed as `cancelled` whichever job saw
+    // so a run the person stopped is closed as `canceled` whichever job saw
     // which first.
-    if let Some(error) = cancelled.or(closed).or(refused) {
+    if let Some(error) = canceled.or(closed).or(refused) {
         return Err(error);
     }
     stats.failed.sort_by(|a, b| a.sha256.cmp(&b.sha256));
@@ -1523,7 +1523,7 @@ mod asset_fetch_tests {
                     "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
                     "title": "State conflict",
                     "status": page_status,
-                    "detail": "export 7 is not running (status=cancelled)"
+                    "detail": "export 7 is not running (status=canceled)"
                 }));
             }
         });

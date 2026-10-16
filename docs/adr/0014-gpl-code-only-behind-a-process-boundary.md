@@ -248,7 +248,7 @@ Three settings in `deny.toml` carry the rule:
 
 `scripts/check-license.sh` (in CI on every pull request) checks the other
 direction: every tracked `Cargo.toml` declares `LicenseRef-FCL-1.0-ALv2`
-except the three crates in its `LICENCE_EXCEPTIONS` table, which must declare
+except the three crates in its `LICENSE_EXCEPTIONS` table, which must declare
 exactly the license recorded there.
 
 `./scripts/check-all.sh` runs both `cargo deny` invocations locally when

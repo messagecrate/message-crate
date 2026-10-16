@@ -16,7 +16,7 @@ describe("messageSortFromParam", () => {
     expect(messageSortFromParam("date")).toEqual({ sort: "date", order: "asc" });
     expect(messageSortFromParam("-date")).toEqual({ sort: "date", order: "desc" });
     expect(messageSortFromParam("relevance,-date")).toEqual({ sort: "relevance", order: "desc" });
-    expect(messageSortFromParam("colour")).toBeNull();
+    expect(messageSortFromParam("color")).toBeNull();
     expect(messageSortFromParam(null)).toBeNull();
   });
 });

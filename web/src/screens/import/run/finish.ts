@@ -54,7 +54,7 @@ export async function finishImport(
   ctx: RunContext,
   args: {
     runId: number | null;
-    status: "completed" | "completed_with_issues" | "failed" | "cancelled" | "paused";
+    status: "completed" | "completed_with_issues" | "failed" | "canceled" | "paused";
     uploadReport: UploadFinishedReport | null;
     uploadMs: number | null;
     skipComplete?: boolean;

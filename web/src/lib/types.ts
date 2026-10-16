@@ -180,9 +180,9 @@ export interface ImportFileDoneEvent {
 
 /**
  * What an Upload said of one conversation: an `ImportFileDoneEvent` status,
- * or `cancelled` from its report, for one a stop left unsent.
+ * or `canceled` from its report, for one a stop left unsent.
  */
-export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";
+export type ConversationStatus = ImportFileDoneEvent["status"] | "canceled";
 
 /**
  * Staging's write queue finished with one conversation file

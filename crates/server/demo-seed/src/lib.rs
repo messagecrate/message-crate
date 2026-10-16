@@ -36,27 +36,27 @@ const GENERATED_PATHS: [&str; 3] = ["staging", "config", "README.md"];
 /// part-way, and its temporary directory, with every file it wrote, is
 /// removed.
 ///
-/// `message-crate-core` has a `Cancelled` and a `check_cancel` of the same
+/// `message-crate-core` has a `Canceled` and a `check_cancel` of the same
 /// shape for exporter runs. demo-seed keeps its own because the server, its
 /// only caller that cancels, does not link `message-crate-core` (the export
 /// pipeline's run model, ADR 0012), and the flag is all it needs from it.
 #[derive(Debug)]
-pub struct Cancelled;
+pub struct Canceled;
 
-impl std::fmt::Display for Cancelled {
+impl std::fmt::Display for Canceled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("demo generation was stopped")
     }
 }
 
-impl std::error::Error for Cancelled {}
+impl std::error::Error for Canceled {}
 
-/// Return [`Cancelled`] when `cancel` is set. Generation calls it between
+/// Return [`Canceled`] when `cancel` is set. Generation calls it between
 /// conversations and between files, so a caller that sets the flag waits
 /// for one file at most.
-pub(crate) fn stop_if_cancelled(cancel: &AtomicBool) -> Result<()> {
+pub(crate) fn stop_if_canceled(cancel: &AtomicBool) -> Result<()> {
     if cancel.load(Ordering::Relaxed) {
-        return Err(Cancelled.into());
+        return Err(Canceled.into());
     }
     Ok(())
 }
@@ -79,18 +79,18 @@ fn rounded_fraction(total: usize, fraction: f64) -> usize {
 /// Returns an error if a directory cannot be created, a file cannot be written,
 /// the new files fail a check, or they cannot replace the old ones.
 pub fn generate(cfg: &SeedConfig) -> Result<GenStats> {
-    generate_cancellable(cfg, &AtomicBool::new(false))
+    generate_cancelable(cfg, &AtomicBool::new(false))
 }
 
 /// [`generate`], stopped part-way when `cancel` is set: it returns
-/// [`Cancelled`], the files it wrote are removed, and the previous files at
+/// [`Canceled`], the files it wrote are removed, and the previous files at
 /// `cfg.out` stay as they were.
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when `cancel` is set, and the errors of
+/// Returns [`Canceled`] when `cancel` is set, and the errors of
 /// [`generate`].
-pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
+pub fn generate_cancelable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
     let out = Path::new(&cfg.out);
     let parent = output_parent_dir(out);
     fs::create_dir_all(parent)
@@ -313,7 +313,7 @@ fn validate_tree_files(root: &Path, cancel: &AtomicBool) -> Result<()> {
         for entry in fs::read_dir(&directory)
             .with_context(|| format!("read prepared directory {}", directory.display()))?
         {
-            stop_if_cancelled(cancel)?;
+            stop_if_canceled(cancel)?;
             let path = entry?.path();
             if path.is_dir() {
                 pending.push(path);
@@ -618,11 +618,11 @@ fn remove_path_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Generate the built-in data set of `size` into `out`, stopped part-way
-/// when `cancel` is set ([`generate_cancellable`]).
+/// when `cancel` is set ([`generate_cancelable`]).
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when `cancel` is set, or an error if `out` is not
+/// Returns [`Canceled`] when `cancel` is set, or an error if `out` is not
 /// valid UTF-8 or generation fails.
 pub fn generate_size_to(size: DemoSize, out: &Path, cancel: &AtomicBool) -> Result<GenStats> {
     generate_with_out(SeedConfig::for_size(size)?, out, cancel)
@@ -646,7 +646,7 @@ fn generate_with_out(mut cfg: SeedConfig, out: &Path, cancel: &AtomicBool) -> Re
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("demo out path is not UTF-8: {}", out.display()))?
         .to_string();
-    generate_cancellable(&cfg, cancel)
+    generate_cancelable(&cfg, cancel)
 }
 
 /// Copy each file in `from` into `to`, until `cancel` is set.
@@ -654,11 +654,11 @@ fn generate_with_out(mut cfg: SeedConfig, out: &Path, cancel: &AtomicBool) -> Re
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when `cancel` is set, or an error if a directory
+/// Returns [`Canceled`] when `cancel` is set, or an error if a directory
 /// cannot be listed or a file cannot be copied.
 fn copy_dir_files(from: &Path, to: &Path, cancel: &AtomicBool) -> Result<()> {
     for entry in fs::read_dir(from)? {
-        stop_if_cancelled(cancel)?;
+        stop_if_canceled(cancel)?;
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {

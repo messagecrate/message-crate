@@ -71,14 +71,14 @@ export async function runMediaStage(
   const mediaStartedAt = ctx.now();
   let transcodeReport: TranscodeFinishedReport | undefined;
   let threw = false;
-  let cancelled = false;
+  let canceled = false;
   try {
     const result = await runJob(ctx, () => ctx.desktop.invokeTranscodeStaging({ run_dir: runDir }));
     transcodeReport = result.transcode;
   } catch (e: unknown) {
     if (e instanceof CanceledError) {
       // The person asked for this: not an error, so no issue row for it.
-      cancelled = true;
+      canceled = true;
     } else {
       threw = true;
       recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
@@ -86,7 +86,7 @@ export async function runMediaStage(
   }
   const mediaMs = ctx.now() - mediaStartedAt;
 
-  if (threw || cancelled) {
+  if (threw || canceled) {
     failActiveStep(ctx);
     // Neither path writes another stage: the run stays at `media`,
     // which is exactly where it got to. A cancellation also skips
@@ -97,10 +97,10 @@ export async function runMediaStage(
     // not lock the account out of importing.
     await finishImport(ctx, {
       runId,
-      status: cancelled ? "cancelled" : "failed",
+      status: canceled ? "canceled" : "failed",
       uploadReport: null,
       uploadMs: null,
-      skipComplete: cancelled,
+      skipComplete: canceled,
     });
     return;
   }

@@ -2372,7 +2372,7 @@ fn a_canceled_import_sends_no_further_batch_and_resumes_later() {
 
     assert!(!report.ok, "a canceled import is not ok");
     assert!(
-        report.cancelled,
+        report.canceled,
         "the report says the cancel flag stopped it"
     );
     assert_eq!(import.calls(), 1, "no batch is sent after the cancel");
@@ -2401,7 +2401,7 @@ fn a_canceled_import_sends_no_further_batch_and_resumes_later() {
 }
 
 /// Every conversation of a canceled import is in one category of the report:
-/// `ok + failed + skipped + cancelled = total`, with one result row per file.
+/// `ok + failed + skipped + canceled = total`, with one result row per file.
 ///
 /// Guards the report of a paused Upload. Without a result for each file the
 /// pause left unsent, the counts add up to less than the total and nothing in
@@ -2445,26 +2445,26 @@ fn a_canceled_import_reports_every_conversation_in_one_category() {
 
     assert_eq!(report.conversations_total, 4);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(report.conversations_cancelled, 3);
-    assert!(report.cancelled, "the cancel flag stopped the run");
+    assert_eq!(report.conversations_canceled, 3);
+    assert!(report.canceled, "the cancel flag stopped the run");
     assert_eq!(
         report.conversations_ok
             + report.conversations_failed
             + report.conversations_skipped
-            + report.conversations_cancelled,
+            + report.conversations_canceled,
         report.conversations_total
     );
     assert_eq!(report.results.len(), 4, "{:?}", report.results);
-    let cancelled: Vec<&str> = report
+    let canceled: Vec<&str> = report
         .results
         .iter()
-        .filter(|row| row.status == "cancelled")
+        .filter(|row| row.status == "canceled")
         .map(|row| row.file.as_str())
         .collect();
-    assert_eq!(cancelled.len(), 3, "{:?}", report.results);
+    assert_eq!(canceled.len(), 3, "{:?}", report.results);
     assert!(
-        cancelled.iter().all(|file| file.ends_with(".jsonl")),
-        "each canceled row names its file: {cancelled:?}"
+        canceled.iter().all(|file| file.ends_with(".jsonl")),
+        "each canceled row names its file: {canceled:?}"
     );
     assert_eq!(journal_events(dir.path(), "file_ok").len(), 1);
 }
@@ -2519,10 +2519,10 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_canceled() {
 
     assert_eq!(first_batch.calls(), 1, "no batch is sent after the cancel");
     assert_eq!(report.conversations_total, 1);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
-    assert!(report.cancelled, "the cancel flag stopped the run");
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
+    assert!(report.canceled, "the cancel flag stopped the run");
     assert_eq!(report.results.len(), 1);
-    assert_eq!(report.results[0].status, "cancelled");
+    assert_eq!(report.results[0].status, "canceled");
     assert_eq!(
         report.results[0].messages, 1,
         "the row counts the message that reached the server"
@@ -2575,9 +2575,9 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 
     assert_eq!(batch.calls(), 1);
     assert_eq!(report.conversations_ok, 1, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 0, "{:?}", report.results);
     assert!(report.ok, "every conversation landed: {report:?}");
-    assert!(!report.cancelled, "the cancel stopped nothing: {report:?}");
+    assert!(!report.canceled, "the cancel stopped nothing: {report:?}");
     assert!(
         read_log(dir.path()).contains("\nThe Upload completed in "),
         "{}",
@@ -2626,10 +2626,10 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     assert_eq!(failed.calls(), 1);
     assert_eq!(refused.calls(), 1);
     assert_eq!(report.conversations_failed, 1, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 0, "{:?}", report.results);
     assert!(report.session_refused);
     assert!(
-        report.cancelled,
+        report.canceled,
         "a refused session halts the Upload: {report:?}"
     );
     assert!(!report.ok);
@@ -2672,7 +2672,7 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
 
     let first = run(&cfg, None).unwrap();
     assert!(!first.ok);
-    assert!(!first.cancelled, "a failed batch is not a cancel");
+    assert!(!first.canceled, "a failed batch is not a cancel");
     assert_eq!(first.conversations_ok, 2);
     assert_eq!(first.conversations_failed, 1);
     assert_eq!(failing.calls(), 1);
@@ -2882,13 +2882,13 @@ fn a_server_told_to_stop_pauses_the_upload_and_fails_no_conversation() {
     let (report, shown) = run_showing(&cfg);
 
     assert_eq!(report.server_away, Some(ServerAway::Stopping));
-    assert!(report.cancelled, "a stopping server pauses the Upload");
+    assert!(report.canceled, "a stopping server pauses the Upload");
     assert!(!report.session_refused, "the session is still good");
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
     assert_eq!(report.messages_failed, 0);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(report.conversations_cancelled, 2, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 2, "{:?}", report.results);
     assert_eq!(accepted.calls(), 1);
     assert_eq!(stopping.calls(), 1, "nothing is sent after the refusal");
     assert!(journal_events(dir.path(), "fail").is_empty());
@@ -2951,12 +2951,12 @@ fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation()
         "the run stops at the first"
     );
     assert_eq!(report.server_away, Some(ServerAway::Unavailable));
-    assert!(report.cancelled, "an unreachable server pauses the Upload");
+    assert!(report.canceled, "an unreachable server pauses the Upload");
     assert!(!report.session_refused);
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
     assert_eq!(report.messages_failed, 0);
-    assert_eq!(report.conversations_cancelled, 3, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 3, "{:?}", report.results);
     assert!(journal_events(dir.path(), "fail").is_empty());
     assert!(journal_events(dir.path(), "file_ok").is_empty());
     let stopped = "The server could not be reached, so the Upload paused. \
@@ -2998,10 +2998,10 @@ fn a_pause_while_a_batch_fails_makes_no_further_retry() {
         1,
         "no retry after the pause"
     );
-    assert!(report.cancelled, "the Upload paused");
+    assert!(report.canceled, "the Upload paused");
     assert_eq!(report.server_away, None);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
     assert!(journal_events(dir.path(), "fail").is_empty());
 }
 
@@ -3032,10 +3032,10 @@ fn an_attachment_upload_to_an_unavailable_server_pauses_the_upload() {
     let report = run(&cfg, None).unwrap();
 
     assert_eq!(report.server_away, Some(ServerAway::Unavailable));
-    assert!(report.cancelled);
+    assert!(report.canceled);
     assert!(!report.session_refused);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
     assert_eq!(batches.calls(), 0);
     assert!(journal_events(dir.path(), "fail").is_empty());
 }
@@ -3304,14 +3304,14 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
     assert!(read_log(dir.path()).contains(stopped));
     assert!(shown.iter().any(|line| line == stopped), "{shown:?}");
     assert!(
-        report.cancelled,
+        report.canceled,
         "a refused session stops the import as a pause"
     );
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
     assert_eq!(report.messages_failed, 0);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(report.conversations_cancelled, 2, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 2, "{:?}", report.results);
     assert_eq!(accepted.calls(), 1);
     assert_eq!(refused.calls(), 1, "nothing is sent after the refusal");
     assert!(journal_events(dir.path(), "fail").is_empty());
@@ -3369,9 +3369,9 @@ fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
     let report = run(&cfg, None).unwrap();
 
     assert!(report.session_refused);
-    assert!(report.cancelled);
+    assert!(report.canceled);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
     assert_eq!(batches.calls(), 0);
 }
 
@@ -3402,13 +3402,13 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     let (report, shown) = run_showing(&cfg);
 
     assert!(report.session_refused);
-    assert!(report.cancelled);
+    assert!(report.canceled);
     let not_started = "The server no longer accepts this session, so the Upload did not start. \
                        The next Upload sends every conversation.";
     assert!(read_log(dir.path()).contains(not_started));
     assert!(shown.iter().any(|line| line == not_started), "{shown:?}");
     assert_eq!(report.conversations_failed, 0);
-    assert_eq!(report.conversations_cancelled, 2);
+    assert_eq!(report.conversations_canceled, 2);
     assert_eq!(report.conversations_total, 2);
     assert_eq!(batches.calls(), 0);
     assert!(

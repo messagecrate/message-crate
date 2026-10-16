@@ -661,7 +661,7 @@ fn describe(
 ///
 /// Returns an error when `input` is not a file, is not valid XML, or a
 /// payload cannot be written to the spool, and
-/// [`Cancelled`](message_crate_core::Cancelled) when the run
+/// [`Canceled`](message_crate_core::Canceled) when the run
 /// is canceled. A file that is not valid XML is refused whole, in the
 /// owner-phone pass and the message pass alike; a message that cannot be
 /// kept in a valid file is counted and the read goes on.

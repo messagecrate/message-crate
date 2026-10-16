@@ -8,7 +8,7 @@ import { importOutcome, stableStem } from "./importOutcome";
 function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
-    cancelled: false,
+    canceled: false,
     session_refused: false,
     messages_attempted: 100,
     messages_inserted: 100,
@@ -20,7 +20,7 @@ function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedRe
     conversations_total: 10,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 0,
+    conversations_canceled: 0,
     results: [],
     ...overrides,
   };
@@ -127,7 +127,7 @@ describe("importOutcome", () => {
       conversations_total: 10,
       conversations_ok: 7,
       conversations_failed: 1,
-      conversations_cancelled: 2,
+      conversations_canceled: 2,
     });
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("paused");
   });
@@ -141,7 +141,7 @@ describe("importOutcome", () => {
     // What run.rs reports when the cancel flag pauses `drive` after 200 of 681.
     const r = report({
       ok: false,
-      cancelled: true,
+      canceled: true,
       conversations_total: 681,
       conversations_ok: 200,
       conversations_failed: 0,
