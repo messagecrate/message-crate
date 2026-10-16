@@ -7,8 +7,13 @@ import {
 import { startFailure, startLocalServer } from "../lib/localServer";
 import { isTauri } from "../lib/tauriCheck";
 
-/** A notice the bar shows: one the desktop app sent, other than `answering`. */
-export type ShownLocalServerNotice = Exclude<LocalServerNotice, { state: "answering" }>;
+/**
+ * A notice the bar shows: one the desktop app sent, other than `answering`,
+ * or `starting` while a Try again from the bar waits for the app's word.
+ */
+export type ShownLocalServerNotice =
+  | Exclude<LocalServerNotice, { state: "answering" }>
+  | { state: "starting" };
 
 /** The failure notice for a failed state the app reports. */
 function failedNotice(status: { message: string; details: string }): ShownLocalServerNotice {
@@ -68,7 +73,7 @@ export function useLocalServerNotice(): {
 
   const retry = useCallback(() => {
     // The app says how the start went; until it does, it is under way.
-    setNotice({ state: "restarting", cause: "exited" });
+    setNotice({ state: "starting" });
     startLocalServer().then(
       (status) => {
         if (status.status === "ready") setNotice(null);

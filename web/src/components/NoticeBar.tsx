@@ -4,8 +4,11 @@ import { isOwnAddress } from "../lib/localServer";
 import Button from "./Button";
 import { type ShownLocalServerNotice, useLocalServerNotice } from "./useLocalServerNotice";
 
-/** What the bar says while the app starts its own server again. */
-function restartingText(notice: Extract<ShownLocalServerNotice, { state: "restarting" }>): string {
+/** What the bar says while the app starts its own server. */
+function startingText(
+  notice: Extract<ShownLocalServerNotice, { state: "restarting" | "starting" }>,
+): string {
+  if (notice.state === "starting") return "Starting the server…";
   return notice.cause === "unanswered"
     ? "The server stopped answering. Restarting it…"
     : "The server stopped. Restarting it…";
@@ -26,13 +29,13 @@ export default function NoticeBar() {
   const { notice, retry } = useLocalServerNotice();
   const { pathname } = useLocation();
   if (notice === null || pathname === "/login" || !isOwnAddress(getBaseUrl())) return null;
-  if (notice.state === "restarting") {
+  if (notice.state !== "failed") {
     return (
       <div
         role="status"
         className="shrink-0 border-warn-soft-border border-b bg-warn-soft-bg px-4 py-2 text-[0.813rem] text-warn-soft-text"
       >
-        {restartingText(notice)}
+        {startingText(notice)}
       </div>
     );
   }
@@ -41,7 +44,7 @@ export default function NoticeBar() {
       role="alert"
       className="flex shrink-0 items-center gap-3 border-danger-soft-border border-b bg-danger-soft-bg px-4 py-2 text-[0.813rem] text-danger"
     >
-      <p className="m-0 min-w-0 flex-1">The server could not be started again. {notice.message}</p>
+      <p className="m-0 min-w-0 flex-1">{notice.message}</p>
       <Button variant="secondary" size="xs" onPress={retry}>
         Try again
       </Button>

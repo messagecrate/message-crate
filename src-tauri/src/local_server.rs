@@ -63,9 +63,10 @@
 //! count again.
 //!
 //! The window is told, with a [`Notice`], when the app's own server is
-//! started again this way, when the new one answers, and when it cannot be
-//! started, so whatever screen is open can say so rather than fail with
-//! network errors (#2695). [`LocalServer::on_notice`] says how to tell it.
+//! started again this way. For that start, a restart for the network
+//! setting, and a Retry after any failure, it is told when a Message Crate
+//! answers and when the start fails, so whatever screen is open can say so
+//! rather than fail with network errors (#2695). [`LocalServer::on_notice`] says how to tell it.
 //!
 //! What happens next is decided by one pure function, [`step`], from the
 //! state the app has, the network setting the person wants, and what just
@@ -348,11 +349,11 @@ struct State {
     /// When the app's own server was started again after it stopped, within
     /// the last [`RESTART_WINDOW`]. Retry empties it.
     restarts: Vec<Instant>,
-    /// Whether the app's own server stopped and the window was told so, and
-    /// no Message Crate has answered since. Stays set through a failed
-    /// restart, so the window is told when a later Retry brings one back.
-    /// Holds how it stopped.
-    recovering: Option<Stop>,
+    /// Whether the app started its own server again by itself, or on Retry
+    /// after a failure, and no Message Crate has answered since: the window
+    /// is told how that start ends. Stays set through a failure, so the
+    /// window is told when a later Retry brings one back.
+    recovering: bool,
 }
 
 impl Default for State {
@@ -362,7 +363,7 @@ impl Default for State {
             wanted_open: false,
             jobs: 0,
             restarts: Vec::new(),
-            recovering: None,
+            recovering: false,
         }
     }
 }
@@ -448,7 +449,6 @@ enum Action {
 /// Decide what follows `event`. The only place the state changes; it does no
 /// I/O, so every rule is tested without a process.
 fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
-    let was_recovering = state.recovering.is_some();
     let was_failed = matches!(state.phase, Phase::PortTaken | Phase::Failed { .. });
     let mut actions = Vec::new();
     match event {
@@ -456,6 +456,9 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             state.wanted_open = open;
             match state.phase {
                 Phase::Idle | Phase::PortTaken | Phase::Failed { .. } => {
+                    // A Retry after a failure, which the window may be
+                    // showing: it is told how the Retry ends.
+                    state.recovering |= !matches!(state.phase, Phase::Idle);
                     state.phase = Phase::Probing;
                     state.restarts.clear();
                     actions.push(Action::Probe);
@@ -635,7 +638,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
         }
         Event::Stopped => {
             // The window is closing too, and has nothing to be told.
-            state.recovering = None;
+            state.recovering = false;
             match state.phase {
                 Phase::Starting { .. } | Phase::Own { .. } => {
                     own_server_ended(&mut state, "Message Crate stopped.", String::new());
@@ -649,7 +652,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             }
         }
     }
-    tell_recovery(&mut state, &mut actions, was_recovering, was_failed);
+    tell_recovery(&mut state, &mut actions, was_failed);
     (state, actions)
 }
 
@@ -665,7 +668,7 @@ fn start_own_again(
     output: String,
     stop: Stop,
 ) {
-    state.recovering = Some(stop);
+    state.recovering = true;
     state
         .restarts
         .retain(|&restart| found_at.saturating_duration_since(restart) < RESTART_WINDOW);
@@ -674,9 +677,12 @@ fn start_own_again(
         state.phase = Phase::Starting {
             open: state.wanted_open,
         };
-        actions.push(Action::Spawn {
-            open: state.wanted_open,
-        });
+        actions.extend([
+            Action::Spawn {
+                open: state.wanted_open,
+            },
+            Action::Notify(NoticeKind::Restarting(stop)),
+        ]);
     } else {
         let message = format!(
             "Message Crate stopped {} times within {} minutes.",
@@ -687,32 +693,24 @@ fn start_own_again(
     }
 }
 
-/// Tell the window how a restart of the app's own server after it stopped is
-/// going: that it began, that it failed, and once a Message Crate answers
-/// again, which may follow a Retry after a failure. `was_recovering` and
-/// `was_failed` are what held before this step.
-fn tell_recovery(
-    state: &mut State,
-    actions: &mut Vec<Action>,
-    was_recovering: bool,
-    was_failed: bool,
-) {
-    let Some(stop) = state.recovering else {
+/// Tell the window how a start the app made by itself, or on Retry after a
+/// failure, ended: that it failed, or that a Message Crate answers again.
+/// `was_failed` is whether the start had already failed before this step.
+fn tell_recovery(state: &mut State, actions: &mut Vec<Action>, was_failed: bool) {
+    if !state.recovering {
         return;
-    };
+    }
     let notice = match state.phase {
         Phase::Own { .. } | Phase::Found { .. } => {
-            state.recovering = None;
+            state.recovering = false;
             Some(NoticeKind::Answering)
         }
         Phase::PortTaken | Phase::Failed { .. } => (!was_failed).then_some(NoticeKind::Failed),
         Phase::Idle => {
-            state.recovering = None;
+            state.recovering = false;
             None
         }
-        Phase::Probing | Phase::Starting { .. } | Phase::Lost { .. } => {
-            (!was_recovering).then_some(NoticeKind::Restarting(stop))
-        }
+        Phase::Probing | Phase::Starting { .. } | Phase::Lost { .. } => None,
     };
     actions.extend(notice.map(Action::Notify));
 }
@@ -740,6 +738,9 @@ fn restart_if_wanted(state: &mut State, actions: &mut Vec<Action>) {
         _ => false,
     };
     if restart {
+        // A start that fails leaves every screen failing, so the window is
+        // told how it ends.
+        state.recovering = true;
         state.phase = Phase::Starting { open: wanted };
         actions.extend([Action::Kill, Action::Spawn { open: wanted }]);
     }

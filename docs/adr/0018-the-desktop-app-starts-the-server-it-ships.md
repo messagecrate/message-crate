@@ -160,8 +160,9 @@ server runs, whether a screen asks or not. A Message Crate the app only
 found is still checked only by the login card. A server killed for not
 answering is started again like one that exits, and counts against the same
 limit of three restarts in ten minutes. The app tells the window when it
-starts the server again and why, when the new one answers, and when it
-cannot start it. The web app shows it in a notice bar across the top of
+starts the server again and why. For that start, a restart for the network
+setting, and a Retry after any failure, it tells the window when a Message
+Crate answers and when the start fails. The web app shows it in a notice bar across the top of
 every screen but the login card, which shows the state itself: "The server
 stopped answering. Restarting it…" ("The server stopped." for one that
 exited), which clears itself once the server answers, or why it could not be

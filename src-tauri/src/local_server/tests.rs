@@ -217,7 +217,7 @@ fn at(phase: Phase, wanted_open: bool) -> State {
         wanted_open,
         jobs: 0,
         restarts: Vec::new(),
-        recovering: None,
+        recovering: false,
     }
 }
 
@@ -545,7 +545,48 @@ fn a_restart_that_fails_tells_the_window_and_so_does_a_retry_that_answers() {
 
     let (state, actions) = step(restarting, Event::Stopped);
     assert_eq!(actions, [Action::Kill]);
-    assert!(state.recovering.is_none());
+    assert!(!state.recovering);
+}
+
+/// A Retry after a failure the app did not reach by restarting, such as a
+/// first start that failed, is told too: the window may be showing that
+/// failure, and nothing else would clear it.
+#[test]
+fn a_retry_after_any_failure_tells_the_window_how_it_ends() {
+    let failed = at(
+        Phase::Failed {
+            reason: FailureReason::StartFailed,
+            message: "Message Crate took too long to start.".into(),
+            details: String::new(),
+        },
+        false,
+    );
+    let (state, actions) = step(failed, Event::Requested { open: false });
+    assert_eq!(actions, [Action::Probe]);
+    let (state, _) = step(state, probed(Probe::Free));
+    let (_, actions) = step(state, Event::Listening);
+    assert_eq!(actions, [Action::Notify(NoticeKind::Answering)]);
+
+    // The first start of all is the login card's to show, and tells nothing.
+    let (state, _) = step(at(Phase::Idle, false), Event::Requested { open: false });
+    let (state, _) = step(state, probed(Probe::Free));
+    let (_, actions) = step(state, Event::Listening);
+    assert_eq!(actions, []);
+}
+
+/// A restart for the network setting that fails leaves every screen failing
+/// as much as a crash does, so the window is told.
+#[test]
+fn a_restart_for_the_network_setting_that_fails_tells_the_window() {
+    let (state, actions) = step(at(own(false), false), Event::Configured { open: true });
+    assert_eq!(actions, [Action::Kill, Action::Spawn { open: true }]);
+    let (_, actions) = step(
+        state,
+        Event::Deadline {
+            output: String::new(),
+        },
+    );
+    assert_eq!(actions, [Action::Kill, Action::Notify(NoticeKind::Failed)]);
 }
 
 /// An import can keep the server from answering in time, so the app's own

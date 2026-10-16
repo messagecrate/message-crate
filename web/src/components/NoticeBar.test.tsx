@@ -96,18 +96,16 @@ describe("NoticeBar", () => {
     const { container } = await renderBar();
     tell({ state: "restarting", cause: "exited" });
     tell({ state: "failed", message: FOUR_TIMES, details: "panicked" });
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      `The server could not be started again. ${FOUR_TIMES}`,
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent(`${FOUR_TIMES}Try again`);
 
     const started = deferred<LocalServerStatus>();
     desktop.startLocalServer.mockReturnValue(started.promise);
     await setupUser().click(screen.getByRole("button", { name: "Try again" }));
     expect(desktop.startLocalServer).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("status")).toHaveTextContent("Restarting it…");
+    expect(screen.getByRole("status")).toHaveTextContent("Starting the server…");
     started.resolve({ status: "starting", first_time: false });
     await settle();
-    expect(screen.getByRole("status")).toHaveTextContent("Restarting it…");
+    expect(screen.getByRole("status")).toHaveTextContent("Starting the server…");
 
     tell({ state: "answering" });
     expect(container).toBeEmptyDOMElement();
@@ -120,7 +118,9 @@ describe("NoticeBar", () => {
     desktop.startLocalServer.mockRejectedValue(new Error("The server program is missing"));
     await setupUser().click(screen.getByRole("button", { name: "Try again" }));
     await settle();
-    expect(screen.getByRole("alert")).toHaveTextContent("Message Crate could not be started.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Message Crate could not be started.Try again",
+    );
   });
 
   it("shows a failure the app reports when the window opens after the notice was sent", async () => {
