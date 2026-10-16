@@ -28,12 +28,12 @@ pub(crate) struct KeyedLocks {
     /// A `std` mutex: it is only ever held for one map operation, never
     /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
-    /// How many tasks found each key's mutex held and started to
-    /// wait, so a test can act once a task waits on a key rather than after
+    /// How many tasks found each key's mutex held and were queued for
+    /// it, so a test can act once a task waits on a key rather than after
     /// a sleep.
     #[cfg(test)]
     waiting: Arc<tokio::sync::watch::Sender<HashMap<String, usize>>>,
-    /// How many tasks that found each key's mutex held have since taken
+    /// How many tasks that were queued for each key's mutex have since taken
     /// it, so a test can act once a waiting task holds a key rather than
     /// after a sleep.
     #[cfg(test)]
@@ -58,14 +58,10 @@ impl KeyedLocks {
         let guard = match Arc::clone(&mutex).try_lock_owned() {
             Ok(guard) => guard,
             Err(_) => {
+                let taking = mutex.lock_owned();
                 #[cfg(test)]
-                self.waiting
-                    .send_modify(|keys| *keys.entry(key.clone()).or_default() += 1);
-                let guard = mutex.lock_owned().await;
-                #[cfg(test)]
-                self.taken_after_waiting
-                    .send_modify(|keys| *keys.entry(key.clone()).or_default() += 1);
-                guard
+                let taking = self.counted_wait(&key, taking);
+                taking.await
             }
         };
         KeyedLockGuard {
@@ -82,6 +78,42 @@ impl KeyedLocks {
     /// process when a guard drops during an unwind.
     fn map_guard(&self) -> MutexGuard<'_, LockMap> {
         self.map.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Wait on `taking`, the mutex for `key`, and count the wait for
+    /// [`Self::a_task_waits`] and [`Self::a_waiting_task_takes`].
+    ///
+    /// The task counts as waiting only once tokio's mutex has queued it,
+    /// which happens in the first poll of `taking` that returns pending. A
+    /// queued task is handed the mutex in turn, and gives it back unused if
+    /// it stops waiting first. Counted before that poll, a test that frees
+    /// the mutex on the count could free it before the task queued, and the
+    /// task then took the free mutex as it queued, whatever the test did in
+    /// between (#3106). A task whose first poll takes the mutex never
+    /// waited, so it is not counted at all.
+    #[cfg(test)]
+    async fn counted_wait(
+        &self,
+        key: &str,
+        taking: impl std::future::Future<Output = OwnedMutexGuard<()>>,
+    ) -> OwnedMutexGuard<()> {
+        let mut taking = std::pin::pin!(taking);
+        let mut queued = false;
+        let guard = std::future::poll_fn(|cx| {
+            let poll = taking.as_mut().poll(cx);
+            if poll.is_pending() && !queued {
+                queued = true;
+                self.waiting
+                    .send_modify(|keys| *keys.entry(key.to_owned()).or_default() += 1);
+            }
+            poll
+        })
+        .await;
+        if queued {
+            self.taken_after_waiting
+                .send_modify(|keys| *keys.entry(key.to_owned()).or_default() += 1);
+        }
+        guard
     }
 
     /// Wait until a task has found the mutex for `key` held and is waiting
