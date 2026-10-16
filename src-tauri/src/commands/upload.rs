@@ -69,8 +69,9 @@ pub struct UploadArgs {
     /// Import mode. `append` adds to existing data (safe to re-run);
     /// `replace` deletes existing messages for this source, then imports.
     pub mode: ImportMode,
-    /// Import id of an earlier import to resume, when set.
-    pub import_id: Option<i64>,
+    /// The Import Run the Upload posts into. The web app starts it before
+    /// the Upload and completes it after.
+    pub import_id: i64,
 }
 
 /// Ask this process to upload extracted conversations to a server.
@@ -156,9 +157,6 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         log_path,
         cancel: CancelFlag::default(),
         import_id: args.import_id,
-        // The web app creates the Import Run, with the form's phone country
-        // on it, before the Upload starts, and the Upload posts into it.
-        phone_country: None,
     })
 }
 
@@ -434,7 +432,6 @@ mod tests {
             cancelled: false,
             session_refused: false,
             server_away: None,
-            completion_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,

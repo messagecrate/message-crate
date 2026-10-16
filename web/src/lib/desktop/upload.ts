@@ -5,7 +5,8 @@ interface UploadConfig {
   token: string;
   input_dir: string;
   mode: string;
-  import_id?: number;
+  /** The Import Run the Upload posts into; the web app starts and completes it. */
+  import_id: number;
 }
 
 export interface UploadFinishedReport {
@@ -46,7 +47,7 @@ export async function invokeUpload(config: UploadConfig): Promise<void> {
       token: config.token,
       inputDir: config.input_dir,
       mode: config.mode,
-      importId: config.import_id ?? null,
+      importId: config.import_id,
     },
   });
 }

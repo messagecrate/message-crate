@@ -29,6 +29,10 @@ pub mod lines;
 #[allow(dead_code)]
 pub mod claim;
 
+// Only the tests that upload through the import library use it.
+#[allow(dead_code)]
+pub mod upload;
+
 // Only the tests that read the server's log use it, and those use only some
 // of it, so the rest would warn as dead code in each test binary.
 #[allow(dead_code)]
