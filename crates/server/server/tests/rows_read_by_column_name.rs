@@ -16,8 +16,7 @@
 //!
 //! So every `query_as` names its row type with a turbofish
 //! (`query_as::<_, Row>`, `query_as_with::<_, Row, _>`): a type the test cannot
-//! see is a type it cannot check. This rule goes beyond #3072, which only
-//! asked for the reads to change. A struct deriving `sqlx::FromRow` reads its
+//! see is a type it cannot check. A struct deriving `sqlx::FromRow` reads its
 //! fields by name, and a one-column tuple such as `(String,)` has no order to
 //! get wrong. Test code is left out: `tests.rs` files, `tests/` directories
 //! and inline `#[cfg(test)] mod tests { … }` blocks.
@@ -41,12 +40,113 @@ fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The file's code without its inline `#[cfg(test)] mod tests { … }` blocks,
-/// with comment lines blanked so prose naming `query_as` is not read as a
-/// call. Every line is kept, blank where it was left out, so line numbers
-/// stay those of the file.
+/// `text` with its comments removed and the contents of its string, byte
+/// string, raw string and char literals emptied, so a brace, a bracket or
+/// the word `query_as` inside one is not read as code. Newlines are kept, so
+/// line numbers stay those of the file.
+fn code_only(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let at = |i: usize| chars.get(i).copied().unwrap_or('\0');
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let starts_word = i == 0 || !(at(i - 1).is_alphanumeric() || at(i - 1) == '_');
+        if c == '/' && at(i + 1) == '/' {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && at(i + 1) == '*' {
+            let mut depth = 0;
+            while i < chars.len() {
+                if chars[i] == '/' && at(i + 1) == '*' {
+                    depth += 1;
+                    i += 2;
+                } else if chars[i] == '*' && at(i + 1) == '/' {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    if chars[i] == '\n' {
+                        out.push('\n');
+                    }
+                    i += 1;
+                }
+            }
+        } else if let Some((opening, hashes)) = starts_word
+            .then(|| raw_string_opening(&chars[i..]))
+            .flatten()
+        {
+            i += opening;
+            out.push_str("\"\"");
+            while i < chars.len() {
+                if chars[i] == '"' && (1..=hashes).all(|k| at(i + k) == '#') {
+                    i += hashes;
+                    break;
+                }
+                if chars[i] == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            i += 1;
+        } else if c == '"' || (starts_word && c == 'b' && at(i + 1) == '"') {
+            i += if c == 'b' { 2 } else { 1 };
+            out.push_str("\"\"");
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                if at(i) == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            i += 1;
+        } else if c == '\'' && (at(i + 1) == '\\' || at(i + 2) == '\'') {
+            // A char literal; a `'` followed by anything else is a lifetime.
+            i += 1;
+            if at(i) == '\\' {
+                i += 1;
+            }
+            i += 1;
+            while i < chars.len() && chars[i] != '\'' {
+                i += 1;
+            }
+            i += 1;
+            out.push_str("''");
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The length of the opening of a raw string (`r"`, `r#"`, `br##"` and so
+/// on) that `chars` starts with, and its number of `#`s.
+fn raw_string_opening(chars: &[char]) -> Option<(usize, usize)> {
+    let mut i = match chars {
+        ['r', ..] => 1,
+        ['b', 'r', ..] => 2,
+        _ => return None,
+    };
+    let mut hashes = 0;
+    while chars.get(i) == Some(&'#') {
+        hashes += 1;
+        i += 1;
+    }
+    (chars.get(i) == Some(&'"')).then_some((i + 1, hashes))
+}
+
+/// The code of `text` ([`code_only`]) without its inline
+/// `#[cfg(test)] mod tests { … }` blocks. Every line is kept, blank where it
+/// was left out, so line numbers stay those of the file.
 fn code_without_tests(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
+    let masked = code_only(text);
+    let lines: Vec<&str> = masked.lines().collect();
     let mut code = String::new();
     let mut i = 0;
     while i < lines.len() {
@@ -71,16 +171,19 @@ fn code_without_tests(text: &str) -> String {
                     }
                     end += 1;
                 }
-                for _ in i..=end.min(lines.len() - 1) {
+                assert!(
+                    end < lines.len(),
+                    "the test module at line {} never closes",
+                    next + 1
+                );
+                for _ in i..=end {
                     code.push('\n');
                 }
                 i = end + 1;
                 continue;
             }
         }
-        if !lines[i].trim_start().starts_with("//") {
-            code.push_str(lines[i]);
-        }
+        code.push_str(lines[i]);
         code.push('\n');
         i += 1;
     }
@@ -123,7 +226,10 @@ fn bracketed(text: &str, open: usize) -> &str {
 /// The top-level, comma-separated items between the outer brackets of
 /// `group`, trimmed.
 fn items(group: &str) -> Vec<&str> {
-    let inner = &group[1..group.len().saturating_sub(1).max(1)];
+    let mut inside = group.chars();
+    inside.next();
+    inside.next_back();
+    let inner = inside.as_str();
     let mut out = Vec::new();
     let mut depth = 0i64;
     let mut previous = ' ';
@@ -234,25 +340,16 @@ fn from_row_tuple_structs(code: &str) -> Vec<usize> {
 }
 
 /// Whether the file brings sqlx's `Row` trait into reach, so a `get` in it
-/// may be a row's.
+/// may be a row's: it names `sqlx::Row`, or a `use sqlx::…;` statement, on
+/// one line or several, names `Row`.
 fn names_sqlx_row(code: &str) -> bool {
     code.contains("sqlx::Row")
-        || code.lines().any(|line| {
-            let line = line.trim_start();
-            line.starts_with("use sqlx::")
-                && items_of_use(line)
-                    .iter()
-                    .any(|item| bare_name(item) == "Row")
+        || code.match_indices("use sqlx::").any(|(at, _)| {
+            let statement = code[at..].split(';').next().unwrap_or("");
+            statement
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .any(|word| word == "Row")
         })
-}
-
-/// The names a `use sqlx::{…};` line imports, or the one it imports.
-fn items_of_use(line: &str) -> Vec<&str> {
-    let line = line.trim_end_matches(';');
-    match line.find('{') {
-        Some(open) => items(bracketed(line, open)),
-        None => vec![line],
-    }
 }
 
 /// The places a column is read by index with `method` (and its turbofish
@@ -273,9 +370,11 @@ fn index_reads(code: &str, method: &str) -> Vec<usize> {
             continue;
         }
         let open = code.len() - rest.len();
-        let by_index = items(bracketed(code, open))
-            .iter()
-            .any(|arg| !arg.is_empty() && arg.chars().all(|c| c.is_ascii_digit() || c == '_'));
+        let by_index = items(bracketed(code, open)).iter().any(|arg| {
+            let number = arg.trim_end_matches("usize");
+            number.starts_with(|c: char| c.is_ascii_digit())
+                && number.chars().all(|c| c.is_ascii_digit() || c == '_')
+        });
         if by_index {
             found.push(at);
         }
