@@ -755,6 +755,19 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
         "<input>: Invalid data found when processing input"
     );
 
+    // A C runtime that prints a pointer without `0x`, as one on Windows
+    // can, gets the same reason.
+    assert_eq!(
+        reason("[libx265 @ 000001C8A4F2E0C0] Error setting preset/tune nonsense/(null).\n"),
+        "[libx265] Error setting preset/tune nonsense/(null)."
+    );
+
+    // A tag whose text after ` @ ` is not an address keeps it.
+    assert_eq!(
+        reason("[filter @ graph 0] Invalid argument\n"),
+        "[filter @ graph 0] Invalid argument"
+    );
+
     // Each tag on the line loses its address and keeps its component.
     assert_eq!(
         reason(

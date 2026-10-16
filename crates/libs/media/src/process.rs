@@ -59,21 +59,19 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         .to_string()
 }
 
-/// `line` with each of its leading `[<component> @ 0x…]` tags written as
-/// `[<component>]`. The address is a pointer inside the ffmpeg process,
+/// `line` with each of its leading `[<component> @ <address>]` tags written
+/// as `[<component>]`. The address is a pointer inside the ffmpeg process,
 /// different on every run, so the same failure would otherwise read
-/// differently each time (#3055). A tag without an address, and the text
-/// after the tags, are kept as they are.
+/// differently each time (#3055). ffmpeg prints it with the C runtime's
+/// `%p`, which writes `0x5e6836f4af00` on Linux and macOS and can write
+/// `000001C8A4F2E0C0`, without `0x`, on Windows. A tag without an address,
+/// and the text after the tags, are kept as they are.
 fn without_addresses(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
     while let Some((tag, after)) = rest.strip_prefix('[').and_then(|r| r.split_once(']')) {
-        let component = match tag.rsplit_once(" @ 0x") {
-            Some((component, address))
-                if !address.is_empty() && address.chars().all(|c| c.is_ascii_hexdigit()) =>
-            {
-                component
-            }
+        let component = match tag.rsplit_once(" @ ") {
+            Some((component, address)) if is_address(address) => component,
             _ => tag,
         };
         let text = after.trim_start();
@@ -85,6 +83,16 @@ fn without_addresses(line: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// Whether `text` is a pointer as `%p` prints it: hex digits, with or
+/// without a `0x` or `0X` before them.
+fn is_address(text: &str) -> bool {
+    let digits = text
+        .strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))
+        .unwrap_or(text);
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// What ffmpeg writes after a failure that only follows from it: a task
@@ -228,7 +236,8 @@ pub fn format_bytes(bytes: u64) -> String {
 
 pub(crate) use crate::mime::Kind;
 
-/// Sidecar written by ffmpeg before [`replace_original`] (must never remain on disk).
+/// Sidecar ffmpeg writes before [`commit_produced`] moves it to its
+/// destination (must never remain on disk).
 fn is_msgmedia_temp(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
