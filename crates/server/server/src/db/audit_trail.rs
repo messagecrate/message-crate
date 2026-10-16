@@ -867,6 +867,31 @@ pub async fn record_own_password_change(
     Ok(())
 }
 
+/// Record that the Session whose `logged_in` entry is `login_entry_id` now
+/// expires at `expires_at_unix`, because it was used. Not an entry: a
+/// Session in use moves its expiry as often as once an hour, and the Audit
+/// Trail reads the latest one only to say when the Session ran out.
+///
+/// # Errors
+///
+/// Returns an error when the write fails.
+pub async fn record_session_extended(
+    conn: &mut SqliteConnection,
+    login_entry_id: i64,
+    expires_at_unix: u64,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO session_extensions (login_entry_id, expires_at) VALUES ($1, $2)
+         ON CONFLICT(login_entry_id) DO UPDATE SET expires_at = excluded.expires_at",
+    )
+    .bind(login_entry_id)
+    .bind(expiry_text(expires_at_unix))
+    .execute(&mut *conn)
+    .await
+    .context("record a Session's new expiry")?;
+    Ok(())
+}
+
 /// Write the `session_ended` entry, stamped `now`, for the Session whose
 /// `logged_in` entry is `login_entry_id`.
 ///
@@ -1060,12 +1085,17 @@ pub enum Scope {
 }
 
 /// When the Session a `logged_in` entry `l` opened runs out: the latest
-/// expiry among the entry and the password changes that renewed it.
+/// expiry among the entry, the password changes that renewed it, and the
+/// use that last moved it (`session_extensions`). Each is RFC 3339 UTC, so
+/// the latest is the greatest as text.
 macro_rules! session_expiry_sql {
     () => {
-        "COALESCE((SELECT MAX(r.session_expires_at) FROM audit_entries r
-                    WHERE r.session_entry_id = l.id AND r.action = 'password_set'),
-                  l.session_expires_at)"
+        "MAX(COALESCE((SELECT MAX(r.session_expires_at) FROM audit_entries r
+                        WHERE r.session_entry_id = l.id AND r.action = 'password_set'),
+                      l.session_expires_at),
+             COALESCE((SELECT x.expires_at FROM session_extensions x
+                        WHERE x.login_entry_id = l.id),
+                      l.session_expires_at))"
     };
 }
 
