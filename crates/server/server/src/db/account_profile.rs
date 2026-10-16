@@ -67,7 +67,12 @@ async fn account_email_addresses(
 /// are the `handles.service` values of every `handles` row for that number
 /// that `account_handles` links to the account.
 async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<AccountPhone>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        normalized: String,
+        service: String,
+    }
+    let rows = sqlx::query_as::<_, Row>(
         "SELECT DISTINCT h.normalized, h.service FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1 AND h.handle_type = $2
@@ -79,7 +84,11 @@ async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<
     .await
     .context("read the account's phone numbers")?;
     let mut phones: Vec<AccountPhone> = Vec::new();
-    for (address, service) in rows {
+    for Row {
+        normalized: address,
+        service,
+    } in rows
+    {
         let service = ApiIdentityService::from(IdentityService::parse(&service));
         match phones.last_mut() {
             Some(phone) if phone.address == address => phone.services.push(service),
@@ -109,7 +118,7 @@ pub async fn account_identity_keys(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<std::collections::HashSet<(String, IdentityType)>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    let rows = sqlx::query_as::<_, super::handles::AddressAndType>(
         "SELECT DISTINCT h.normalized, h.handle_type FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1",
@@ -120,7 +129,7 @@ pub async fn account_identity_keys(
     .context("read the account's identities")?;
     Ok(rows
         .into_iter()
-        .map(|(normalized, handle_type)| (normalized, IdentityType::parse(&handle_type)))
+        .map(|row| (row.normalized, IdentityType::parse(&row.handle_type)))
         .collect())
 }
 
@@ -602,7 +611,15 @@ pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Option<AccountAuth>> {
-    let row: Option<(i64, i64, i64, i64, i64)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        disabled: i64,
+        must_set_up_profile: i64,
+        can_import: i64,
+        can_export: i64,
+        can_delete: i64,
+    }
+    let row = sqlx::query_as::<_, Row>(
         "SELECT disabled, must_set_up_profile, can_import, can_export, can_delete
          FROM accounts WHERE id = $1",
     )
@@ -610,19 +627,21 @@ pub async fn load_account_auth(
     .fetch_optional(&mut *conn)
     .await
     .context("read the account's disabled flag and permissions")?;
-    Ok(row.map(
-        |(disabled, must_set_up, import, export, delete)| AccountAuth {
-            disabled: disabled != 0,
-            must_set_up_profile: must_set_up != 0,
-            permissions: if is_server_owner(account_id) {
-                crate::db::permissions::Permissions::none()
-            } else if is_demo_account(account_id) {
-                DEMO_ACCOUNT_PERMISSIONS
-            } else {
-                crate::db::permissions::Permissions::from_ints(import, export, delete)
-            },
+    Ok(row.map(|row| AccountAuth {
+        disabled: row.disabled != 0,
+        must_set_up_profile: row.must_set_up_profile != 0,
+        permissions: if is_server_owner(account_id) {
+            crate::db::permissions::Permissions::none()
+        } else if is_demo_account(account_id) {
+            DEMO_ACCOUNT_PERMISSIONS
+        } else {
+            crate::db::permissions::Permissions::from_ints(
+                row.can_import,
+                row.can_export,
+                row.can_delete,
+            )
         },
-    ))
+    }))
 }
 
 /// Mark an account as still owing profile setup, or clear the mark once its

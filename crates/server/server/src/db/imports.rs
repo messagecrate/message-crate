@@ -957,44 +957,62 @@ pub async fn list_import_issues(
     conn: &mut SqliteConnection,
     import_id: i64,
 ) -> Result<Vec<ImportIssueRow>> {
-    let issue_rows: Vec<ImportIssueRow> =
-        sqlx::query_as::<_, (i64, i64, String, String, String, String, String)>(
-            r"
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        import_id: i64,
+        kind: String,
+        stage: String,
+        item: String,
+        reason: String,
+        created_at: String,
+    }
+    let issue_rows: Vec<ImportIssueRow> = sqlx::query_as::<_, Row>(
+        r"
         SELECT id, import_id, kind, stage, item, reason, created_at
         FROM import_issues
         WHERE import_id = $1
         ORDER BY id ASC
         ",
-        )
-        .bind(import_id)
-        .fetch_all(&mut *conn)
-        .await
-        .and_then(|rows| {
-            rows.into_iter()
-                .map(|(id, import_id, kind, stage, item, reason, created_at)| {
-                    let kind = ImportErrorKind::parse(&kind).ok_or_else(|| {
-                        sqlx::Error::Decode(
-                            format!("import_issues.kind holds unknown value '{kind}'").into(),
-                        )
-                    })?;
-                    let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
-                        sqlx::Error::Decode(
-                            format!("import_issues.stage holds unknown value '{stage}'").into(),
-                        )
-                    })?;
-                    Ok(ImportIssueRow {
-                        id,
-                        import_id,
-                        kind,
-                        stage,
-                        item,
-                        reason,
-                        created_at,
-                    })
+    )
+    .bind(import_id)
+    .fetch_all(&mut *conn)
+    .await
+    .and_then(|rows| {
+        rows.into_iter()
+            .map(|row| {
+                let Row {
+                    id,
+                    import_id,
+                    kind,
+                    stage,
+                    item,
+                    reason,
+                    created_at,
+                } = row;
+                let kind = ImportErrorKind::parse(&kind).ok_or_else(|| {
+                    sqlx::Error::Decode(
+                        format!("import_issues.kind holds unknown value '{kind}'").into(),
+                    )
+                })?;
+                let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
+                    sqlx::Error::Decode(
+                        format!("import_issues.stage holds unknown value '{stage}'").into(),
+                    )
+                })?;
+                Ok(ImportIssueRow {
+                    id,
+                    import_id,
+                    kind,
+                    stage,
+                    item,
+                    reason,
+                    created_at,
                 })
-                .collect::<std::result::Result<Vec<_>, sqlx::Error>>()
-        })
-        .context("read the Import Errors of an Import Run")?;
+            })
+            .collect::<std::result::Result<Vec<_>, sqlx::Error>>()
+    })
+    .context("read the Import Errors of an Import Run")?;
     Ok(issue_rows)
 }
 
@@ -1008,7 +1026,13 @@ pub async fn list_import_notes(
     conn: &mut SqliteConnection,
     import_id: i64,
 ) -> Result<Vec<ImportNoteRow>> {
-    let rows: Vec<ImportNoteRow> = sqlx::query_as::<_, (String, String, String)>(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        stage: String,
+        item: String,
+        text: String,
+    }
+    let rows: Vec<ImportNoteRow> = sqlx::query_as::<_, Row>(
         "SELECT stage, item, text FROM import_notes WHERE import_id = $1 ORDER BY id ASC",
     )
     .bind(import_id)
@@ -1016,7 +1040,7 @@ pub async fn list_import_notes(
     .await
     .and_then(|rows| {
         rows.into_iter()
-            .map(|(stage, item, text)| {
+            .map(|Row { stage, item, text }| {
                 let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
                     sqlx::Error::Decode(
                         format!("import_notes.stage holds unknown value '{stage}'").into(),
@@ -1162,9 +1186,14 @@ pub async fn issue_and_note_counts(
     conn: &mut SqliteConnection,
     import_id: i64,
 ) -> Result<(u64, u64)> {
-    let (issues, notes): (i64, i64) = sqlx::query_as(
-        "SELECT (SELECT COUNT(*) FROM import_issues WHERE import_id = $1),
-                (SELECT COUNT(*) FROM import_notes WHERE import_id = $1)",
+    #[derive(sqlx::FromRow)]
+    struct Counts {
+        issues: i64,
+        notes: i64,
+    }
+    let Counts { issues, notes } = sqlx::query_as::<_, Counts>(
+        "SELECT (SELECT COUNT(*) FROM import_issues WHERE import_id = $1) AS issues,
+                (SELECT COUNT(*) FROM import_notes WHERE import_id = $1) AS notes",
     )
     .bind(import_id)
     .fetch_one(&mut *conn)
@@ -1227,15 +1256,16 @@ impl TopAttachment {
 }
 
 /// Raw row for [`top_attachments_by_size`] before mapping to [`TopAttachment`].
-type TopAttachmentRow = (
-    i64,
-    Option<String>,
-    Option<String>,
-    i64,
-    i64,
-    Option<String>,
-    String,
-);
+#[derive(sqlx::FromRow)]
+struct TopAttachmentRow {
+    id: i64,
+    original_name: Option<String>,
+    mime_type: Option<String>,
+    size_bytes: i64,
+    conversation_id: i64,
+    group_title: Option<String>,
+    chat_identifier: String,
+}
 
 /// Largest attachments for an account.
 pub async fn top_attachments_by_size(
@@ -1243,15 +1273,15 @@ pub async fn top_attachments_by_size(
     account_id: i64,
     limit: i64,
 ) -> Result<Vec<TopAttachment>> {
-    let rows: Vec<TopAttachmentRow> = sqlx::query_as(
+    let rows = sqlx::query_as::<_, TopAttachmentRow>(
         r"
             SELECT a.id,
                    a.original_name,
                    a.mime_type,
-                   COALESCE(a.size_bytes, 0),
-                   c.id,
+                   COALESCE(a.size_bytes, 0) AS size_bytes,
+                   c.id AS conversation_id,
                    c.group_title,
-                   h.raw
+                   h.raw AS chat_identifier
             FROM attachments a
             JOIN messages m ON m.id = a.message_id
             JOIN conversations c ON c.id = m.conversation_id
@@ -1270,15 +1300,15 @@ pub async fn top_attachments_by_size(
     Ok(rows
         .into_iter()
         .map(
-            |(
-                id,
-                original_name,
-                mime_type,
-                size_bytes,
-                conversation_id,
-                group_title,
-                chat_identifier,
-            )| TopAttachment {
+            |TopAttachmentRow {
+                 id,
+                 original_name,
+                 mime_type,
+                 size_bytes,
+                 conversation_id,
+                 group_title,
+                 chat_identifier,
+             }| TopAttachment {
                 id,
                 original_name,
                 mime_type,

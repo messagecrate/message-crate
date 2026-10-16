@@ -58,7 +58,7 @@ pub async fn queue_import_run(
 ///
 /// Returns an error naming the step when the query fails.
 pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>> {
-    sqlx::query_as(
+    sqlx::query_as::<_, QueuedAsset>(
         "SELECT account_id, sha256, rowid FROM media_queue
          ORDER BY queued_at, rowid
          LIMIT 1",
@@ -76,7 +76,7 @@ pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>> {
 ///
 /// Returns an error naming the step when the query fails.
 pub async fn queued_after(conn: &mut SqliteConnection, rowid: i64) -> Result<Vec<QueuedAsset>> {
-    sqlx::query_as(
+    sqlx::query_as::<_, QueuedAsset>(
         "SELECT account_id, sha256, rowid FROM media_queue
          WHERE rowid > $1
          ORDER BY rowid",

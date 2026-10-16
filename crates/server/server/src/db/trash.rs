@@ -49,6 +49,7 @@
 use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
+use crate::db::attachment_versions::NamedFiles;
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts;
 use crate::db::erase;
@@ -440,19 +441,6 @@ pub struct EmptiedTrash {
     pub contacts: usize,
 }
 
-/// One attachment's stored files, read before its message is deleted so the
-/// reference check afterwards knows what to look for: sha256, assets_path,
-/// preview_sha256, preview_assets_path, thumbnail_sha256,
-/// thumbnail_assets_path.
-type AttachmentFilesRow = (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
-
 /// Delete those of `ids` that are `account_id`'s trashed conversations, and
 /// report the attachment files nothing references any more. The `DELETE`
 /// checks the Trash marker itself, so a conversation restored since the
@@ -469,7 +457,9 @@ async fn delete_conversations(
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut candidates: Vec<AttachmentFilesRow> = Vec::new();
+    // Each attachment's stored files, read before its message is deleted so
+    // the reference check afterwards knows what to look for.
+    let mut candidates: Vec<NamedFiles> = Vec::new();
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let placeholders = in_placeholders(1, chunk.len());
         let sql = format!(
@@ -482,7 +472,7 @@ async fn delete_conversations(
                AND (a.sha256 IS NOT NULL OR a.preview_sha256 IS NOT NULL
                     OR a.thumbnail_sha256 IS NOT NULL)"
         );
-        let mut q = sqlx::query_as::<_, AttachmentFilesRow>(sqlx::AssertSqlSafe(sql));
+        let mut q = sqlx::query_as::<_, NamedFiles>(sqlx::AssertSqlSafe(sql));
         for id in chunk {
             q = q.bind(*id);
         }
@@ -532,17 +522,17 @@ async fn delete_conversations(
 async fn orphaned_files(
     conn: &mut SqliteConnection,
     account_id: i64,
-    candidates: Vec<AttachmentFilesRow>,
+    candidates: Vec<NamedFiles>,
 ) -> Result<Vec<OrphanedFile>> {
     let mut out = Vec::new();
-    for (
+    for NamedFiles {
         sha256,
         assets_path,
         preview_sha256,
         preview_assets_path,
         thumbnail_sha256,
-        thumbnail_path,
-    ) in candidates
+        thumbnail_assets_path: thumbnail_path,
+    } in candidates
     {
         if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
             && !original_is_referenced(conn, account_id, &sha256).await?

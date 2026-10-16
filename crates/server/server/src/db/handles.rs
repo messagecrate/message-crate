@@ -227,9 +227,19 @@ pub async fn existing_handle_id(
     Ok(id)
 }
 
+/// The address and type of one `handles` row, the pair an identity is
+/// matched by whatever its service.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AddressAndType {
+    /// The address's key (`handles.normalized`).
+    pub normalized: String,
+    /// `phone`, `email`, `username` or `other`.
+    pub handle_type: String,
+}
+
 /// One `handles` row as a country pick reads it: the address as written,
 /// its type, its service, and its key.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct KeyedRow {
     /// The address exactly as the source wrote it.
     pub raw: String,
@@ -238,6 +248,7 @@ pub struct KeyedRow {
     /// `phone` or `whatsapp`.
     pub service: String,
     /// The key it is matched under (`normalized`).
+    #[sqlx(rename = "normalized")]
     pub key: String,
 }
 
@@ -251,7 +262,7 @@ pub async fn keyed_row(
     account_id: i64,
     handle_id: i64,
 ) -> Result<Option<KeyedRow>> {
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
+    sqlx::query_as::<_, KeyedRow>(
         "SELECT raw, handle_type, service, normalized FROM handles
          WHERE account_id = $1 AND id = $2",
     )
@@ -259,13 +270,7 @@ pub async fn keyed_row(
     .bind(handle_id)
     .fetch_optional(&mut *conn)
     .await
-    .context("read an identity's address, type, service and key")?;
-    Ok(row.map(|(raw, handle_type, service, key)| KeyedRow {
-        raw,
-        handle_type,
-        service,
-        key,
-    }))
+    .context("read an identity's address, type, service and key")
 }
 
 /// The account's phone identity on `service` keyed `key`, other than
@@ -477,17 +482,18 @@ pub enum IdentitiesOf {
 /// One row of [`identities`]: address, service, whether its country is
 /// unknown, first and last timestamp, conversation count, one-to-one, group, and
 /// orphaned message counts.
-type IdentityRow = (
-    String,
-    String,
-    bool,
-    Option<String>,
-    Option<String>,
-    i64,
-    i64,
-    i64,
-    i64,
-);
+#[derive(sqlx::FromRow)]
+struct IdentityRow {
+    normalized: String,
+    service: String,
+    country_unknown: bool,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    conversations: i64,
+    one_to_one: i64,
+    group_messages: i64,
+    orphaned: i64,
+}
 
 /// The identities of an account or of a contact, each with its messages,
 /// phones before emails and each in order.
@@ -542,13 +548,13 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 CASE WHEN h.handle_type = 'email' THEN 'email'
                      WHEN h.service = 'whatsapp' THEN 'whatsapp'
                      ELSE 'phone' END AS service,
-                {country_unknown},
-                (SELECT MIN(m.timestamp) {messages}),
-                (SELECT MAX(m.timestamp) {messages}),
-                {conversations},
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'one-to-one'),
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'group'),
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned')
+                {country_unknown} AS country_unknown,
+                (SELECT MIN(m.timestamp) {messages}) AS start_date,
+                (SELECT MAX(m.timestamp) {messages}) AS end_date,
+                {conversations} AS conversations,
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'one-to-one') AS one_to_one,
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'group') AS group_messages,
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned') AS orphaned
          FROM linked l
          JOIN handles h ON h.id = l.handle_id
          {scope}
@@ -565,17 +571,17 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
     Ok(rows
         .into_iter()
         .map(
-            |(
-                handle,
-                service,
-                country_unknown,
-                start_date,
-                end_date,
-                conversations,
-                one_to_one,
-                group,
-                orphaned,
-            )| {
+            |IdentityRow {
+                 normalized: handle,
+                 service,
+                 country_unknown,
+                 start_date,
+                 end_date,
+                 conversations,
+                 one_to_one,
+                 group_messages: group,
+                 orphaned,
+             }| {
                 Identity {
                     address: handle,
                     service,

@@ -286,9 +286,33 @@ struct Snapshot {
 impl Snapshot {
     /// Read the account's contacts, identities and Contact Groups.
     async fn read(conn: &mut SqliteConnection, account_id: i64) -> Result<Self> {
+        #[derive(sqlx::FromRow)]
+        struct ContactRow {
+            id: i64,
+            name: String,
+            trashed: i64,
+        }
+        #[derive(sqlx::FromRow)]
+        struct IdentityRow {
+            id: i64,
+            service: String,
+            handle_type: String,
+            normalized: String,
+            holder: Option<i64>,
+        }
+        #[derive(sqlx::FromRow)]
+        struct ContactGroupRow {
+            id: i64,
+            name: String,
+        }
+        #[derive(sqlx::FromRow)]
+        struct MembershipRow {
+            contact_id: i64,
+            group_id: i64,
+        }
         let mut snapshot = Self::default();
-        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT ct.id, ct.preferred_name, NOT ({not_trashed})
+        let rows = sqlx::query_as::<_, ContactRow>(sqlx::AssertSqlSafe(format!(
+            "SELECT ct.id, ct.preferred_name AS name, NOT ({not_trashed}) AS trashed
              FROM contacts ct WHERE ct.account_id = $1",
             not_trashed = not_trashed_contact("ct"),
         )))
@@ -296,7 +320,7 @@ impl Snapshot {
         .fetch_all(&mut *conn)
         .await
         .context("read the account's contacts")?;
-        for (id, name, trashed) in rows {
+        for ContactRow { id, name, trashed } in rows {
             if trashed != 0 {
                 snapshot.trashed.insert(id, name);
             } else {
@@ -304,8 +328,8 @@ impl Snapshot {
             }
         }
 
-        let rows: Vec<(i64, String, String, String, Option<i64>)> = sqlx::query_as(
-            "SELECT h.id, h.service, h.handle_type, h.normalized, ch.contact_id
+        let rows = sqlx::query_as::<_, IdentityRow>(
+            "SELECT h.id, h.service, h.handle_type, h.normalized, ch.contact_id AS holder
              FROM handles h
              LEFT JOIN contact_handles ch
                ON ch.account_id = h.account_id AND ch.handle_id = h.id
@@ -315,7 +339,14 @@ impl Snapshot {
         .fetch_all(&mut *conn)
         .await
         .context("read the account's identities and their contacts")?;
-        for (id, service, handle_type, normalized, holder) in rows {
+        for IdentityRow {
+            id,
+            service,
+            handle_type,
+            normalized,
+            holder,
+        } in rows
+        {
             let (Some(service), Some(handle_type)) =
                 (parse_service(&service), parse_handle_type(&handle_type))
             else {
@@ -331,17 +362,18 @@ impl Snapshot {
             );
         }
 
-        let rows: Vec<(i64, String)> =
-            sqlx::query_as("SELECT id, name FROM contact_groups WHERE account_id = $1")
-                .bind(account_id)
-                .fetch_all(&mut *conn)
-                .await
-                .context("read the account's Contact Groups")?;
-        for (id, name) in rows {
+        let rows = sqlx::query_as::<_, ContactGroupRow>(
+            "SELECT id, name FROM contact_groups WHERE account_id = $1",
+        )
+        .bind(account_id)
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the account's Contact Groups")?;
+        for ContactGroupRow { id, name } in rows {
             snapshot.groups.insert(name.to_lowercase(), id);
         }
 
-        let rows: Vec<(i64, i64)> = sqlx::query_as(
+        let rows = sqlx::query_as::<_, MembershipRow>(
             "SELECT m.contact_id, m.group_id
              FROM contact_group_members m
              JOIN contact_groups g ON g.id = m.group_id
@@ -351,7 +383,11 @@ impl Snapshot {
         .fetch_all(&mut *conn)
         .await
         .context("read the account's Contact Group memberships")?;
-        for (contact_id, group_id) in rows {
+        for MembershipRow {
+            contact_id,
+            group_id,
+        } in rows
+        {
             snapshot
                 .memberships
                 .entry(contact_id)
@@ -1414,7 +1450,21 @@ pub struct WrittenAddressBook {
 /// One row of [`export_csv`]'s query: the contact's id and name, and one of
 /// its identities as service, handle type and key, absent for a contact
 /// with no identity.
-type ExportRow = (i64, String, Option<String>, Option<String>, Option<String>);
+#[derive(sqlx::FromRow)]
+struct ExportRow {
+    id: i64,
+    name: String,
+    service: Option<String>,
+    handle_type: Option<String>,
+    normalized: Option<String>,
+}
+
+/// One Contact Group a contact is in, for [`export_csv`].
+#[derive(sqlx::FromRow)]
+struct ExportMembership {
+    contact_id: i64,
+    name: String,
+}
 
 /// Write the address book for the account's contacts, or for the ones in
 /// `only` when it is given. One row per identity; a contact with no identity
@@ -1432,8 +1482,8 @@ pub async fn export_csv(
     account_id: i64,
     only: Option<&HashSet<i64>>,
 ) -> Result<WrittenAddressBook> {
-    let rows: Vec<ExportRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT ct.id, ct.preferred_name, h.service, h.handle_type, h.normalized
+    let rows = sqlx::query_as::<_, ExportRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT ct.id, ct.preferred_name AS name, h.service, h.handle_type, h.normalized
          FROM contacts ct
          LEFT JOIN contact_handles ch
            ON ch.account_id = ct.account_id AND ch.contact_id = ct.id
@@ -1448,7 +1498,7 @@ pub async fn export_csv(
     .fetch_all(&mut *conn)
     .await
     .context("read the contacts and identities to export")?;
-    let memberships: Vec<(i64, String)> = sqlx::query_as(
+    let memberships = sqlx::query_as::<_, ExportMembership>(
         "SELECT m.contact_id, g.name
          FROM contact_group_members m
          JOIN contact_groups g ON g.id = m.group_id
@@ -1460,22 +1510,24 @@ pub async fn export_csv(
     .await
     .context("read the Contact Group memberships to export")?;
     let mut groups: HashMap<i64, Vec<String>> = HashMap::new();
-    for (contact_id, name) in memberships {
+    for ExportMembership { contact_id, name } in memberships {
         groups.entry(contact_id).or_default().push(name);
     }
 
     let rows: Vec<ExportRow> = rows
         .into_iter()
-        .filter(|(id, ..)| only.is_none_or(|only| only.contains(id)))
+        .filter(|row| only.is_none_or(|only| only.contains(&row.id)))
         .collect();
-    let contacts: HashSet<i64> = rows.iter().map(|(id, ..)| *id).collect();
-    let identities = rows
-        .iter()
-        .filter(|(.., normalized)| normalized.is_some())
-        .count();
-    let book = rows
-        .into_iter()
-        .map(|(id, name, service, handle_type, normalized)| {
+    let contacts: HashSet<i64> = rows.iter().map(|row| row.id).collect();
+    let identities = rows.iter().filter(|row| row.normalized.is_some()).count();
+    let book = rows.into_iter().map(
+        |ExportRow {
+             id,
+             name,
+             service,
+             handle_type,
+             normalized,
+         }| {
             let group_names = groups
                 .get(&id)
                 .map(|names| names.join(&GROUP_SEPARATOR.to_string()))
@@ -1492,7 +1544,8 @@ pub async fn export_csv(
                 normalized.unwrap_or_default(),
                 group_names,
             ]
-        });
+        },
+    );
     Ok(WrittenAddressBook {
         csv: write_book(book)?,
         contacts: u64::try_from(contacts.len()).unwrap_or(u64::MAX),

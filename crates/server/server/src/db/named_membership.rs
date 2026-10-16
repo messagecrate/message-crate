@@ -745,11 +745,16 @@ pub async fn names_for_items(
     item_ids: &[i64],
 ) -> AnyResult<std::collections::HashMap<i64, Vec<String>>> {
     use crate::db::sql::{fold_in_id_chunks, in_placeholders};
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        member_id: i64,
+        name: String,
+    }
     fold_in_id_chunks(conn, item_ids, |conn, chunk| {
         Box::pin(async move {
             let placeholders = in_placeholders(2, chunk.len());
             let sql = format!(
-                "SELECT m.{member_col}, n.name
+                "SELECT m.{member_col} AS member_id, n.name
                  FROM {members} m
                  JOIN {table} n ON n.id = m.{name_col}
                  WHERE n.account_id = $1 AND m.{member_col} IN ({placeholders})
@@ -759,7 +764,7 @@ pub async fn names_for_items(
                 name_col = spec.name_column,
                 member_col = spec.member_column,
             );
-            let mut q = sqlx::query_as::<_, (i64, String)>(AssertSqlSafe(sql)).bind(account_id);
+            let mut q = sqlx::query_as::<_, Row>(AssertSqlSafe(sql)).bind(account_id);
             for id in chunk {
                 q = q.bind(*id);
             }
@@ -767,7 +772,10 @@ pub async fn names_for_items(
                 .fetch_all(&mut *conn)
                 .await
                 .context("read the names of the sets each item is in")?;
-            Ok(rows)
+            Ok(rows
+                .into_iter()
+                .map(|row| (row.member_id, row.name))
+                .collect())
         })
     })
     .await

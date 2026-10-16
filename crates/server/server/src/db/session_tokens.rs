@@ -180,7 +180,7 @@ pub async fn lookup_session(
     now: DateTime<Utc>,
 ) -> Result<Option<Session>> {
     let token_hash = hash_api_token(token);
-    let found: Option<SessionRow> = sqlx::query_as(
+    let found = sqlx::query_as::<_, SessionRow>(
         "SELECT account_id, created_at, expires_at, app_kind, app_build, login_entry_id \
          FROM account_session_tokens WHERE token_hash = $1",
     )
@@ -279,7 +279,12 @@ pub async fn live_session_hash(
     account_id: i64,
     now: DateTime<Utc>,
 ) -> Result<Option<String>> {
-    let found: Option<(String, String)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        token_hash: String,
+        expires_at: String,
+    }
+    let found = sqlx::query_as::<_, Row>(
         "SELECT token_hash, expires_at FROM account_session_tokens WHERE account_id = $1",
     )
     .bind(account_id)
@@ -287,12 +292,17 @@ pub async fn live_session_hash(
     .await
     .context("read the account's Session token hash")?;
     let now = unix_secs(now);
-    Ok(found.and_then(|(token_hash, expires_at)| {
-        expires_at
-            .parse::<u64>()
-            .is_ok_and(|expires| expires > now)
-            .then_some(token_hash)
-    }))
+    Ok(found.and_then(
+        |Row {
+             token_hash,
+             expires_at,
+         }| {
+            expires_at
+                .parse::<u64>()
+                .is_ok_and(|expires| expires > now)
+                .then_some(token_hash)
+        },
+    ))
 }
 
 /// Record the app a session's request came from, when it is not the one
@@ -332,14 +342,19 @@ pub async fn connecting_app_for_account(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Option<ConnectingApp>> {
-    let found: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        app_kind: Option<String>,
+        app_build: Option<String>,
+    }
+    let found = sqlx::query_as::<_, Row>(
         "SELECT app_kind, app_build FROM account_session_tokens WHERE account_id = $1",
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
     .await
     .context("read the app recorded on the account's Session")?;
-    Ok(found.and_then(|(kind, build)| ConnectingApp::from_columns(kind, build)))
+    Ok(found.and_then(|row| ConnectingApp::from_columns(row.app_kind, row.app_build)))
 }
 
 /// Replace the account's session token with a new one made at `now` and
@@ -394,7 +409,12 @@ pub(crate) async fn live_login_entry(
     account_id: i64,
     now: DateTime<Utc>,
 ) -> Result<Option<i64>> {
-    let found: Option<(Option<i64>, String)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        login_entry_id: Option<i64>,
+        expires_at: String,
+    }
+    let found = sqlx::query_as::<_, Row>(
         "SELECT login_entry_id, expires_at FROM account_session_tokens WHERE account_id = $1",
     )
     .bind(account_id)
@@ -403,7 +423,11 @@ pub(crate) async fn live_login_entry(
     .context("read the login entry of the account's Session")?;
     let now = unix_secs(now);
     // An `expires_at` that does not parse counts as expired, as in `lookup_session`.
-    Ok(found.and_then(|(login_entry_id, expires_at)| {
+    Ok(found.and_then(|row| {
+        let Row {
+            login_entry_id,
+            expires_at,
+        } = row;
         login_entry_id.filter(|_| expires_at.parse::<u64>().is_ok_and(|expires| expires > now))
     }))
 }
@@ -534,14 +558,23 @@ pub async fn revoke_session_token(
     let mut tx = crate::db::begin_write(conn)
         .await
         .context("begin a write transaction")?;
-    let found: Option<(i64, Option<i64>)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        account_id: i64,
+        login_entry_id: Option<i64>,
+    }
+    let found = sqlx::query_as::<_, Row>(
         "SELECT account_id, login_entry_id FROM account_session_tokens WHERE token_hash = $1",
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *tx)
     .await
     .context("look up the Session a token names")?;
-    let Some((account_id, login_entry_id)) = found else {
+    let Some(Row {
+        account_id,
+        login_entry_id,
+    }) = found
+    else {
         return Ok(false);
     };
     if let Some(login_entry_id) = login_entry_id {

@@ -37,20 +37,24 @@ impl Default for ServerSettings {
 
 /// Read the server's settings, or the defaults when nothing has been written.
 pub async fn load(conn: &mut SqliteConnection) -> Result<ServerSettings> {
-    let row: Option<(i64, i64)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        public_registration: i64,
+        asset_max_bytes: i64,
+    }
+    let row = sqlx::query_as::<_, Row>(
         "SELECT public_registration, asset_max_bytes FROM server_settings WHERE id = 1",
     )
     .fetch_optional(&mut *conn)
     .await
     .context("read the server settings")?;
-    Ok(row.map_or_else(
-        ServerSettings::default,
-        |(public_registration, asset_max_bytes)| ServerSettings {
-            public_registration: public_registration != 0,
+    Ok(
+        row.map_or_else(ServerSettings::default, |row| ServerSettings {
+            public_registration: row.public_registration != 0,
             // The column is only ever written from a `u64` that fits.
-            asset_max_bytes: u64::try_from(asset_max_bytes).unwrap_or(0),
-        },
-    ))
+            asset_max_bytes: u64::try_from(row.asset_max_bytes).unwrap_or(0),
+        }),
+    )
 }
 
 /// Set the attachment size limit, creating the settings row if this is the

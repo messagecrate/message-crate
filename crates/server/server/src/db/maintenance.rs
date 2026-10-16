@@ -61,10 +61,15 @@ pub async fn vacuum_import_tables(conn: &mut SqliteConnection, progress: Progres
 ///
 /// Returns an error when the statement fails.
 pub async fn checkpoint_truncate(conn: &mut SqliteConnection) -> anyhow::Result<bool> {
-    let (busy, _log, _checkpointed) =
-        sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")
-            .fetch_one(&mut *conn)
-            .await
-            .context("checkpoint the write-ahead log")?;
+    /// The pragma's row: `busy`, then `log` and `checkpointed`, which are
+    /// not read.
+    #[derive(sqlx::FromRow)]
+    struct Checkpoint {
+        busy: i64,
+    }
+    let Checkpoint { busy } = sqlx::query_as::<_, Checkpoint>("PRAGMA wal_checkpoint(TRUNCATE)")
+        .fetch_one(&mut *conn)
+        .await
+        .context("checkpoint the write-ahead log")?;
     Ok(busy == 0)
 }

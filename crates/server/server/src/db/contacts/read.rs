@@ -227,24 +227,25 @@ pub async fn list_contacts_sorted(
     params.push(SqlParam::Int(
         i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     ));
-    let rows: Vec<ContactRow> = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), bind_args(&params))
-        .fetch_all(&mut *conn)
-        .await
-        .context("read a page of contacts")?;
+    let rows =
+        sqlx::query_as_with::<_, ContactRow, _>(sqlx::AssertSqlSafe(sql), bind_args(&params))
+            .fetch_all(&mut *conn)
+            .await
+            .context("read a page of contacts")?;
 
     let contacts = rows
         .into_iter()
         .map(
-            |(
-                id,
-                name,
-                is_unknown,
-                identity_count,
-                addresses_blob,
-                last_modified,
-                last_heard_at,
-                groups_blob,
-            )| {
+            |ContactRow {
+                 id,
+                 name,
+                 is_unknown,
+                 identity_count,
+                 addresses: addresses_blob,
+                 last_modified,
+                 last_heard_at,
+                 groups: groups_blob,
+             }| {
                 let addresses = addresses_blob
                     .map(|s| {
                         s.split('\u{1f}')
@@ -317,16 +318,19 @@ fn compile_contacts_query(
     })
 }
 
-type ContactRow = (
-    i64,
-    String,
-    i64,
-    i64,
-    Option<String>,
-    String,
-    Option<String>,
-    Option<String>,
-);
+/// One row of [`list_contacts_sorted`]'s page query. `addresses` and
+/// `groups` are joined with the unit separator, `char(31)`.
+#[derive(sqlx::FromRow)]
+struct ContactRow {
+    id: i64,
+    name: String,
+    is_unknown: i64,
+    identity_count: i64,
+    addresses: Option<String>,
+    last_modified: String,
+    last_heard_at: Option<String>,
+    groups: Option<String>,
+}
 
 /// The contact's preferred name (empty when it has none), whether it is
 /// Unknown, and its last-modified stamp; `None` when it is missing, another
@@ -340,9 +344,15 @@ pub async fn contact_name_and_modified(
     account_id: i64,
     contact_id: i64,
 ) -> AnyResult<Option<(String, bool, String)>> {
-    let row: Option<(String, i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT ct.preferred_name,
-                CASE WHEN {unknown} THEN 1 ELSE 0 END,
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        name: String,
+        is_unknown: i64,
+        last_modified: String,
+    }
+    let row = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
+        "SELECT ct.preferred_name AS name,
+                CASE WHEN {unknown} THEN 1 ELSE 0 END AS is_unknown,
                 ct.last_modified
          FROM contacts ct
          WHERE ct.id = $1 AND ct.account_id = $2
@@ -355,7 +365,7 @@ pub async fn contact_name_and_modified(
     .fetch_optional(&mut *conn)
     .await
     .context("read a contact's name")?;
-    Ok(row.map(|(name, unknown, last_modified)| (name, unknown != 0, last_modified)))
+    Ok(row.map(|row| (row.name, row.is_unknown != 0, row.last_modified)))
 }
 
 /// Conversation and message counts across every handle of one contact.
@@ -383,9 +393,20 @@ pub async fn contact_totals(
     account_id: i64,
     contact_id: i64,
 ) -> AnyResult<ContactTotals> {
-    let (one_to_one, groups, orphaned, messages): (i64, i64, i64, i64) =
-        sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "WITH involved AS (
+    #[derive(sqlx::FromRow)]
+    struct Totals {
+        one_to_one: i64,
+        groups: i64,
+        orphaned: i64,
+        messages: i64,
+    }
+    let Totals {
+        one_to_one,
+        groups,
+        orphaned,
+        messages,
+    } = sqlx::query_as::<_, Totals>(sqlx::AssertSqlSafe(format!(
+        "WITH involved AS (
                SELECT c.id, c.conversation_type
                FROM conversations c
                WHERE c.account_id = $1
@@ -393,20 +414,22 @@ pub async fn contact_totals(
                  AND {not_trashed_conversation}
              )
              SELECT
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'one-to-one'),
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'group'),
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'orphaned'),
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'one-to-one')
+                 AS one_to_one,
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'group') AS groups,
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'orphaned') AS orphaned,
                COALESCE((SELECT (SELECT COUNT(*) {sent})
-                         FROM contacts ct WHERE ct.account_id = $1 AND ct.id = $2), 0)",
-            involves_contact_sql = involves_contact_sql(),
-            not_trashed_conversation = not_trashed_conversation("c"),
-            sent = contact_sent_messages(TrashScope::LeftOut),
-        )))
-        .bind(account_id)
-        .bind(contact_id)
-        .fetch_one(&mut *conn)
-        .await
-        .context("count a contact's conversations and messages")?;
+                         FROM contacts ct WHERE ct.account_id = $1 AND ct.id = $2), 0)
+                 AS messages",
+        involves_contact_sql = involves_contact_sql(),
+        not_trashed_conversation = not_trashed_conversation("c"),
+        sent = contact_sent_messages(TrashScope::LeftOut),
+    )))
+    .bind(account_id)
+    .bind(contact_id)
+    .fetch_one(&mut *conn)
+    .await
+    .context("count a contact's conversations and messages")?;
     Ok(ContactTotals {
         one_to_one: one_to_one.max(0) as u64,
         groups: groups.max(0) as u64,
@@ -472,14 +495,19 @@ pub async fn get_contact_summaries(
             (SELECT MIN(m.timestamp) {sent}) AS start_date,
             (SELECT MAX(m.timestamp) {sent}) AS end_date,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'one-to-one'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'one-to-one')
+              AS one_to_one_conversations,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'group'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'group')
+              AS group_conversations,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'orphaned'),
-            (SELECT COUNT(*) {sent} AND c.conversation_type = 'one-to-one'),
-            (SELECT COUNT(*) {sent} AND c.conversation_type = 'group'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'orphaned')
+              AS orphaned_conversations,
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'one-to-one')
+              AS one_to_one_message_count,
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'group') AS group_message_count,
             (SELECT COUNT(*) {sent} AND c.conversation_type = 'orphaned')
+              AS orphaned_message_count
          FROM selected ct",
         sent = contact_sent_messages(TrashScope::LeftOut),
         not_trashed_contact = not_trashed_contact("ct"),
@@ -497,7 +525,7 @@ pub async fn get_contact_summaries(
         .context("read the summaries of the selected contacts")?;
 
     let mut by_id = HashMap::new();
-    for (
+    for ContactSelectionRow {
         id,
         name,
         start_date,
@@ -508,7 +536,7 @@ pub async fn get_contact_summaries(
         one_to_one_message_count,
         group_message_count,
         orphaned_message_count,
-    ) in rows
+    } in rows
     {
         by_id.insert(
             id,
@@ -532,18 +560,20 @@ pub async fn get_contact_summaries(
         .collect())
 }
 
-type ContactSelectionRow = (
-    i64,
-    String,
-    Option<String>,
-    Option<String>,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-);
+/// One row of [`get_contact_summaries`]'s query.
+#[derive(sqlx::FromRow)]
+struct ContactSelectionRow {
+    id: i64,
+    name: String,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    one_to_one_conversations: i64,
+    group_conversations: i64,
+    orphaned_conversations: i64,
+    one_to_one_message_count: i64,
+    group_message_count: i64,
+    orphaned_message_count: i64,
+}
 
 /// Which of `identifiers` this account has no contact for.
 ///

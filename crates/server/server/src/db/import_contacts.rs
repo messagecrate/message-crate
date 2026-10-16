@@ -176,12 +176,21 @@ pub(in crate::db) fn tally_sql(import_id: &str) -> [String; 2] {
 /// Returns an error when the query fails.
 pub async fn counts(conn: &mut SqliteConnection, import_id: i64) -> Result<ContactCounts> {
     let [new, changed] = tally_sql("$1");
-    let (new_count, changed_count): (i64, i64) =
-        sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {new}, {changed}")))
-            .bind(import_id)
-            .fetch_one(&mut *conn)
-            .await
-            .context("count the contacts the Import Run created and changed")?;
+    #[derive(sqlx::FromRow)]
+    struct Counts {
+        new_count: i64,
+        changed_count: i64,
+    }
+    let Counts {
+        new_count,
+        changed_count,
+    } = sqlx::query_as::<_, Counts>(sqlx::AssertSqlSafe(format!(
+        "SELECT {new} AS new_count, {changed} AS changed_count"
+    )))
+    .bind(import_id)
+    .fetch_one(&mut *conn)
+    .await
+    .context("count the contacts the Import Run created and changed")?;
     Ok(ContactCounts {
         new_count: new_count.max(0) as u64,
         changed_count: changed_count.max(0) as u64,
@@ -207,8 +216,14 @@ pub async fn page(
             .fetch_one(&mut *conn)
             .await
             .context("count the Import Run's contacts")?;
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT c.id, c.preferred_name, ic.reason
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        name: String,
+        reason: String,
+    }
+    let rows = sqlx::query_as::<_, Row>(
+        "SELECT c.id, c.preferred_name AS name, ic.reason
          FROM import_contacts ic
          JOIN contacts c ON c.id = ic.contact_id
          WHERE ic.import_id = $1
@@ -229,7 +244,7 @@ pub async fn page(
     .context("read a page of the Import Run's contacts")?;
     let items = rows
         .into_iter()
-        .filter_map(|(id, name, reason)| {
+        .filter_map(|Row { id, name, reason }| {
             ContactReason::parse(&reason).map(|reason| ImportContact { id, name, reason })
         })
         .collect();
