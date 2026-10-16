@@ -12,14 +12,14 @@
 //!
 //! Every optional field is set in at least one payload, and every value of
 //! each enum a payload carries appears in one, so the web test sees each
-//! field and each word the window can receive. An issue row's `step` is the
-//! exception: Rust carries it as a `String`, not an enum, so its one word
-//! here is a sample and the stages' other words are not checked.
+//! field and each word the window can receive.
 
 use std::path::PathBuf;
 
 use import::FileStatus;
-use message_crate_core::{Canceled, ProgressEvent, RunIssue, RunIssueKind, WriteStatus};
+use message_crate_core::{
+    Canceled, ProgressEvent, RunIssue, RunIssueKind, RunIssueStep, WriteStatus,
+};
 use serde_json::Value;
 
 use super::{
@@ -74,17 +74,44 @@ fn payloads() -> Value {
         )
         .map(to_json);
 
+    let issue_row = |kind, step, item: &str, reason: &str| {
+        ImportIssueEvent::from(&RunIssue {
+            kind,
+            step,
+            item: item.into(),
+            reason: reason.into(),
+            conversation: Some("c.jsonl".into()),
+        })
+    };
+    // One per kind, then one per step, each with an item and reason of the
+    // kind that step reports.
     let issue = every!(RunIssueKind: Skip, Error, Note, Resolved)
         .into_iter()
         .map(|kind| {
-            ImportIssueEvent::from(&RunIssue {
+            issue_row(
                 kind,
-                step: "attachments".into(),
-                item: "/backup/IMG_0001.MOV".into(),
-                reason: "could not be decrypted".into(),
-                conversation: Some("c.jsonl".into()),
-            })
+                RunIssueStep::Attachments,
+                "/backup/IMG_0001.MOV",
+                "could not be decrypted",
+            )
         })
+        .chain(
+            every!(RunIssueStep: Parse, Attachments, Media, Upload)
+                .into_iter()
+                .map(|step| {
+                    let (item, reason) = match step {
+                        RunIssueStep::Parse => ("sms-1.xml", "could not be read"),
+                        RunIssueStep::Attachments => {
+                            ("/backup/IMG_0001.MOV", "could not be decrypted")
+                        }
+                        RunIssueStep::Media => {
+                            ("c.jsonl:attachments/IMG_0001.MOV", "could not be converted")
+                        }
+                        RunIssueStep::Upload => ("c.jsonl", "upload failed"),
+                    };
+                    issue_row(RunIssueKind::Skip, step, item, reason)
+                }),
+        )
         .map(to_json);
 
     let file_done = every!(FileStatus: Ok, Failed, Skipped)

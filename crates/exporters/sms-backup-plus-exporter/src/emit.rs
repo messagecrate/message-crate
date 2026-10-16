@@ -17,7 +17,7 @@ use ir::{
 };
 use message_crate_core::{
     CancelFlag, Canceled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
-    RunIssueKind, count_of, prepare_outputs, project_conversation,
+    RunIssueKind, RunIssueStep, count_of, prepare_outputs, project_conversation,
 };
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
@@ -354,7 +354,7 @@ fn project_and_count(
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
             report.issues.emit(RunIssue {
                 kind: RunIssueKind::Skip,
-                step: "parse".into(),
+                step: RunIssueStep::Parse,
                 item: format!("{eml_path} (sender)"),
                 reason: "The sender of this group message could not be read and was left out. The message itself is kept.".into(),
                 conversation: None,

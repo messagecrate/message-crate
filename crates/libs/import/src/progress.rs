@@ -69,13 +69,12 @@ pub enum ProgressEvent {
         /// How it ended.
         status: FileStatus,
     },
-    /// Structured skip/error for Import Errors (e.g. oversized attachment).
+    /// Structured skip/error for Import Errors (e.g. oversized attachment),
+    /// raised by the Upload.
     Issue {
         /// [`RunIssueKind::Skip`] when the item was left out,
         /// [`RunIssueKind::Error`] when it failed.
         kind: RunIssueKind,
-        /// The Stage that raised it, e.g. `upload`.
-        step: String,
         /// What was affected: an attachment path or a conversation file.
         item: String,
         /// Why, in one sentence.
@@ -371,7 +370,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
             );
             self.event(ProgressEvent::Issue {
                 kind: RunIssueKind::Skip,
-                step: "upload".into(),
                 item: skip.item.clone(),
                 reason: skip.reason.clone(),
                 conversation: skip.conversation.clone(),
@@ -399,7 +397,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
             };
             self.event(ProgressEvent::Issue {
                 kind,
-                step: "upload".into(),
                 item: result.file.clone(),
                 reason: result.error.clone().unwrap_or_else(|| fallback.to_string()),
                 conversation: result.file.clone(),

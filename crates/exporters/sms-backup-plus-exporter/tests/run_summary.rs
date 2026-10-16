@@ -3,7 +3,7 @@
 //! wrote nothing, or dropped its summary, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
-use message_crate_core::{RunIssue, SmsBackupPlusConfig};
+use message_crate_core::{RunIssue, RunIssueStep, SmsBackupPlusConfig};
 use std::fs;
 use std::path::Path;
 
@@ -189,10 +189,10 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
     assert_eq!(issues.len(), 1, "{issues:?}");
     let issue = &issues[0];
     assert_eq!(
-        (issue.kind, issue.step.as_str(), issue.item.as_str()),
+        (issue.kind, issue.step, issue.item.as_str()),
         (
             message_crate_core::RunIssueKind::Skip,
-            "parse",
+            RunIssueStep::Parse,
             "1.eml (sender)"
         )
     );
@@ -259,7 +259,7 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
 fn note(item: &str, text: &str) -> RunIssue {
     RunIssue {
         kind: message_crate_core::RunIssueKind::Note,
-        step: "parse".into(),
+        step: RunIssueStep::Parse,
         item: item.into(),
         reason: text.into(),
         conversation: None,
