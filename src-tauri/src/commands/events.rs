@@ -336,12 +336,16 @@ impl From<anyhow::Error> for DesktopJobErrorEvent {
 }
 
 /// The sentence for a failure the person can act on, found by its type in
-/// `err`'s chain: a session the server refused, or a full disk, a refused
-/// file or directory, or a missing one. `None` for anything else, so the
-/// window shows the chain when nothing better is known.
+/// `err`'s chain: a session the server refused, an Export Run the server
+/// closed before every page was read, or a full disk, a refused file or
+/// directory, or a missing one. `None` for anything else, so the window
+/// shows the chain when nothing better is known.
 fn user_message(err: &anyhow::Error) -> Option<&'static str> {
     if message_crate_http::is_session_refused(err) {
         return Some(message_crate_http::SESSION_REFUSED);
+    }
+    if message_crate_export::is_run_canceled_on_server(err) {
+        return Some(message_crate_export::RUN_CANCELED_ON_SERVER);
     }
     let io = err
         .chain()
@@ -440,6 +444,12 @@ mod tests {
                 anyhow::Error::from(message_crate_http::session_refused("Upload a batch"))
                     .context("upload chat.jsonl"),
                 message_crate_http::SESSION_REFUSED,
+            ),
+            (
+                anyhow::anyhow!("Export Run 7 page failed (HTTP 409 Conflict)")
+                    .context(message_crate_export::RunCanceledOnServer)
+                    .context("export the account"),
+                message_crate_export::RUN_CANCELED_ON_SERVER,
             ),
         ];
         for (error, sentence) in cases {

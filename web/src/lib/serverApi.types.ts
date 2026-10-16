@@ -925,7 +925,7 @@ export interface paths {
         put?: never;
         /**
          * Start an Export Run: compile the scope, list and count the messages it matches now, and record the run as `running`.
-         * @description Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`.
+         * @description Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `cancelled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.
          */
         post: operations["create_export"];
         delete?: never;
@@ -1948,7 +1948,7 @@ export interface components {
          * @description What an entry records.
          * @enum {string}
          */
-        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
+        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "export_run_closed" | "import_run" | "export_run";
         /**
          * @description Who acted.
          * @enum {string}
@@ -2044,6 +2044,12 @@ export interface components {
             demo_data_size: components["schemas"]["DemoDataSize"] | null;
             /**
              * Format: int64
+             * @description `export_run_closed`: the id of the Export Run the server closed, the
+             *     `id` of that run's own `export_run` entry.
+             */
+            export_run_id: number | null;
+            /**
+             * Format: int64
              * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
              *     session that expired, the id of its `logged_in` entry.
              */
@@ -2097,10 +2103,11 @@ export interface components {
             username: string | null;
         };
         /**
-         * @description How a Session ended, or why a login was refused.
+         * @description How a Session ended, why a login was refused, or why the server closed an
+         *     Export Run.
          * @enum {string}
          */
-        AuditReason: "logged_out" | "replaced" | "revoked" | "expired" | "unknown_username" | "wrong_password" | "account_disabled";
+        AuditReason: "logged_out" | "replaced" | "revoked" | "expired" | "unknown_username" | "wrong_password" | "account_disabled" | "idle";
         /** @description Body for claiming a Message Crate. */
         ClaimServerRequest: {
             /** @description Password for the owner. Must satisfy the server's password policy. */
@@ -4241,6 +4248,12 @@ export interface components {
                  *     build was asked for.
                  */
                 demo_data_size: components["schemas"]["DemoDataSize"] | null;
+                /**
+                 * Format: int64
+                 * @description `export_run_closed`: the id of the Export Run the server closed, the
+                 *     `id` of that run's own `export_run` entry.
+                 */
+                export_run_id: number | null;
                 /**
                  * Format: int64
                  * @description The row's id: the entry's, the Import Run's or the Export Run's. For a

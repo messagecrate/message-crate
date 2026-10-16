@@ -1,9 +1,10 @@
 //! The Audit Trail: what each user did on this Message Crate, and when.
 //!
 //! The record is three tables read as one list. `audit_entries` holds
-//! everything that has no record of its own: sessions, refused logins, and the
-//! owner's and holders' changes to accounts. Import Runs and Export Runs stay
-//! in `imports` and `exports` and are not copied. [`page`] reads all three in
+//! everything that has no record of its own: sessions, refused logins, the
+//! owner's and holders' changes to accounts, and the server closing an Export
+//! Run nobody closed. Import Runs and Export Runs stay in `imports` and
+//! `exports` and are not copied. [`page`] reads all three in
 //! time order, and adds a `session_ended` entry with the reason `expired` for
 //! each session that ran out with nothing to end it, so expiry needs no write.
 //!
@@ -100,6 +101,9 @@ pub enum AuditAction {
     AddressBookLoaded,
     /// The holder exported the address book.
     AddressBookExported,
+    /// The server closed a running Export Run as `cancelled`, removing its
+    /// list of messages; `reason` says why and `export_run_id` names the run.
+    ExportRunClosed,
     /// An Import Run, read from `imports`.
     ImportRun,
     /// An Export Run, read from `exports`.
@@ -132,6 +136,7 @@ impl AuditAction {
             Self::ApiTokenDeleted => "api_token_deleted",
             Self::AddressBookLoaded => "address_book_loaded",
             Self::AddressBookExported => "address_book_exported",
+            Self::ExportRunClosed => "export_run_closed",
             Self::ImportRun => "import_run",
             Self::ExportRun => "export_run",
         }
@@ -201,13 +206,16 @@ impl AuditActor {
     }
 }
 
-/// How a Session ended, or why a login was refused.
+/// How a Session ended, why a login was refused, or why the server closed an
+/// Export Run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditReason {
     /// `session_ended`: the holder logged out.
     LoggedOut,
     /// `session_ended`: a new login took the account's one Session.
+    /// `export_run_closed`: a new Export took the account's one running
+    /// Export Run.
     Replaced,
     /// `session_ended`: the server ended it, as `reset-owner-password` does.
     Revoked,
@@ -220,6 +228,9 @@ pub enum AuditReason {
     WrongPassword,
     /// `login_refused`: the password was right and the account is disabled.
     AccountDisabled,
+    /// `export_run_closed`: no page of the run was read for
+    /// [`crate::db::exports::IDLE_EXPORT_RUN_LIMIT`].
+    Idle,
 }
 
 impl AuditReason {
@@ -232,6 +243,7 @@ impl AuditReason {
             Self::UnknownUsername => "unknown_username",
             Self::WrongPassword => "wrong_password",
             Self::AccountDisabled => "account_disabled",
+            Self::Idle => "idle",
         }
     }
 
@@ -448,6 +460,9 @@ pub struct Details {
     /// build was asked for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub demo_data_size: Option<DemoDataSize>,
+    /// `export_run_closed`: the Export Run the server closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_run_id: Option<i64>,
 }
 
 /// One entry of the Audit Trail as the interface hands it out: an entry of
@@ -538,6 +553,9 @@ pub struct AuditEntry {
     /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
     /// build was asked for.
     pub demo_data_size: Option<DemoDataSize>,
+    /// `export_run_closed`: the id of the Export Run the server closed, the
+    /// `id` of that run's own `export_run` entry.
+    pub export_run_id: Option<i64>,
 }
 
 impl AuditEntry {
@@ -585,6 +603,7 @@ impl AuditEntry {
             contacts_deleted: None,
             asset_max_bytes: None,
             demo_data_size: None,
+            export_run_id: None,
         }
     }
 }
@@ -927,6 +946,38 @@ pub async fn record_refused_login(
     Ok(())
 }
 
+/// Write the `export_run_closed` entry, stamped `now`, for the account's
+/// Export Run `export_id`, which the server closed as `cancelled` for
+/// `reason`: `replaced` when `actor` started a new Export, `idle` when no
+/// page was read for an hour. Nothing is written when the account does not
+/// exist.
+///
+/// # Errors
+///
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_export_run_closed(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    export_id: i64,
+    reason: AuditReason,
+    actor: AuditActor,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let Some(username) = account_profile::username_for_account(conn, account_id).await? else {
+        return Ok(());
+    };
+    let entry = NewEntry {
+        reason: Some(reason),
+        ..NewEntry::about(AuditAction::ExportRunClosed, actor, (account_id, &username))
+            .with_details(Details {
+                export_run_id: Some(export_id),
+                ..Details::default()
+            })
+    };
+    insert(conn, &entry, None, None, now).await?;
+    Ok(())
+}
+
 /// Delete the refused logins as a username no account held that are older
 /// than [`UNKNOWN_USERNAME_RETENTION_DAYS`] at `now`. Run when a login is
 /// handled, so the record of them stays bounded with no sweeper. Nothing else
@@ -1243,6 +1294,7 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
         contacts_deleted: details.contacts_deleted,
         asset_max_bytes: details.asset_max_bytes,
         demo_data_size: details.demo_data_size,
+        export_run_id: details.export_run_id,
         request_id: row.try_get("request_id")?,
         ..AuditEntry::new(
             row.try_get("id")?,

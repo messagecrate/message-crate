@@ -148,6 +148,7 @@ export function auditEntry(
     conversations: null,
     credential: null,
     demo_data_size: null,
+    export_run_id: null,
     identities: null,
     messages: null,
     mode: null,

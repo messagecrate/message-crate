@@ -944,14 +944,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
         json!({ "kind": "query", "list": "messages", "q": "pizza" }),
     )
     .await;
-    let cancelled: Value = post_json(
-        &fixture.state,
-        &format!("/v1/exports/{}/cancel", first["id"]),
-        &alice.token,
-        json!({}),
-    )
-    .await;
-    assert_eq!(cancelled["status"], "cancelled");
+    // The second start closed the first as `cancelled`.
 
     let list: Value = get_json(&fixture.state, "/v1/exports", &alice.token).await;
     assert_eq!(list["total"], 2);
@@ -1682,4 +1675,197 @@ async fn an_export_run_for_a_deleted_account_brings_no_account_back() {
             .unwrap(),
         "the refused run put the deleted account's row back"
     );
+}
+
+/// The `export_run_closed` entries about `account`, newest first, read at
+/// `now`.
+async fn closures(
+    fixture: &TestFixture,
+    account: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Vec<crate::db::audit_trail::AuditEntry> {
+    let mut conn = fixture.conn().await;
+    let (entries, _) = crate::db::audit_trail::page(
+        &mut conn,
+        crate::db::audit_trail::Scope::Account(account),
+        100,
+        0,
+        now,
+    )
+    .await
+    .unwrap();
+    entries
+        .into_iter()
+        .filter(|e| e.action == crate::db::audit_trail::AuditAction::ExportRunClosed)
+        .collect()
+}
+
+/// An account has one running Export Run: a second start closes the first
+/// as `cancelled` and deletes its list, a page of the first is refused as for
+/// any run that is not running, and the Audit Trail says a new Export
+/// replaced it (#2080).
+#[tokio::test]
+async fn a_second_start_closes_the_first_and_its_list_goes() {
+    use crate::db::audit_trail::{AuditActor, AuditReason};
+
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let first = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let first_id = first["id"].as_i64().unwrap();
+    assert_eq!(snapshot_rows(&fixture, first_id).await, 3);
+
+    let second = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let second_id = second["id"].as_i64().unwrap();
+    assert_eq!(second["status"], "running");
+
+    let first: Value = get_json(
+        &fixture.state,
+        &format!("/v1/exports/{first_id}"),
+        &alice.token,
+    )
+    .await;
+    assert_eq!(first["status"], "cancelled");
+    assert!(first["finished_at"].is_string(), "{first}");
+    assert_eq!(snapshot_rows(&fixture, first_id).await, 0);
+    assert_eq!(snapshot_rows(&fixture, second_id).await, 3);
+
+    let (status, text) = get_raw(
+        &fixture.state,
+        &format!("/v1/exports/{first_id}/messages"),
+        &alice.token,
+    )
+    .await;
+    let problem = expect_problem(status, &text, ProblemType::StateConflict);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some(format!("export {first_id} is not running (status=cancelled)").as_str())
+    );
+    let (ids, total) = run_page_ids(&fixture, &alice.token, second_id, "").await;
+    assert_eq!((ids.len(), total), (3, 3));
+
+    let closed = closures(&fixture, alice.account_id, chrono::Utc::now()).await;
+    assert_eq!(closed.len(), 1, "{closed:?}");
+    assert_eq!(closed[0].reason, Some(AuditReason::Replaced));
+    assert_eq!(closed[0].actor, AuditActor::Holder);
+    assert_eq!(closed[0].export_run_id, Some(first_id));
+    assert_eq!(closed[0].username.as_deref(), Some(alice.username.as_str()));
+
+    // The index holds the rule on its own: a second running row is refused.
+    let mut conn = fixture.conn().await;
+    let reopened = sqlx::query("UPDATE exports SET status = 'running' WHERE id = $1")
+        .bind(first_id)
+        .execute(&mut *conn)
+        .await;
+    assert!(reopened.is_err(), "two running Export Runs for one account");
+}
+
+/// A running Export Run with no page read for an hour is closed as
+/// cancelled and its list deleted; one whose page was read within the hour
+/// is left running. The times are passed in, never waited for (#2080).
+#[tokio::test]
+async fn a_run_idle_past_the_hour_is_closed_and_one_read_within_it_is_not() {
+    use crate::db::audit_trail::{AuditActor, AuditReason};
+    use chrono::TimeDelta;
+
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let account = alice.account_id;
+    let started = crate::test_support::fixed_instant();
+    let minutes = |m: i64| started + TimeDelta::minutes(m);
+    let mut conn = fixture.conn().await;
+    let run = start_export_run(
+        &mut conn,
+        account,
+        &ExportScope::Everything,
+        None,
+        crate::search::tests::clock(),
+        &crate::db::audit_trail::CredentialUsed::Session(None),
+        started,
+    )
+    .await
+    .unwrap();
+    let status_of = |id: i64| {
+        let pool = fixture.state.db.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT status FROM exports WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+
+    // Never read, started 59 minutes ago: not idle yet.
+    assert!(
+        exports::close_idle_runs(&mut conn, minutes(59))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // A page read 50 minutes in keeps it open past the hour from its start.
+    assert!(
+        exports::record_delivered(&mut conn, account, run.id, 1, minutes(50))
+            .await
+            .unwrap()
+    );
+    assert!(
+        exports::close_idle_runs(&mut conn, minutes(110))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(status_of(run.id).await, "running");
+    assert_eq!(snapshot_rows(&fixture, run.id).await, 3);
+
+    // An hour and a minute after that page, it is closed.
+    let closed_at = minutes(111);
+    assert_eq!(
+        exports::close_idle_runs(&mut conn, closed_at)
+            .await
+            .unwrap(),
+        [run.id]
+    );
+    let closed = exports::get_export(&mut conn, account, run.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(closed.status, ExportStatus::Cancelled);
+    assert_eq!(closed.finished_at, Some(closed_at.to_rfc3339()));
+    assert_eq!(snapshot_rows(&fixture, run.id).await, 0);
+    // A page read after the close is refused.
+    assert!(
+        !exports::record_delivered(&mut conn, account, run.id, 2, minutes(112))
+            .await
+            .unwrap()
+    );
+
+    let entries = closures(&fixture, account, closed_at).await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].reason, Some(AuditReason::Idle));
+    assert_eq!(entries[0].actor, AuditActor::Server);
+    assert_eq!(entries[0].export_run_id, Some(run.id));
+    assert_eq!(entries[0].at, closed_at.to_rfc3339());
+}
+
+/// A page past the end of a run's list hands over nothing and still counts
+/// as a page read, which is how the desktop app keeps a run open while it
+/// fetches the Assets (#2080).
+#[tokio::test]
+async fn a_page_past_the_end_counts_as_a_page_read() {
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let id = run["id"].as_i64().unwrap();
+    let last_read = || async {
+        let mut conn = fixture.conn().await;
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT last_page_read_at FROM exports WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+    };
+    assert_eq!(last_read().await, None);
+
+    let (ids, total) = run_page_ids(&fixture, &alice.token, id, "offset=3&limit=1").await;
+    assert_eq!((ids.len(), total), (0, 3));
+    assert!(last_read().await.is_some());
 }

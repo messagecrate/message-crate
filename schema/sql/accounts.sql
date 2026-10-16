@@ -318,11 +318,22 @@ CREATE TABLE IF NOT EXISTS exports (
     total_bytes INTEGER NOT NULL,
     -- How far the run's message pages have read into its list, in places,
     -- so an abandoned run shows how far it got.
-    messages_delivered INTEGER NOT NULL DEFAULT 0
+    messages_delivered INTEGER NOT NULL DEFAULT 0,
+    -- When a page of the run's messages was last read; NULL until the first.
+    -- A running run with no page read for an hour, counted from this or
+    -- from `started_at` before the first, is closed as `cancelled`.
+    last_page_read_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_exports_account_started
     ON exports(account_id, started_at DESC);
+
+-- At most one running Export Run per account. Starting an Export closes the
+-- account's running run as `cancelled` in the same transaction, so the index
+-- never refuses a start; it holds the rule against a racing client, as
+-- `ux_imports_active_account` does for imports.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_exports_active_account
+    ON exports(account_id) WHERE status = 'running';
 
 -- Per-item error or skip recorded during an import run.
 CREATE TABLE IF NOT EXISTS import_issues (
@@ -425,7 +436,7 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- trash_emptied, account_deleted, registration_opened,
     -- registration_closed, asset_limit_changed, demo_account_added,
     -- demo_account_reset, api_token_created, api_token_deleted,
-    -- address_book_loaded or address_book_exported.
+    -- address_book_loaded, address_book_exported or export_run_closed.
     action TEXT NOT NULL,
     -- Who acted: owner, holder (the account's own holder), command_line
     -- (a server command), start_up (the server's first start, which adds
@@ -447,7 +458,9 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- its username may pass to a later account.
     deletion_entry_id INTEGER REFERENCES audit_entries(id),
     -- session_ended: logged_out, replaced or revoked. login_refused:
-    -- unknown_username, wrong_password or account_disabled. NULL otherwise.
+    -- unknown_username, wrong_password or account_disabled.
+    -- export_run_closed: replaced (a new Export started) or idle (no page
+    -- read for an hour). NULL otherwise.
     reason TEXT,
     -- logged_in and login_refused: the app the request named, 'desktop' or
     -- 'website'; NULL when the request named none.
@@ -466,7 +479,8 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- JSON object of the entry's counts and names: permissions added and
     -- removed, conversations and attachments deleted, an API token's label
     -- and hint, an address book's mode and contact counts, the new
-    -- attachment size limit, the size of Demo Data a build was asked for.
+    -- attachment size limit, the size of Demo Data a build was asked for,
+    -- the id of the Export Run the server closed.
     details TEXT
 );
 

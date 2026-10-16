@@ -1180,6 +1180,46 @@ fn a_page_that_cannot_be_fetched_closes_the_run_as_failed() {
     assert!(!load_journal(&out, &server).export_complete);
 }
 
+/// A page of a run the server closed (another Export of the account started,
+/// or no page was read for an hour) ends the Export with the sentence that
+/// says it was canceled, not quietly, and is not retried. Nothing tries to
+/// close the run again: the server already did (#2080).
+#[test]
+fn a_page_of_a_run_the_server_closed_says_the_export_was_canceled() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
+    let cancel = mock_cancel(&server);
+    let page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"));
+        then.status(409).json_body(json!({
+            "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
+            "title": "State conflict",
+            "status": 409,
+            "detail": "export 7 is not running (status=cancelled)"
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+
+    let error = run(&config(&out, server.base_url()), None).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        message_crate_export::RUN_CANCELED_ON_SERVER
+    );
+    assert!(message_crate_export::is_run_canceled_on_server(&error));
+    assert_eq!(page.calls(), 1, "a 409 Conflict is not retried");
+    create.assert();
+    assert_eq!(fail.calls(), 0);
+    assert_eq!(complete.calls(), 0);
+    assert_eq!(cancel.calls(), 0);
+    assert!(!out.join(CONVERSATION_FILE).exists());
+    assert!(!load_journal(&out, &server).export_complete);
+}
+
 /// A session the server refuses while the Assets are fetched (it expired, or
 /// was ended from another window) refuses every other fetch too. The run
 /// ends with the sentence that says to log in again, closed as failed,
@@ -1850,10 +1890,11 @@ fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
 }
 
 /// A Cancel pressed while the close of a finished run is failing does not
-/// cut its retries short: nothing on the server closes a run left running,
-/// so the run would stay recorded as running for good. The close is tried
-/// again and the run is recorded as completed. The retry takes the real
-/// first backoff, about half a second; nothing here depends on its length.
+/// cut its retries short: the server closes a run left running only as
+/// `cancelled`, an hour later, so the run would be recorded as something
+/// the person did not choose. The close is tried again and the run is
+/// recorded as completed. The retry takes the real first backoff, about half
+/// a second; nothing here depends on its length.
 #[test]
 fn a_cancel_while_a_finished_run_is_closed_keeps_the_close_retrying() {
     let dir = tempdir().unwrap();

@@ -6,7 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
@@ -35,6 +37,13 @@ pub const MAX_PAGE_LIMIT: usize = 500;
 pub const TOOL_NAME: &str = "message-crate-export";
 /// Default number of workers that fetch Assets in parallel.
 pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
+/// How often, while its Assets are fetched, a run reads a page past the end
+/// of its list ([`KeepAlive`]). The server closes a run with no page read for
+/// an hour, and the Asset fetches read no page, so a long fetch would lose
+/// the run without these reads. One try of a fetch is cut off after five
+/// minutes, so ten minutes leaves the hour room.
+const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(10 * 60);
+
 /// Extra tries for transient HTTP failures, matching the message-crate-import default.
 const MAX_RETRIES: u32 = 3;
 
@@ -247,10 +256,13 @@ pub fn run(
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
     // it ended: cancelled only when the person asked, failed for any other
-    // error. A close that fails after the files are written is a warning,
-    // not a failed export: the directory is complete, only the record is not.
+    // error. A run the server already closed is left as it is. A close that
+    // fails after the files are written is a warning, not a failed export:
+    // the directory is complete, only the record is not.
     let action = close_action(&outcome);
-    if let Err(error) = exporter.close_export(export.id, action) {
+    if let Some(action) = action
+        && let Err(error) = exporter.close_export(export.id, action)
+    {
         // A refused completion follows a run whose files are all written;
         // any other refused close follows the error the run returns below.
         let line = if action == CloseAction::Complete(CompleteExportStatus::Completed) {
@@ -300,12 +312,14 @@ pub fn run(
 
 /// How a run that returned `outcome` is closed on the server: completed when
 /// it wrote its conversation files, cancelled when the person stopped it,
-/// and failed for every other error.
-fn close_action<T>(outcome: &Result<T>) -> CloseAction {
+/// and failed for every other error. `None` when the server already closed
+/// it ([`crate::http::RunCanceledOnServer`]): a close would only be refused.
+fn close_action<T>(outcome: &Result<T>) -> Option<CloseAction> {
     match outcome {
-        Ok(_) => CloseAction::Complete(CompleteExportStatus::Completed),
-        Err(error) if error.is::<Cancelled>() => CloseAction::Cancel,
-        Err(_) => CloseAction::Complete(CompleteExportStatus::Failed),
+        Ok(_) => Some(CloseAction::Complete(CompleteExportStatus::Completed)),
+        Err(error) if crate::http::is_run_canceled_on_server(error) => None,
+        Err(error) if error.is::<Cancelled>() => Some(CloseAction::Cancel),
+        Err(_) => Some(CloseAction::Complete(CompleteExportStatus::Failed)),
     }
 }
 
@@ -478,10 +492,12 @@ impl<'a> Export<'a> {
 
     /// Close the run by `action`, retrying a transient failure. The close of
     /// a canceled run is tried once, so Cancel is not kept waiting on a
-    /// server that is away. A completed or failed run keeps every retry
-    /// even when Cancel is pressed during its close, since nothing on the
-    /// server closes a run left running. A failed close is returned as it
-    /// is, never as [`Cancelled`]: the caller logs it.
+    /// server that is away: a run whose close fails is closed by the server
+    /// once no page of it is read for an hour. A completed or failed run
+    /// keeps every retry even when Cancel is pressed during its close, so
+    /// the server records how it ended rather than `cancelled`. A failed
+    /// close is returned as it is, never as [`Cancelled`]: the caller logs
+    /// it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
         let close = || {
@@ -512,7 +528,7 @@ impl<'a> Export<'a> {
         let assets = if self.cfg.skip_attachments {
             AssetCounts::default()
         } else {
-            let counts = self.fetch_assets(&mut fetched.assets, out)?;
+            let counts = self.fetch_assets(export, &mut fetched.assets, out)?;
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
@@ -622,6 +638,7 @@ impl<'a> Export<'a> {
     /// session.
     fn fetch_assets(
         &self,
+        export: &ExportRun,
         assets: &mut HashMap<String, String>,
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<AssetCounts> {
@@ -648,6 +665,7 @@ impl<'a> Export<'a> {
                 out_dir: &cfg.out_dir,
                 workers: cfg.asset_fetch_workers,
                 cancel: &cfg.cancel,
+                keep_alive: &KeepAlive::new(export, KEEP_ALIVE_EVERY, Instant::now()),
             })?;
             for failure in &stats.failed {
                 emit(
@@ -962,9 +980,54 @@ fn assets_to_fetch(assets: &HashMap<String, String>, out_dir: &Path) -> HashMap<
         .collect()
 }
 
+/// Keeps a run open on the server while its Assets are fetched: before a
+/// fetch starts, once [`KeepAlive::every`] has passed since the last read,
+/// it reads the run's page past the end of its list, which hands over
+/// nothing and counts as a page read. A run the server closed meanwhile
+/// answers `409 Conflict`, so the Export stops there and says it was
+/// canceled rather than finishing on a run that is gone.
+struct KeepAlive {
+    /// The run to keep open.
+    export_id: i64,
+    /// Places in its list: the offset of the page past the end.
+    total: usize,
+    /// How long may pass between reads.
+    every: Duration,
+    /// When the run's last page was read.
+    last: Mutex<Instant>,
+}
+
+impl KeepAlive {
+    /// A keep-alive for `export`, whose last page was read at `now`.
+    fn new(export: &ExportRun, every: Duration, now: Instant) -> Self {
+        Self {
+            export_id: export.id,
+            total: usize::try_from(export.message_count).unwrap_or(0),
+            every,
+            last: Mutex::new(now),
+        }
+    }
+
+    /// Whether a read is due at `now`. A due read is counted as made, so
+    /// workers that ask together make one.
+    fn take_due(&self, now: Instant) -> bool {
+        let mut last = self
+            .last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if now.saturating_duration_since(*last) >= self.every {
+            *last = now;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// What [`fetch_assets_parallel`] fetches, from where, and how: the
 /// server and session, each Asset's SHA-256 with the path under `out_dir` it
-/// is written at, the number of workers, and the run's cancel flag.
+/// is written at, the number of workers, the run's cancel flag, and what
+/// keeps the run open meanwhile.
 struct FetchAssetsParallelArgs<'a> {
     session: &'a crate::http::HttpSession,
     base_url: &'a str,
@@ -973,6 +1036,7 @@ struct FetchAssetsParallelArgs<'a> {
     out_dir: &'a Path,
     workers: usize,
     cancel: &'a CancelFlag,
+    keep_alive: &'a KeepAlive,
 }
 
 /// Fetch each Asset in `assets` on `workers` threads and return the counts,
@@ -987,10 +1051,13 @@ struct FetchAssetsParallelArgs<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is cancelled, and the server's refusal
-/// when it refuses the session (`401 Unauthorized`): every other fetch with
-/// that token is refused too, so the run stops and says to log in again
-/// rather than listing each Asset as missing.
+/// Returns [`Cancelled`] when the run is canceled,
+/// [`RunCanceledOnServer`](crate::http::RunCanceledOnServer) when a
+/// keep-alive read finds the run closed on the server, and the server's
+/// refusal when it refuses the session (`401 Unauthorized`): every other
+/// fetch with that token is refused too, so the run stops and says to log in
+/// again rather than listing each Asset as missing. A keep-alive read that
+/// fails any other way is left for the next one.
 fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetchStats> {
     let FetchAssetsParallelArgs {
         session,
@@ -1000,6 +1067,7 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         out_dir,
         workers,
         cancel,
+        keep_alive,
     } = args;
     let jobs: Vec<AssetFetchJob> = assets
         .iter()
@@ -1014,9 +1082,31 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
     // Set by the first refused session, so the jobs not yet started skip
     // their request: the server would refuse each one the same way.
     let session_refused = AtomicBool::new(false);
+    // Set by a keep-alive read that finds the run closed, so no job starts
+    // after it: the Export is over.
+    let run_closed = AtomicBool::new(false);
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
         if session_refused.load(Ordering::Relaxed) {
             bail!("Asset {} skipped after the session was refused", job.sha256);
+        }
+        if run_closed.load(Ordering::Relaxed) {
+            bail!("Asset {} skipped after the run was closed", job.sha256);
+        }
+        if keep_alive.take_due(Instant::now())
+            && let Err(error) = crate::http::export_messages(
+                session,
+                ExportMessagesArgs {
+                    base_url,
+                    token,
+                    export_id: keep_alive.export_id,
+                    limit: 1,
+                    offset: keep_alive.total,
+                },
+            )
+            && crate::http::is_run_canceled_on_server(&error)
+        {
+            run_closed.store(true, Ordering::Relaxed);
+            return Err(error);
         }
         let result = retried_until_canceled(cancel, || {
             crate::http::fetch_asset(session, base_url, token, &job.sha256, &job.dest)
@@ -1030,6 +1120,7 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
     });
 
     let mut cancelled = None;
+    let mut closed = None;
     let mut refused = None;
     for (job, result) in jobs.iter().zip(results) {
         match result {
@@ -1040,6 +1131,10 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
             Err(error) if error.is::<Cancelled>() => {
                 cancelled.get_or_insert(error);
             }
+            Err(error) if crate::http::is_run_canceled_on_server(&error) => {
+                closed.get_or_insert(error);
+            }
+            Err(_) if run_closed.load(Ordering::Relaxed) => {}
             Err(error) if is_session_refused(&error) => {
                 refused.get_or_insert(error);
             }
@@ -1050,9 +1145,10 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
             }),
         }
     }
-    // A cancel wins over a refused session, so a run the person stopped is
-    // closed as cancelled whichever job saw which first.
-    if let Some(error) = cancelled.or(refused) {
+    // A cancel wins over a run closed on the server and a refused session,
+    // so a run the person stopped is closed as `cancelled` whichever job saw
+    // which first.
+    if let Some(error) = cancelled.or(closed).or(refused) {
         return Err(error);
     }
     stats.failed.sort_by(|a, b| a.sha256.cmp(&b.sha256));
@@ -1282,7 +1378,7 @@ mod asset_fetch_tests {
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     /// The names of the files in `dir`, sorted.
     fn names_in(dir: &Path) -> Vec<String> {
@@ -1369,6 +1465,12 @@ mod asset_fetch_tests {
             out_dir: dir.path(),
             workers: 2,
             cancel: &CancelFlag::default(),
+            keep_alive: &KeepAlive {
+                export_id: 7,
+                total: 0,
+                every: Duration::MAX,
+                last: Mutex::new(Instant::now()),
+            },
         })
         .unwrap();
 
@@ -1381,6 +1483,93 @@ mod asset_fetch_tests {
             ["menu.jpg", "menu.pdf"],
             "no temporary file is left behind"
         );
+    }
+
+    /// A keep-alive read is due once its interval has passed since the
+    /// last, and a due read counts as made. The instants are passed in.
+    #[test]
+    fn a_keep_alive_read_is_due_once_its_interval_has_passed() {
+        let start = Instant::now();
+        let keep_alive = KeepAlive {
+            export_id: 7,
+            total: 3,
+            every: Duration::from_secs(600),
+            last: Mutex::new(start),
+        };
+        assert!(!keep_alive.take_due(start + Duration::from_secs(599)));
+        assert!(keep_alive.take_due(start + Duration::from_secs(600)));
+        assert!(!keep_alive.take_due(start + Duration::from_secs(600)));
+        assert!(keep_alive.take_due(start + Duration::from_secs(1200)));
+    }
+
+    /// Fetch the menu with a keep-alive due before every fetch, against a
+    /// server whose page past the end answers `page_status`. Returns the
+    /// result, the page reads and the Asset fetches.
+    fn fetch_with_keep_alive(page_status: u16) -> (Result<AssetFetchStats>, usize, usize) {
+        let server = httpmock::MockServer::start();
+        let menu = b"%PDF-1.4 menu".to_vec();
+        let sha = file_io::sha256_hex(&menu);
+        let page = server.mock(|when, then| {
+            when.method("GET")
+                .path("/v1/exports/7/messages")
+                .query_param("offset", "3")
+                .query_param("limit", "1");
+            if page_status == 200 {
+                then.status(200).json_body(serde_json::json!({
+                    "items": [], "total": 3, "limit": 1, "offset": 3
+                }));
+            } else {
+                then.status(page_status).json_body(serde_json::json!({
+                    "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
+                    "title": "State conflict",
+                    "status": page_status,
+                    "detail": "export 7 is not running (status=cancelled)"
+                }));
+            }
+        });
+        let asset = server.mock(|when, then| {
+            when.method("GET").path(format!("/v1/assets/{sha}"));
+            then.status(200).body(menu.clone());
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let assets = HashMap::from([(sha, "attachments/menu.pdf".to_string())]);
+        let result = fetch_assets_parallel(FetchAssetsParallelArgs {
+            session: &HttpSession::new().unwrap(),
+            base_url: &server.base_url(),
+            token: "token",
+            assets: &assets,
+            out_dir: dir.path(),
+            workers: 1,
+            cancel: &CancelFlag::default(),
+            keep_alive: &KeepAlive {
+                export_id: 7,
+                total: 3,
+                every: Duration::ZERO,
+                last: Mutex::new(Instant::now()),
+            },
+        });
+        (result, page.calls(), asset.calls())
+    }
+
+    /// While Assets are fetched, the run's page past the end is read, so the
+    /// server does not close the run as idle (#2080).
+    #[test]
+    fn a_due_keep_alive_reads_the_page_past_the_end_and_the_fetch_goes_on() {
+        let (result, pages, fetches) = fetch_with_keep_alive(200);
+        assert_eq!(result.unwrap().fetched, 1);
+        assert_eq!((pages, fetches), (1, 1));
+    }
+
+    /// A keep-alive read that finds the run closed on the server ends the
+    /// fetches with the error that says the Export was canceled (#2080).
+    #[test]
+    fn a_keep_alive_read_of_a_closed_run_ends_the_fetches() {
+        let (result, pages, fetches) = fetch_with_keep_alive(409);
+        let Err(error) = result else {
+            panic!("a closed run ends the fetches");
+        };
+        assert!(crate::http::is_run_canceled_on_server(&error), "{error:#}");
+        assert_eq!((pages, fetches), (1, 0));
     }
 
     #[test]

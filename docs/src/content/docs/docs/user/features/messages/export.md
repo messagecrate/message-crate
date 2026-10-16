@@ -64,6 +64,7 @@ The export then holds every message of the conversations the list showed.
 Opened from any other screen, or with no search running, it starts in **Everything**, and choosing **Search** there starts in **Messages**.
 
 An Export Run hands over the messages that matched when it started.
+An account has one Export Run open at a time. Starting an Export cancels the account's Export Run that is still open, from this desktop app, another one or a program, and the server cancels an Export Run nobody has read from for an hour. An Export whose run was canceled this way stops and says so.
 A message imported or trashed while the run is being read does not change what the run writes.
 
 An attachment that can't be fetched, such as one whose file is gone from the server, doesn't stop the export.

@@ -430,7 +430,9 @@ and how much matched, never what the messages said. A person asks in one of
 three ways: everything the account holds, whatever a search currently shows,
 or conversations and messages they have picked by hand. The run hands over
 the messages that matched when it started, whatever is imported or trashed
-while it is read. Exporting everything
+while it is read. An account has one running Export Run: starting an Export
+cancels the one still running, and the server cancels a run nobody has read
+from for an hour. Exporting everything
 is still an Export Run; it is not called a backup, because a backup is the
 phone's file that Import reads.
 _Avoid_: Export Job, Backup, Download

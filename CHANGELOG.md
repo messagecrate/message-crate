@@ -1265,6 +1265,13 @@ carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-15: **An Export left open no longer stays open for good.** An
+  account now has one Export open at a time: starting an Export cancels the
+  one still open, and the server cancels an Export nobody has read from for
+  an hour, such as one whose desktop app was closed part-way. Before, each
+  such Export kept a list of every message it covered on the server, and a
+  program could start them without end. An Export canceled this way stops
+  and says it was canceled, and the Audit Trail records why (#2080).
 - 2026-10-15: **An Export keeps the date of the backup each message came
   from.** A conversation imported from two backups of a phone was exported
   with no backup date at all, and a message that had none left its whole

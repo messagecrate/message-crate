@@ -11,6 +11,7 @@ mod part_file;
 mod project;
 mod run;
 
+pub use http::{RUN_CANCELED_ON_SERVER, RunCanceledOnServer, is_run_canceled_on_server};
 pub use journal::{EXPORT_JOURNAL_NAME, ExportJournalEvent, ExportJournalState, journal_path};
 pub use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
 pub use message_crate_http::{AuthError, AuthInfo, auth_check as authenticate};
