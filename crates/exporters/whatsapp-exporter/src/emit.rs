@@ -6,16 +6,16 @@ use crate::jid::{
     phone_id_to_e164,
 };
 use crate::read::{
-    ChatJson, MemberJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store,
-    media_path, message_text, timestamp_ms, timestamp_secs,
+    ChatJson, MemberJson, MessageJson, ReactionJson, group_action, is_reply, key_string,
+    load_chat_store, media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
 use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
 use message_csv::format_local_ts;
 use message_ir::{
-    Attachment, ConversationDocument, ExportMeta, IdentityType, Participant, PendingAttachment,
-    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
-    Transport, VendorFields,
+    Attachment, ConversationDocument, ExportMeta, IdentityType, MessageKind, Participant,
+    PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectionHooks,
+    Reaction, SortKeyUnit, Transport, VendorFields,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
@@ -27,6 +27,13 @@ const EXPORT_SOURCE: &str = message_crate_core::Exporter::Whatsapp.source_id();
 const EXPORT_TOOL: &str = "WhatsApp Chat Exporter";
 /// Pinned documented upstream version (JSON convert path; shell-out may differ).
 pub(crate) const EXPORT_TOOL_VERSION: &str = "0.13.0";
+
+/// The extra flag `ingest_chat` sets on a group event the fork gave a text,
+/// which [`WhatsappProjection`] writes as an announcement.
+const IS_ANNOUNCEMENT: &str = "is_announcement";
+/// The extra, and the `source.fields` key, holding the fork's
+/// `group_action_jid`: the id of the member a group event's text names.
+const GROUP_ACTION_JID: &str = "group_action_jid";
 
 /// Inputs for [`convert_export`]: the wtsexporter `result.json` to read,
 /// where to write it, and how.
@@ -247,7 +254,10 @@ fn ingest_chat(
             (chat_id.clone(), chat_name.clone())
         };
 
-        let text = message_text(message);
+        // A group event the fork gives a text is an announcement with that
+        // text; its `data` is the backup's raw row (#2038).
+        let announcement = group_action(message);
+        let text = announcement.map_or_else(|| message_text(message), str::to_string);
         let (attachments, media_source) = match media_path(message) {
             Some(src) => queue_media(
                 src,
@@ -274,6 +284,16 @@ fn ingest_chat(
                     "full_key_id".into(),
                     key_string(message.full_key_id.as_ref()).unwrap_or_default(),
                 );
+                if announcement.is_some() {
+                    e.insert(IS_ANNOUNCEMENT.into(), "true".into());
+                }
+                if let Some(named_member_jid) = message
+                    .group_action_jid
+                    .as_deref()
+                    .and_then(message_ir::trimmed)
+                {
+                    e.insert(GROUP_ACTION_JID.into(), named_member_jid.to_string());
+                }
                 if is_reply(message) {
                     e.insert("is_reply".into(), "true".into());
                 }
@@ -660,6 +680,17 @@ impl ProjectionHooks for WhatsappProjection {
         SortKeyUnit::Milliseconds
     }
 
+    /// [`MessageKind::Announcement`] for a group event with the fork's
+    /// text, which the server marks as an announcement; otherwise the
+    /// default.
+    fn message_kind(&self, message: &PendingMessage) -> MessageKind {
+        if message.extra_flag(IS_ANNOUNCEMENT) {
+            MessageKind::Announcement
+        } else {
+            message_ir::default_message_kind(message)
+        }
+    }
+
     /// Same-millisecond rows fall back to `key_id` so output order is stable.
     fn message_order(&self, a: &PendingMessage, b: &PendingMessage) -> std::cmp::Ordering {
         a.sort_key
@@ -733,7 +764,8 @@ impl ProjectionHooks for WhatsappProjection {
         Some("__whatsapp".into())
     }
 
-    /// The chat's `jid` and the message's `key_id`: raw values the
+    /// The chat's `jid`, the message's `key_id` and, on a group event, the
+    /// `group_action_jid` of the member its text names: raw values the
     /// conversation model has no place for. A reply is not copied here,
     /// because `reply_to` records it on the message. A reply whose quoted
     /// message is not in the export keeps no quoted id: `reply_to` names
@@ -759,6 +791,13 @@ impl ProjectionHooks for WhatsappProjection {
             fields.insert(
                 "key_id".into(),
                 serde_json::Value::String(key_id.to_string()),
+            );
+        }
+        let named_member_jid = message.extra_str(GROUP_ACTION_JID);
+        if !named_member_jid.is_empty() {
+            fields.insert(
+                GROUP_ACTION_JID.into(),
+                serde_json::Value::String(named_member_jid.to_string()),
             );
         }
         VendorFields {

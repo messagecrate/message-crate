@@ -209,14 +209,9 @@ pub trait ProjectionHooks {
         a.sort_key.cmp(&b.sort_key)
     }
 
-    /// Row shape of one message. The default maps attachment-less rows to
-    /// [`MessageKind::Sms`] and the rest to [`MessageKind::Mms`].
+    /// Row shape of one message. The default is [`default_message_kind`].
     fn message_kind(&self, message: &PendingMessage) -> MessageKind {
-        if message.attachments.is_empty() {
-            MessageKind::Sms
-        } else {
-            MessageKind::Mms
-        }
+        default_message_kind(message)
     }
 
     /// Roster written on the document. The default is
@@ -235,6 +230,16 @@ pub trait ProjectionHooks {
     /// On-disk stem suffix (e.g. `__whatsapp`); the default has none.
     fn packaging_stem_suffix(&self, _conversation: &PendingConversation) -> Option<String> {
         None
+    }
+}
+
+/// The default row shape of one message: [`MessageKind::Sms`] for a row
+/// without attachments, [`MessageKind::Mms`] for one with.
+pub fn default_message_kind(message: &PendingMessage) -> MessageKind {
+    if message.attachments.is_empty() {
+        MessageKind::Sms
+    } else {
+        MessageKind::Mms
     }
 }
 

@@ -812,3 +812,72 @@ fn reactions_are_on_the_message_under_the_reactors_id() {
         "iPhone shape: a phone id, a phone id resolved from an @lid id, an unmapped @lid id, no id, and the owner"
     );
 }
+
+/// A group event the fork gives a `group_action` text is an announcement
+/// with that text, sent by the member who acted, and keeps the id the text
+/// names in `source.fields`. One whose `group_action` is `null`, of a kind
+/// the backup does not state, is written as before: a message with its
+/// `data` as its text.
+#[test]
+fn a_group_event_with_a_text_is_an_announcement() {
+    use message_ir::{Direction, MessageKind};
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/group-events.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
+            .expect("parse fixture");
+
+    let (_, documents) = convert_with_owner(&json, Some("+15555550100"));
+    let group = documents
+        .values()
+        .find(|document| document.conversation.group_title.as_deref() == Some("Book club"))
+        .expect("the group");
+    let named_id = |message: &message_ir::Message| {
+        message
+            .source
+            .as_ref()
+            .and_then(|source| source.fields.get("group_action_jid"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+
+    for (text, sender, named) in [
+        (
+            "Ada Example joined the group",
+            "+15555550133",
+            "15555550133@s.whatsapp.net",
+        ),
+        (
+            "Cy Example changed the group name to Book club.",
+            "+15555550155",
+            "15555550155@s.whatsapp.net",
+        ),
+        (
+            "Ben Example left the group",
+            "+15555550144",
+            "15555550144@s.whatsapp.net",
+        ),
+    ] {
+        let message = message_of(group, text);
+        assert_eq!(message.message_kind, MessageKind::Announcement, "{text}");
+        assert_eq!(message.direction, Direction::Incoming, "{text}");
+        assert_eq!(message.sender_identity.as_deref(), Some(sender), "{text}");
+        assert_eq!(named_id(message).as_deref(), Some(named), "{text}");
+    }
+
+    let by_owner = message_of(group, "You changed the group name to Reading club.");
+    assert_eq!(by_owner.message_kind, MessageKind::Announcement);
+    assert_eq!(by_owner.direction, Direction::Outgoing);
+    assert_eq!(
+        named_id(by_owner),
+        None,
+        "the fork names no id for the owner"
+    );
+
+    for text in ["Welcome, Ada", "An event the backup does not state"] {
+        let message = message_of(group, text);
+        assert_eq!(message.message_kind, MessageKind::Sms, "{text}");
+        assert_eq!(named_id(message), None, "{text}");
+    }
+    assert_eq!(group.messages.len(), 6);
+}

@@ -63,9 +63,15 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **Reactions / tapbacks** | no | no | no | no | each message's `reactions`, the reactor by display name only | each message's `reactions` (`reactions_json` in CSV), each under the reactor's WhatsApp id | each message's `reactions` (`reactions_json` in CSV) |
 | **Deleted in the source app / Unsent** | no | no | no | no | each message's `deletion`, Deleted in the source app only | no | each message's `deletion` (`deletion` in CSV) |
 | **Edits / replies** | no | no | no | no | one earlier version in `edits` with its time and no text / each message's `reply_to`, linked by the quoted date within the conversation | each message's `reply_to` (`is_reply` / `reply_to_guid` in CSV) | each message's earlier versions in `edits` (`earlier_versions_json` in CSV) / each message's `reply_to` (`is_reply` / `reply_to_guid` / `reply_to_part` in CSV) |
-| **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` (in `source_fields_json`) | `parts_json`, `app_json`, … |
+| **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` / `group_action_jid` (in `source_fields_json`) | `parts_json`, `app_json`, … |
 | **Timezone** | XML/PDU epoch | XML epoch | EML dates | vendor `Date` | naive, zone from the Import form | epoch from wtsexporter | DB epoch + offset |
 | **Skip diagnostics** | `skipped_*.csv` (invalid address, empty PDU, no party) plus run summary counters | run summary counters | run summary counters | unresolved phone count | run summary counters | run summary counters | run summary counters |
+
+### WhatsApp group events
+
+A group event (a member joined or left, the group was renamed or its picture changed) carries the text the fork of WhatsApp Chat Exporter writes in `group_action`, such as "Ada joined the group". The converter writes such a message with `message_kind` `announcement` and that text as its `text`, the shape an Apple Messages group announcement takes, so the server marks it as an announcement.
+
+Its sender is the member who acted, by the same rules as any group message's sender. `group_action_jid`, the id of the member the text names, is kept in `source.fields`. The fork writes `group_action` only for the kinds of event the backup states, and `null` for any other kind. An event of another kind has no `group_action` text. It is written as any other message, with its text built from `data` and `caption` as for any message.
 
 Discord, Signal, Telegram, and Slack are recognized services in the shared model (each a value of `Transport`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
 

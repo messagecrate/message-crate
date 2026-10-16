@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **A WhatsApp group event shows in the conversation.** When a
+  member joined or left a group, or someone renamed it or changed its
+  picture, the conversation now shows a line saying so, such as "Ada joined
+  the group", as it does for an Apple Messages group. An event of a kind the
+  backup does not state is imported as before, without that line (#2038).
 - 2026-10-15: **The Import form says when a disk it writes to is low.** When
   the disk that holds the Staging Directory or the Scratch Directory has less
   than 10 GB free, the form names the disk, the directory and the space free

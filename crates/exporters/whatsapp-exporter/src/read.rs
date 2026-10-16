@@ -168,6 +168,19 @@ pub(crate) struct MessageJson {
     /// The name the sender typed into their own WhatsApp profile.
     #[serde(default)]
     pub sender_push_name: ForkField<String>,
+    /// On a group event (a member joined or left, the group was renamed or
+    /// its picture changed), the fork's text of it, such as "Ada joined the
+    /// group". `null` on every other message, and on an event of a kind the
+    /// backup does not state, because the fork guesses none. Absent from a
+    /// JSON that upstream WhatsApp Chat Exporter wrote: only the fork writes
+    /// it, from release `0.13.0-mc.2`.
+    #[serde(default)]
+    pub group_action: Option<String>,
+    /// The id of the member [`Self::group_action`] names, resolved as
+    /// [`Self::sender_jid`] is. `null` where `group_action` is, when the
+    /// owner of the phone acted, and when the text names no member.
+    #[serde(default)]
+    pub group_action_jid: Option<String>,
 }
 
 impl MessageJson {
@@ -288,6 +301,15 @@ pub(crate) fn key_string(value: Option<&Value>) -> Option<String> {
 pub(crate) fn is_reply(message: &MessageJson) -> bool {
     key_string(message.reply.as_ref()).is_some()
         || key_string(message.reply_key_id.as_ref()).is_some()
+}
+
+/// The fork's text of a group event, or `None` when the message is not
+/// one or the backup does not state what the event was.
+pub(crate) fn group_action(message: &MessageJson) -> Option<&str> {
+    message
+        .group_action
+        .as_deref()
+        .and_then(message_ir::trimmed)
 }
 
 /// Path hint for an attachment.

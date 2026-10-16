@@ -36,8 +36,8 @@ pub use identity::{
 };
 pub use projection::{
     PendingReply, ProjectedRole, Projection, ProjectionHooks, ProjectionTally, SortKeyUnit,
-    default_participants, display_names_for_handles, ensure_conversation, message_time,
-    pending_to_document, prepare_conversation, project_pending,
+    default_message_kind, default_participants, display_names_for_handles, ensure_conversation,
+    message_time, pending_to_document, prepare_conversation, project_pending,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,

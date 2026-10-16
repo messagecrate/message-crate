@@ -110,5 +110,7 @@ When the backup doesn't hold it, Import uses **WhatsApp phone number** under **P
 - Status updates aren't imported, because a Status is a post to many people that expires after 24 hours, not a conversation. The run summary counts them, as in `Skipped 4 status updates`. A reply to someone's Status is a message in the one-to-one conversation with that person and is imported.
 - A quoted reply is linked to the message it quotes only when that message is in the same conversation of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message.
 - Channel posts aren't imported, because a Channel is a one-way feed from a publisher that nobody can write back to. The run summary counts them, as in `Skipped 3 channel posts`.
+- A group event, such as a member joining or leaving or the group being renamed, is imported as a line in the conversation that says what happened, as in "Ada joined the group". `wtsexporter` writes that line only for the kinds of event the backup states, and an event of any other kind is imported without it.
+- A poll is imported as the message it is, without its question and options, because `wtsexporter` doesn't read them from the backup.
 
 The run itself is the same as in [Import your backup](/docs/user/your-messages/import-your-backup/#start-the-import).
