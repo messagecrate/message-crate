@@ -193,11 +193,7 @@ fn pending_from_parsed(
     PendingMessage {
         sort_key: message.timestamp_secs as i64,
         is_from_me: message.is_from_me,
-        sender: ir::Sender {
-            identity: message.sender.map(Handle::into_key),
-            display_name: message.name_alias,
-            country: None,
-        },
+        sender: ir::Sender::new(message.sender.map(Handle::into_key), message.name_alias),
         text: message.text,
         attachments: pending_atts,
         extra: {

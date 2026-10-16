@@ -319,7 +319,9 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             let (timestamp_unix_ms, precision) = message_time(message, unit);
             Prepared {
                 sender: message
-                    .sender_identity()
+                    .sender
+                    .identity
+                    .as_deref()
                     .map(|identity| hooks.normalize_handle(identity)),
                 timestamp_unix_ms,
                 precision,
@@ -482,7 +484,7 @@ pub fn display_names_for_handles(
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for message in &conversation.messages {
-        if let Some(identity) = message.sender_identity() {
+        if let Some(identity) = message.sender.identity.as_deref() {
             let handle = normalize_handle(identity);
             if let Some(name) = message
                 .sender

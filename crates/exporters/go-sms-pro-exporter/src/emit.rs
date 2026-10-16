@@ -180,11 +180,10 @@ fn add_xml_messages(
         conversation.messages.push(PendingMessage {
             sort_key: message.timestamp_secs as i64,
             is_from_me: message.is_from_me,
-            sender: ir::Sender {
-                identity: (!message.is_from_me).then(|| message.other.into_key()),
-                display_name: message.name_alias.clone(),
-                country: None,
-            },
+            sender: ir::Sender::new(
+                (!message.is_from_me).then(|| message.other.into_key()),
+                message.name_alias.clone(),
+            ),
             text: message.text,
             attachments: Vec::new(),
             extra: {
@@ -354,11 +353,7 @@ fn pdu_pending_message(
     PendingMessage {
         sort_key: parsed.timestamp,
         is_from_me: parsed.is_sent,
-        sender: ir::Sender {
-            identity,
-            display_name: None,
-            country: None,
-        },
+        sender: ir::Sender::new(identity, None),
         text: parsed.body,
         attachments,
         extra,

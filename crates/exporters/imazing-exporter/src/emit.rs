@@ -654,11 +654,7 @@ impl Ingest {
         Some(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender: ir::Sender {
-                identity: (!sender_identity.is_empty()).then_some(sender_identity),
-                display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
-                country: None,
-            },
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text.clone(),
             attachments,
             extra,

@@ -525,6 +525,19 @@ pub struct Sender {
     pub country: Option<String>,
 }
 
+impl Sender {
+    /// The sender a source names by identity and display name, with no
+    /// country. An empty identity or name is none.
+    pub fn new(identity: Option<String>, display_name: Option<String>) -> Self {
+        let given = |value: Option<String>| value.filter(|value| !value.is_empty());
+        Self {
+            identity: given(identity),
+            display_name: given(display_name),
+            country: None,
+        }
+    }
+}
+
 /// One message in a conversation: sender, body text, and attachments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -909,9 +922,9 @@ pub struct PendingMessage {
     pub sort_key: i64,
     /// Whether the owner sent the message.
     pub is_from_me: bool,
-    /// Who sent the message, as the source names them. The projection
-    /// gives an outgoing message the owner as its sender, so an exporter
-    /// leaves this empty for one.
+    /// Who sent the message, as the source names them, built with
+    /// [`Sender::new`]. The projection gives an outgoing message the owner
+    /// as its sender and ignores this for one.
     pub sender: Sender,
     /// Plain-text body; never includes attachment data.
     pub text: String,
@@ -922,15 +935,6 @@ pub struct PendingMessage {
 }
 
 impl PendingMessage {
-    /// The sender's identity, or `None` when the source names none or an
-    /// empty one.
-    pub fn sender_identity(&self) -> Option<&str> {
-        self.sender
-            .identity
-            .as_deref()
-            .filter(|identity| !identity.is_empty())
-    }
-
     /// Read an exporter-specific string field from [`Self::extra`].
     pub fn extra_str(&self, key: &str) -> &str {
         self.extra.get(key).map_or("", String::as_str)

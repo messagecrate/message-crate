@@ -251,17 +251,9 @@ fn ingest_chat(
                 .map(|(identity, _)| identity.clone());
             let display_name = sender.name.clone();
             roster.add(sender);
-            ir::Sender {
-                identity,
-                display_name,
-                country: None,
-            }
+            ir::Sender::new(identity, display_name)
         } else {
-            ir::Sender {
-                identity: Some(chat_id.clone()),
-                display_name: chat_name.clone(),
-                country: None,
-            }
+            ir::Sender::new(Some(chat_id.clone()), chat_name.clone())
         };
 
         // A group event the fork gives a text is an announcement with that

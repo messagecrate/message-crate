@@ -465,11 +465,10 @@ fn add_record(
         // extra (`ir::message_time`).
         sort_key: record.timestamp_secs as i64,
         is_from_me: record.is_from_me,
-        sender: ir::Sender {
-            identity: record.sender.map(Handle::into_key),
-            display_name: record.sender_display_name,
-            country: None,
-        },
+        sender: ir::Sender::new(
+            record.sender.map(Handle::into_key),
+            record.sender_display_name,
+        ),
         text: record.text,
         attachments,
         extra,
@@ -502,7 +501,9 @@ impl SbrProjection<'_> {
         let mut names = HashMap::new();
         for message in &conversation.messages {
             if let Some((identity, name)) = message
-                .sender_identity()
+                .sender
+                .identity
+                .as_deref()
                 .zip(message.sender.display_name.as_deref().and_then(ir::trimmed))
             {
                 names
