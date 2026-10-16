@@ -27,11 +27,14 @@ export async function invokeStartImportRunLog(
 }
 
 /** Who is asking for the logs on this computer. */
-export interface RunLogReader {
+export interface LogReader {
   /** The id of the Message Crate the window is signed in to. */
   messageCrateId: string;
   accountId: number;
-  /** The owner reads every run log; an account only those of its own runs. */
+  /**
+   * The owner reads every log, the desktop app's own included; an account
+   * only those of its own Import Runs.
+   */
   owner: boolean;
 }
 
@@ -62,7 +65,7 @@ export interface LogEntry {
  * The logs on this computer that `reader` may read, newest first: its Import
  * Run logs, and for the owner every one and the desktop app's own.
  */
-export async function invokeListLogs(reader: RunLogReader): Promise<LogEntry[]> {
+export async function invokeListLogs(reader: LogReader): Promise<LogEntry[]> {
   return invoke("list_logs", { reader });
 }
 
@@ -78,7 +81,7 @@ type RunLogLevel = "error" | "warn" | "info";
  * whose id is `after`. The page has the shape the server's log answers.
  */
 export async function invokeReadLogLines(
-  reader: RunLogReader,
+  reader: LogReader,
   name: string,
   query: {
     level?: RunLogLevel;
@@ -91,7 +94,7 @@ export async function invokeReadLogLines(
 }
 
 /** One log whole, byte for byte as it is on disk, for a download. */
-export async function invokeReadLog(reader: RunLogReader, name: string): Promise<ArrayBuffer> {
+export async function invokeReadLog(reader: LogReader, name: string): Promise<ArrayBuffer> {
   return invoke("read_log", { args: { reader, name } });
 }
 

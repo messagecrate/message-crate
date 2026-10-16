@@ -15,9 +15,10 @@
 //! cannot be written there, goes to standard error, which is the one place
 //! left for it.
 //!
-//! A line names only paths inside Message Crate's own directories. Why: the
-//! log is listed for the owner of any Message Crate the app signs in to, and
-//! a backup's path names the person whose phone it is.
+//! A line names only paths inside Message Crate's own directories, and no
+//! phone's name. Why: the log is listed for the owner of any Message Crate
+//! the app signs in to, and a backup's path or a phone's name can name the
+//! person whose phone it is.
 
 use std::fs::File;
 use std::io::Write as _;
@@ -117,7 +118,7 @@ mod tests {
 
     use super::{AppLog, DESKTOP_APP_LOG};
 
-    /// Each line is written in the shared line format, at its level, into
+    /// Each line is written in the shared line format, as a warning, into
     /// `desktop-app.log` in the Logs Directory, which is made for it.
     #[test]
     fn a_line_goes_into_desktop_app_log_in_the_logs_directory() {
@@ -129,7 +130,10 @@ mod tests {
             RunLogLevel::Warn,
             "The server's processes will not end with it",
         );
-        log.write(RunLogLevel::Info, "The desktop app started its server");
+        log.write(
+            RunLogLevel::Warn,
+            "The desktop app could not send the desktop-job:log event to its window",
+        );
 
         assert_eq!(log.path(), logs.join(DESKTOP_APP_LOG));
         assert_eq!(
@@ -140,8 +144,9 @@ mod tests {
                     "The server's processes will not end with it".to_string()
                 ),
                 (
-                    RunLogLevel::Info,
-                    "The desktop app started its server".to_string()
+                    RunLogLevel::Warn,
+                    "The desktop app could not send the desktop-job:log event to its window"
+                        .to_string()
                 ),
             ]
         );

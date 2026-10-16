@@ -7,7 +7,7 @@ import {
   SERVER_LOG,
   UNREADABLE_RUN_LOG,
   useDesktopLogs,
-  useRunLogReader,
+  useLogReader,
   useServerLogDownloads,
 } from "../../components/logs/logSource";
 import Select, {
@@ -40,7 +40,7 @@ const LOG_HINTS: Record<LogEntry["kind"], string> = {
 
 /** The picker's key for a log on this computer. */
 function logKey(name: string): string {
-  return `run:${name}`;
+  return `log:${name}`;
 }
 
 /**
@@ -67,7 +67,7 @@ function runLogLabel(log: LogEntry, usernames: ReadonlyMap<number, string>): str
  */
 export function OwnerLogsPanel() {
   const [picked, setPicked] = useState(SERVER_KEY);
-  const reader = useRunLogReader();
+  const reader = useLogReader();
   const onComputer = useDesktopLogs(reader);
   const { accounts } = useOwnerAccounts();
   const usernames = new Map(accounts.map((account) => [account.account_id, account.username]));

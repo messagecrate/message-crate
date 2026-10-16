@@ -234,15 +234,13 @@ pub struct RunLog {
 
 impl RunLog {
     /// The log of the run whose directory is `run_dir`, in `logs_dir`,
-    /// opened to add to it. The Logs Directory is made, or kept, readable by
-    /// the user alone ([`file_io::restrict_to_owner`]), because a run's log
-    /// names the phone numbers and email addresses in its file names (#2097).
+    /// opened to add to it through [`open_in_logs_directory`].
     pub fn open(logs_dir: &Path, run_dir: &Path) -> Self {
-        let opened = open_in_logs_directory(logs_dir, &import_run_log(logs_dir, run_dir)).ok();
-        let (file, not_tightened) = match opened {
-            Some((file, not_tightened)) => (Some(Arc::new(Mutex::new(file))), not_tightened),
-            None => (None, None),
-        };
+        let (file, not_tightened) =
+            match open_in_logs_directory(logs_dir, &import_run_log(logs_dir, run_dir)) {
+                Ok((file, not_tightened)) => (Some(Arc::new(Mutex::new(file))), not_tightened),
+                Err(_) => (None, None),
+            };
         let log = Self { file };
         if let Some(error) = not_tightened {
             log.warn(&not_tightened_line(logs_dir, &error));

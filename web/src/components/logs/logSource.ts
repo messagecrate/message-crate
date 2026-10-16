@@ -4,9 +4,9 @@ import {
   invokeReadLog,
   invokeReadLogLines,
   type LogEntry,
-  type RunLogReader,
+  type LogReader,
 } from "../../lib/desktop/runLog";
-import { canReadImportRunLogs } from "../../lib/desktopFeatures";
+import { canReadDesktopLogs } from "../../lib/desktopFeatures";
 import { useRouteQuery } from "../../lib/routeQuery";
 import {
   getServerLogFile,
@@ -61,9 +61,9 @@ export const SERVER_LOG: LogSource = {
  * One log in this computer's Logs Directory, an Import Run's or the desktop
  * app's own, read by `reader` through the desktop app.
  */
-export function desktopLogSource(reader: RunLogReader, name: string): LogSource {
+export function desktopLogSource(reader: LogReader, name: string): LogSource {
   return {
-    key: ["logs", "run", reader.messageCrateId, reader.owner, name],
+    key: ["logs", "desktop", "lines", reader.messageCrateId, reader.owner, name],
     // The desktop app cannot cancel the read, so the signal goes unused.
     readLines: (request) => invokeReadLogLines(reader, name, request),
   };
@@ -77,7 +77,7 @@ export const UNREADABLE_RUN_LOG =
   "This log was written before its lines carried a time and a level, so it cannot be shown here. Download it to read it.";
 
 /** The download of one log in this computer's Logs Directory, whole, under its own name. */
-export function desktopLogDownload(reader: RunLogReader, name: string): LogDownload {
+export function desktopLogDownload(reader: LogReader, name: string): LogDownload {
   return { name, read: () => invokeReadLog(reader, name) };
 }
 
@@ -99,17 +99,18 @@ export function useServerLogDownloads(): { downloads: LogDownload[]; error: Erro
 }
 
 /**
- * Who reads the Import Run logs on this computer: the signed-in account on
- * the Message Crate it is signed in to, and whether it is the owner, who reads
- * every one. Null in a browser, where no run log is, and before the profile
- * says whether the account is the owner and the server says its id.
+ * Who reads the logs in this computer's Logs Directory: the signed-in
+ * account on the Message Crate it is signed in to, and whether it is the
+ * owner, who reads every one, the desktop app's own included. Null in a
+ * browser, where none is, and before the profile says whether the account
+ * is the owner and the server says its id.
  */
-export function useRunLogReader(): RunLogReader | null {
+export function useLogReader(): LogReader | null {
   const { accountId } = useAuth();
   const { isOwner, loading } = useIsOwner();
   const server = useServerInfo();
   const messageCrateId = server.data?.id;
-  if (!canReadImportRunLogs(isTauri()) || accountId === null || loading || !messageCrateId) {
+  if (!canReadDesktopLogs(isTauri()) || accountId === null || loading || !messageCrateId) {
     return null;
   }
   return { messageCrateId, accountId, owner: isOwner };
@@ -120,13 +121,13 @@ export function useRunLogReader(): RunLogReader | null {
  * first: its Import Run logs, and for the owner every one and the desktop
  * app's own.
  */
-export function useDesktopLogs(reader: RunLogReader | null): {
+export function useDesktopLogs(reader: LogReader | null): {
   logs: LogEntry[];
   loading: boolean;
   error: Error | null;
 } {
   const listing = useRouteQuery(
-    ["logs", "runs", reader?.messageCrateId, reader?.owner],
+    ["logs", "desktop", "list", reader?.messageCrateId, reader?.owner],
     () => (reader ? invokeListLogs(reader) : Promise.resolve([])),
     { enabled: reader !== null },
   );
