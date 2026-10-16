@@ -4,7 +4,7 @@
 
 use anyhow::Result as AnyResult;
 use chrono::{DateTime, Utc};
-use message_ir::IdentityService;
+use ir::IdentityService;
 use sqlx::SqliteConnection;
 
 use super::{

@@ -9,8 +9,8 @@ statement is on [What Message Crate is](../src/content/docs/docs/user/try/what-i
 Message Crate sends no telemetry, crash reports, or usage data. Exactly two
 outbound connections exist, both from the desktop app:
 
-- **The Message Crate server the app uses.** The desktop app, `message-crate-import`,
-  and `message-crate-export` talk to the server address they are given and to
+- **The Message Crate server the app uses.** The desktop app, `import`,
+  and `export` talk to the server address they are given and to
   no other host.
 - **GitHub, for the Tools Directory.** `src-tauri/src/tool_downloads.rs`
   downloads ffmpeg, ffprobe, and wtsexporter from `GITHUB`

@@ -11,19 +11,17 @@ use crate::read::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use android_fields::android_vendor_fields;
 use anyhow::{Result, bail};
+use ir::{
+    ConversationDocument, ConversationType, Direction, ExportMeta, PendingAttachment,
+    PendingConversation, PendingMessage, ProjectionHooks, Transport, VendorFields,
+};
 use message_crate_core::{
     CancelFlag, Canceled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
     RunIssueKind, count_of, prepare_outputs, project_conversation,
 };
-use message_ir::{
-    ConversationDocument, ConversationType, Direction, ExportMeta, PendingAttachment,
-    PendingConversation, PendingMessage, ProjectionHooks, Transport, VendorFields,
-};
-use message_staging::{
-    AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup,
-};
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
+use staging::{AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -245,7 +243,7 @@ fn add_message(
         .push(pending_from_parsed(message, pending_atts));
 }
 
-/// SMS Backup+ deltas of the shared [`message_ir::pending_to_document`] projection.
+/// SMS Backup+ deltas of the shared [`ir::pending_to_document`] projection.
 struct SbpProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -433,7 +431,7 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
 /// write the chosen output format.
 ///
 /// Copies of one message, such as two exports of one mailbox, are reduced to
-/// one by the shared projection (`message_ir::one_copy_per_message`).
+/// one by the shared projection (`ir::one_copy_per_message`).
 /// Cancellation is checked during the EML walk, while merging parse
 /// results, and between conversations.
 ///
@@ -790,9 +788,9 @@ impl<'a> EmlIngest<'a> {
 mod tests {
     use super::*;
     use crate::types::AttachmentBytes;
+    use ir::{ConversationMeta, ConversationStats, Message, MessageKind, SCHEMA_VERSION};
     use message_crate_core::ProgressSink;
-    use message_ir::{ConversationMeta, ConversationStats, Message, MessageKind, SCHEMA_VERSION};
-    use message_staging::AttachmentSource;
+    use staging::AttachmentSource;
 
     /// The verbose list of Import Errors is what the run went on without, so
     /// every line of it is at `WARN` (#2047).
@@ -898,7 +896,7 @@ mod tests {
             messages: vec![Message {
                 guid: "g".into(),
                 timestamp_unix_ms: 0,
-                time_precision: message_ir::TimePrecision::Milliseconds,
+                time_precision: ir::TimePrecision::Milliseconds,
                 direction: Direction::Incoming,
                 service: Transport::Sms,
                 message_kind: MessageKind::Mms,
@@ -919,10 +917,10 @@ mod tests {
             }],
             packaging_stem_suffix: None,
         };
-        report.attachments_saved += message_staging::CountedAttachments::new(
+        report.attachments_saved += staging::CountedAttachments::new(
             document.messages.iter_mut(),
             message_crate_core::AttachmentFiles::Originals,
-            message_staging::PathSources::OnDisk,
+            staging::PathSources::OnDisk,
             |att| {
                 spool
                     .source(att)
@@ -932,7 +930,7 @@ mod tests {
         )
         .stage(
             &att_dir,
-            message_staging::load_attachment_source,
+            staging::load_attachment_source,
             message_crate_core::Sinks {
                 log: &LogSink::none(),
                 progress: &ProgressSink::none(),

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Context, Result, bail};
 use demo_seed::DemoSize;
 use demo_seed::bundle::{DemoSeed, IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE, read_seed_toml};
-use message_ir::IdentityType;
+use ir::IdentityType;
 use sqlx::SqlitePool;
 
 use super::{DEMO_ACCOUNT_ID, console};
@@ -26,7 +26,7 @@ use crate::imports_api::pipeline::{self, FixedImportArgs, ImportOptions};
 use crate::open_db::OpenDb;
 use crate::process_assets::{self, ProcessAssetsOptions};
 use crate::progress::Progress;
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 
 pub(super) struct PreparedBundle {
     pub(super) seed: DemoSeed,
@@ -465,10 +465,10 @@ impl BuildRun {
 }
 
 /// The most JSONL a build imports in one transaction: what an Upload sends
-/// in one request, [`message_crate_api_types::MAX_IMPORT_BATCH_BYTES`].
+/// in one request, [`api_types::MAX_IMPORT_BATCH_BYTES`].
 /// Every other write on the server waits for the transaction, so it waits
 /// for one batch at most.
-pub(super) const IMPORT_BATCH_BYTES: u64 = message_crate_api_types::MAX_IMPORT_BATCH_BYTES as u64;
+pub(super) const IMPORT_BATCH_BYTES: u64 = api_types::MAX_IMPORT_BATCH_BYTES as u64;
 
 /// Group `paths`, in order, into batches whose sizes add up to `limit` bytes
 /// or less. A file larger than `limit` is a batch of its own, because a

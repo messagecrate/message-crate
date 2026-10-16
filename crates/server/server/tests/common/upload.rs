@@ -31,19 +31,19 @@ pub async fn upload(base: &str, token: &str, source: &str, input: PathBuf) {
     assert_eq!(status, StatusCode::CREATED, "{started}");
     let import_id = started["id"].as_i64().unwrap();
 
-    let config = message_crate_import::ImportConfig {
+    let config = import::ImportConfig {
         input,
         base_url: base.to_string(),
         token: token.to_string(),
-        mode: message_crate_import::ImportMode::Append,
+        mode: import::ImportMode::Append,
         force: false,
         max_retries: 0,
-        batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
-        asset_upload_workers: message_crate_import::DEFAULT_ASSET_UPLOAD_WORKERS,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
+        batch_size: import::NO_MESSAGE_COUNT_LIMIT,
+        asset_upload_workers: import::DEFAULT_ASSET_UPLOAD_WORKERS,
+        prepare_ahead: import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: import::DEFAULT_PREPARE_WORKERS,
         asset_multipart_threshold: 5 * 1024 * 1024,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
+        asset_max_bytes: import::DEFAULT_ASSET_MAX_BYTES,
         log_path: None,
         cancel: Default::default(),
         import_id,
@@ -51,7 +51,7 @@ pub async fn upload(base: &str, token: &str, source: &str, input: PathBuf) {
     // tokio's own call: `request_id::spawn_blocking_in_current_span` is the
     // server crate's own, and a test under `tests/` cannot call it.
     #[allow(clippy::disallowed_methods)]
-    let report = tokio::task::spawn_blocking(move || message_crate_import::run(&config, None))
+    let report = tokio::task::spawn_blocking(move || import::run(&config, None))
         .await
         .unwrap()
         .unwrap();

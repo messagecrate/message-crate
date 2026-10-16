@@ -45,7 +45,7 @@ const OWNER_HIDDEN_TABS: readonly SettingsTab[] = ["storage", "system", "convert
 /**
  * Tabs this person can open, in display order.
  *
- * - Convert is a desktop-only tool: it runs `message-reexport` in the desktop
+ * - Convert is a desktop-only tool: it runs `reexport` in the desktop
  *   process, so a browser visiting the website never sees it.
  * - An account the owner opened from User Accounts has the tabs that
  *   are the account's. The device tabs would change the owner's own browser,

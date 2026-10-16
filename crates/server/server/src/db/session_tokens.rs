@@ -2,8 +2,8 @@
 //! Opening and ending a Session writes its entries in the Audit Trail.
 
 use anyhow::{Context, Result, bail};
+pub use api_types::AppKind;
 use chrono::{DateTime, Utc};
-pub use message_crate_api_types::AppKind;
 use rand::TryRng;
 use sqlx::SqliteConnection;
 

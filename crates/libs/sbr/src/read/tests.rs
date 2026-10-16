@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::IdentityType;
+use ir::IdentityType;
 
 #[test]
 fn group_mms_without_from_has_no_sender() {

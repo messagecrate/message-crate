@@ -27,7 +27,7 @@ function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedRe
 }
 
 /** `n` Upload issues for attachments the plan flagged as too big to upload —
- * the `"{conversationFile}:{relativePath}"` shape `message-crate-import` actually
+ * the `"{conversationFile}:{relativePath}"` shape `import` actually
  * emits (`AttachmentSkip`, built in `crates/libs/import/src/prepare.rs`), not
  * a bare path. */
 function tooLargeIssues(n: number): ImportIssue[] {

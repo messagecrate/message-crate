@@ -1,9 +1,9 @@
-//! The records an import reads from a conversation file: message-ir JSONL
+//! The records an import reads from a conversation file: JSONL
 //! mapped to the rows staging writes, and `parse_ir_lines`, which reads them.
 
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
-use message_ir::{
+use ir::{
     Attachment, ConversationHeader, Deletion, Direction, EarlierVersion, IdentityService,
     IdentityType, Message, MessageKind, Participant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
@@ -222,7 +222,7 @@ pub fn clean_body(text: Option<&str>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Parse message-ir JSONL lines into import records.
+/// Parse JSONL conversation file lines into import records.
 ///
 /// Accepts one or more concatenated conversations (each: header line, then
 /// message lines). Upload clients batch multiple conversations this way.

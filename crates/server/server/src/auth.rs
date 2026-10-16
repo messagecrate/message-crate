@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Context;
+use api_types::{APP_HEADER, APP_VERSION_HEADER};
 use axum::extract::FromRef;
 use axum::http::{HeaderMap, header};
-use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::api_error::ApiError;

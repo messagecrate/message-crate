@@ -32,7 +32,7 @@ const REL_VIDEO: &str = "attachments/placeholder.mp4";
 const REL_OTHER: &str = "attachments/placeholder.bin";
 
 /// The three files an obfuscated export ships in place of its real media,
-/// as (path under the output directory, bytes). `message-ir-format` writes
+/// as (path under the output directory, bytes). `ir-format` writes
 /// them, since it owns the output directory and the check that an export
 /// wrote it.
 pub const PLACEHOLDER_FILES: [(&str, &[u8]); 3] = [

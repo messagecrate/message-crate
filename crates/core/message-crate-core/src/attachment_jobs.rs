@@ -8,7 +8,7 @@ use crate::process::{Canceled, LogSink, Sinks};
 use crate::progress::{ProgressEvent, ProgressSink};
 use anyhow::Context as _;
 use file_io::sha256_hex;
-use message_ir::{Attachment, ConversationDocument, Message, missing_reason};
+use ir::{Attachment, ConversationDocument, Message, missing_reason};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -204,7 +204,7 @@ pub fn run_attachment_jobs(
 ///
 /// Each job's `size_hint` goes into the progress totals as it is. A run
 /// leaves every attachment known to have no file out of those totals from
-/// the start by giving it no hint, which `message-staging`'s
+/// the start by giving it no hint, which `staging`'s
 /// `CountedAttachments` does for every caller.
 ///
 /// # Errors

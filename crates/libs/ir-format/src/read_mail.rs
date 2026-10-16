@@ -1,12 +1,12 @@
 //! Read an EML directory or mboxrd mailbox back into a [`ConversationDocument`].
 
 use anyhow::{Context, Result, bail};
-use mail::{MailMessage, mail_message_from_eml_bytes, mail_messages_from_mbox};
-use message_crate_core::discover_files;
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
     ExportMeta, Message, Participant, SCHEMA_VERSION, nonempty,
 };
+use mail::{MailMessage, mail_message_from_eml_bytes, mail_messages_from_mbox};
+use message_crate_core::discover_files;
 use std::fs;
 use std::path::Path;
 

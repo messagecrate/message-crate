@@ -10,7 +10,7 @@ chrono = { workspace = true }
 mail-builder = { workspace = true }
 mailparse = { workspace = true }
 media = { path = "../media" }
-message-ir = { path = "../ir" }
+ir = { path = "../ir" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

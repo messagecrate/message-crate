@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::IdentityType;
+use ir::IdentityType;
 
 #[test]
 fn parses_flat_received() {
@@ -647,10 +647,7 @@ fn a_mail_that_names_nobody_is_kept_in_the_conversation_that_names_nobody() {
             &["5555550100"],
         )
         .unwrap_or_else(|| panic!("type {typ}: skipped"));
-        assert_eq!(
-            crate::identity::chat_id_for(&message),
-            message_ir::NAMELESS_CHAT_ID
-        );
+        assert_eq!(crate::identity::chat_id_for(&message), ir::NAMELESS_CHAT_ID);
         assert!(
             message.participants.is_empty(),
             "{:?}",

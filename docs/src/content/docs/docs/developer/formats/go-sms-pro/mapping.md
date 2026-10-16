@@ -5,7 +5,7 @@ description: "How GO SMS Pro XML and PDU fields become the shared conversation s
 
 How `gosms_sys*.xml` `<SMS>` elements and `I_*.pdu` / `S_*.pdu` MMS files become shared `ConversationDocument` values, including validation, skipped records, and retained source data.
 
-Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/) and [`message_ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs).
+Shared model: [the common message](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/) and [`ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs).
 
 ## Goal / non-goal
 
@@ -14,7 +14,7 @@ Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV pr
 
 ## Pipeline / output
 
-Source XML/PDU → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs).
+Source XML/PDU → `ConversationDocument` → [`ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs).
 
 The desktop app's Import screen runs this exporter and always writes JSON Lines, one file per conversation, because Import reads conversation files in that form (`src-tauri/src/commands/extract.rs`).
 Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.

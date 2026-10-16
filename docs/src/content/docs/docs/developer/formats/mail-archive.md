@@ -5,7 +5,7 @@ description: "EML and MBOX layout and X-ME headers used when Message Crate write
 
 Design for a human-viewable export: **one directory per conversation**, **one `.eml` per message**, with structured `X-ME-*` headers for machine fidelity. Intended as an archive / interchange path. Mail clients can open individual messages; translators can recover SMS, group MMS, and (later) iMessage semantics without relying on CSV.
 
-**Status:** Writer in [`mail`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/mail/). Every exporter's output can be rewritten as EML or MBOX through [Convert](/docs/developer/formats/convert/). All exporters (including iMessage via [`imessage-ir-exporter`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/imessage-ir-exporter/)) go backup → [shared conversation structure](/docs/developer/reference/export-structure/) ([`message-ir`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/)) → output format (see [message-ir architecture](/docs/developer/architecture/common-message/)). JSON is the default format. iMessage writes extension headers; handwriting attaches SVG. See also [CSV columns](/docs/developer/reference/csv-columns/).
+**Status:** Writer in [`mail`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/mail/). Every exporter's output can be rewritten as EML or MBOX through [Convert](/docs/developer/formats/convert/). All exporters (including iMessage via [`imessage-ir-exporter`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/imessage-ir-exporter/)) go backup → [shared conversation structure](/docs/developer/reference/export-structure/) ([`ir`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/)) → output format (see [common message architecture](/docs/developer/architecture/common-message/)). JSON is the default format. iMessage writes extension headers; handwriting attaches SVG. See also [CSV columns](/docs/developer/reference/csv-columns/).
 
 ## Goals
 
@@ -33,7 +33,7 @@ output/
     ...
 ```
 
-- **Conversation stem:** same rules as CSV filenames from [`message_ir_format::filename_stem`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/naming.rs), without the `.csv` suffix (e.g. `+15555550101`, `Family_Chat`, `group_+A_+B`).
+- **Conversation stem:** same rules as CSV filenames from [`ir_format::filename_stem`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/naming.rs), without the `.csv` suffix (e.g. `+15555550101`, `Family_Chat`, `group_+A_+B`).
 - **Sequence prefix:** zero-padded decimal in chronological emit order so file browsers sort stably.
 - **Timestamp in name:** local wall-clock of the message for skimming (authoritative time is still `Date` / `X-ME-Timestamp-Unix-Ms`).
 - **`guid8`:** first 8 hex chars of `X-ME-Guid` (or Message-ID local-part hash) to avoid collisions when two messages share a second.
@@ -113,7 +113,7 @@ Browse-oriented so mail-client **Correspondents** / Subject columns stay readabl
 
 Empty owner identity falls back to `me@sms.local` with display name `Me`. Outgoing rows set `X-ME-Sender-*` from owner identity (same as common message / CSV). Owner is always mirrored in `X-ME-Owner-*` when known.
 
-Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-format`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/) (`read_conversation_eml_dir` / `read_conversation_mbox`).
+Reverse import (EML/MBOX → common-message JSON) is available via [`ir-format`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/) (`read_conversation_eml_dir` / `read_conversation_mbox`).
 
 ## Core `X-ME-*` headers (SMS / MMS / shared)
 
@@ -224,7 +224,7 @@ Media is transformed then embedded; FormatSink removes the staged `attachments/`
 
 ## iMessage extension
 
-Align with the unified CSV inventory in [`message_ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Apple-only cells are empty for SMS rows.
+Align with the unified CSV inventory in [`ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Apple-only cells are empty for SMS rows.
 
 ### Threading (replies)
 

@@ -4,7 +4,7 @@
 //! Calls are blocking so they can run on worker threads without an async
 //! runtime. The session type is [`message_crate_http::HttpSession`].
 //!
-//! The shapes are `message-crate-api-types`, the same definitions the server
+//! The shapes are `api-types`, the same definitions the server
 //! serializes from. This file used to mirror them by hand, and three defects
 //! shipped because the mirror and the server drifted apart with nothing to
 //! notice.
@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 use crate::part_file::write_asset;
 
-use message_crate_api_types::{CompleteExportStatus, ExportRun, ExportScope, Message, Page};
+use api_types::{CompleteExportStatus, ExportRun, ExportScope, Message, Page};
 
 pub use message_crate_http::HttpSession;
 
@@ -524,13 +524,13 @@ mod tests {
         .unwrap();
 
         failed.assert();
-        assert_eq!(run.status, message_crate_api_types::ExportStatus::Failed);
+        assert_eq!(run.status, api_types::ExportStatus::Failed);
     }
 
     #[test]
     fn the_create_body_carries_the_scope_as_given_and_the_tool() {
         let scope = ExportScope::Query {
-            list: message_crate_api_types::ExportQueryList::Conversations,
+            list: api_types::ExportQueryList::Conversations,
             q: "from:me".into(),
         };
         let body = serde_json::to_value(CreateExportBody {

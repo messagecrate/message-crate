@@ -1,7 +1,7 @@
 use super::*;
 use crate::write::SbrBackupSession;
+use ir::Direction;
 use message_crate_core::{CancelFlag, LogSink, ProgressSink};
-use message_ir::Direction;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -58,7 +58,7 @@ fn reads_then_writes_source_fields_and_attachment() {
     assert_eq!(
         docs[0].messages[0].attachments[0].size_bytes,
         Some(5),
-        "decoded aGVsbG8= is five bytes; size_bytes lets message-crate-import skip re-hashing"
+        "decoded aGVsbG8= is five bytes; size_bytes lets the import skip re-hashing"
     );
     assert_eq!(
         docs[0].messages[0].source.as_ref().unwrap().fields["attrs"]["extra"],

@@ -4,8 +4,8 @@
 //! [`SetIdentityCountryRequest`] and run [`set_identity_country`]; the
 //! statements are in `db::identity_country` (#1676).
 
-use message_crate_api_types::IdentityHolder;
-use message_ir::IdentityService;
+use api_types::IdentityHolder;
+use ir::IdentityService;
 use serde::Deserialize;
 use sqlx::SqliteConnection;
 

@@ -1,14 +1,14 @@
 //! What `serve` tells the program that started it, read the way the desktop
 //! app reads it (`src-tauri/src/local_server.rs`): the listening line from its
 //! output, and the exit code when another server holds the operation lock. Both
-//! values come from `message_crate_serve_protocol`, which the app reads
+//! values come from `serve_protocol`, which the app reads
 //! too, so a server that stops giving them fails here (#1416).
 
 mod common;
 
 use std::time::Instant;
 
-use message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE;
+use serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE;
 
 use common::log::{listen_then_close_stderr, newest_log};
 use common::{Running, WAIT, empty_message_crate, listen, new_message_crate, serve};

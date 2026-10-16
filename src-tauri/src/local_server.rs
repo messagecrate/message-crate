@@ -63,11 +63,9 @@
 //! happened. [`LocalServer`] holds that state with the processes and does
 //! what [`step`] asks.
 
-use message_crate_serve_protocol::{
-    EXIT_WITH_PARENT_ARG, LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE,
-};
 use process_tree::ServerProcess;
 use serde::Serialize;
+use serve_protocol::{EXIT_WITH_PARENT_ARG, LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::net::{SocketAddr, TcpStream};

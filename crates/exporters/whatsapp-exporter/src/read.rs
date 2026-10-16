@@ -290,7 +290,7 @@ pub(crate) fn message_text(message: &MessageJson) -> String {
 /// A key field as a string: `None` when it is absent, `null` or blank.
 pub(crate) fn key_string(value: Option<&Value>) -> Option<String> {
     match value? {
-        Value::String(s) => message_ir::trimmed(s).map(str::to_string),
+        Value::String(s) => ir::trimmed(s).map(str::to_string),
         Value::Null => None,
         other => Some(other.to_string()),
     }
@@ -306,10 +306,7 @@ pub(crate) fn is_reply(message: &MessageJson) -> bool {
 /// The fork's text of a group event, or `None` when the message is not
 /// one or the backup does not state what the event was.
 pub(crate) fn group_action(message: &MessageJson) -> Option<&str> {
-    message
-        .group_action
-        .as_deref()
-        .and_then(message_ir::trimmed)
+    message.group_action.as_deref().and_then(ir::trimmed)
 }
 
 /// Path hint for an attachment.

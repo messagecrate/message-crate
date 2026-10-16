@@ -35,8 +35,8 @@ libc = "0.2"
 # the Unicode lower() the server registers on every SQLite connection.
 libsqlite3-sys = { version = "0.38", default-features = false, features = ["bundled"] }
 media = { path = "../../libs/media" }
-message-csv = { path = "../../libs/csv" }
-message-ir = { workspace = true }
+message-crate-csv = { path = "../../libs/csv" }
+ir = { workspace = true }
 phone = { workspace = true }
 rand = "0.10.2"
 rayon = "1.12.0"
@@ -53,9 +53,9 @@ tokio-util = { version = "0.7", features = ["io"] }
 toml = "1.1.2"
 tower-http = { version = "0.7.1", features = ["catch-panic", "limit", "cors", "fs", "set-header", "trace"] }
 uuid = { version = "1.18.1", features = ["v4"] }
-message-crate-api-types = { path = "../../libs/api-types", features = ["schema"] }
-message-crate-serve-protocol = { path = "../../libs/serve-protocol" }
-message-crate-log-lines = { path = "../../libs/log-lines", features = ["schema"] }
+api-types = { path = "../../libs/api-types", features = ["schema"] }
+serve-protocol = { path = "../../libs/serve-protocol" }
+log-lines = { path = "../../libs/log-lines", features = ["schema"] }
 utoipa = { version = "6", features = ["axum_extras"] }
 utoipa-axum = "0.3"
 utoipa-swagger-ui = { version = "10", features = ["axum"] }
@@ -74,8 +74,8 @@ demo-seed = { path = "../demo-seed", features = ["testutil"] }
 # `media::testutil`, so a test that runs the real ffmpeg skips or fails the
 # way every other crate's does.
 media = { path = "../../libs/media", features = ["testutil"] }
-# `message_ir::testutil::sample_attachment`, which `test_support::lines::attachment` builds on.
-message-ir = { workspace = true, features = ["testutil"] }
+# `ir::testutil::sample_attachment`, which `test_support::lines::attachment` builds on.
+ir = { workspace = true, features = ["testutil"] }
 # `stream`, so a test can send a body with no declared length.
 reqwest = { workspace = true, features = ["stream"] }
 # `util`, so a test can send a request straight to a router with `oneshot`.
@@ -84,10 +84,10 @@ tower = { version = "0.5", features = ["util"] }
 tokio = { version = "1.53.0", features = ["test-util"] }
 # The desktop app's import library, so a test can run an Upload as the app
 # sends one against the server binary.
-message-crate-import = { path = "../../libs/import" }
+import = { path = "../../libs/import" }
 # The desktop app's export library, so a test can run an Export Run against
 # the server binary and import what it wrote into another.
-message-crate-export = { path = "../../libs/export" }
+export = { path = "../../libs/export" }
 
 [lints]
 workspace = true

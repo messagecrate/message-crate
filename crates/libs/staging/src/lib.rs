@@ -8,7 +8,7 @@
 //! queue (JSON Lines, the import path: a conversation file lands only after
 //! everything it references, so an interrupted run resumes by skipping what
 //! is already there) or stages attachments and writes through
-//! `message_ir_format::FormatSink` for every other format. An exporter whose
+//! `ir_format::FormatSink` for every other format. An exporter whose
 //! attachments arrive as bytes writes each payload to the writer's
 //! [`AttachmentSpool`], under the Scratch Directory, as it parses, so parse
 //! never holds the backup's attachments in memory, and the write reads them
@@ -23,7 +23,7 @@
 //! ([`write_media_settings`], [`read_media_settings`]); a local export passes
 //! its own.
 //!
-//! Formats live in `message-ir-format`; the run model in
+//! Formats live in `ir-format`; the run model in
 //! `message-crate-core`. Why this is its own crate:
 //! `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 

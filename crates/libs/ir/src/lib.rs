@@ -3,16 +3,16 @@
 //! A [`ConversationDocument`] is the in-memory form of one conversation:
 //! export metadata, participants, and messages. Backup converters parse
 //! vendor formats into this type. Writing files (JSON, CSV, EML, and so on)
-//! lives in `message-ir-format`. The atomic, synced write those files go
+//! lives in `ir-format`. The atomic, synced write those files go
 //! through lives in `file-io`. Converting an existing export
-//! directory lives in `message-reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
+//! directory lives in `reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 //!
 //! Converters stage parsed rows in [`PendingMessage`] and
 //! [`PendingConversation`] (with per-converter metadata in their `extra`
 //! maps) before building a [`ConversationDocument`].
 //!
 //! Types are named for what they are, with no prefix: the crate path tells
-//! `message_ir::Message` from `message_crate_api_types::Message`, and a file
+//! `ir::Message` from `api_types::Message`, and a file
 //! that needs both imports one of them with `as`.
 
 use serde::{Deserialize, Serialize};

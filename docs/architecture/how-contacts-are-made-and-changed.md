@@ -128,7 +128,7 @@ A contact named `=HYPERLINK(…)` is written `'=HYPERLINK(…)`, and a phone
 number `+6555550100` is written `'+6555550100`.
 CSV quoting does not prevent this, because a spreadsheet removes the quotes
 and then reads the cell as typed.
-The code is `written_cell` and `read_cell` in `message-csv`
+The code is `written_cell` and `read_cell` in `message-crate-csv`
 (`crates/libs/csv/src/lib.rs`). Every CSV file Message Crate writes goes
 through them.
 

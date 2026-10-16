@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::conversations::{ConversationSort, display_service_label};
 use crate::db::participant_names::Participant;
-use message_ir::IdentityType;
+use ir::IdentityType;
 use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
@@ -419,8 +419,8 @@ async fn malformed_boolean_queries_are_invalid_search_queries_for_export() {
     let mut conn = pool.acquire().await.unwrap();
 
     for query in ["foo OR", "(foo OR bar", "foo OR bar)"] {
-        let scope = message_crate_api_types::ExportScope::Query {
-            list: message_crate_api_types::ExportQueryList::Messages,
+        let scope = api_types::ExportScope::Query {
+            list: api_types::ExportQueryList::Messages,
             q: query.into(),
         };
         let export_error = crate::exports_api::scope_filter(

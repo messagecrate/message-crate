@@ -7,7 +7,7 @@
 //! worker needs is read-only and lives in [`PrepareContext`]; the only shared
 //! mutable state is the journal behind a mutex.
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
@@ -19,9 +19,9 @@ use std::thread::Scope;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
+use ir_format::read_conversation_jsonl_with_lines;
 use message_crate_core::parallel_for_each;
-use message_ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
-use message_ir_format::read_conversation_jsonl_with_lines;
 
 use crate::directory::{attachment_label, resolve_attachment};
 use crate::http::{Asset, AssetUpload};
@@ -30,7 +30,7 @@ use crate::progress::AttachmentSkip;
 use crate::project::{self, AttachmentProjection};
 use crate::report::{AssetTotals, UploadProfile, elapsed_ms};
 use crate::run::{ImportConfig, Session};
-use message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+use api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// Journal state shared by every prepare worker and the import pipeline.
 ///
@@ -312,7 +312,7 @@ fn scan_one_attachment(
     index: usize,
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {
-    let Some(rel) = att.path.as_deref().and_then(message_ir::trimmed) else {
+    let Some(rel) = att.path.as_deref().and_then(ir::trimmed) else {
         // No path means the bytes were never staged. "Do not copy" exports
         // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
@@ -369,8 +369,8 @@ fn scan_one_attachment(
             reason: format!(
                 "attachment is {} bytes ({} MiB), over the configured asset max of {} MiB",
                 file_len,
-                file_len / message_ir::MIB,
-                ctx.cfg.asset_max_bytes / message_ir::MIB
+                file_len / ir::MIB,
+                ctx.cfg.asset_max_bytes / ir::MIB
             ),
         });
         return Ok(AttachmentProjection::Missing {
@@ -379,7 +379,7 @@ fn scan_one_attachment(
             size: Some(file_len),
         });
     }
-    let claimed = att.digest_sha256.as_deref().and_then(message_ir::trimmed);
+    let claimed = att.digest_sha256.as_deref().and_then(ir::trimmed);
     let digest = ctx
         .digests
         .resolve(&abs, claimed, att.size_bytes, name, rel, &mut |warning| {
@@ -432,7 +432,7 @@ fn build_import_chunks(
                 "{name}: message {guid} encodes to {} bytes, which with its conversation \
                  header exceeds the {} MiB import batch limit",
                 line.len(),
-                MAX_IMPORT_BATCH_BYTES as u64 / message_ir::MIB
+                MAX_IMPORT_BATCH_BYTES as u64 / ir::MIB
             );
         }
         builder.push(

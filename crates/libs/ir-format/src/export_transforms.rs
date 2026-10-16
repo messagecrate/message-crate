@@ -3,11 +3,11 @@
 
 use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
-use message_crate_core::{AttachmentFiles, ExportTransforms};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, Direction, ImessageExtensions, MessageGuid, MessageIdentity,
     Participant, Reaction,
 };
+use message_crate_core::{AttachmentFiles, ExportTransforms};
 use obfuscate::{
     Obfuscator, classify_attachment, placeholder_rel_path, resolve_obfuscator_with_log,
 };

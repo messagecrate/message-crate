@@ -4,7 +4,7 @@
 //! Each following line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{ConversationDocument, ConversationHeader, Message, check_schema_version_in_json};
+use ir::{ConversationDocument, ConversationHeader, Message, check_schema_version_in_json};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::Path;

@@ -5,7 +5,7 @@ description: "How SMS Backup+ EML fields become the shared conversation structur
 
 How flat and archive `.eml` messages become shared `ConversationDocument` values, including identity resolution, deduplication, and retained source data.
 
-Input layouts: [format](/docs/developer/formats/sms-backup-plus/format/). Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/) and [`message_ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs).
+Input layouts: [format](/docs/developer/formats/sms-backup-plus/format/). Shared model: [the common message](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/) and [`ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs).
 
 ## Goal / non-goal
 
@@ -14,7 +14,7 @@ Input layouts: [format](/docs/developer/formats/sms-backup-plus/format/). Shared
 
 ## Pipeline / output
 
-Source EML → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) ).
+Source EML → `ConversationDocument` → [`ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) ).
 
 The desktop app's Import screen always writes JSON Lines, one file per conversation, because Import reads conversation files in that form. Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
 
@@ -53,7 +53,7 @@ Apple-only columns stay empty.
 ## Deduplication
 
 Every parsed mail is kept until the conversation is projected.
-The shared dedupe step (`message_ir::one_copy_per_message`) then keeps one copy of each message.
+The shared dedupe step (`ir::one_copy_per_message`) then keeps one copy of each message.
 Two copies are one message when the chat, the direction, the sender, the collapsed text and the attachment digests agree and the times are compatible.
 Times are compatible when they are equal to the millisecond, or when one copy has whole seconds only and falls in the same second as the other.
 

@@ -47,7 +47,7 @@ fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
     let message = files.iter().zip(shas).fold(
         message_line("g-media", "some files").sender("+15555550123"),
         |message, ((name, mime), sha)| {
-            message.attachment(message_ir::Attachment {
+            message.attachment(ir::Attachment {
                 digest_sha256: Some(sha.clone()),
                 ..attachment(&format!("attachments/{name}"), name, mime)
             })
@@ -921,12 +921,12 @@ async fn import_photo_run(
             )
             .await;
             assert!(status.is_success(), "upload: {status} {text}");
-            Some(message_ir::Attachment {
+            Some(ir::Attachment {
                 digest_sha256: Some(sha.clone()),
                 ..listed
             })
         }
-        Photo::Missing => Some(message_ir::Attachment {
+        Photo::Missing => Some(ir::Attachment {
             missing_reason: Some("not_exported".into()),
             ..listed
         }),

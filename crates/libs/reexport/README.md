@@ -1,4 +1,4 @@
-# message-reexport
+# reexport
 
 Convert an existing Message Crate output directory from one packaging format to another (JSON Lines, JSON, CSV, EML, MBOX, or XML).
 
@@ -7,7 +7,7 @@ The desktop app's Export screen uses this crate to write any format other than J
 ## Build and test
 
 ```bash
-cargo test -p message-reexport
+cargo test -p reexport
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).

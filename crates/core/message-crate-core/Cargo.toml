@@ -8,11 +8,11 @@ description = "Shared export pipeline, jobs, and form model for the Message Crat
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
-message-csv = { path = "../../libs/csv", optional = true }
-message-crate-api-types = { path = "../../libs/api-types" }
-message-crate-log-lines = { path = "../../libs/log-lines" }
+message-crate-csv = { path = "../../libs/csv", optional = true }
+api-types = { path = "../../libs/api-types" }
+log-lines = { path = "../../libs/log-lines" }
 file-io = { workspace = true }
-message-ir = { path = "../../libs/ir" }
+ir = { path = "../../libs/ir" }
 media = { path = "../../libs/media" }
 obfuscate = { path = "../../libs/obfuscate" }
 phone = { path = "../../libs/phone" }
@@ -24,13 +24,13 @@ thiserror = { workspace = true }
 [features]
 # The CSV and JSON readers are only for `testutil`, which reads exports back
 # in tests.
-testutil = ["dep:message-csv", "dep:serde_json"]
+testutil = ["dep:message-crate-csv", "dep:serde_json"]
 
 [dev-dependencies]
-message-csv = { path = "../../libs/csv" }
+message-crate-csv = { path = "../../libs/csv" }
 serde_json = { workspace = true }
 media = { path = "../../libs/media", features = ["testutil"] }
-message-ir = { path = "../../libs/ir", features = ["testutil"] }
+ir = { path = "../../libs/ir", features = ["testutil"] }
 
 [lints]
 workspace = true

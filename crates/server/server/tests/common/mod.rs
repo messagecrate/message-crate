@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use message_crate_serve_protocol::LISTENING_LINE;
+use serve_protocol::LISTENING_LINE;
 
 // The unit tests' own builders, compiled into each test binary, because a
 // test under `tests/` cannot reach the library's `cfg(test)` `test_support`

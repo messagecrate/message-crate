@@ -4,8 +4,8 @@
 //! `.import-state.jsonl`, a local log of which conversations and files
 //! were already uploaded.
 
+use import::ImportMode;
 use message_crate_core::{CancelFlag, RunIssueKind};
-use message_crate_import::ImportMode;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -13,15 +13,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
-use message_crate_import::{
+use import::{
     AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, ServerAway, authenticate, run,
 };
-use message_ir::testutil::sample_document;
-use message_ir::{Attachment, ConversationDocument};
+use ir::testutil::sample_document;
+use ir::{Attachment, ConversationDocument};
 use serde_json::json;
 use tempfile::tempdir;
 
-/// One SMS conversation used by most mock-server tests: message_ir's sample
+/// One SMS conversation used by most mock-server tests: `ir`'s sample
 /// conversation, with the message guid the mock server matches on.
 fn sample_doc() -> ConversationDocument {
     let mut doc = sample_document("hello there");
@@ -52,7 +52,7 @@ fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
 
 /// Write `doc` as a JSON Lines file under `dir`.
 fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
-    let stem = message_ir_format::filename_stem(doc);
+    let stem = ir_format::filename_stem(doc);
     let path = dir.join(format!("{stem}.jsonl"));
     let mut f = fs::File::create(&path).unwrap();
     let header = json!({
@@ -112,10 +112,10 @@ fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
         max_retries: 0,
         batch_size: 50,
         asset_upload_workers: 1,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
+        prepare_ahead: import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: import::DEFAULT_PREPARE_WORKERS,
+        asset_multipart_threshold: import::MAX_PROXY_BODY_BYTES,
+        asset_max_bytes: import::DEFAULT_ASSET_MAX_BYTES,
         log_path: Some(dir.join("message-crate-import.log")),
         cancel: CancelFlag::default(),
         import_id: RUN_ID,
@@ -548,7 +548,7 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
     let mut later = second.messages[0].clone();
     later.guid = "guid-3".into();
     second.messages.push(later);
-    let second_name = format!("{}.jsonl", message_ir_format::filename_stem(&second));
+    let second_name = format!("{}.jsonl", ir_format::filename_stem(&second));
     let header = json!({
         "schema_version": second.schema_version,
         "export": second.export,
@@ -585,7 +585,7 @@ fn directory_with_a_bad_middle_file(dir: &Path) {
     write_jsonl(dir, &sample_doc());
     let bad = sample_doc_for("+15555550102", "guid-2");
     fs::write(
-        dir.join(format!("{}.jsonl", message_ir_format::filename_stem(&bad))),
+        dir.join(format!("{}.jsonl", ir_format::filename_stem(&bad))),
         "not a conversation\n",
     )
     .unwrap();
@@ -857,7 +857,7 @@ fn profiles_attachment_upload_phases() {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc);
 
@@ -872,10 +872,10 @@ fn profiles_attachment_upload_phases() {
         max_retries: 0,
         batch_size: 50,
         asset_upload_workers: 2,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
+        prepare_ahead: import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: import::DEFAULT_PREPARE_WORKERS,
+        asset_multipart_threshold: import::MAX_PROXY_BODY_BYTES,
+        asset_max_bytes: import::DEFAULT_ASSET_MAX_BYTES,
         log_path: Some(log_path.clone()),
         cancel: CancelFlag::default(),
         import_id: RUN_ID,
@@ -930,7 +930,7 @@ fn ir_attachment(rel: &str, digest: String) -> Attachment {
         original_name: Some(rel.rsplit('/').next().unwrap_or(rel).into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
@@ -1255,7 +1255,7 @@ fn multipart_upload_when_over_proxy_threshold() {
         original_name: Some("large.bin".into()),
         mime_type: Some("video/mp4".into()),
         digest_sha256: Some(digest.clone()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc);
 
@@ -1340,7 +1340,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
         original_name: Some("bad.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         digest_sha256: Some(digest),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc);
 
@@ -1452,7 +1452,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     assert_eq!(put.calls(), 2);
 
     let log = read_log(dir.path());
-    let name = format!("{}.jsonl", message_ir_format::filename_stem(&doc));
+    let name = format!("{}.jsonl", ir_format::filename_stem(&doc));
     assert!(
         log.contains(&format!(
             "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \
@@ -1533,7 +1533,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest.clone()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
     let mut doc_b = sample_doc_for("+15555550102", "guid-b");
     doc_b.messages[0].attachments.push(Attachment {
@@ -1541,7 +1541,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc_a);
     write_jsonl(dir.path(), &doc_b);
@@ -1872,7 +1872,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             mime_type: Some("application/octet-stream".into()),
             digest_sha256: Some(big_digest),
             size_bytes: Some(BIG.len() as u64),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
         Attachment {
             path: Some("attachments/small.txt".into()),
@@ -1880,7 +1880,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
             size_bytes: Some(SMALL.len() as u64),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
     ];
     write_jsonl(dir.path(), &doc);
@@ -1997,7 +1997,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             original_name: Some("gone.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             size_bytes: Some(1234),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
         Attachment {
             path: Some("attachments/small.txt".into()),
@@ -2005,7 +2005,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
             size_bytes: Some(SMALL.len() as u64),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
         // An Export that could not fetch this file said why, and the
         // Import keeps that reason rather than a plain missing file.
@@ -2013,8 +2013,8 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             path: Some("attachments/unfetched.pdf".into()),
             original_name: Some("unfetched.pdf".into()),
             mime_type: Some("application/pdf".into()),
-            missing_reason: Some(message_ir::missing_reason::NOT_FETCHED.into()),
-            ..message_ir::testutil::sample_attachment()
+            missing_reason: Some(ir::missing_reason::NOT_FETCHED.into()),
+            ..ir::testutil::sample_attachment()
         },
     ];
     write_jsonl(dir.path(), &doc);
@@ -2079,7 +2079,7 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
         mime_type: Some("image/heic".into()),
         size_bytes: Some(2048),
         missing_reason: Some("not_copied".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     write_jsonl(dir.path(), &doc);
 
@@ -2140,7 +2140,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     doc.messages[0].attachments = vec![Attachment {
         original_name: Some("mystery.bin".into()),
         mime_type: Some("application/octet-stream".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     write_jsonl(dir.path(), &doc);
 
@@ -3194,7 +3194,7 @@ fn an_import_goes_on_after_sending_a_large_batch_early() {
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
-    cfg.batch_size = message_crate_import::DEFAULT_BATCH_SIZE;
+    cfg.batch_size = import::DEFAULT_BATCH_SIZE;
     cfg.prepare_ahead = 1;
 
     let report = run(&cfg, None).unwrap();
@@ -3240,7 +3240,7 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     write_jsonl(dir.path(), &doc);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
-    cfg.asset_max_bytes = message_crate_import::DEFAULT_ASSET_MAX_BYTES;
+    cfg.asset_max_bytes = import::DEFAULT_ASSET_MAX_BYTES;
     let report = run(&cfg, None).unwrap();
 
     assert!(report.ok, "{:?}", report.results);

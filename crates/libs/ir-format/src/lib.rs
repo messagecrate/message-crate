@@ -1,4 +1,4 @@
-//! Write and read [`message_ir::ConversationDocument`] in each format Message
+//! Write and read [`ir::ConversationDocument`] in each format Message
 //! Crate emits itself: JSON, JSON Lines (one JSON object per line), CSV, EML
 //! and MBOX. [`FormatSink`] buffers documents, applies obfuscation and the
 //! media mode, and writes them; a merged archive owned by another crate
@@ -6,9 +6,9 @@
 //! [`give_each_document_its_own_file`] name the files a conversation is
 //! written to.
 //!
-//! The resumable write path lives in `message-staging`, directory convert in
-//! `message-reexport`, the run model in `message-crate-core`, and the
-//! schema types in `message-ir`.
+//! The resumable write path lives in `staging`, directory convert in
+//! `reexport`, the run model in `message-crate-core`, and the
+//! schema types in `ir`.
 
 mod clean;
 mod export_transforms;

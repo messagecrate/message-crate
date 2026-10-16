@@ -1,4 +1,4 @@
-use message_ir::{
+use ir::{
     ConversationDocument, ConversationHeader, ConversationType, Direction, Message, SCHEMA_VERSION,
 };
 
@@ -1001,7 +1001,7 @@ fn every_message_of_the_medium_set_falls_between_8am_and_11pm_utc_and_not_after_
 /// message keeps nothing: no text, no attachment and no reaction.
 #[test]
 fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsent() {
-    use message_ir::{Deletion, Transport};
+    use ir::{Deletion, Transport};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
@@ -1047,7 +1047,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
 /// sending, and the original was written when the message was sent.
 #[test]
 fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() {
-    use message_ir::{Deletion, Transport};
+    use ir::{Deletion, Transport};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");

@@ -240,13 +240,13 @@ pub fn shown_title_sql(c: &str) -> String {
 }
 
 /// A SQL condition, true when conversation `c` holds orphaned messages: its
-/// type is [`message_ir::ORPHANED_CONVERSATION_TYPE`], in any case. `c` is
+/// type is [`ir::ORPHANED_CONVERSATION_TYPE`], in any case. `c` is
 /// the alias of a `conversations` row.
 #[must_use]
 pub fn is_orphaned_sql(c: &str) -> String {
     format!(
         "lower({c}.conversation_type) = '{}'",
-        message_ir::ORPHANED_CONVERSATION_TYPE
+        ir::ORPHANED_CONVERSATION_TYPE
     )
 }
 

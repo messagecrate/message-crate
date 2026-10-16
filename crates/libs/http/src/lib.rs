@@ -1,7 +1,7 @@
 //! Blocking HTTP client helpers and retry classification for the import and export
 //! crates.
 //!
-//! `message-crate-import` and `message-crate-export` both talk to the server through one
+//! `import` and `export` both talk to the server through one
 //! [`HttpSession`] (built on [`build_client`]), log in through
 //! [`auth_check`], share [`truncate`] for error snippets, and classify
 //! retryable failures through `classify_retry` / `with_retries`.
@@ -57,12 +57,10 @@ fn app_headers() -> reqwest::header::HeaderMap {
         .and_then(|build| reqwest::header::HeaderValue::from_str(build).ok());
     if let Some(build) = build {
         headers.insert(
-            message_crate_api_types::APP_HEADER,
-            reqwest::header::HeaderValue::from_static(
-                message_crate_api_types::AppKind::Desktop.as_str(),
-            ),
+            api_types::APP_HEADER,
+            reqwest::header::HeaderValue::from_static(api_types::AppKind::Desktop.as_str()),
         );
-        headers.insert(message_crate_api_types::APP_VERSION_HEADER, build);
+        headers.insert(api_types::APP_VERSION_HEADER, build);
     }
     headers
 }

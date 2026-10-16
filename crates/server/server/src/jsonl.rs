@@ -1,4 +1,4 @@
-//! Read message-ir JSONL files (one JSON object per line) into import records.
+//! Read JSONL conversation files (one JSON object per line) into import records.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -11,8 +11,8 @@ use crate::imports_api::records::{self, ExportRecord};
 /// a file the server cannot read.
 #[derive(Debug, thiserror::Error)]
 pub enum ReadRecordsError {
-    /// A line breaks a rule of message-ir, or is not text at all.
-    #[error("failed to parse message-ir JSONL in {}: {failure}", path.display())]
+    /// A line breaks a rule of the conversation file, or is not text at all.
+    #[error("failed to parse the JSONL conversation file {}: {failure}", path.display())]
     Rejected {
         path: PathBuf,
         failure: ImportFailure,
@@ -38,7 +38,7 @@ fn unreadable_message(path: &Path, line: Option<usize>) -> String {
     }
 }
 
-/// Read a message-ir JSON Lines conversation file (one JSON object per line)
+/// Read a JSON Lines conversation file (one JSON object per line)
 /// into import records.
 ///
 /// Parses line-by-line so the full file is not held as a second string buffer
@@ -47,7 +47,7 @@ fn unreadable_message(path: &Path, line: Option<usize>) -> String {
 /// # Errors
 ///
 /// Returns [`ReadRecordsError::Rejected`] when a line is not valid
-/// message-ir JSON, and [`ReadRecordsError::Unreadable`] when the file cannot
+/// conversation file JSON, and [`ReadRecordsError::Unreadable`] when the file cannot
 /// be opened or a line cannot be read.
 pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> {
     let unreadable = |line, source| ReadRecordsError::Unreadable {

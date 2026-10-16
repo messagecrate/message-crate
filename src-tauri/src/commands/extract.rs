@@ -26,7 +26,7 @@ use media::{CompressOptions, InstalledTools, MaxResolution, MediaMode};
 use message_crate_core::{
     AttachmentFiles, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
 };
-use message_staging::TranscodeOptions;
+use staging::TranscodeOptions;
 
 use super::events;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
@@ -270,7 +270,7 @@ struct ExtractOptions {
 ///
 /// Returns an error if the string is not copy, convert, compress, or skip.
 fn parse_attachment_media(raw: Option<&str>) -> Result<MediaMode, String> {
-    let Some(raw) = raw.and_then(message_ir::trimmed) else {
+    let Some(raw) = raw.and_then(ir::trimmed) else {
         return Ok(MediaMode::default());
     };
     MediaMode::parse(raw).ok_or_else(|| {
@@ -284,7 +284,7 @@ fn parse_attachment_media(raw: Option<&str>) -> Result<MediaMode, String> {
 ///
 /// Returns an error if the string is not 720p, 1080p, or 4k.
 fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
-    let Some(raw) = raw.and_then(message_ir::trimmed) else {
+    let Some(raw) = raw.and_then(ir::trimmed) else {
         return Ok(MaxResolution::default());
     };
     MaxResolution::parse(raw).ok_or_else(|| {
@@ -362,7 +362,7 @@ fn run_staging(
     media_settings: &TranscodeOptions,
 ) -> anyhow::Result<RunResult> {
     let run_result = exporters::run(config)?;
-    message_staging::write_media_settings(output_dir, media_settings)?;
+    staging::write_media_settings(output_dir, media_settings)?;
     Ok(run_result)
 }
 

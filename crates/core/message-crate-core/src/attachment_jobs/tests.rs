@@ -1,13 +1,13 @@
 use super::*;
 use crate::CancelFlag;
-use message_ir::Attachment;
+use ir::Attachment;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 fn empty_att(name: &str) -> Attachment {
     Attachment {
         original_name: Some(name.into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
@@ -372,14 +372,14 @@ fn clone_temp_paths_are_unique_per_call() {
 ///
 /// Every test above drives `run_attachment_jobs` directly with a hand-built
 /// job list. `stage_attachment_jobs` over `attachment_jobs` is what the
-/// exporters actually reach, through `message-staging` — it builds the jobs,
+/// exporters actually reach, through `staging` — it builds the jobs,
 /// runs them, counts what was saved, and drops the in-memory bytes. Mutation
 /// testing found that `stage_conversation_attachments`, the step it replaced,
 /// could be replaced with `Ok(())` in its entirety with nothing failing.
 /// An export would then write no attachment files at all and report success.
 #[test]
 fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
-    use message_ir::{
+    use ir::{
         ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
         ExportMeta, Message, MessageKind, Transport,
     };
@@ -408,7 +408,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     second.mime_type = Some("video/mp4".into());
 
     let mut documents = vec![ConversationDocument {
-        schema_version: message_ir::SCHEMA_VERSION,
+        schema_version: ir::SCHEMA_VERSION,
         export: ExportMeta {
             source: "test".into(),
             tool: "test".into(),
@@ -427,7 +427,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
+            time_precision: ir::TimePrecision::Milliseconds,
             direction: Direction::Incoming,
             service: Transport::Sms,
             message_kind: MessageKind::Mms,
@@ -643,7 +643,7 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
 /// being killed by the kernel.
 #[test]
 fn staging_frees_the_bytes_the_documents_were_carrying() {
-    use message_ir::{
+    use ir::{
         ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
         ExportMeta, Message, MessageKind, Transport,
     };
@@ -656,7 +656,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     carried.bytes = Some(b"bytes held on the document".to_vec());
 
     let mut documents = vec![ConversationDocument {
-        schema_version: message_ir::SCHEMA_VERSION,
+        schema_version: ir::SCHEMA_VERSION,
         export: ExportMeta {
             source: "test".into(),
             tool: "test".into(),
@@ -675,7 +675,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
         messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
+            time_precision: ir::TimePrecision::Milliseconds,
             direction: Direction::Incoming,
             service: Transport::Sms,
             message_kind: MessageKind::Mms,

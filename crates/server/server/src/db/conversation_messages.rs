@@ -2,7 +2,7 @@
 //! conversation, attachments, tapbacks and earlier versions, joined and
 //! grouped.
 //!
-//! The row shapes themselves live in `message-crate-api-types`, where `message-crate-export`
+//! The row shapes themselves live in `api-types`, where `export`
 //! reads them from the same definition rather than a hand-written mirror.
 //!
 //! `load_messages` takes an already-compiled `WHERE` fragment and its bound
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use anyhow::Context;
 use sqlx::{Executor, Row, SqlSafeStr, SqliteConnection};
 
-pub use message_crate_api_types::{
+pub use api_types::{
     Attachment, Deletion, EarlierVersion, Message, MessageConversation, ReplyTo, Tapback,
     TimePrecision,
 };

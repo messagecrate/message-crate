@@ -206,7 +206,7 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// inputs. [`ConvertRun::new`] builds them, so a new run-wide setting is
 /// added to this struct and to [`ConvertRun::new`], not to each exporter's
 /// arguments or to each `run` that fills them. The shared convert step,
-/// `message_staging::convert_backup`, unpacks every field, so a new one is
+/// `staging::convert_backup`, unpacks every field, so a new one is
 /// named there and the step decides what it does with it. Apple Messages,
 /// which keeps a convert step of its own, reads the fields it uses.
 ///
@@ -342,7 +342,7 @@ impl SourceConfig {
 
 #[derive(Debug, Clone, Default)]
 /// Convert an existing export directory to another output format
-/// (`message-reexport`). Not a backup type, so not a [`SourceConfig`].
+/// (`reexport`). Not a backup type, so not a [`SourceConfig`].
 pub struct FormatConfig {
     /// When the Export Run this conversion is part of started. Export pulls
     /// JSON Lines from the server and then converts them, so its run starts

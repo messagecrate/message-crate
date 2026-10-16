@@ -1,10 +1,10 @@
-//! Stage message-ir JSONL rows into the temporary import tables.
+//! Stage JSONL conversation file rows into the temporary import tables.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use message_ir::{IdentityService, IdentityType, nonempty, trimmed};
+use ir::{IdentityService, IdentityType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
 use super::records::{
@@ -71,7 +71,7 @@ fn safe_source(
     rel: &str,
     line: usize,
 ) -> Result<Option<PathBuf>, ImportFailure> {
-    let rel = message_ir::safe_attachment_path(Path::new(""), rel)
+    let rel = ir::safe_attachment_path(Path::new(""), rel)
         .map_err(|refusal| ImportFailure::UnsafeAttachmentPath { refusal, line })?;
     Ok(export_dir.map(|dir| dir.join(rel)))
 }
@@ -652,8 +652,8 @@ impl FileStaging<'_> {
         // (#1094). Its header's participant, if any, is the holder and
         // `insert_participant` drops it.
         let chat_is_an_address = one_to_one
-            && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
-            && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
+            && ir::name_of_chat_id(&conversation.chat_identifier).is_none()
+            && conversation.chat_identifier != ir::NAMELESS_CHAT_ID;
         let with_yourself = chat_is_an_address
             && is_account_identity(
                 &self.stmts.identities,
@@ -1114,7 +1114,7 @@ async fn add_staged_copy(
         && row.msg.tapbacks.is_empty()
         && row.msg.deletion.is_none()
         && row.msg.backup_taken_at.is_none()
-        && row.msg.time_precision == message_ir::TimePrecision::Seconds
+        && row.msg.time_precision == ir::TimePrecision::Seconds
     {
         return Ok(());
     }
@@ -1126,7 +1126,7 @@ async fn add_staged_copy(
     let staged = db_staging::staged_message_id(tx, key)
         .await?
         .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
-    if row.msg.time_precision == message_ir::TimePrecision::Milliseconds {
+    if row.msg.time_precision == ir::TimePrecision::Milliseconds {
         db_staging::add_staged_copy_milliseconds(tx, staged, &row.msg.timestamp).await?;
     }
     let held = db_staging::staged_text(tx, staged).await?;

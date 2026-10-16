@@ -232,10 +232,7 @@ fn staging_records_the_media_settings_in_the_directory() {
 
     run_staging(&config, &output, &settings).unwrap();
 
-    assert_eq!(
-        message_staging::read_media_settings(&output).unwrap(),
-        settings
-    );
+    assert_eq!(staging::read_media_settings(&output).unwrap(), settings);
 }
 
 /// Each issue reaches the issue sink, which the command forwards to the
@@ -281,7 +278,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     let sink_arrived = Arc::clone(&arrived);
     let sink_output = output.clone();
     config.context.issues = IssueSink::new(move |issue| {
-        let staging_ended = message_staging::read_media_settings(&sink_output).is_ok();
+        let staging_ended = staging::read_media_settings(&sink_output).is_ok();
         sink_arrived
             .lock()
             .unwrap()

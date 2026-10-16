@@ -198,7 +198,7 @@ impl ListConversationMessagesQuery {
         ("after" = Option<i64>, Query, description = "Message id: the page just after this message in the page's order, without it. Not with `offset`, `around` or `before`.")
     ),
     responses(
-        (status = 200, body = crate::paging::Page<message_crate_api_types::Message>),
+        (status = 200, body = crate::paging::Page<api_types::Message>),
     )
 )]
 pub(crate) async fn list_conversation_messages(

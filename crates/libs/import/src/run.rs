@@ -34,7 +34,7 @@
 //!   huge single uploads. Message batches are split, and large attachments use
 //!   multipart, so a big chat or video does not hit that wall.
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -65,7 +65,7 @@ pub const DEFAULT_BATCH_SIZE: usize = 1_000;
 /// Sentinel for "do not flush import batches on message count; size only".
 ///
 /// Desktop import uses this so SMS-style short messages pack until
-/// [`MAX_IMPORT_BATCH_BYTES`](message_crate_api_types::MAX_IMPORT_BATCH_BYTES)
+/// [`MAX_IMPORT_BATCH_BYTES`](api_types::MAX_IMPORT_BATCH_BYTES)
 /// instead of stopping at a small count.
 pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// Max size for uploading an attachment in a single HTTP PUT.
@@ -74,7 +74,7 @@ pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// accept more reliably than one huge body. The largest import batch, so an
 /// attachment arrives at the speed a batch does
 /// (`docs/architecture/http-api.md`, "Credentials and reach").
-pub const MAX_PROXY_BODY_BYTES: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+pub const MAX_PROXY_BODY_BYTES: usize = api_types::MAX_IMPORT_BATCH_BYTES;
 /// What a server's attachment size limit reads as until its owner sets one.
 /// A caller that uploads to a real server reads the limit from `GET /v1/server`
 /// and passes that; this is for tests.

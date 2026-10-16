@@ -1,7 +1,7 @@
 //! Small shared helpers for reading and writing conversation documents.
 
 use anyhow::{Context, Result};
-use message_ir::{Attachment, ConversationDocument};
+use ir::{Attachment, ConversationDocument};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
@@ -55,12 +55,12 @@ pub fn load_attachment_bytes(att: &Attachment, output_dir: &Path) -> Result<Vec<
 /// Missing paths yield `Ok(None)`. IO failures return an error (strict). Callers
 /// that want lenient behavior map with `.ok().flatten()`.
 ///
-/// The relative path is validated via [`message_ir::safe_attachment_path`].
+/// The relative path is validated via [`ir::safe_attachment_path`].
 pub(crate) fn read_attachment_file(att: &Attachment, output_dir: &Path) -> Result<Option<Vec<u8>>> {
     let Some(rel) = att.path.as_deref() else {
         return Ok(None);
     };
-    let path = message_ir::safe_attachment_path(output_dir, rel)?;
+    let path = ir::safe_attachment_path(output_dir, rel)?;
     if !path.is_file() {
         return Ok(None);
     }
@@ -95,14 +95,14 @@ pub fn is_complete_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::Attachment;
+    use ir::Attachment;
     use std::fs;
     use std::io::Write;
 
     fn att_with_path(rel: &str) -> Attachment {
         Attachment {
             path: Some(rel.into()),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         }
     }
 

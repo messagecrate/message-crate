@@ -183,7 +183,7 @@ pub struct MessageRow<'a> {
     /// When it was sent, in the stored form ([`stored_time`]).
     pub timestamp: crate::models::StoredTime,
     /// `messages.time_precision`.
-    pub time_precision: message_ir::TimePrecision,
+    pub time_precision: ir::TimePrecision,
     /// Whether the account sent it.
     pub is_from_me: bool,
     /// `messages.sender_handle_id`.
@@ -205,7 +205,7 @@ pub struct MessageRow<'a> {
     /// `messages.reply_to_part`.
     pub reply_to_part: Option<i64>,
     /// `messages.deletion`.
-    pub deletion: Option<message_ir::Deletion>,
+    pub deletion: Option<ir::Deletion>,
     /// `messages.sort_order`.
     pub sort_order: i64,
     /// `messages.content_key`.
@@ -227,7 +227,7 @@ impl MessageRow<'_> {
             source: "imessage",
             guid: Some(unique_guid()),
             timestamp: stored_time("2020-01-01T00:00:00.000Z"),
-            time_precision: message_ir::TimePrecision::Milliseconds,
+            time_precision: ir::TimePrecision::Milliseconds,
             is_from_me: false,
             sender_handle_id: None,
             owner_handle_id: None,
@@ -296,7 +296,7 @@ impl MessageRow<'_> {
         .bind(self.is_reply)
         .bind(self.reply_to_guid)
         .bind(self.reply_to_part)
-        .bind(self.deletion.map(message_ir::Deletion::as_str))
+        .bind(self.deletion.map(ir::Deletion::as_str))
         .bind(self.sort_order)
         .bind(self.content_key)
         .bind(self.duplicate_of)

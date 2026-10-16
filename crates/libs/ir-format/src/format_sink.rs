@@ -8,8 +8,8 @@ use crate::clean::{
 use crate::export_transforms::apply_transforms;
 use crate::write::write_format;
 use anyhow::{Context, Result};
+use ir::ConversationDocument;
 use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
-use message_ir::ConversationDocument;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -241,7 +241,7 @@ fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
 /// bumping `report.conversations` per document, then finish the sink. The
 /// shared tail of every exporter's non-queue arm.
 pub fn write_documents_through_sink(
-    documents: Vec<message_ir::ConversationDocument>,
+    documents: Vec<ir::ConversationDocument>,
     mut sink: FormatSink,
     sinks: message_crate_core::Sinks<'_>,
     report: &mut ExportReport,
@@ -276,7 +276,7 @@ pub fn write_documents_through_sink(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::Attachment;
+    use ir::Attachment;
     use std::fs;
 
     #[test]
@@ -293,7 +293,7 @@ mod tests {
         let mut report = ExportReport::default();
 
         write_documents_through_sink(
-            vec![message_ir::testutil::sample_document("hello")],
+            vec![ir::testutil::sample_document("hello")],
             sink,
             Sinks {
                 log: &LogSink::none(),
@@ -320,9 +320,9 @@ mod tests {
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
         for chat in ["chat1", "chat2"] {
-            let mut doc = message_ir::testutil::sample_document(chat);
+            let mut doc = ir::testutil::sample_document(chat);
             doc.conversation.chat_identifier = chat.into();
-            doc.conversation.conversation_type = message_ir::ConversationType::Group;
+            doc.conversation.conversation_type = ir::ConversationType::Group;
             doc.conversation.group_title = Some("Family".into());
             sink.write_document(doc).unwrap();
         }
@@ -342,7 +342,7 @@ mod tests {
         let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
-        sink.write_document(message_ir::testutil::sample_document("hello"))
+        sink.write_document(ir::testutil::sample_document("hello"))
             .unwrap();
         sink.finish(&mut ExportReport::default()).unwrap();
         assert!(tmp.path().join("+15555550101.csv").is_file());
@@ -386,9 +386,9 @@ mod tests {
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none())
             .unwrap()
             .with_archive(Box::new(LineArchive));
-        sink.write_document(message_ir::testutil::sample_document("one"))
+        sink.write_document(ir::testutil::sample_document("one"))
             .unwrap();
-        let mut doc2 = message_ir::testutil::sample_document("two");
+        let mut doc2 = ir::testutil::sample_document("two");
         doc2.conversation.chat_identifier = "+15555550102".into();
         sink.write_document(doc2).unwrap();
         sink.finish(&mut ExportReport::default()).unwrap();
@@ -407,7 +407,7 @@ mod tests {
         let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none()).unwrap();
-        sink.write_document(message_ir::testutil::sample_document("one"))
+        sink.write_document(ir::testutil::sample_document("one"))
             .unwrap();
         let err = sink
             .finish(&mut ExportReport::default())
@@ -428,10 +428,10 @@ mod tests {
             let rel = "attachments/photo.jpg";
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
-            let mut doc = message_ir::testutil::sample_document("with media");
+            let mut doc = ir::testutil::sample_document("with media");
             doc.messages[0].attachments = vec![Attachment {
                 path: Some(rel.into()),
-                ..message_ir::testutil::sample_attachment()
+                ..ir::testutil::sample_attachment()
             }];
 
             let transforms = ExportTransforms {
@@ -469,7 +469,7 @@ mod tests {
 
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
-        sink.write_document(message_ir::testutil::sample_document("hello"))
+        sink.write_document(ir::testutil::sample_document("hello"))
             .unwrap();
         sink.finish(&mut ExportReport::default()).unwrap();
         assert!(tmp.path().join("attachments/photo.jpg").is_file());
@@ -488,7 +488,7 @@ mod tests {
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Csv, transforms).unwrap();
         // The fixture's `source` bag carries the raw sender address; obfuscation
         // must drop it, so the bag stays in and the assertion below covers it.
-        let doc = message_ir::testutil::sample_document("secret");
+        let doc = ir::testutil::sample_document("secret");
         assert!(
             doc.messages[0].source.is_some(),
             "fixture should carry a vendor bag"

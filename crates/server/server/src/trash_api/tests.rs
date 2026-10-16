@@ -192,7 +192,7 @@ async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
 fn batch_naming(sha: &str) -> String {
     let message = message_line("g-new", "new")
         .sender("+15555550123")
-        .attachment(message_ir::Attachment {
+        .attachment(ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/photo.bin",
@@ -211,7 +211,7 @@ fn batch_naming(sha: &str) -> String {
 /// must not leave the imported attachment without its file.
 ///
 /// The run starts before `HEAD`, because that is the order an Upload sends:
-/// `message-crate-import` (`crates/libs/import/src/run.rs`) starts the run
+/// `import` (`crates/libs/import/src/run.rs`) starts the run
 /// before any asset request.
 #[tokio::test]
 async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch() {
@@ -422,7 +422,7 @@ fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
     let message = message_line(&format!("g-{source}"), &format!("from {source}"))
         .sms()
         .sender(handle)
-        .attachment(message_ir::Attachment {
+        .attachment(ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg")
         });

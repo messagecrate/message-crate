@@ -540,7 +540,7 @@ fn every_backup_type_is_in_the_list_of_all() {
 #[test]
 fn search_accepts_the_source_id_of_every_backup_type() {
     let mut written: Vec<&str> = Exporter::ALL.iter().map(|e| e.source_id()).collect();
-    let mut accepted = message_crate_api_types::SOURCE_IDS.to_vec();
+    let mut accepted = api_types::SOURCE_IDS.to_vec();
     written.sort_unstable();
     accepted.sort_unstable();
     assert_eq!(written, accepted);

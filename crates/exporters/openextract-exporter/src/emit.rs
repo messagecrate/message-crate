@@ -4,16 +4,16 @@
 use crate::read::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use anyhow::Result;
 use chrono::DateTime;
-use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationKey, ConversationType, ExportMeta, IdentityType,
     NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Transport,
     VendorFields, orphaned_chat_id,
 };
-use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use phone::Handle;
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
+use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -288,7 +288,7 @@ impl Ingest {
 
     /// Add one row of the CSV at `path` to its conversation, or count why it
     /// was dropped. `vendor_key` tells apart rows the export cannot: two
-    /// copies with different keys are two messages ([`message_ir::one_copy_per_message`]).
+    /// copies with different keys are two messages ([`ir::one_copy_per_message`]).
     fn ingest_row(
         &mut self,
         path: &Path,
@@ -576,7 +576,7 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
     None
 }
 
-/// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
+/// OpenExtract deltas of the shared [`ir::pending_to_document`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
     /// Every message's Backup Date.

@@ -3,11 +3,11 @@
 use crate::headers as hn;
 use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
-use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
-use message_ir::{
+use ir::{
     Deletion, Direction, EarlierVersion, ImessageExtensions, Message, MessageKind, Reaction,
     ReplyTo, TimePrecision, Transport, VendorFields,
 };
+use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::fs;
@@ -195,7 +195,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 /// The message a reply quotes, from `X-ME-Is-Reply` and the `X-ME-Reply-To-*`
 /// headers; `None` for a mail that is not a reply.
 fn parse_reply_to(headers: &[MailHeader<'_>]) -> Option<ReplyTo> {
-    message_ir::reply_to_from_mark(
+    ir::reply_to_from_mark(
         header_bool(headers, hn::IS_REPLY),
         optional_header(headers, hn::REPLY_TO_GUID),
         header_u32(headers, hn::REPLY_TO_PART),
@@ -363,7 +363,7 @@ fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
     let Some(raw) = typed_header(headers, hn::DELETION) else {
         return Ok(None);
     };
-    message_ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
+    ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
 }
 
 /// The message's reactions from `X-ME-Reactions`, or none when the header is
@@ -433,7 +433,7 @@ fn merge_attachments(
             .unwrap_or_else(|| (Vec::new(), None, None));
         out.push(MailAttachment {
             bytes,
-            meta: message_ir::AttachmentMeta {
+            meta: ir::AttachmentMeta {
                 path: None,
                 original_name: m.and_then(|c| c.original_name.clone()).or(name_fallback),
                 mime_type: m.and_then(|c| c.mime_type.clone()).or(mime_fallback),
@@ -570,7 +570,7 @@ mod tests {
             guid: Some("parent-guid-1111".into()),
             part_index: Some(1),
         };
-        let imessage = message_ir::ImessageExtensions {
+        let imessage = ir::ImessageExtensions {
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
@@ -612,7 +612,7 @@ mod tests {
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 reactions: reactions.clone(),
-                deletion: Some(message_ir::Deletion::Unsent),
+                deletion: Some(ir::Deletion::Unsent),
                 edits: edits.clone(),
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
@@ -625,7 +625,7 @@ mod tests {
             },
             attachments: vec![MailAttachment {
                 bytes: b"\xff\xd8\xfffakejpeg".to_vec(),
-                meta: message_ir::AttachmentMeta {
+                meta: ir::AttachmentMeta {
                     path: None,
                     original_name: Some("photo.jpg".into()),
                     mime_type: Some("image/jpeg".into()),
@@ -672,7 +672,7 @@ mod tests {
             parsed.message.reactions, reactions,
             "each reaction keeps its reactor, even a name that looks like an encoded word"
         );
-        assert_eq!(parsed.message.deletion, Some(message_ir::Deletion::Unsent));
+        assert_eq!(parsed.message.deletion, Some(ir::Deletion::Unsent));
         assert_eq!(
             parsed.message.edits, edits,
             "each earlier version keeps its part, text and time"
@@ -703,7 +703,7 @@ mod tests {
     fn message_with_text_and_binary_attachments() -> MailMessage {
         let attachment = |name: &str, mime: &str, bytes: &[u8]| MailAttachment {
             bytes: bytes.to_vec(),
-            meta: message_ir::AttachmentMeta {
+            meta: ir::AttachmentMeta {
                 path: None,
                 original_name: Some(name.into()),
                 mime_type: Some(mime.into()),

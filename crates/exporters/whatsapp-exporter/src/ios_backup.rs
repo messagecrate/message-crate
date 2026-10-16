@@ -17,7 +17,7 @@ use ios_backup::{
     DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
 };
 use message_crate_core::{RunContext, WhatsappConfig};
-use message_staging::{Disk, check_headroom};
+use staging::{Disk, check_headroom};
 use std::path::{Path, PathBuf};
 
 /// The app-group domain WhatsApp keeps its data under in an iPhone backup.

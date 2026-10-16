@@ -10,7 +10,7 @@ use crate::test_support::{
     log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve, test_fixture,
     with_trigger_lifted,
 };
-use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
+use api_types::{APP_HEADER, APP_VERSION_HEADER};
 
 /// The items of an Audit Trail page.
 async fn trail(state: &crate::server::AppState, path: &str, token: &str) -> Vec<Value> {

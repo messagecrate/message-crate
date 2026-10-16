@@ -116,7 +116,7 @@ pub(crate) fn parse_xml_str(text: &str) -> Result<(Vec<XmlMessage>, XmlParseStat
                 stats.sent += 1;
                 XmlMessage {
                     other,
-                    name_alias: message_ir::nonempty(&contact),
+                    name_alias: ir::nonempty(&contact),
                     timestamp_secs,
                     is_from_me: true,
                     text: body,
@@ -296,7 +296,7 @@ fn push_bad_addr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IdentityType;
+    use ir::IdentityType;
 
     #[test]
     fn parses_sent_and_received() {

@@ -1127,7 +1127,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Import one message-ir JSONL body.
+         * Import one JSONL conversation file body.
          * @description Every message needs a non-empty `guid`. A batch with a message without
          *     one is refused with `422`, naming its lines, and nothing in it is stored.
          *     A message whose `guid` the source already holds is skipped, so a batch
@@ -11965,7 +11965,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description message-ir JSONL as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets. */
+        /** @description A JSONL conversation file as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets. */
         requestBody?: {
             content: {
                 "application/jsonl": unknown;

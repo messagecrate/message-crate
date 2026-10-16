@@ -8,12 +8,12 @@ use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
 };
 use anyhow::Result;
+use ir::{Attachment, ConversationDocument};
+use ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use message_crate_core::{
     AttachmentFiles, CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat,
     ProgressSink, Sinks,
 };
-use message_ir::{Attachment, ConversationDocument};
-use message_ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use std::path::{Path, PathBuf};
 
 /// Owns the write tail of an exporter run: output preparation, the
@@ -312,10 +312,10 @@ mod tests {
 
     /// One conversation whose only message carries one attachment's bytes.
     fn document_with_bytes() -> ConversationDocument {
-        let mut doc = message_ir::testutil::sample_document("with a photo");
+        let mut doc = ir::testutil::sample_document("with a photo");
         doc.messages[0].attachments = vec![Attachment {
             bytes: Some(b"\xff\xd8\xffphoto".to_vec()),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         }];
         doc
     }

@@ -1,8 +1,8 @@
 //! Per-account Import Run records (one row per Import Run).
 
 use anyhow::{Context as _, Result};
+use api_types::ImportErrorKind;
 use chrono::Utc;
-use message_crate_api_types::ImportErrorKind;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -1288,7 +1288,7 @@ pub async fn top_attachments_by_size(
                 // A conversation keyed by a name is labeled with the name,
                 // not with its `name:` key.
                 chat_identifier: Some(
-                    message_ir::name_of_chat_id(&chat_identifier)
+                    ir::name_of_chat_id(&chat_identifier)
                         .map_or_else(|| chat_identifier.clone(), str::to_string),
                 ),
             },

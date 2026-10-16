@@ -32,7 +32,7 @@ pub(crate) fn input_directory(input: &Path) -> Result<PathBuf> {
     Ok(directory)
 }
 
-/// True for files message-crate-import itself writes (journal/report/log), not conversations.
+/// True for files the `import` crate itself writes (journal/report/log), not conversations.
 fn is_import_artifact(name: &str) -> bool {
     name.eq_ignore_ascii_case(journal::JOURNAL_NAME)
         || name.eq_ignore_ascii_case(journal::REPORT_NAME)
@@ -113,7 +113,7 @@ pub(crate) fn file_label(path: &Path) -> String {
 ///
 /// Returns an error when the path could escape the export directory.
 pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option<PathBuf>> {
-    let under = message_ir::safe_attachment_path(export_root, rel)?;
+    let under = ir::safe_attachment_path(export_root, rel)?;
     Ok(under.is_file().then_some(under))
 }
 
@@ -121,10 +121,10 @@ pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option
 ///
 /// Falls back to the position in the message so two pathless attachments in one
 /// conversation stay distinguishable.
-pub(crate) fn attachment_label(att: &message_ir::Attachment, index: usize) -> String {
+pub(crate) fn attachment_label(att: &ir::Attachment, index: usize) -> String {
     att.original_name
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .map_or_else(|| format!("attachment {index}"), str::to_string)
 }
 

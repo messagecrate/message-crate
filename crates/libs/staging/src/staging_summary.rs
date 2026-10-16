@@ -29,11 +29,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use anyhow::Result;
+use ir::{Direction, Message};
 use media::{MediaMode, MediaTools, SizeVerdict, classify_probed, estimate_bytes, needs_probe};
-use message_ir::{Direction, Message};
 
 use crate::transcode::{COMMITTED_SUFFIX, TranscodeOptions, conversation_files};
-use message_ir_format::read_conversation_jsonl;
+use ir_format::read_conversation_jsonl;
 
 /// How often [`summarize_staging`] reports progress, over attachments.
 ///
@@ -307,7 +307,7 @@ fn classify_one(
     has_media_step: bool,
     summary: &mut StagingSummary,
 ) {
-    let Ok(abs) = message_ir::safe_attachment_path(run_dir, rel) else {
+    let Ok(abs) = ir::safe_attachment_path(run_dir, rel) else {
         return;
     };
     let Ok(meta) = std::fs::metadata(&abs) else {

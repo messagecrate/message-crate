@@ -6,7 +6,7 @@ description = "Fields of Android's message store, read one way by the SMS Backup
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
-message-ir = { path = "../ir" }
+ir = { path = "../ir" }
 serde_json = { workspace = true }
 
 [lints]

@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::discover_files;
-use message_csv::{col, field};
+use message_crate_csv::{col, field};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -135,7 +135,7 @@ fn classify_imazing_csv(path: &Path) -> Result<Option<SourceKind>> {
 
 /// Read every row of one iMazing CSV, stripping a UTF-8 BOM first.
 pub(crate) fn parse_csv_file(path: &Path, kind: SourceKind) -> Result<Vec<RawRow>> {
-    let (mut rdr, headers) = message_csv::open_csv_lowercase(path)?;
+    let (mut rdr, headers) = message_crate_csv::open_csv_lowercase(path)?;
 
     let chat_i = col(&headers, "chat session")?;
     let date_i = col(&headers, "message date")?;

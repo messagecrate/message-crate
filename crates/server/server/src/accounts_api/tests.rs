@@ -14,7 +14,7 @@ use crate::test_support::{
     post_status_logged_out, put_json, put_json_raw, put_raw, put_status, register_via_api,
     seed_conversation, seed_one_message, stored_time, test_fixture,
 };
-use message_ir::IdentityType;
+use ir::IdentityType;
 
 fn member(id: i64) -> String {
     format!("/v1/accounts/{id}")
@@ -1781,7 +1781,7 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
 
     let message = message_line("g-new", "new")
         .sender("+15555550123")
-        .attachment(message_ir::Attachment {
+        .attachment(ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/photo.bin",
@@ -2910,11 +2910,8 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
     let status = server
         .get("/v1/session")
         .bearer_auth(&bob.token)
-        .header(message_crate_api_types::APP_HEADER, "desktop")
-        .header(
-            message_crate_api_types::APP_VERSION_HEADER,
-            "0.8.0+1234abcd",
-        )
+        .header(api_types::APP_HEADER, "desktop")
+        .header(api_types::APP_VERSION_HEADER, "0.8.0+1234abcd")
         .send()
         .await
         .unwrap()

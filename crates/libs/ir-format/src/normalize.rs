@@ -1,8 +1,8 @@
 //! Prepare conversation documents so round-trip tests can compare content.
 
 #[cfg(test)]
-use message_ir::{Attachment, ConversationDocument};
-use message_ir::{ImessageExtensions, VendorFields};
+use ir::{Attachment, ConversationDocument};
+use ir::{ImessageExtensions, VendorFields};
 
 /// Prepare a document so two copies can be compared after a round trip.
 ///
@@ -36,7 +36,7 @@ pub(crate) fn normalize_document_for_compare(doc: &mut ConversationDocument) {
         empty_to_none(&mut p.display_name);
     }
     doc.packaging_stem_suffix = None;
-    doc.schema_version = message_ir::SCHEMA_VERSION;
+    doc.schema_version = ir::SCHEMA_VERSION;
     doc.finalize_stats();
 }
 

@@ -4,7 +4,7 @@
 //! header. Each later line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{ConversationDocument, ConversationHeader, Message, check_schema_version};
+use ir::{ConversationDocument, ConversationHeader, Message, check_schema_version};
 
 /// Return the backup source name from a conversation header, or an error if the
 /// schema version or source field is unusable.
@@ -31,8 +31,7 @@ pub fn validate_header(header: &ConversationHeader) -> Result<String> {
 pub fn document_header_line(doc: &ConversationDocument) -> Result<Vec<u8>> {
     let header = ConversationHeader::from_document(doc);
     validate_header(&header)?;
-    let mut out =
-        serde_json::to_vec(&header).context("serialize message-ir conversation header")?;
+    let mut out = serde_json::to_vec(&header).context("serialize the conversation header")?;
     out.push(b'\n');
     Ok(out)
 }
@@ -104,7 +103,7 @@ pub fn message_line(
 ///
 /// Returns an error when JSON serialization fails.
 fn serialize_message(msg: &Message) -> Result<(Vec<u8>, String)> {
-    let mut out = serde_json::to_vec(msg).context("serialize message-ir message")?;
+    let mut out = serde_json::to_vec(msg).context("serialize a message")?;
     out.push(b'\n');
     Ok((out, msg.guid.clone()))
 }
@@ -112,18 +111,15 @@ fn serialize_message(msg: &Message) -> Result<(Vec<u8>, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::Attachment;
-    use message_ir::testutil::{sample_attachment, sample_document};
+    use ir::Attachment;
+    use ir::testutil::{sample_attachment, sample_document};
 
     #[test]
     fn serializes_ir_sms() {
         let mut doc = sample_document("hello");
         let msg = doc.messages.remove(0);
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(&format!(
-            r#""schema_version":{}"#,
-            message_ir::SCHEMA_VERSION
-        )));
+        assert!(header.contains(&format!(r#""schema_version":{}"#, ir::SCHEMA_VERSION)));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 

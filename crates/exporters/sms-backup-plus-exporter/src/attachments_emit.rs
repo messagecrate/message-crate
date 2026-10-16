@@ -3,8 +3,8 @@
 
 use crate::types::AttachmentBytes;
 use anyhow::Result;
-use message_ir::PendingAttachment;
-use message_staging::AttachmentSpool;
+use ir::PendingAttachment;
+use staging::AttachmentSpool;
 
 /// Queue decoded attachments as metadata, each with its payload's size whether
 /// or not the run copies it. With a `spool`, each payload is written to it

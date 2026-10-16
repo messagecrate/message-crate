@@ -1,7 +1,7 @@
 use super::*;
 use message_crate_core::{CancelFlag, LogSink, ProgressSink};
-use message_staging::AttachmentSpool;
 use serde_json::{Map, json};
+use staging::AttachmentSpool;
 use std::fs;
 use std::sync::LazyLock;
 
@@ -115,7 +115,7 @@ fn ir_attachment(name: &str, bytes: &[u8]) -> Attachment {
     Attachment {
         original_name: Some(name.into()),
         bytes: Some(bytes.to_vec()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
@@ -125,16 +125,16 @@ fn pair(address: &str, addr_type: &str) -> (String, String) {
 
 #[test]
 fn a_group_mms_keeps_its_addresses_and_attachment() {
-    let mut document = message_ir::testutil::sample_document("look");
+    let mut document = ir::testutil::sample_document("look");
     document.conversation.chat_identifier = "chat-group".into();
     document.conversation.conversation_type = ConversationType::Group;
     document.conversation.participants = vec![
-        message_ir::Participant {
+        ir::Participant {
             identity: Some("+15555550101".into()),
             display_name: Some("Ana".into()),
             country: None,
         },
-        message_ir::Participant {
+        ir::Participant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
             country: None,
@@ -200,7 +200,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
 
 #[test]
 fn an_incoming_sms_keeps_its_sender_and_contact_name() {
-    let mut document = message_ir::testutil::sample_document("hello ir");
+    let mut document = ir::testutil::sample_document("hello ir");
     document.messages[0].source = None;
     let read = round_trip(&[document]);
     let conversation = &read[0].conversation;
@@ -231,7 +231,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
 /// source app called the message.
 #[test]
 fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and_bytes() {
-    let mut document = message_ir::testutil::sample_document("look at this");
+    let mut document = ir::testutil::sample_document("look at this");
     let message = &mut document.messages[0];
     message.source = None;
     message.message_kind = MessageKind::Sms;
@@ -267,17 +267,14 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
 /// it.
 #[test]
 fn a_text_only_group_message_from_another_app_stays_in_its_group() {
-    let mut document = message_ir::testutil::sample_document("who is in?");
+    let mut document = ir::testutil::sample_document("who is in?");
     document.conversation.chat_identifier = "chat-group".into();
     document.conversation.conversation_type = ConversationType::Group;
-    document
-        .conversation
-        .participants
-        .push(message_ir::Participant {
-            identity: Some("+15555550102".into()),
-            display_name: Some("Lee".into()),
-            country: None,
-        });
+    document.conversation.participants.push(ir::Participant {
+        identity: Some("+15555550102".into()),
+        display_name: Some("Lee".into()),
+        country: None,
+    });
     let incoming = &mut document.messages[0];
     incoming.source = None;
     incoming.message_kind = MessageKind::Sms;
@@ -322,17 +319,14 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
 /// is the one-to-one value and not every participant's name.
 #[test]
 fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
-    let mut document = message_ir::testutil::sample_document("hi");
+    let mut document = ir::testutil::sample_document("hi");
     document.conversation.chat_identifier = "chat-group".into();
     document.conversation.conversation_type = ConversationType::Group;
-    document
-        .conversation
-        .participants
-        .push(message_ir::Participant {
-            identity: None,
-            display_name: Some("Lee".into()),
-            country: None,
-        });
+    document.conversation.participants.push(ir::Participant {
+        identity: None,
+        display_name: Some("Lee".into()),
+        country: None,
+    });
     document.messages[0].source = None;
 
     let read = round_trip(&[document]);
@@ -353,17 +347,14 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
 #[test]
 fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
     for (handle, name) in [("+1 555-555-0101", "Sam (work)"), (OWNER, "Me")] {
-        let mut document = message_ir::testutil::sample_document("hi");
+        let mut document = ir::testutil::sample_document("hi");
         document.conversation.chat_identifier = "chat-group".into();
         document.conversation.conversation_type = ConversationType::Group;
-        document
-            .conversation
-            .participants
-            .push(message_ir::Participant {
-                identity: Some(handle.into()),
-                display_name: Some(name.into()),
-                country: None,
-            });
+        document.conversation.participants.push(ir::Participant {
+            identity: Some(handle.into()),
+            display_name: Some(name.into()),
+            country: None,
+        });
         document.messages[0].source = None;
 
         let read = round_trip(&[document]);
@@ -387,7 +378,7 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
 /// sent message. The `<sms>` is still addressed to the other person.
 #[test]
 fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
-    let mut document = message_ir::testutil::sample_document("on my way");
+    let mut document = ir::testutil::sample_document("on my way");
     let message = &mut document.messages[0];
     message.source = None;
     message.direction = Direction::Outgoing;
@@ -419,7 +410,7 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
 /// chat's other person, as an `<sms>` and as an `<mms>`.
 #[test]
 fn a_received_message_with_an_empty_sender_address_is_from_the_peer() {
-    let mut document = message_ir::testutil::sample_document("text");
+    let mut document = ir::testutil::sample_document("text");
     let text = &mut document.messages[0];
     text.source = None;
     text.sender_identity = Some(String::new());
@@ -516,11 +507,11 @@ fn restored_mms_parts_get_back_their_own_attachment_bytes() {
 /// an SMS under a new id, so the archive leaves it out and counts it (ADR 0021).
 #[test]
 fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
-    let mut imessage = message_ir::testutil::sample_imessage_document();
+    let mut imessage = ir::testutil::sample_imessage_document();
     // iMessage's SMS fallback is an SMS, whatever app it came from.
     let mut fallback = imessage.messages[0].clone();
     fallback.guid = "SMS-FALLBACK-0001".into();
-    fallback.service = message_ir::Transport::Sms;
+    fallback.service = ir::Transport::Sms;
     fallback.message_kind = MessageKind::Sms;
     fallback.imessage = None;
     fallback.text = "hello fallback".into();
@@ -528,15 +519,15 @@ fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
     // A Mac `chat.db` row with no service is read as an SMS by its kind.
     let mut no_service = imessage.messages[0].clone();
     no_service.guid = "NO-SERVICE-0001".into();
-    no_service.service = message_ir::Transport::Unknown;
+    no_service.service = ir::Transport::Unknown;
     no_service.message_kind = MessageKind::Sms;
     no_service.imessage = None;
     no_service.text = "hello no service".into();
     imessage.messages.push(no_service);
     let docs = [
-        message_ir::testutil::sample_document("hello ir"),
+        ir::testutil::sample_document("hello ir"),
         imessage,
-        message_ir::testutil::sample_whatsapp_document("hello whatsapp"),
+        ir::testutil::sample_whatsapp_document("hello whatsapp"),
     ];
 
     let tmp = tempfile::tempdir().unwrap();
@@ -560,7 +551,7 @@ fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
 
 #[test]
 fn the_archive_restores_source_fields_as_attrs() {
-    let mut document = message_ir::testutil::sample_document("hello ir");
+    let mut document = ir::testutil::sample_document("hello ir");
     // SyncTech-shaped bag (the same shape the reader stores).
     if let Some(source) = document.messages[0].source.as_mut() {
         let mut attrs = Map::new();
@@ -594,7 +585,7 @@ fn the_archive_restores_source_fields_as_attrs() {
 
 #[test]
 fn the_archive_counts_the_characters_xml_cannot_carry() {
-    let document = message_ir::testutil::sample_document("bell\u{7} and escape\u{1b}");
+    let document = ir::testutil::sample_document("bell\u{7} and escape\u{1b}");
     let tmp = tempfile::tempdir().unwrap();
     let mut report = message_crate_core::ExportReport::default();
     SbrArchive
@@ -611,13 +602,13 @@ fn the_archive_counts_the_characters_xml_cannot_carry() {
 /// WhatsApp message, which it does not write, does not move it.
 #[test]
 fn the_backup_date_comes_from_the_messages_written() {
-    let mut sms = message_ir::testutil::sample_document("hello ir");
+    let mut sms = ir::testutil::sample_document("hello ir");
     let mut older = sms.messages[0].clone();
     older.guid = "older".into();
     older.backup_taken_at_unix_ms = Some(1_780_000_000_000);
     sms.messages[0].backup_taken_at_unix_ms = Some(1_788_256_800_000);
     sms.messages.push(older);
-    let mut whatsapp = message_ir::testutil::sample_whatsapp_document("hello whatsapp");
+    let mut whatsapp = ir::testutil::sample_whatsapp_document("hello whatsapp");
     whatsapp.messages[0].backup_taken_at_unix_ms = Some(1_790_793_912_000);
 
     let tmp = tempfile::tempdir().unwrap();

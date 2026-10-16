@@ -21,17 +21,17 @@ use imessage_reader_protocol::{
     Message as MessageRecord,
 };
 use ios_backup::Helper;
-use message_crate_core::{
-    Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
-    RunIssueKind, item_line, item_reason,
-};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationMeta, ConversationType, Direction, ExportMeta,
     ImessageExtensions, Message, MessageKind, Participant, SCHEMA_VERSION, Transport,
     missing_reason, nonempty, owner_sender,
 };
-use message_ir_format::FormatSink;
-use message_staging::{
+use ir_format::FormatSink;
+use message_crate_core::{
+    Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
+    RunIssueKind, item_line, item_reason,
+};
+use staging::{
     AttachmentSource, ConversationUnit, CountedAttachments, Disk, ExportWriter, ExportWriterParts,
     PathSources, WriteQueueOptions, bytes_embedded, check_headroom, load_attachment_source,
 };
@@ -677,7 +677,7 @@ fn read_attachment(
         Err(e) => {
             options
                 .log
-                .warn(message_staging::unreadable_attachment_line(path, e));
+                .warn(staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
@@ -772,7 +772,7 @@ pub(crate) struct FileDates {
 /// each message dated by the backup and the file by the run, as `dates`
 /// says.
 ///
-/// Not through [`message_ir::ProjectionHooks`], whose documentation says why.
+/// Not through [`ir::ProjectionHooks`], whose documentation says why.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,
@@ -885,9 +885,9 @@ fn drain_conversations(
                 )?;
                 Ok((!bytes.is_empty()).then_some(bytes))
             }
-            other => message_staging::load_attachment_source(other),
+            other => staging::load_attachment_source(other),
         };
-        message_staging::drain_write_queue_with_loader(
+        staging::drain_write_queue_with_loader(
             &options.export_path,
             units,
             &queue,
@@ -895,7 +895,7 @@ fn drain_conversations(
             sinks,
         )
     } else {
-        message_staging::drain_write_queue(&options.export_path, units, &queue, sinks)
+        staging::drain_write_queue(&options.export_path, units, &queue, sinks)
     }
     .map_err(|e| anyhow!("write conversations: {e:#}"))?;
 
@@ -975,9 +975,9 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ir::TimePrecision;
+    use ir::testutil::sample_attachment;
     use message_crate_core::ProgressSink;
-    use message_ir::TimePrecision;
-    use message_ir::testutil::sample_attachment;
 
     fn record_with_attachment(source: SourceRecord) -> AttachmentRecord {
         AttachmentRecord {
@@ -1221,12 +1221,12 @@ mod tests {
             send_effect: text("Slam"),
             ..ImessageRecord::default()
         });
-        let reply_to = message_ir::ReplyTo {
+        let reply_to = ir::ReplyTo {
             guid: text("parent"),
             part_index: Some(1),
         };
         with_fields.reply_to = Some(reply_to.clone());
-        let reaction = message_ir::Reaction {
+        let reaction = ir::Reaction {
             part_index: 1,
             kind: "emoji".into(),
             emoji: Some("🔥".into()),
@@ -1235,7 +1235,7 @@ mod tests {
             reactor_display_name: Some("Ray".into()),
         };
         with_fields.reactions = vec![reaction.clone()];
-        let earlier = message_ir::EarlierVersion {
+        let earlier = ir::EarlierVersion {
             part_index: 0,
             text: Some("hu".into()),
             edited_at_unix_ms: Some(1_609_459_200_000),

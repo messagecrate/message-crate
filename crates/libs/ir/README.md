@@ -1,13 +1,13 @@
-# message-ir
+# ir
 
 Shared conversation types for Message Crate: `ConversationDocument`, messages, attachments, and participants. This crate has no I/O and no formatting. Attachment bytes are never serialized to JSON; paths and hashes point at sidecar files.
 
-Exporters, `message-ir-format`, `message-crate-import`, `message-crate-export`, and the server use this crate.
+Exporters, `ir-format`, `import`, `export`, and the server use this crate.
 
 ## Build and test
 
 ```bash
-cargo test -p message-ir
+cargo test -p ir
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).

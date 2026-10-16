@@ -33,7 +33,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqliteConnection};
 
-use message_crate_api_types::{ExportQueryList, ExportStatus};
+use api_types::{ExportQueryList, ExportStatus};
 
 use crate::credentials::require_valid_username;
 use crate::db::account_profile;

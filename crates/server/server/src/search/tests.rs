@@ -168,7 +168,7 @@ pub(crate) async fn named_participant(conn: &mut SqliteConnection, conversation:
         conn,
         account,
         alias,
-        message_ir::IdentityType::Other,
+        ir::IdentityType::Other,
         Some("phone"),
     )
     .await
@@ -2272,7 +2272,7 @@ mod kind_words {
                 crate::imports_api::pipeline::FixedImportArgs {
                     assets_dir: &assets,
                     asset_root: Some(dir),
-                    mode: message_crate_api_types::ImportMode::Append,
+                    mode: api_types::ImportMode::Append,
                     source,
                     account_id: ACCOUNT,
                     import_id: None,
@@ -4055,7 +4055,7 @@ mod name_keyed_conversation {
             msg(sarah, "2024-03-01T10:00:00Z", false, None, "hello"),
         )
         .await;
-        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody_key = handle(&mut conn, ACCOUNT, ir::NAMELESS_CHAT_ID, "sms").await;
         let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "one-to-one", None, &[]).await;
         let to_nobody = message(
             &mut conn,
@@ -4123,7 +4123,7 @@ mod name_keyed_conversation {
             msg(theo, "2024-03-01T11:00:00Z", false, None, "hello"),
         )
         .await;
-        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody_key = handle(&mut conn, ACCOUNT, ir::NAMELESS_CHAT_ID, "sms").await;
         let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "one-to-one", None, &[]).await;
         let to_nobody = message(
             &mut conn,

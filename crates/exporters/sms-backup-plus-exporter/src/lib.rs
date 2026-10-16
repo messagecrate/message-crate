@@ -1,6 +1,6 @@
 //! SMS Backup+ (jberkel) mail, in both directions: [`run()`] turns its `.eml`
 //! files into the shared conversation structure
-//! ([`message_ir::ConversationDocument`]) every exporter writes, and
+//! ([`ir::ConversationDocument`]) every exporter writes, and
 //! [`SmsBackupPlusArchive`] writes the SMS and MMS of conversations back out
 //! as that mail.
 //!

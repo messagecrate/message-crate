@@ -299,7 +299,7 @@ async fn failed_replace_keeps_existing_messages() {
     )
     .await
     .unwrap_err();
-    assert!(err.to_string().contains(message_ir::UNSAFE_ATTACHMENT_PATH));
+    assert!(err.to_string().contains(ir::UNSAFE_ATTACHMENT_PATH));
 
     let (_pool, mut conn) = open_verify(&db).await;
     let body: String =

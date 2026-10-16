@@ -11,6 +11,12 @@
 use crate::flat_eml::Datatype;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use ir::{
+    ConversationDocument, ConversationType, Direction, IdentityType, Message, MessageKind, trimmed,
+};
+use ir_format::{
+    MergedArchive, filename_stem, give_each_document_its_own_file, load_attachment_bytes,
+};
 use mail::{attachment_part, eml_file_name, text_body_part};
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address;
@@ -18,12 +24,6 @@ use mail_builder::headers::date::Date;
 use mail_builder::headers::text::Text;
 use mail_builder::mime::MimePart;
 use message_crate_core::{ATTACHMENTS_MISSING, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
-use message_ir::{
-    ConversationDocument, ConversationType, Direction, IdentityType, Message, MessageKind, trimmed,
-};
-use message_ir_format::{
-    MergedArchive, filename_stem, give_each_document_its_own_file, load_attachment_bytes,
-};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
@@ -35,7 +35,7 @@ use crate::flat_eml::UNKNOWN_EMAIL_DOMAIN;
 const DOMAIN: &str = "sms-backup-plus.local";
 
 /// Writes the SMS and MMS of every conversation as SMS Backup+ mail. Hand it
-/// to [`message_ir_format::FormatSink::with_archive`] for
+/// to [`ir_format::FormatSink::with_archive`] for
 /// [`message_crate_core::OutputFormat::SmsBackupPlus`].
 #[derive(Debug, Clone, Copy)]
 pub struct SmsBackupPlusArchive {
@@ -298,9 +298,9 @@ impl<'a> Conversation<'a> {
         let mut name_only = false;
         if peers.is_empty()
             && let Some(id) = trimmed(&document.conversation.chat_identifier)
-                .filter(|id| *id != message_ir::NAMELESS_CHAT_ID)
+                .filter(|id| *id != ir::NAMELESS_CHAT_ID)
         {
-            let name = message_ir::name_of_chat_id(id);
+            let name = ir::name_of_chat_id(id);
             name_only = name.is_some();
             peers.push(name.unwrap_or(id));
         }

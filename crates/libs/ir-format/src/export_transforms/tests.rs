@@ -1,21 +1,21 @@
 use super::*;
-use message_crate_core::AttachmentFiles;
-use message_crate_core::{ExportReport, OutputFormat};
-use message_ir::{
+use ir::{
     ConversationMeta, ConversationStats, ConversationType, EarlierVersion, ExportMeta,
     ImessageExtensions, Message, MessageGuid, MessageIdentity, MessageKind, Participant, Reaction,
     ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
 };
+use message_crate_core::AttachmentFiles;
+use message_crate_core::{ExportReport, OutputFormat};
 use serde_json::{Value, json};
 use std::fs;
 
-/// message_ir's sample conversation, its one message `hi` with a JPEG
+/// `ir`'s sample conversation, its one message `hi` with a JPEG
 /// attached.
 fn doc_with_image_attachment() -> ConversationDocument {
-    let mut doc = message_ir::testutil::sample_document("hi");
+    let mut doc = ir::testutil::sample_document("hi");
     doc.messages[0].attachments = vec![Attachment {
         path: Some("photo.jpg".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
     doc
 }
@@ -27,7 +27,7 @@ fn obfuscate_one(doc: &mut ConversationDocument, anon: &mut Obfuscator) {
 
 #[test]
 fn obfuscate_drops_the_vendor_bag() {
-    let mut doc = message_ir::testutil::sample_document("secret");
+    let mut doc = ir::testutil::sample_document("secret");
     assert!(doc.messages[0].source.is_some());
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);
@@ -39,7 +39,7 @@ fn obfuscate_drops_the_vendor_bag() {
 
 #[test]
 fn obfuscate_replaces_the_owner_address_on_each_message() {
-    let mut doc = message_ir::testutil::sample_document("secret");
+    let mut doc = ir::testutil::sample_document("secret");
     doc.messages[0].owner_identity = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);
@@ -196,7 +196,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
         messages: vec![Message {
             guid: "LEAK-27".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
+            time_precision: ir::TimePrecision::Milliseconds,
             direction: Direction::Incoming,
             service: Transport::IMessage,
             message_kind: MessageKind::IMessage,
@@ -213,7 +213,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 sticker_effect: Some("shiny".into()),
                 size_bytes: Some(4),
                 missing_reason: Some("file_missing".into()),
-                ..message_ir::testutil::sample_attachment()
+                ..ir::testutil::sample_attachment()
             }],
             reactions: vec![Reaction {
                 part_index: 0,

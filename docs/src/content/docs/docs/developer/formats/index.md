@@ -9,7 +9,7 @@ What each converter writes (and where it falls short). Marks: **yes** / **partia
 
 ## Shared model
 
-All converters build a **common message** per conversation (`ConversationDocument`, schema version 16 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
+All converters build a **common message** per conversation (`ConversationDocument`, schema version 16 in [`ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
 
 - The peer is `chat_identifier` — there is **no** dedicated receiver-phone column
 - A participant carries its identity and display name and no type: the server works out each identity's type (`phone` / `email` / `other`) from the service and the address on import. The CSV `identity_type` column carries the sender's type as the server works it out
@@ -87,6 +87,6 @@ Discord, Signal, Telegram, and Slack are recognized services in the shared model
 | WhatsApp | [Import methods](/docs/user/import-sources/whatsapp/) |
 | iMessage | [Back up an iPhone](/docs/user/your-messages/back-up-an-iphone/) |
 
-**Common message:** end-user [export structure](/docs/developer/reference/export-structure/); schema [message-ir architecture](/docs/developer/architecture/common-message/). All exporters parse to `ConversationDocument` then project via `message_ir_format::FormatSink` (per-conversation JSON/JSONL/CSV/EML/MBOX, or one SyncTech `smses.xml` as the XML format). Output formats: [mail archives](/docs/developer/formats/mail-archive/) and [SMS Backup & Restore XML](/docs/developer/formats/sms-backup-restore-xml/). Attachment modes (none / copy / convert / compress) and obfuscate apply through `FormatSink` for every format.
+**Common message:** end-user [export structure](/docs/developer/reference/export-structure/); schema [common message architecture](/docs/developer/architecture/common-message/). All exporters parse to `ConversationDocument` then project via `ir_format::FormatSink` (per-conversation JSON/JSONL/CSV/EML/MBOX, or one SyncTech `smses.xml` as the XML format). Output formats: [mail archives](/docs/developer/formats/mail-archive/) and [SMS Backup & Restore XML](/docs/developer/formats/sms-backup-restore-xml/). Attachment modes (none / copy / convert / compress) and obfuscate apply through `FormatSink` for every format.
 
-**Convert:** [`message-reexport`](/docs/developer/formats/convert/) converts an existing Message Crate output directory to another format, detecting the input format from the directory. Export uses it for any format other than JSON Lines. Not a vendor backup source.
+**Convert:** [`reexport`](/docs/developer/formats/convert/) converts an existing Message Crate output directory to another format, detecting the input format from the directory. Export uses it for any format other than JSON Lines. Not a vendor backup source.

@@ -199,7 +199,7 @@ pub async fn imessage_backup_identities(
 ) -> Result<Vec<String>, String> {
     let scratch_root = scratch_dir(&app).join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
-        let password = backup_password.as_deref().and_then(message_ir::trimmed);
+        let password = backup_password.as_deref().and_then(ir::trimmed);
         let log = identity_check_log(path.trim().to_string(), crate::app_log::warn);
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root, log)
             .map_err(|e| format!("{e:#}"))

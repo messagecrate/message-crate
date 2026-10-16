@@ -19,10 +19,10 @@ pub(crate) fn base_sms() -> MailMessage {
         message: Message {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
+            time_precision: ir::TimePrecision::Milliseconds,
             direction: Direction::Incoming,
-            service: message_ir::Transport::Sms,
-            message_kind: message_ir::MessageKind::Sms,
+            service: ir::Transport::Sms,
+            message_kind: ir::MessageKind::Sms,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
             sender_country: None,
@@ -35,7 +35,7 @@ pub(crate) fn base_sms() -> MailMessage {
             edits: Vec::new(),
             reply_to: None,
             imessage: None,
-            source: Some(message_ir::VendorFields {
+            source: Some(ir::VendorFields {
                 android_type: Some(1),
                 fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
             }),
@@ -46,7 +46,7 @@ pub(crate) fn base_sms() -> MailMessage {
 }
 
 /// The extension bag, creating it when the base message has none.
-fn im_mut(msg: &mut MailMessage) -> &mut message_ir::ImessageExtensions {
+fn im_mut(msg: &mut MailMessage) -> &mut ir::ImessageExtensions {
     msg.message.imessage.get_or_insert_with(Default::default)
 }
 
@@ -119,7 +119,7 @@ fn writes_group_mms_with_image_part() {
     msg.chat_identifier = "chat-group1".into();
     msg.conversation_type = "group".into();
     msg.group_title = Some("Family".into());
-    msg.message.message_kind = message_ir::MessageKind::Mms;
+    msg.message.message_kind = ir::MessageKind::Mms;
     msg.participants = vec![
         Participant {
             identity: "+15555550101".into(),
@@ -132,7 +132,7 @@ fn writes_group_mms_with_image_part() {
     ];
     msg.attachments = vec![MailAttachment {
         bytes: b"\xff\xd8\xfffakejpeg".to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("photo.jpg".into()),
             mime_type: Some("image/jpeg".into()),
@@ -202,8 +202,8 @@ fn encodes_email_handles_and_imessage_message_id() {
     }];
     msg.message.sender_identity = Some("friend@example.com".into());
     msg.owner_identity = "me@example.com".into();
-    msg.message.service = message_ir::Transport::IMessage;
-    msg.message.message_kind = message_ir::MessageKind::IMessage;
+    msg.message.service = ir::Transport::IMessage;
+    msg.message.message_kind = ir::MessageKind::IMessage;
     msg.message.guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
     msg.export_source = "imessage".into();
 
@@ -340,8 +340,8 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
     msg.message.sender_display_name = Some("+15555550100".into());
     msg.owner_display_name = Some("+15555550100".into());
     msg.export_source = "imessage".into();
-    msg.message.message_kind = message_ir::MessageKind::IMessage;
-    msg.message.reply_to = Some(message_ir::ReplyTo {
+    msg.message.message_kind = ir::MessageKind::IMessage;
+    msg.message.reply_to = Some(ir::ReplyTo {
         guid: Some("parent-guid-1111".into()),
         part_index: Some(0),
     });
@@ -394,7 +394,7 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
 fn tapback_and_handwriting_svg_headers() {
     let mut msg = base_sms();
     msg.export_source = "imessage".into();
-    msg.message.message_kind = message_ir::MessageKind::Tapback;
+    msg.message.message_kind = ir::MessageKind::Tapback;
     im_mut(&mut msg).associated_guid = Some("parent-guid".into());
     im_mut(&mut msg).associated_part = Some(0);
     im_mut(&mut msg).tapback_kind = Some("loved".into());
@@ -402,7 +402,7 @@ fn tapback_and_handwriting_svg_headers() {
     msg.message.text = "Loved a message".into();
     msg.attachments = vec![MailAttachment {
         bytes: b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("handwriting.svg".into()),
             mime_type: Some("image/svg+xml".into()),
@@ -537,10 +537,10 @@ fn a_messages_own_owner_survives_an_mbox_round_trip() {
 fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
     let card = b"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Sam\r\nEND:VCARD\r\n".to_vec();
     let mut msg = base_sms();
-    msg.message.message_kind = message_ir::MessageKind::Mms;
+    msg.message.message_kind = ir::MessageKind::Mms;
     msg.attachments = vec![MailAttachment {
         bytes: card.clone(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("sam.vcf".into()),
             mime_type: Some("text/vcard".into()),
@@ -659,7 +659,7 @@ fn a_mail_that_keeps_a_reply_link_in_x_me_thread_originator_guid_is_refused() {
 #[test]
 fn a_reply_with_no_link_reads_back_as_a_reply() {
     let mut msg = base_sms();
-    msg.message.reply_to = Some(message_ir::ReplyTo::default());
+    msg.message.reply_to = Some(ir::ReplyTo::default());
     let eml = build_eml(&msg).unwrap();
     let mail = mailparse::parse_mail(&eml).unwrap();
     let headers = mail.get_headers();
@@ -670,7 +670,7 @@ fn a_reply_with_no_link_reads_back_as_a_reply() {
     assert_eq!(headers.get_first_value("X-ME-Reply-To-Guid"), None);
     assert_eq!(headers.get_first_value("In-Reply-To"), None);
     let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
-    assert_eq!(back.message.reply_to, Some(message_ir::ReplyTo::default()));
+    assert_eq!(back.message.reply_to, Some(ir::ReplyTo::default()));
 
     msg.message.reply_to = None;
     let eml = build_eml(&msg).unwrap();
@@ -689,7 +689,7 @@ fn a_mail_whose_reactions_do_not_read_is_refused() {
 /// as the same mark; a message with none writes no header.
 #[test]
 fn a_deletion_mark_reads_back_as_written() {
-    for deletion in message_ir::Deletion::ALL {
+    for deletion in ir::Deletion::ALL {
         let mut msg = base_sms();
         msg.message.deletion = Some(deletion);
         let eml = build_eml(&msg).unwrap();
@@ -868,7 +868,7 @@ fn with_every_x_me_text(value: &str, direction: Direction) -> MailMessage {
     msg.message.sender_display_name = text();
     msg.message.owner_identity = text();
     msg.message.subject = text();
-    msg.message.reactions = vec![message_ir::Reaction {
+    msg.message.reactions = vec![ir::Reaction {
         part_index: 0,
         kind: value.into(),
         emoji: text(),
@@ -876,7 +876,7 @@ fn with_every_x_me_text(value: &str, direction: Direction) -> MailMessage {
         reactor_identity: text(),
         reactor_display_name: text(),
     }];
-    msg.message.edits = vec![message_ir::EarlierVersion {
+    msg.message.edits = vec![ir::EarlierVersion {
         part_index: 0,
         text: Some(value.into()),
         edited_at_unix_ms: None,
@@ -892,13 +892,13 @@ fn with_every_x_me_text(value: &str, direction: Direction) -> MailMessage {
     im.balloon_bundle_id = text();
     im.associated_guid = text();
     im.tapback_emoji = text();
-    msg.message.reply_to = Some(message_ir::ReplyTo {
+    msg.message.reply_to = Some(ir::ReplyTo {
         guid: text(),
         part_index: None,
     });
     msg.attachments = vec![MailAttachment {
         bytes: b"x".to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: text(),
             mime_type: text(),
@@ -1049,18 +1049,15 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
     let msg = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap();
     assert_eq!(msg.conversation_type, "group");
     assert_eq!(msg.message.timestamp_unix_ms, 1_400_773_261_000);
-    assert_eq!(
-        msg.message.time_precision,
-        message_ir::TimePrecision::Seconds
-    );
+    assert_eq!(msg.message.time_precision, ir::TimePrecision::Seconds);
     assert_eq!(msg.message.direction, Direction::Outgoing);
-    assert_eq!(msg.message.service, message_ir::Transport::IMessage);
-    assert_eq!(msg.message.message_kind, message_ir::MessageKind::IMessage);
+    assert_eq!(msg.message.service, ir::Transport::IMessage);
+    assert_eq!(msg.message.message_kind, ir::MessageKind::IMessage);
     assert_eq!(msg.message.source.unwrap().android_type, Some(2));
-    assert_eq!(msg.message.deletion, Some(message_ir::Deletion::Unsent));
+    assert_eq!(msg.message.deletion, Some(ir::Deletion::Unsent));
     assert_eq!(
         msg.message.reply_to,
-        Some(message_ir::ReplyTo {
+        Some(ir::ReplyTo {
             guid: None,
             part_index: Some(3),
         })
@@ -1127,7 +1124,7 @@ fn a_guid_with_a_line_break_keeps_the_mail_headers_whole() {
     parent.message.guid = "c\r\n\r\nd".into();
     let mut msg = base_sms();
     msg.message.guid = "a\r\n\r\nb".into();
-    msg.message.reply_to = Some(message_ir::ReplyTo {
+    msg.message.reply_to = Some(ir::ReplyTo {
         guid: Some("c\r\n\r\nd".into()),
         part_index: None,
     });
@@ -1280,7 +1277,7 @@ fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
 fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
     let attachment = |mime: &str, bytes: &[u8]| MailAttachment {
         bytes: bytes.to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("a.txt".into()),
             mime_type: Some(mime.into()),

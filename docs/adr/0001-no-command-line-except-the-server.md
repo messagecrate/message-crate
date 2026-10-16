@@ -120,3 +120,11 @@ The text above is kept as it was decided. Since #1926, the crate it calls
 `message-crate-push` is `message-crate-import`, at `crates/libs/import/`,
 because CONTEXT.md names the operation Import and avoids Push for an Import
 Run. Nothing else in this decision changed.
+
+## Amended 2026-10-16: crates take their directory's name
+
+The text above is kept as it was decided. Since #2192, a crate's package
+name is its directory's name, so the crates it names have new names:
+`message-reexport` is `reexport`, `message-crate-import` is `import`, and
+`message-crate-export` is `export`. The directories did not move, and
+nothing else in this decision changed.

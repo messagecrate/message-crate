@@ -2,7 +2,7 @@
 
 Build `.eml` files and mboxrd mailboxes from a `ConversationDocument`.
 
-`message-ir-format` uses this crate when the user picks EML or MBOX.
+`ir-format` uses this crate when the user picks EML or MBOX.
 
 ## Build and test
 
