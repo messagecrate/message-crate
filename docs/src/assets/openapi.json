@@ -20491,7 +20491,7 @@
               "boolean",
               "null"
             ],
-            "description": "Disable or re-enable login."
+            "description": "Disable or enable the account. A disabled account may not log in,\nand its API tokens are refused while it stays disabled. Disabling it\nalso ends its Session, so enabling it again takes a new login."
           },
           "identities": {
             "type": "array",
