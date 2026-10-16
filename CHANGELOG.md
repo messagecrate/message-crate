@@ -448,6 +448,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **Last Login and App are on an account's Account tab.** When
+  the owner opens an account from User Accounts, when it last logged in and
+  the app it last connected with now sit under its username on **Account**,
+  rather than under its identities on **Profile**, which holds what the
+  account's holder sets about themselves (#2988).
 - 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.**
   The `reset-demo` server command recorded its reset after deleting the old
   Demo Account, so its entry belonged to no account and appeared only in the

@@ -352,12 +352,12 @@ status of an account that has no password reads No password under it, except
 for the Demo Account. There the owner adds
 accounts. An account's name opens that account's Settings, the screen its
 holder sees, where the owner sets its password, its status (active or
-disabled) and its permissions (import, export, delete), and deletes its
-messages or the account. The account holder reads the same status and
-permissions under Settings, Account, and changes none. The owner sets the
-account's display name, time zone and identities on Profile as the holder does,
-which is not the holder's own profile setup, and reads there its last login and
-the app it connects with. On the Demo Account its display name, time zone and
+disabled) and its permissions (import, export, delete), reads on Account its
+last login and the app it connects with, and deletes its messages or the
+account. The account holder reads the same status and permissions under
+Settings, Account, and changes none. The owner sets the account's display
+name, time zone and identities on Profile as the holder does, which is not the
+holder's own profile setup. On the Demo Account its display name, time zone and
 identities are fixed, for the owner as for the holder. The owner reads the
 Storage tab as the holder sees it, without seeing inside it. The owner's own
 row opens the owner's own Settings, which is also where the account button's
