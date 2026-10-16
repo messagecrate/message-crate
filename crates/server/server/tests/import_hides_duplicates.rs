@@ -48,8 +48,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
     )
     .unwrap();
 
-    let report = upload(&base, &token, "sms-backup-plus", input).await;
-    assert_eq!(report.messages_failed, 0, "{report:?}");
+    upload(&base, &token, "sms-backup-plus", input).await;
 
     let page: Value = common::client::http_client()
         .get(format!("{base}/v1/messages"))

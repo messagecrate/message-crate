@@ -98,10 +98,8 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
             ("g-undated", 1_426_183_464_000, None),
         ],
     );
-    let report = upload(&first, &first_token, "sms-backup-restore", older).await;
-    assert_eq!(report.messages_failed, 0, "{report:?}");
-    let report = upload(&first, &first_token, "sms-backup-restore", newer).await;
-    assert_eq!(report.messages_failed, 0, "{report:?}");
+    upload(&first, &first_token, "sms-backup-restore", older).await;
+    upload(&first, &first_token, "sms-backup-restore", newer).await;
     let expected = BTreeMap::from([
         (
             "g-older".to_owned(),
@@ -160,7 +158,6 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
     let (_second, address) = listen(&mut serve(&data_dir, &static_dir));
     let second = format!("http://{address}");
     let second_token = claimed_with_account(&second).await.alice_token;
-    let report = upload(&second, &second_token, "sms-backup-restore", exported).await;
-    assert_eq!(report.messages_failed, 0, "{report:?}");
+    upload(&second, &second_token, "sms-backup-restore", exported).await;
     assert_eq!(stored_dates(&second, &second_token).await, expected);
 }

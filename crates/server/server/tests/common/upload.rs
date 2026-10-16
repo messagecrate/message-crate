@@ -1,7 +1,9 @@
 //! An Upload through the import library, as the desktop app sends one: the
 //! test starts the Import Run, the library posts every conversation file
 //! into it, and the test completes it. The library neither starts nor
-//! completes a run (#2053).
+//! completes a run (#2053). Every Upload it sends must be clean, so it
+//! completes each run as `completed`, the status the desktop app gives a
+//! clean one.
 
 use std::path::PathBuf;
 
@@ -12,15 +14,10 @@ use serde_json::json;
 use super::claim::{call, json_body};
 
 /// Upload every conversation file under `input` to `base` as `token`, into
-/// an Import Run of `source` the test starts and then completes, and return
-/// the library's report. The completion runs the end of the run, which
+/// an Import Run of `source` the test starts and then completes. The Upload
+/// must fail no message. The completion runs the end of the run, which
 /// hides the account's duplicates.
-pub async fn upload(
-    base: &str,
-    token: &str,
-    source: &str,
-    input: PathBuf,
-) -> message_crate_import::ImportReport {
+pub async fn upload(base: &str, token: &str, source: &str, input: PathBuf) {
     let (status, started) = call(
         base,
         Method::POST,
@@ -56,6 +53,7 @@ pub async fn upload(
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(report.messages_failed, 0, "{report:?}");
 
     let (status, completed) = call(
         base,
@@ -66,5 +64,4 @@ pub async fn upload(
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{completed}");
-    report
 }
