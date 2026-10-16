@@ -20,18 +20,18 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     let original = dir.path().join(&rel);
     std::fs::write(&original, bytes).unwrap();
 
-    let mut doc = ir::testutil::sample_document("hello from the fixture");
-    doc.messages[0].attachments = vec![Attachment {
+    let mut document = ir::testutil::sample_document("hello from the fixture");
+    document.messages[0].attachments = vec![Attachment {
         path: Some(rel),
         original_name: Some(name.to_string()),
         mime_type: None,
         size_bytes: Some(bytes.len() as u64),
         ..ir::testutil::sample_attachment()
     }];
-    doc.finalize_stats();
+    document.finalize_stats();
 
-    let jsonl = conversation_file(dir.path(), &doc);
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    let jsonl = conversation_file(dir.path(), &document);
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     (dir, jsonl, original)
 }
 
@@ -69,8 +69,8 @@ fn a_converted_attachment_is_patched_before_its_final_name_exists() {
     .unwrap();
 
     assert_eq!(report.converted, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(att.path.as_deref(), Some("attachments/photo-mv.jpg"));
     assert!(
         !original.exists(),
@@ -106,8 +106,8 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
     )
     .unwrap();
 
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     let derivative = dir.path().join("attachments/photo-mv.jpg");
     let on_disk = std::fs::read(&derivative).unwrap();
     assert_eq!(
@@ -146,9 +146,9 @@ fn an_interrupted_file_is_re_transcoded_not_adopted() {
         b"truncated garbage from a killed run".to_vec(),
         "the marker's bytes must never be adopted"
     );
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let document = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].path.as_deref(),
+        document.messages[0].attachments[0].path.as_deref(),
         Some("attachments/photo-mv.jpg")
     );
 }
@@ -187,9 +187,9 @@ fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
         std::fs::read(dir.path().join("attachments/photo-mv.jpg")).unwrap(),
         after_first
     );
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let document = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].path.as_deref(),
+        document.messages[0].attachments[0].path.as_deref(),
         Some("attachments/photo-mv.jpg")
     );
 }
@@ -215,10 +215,10 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
 
     assert_eq!(report.too_large, 1);
     assert_eq!(report.converted, 0);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let msg = &doc.messages[0];
-    assert!(!msg.text.is_empty(), "the message keeps its text");
-    let att = &msg.attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let message = &document.messages[0];
+    assert!(!message.text.is_empty(), "the message keeps its text");
+    let att = &message.attachments[0];
     assert_eq!(att.missing_reason.as_deref(), Some("too_large"));
     assert_eq!(att.path, None, "nothing to upload");
     assert!(!original.exists(), "the original is not kept as a fallback");
@@ -248,8 +248,8 @@ fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
     // ffmpeg failing on one file is an issue, never a failed Media stage.
     let report = report.unwrap();
     assert_eq!(report.failed, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let reason = doc.messages[0].attachments[0]
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let reason = document.messages[0].attachments[0]
         .missing_reason
         .clone()
         .unwrap();
@@ -294,14 +294,10 @@ fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
     assert_eq!(issues.len(), 1, "{issues:?}");
     let conversation = jsonl.file_name().unwrap().to_str().unwrap();
     assert_eq!(
-        (
-            issues[0].kind,
-            issues[0].step.as_str(),
-            issues[0].item.clone()
-        ),
+        (issues[0].kind, issues[0].step, issues[0].item.clone()),
         (
             RunIssueKind::Skip,
-            "media",
+            RunIssueStep::Media,
             format!("{conversation}:attachments/broken.png")
         )
     );
@@ -427,9 +423,9 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
         "attachments/photo.png",
         PNG_1X1_RGB.len() as u64,
     );
-    let mut doc_b = read_conversation_jsonl(&jsonl_b).unwrap();
-    doc_b.messages[0].attachments[0].missing_reason = Some("convert_failed: earlier".into());
-    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    let mut document_b = read_conversation_jsonl(&jsonl_b).unwrap();
+    document_b.messages[0].attachments[0].missing_reason = Some("convert_failed: earlier".into());
+    write_conversation_jsonl_to(&jsonl_b, &document_b).unwrap();
     let opts = options(MediaMode::Convert, u64::MAX);
     let (sink, issues) = collecting_sink();
 
@@ -481,8 +477,8 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
     )
     .unwrap();
     assert_eq!(first.failed, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(
         att.path.as_deref(),
         Some("attachments/broken.png"),
@@ -531,9 +527,9 @@ fn canceling_stops_the_media_stage_without_corrupting_the_directory() {
         "canceled",
         "the same word every other canceled stage returns; the import screen matches it"
     );
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let document = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].path.as_deref(),
+        document.messages[0].attachments[0].path.as_deref(),
         Some("attachments/photo.png"),
         "an untouched attachment still points at its original"
     );
@@ -571,19 +567,19 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
     };
     // Hand-simulate the crash window between the conversation file being
     // patched and written and the marker being renamed into its final
-    // name: the doc already points at the -mv
+    // name: the document already points at the -mv
     // name, a marker sits under .in_progress, and the original is still
     // on disk under its old name because the delete never ran.
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
     {
-        let att = &mut doc.messages[0].attachments[0];
+        let att = &mut document.messages[0].attachments[0];
         att.path = Some("attachments/photo-mv.jpg".into());
         att.digest_sha256 = Some("deadbeef".repeat(8));
         att.size_bytes = Some(1234);
         att.mime_type = Some("image/jpeg".into());
     }
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     let marker = dir.path().join("attachments/photo-mv.jpg.in_progress");
     std::fs::write(&marker, b"leftover bytes from the crashed run").unwrap();
     assert!(
@@ -618,11 +614,11 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
         !original.exists(),
         "the original is gone once the heal commits"
     );
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let document = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].path.as_deref(),
+        document.messages[0].attachments[0].path.as_deref(),
         Some("attachments/photo-mv.jpg"),
-        "the doc points at the healed derivative"
+        "the document points at the healed derivative"
     );
 }
 
@@ -638,15 +634,15 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
     // crashed run, which will never exist. It must repoint at the
     // recovered original first, then record the failure on it.
     let (dir, jsonl, original) = staged_one("broken.png", b"not a png at all");
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
     {
-        let att = &mut doc.messages[0].attachments[0];
+        let att = &mut document.messages[0].attachments[0];
         att.path = Some("attachments/broken-mv.jpg".into());
         att.digest_sha256 = Some("deadbeef".repeat(8));
         att.size_bytes = Some(1234);
         att.mime_type = Some("image/jpeg".into());
     }
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     assert!(
         original.exists(),
         "the original is still there before the Media stage runs"
@@ -664,8 +660,8 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
     .unwrap();
 
     assert_eq!(report.failed, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(
         att.path.as_deref(),
         Some("attachments/broken.png"),
@@ -700,15 +696,15 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
     // (say) an already-efficient-codec skip, which depends on what that
     // ffmpeg actually reports.
     let (dir, jsonl, original) = staged_one("clip.mp4", b"not really a video, but small");
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
     {
-        let att = &mut doc.messages[0].attachments[0];
+        let att = &mut document.messages[0].attachments[0];
         att.path = Some("attachments/clip-mv.mp4".into());
         att.digest_sha256 = Some("deadbeef".repeat(8));
         att.size_bytes = Some(1234);
         att.mime_type = Some("video/mp4".into());
     }
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     assert!(
         original.exists(),
         "the original is still there before the Media stage runs"
@@ -728,8 +724,8 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
     .unwrap();
 
     assert_eq!(report.skipped, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(
         att.path.as_deref(),
         Some("attachments/clip.mp4"),
@@ -752,16 +748,16 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
         return;
     };
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
     {
-        let att = &mut doc.messages[0].attachments[0];
+        let att = &mut document.messages[0].attachments[0];
         att.path = Some("attachments/photo-mv.jpg".into());
         // Seed non-None digest/size so the clearing assertions below can
         // actually fail if `apply_unrecoverable` stops clearing them.
         att.digest_sha256 = Some("cafebabe".repeat(8));
         att.size_bytes = Some(999);
     }
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     // Nothing recoverable is left: no marker, and the original itself is gone too.
     std::fs::remove_file(&original).unwrap();
 
@@ -778,8 +774,8 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
 
     assert_eq!(report.missing, 1);
     assert_eq!(report.converted, 0);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(att.missing_reason.as_deref(), Some("file_missing"));
     assert_eq!(att.path, None);
     assert_eq!(att.digest_sha256, None);
@@ -794,13 +790,13 @@ fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
     // A second message in the same document, carrying an attachment
     // recorded at the exact same content-addressed path — a legitimate
     // state, not a fixture error.
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
-    let mut second_msg = doc.messages[0].clone();
-    second_msg.guid = "second-message-guid".into();
-    second_msg.timestamp_unix_ms += 1000;
-    doc.messages.push(second_msg);
-    doc.finalize_stats();
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
+    let mut second_message = document.messages[0].clone();
+    second_message.guid = "second-message-guid".into();
+    second_message.timestamp_unix_ms += 1000;
+    document.messages.push(second_message);
+    document.finalize_stats();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
 
     let report = transcode_staged(
         dir.path(),
@@ -818,10 +814,10 @@ fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
         "one physical file, one transcode, however many attachments reference it"
     );
     assert!(!original.exists());
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    assert_eq!(doc.messages.len(), 2);
-    for msg in &doc.messages {
-        let att = &msg.attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    assert_eq!(document.messages.len(), 2);
+    for message in &document.messages {
+        let att = &message.attachments[0];
         assert_eq!(
             att.path.as_deref(),
             Some("attachments/photo-mv.jpg"),
@@ -841,19 +837,19 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     // A second, independent conversation staged in the same directory whose
     // attachment happens to record the identical path — two different
     // chats that received the same bytes.
-    let mut doc_b = ir::testutil::sample_document("second conversation, same photo");
-    doc_b.conversation.chat_identifier = "+15555550199".into();
-    doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![Attachment {
+    let mut document_b = ir::testutil::sample_document("second conversation, same photo");
+    document_b.conversation.chat_identifier = "+15555550199".into();
+    document_b.messages[0].guid = "doc-b-guid".into();
+    document_b.messages[0].attachments = vec![Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
         size_bytes: Some(PNG_1X1_RGB.len() as u64),
         ..ir::testutil::sample_attachment()
     }];
-    doc_b.finalize_stats();
-    let jsonl_b = conversation_file(dir.path(), &doc_b);
-    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    document_b.finalize_stats();
+    let jsonl_b = conversation_file(dir.path(), &document_b);
+    write_conversation_jsonl_to(&jsonl_b, &document_b).unwrap();
 
     let report = transcode_staged(
         dir.path(),
@@ -873,10 +869,10 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     );
     assert!(!original.exists());
 
-    let final_doc_a = read_conversation_jsonl(&jsonl_a).unwrap();
-    let final_doc_b = read_conversation_jsonl(&jsonl_b).unwrap();
-    let att_a = &final_doc_a.messages[0].attachments[0];
-    let att_b = &final_doc_b.messages[0].attachments[0];
+    let final_document_a = read_conversation_jsonl(&jsonl_a).unwrap();
+    let final_document_b = read_conversation_jsonl(&jsonl_b).unwrap();
+    let att_a = &final_document_a.messages[0].attachments[0];
+    let att_b = &final_document_b.messages[0].attachments[0];
     assert_eq!(att_a.path.as_deref(), Some("attachments/shared-mv.jpg"));
     assert_eq!(att_b.path.as_deref(), Some("attachments/shared-mv.jpg"));
     assert!(att_a.digest_sha256.is_some());
@@ -990,19 +986,19 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
     );
     let (dir, jsonl_a, original) = staged_one("shared.jpg", &bytes);
 
-    let mut doc_b = ir::testutil::sample_document("second conversation, same photo");
-    doc_b.conversation.chat_identifier = "+15555550199".into();
-    doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![Attachment {
+    let mut document_b = ir::testutil::sample_document("second conversation, same photo");
+    document_b.conversation.chat_identifier = "+15555550199".into();
+    document_b.messages[0].guid = "doc-b-guid".into();
+    document_b.messages[0].attachments = vec![Attachment {
         path: Some("attachments/shared.jpg".into()),
         original_name: Some("shared.jpg".into()),
         mime_type: None,
         size_bytes: Some(bytes.len() as u64),
         ..ir::testutil::sample_attachment()
     }];
-    doc_b.finalize_stats();
-    let jsonl_b = conversation_file(dir.path(), &doc_b);
-    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    document_b.finalize_stats();
+    let jsonl_b = conversation_file(dir.path(), &document_b);
+    write_conversation_jsonl_to(&jsonl_b, &document_b).unwrap();
 
     let report = transcode_staged(
         dir.path(),
@@ -1022,10 +1018,10 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
     );
     assert!(!original.exists());
 
-    let final_doc_a = read_conversation_jsonl(&jsonl_a).unwrap();
-    let final_doc_b = read_conversation_jsonl(&jsonl_b).unwrap();
-    let att_a = &final_doc_a.messages[0].attachments[0];
-    let att_b = &final_doc_b.messages[0].attachments[0];
+    let final_document_a = read_conversation_jsonl(&jsonl_a).unwrap();
+    let final_document_b = read_conversation_jsonl(&jsonl_b).unwrap();
+    let att_a = &final_document_a.messages[0].attachments[0];
+    let att_b = &final_document_b.messages[0].attachments[0];
     assert_eq!(att_a.path.as_deref(), Some("attachments/shared-mv.jpg"));
     assert_eq!(att_b.path.as_deref(), Some("attachments/shared-mv.jpg"));
     assert!(att_a.missing_reason.is_none());
@@ -1068,8 +1064,8 @@ fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
     assert_eq!(report.missing, 1);
     assert_eq!(report.repointed, 0);
     assert_eq!(report.converted, 0);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(att.missing_reason.as_deref(), Some("file_missing"));
     assert_eq!(att.path, None);
     assert_eq!(att.digest_sha256, None);
@@ -1081,19 +1077,19 @@ fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
 ///
 /// Returns the second conversation file's path.
 fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
-    let mut doc_b = ir::testutil::sample_document("second conversation, same file");
-    doc_b.conversation.chat_identifier = "+15555550199".into();
-    doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![Attachment {
+    let mut document_b = ir::testutil::sample_document("second conversation, same file");
+    document_b.conversation.chat_identifier = "+15555550199".into();
+    document_b.messages[0].guid = "doc-b-guid".into();
+    document_b.messages[0].attachments = vec![Attachment {
         path: Some(rel.into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
         size_bytes: Some(size),
         ..ir::testutil::sample_attachment()
     }];
-    doc_b.finalize_stats();
-    let jsonl_b = conversation_file(dir, &doc_b);
-    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    document_b.finalize_stats();
+    let jsonl_b = conversation_file(dir, &document_b);
+    write_conversation_jsonl_to(&jsonl_b, &document_b).unwrap();
     jsonl_b
 }
 
@@ -1214,9 +1210,9 @@ fn the_committed_suffix_guard_excludes_an_already_final_video_from_pending() {
     // exclusion a committed video derivative would look pending forever
     // and get re-degraded on every resume.
     let (dir, jsonl, _original) = staged_one("clip-mv.mp4", b"");
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let document = read_conversation_jsonl(&jsonl).unwrap();
 
-    let work = pending_in(dir.path(), &doc, MediaMode::Convert).unwrap();
+    let work = pending_in(dir.path(), &document, MediaMode::Convert).unwrap();
 
     assert!(
         work.is_empty(),
@@ -1249,23 +1245,23 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
     // `convert_failed`. The directory holds work for both modes: an image, a
     // video, and an audio file, across two conversation files.
     let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
-    let image = doc.messages[0].attachments[0].clone();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
+    let image = document.messages[0].attachments[0].clone();
     for (name, bytes) in [
         ("clip.mp4", b"not really a video".as_slice()),
         ("voice.m4a", b"not really audio".as_slice()),
     ] {
         let rel = format!("attachments/{name}");
         std::fs::write(dir.path().join(&rel), bytes).unwrap();
-        doc.messages[0].attachments.push(Attachment {
+        document.messages[0].attachments.push(Attachment {
             path: Some(rel),
             original_name: Some(name.to_string()),
             size_bytes: Some(bytes.len() as u64),
             ..image.clone()
         });
     }
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
-    write_conversation_jsonl_to(&dir.path().join("second.jsonl"), &doc).unwrap();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
+    write_conversation_jsonl_to(&dir.path().join("second.jsonl"), &document).unwrap();
     let before = snapshot_tree(dir.path());
     assert_eq!(
         before.len(),
@@ -1309,8 +1305,8 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
             "{mode:?}: a conversation file or an original changed"
         );
         for file in conversation_files(dir.path()).unwrap() {
-            let doc = read_conversation_jsonl(&file).unwrap();
-            for attachment in doc.messages.iter().flat_map(|m| &m.attachments) {
+            let document = read_conversation_jsonl(&file).unwrap();
+            for attachment in document.messages.iter().flat_map(|m| &m.attachments) {
                 assert_eq!(
                     attachment.missing_reason,
                     None,
@@ -1358,13 +1354,13 @@ fn a_crash_heal_whose_original_was_dropped_too_large_records_too_large() {
         return;
     };
     let (dir, jsonl, original) = staged_one("x.mov", b"not really a video");
-    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
+    let mut document = read_conversation_jsonl(&jsonl).unwrap();
     {
-        let att = &mut doc.messages[0].attachments[0];
+        let att = &mut document.messages[0].attachments[0];
         att.path = Some("attachments/x-mv.mp4".into());
         att.digest_sha256 = Some("cafebabe".repeat(8));
     }
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     std::fs::remove_file(&original).unwrap();
     std::fs::write(too_large_note(&original), "12345").unwrap();
 
@@ -1381,8 +1377,8 @@ fn a_crash_heal_whose_original_was_dropped_too_large_records_too_large() {
 
     assert_eq!(report.too_large, 1);
     assert_eq!(report.missing, 0, "the shared file was dropped, not lost");
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let att = &doc.messages[0].attachments[0];
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &document.messages[0].attachments[0];
     assert_eq!(att.missing_reason.as_deref(), Some("too_large"));
     assert_eq!(att.size_bytes, Some(12345));
     assert_eq!(att.path, None);
@@ -1460,8 +1456,8 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
         "{:?}",
         rows.lock().unwrap()
     );
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    assert_eq!(doc.messages[0].attachments[0].missing_reason, None);
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    assert_eq!(document.messages[0].attachments[0].missing_reason, None);
     assert!(original.exists(), "the original is kept");
 }
 
@@ -1503,8 +1499,8 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
     .unwrap();
 
     assert_eq!(report.failed, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
-    let reason = doc.messages[0].attachments[0]
+    let document = read_conversation_jsonl(&jsonl).unwrap();
+    let reason = document.messages[0].attachments[0]
         .missing_reason
         .clone()
         .unwrap();
@@ -1533,9 +1529,11 @@ fn a_failed_conversion_records_the_line_that_names_the_cause() {
     .unwrap();
 
     assert_eq!(report.failed, 1);
-    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let document = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].missing_reason.as_deref(),
+        document.messages[0].attachments[0]
+            .missing_reason
+            .as_deref(),
         Some("convert_failed: -q:v: fake failure on '<input>'")
     );
     let rows = rows.lock().unwrap();

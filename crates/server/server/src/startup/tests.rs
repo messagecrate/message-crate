@@ -40,6 +40,7 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         app,
+        crate::connections::ConnectionLimits::of_default_config(),
         async move {
             shutdown_signal(None).await;
             let _ = stopping_tx.send(());
@@ -117,6 +118,7 @@ async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limi
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         app,
+        crate::connections::ConnectionLimits::of_default_config(),
         async move {
             let _ = stop_rx.await;
         },
@@ -185,6 +187,7 @@ async fn a_stopping_server_gives_up_on_its_own_work_at_the_drain_limit() {
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         Router::new(),
+        crate::connections::ConnectionLimits::of_default_config(),
         async move {
             let _ = stop_rx.await;
         },
@@ -217,6 +220,7 @@ async fn a_stopping_server_waits_for_its_own_work() {
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         Router::new(),
+        crate::connections::ConnectionLimits::of_default_config(),
         async move {
             let _ = stop_rx.await;
         },

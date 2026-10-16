@@ -62,7 +62,7 @@ pub struct FormatSink {
     format: OutputFormat,
     transforms: ExportTransforms,
     archive: Option<Box<dyn MergedArchive>>,
-    docs: Vec<ConversationDocument>,
+    documents: Vec<ConversationDocument>,
 }
 
 impl FormatSink {
@@ -90,7 +90,7 @@ impl FormatSink {
             format,
             transforms,
             archive: None,
-            docs: Vec::new(),
+            documents: Vec::new(),
         })
     }
 
@@ -184,8 +184,8 @@ impl FormatSink {
     /// # Errors
     ///
     /// Currently always succeeds.
-    pub fn write_document(&mut self, doc: ConversationDocument) -> Result<()> {
-        self.docs.push(doc);
+    pub fn write_document(&mut self, document: ConversationDocument) -> Result<()> {
+        self.documents.push(document);
         Ok(())
     }
 
@@ -205,18 +205,18 @@ impl FormatSink {
     /// a merged archive and no [`MergedArchive`] was supplied.
     pub fn finish(mut self, report: &mut ExportReport) -> Result<()> {
         let embeds_media = self.format.is_mail_archive() || self.archive.is_some();
-        let outcome = apply_transforms(&mut self.docs, &self.output_dir, &self.transforms)?;
+        let outcome = apply_transforms(&mut self.documents, &self.output_dir, &self.transforms)?;
 
-        report.obfuscated_docs += outcome.obfuscated_docs as u64;
+        report.obfuscated_documents += outcome.obfuscated_documents as u64;
 
         if let Some(archive) = &self.archive {
-            record_archive_outputs(&self.output_dir, &archive.outputs(&self.docs)?)?;
-            archive.write(&self.output_dir, &self.docs, report)?;
+            record_archive_outputs(&self.output_dir, &archive.outputs(&self.documents)?)?;
+            archive.write(&self.output_dir, &self.documents, report)?;
         } else {
-            let mut docs: Vec<&mut ConversationDocument> = self.docs.iter_mut().collect();
-            crate::give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
-            for doc in self.docs {
-                write_format(&self.output_dir, self.format, doc)?;
+            let mut documents: Vec<&mut ConversationDocument> = self.documents.iter_mut().collect();
+            crate::give_each_document_its_own_file(&mut documents).map_err(anyhow::Error::msg)?;
+            for document in self.documents {
+                write_format(&self.output_dir, self.format, document)?;
             }
         }
 
@@ -257,10 +257,10 @@ pub fn write_documents_through_sink(
     log.emit(CONVERSATION_FILES_PREPARING.line(total as u64));
     progress.emit(ProgressEvent::Prepare { done: 0, total });
     let mut written = 0usize;
-    for doc in documents {
+    for document in documents {
         message_crate_core::check_cancel(cancel)?;
         written += 1;
-        sink.write_document(doc)?;
+        sink.write_document(document)?;
         report.conversations += 1;
         if written.is_multiple_of(100) || written == total {
             log.emit(format!("  preparing {written}/{total}"));
@@ -320,11 +320,11 @@ mod tests {
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
         for chat in ["chat1", "chat2"] {
-            let mut doc = ir::testutil::sample_document(chat);
-            doc.conversation.chat_identifier = chat.into();
-            doc.conversation.conversation_type = ir::ConversationType::Group;
-            doc.conversation.group_title = Some("Family".into());
-            sink.write_document(doc).unwrap();
+            let mut document = ir::testutil::sample_document(chat);
+            document.conversation.chat_identifier = chat.into();
+            document.conversation.conversation_type = ir::ConversationType::Group;
+            document.conversation.group_title = Some("Family".into());
+            sink.write_document(document).unwrap();
         }
 
         sink.finish(&mut ExportReport::default()).unwrap();
@@ -364,7 +364,7 @@ mod tests {
             let path = output_dir.join("all.txt");
             let body: Vec<String> = documents
                 .iter()
-                .map(|doc| doc.conversation.chat_identifier.clone())
+                .map(|document| document.conversation.chat_identifier.clone())
                 .collect();
             fs::write(&path, body.join("\n"))?;
             Ok(())
@@ -428,8 +428,8 @@ mod tests {
             let rel = "attachments/photo.jpg";
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
-            let mut doc = ir::testutil::sample_document("with media");
-            doc.messages[0].attachments = vec![Attachment {
+            let mut document = ir::testutil::sample_document("with media");
+            document.messages[0].attachments = vec![Attachment {
                 path: Some(rel.into()),
                 ..ir::testutil::sample_attachment()
             }];
@@ -439,7 +439,7 @@ mod tests {
                 ..ExportTransforms::none()
             };
             let mut sink = FormatSink::open(tmp.path(), format, transforms).unwrap();
-            sink.write_document(doc).unwrap();
+            sink.write_document(document).unwrap();
             sink.finish(&mut ExportReport::default()).unwrap();
 
             assert!(!att_dir.exists(), "{format:?}");
@@ -488,15 +488,15 @@ mod tests {
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Csv, transforms).unwrap();
         // The fixture's `source` bag carries the raw sender address; obfuscation
         // must drop it, so the bag stays in and the assertion below covers it.
-        let doc = ir::testutil::sample_document("secret");
+        let document = ir::testutil::sample_document("secret");
         assert!(
-            doc.messages[0].source.is_some(),
+            document.messages[0].source.is_some(),
             "fixture should carry a vendor bag"
         );
-        sink.write_document(doc).unwrap();
+        sink.write_document(document).unwrap();
         let mut report = ExportReport::default();
         sink.finish(&mut report).unwrap();
-        assert_eq!(report.obfuscated_docs, 1);
+        assert_eq!(report.obfuscated_documents, 1);
         let mut found = false;
         for entry in fs::read_dir(tmp.path()).unwrap() {
             let path = entry.unwrap().path();

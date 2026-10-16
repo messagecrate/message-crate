@@ -197,23 +197,25 @@ pub fn summarize_staging(
     let mut attachments: Vec<AttachmentRef> = Vec::new();
 
     for jsonl in &files {
-        let doc = read_conversation_jsonl(jsonl)?;
+        let document = read_conversation_jsonl(jsonl)?;
         summary.conversations += 1;
-        summary.messages += doc.messages.len() as u64;
-        for participant in &doc.conversation.participants {
+        summary.messages += document.messages.len() as u64;
+        for participant in &document.conversation.participants {
             if let Some(identity) = participant.identity.clone() {
                 contacts.insert(identity);
             }
         }
-        for msg in &doc.messages {
-            if let Some(identity) = owner_identity_of(msg, doc.export.owner_identity.as_deref()) {
+        for message in &document.messages {
+            if let Some(identity) =
+                owner_identity_of(message, document.export.owner_identity.as_deref())
+            {
                 let (sent, received) = owner.entry(identity.to_string()).or_insert((0, 0));
-                match msg.direction {
+                match message.direction {
                     Direction::Outgoing => *sent += 1,
                     Direction::Incoming => *received += 1,
                 }
             }
-            for att in &msg.attachments {
+            for att in &message.attachments {
                 attachments.push(AttachmentRef {
                     path: att.path.clone(),
                     missing_reason: att.missing_reason.clone(),
@@ -274,19 +276,23 @@ struct AttachmentRef {
     original_name: Option<String>,
 }
 
-/// The owner's address on `msg`: its own record, then the sender of an
+/// The owner's address on `message`: its own record, then the sender of an
 /// outgoing message, then the export's one owner address. `None` when all
 /// are blank.
-fn owner_identity_of<'a>(msg: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
-    let outgoing_sender = match msg.direction {
-        Direction::Outgoing => msg.sender_identity.as_deref(),
+fn owner_identity_of<'a>(message: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
+    let outgoing_sender = match message.direction {
+        Direction::Outgoing => message.sender_identity.as_deref(),
         Direction::Incoming => None,
     };
-    [msg.owner_identity.as_deref(), outgoing_sender, export_owner]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .find(|identity| !identity.is_empty())
+    [
+        message.owner_identity.as_deref(),
+        outgoing_sender,
+        export_owner,
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|identity| !identity.is_empty())
 }
 
 /// Measure and classify one physical file, folding its bytes and verdict

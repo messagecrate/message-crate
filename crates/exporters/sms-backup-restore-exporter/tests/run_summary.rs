@@ -5,7 +5,8 @@
 use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
 use message_crate_core::{
-    CancelFlag, ConvertRun, LogSink, OutputFormat, ProgressSink, SmsBackupRestoreConfig,
+    CancelFlag, ConvertRun, LogSink, OutputFormat, ProgressSink, RunIssueKind, RunIssueStep,
+    SmsBackupRestoreConfig,
 };
 use std::fs;
 use std::path::Path;
@@ -93,9 +94,9 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     // Each message kept with something left out is a note naming the file
     // and the message (#1707).
     let issues = issues.lock().unwrap();
-    let rows: Vec<(message_crate_core::RunIssueKind, &str, &str, &str)> = issues
+    let rows: Vec<(RunIssueKind, RunIssueStep, &str, &str)> = issues
         .iter()
-        .map(|i| (i.kind, i.step.as_str(), i.item.as_str(), i.reason.as_str()))
+        .map(|i| (i.kind, i.step, i.item.as_str(), i.reason.as_str()))
         .collect();
     let sms_1 = input.display().to_string();
     let hey = format!("{sms_1} (message of 2014-05-22T15:42:01Z with +15555550101)");
@@ -104,15 +105,15 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         rows,
         [
             (
-                message_crate_core::RunIssueKind::Note,
-                "parse",
+                RunIssueKind::Note,
+                RunIssueStep::Parse,
                 hey.as_str(),
                 "1 character reference in this message is not a character and was left out. \
                  The message itself is kept."
             ),
             (
-                message_crate_core::RunIssueKind::Note,
-                "parse",
+                RunIssueKind::Note,
+                RunIssueStep::Parse,
                 photo.as_str(),
                 "1 part of this message could not be read and was left out. The message \
                  itself is kept."

@@ -162,12 +162,12 @@ fn xml_writes_only_sms_and_mms_and_the_log_names_what_was_left_out() {
     imessage.conversation.participants[0].identity = Some("+15555550103".into());
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    for doc in [
+    for document in [
         ir::testutil::sample_document("hello sms"),
         imessage,
         ir::testutil::sample_whatsapp_document("hello whatsapp"),
     ] {
-        sink.write_document(doc).unwrap();
+        sink.write_document(document).unwrap();
     }
     sink.finish(&mut ExportReport::default()).unwrap();
 
@@ -570,7 +570,7 @@ fn log_lines_append_the_obfuscated_line_after_the_count() {
         report: ExportReport {
             conversations: 1,
             attachments_saved: 4,
-            obfuscated_docs: 2,
+            obfuscated_documents: 2,
             ..ExportReport::default()
         },
     };
@@ -1242,11 +1242,11 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
     for chat in ["chat-one", "chat-two"] {
-        let mut doc = ir::testutil::sample_document("hello group");
-        doc.conversation.conversation_type = ir::ConversationType::Group;
-        doc.conversation.group_title = Some("Family".into());
-        doc.conversation.chat_identifier = chat.into();
-        sink.write_document(doc).unwrap();
+        let mut document = ir::testutil::sample_document("hello group");
+        document.conversation.conversation_type = ir::ConversationType::Group;
+        document.conversation.group_title = Some("Family".into());
+        document.conversation.chat_identifier = chat.into();
+        sink.write_document(document).unwrap();
     }
     sink.finish(&mut ExportReport::default()).unwrap();
     let written = json_names(source.path());
@@ -1536,13 +1536,13 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
     let source = tempfile::tempdir().unwrap();
     fs::create_dir_all(source.path()).unwrap();
     clean_previous_ir_output(source.path()).unwrap();
-    let mut doc = ir::testutil::sample_document("a huge video");
+    let mut document = ir::testutil::sample_document("a huge video");
     let mut video = attachment("video.mov", Some("attachments/video.mov"));
     video.size_bytes = Some(u64::MAX / 2);
-    doc.messages[0].attachments = vec![video];
+    document.messages[0].attachments = vec![video];
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(doc).unwrap();
+    sink.write_document(document).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     fs::create_dir_all(source.path().join("attachments")).unwrap();
     fs::write(source.path().join("attachments/video.mov"), b"video").unwrap();
@@ -1608,13 +1608,13 @@ fn assert_writes_each_attachment_once(source: &Path) {
 fn a_conversion_writes_each_attachment_once() {
     let source = tempfile::tempdir().unwrap();
     clean_previous_ir_output(source.path()).unwrap();
-    let mut doc = ir::testutil::sample_document("a photo");
+    let mut document = ir::testutil::sample_document("a photo");
     let mut photo = attachment("photo.png", Some("attachments/photo.png"));
     photo.mime_type = Some("image/png".into());
-    doc.messages[0].attachments = vec![photo];
+    document.messages[0].attachments = vec![photo];
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(doc).unwrap();
+    sink.write_document(document).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     fs::create_dir_all(source.path().join("attachments")).unwrap();
     fs::write(
@@ -1653,15 +1653,15 @@ fn a_converted_sms_backup_writes_each_attachment_once() {
 fn write_huge_attachments_with_no_file(dir: &Path, reason: &str) {
     fs::create_dir_all(dir).unwrap();
     clean_previous_ir_output(dir).unwrap();
-    let mut doc = ir::testutil::sample_document("two huge videos");
+    let mut document = ir::testutil::sample_document("two huge videos");
     let mut gone = attachment("gone.mov", Some("attachments/gone.mov"));
     gone.size_bytes = Some(u64::MAX / 2);
     let mut marked = attachment("marked.mov", None);
     marked.size_bytes = Some(u64::MAX / 2);
     marked.missing_reason = Some(reason.to_string());
-    doc.messages[0].attachments = vec![gone, marked];
+    document.messages[0].attachments = vec![gone, marked];
     let mut sink = FormatSink::open(dir, OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(doc).unwrap();
+    sink.write_document(document).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
 }
 

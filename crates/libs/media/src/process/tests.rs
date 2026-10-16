@@ -127,9 +127,9 @@ fn derivative_name_is_none_for_a_file_the_mode_leaves_alone() {
     fs::write(&jpeg, b"not really a jpeg").unwrap();
     assert_eq!(derivative_name(&jpeg, MediaMode::Convert), None);
 
-    let doc = dir.path().join("notes.pdf");
-    fs::write(&doc, b"%PDF").unwrap();
-    assert_eq!(derivative_name(&doc, MediaMode::Convert), None);
+    let document = dir.path().join("notes.pdf");
+    fs::write(&document, b"%PDF").unwrap();
+    assert_eq!(derivative_name(&document, MediaMode::Convert), None);
 }
 
 #[test]

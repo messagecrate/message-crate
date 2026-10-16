@@ -97,7 +97,7 @@ fn parse_address(raw: &str) -> Option<Handle> {
 
 /// True for a row someone other than the account holder wrote.
 fn written_by_someone_else(row: &RawRow) -> bool {
-    !is_outgoing(&row.msg_type) && !is_notification(&row.msg_type)
+    !is_outgoing(&row.message_type) && !is_notification(&row.message_type)
 }
 
 /// The node `node` is joined to in a union-find map.
@@ -230,7 +230,7 @@ fn group_members(roster: bool, session: &str, rows: &[&RawRow]) -> (Vec<Particip
     // The rows themselves pair a sender's name with their address. That is
     // the only name-to-address mapping the source gives.
     let mut handle_by_sender_name: HashMap<String, Handle> = HashMap::new();
-    for row in rows.iter().filter(|row| !is_outgoing(&row.msg_type)) {
+    for row in rows.iter().filter(|row| !is_outgoing(&row.message_type)) {
         let Some(address) = parse_address(&row.sender_id) else {
             continue;
         };
@@ -287,7 +287,7 @@ fn group_members(roster: bool, session: &str, rows: &[&RawRow]) -> (Vec<Particip
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct RowFields<'a> {
     message_date: &'a str,
-    msg_type: &'a str,
+    message_type: &'a str,
     sender_id: &'a str,
     text: &'a str,
     attachment: &'a str,
@@ -297,7 +297,7 @@ impl<'a> RowFields<'a> {
     fn of(row: &'a RawRow) -> Self {
         Self {
             message_date: &row.message_date,
-            msg_type: &row.msg_type,
+            message_type: &row.message_type,
             sender_id: &row.sender_id,
             text: &row.text,
             attachment: &row.attachment,
@@ -311,7 +311,7 @@ fn row_digest(fields: &RowFields<'_>) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for (index, field) in [
         fields.message_date,
-        fields.msg_type,
+        fields.message_type,
         fields.sender_id,
         fields.text,
         fields.attachment,
@@ -360,7 +360,7 @@ pub(super) fn group_vendor_id(row_digests: &[[u8; 32]], depth: usize) -> String 
         return hex::encode(row_digests.first().copied().unwrap_or_else(|| {
             row_digest(&RowFields {
                 message_date: "",
-                msg_type: "",
+                message_type: "",
                 sender_id: "",
                 text: "",
                 attachment: "",
@@ -404,16 +404,16 @@ pub(super) fn parse_message_date(raw: &str, zone: Zone) -> Option<i64> {
 }
 
 /// True for rows the exporter treats as sent (`outgoing`/`sent` types).
-pub(super) fn is_outgoing(msg_type: &str) -> bool {
+pub(super) fn is_outgoing(message_type: &str) -> bool {
     matches!(
-        msg_type.trim().to_ascii_lowercase().as_str(),
+        message_type.trim().to_ascii_lowercase().as_str(),
         "outgoing" | "sent"
     )
 }
 
 /// True for iMazing's `Notification` message type.
-pub(super) fn is_notification(msg_type: &str) -> bool {
-    msg_type.trim().eq_ignore_ascii_case("notification")
+pub(super) fn is_notification(message_type: &str) -> bool {
+    message_type.trim().eq_ignore_ascii_case("notification")
 }
 
 /// The fewest digits a number written inside a name has, so `Party +1`

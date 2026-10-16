@@ -7,25 +7,25 @@ use ir::{ConversationDocument, trimmed};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
-/// The file name stem of `doc`, without an extension, used for CSV, JSON,
+/// The file name stem of `document`, without an extension, used for CSV, JSON,
 /// JSON Lines, and mail files and directories.
-pub fn filename_stem(doc: &ConversationDocument) -> String {
-    let handles: Vec<String> = doc
+pub fn filename_stem(document: &ConversationDocument) -> String {
+    let handles: Vec<String> = document
         .conversation
         .participants
         .iter()
         .filter_map(|p| p.identity.clone())
         .collect();
     conversation_stem(
-        doc.conversation.conversation_type.as_str(),
-        &doc.conversation.chat_identifier,
-        doc.conversation.group_title.as_deref(),
+        document.conversation.conversation_type.as_str(),
+        &document.conversation.chat_identifier,
+        document.conversation.group_title.as_deref(),
         &handles,
-        doc.packaging_stem_suffix.as_deref(),
+        document.packaging_stem_suffix.as_deref(),
     )
 }
 
-/// Give every document a file name no other document in `docs` has.
+/// Give every document a file name no other document in `documents` has.
 ///
 /// Two conversations can reduce to one [`filename_stem`]:
 /// two groups with the same title, two untitled groups with the same people,
@@ -41,26 +41,28 @@ pub fn filename_stem(doc: &ConversationDocument) -> String {
 /// chat identifier twice), so the caller can refuse rather than write one
 /// over the other.
 pub fn give_each_document_its_own_file(
-    docs: &mut [&mut ConversationDocument],
+    documents: &mut [&mut ConversationDocument],
 ) -> Result<(), String> {
     let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, doc) in docs.iter().enumerate() {
+    for (i, document) in documents.iter().enumerate() {
         by_name
-            .entry(filename_stem(doc).to_lowercase())
+            .entry(filename_stem(document).to_lowercase())
             .or_default()
             .push(i);
     }
     for clash in by_name.values().filter(|indexes| indexes.len() > 1) {
         for &i in clash {
-            let doc = &mut *docs[i];
-            let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
-            let suffix = doc.packaging_stem_suffix.take().unwrap_or_default();
-            doc.packaging_stem_suffix = Some(format!("{suffix}__{}", &digest[..8]));
+            let document = &mut *documents[i];
+            let digest = hex::encode(Sha256::digest(
+                document.conversation.chat_identifier.as_bytes(),
+            ));
+            let suffix = document.packaging_stem_suffix.take().unwrap_or_default();
+            document.packaging_stem_suffix = Some(format!("{suffix}__{}", &digest[..8]));
         }
     }
     let mut names = HashSet::new();
-    for doc in docs.iter() {
-        let stem = filename_stem(doc);
+    for document in documents.iter() {
+        let stem = filename_stem(document);
         if !names.insert(stem.to_lowercase()) {
             return Err(format!("two conversations would both be written to {stem}"));
         }

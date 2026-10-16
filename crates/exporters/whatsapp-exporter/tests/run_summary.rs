@@ -3,7 +3,7 @@
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
-use message_crate_core::{RunIssue, WhatsappConfig};
+use message_crate_core::{RunIssue, RunIssueStep, WhatsappConfig};
 use std::fs;
 
 /// A message with the given `timestamp` JSON value.
@@ -148,7 +148,7 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
         *issues.lock().unwrap(),
         [RunIssue {
             kind: message_crate_core::RunIssueKind::Note,
-            step: "parse".into(),
+            step: RunIssueStep::Parse,
             item: "Media/WhatsApp Images/IMG-1.jpg".into(),
             reason:
                 "This attachment's file is not in the backup, so its message is kept without it."

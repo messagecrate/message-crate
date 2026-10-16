@@ -165,8 +165,8 @@ mod tests {
     /// attachments has a file, each given the size its record names.
     fn totals(paths: PathSources, gone: &Path) -> (Vec<(usize, u64, u64)>, u64) {
         let out = tempfile::tempdir().unwrap();
-        let mut doc = ir::testutil::sample_document("with a photo");
-        doc.messages[0].attachments = [5, 700, 1_000, 30].map(attachment).to_vec();
+        let mut document = ir::testutil::sample_document("with a photo");
+        document.messages[0].attachments = [5, 700, 1_000, 30].map(attachment).to_vec();
         let mut sources = vec![
             AttachmentSource::Bytes(b"xxxxx".to_vec()),
             AttachmentSource::Path(gone.to_path_buf()),
@@ -177,7 +177,7 @@ mod tests {
         let (progress, totals) = message_crate_core::testutil::attachment_totals();
 
         let counted = CountedAttachments::new(
-            doc.messages.iter_mut(),
+            document.messages.iter_mut(),
             AttachmentFiles::Originals,
             paths,
             |att| (sources.next().unwrap(), att.size_bytes),

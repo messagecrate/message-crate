@@ -347,40 +347,50 @@ fn an_export_records_one_run_and_writes_the_conversation_and_every_asset_once_ac
         Vec::<String>::new(),
         "each temporary file is renamed into place"
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.export.source, "sms-backup-restore");
-    assert_eq!(doc.export.exported_at_unix_ms, Some(EXPORTED_AT_UNIX_MS));
-    assert_eq!(doc.conversation.chat_identifier, "+15555550101");
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.export.source, "sms-backup-restore");
     assert_eq!(
-        doc.conversation.participants[0].display_name.as_deref(),
+        document.export.exported_at_unix_ms,
+        Some(EXPORTED_AT_UNIX_MS)
+    );
+    assert_eq!(document.conversation.chat_identifier, "+15555550101");
+    assert_eq!(
+        document.conversation.participants[0]
+            .display_name
+            .as_deref(),
         Some("Sam")
     );
-    assert_eq!(doc.conversation.stats.message_count, 3);
-    assert_eq!(doc.conversation.stats.attachment_count, 3);
+    assert_eq!(document.conversation.stats.message_count, 3);
+    assert_eq!(document.conversation.stats.attachment_count, 3);
     assert_eq!(
-        doc.messages
+        document
+            .messages
             .iter()
             .map(|m| m.guid.as_str())
             .collect::<Vec<_>>(),
         ["guid-1", "guid-2", "guid-3"]
     );
-    assert_eq!(doc.messages[0].text, "dinner at seven?");
+    assert_eq!(document.messages[0].text, "dinner at seven?");
     // The address the server holds each message at comes out on the message,
     // and on the header since every message shares it (#1098).
     assert_eq!(
-        doc.messages
+        document
+            .messages
             .iter()
             .map(|m| m.owner_identity.as_deref())
             .collect::<Vec<_>>(),
         [Some("+15555550100"); 3]
     );
-    assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
     assert_eq!(
-        doc.messages[0].attachments[0].digest_sha256.as_deref(),
+        document.export.owner_identity.as_deref(),
+        Some("+15555550100")
+    );
+    assert_eq!(
+        document.messages[0].attachments[0].digest_sha256.as_deref(),
         Some(MENU_SHA)
     );
     assert_eq!(
-        doc.messages[1].attachments[0].path.as_deref(),
+        document.messages[1].attachments[0].path.as_deref(),
         Some(format!("attachments/{PHOTO_SHA}").as_str())
     );
 }
@@ -428,9 +438,9 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
     assert_eq!(assets.calls(), 0, "nothing names a file to fetch");
     assert!(!dir.path().join("escape.pdf").exists());
     assert_eq!(report.refused_attachment_paths, [climbing.to_string()]);
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].path, None,
+        document.messages[0].attachments[0].path, None,
         "the conversation file names no path outside the Export's directory"
     );
     let line = format!(
@@ -503,8 +513,8 @@ fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fing
         fs::read(out.join("attachments").join(PHOTO_SHA)).unwrap(),
         PHOTO_BYTES
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    let written: Vec<Option<&str>> = doc
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let written: Vec<Option<&str>> = document
         .messages
         .iter()
         .map(|m| m.attachments[0].path.as_deref())
@@ -800,9 +810,10 @@ fn a_source_name_with_spaces_and_brackets_becomes_a_file_safe_suffix() {
 
     run(&config(&out, server.base_url()), None).unwrap();
 
-    let doc = read_conversation_jsonl(&out.join("+15555550101__whatsapp__phone_2_.jsonl")).unwrap();
-    assert_eq!(doc.export.source, "whatsapp (phone 2)");
-    assert_eq!(doc.conversation.stats.message_count, 3);
+    let document =
+        read_conversation_jsonl(&out.join("+15555550101__whatsapp__phone_2_.jsonl")).unwrap();
+    assert_eq!(document.export.source, "whatsapp (phone 2)");
+    assert_eq!(document.conversation.stats.message_count, 3);
 }
 
 #[test]
@@ -890,9 +901,9 @@ fn skipping_attachments_writes_messages_without_files_or_fetches() {
     assert_eq!(menu.calls(), 0);
     assert_eq!(photo.calls(), 0);
     assert!(!out.join("attachments").exists());
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.conversation.stats.attachment_count, 0);
-    assert!(doc.messages[0].attachments.is_empty());
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.conversation.stats.attachment_count, 0);
+    assert!(document.messages[0].attachments.is_empty());
 }
 
 #[test]
@@ -1039,12 +1050,12 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
         fs::read(out.join("attachments").join(PHOTO_SHA)).unwrap(),
         PHOTO_BYTES
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.messages.len(), 3, "every message is written");
-    let attachments: Vec<_> = doc
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.messages.len(), 3, "every message is written");
+    let attachments: Vec<_> = document
         .messages
         .iter()
-        .flat_map(|msg| msg.attachments.iter())
+        .flat_map(|message| message.attachments.iter())
         .collect();
     let menus: Vec<_> = attachments
         .iter()
@@ -1434,14 +1445,14 @@ fn every_path_a_message_names_exists_after_an_export() {
     run(&config(&out, server.base_url()), None).unwrap();
 
     menu.assert_calls(1);
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    for msg in &doc.messages {
-        let rel = msg.attachments[0].path.as_deref().unwrap();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    for exported in &document.messages {
+        let rel = exported.attachments[0].path.as_deref().unwrap();
         assert_eq!(
             fs::read(out.join(rel)).ok().as_deref(),
             Some(MENU_BYTES),
             "message {} names {rel}, which the Export Run never wrote",
-            msg.guid
+            exported.guid
         );
     }
 }
@@ -1494,9 +1505,9 @@ fn an_exported_message_keeps_its_reactions_under_each_reactor() {
         ]),
         "{line}"
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(
-        doc.messages[0].reactions,
+        document.messages[0].reactions,
         [
             Reaction {
                 part_index: 0,
@@ -1591,8 +1602,8 @@ fn an_exported_message_keeps_its_deletion_mark() {
     assert_eq!(lines[0]["deletion"], "deleted_in_source_app", "{written}");
     assert_eq!(lines[1]["deletion"], "unsent", "{written}");
     assert!(lines[2].get("deletion").is_none(), "{written}");
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    let marks: Vec<Option<Deletion>> = doc.messages.iter().map(|m| m.deletion).collect();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let marks: Vec<Option<Deletion>> = document.messages.iter().map(|m| m.deletion).collect();
     assert_eq!(
         marks,
         [
@@ -1640,10 +1651,10 @@ fn an_exported_message_keeps_its_earlier_versions() {
 
     run(&config(&out, server.base_url()), None).unwrap();
 
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.messages[0].text, "See you at noon");
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.messages[0].text, "See you at noon");
     assert_eq!(
-        doc.messages[0].edits,
+        document.messages[0].edits,
         [
             EarlierVersion {
                 part_index: 0,

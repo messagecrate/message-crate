@@ -4,7 +4,7 @@
 //! app never heard of either.
 
 use message_crate_core::testutil::{collect_issues, jsonl_test_run};
-use message_crate_core::{ImazingConfig, RunIssue};
+use message_crate_core::{ImazingConfig, RunIssue, RunIssueStep};
 use std::fs;
 use std::path::Path;
 
@@ -34,7 +34,7 @@ fn a_csv_the_run_cannot_read_is_an_import_error_naming_it() {
         input.join("Messages/2020-01-02 09 00 00 - Carol Sample/Messages - Carol Sample.csv");
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0].kind, message_crate_core::RunIssueKind::Error);
-    assert_eq!(rows[0].step, "parse");
+    assert_eq!(rows[0].step, RunIssueStep::Parse);
     assert_eq!(rows[0].item, broken.display().to_string());
     assert!(rows[0].reason.contains("type"), "{rows:?}");
 }
@@ -72,7 +72,7 @@ fn a_live_photo_video_two_rows_name_is_a_note_naming_the_picture() {
         rows,
         [RunIssue {
             kind: message_crate_core::RunIssueKind::Note,
-            step: "parse".into(),
+            step: RunIssueStep::Parse,
             item: picture.display().to_string(),
             reason: "This picture is named by 2 rows. Its Live Photo video goes to the first of them in the CSV".into(),
             conversation: None,
@@ -107,7 +107,7 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
         rows,
         [RunIssue {
             kind: message_crate_core::RunIssueKind::Note,
-            step: "parse".into(),
+            step: RunIssueStep::Parse,
             item: format!("{csv} (Mystery Person)"),
             reason: "This conversation names its person with no phone number or email address, so it is kept under the name alone.".into(),
             conversation: None,
@@ -127,7 +127,7 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
         rows,
         [RunIssue {
             kind: message_crate_core::RunIssueKind::Note,
-            step: "parse".into(),
+            step: RunIssueStep::Parse,
             item: format!("{csv} (Carol Silent)"),
             reason: "The group's name lists this member, but no message gives their phone number or email address, so they are kept by name.".into(),
             conversation: None,

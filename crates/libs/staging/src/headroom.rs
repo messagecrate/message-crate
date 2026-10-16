@@ -308,9 +308,9 @@ mod tests {
             headroom_shortfall(1024, 10 * 1024 * 1024 * 1024, Disk::Staging),
             None
         );
-        let msg = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Staging).unwrap();
-        assert!(msg.contains("free"), "{msg}");
-        assert!(msg.contains("GB"), "{msg}");
+        let message = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Staging).unwrap();
+        assert!(message.contains("free"), "{message}");
+        assert!(message.contains("GB"), "{message}");
     }
 
     /// One payload in many messages is written once, so it is counted once.
@@ -340,10 +340,10 @@ mod tests {
     /// disk, so the person knows which disk to clear.
     #[test]
     fn a_short_scratch_disk_is_named_as_the_scratch_directory_s() {
-        let msg = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Scratch).unwrap();
+        let message = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Scratch).unwrap();
         assert!(
-            msg.starts_with("Not enough space on the disk that holds the Scratch Directory"),
-            "{msg}"
+            message.starts_with("Not enough space on the disk that holds the Scratch Directory"),
+            "{message}"
         );
     }
 

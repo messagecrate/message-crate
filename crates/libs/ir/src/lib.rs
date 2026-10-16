@@ -781,9 +781,13 @@ fn compute_stats(messages: &[Message]) -> ConversationStats {
     let attachment_count = messages.iter().map(|m| m.attachments.len() as u64).sum();
     let mut first = None;
     let mut last = None;
-    for msg in messages {
-        first = Some(first.map_or(msg.timestamp_unix_ms, |f: i64| f.min(msg.timestamp_unix_ms)));
-        last = Some(last.map_or(msg.timestamp_unix_ms, |l: i64| l.max(msg.timestamp_unix_ms)));
+    for message in messages {
+        first = Some(first.map_or(message.timestamp_unix_ms, |f: i64| {
+            f.min(message.timestamp_unix_ms)
+        }));
+        last = Some(last.map_or(message.timestamp_unix_ms, |l: i64| {
+            l.max(message.timestamp_unix_ms)
+        }));
     }
     ConversationStats {
         message_count,
@@ -852,11 +856,11 @@ pub struct ConversationHeader {
 
 impl ConversationHeader {
     /// Copy export and conversation metadata from a full document.
-    pub fn from_document(doc: &ConversationDocument) -> Self {
+    pub fn from_document(document: &ConversationDocument) -> Self {
         Self {
-            schema_version: doc.schema_version,
-            export: doc.export.clone(),
-            conversation: doc.conversation.clone(),
+            schema_version: document.schema_version,
+            export: document.export.clone(),
+            conversation: document.conversation.clone(),
         }
     }
 
@@ -864,15 +868,15 @@ impl ConversationHeader {
     /// followed it, at the current schema version, with its stats computed.
     /// It has no stem suffix: a reader recovers that from the file name.
     pub fn into_document(self, messages: Vec<Message>) -> ConversationDocument {
-        let mut doc = ConversationDocument {
+        let mut document = ConversationDocument {
             schema_version: SCHEMA_VERSION,
             export: self.export,
             conversation: self.conversation,
             messages,
             packaging_stem_suffix: None,
         };
-        doc.finalize_stats();
-        doc
+        document.finalize_stats();
+        document
     }
 }
 
@@ -1149,7 +1153,7 @@ mod pending_message_tests {
 
     #[test]
     fn an_extra_flag_is_set_only_by_the_value_true() {
-        let msg = PendingMessage {
+        let message = PendingMessage {
             sort_key: 0,
             is_from_me: false,
             sender_identity: String::new(),
@@ -1161,9 +1165,9 @@ mod pending_message_tests {
                 ("is_deleted".to_string(), "false".to_string()),
             ]),
         };
-        assert!(msg.extra_flag("is_sticker"));
-        assert!(!msg.extra_flag("is_deleted"));
-        assert!(!msg.extra_flag("never_set"));
+        assert!(message.extra_flag("is_sticker"));
+        assert!(!message.extra_flag("is_deleted"));
+        assert!(!message.extra_flag("never_set"));
     }
 }
 
