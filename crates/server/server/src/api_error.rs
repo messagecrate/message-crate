@@ -588,6 +588,16 @@ impl From<crate::db::address_book::LoadError> for ApiError {
     }
 }
 
+impl From<crate::db::address_book::VcardError> for ApiError {
+    fn from(e: crate::db::address_book::VcardError) -> Self {
+        use crate::db::address_book::VcardError;
+        match e {
+            VcardError::UnknownCharset(unknown) => Self::validation(unknown.to_string()),
+            VcardError::Failed(cause) => Self::Internal(cause.context("convert vCard file")),
+        }
+    }
+}
+
 impl From<crate::accounts_api::ProfileUpdateError> for ApiError {
     fn from(e: crate::accounts_api::ProfileUpdateError) -> Self {
         use crate::accounts_api::ProfileUpdateError;

@@ -6,6 +6,8 @@ license = "LicenseRef-FCL-1.0-ALv2"
 description = "vCard (VCF) parser for message-crate"
 
 [dependencies]
+encoding_rs = "0.8.35"
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

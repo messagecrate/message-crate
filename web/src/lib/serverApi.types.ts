@@ -760,8 +760,11 @@ export interface paths {
          *     refuses what it cannot store and names the rows. Cells are written with
          *     the `'` the export puts before a cell a spreadsheet would run.
          *
-         *     A body that holds no `BEGIN:VCARD` line answers
-         *     `422 Unprocessable Entity`.
+         *     A vCard 2.1 quoted-printable value is read in the charset its `CHARSET`
+         *     names, such as `SHIFT_JIS` or `ISO-8859-1`, and as UTF-8 when it names
+         *     none. A body that holds no `BEGIN:VCARD` line, and a card that writes its
+         *     name, a number or an email address in a charset Message Crate cannot
+         *     read, answer `422 Unprocessable Entity`.
          */
         post: operations["get_vcard_address_book"];
         delete?: never;

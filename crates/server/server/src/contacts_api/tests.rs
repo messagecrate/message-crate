@@ -3942,6 +3942,26 @@ async fn a_vcard_conversion_refuses_an_unknown_country_and_a_file_with_no_card()
     );
 }
 
+/// A card that writes a name in a charset the server cannot read is
+/// refused, naming the card and the charset, rather than converted with the
+/// name garbled.
+#[tokio::test]
+async fn a_vcard_conversion_refuses_a_name_in_a_charset_it_cannot_read() {
+    let (fixture, account) = fixture_with_account().await;
+    let cards = "BEGIN:VCARD\nFN:Dana\nTEL:5555550100\nEND:VCARD\n\
+                 BEGIN:VCARD\nVERSION:2.1\n\
+                 FN;CHARSET=X-MADE-UP;ENCODING=QUOTED-PRINTABLE:=82=A0\n\
+                 TEL:5555550101\nEND:VCARD\n";
+    let (status, _, _, text) = get_vcard_address_book(&fixture, &account, "", cards, None).await;
+    let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors.unwrap(),
+        [
+            "card 2 writes its FN in the character set \"X-MADE-UP\", which Message Crate cannot read"
+        ]
+    );
+}
+
 /// `/v1/contacts/{id}` takes an `i64`, and three literal routes sit beside
 /// it: `summaries`, `unmatched-identities`, and `address-book`. This test
 /// covers the first two. Each is a `POST`, and editing a contact is a

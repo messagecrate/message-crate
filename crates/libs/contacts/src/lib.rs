@@ -7,4 +7,4 @@
 
 mod vcf;
 
-pub use vcf::{VcfCard, parse_vcf};
+pub use vcf::{UnknownCharset, VcfCard, parse_vcf};
