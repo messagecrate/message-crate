@@ -79,7 +79,7 @@ pub fn run() {
             // What is missing there is downloaded in the background, and
             // nothing waits for it (`tool_downloads`).
             let tools_dir = directory.tools();
-            let installed = media::InstalledTools::new(Some(tools_dir.clone()));
+            let installed = commands::tools::installed_tools(&tools_dir);
             tool_downloads::start(
                 tools_dir,
                 installed.clone(),

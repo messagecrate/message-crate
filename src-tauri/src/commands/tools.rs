@@ -116,15 +116,22 @@ pub struct ToolsStatus {
     pub wtsexporter: ToolStatus,
 }
 
+/// The ffmpeg and ffprobe the app runs: on `PATH`, else in `tools_dir`, the
+/// Tools Directory. The app keeps one built here as its state, and the
+/// Tools commands build the same one from the same directory, so the Tools
+/// Directory has one source.
+pub(crate) fn installed_tools(tools_dir: &Path) -> InstalledTools {
+    InstalledTools::new(Some(tools_dir.to_path_buf()))
+}
+
 /// Look for ffmpeg, ffprobe and wtsexporter where this process runs them from,
 /// and say how each one's download stands.
 #[tauri::command]
 pub fn tools_status(
     downloads: tauri::State<'_, ToolDownloads>,
-    installed: tauri::State<'_, InstalledTools>,
     directory: tauri::State<'_, MessageCrateDirectory>,
 ) -> ToolsStatus {
-    tools_status_with(&downloads, &installed, &directory.tools(), &pinned_here())
+    tools_status_with(&downloads, &directory.tools(), &pinned_here())
 }
 
 /// The downloads the app has for this computer.
@@ -155,12 +162,11 @@ pub enum RetryResult {
 #[tauri::command]
 pub fn retry_tool_downloads(
     downloads: tauri::State<'_, ToolDownloads>,
-    installed: tauri::State<'_, InstalledTools>,
     directory: tauri::State<'_, MessageCrateDirectory>,
 ) -> RetryResult {
     let dir = directory.tools();
     let pinned = pinned_here();
-    let status = tools_status_with(&downloads, &installed, &dir, &pinned);
+    let status = tools_status_with(&downloads, &dir, &pinned);
     let not_found: Vec<Program> = [
         (Program::Ffmpeg, &status.ffmpeg),
         (Program::Ffprobe, &status.ffprobe),
@@ -171,8 +177,8 @@ pub fn retry_tool_downloads(
     .map(|(program, _)| program)
     .collect();
     match tool_downloads::retry(
-        dir,
-        installed.inner().clone(),
+        dir.clone(),
+        installed_tools(&dir),
         tool_downloads::GITHUB.to_string(),
         pinned,
         &downloads,
@@ -243,14 +249,12 @@ fn worth_sending(
     program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
 }
 
-/// [`tools_status`], with the downloads in `downloads`, the programs where
-/// `installed` looks, `tools_dir` as the Tools Directory, and `pinned` as
-/// the downloads for this computer. A
+/// [`tools_status`], with the downloads in `downloads`, `tools_dir` as the
+/// Tools Directory, and `pinned` as the downloads for this computer. A
 /// wtsexporter counts only when it is the pinned one, where there is one
 /// (#2692).
 fn tools_status_with(
     downloads: &ToolDownloads,
-    installed: &InstalledTools,
     tools_dir: &Path,
     pinned: &[Pinned],
 ) -> ToolsStatus {
@@ -260,7 +264,7 @@ fn tools_status_with(
             .with_pin(pin(program).is_some())
             .with_download(downloads.get(program))
     };
-    let (ffmpeg, ffprobe) = match installed.find() {
+    let (ffmpeg, ffprobe) = match installed_tools(tools_dir).find() {
         Ok(tools) => (ToolStatus::of(tools.ffmpeg), ToolStatus::of(tools.ffprobe)),
         // Found in two places: neither is used, and both say why.
         Err(err) => {
@@ -374,19 +378,16 @@ mod tests {
         let tools = tempfile::tempdir().unwrap();
         let name = whatsapp_exporter::wtsexporter_file_name();
         let program = tools.path().join(name);
-        let installed = InstalledTools::new(Some(tools.path().to_path_buf()));
         let downloads = ToolDownloads::default();
         let pinned = [wtsexporter_pinned_to(b"the pinned file")];
-        let missing = tools_status_with(&downloads, &installed, tools.path(), &pinned).wtsexporter;
-        let unavailable = tools_status_with(&downloads, &installed, tools.path(), &[]).wtsexporter;
+        let missing = tools_status_with(&downloads, tools.path(), &pinned).wtsexporter;
+        let unavailable = tools_status_with(&downloads, tools.path(), &[]).wtsexporter;
         media::testutil::write_with_mode(&program, 0o755);
         std::fs::write(&program, b"the pinned").unwrap();
-        let truncated =
-            tools_status_with(&downloads, &installed, tools.path(), &pinned).wtsexporter;
-        let found_by_hand =
-            tools_status_with(&downloads, &installed, tools.path(), &[]).wtsexporter;
+        let truncated = tools_status_with(&downloads, tools.path(), &pinned).wtsexporter;
+        let found_by_hand = tools_status_with(&downloads, tools.path(), &[]).wtsexporter;
         std::fs::write(&program, b"the pinned file").unwrap();
-        let found = tools_status_with(&downloads, &installed, tools.path(), &pinned).wtsexporter;
+        let found = tools_status_with(&downloads, tools.path(), &pinned).wtsexporter;
 
         assert_eq!(missing, ToolStatus::Missing);
         // No download for this computer: told apart, so the form offers no
