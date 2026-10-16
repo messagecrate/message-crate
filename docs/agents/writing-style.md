@@ -85,8 +85,8 @@ color, favorite. The rule holds in prose, product copy, comments,
 identifiers, and the values the server stores and sends, such as the
 `canceled` run status. A name that belongs to a library or a standard keeps
 its own spelling, whichever it is: tokio's `cancelled()`, GitHub's
-`cancelled` run conclusion. Text Message Crate did not write keeps its
-spelling too, because changing it would misquote it: vendored code and
+`cancelled` run conclusion. Text that Message Crate did not write keeps
+its spelling too, because changing it would misquote it: vendored code and
 skills, test fixtures taken from real exports, and quoted books.
 
 ## HTTP status codes carry their name

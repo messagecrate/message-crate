@@ -251,10 +251,6 @@ carry their date on the heading.
 
 ### Design
 
-- 2026-10-16: **A stopped run is "canceled" to programs too.** A program
-  that reads Import Runs, Export Runs or the Audit Trail from your Message
-  Crate now gets the status "canceled", spelled as on screen, and must be
-  updated if it looked for "cancelled" (#2279).
 - 2026-10-16: **Message Crate spells American.** Screens and the user guide
   now say "canceled", "grayed out", "recognized" and "labeled": a stopped
   import reads "Import canceled", and a stopped run in the import and
@@ -1863,6 +1859,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-16: A program that reads Import Runs, Export Runs or the Audit
+  Trail from your Message Crate and looks for the status "cancelled" must
+  look for "canceled" instead, the spelling the screens use (#2279).
 - 2026-10-15: An address book exported by an earlier build is refused when
   you load it, because its columns changed. Export it again from the
   Contacts screen and make the edits in the new file (#916).
