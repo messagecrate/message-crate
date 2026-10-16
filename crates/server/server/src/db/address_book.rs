@@ -1526,7 +1526,7 @@ pub fn from_vcard(
     text: &str,
     country: Option<&'static phone::Country>,
 ) -> Result<Option<String>, VcardError> {
-    let cards = ::contacts::parse_vcf(text).map_err(VcardError::UnknownCharset)?;
+    let cards = ::contacts::parse_vcf(text)?;
     if cards.is_empty() {
         return Ok(None);
     }
@@ -1550,17 +1550,19 @@ pub fn from_vcard(
             rows.push(row(FileService::Email, email.clone()));
         }
     }
-    write_book(rows).map(Some).map_err(VcardError::Failed)
+    Ok(Some(write_book(rows)?))
 }
 
 /// Why a vCard file did not convert to an address book.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum VcardError {
     /// A card writes a value in a charset Message Crate cannot read; the
     /// person can fix the file.
-    UnknownCharset(::contacts::UnknownCharset),
+    #[error(transparent)]
+    UnknownCharset(#[from] ::contacts::UnknownCharset),
     /// Something failed that changing the file would not help.
-    Failed(anyhow::Error),
+    #[error(transparent)]
+    Failed(#[from] anyhow::Error),
 }
 
 /// The number `written` as the address book writes it: its `+` form in

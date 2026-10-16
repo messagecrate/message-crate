@@ -1590,7 +1590,7 @@ carry their date on the heading.
   Convert a vCard file reads a name in the character set the card names,
   such as Shift_JIS from a Japanese Android phone, or Windows-1252, whose €
   came out as a stray control character. A card in a character set Message
-  Crate doesn't know is refused, naming the card and the character set,
+  Crate can't read is refused, naming the card and the character set,
   rather than converted with its name garbled (#3101).
 - 2026-10-16: **Add a WhatsApp internal id or a sender name as an
   identity.** **Add identity**, in Settings and on a contact, and **Your

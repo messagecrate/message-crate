@@ -300,7 +300,7 @@ A phone and Google Contacts export contacts as a vCard file, ending in `.vcf`, a
 Versions 2.1, 3.0 and 4.0 of vCard are read.
 A vCard 2.1 file, such as an Android phone's, can write a name in another character set and say which, such as Shift_JIS from a Japanese phone.
 The name is read in that character set.
-A card that names a character set Message Crate doesn't know is refused with the card's position and the character set, rather than converted with the name garbled.
+A card that names a character set Message Crate can't read is refused with the card's position and the character set, rather than converted with the name garbled.
 Message Crate does not load a vCard file, because a card lists every number and address whether or not a message ever used it, and can't say which service a number is on.
 It converts one into the address book instead, to edit and then load.
 

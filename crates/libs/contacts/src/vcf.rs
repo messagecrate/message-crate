@@ -136,22 +136,28 @@ fn is_quoted_printable(line: &str) -> bool {
     };
     name.split(';').skip(1).any(|param| {
         let value = param.rsplit_once('=').map_or(param, |(_, value)| value);
-        value.eq_ignore_ascii_case("QUOTED-PRINTABLE")
+        unquoted(value).eq_ignore_ascii_case("QUOTED-PRINTABLE")
     })
 }
 
-/// The `CHARSET` parameter of a property line, if it has one, without the
-/// double quotes vCard 3.0 and 4.0 allow around a parameter value.
+/// The `CHARSET` parameter of a property line, if it has one.
 fn charset_param(name: &str) -> Option<&str> {
     name.split(';').skip(1).find_map(|param| {
         let (key, value) = param.split_once('=')?;
-        let value = value.trim();
-        let value = value
-            .strip_prefix('"')
-            .and_then(|inner| inner.strip_suffix('"'))
-            .unwrap_or(value);
-        key.trim().eq_ignore_ascii_case("CHARSET").then_some(value)
+        key.trim()
+            .eq_ignore_ascii_case("CHARSET")
+            .then(|| unquoted(value))
     })
+}
+
+/// A parameter value without its surrounding whitespace and the double
+/// quotes vCard 3.0 and 4.0 allow around it.
+fn unquoted(value: &str) -> &str {
+    let value = value.trim();
+    value
+        .strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .unwrap_or(value)
 }
 
 /// Decode a quoted-printable value: each `=` and two hex digits is one
@@ -421,10 +427,10 @@ mod tests {
 
     /// vCard 3.0 and 4.0 allow a parameter value in double quotes.
     #[test]
-    fn parse_vcf_reads_a_charset_written_in_double_quotes() {
+    fn parse_vcf_reads_a_charset_and_an_encoding_written_in_double_quotes() {
         let text = "BEGIN:VCARD\nVERSION:3.0\n\
              N;CHARSET=\"Shift_JIS\";ENCODING=QUOTED-PRINTABLE:=8E=52=93=63;;;;\n\
-             FN;CHARSET=\"UTF-8\";ENCODING=QUOTED-PRINTABLE:Dupr=C3=A9\nEND:VCARD\n";
+             FN;CHARSET=\"UTF-8\";ENCODING=\"QUOTED-PRINTABLE\":Dupr=C3=A9\nEND:VCARD\n";
         let cards = parse_vcf(text).unwrap();
         assert_eq!(cards[0].n_family, "山田");
         assert_eq!(cards[0].fn_raw, "Dupré");
