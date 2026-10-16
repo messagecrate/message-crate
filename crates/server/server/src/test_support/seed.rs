@@ -464,10 +464,10 @@ pub async fn attach_stored_file(
 }
 
 /// Write `bytes` in `assets_dir` where the store places the original of
-/// `sha`, and its MIME sidecar holding `mime`. Both paths come from the store's own rules (`shard_rel_path`,
-/// `sidecar_path`) for the parsed fingerprint. Returns that fingerprint, the
-/// original's path relative to `assets_dir` for the attachment row, and the
-/// path of the file written.
+/// `sha`, and its MIME sidecar holding `mime`. Both paths come from the
+/// store's own rules (`shard_rel_path`, `sidecar_path`) for the parsed
+/// fingerprint. Returns that fingerprint, the original's path relative to
+/// `assets_dir` for the attachment row, and the path of the file written.
 pub(crate) fn write_stored_original(
     assets_dir: &std::path::Path,
     sha: &str,

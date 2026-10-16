@@ -279,8 +279,9 @@ pub(crate) async fn decide_shown_as_is(
 /// Returns an error when no account is named and the database has none, a
 /// query fails, or an account's asset directories cannot be prepared. An
 /// original whose Preview or Thumbnail cannot be made is counted in
-/// `not_made`, and a damaged version that cannot be dropped in
-/// `not_dropped`. Each is said through `progress`, and the run goes on.
+/// `not_made`, a damaged version that cannot be dropped in `not_dropped`,
+/// and an original whose shown-as-is decision cannot be recorded in
+/// `not_decided`. Each is said through `progress`, and the run goes on.
 pub async fn run(
     opened: &OpenDb,
     tools: &dyn MediaTools,
@@ -488,8 +489,7 @@ impl Outcome {
             .chain(&self.not_decided)
     }
 
-    /// Nothing was written, dropped or shared, and nothing
-    /// failed.
+    /// Nothing was written, dropped or shared, and nothing failed.
     fn left_as_it_was(&self) -> bool {
         !self.preview
             && !self.thumbnail

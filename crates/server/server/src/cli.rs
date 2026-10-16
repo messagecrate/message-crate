@@ -743,9 +743,9 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// # Errors
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
-/// any original could not be made or a damaged version could not be
-/// dropped, so a cron job or
-/// script that runs the command sees a non-zero exit status.
+/// any original could not be made, a damaged version could not be dropped,
+/// or whether an original is shown as it is could not be recorded, so a
+/// cron job or script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.
