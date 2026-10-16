@@ -4,18 +4,23 @@
 //! before the others, and two columns of the same type swap values with no
 //! error.
 //!
-//! The test walks `src/` and refuses the two positional reads sqlx offers:
+//! The test walks `src/` and refuses the positional reads sqlx offers:
 //!
-//! - `row.try_get(<index>)` on a row from `sqlx::query`.
+//! - `try_get`, `get` and their `_unchecked` forms given a column index. `get`
+//!   is checked only in a file that names `sqlx::Row`, since a slice's `get`
+//!   looks the same.
 //! - `sqlx::query_as` into a tuple of more than one column, written as the
 //!   tuple or as a `type` alias of one. sqlx maps a tuple by position.
+//! - `#[derive(sqlx::FromRow)]` on a tuple struct, which sqlx also maps by
+//!   position.
 //!
 //! So every `query_as` names its row type with a turbofish
 //! (`query_as::<_, Row>`, `query_as_with::<_, Row, _>`): a type the test cannot
-//! see is a type it cannot check. A struct deriving `sqlx::FromRow` reads its
+//! see is a type it cannot check. This rule goes beyond #3072, which only
+//! asked for the reads to change. A struct deriving `sqlx::FromRow` reads its
 //! fields by name, and a one-column tuple such as `(String,)` has no order to
 //! get wrong. Test code is left out: `tests.rs` files, `tests/` directories
-//! and inline `mod tests` blocks.
+//! and inline `#[cfg(test)] mod tests { … }` blocks.
 
 use std::collections::HashSet;
 use std::fs;
@@ -36,34 +41,72 @@ fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The file's code before its inline `#[cfg(test)] mod tests { … }` block,
-/// with comment lines blanked so prose naming `query_as` is not read as a call.
+/// The file's code without its inline `#[cfg(test)] mod tests { … }` blocks,
+/// with comment lines blanked so prose naming `query_as` is not read as a
+/// call. Every line is kept, blank where it was left out, so line numbers
+/// stay those of the file.
 fn code_without_tests(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut code = String::new();
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim() == "#[cfg(test)]"
-            && lines
-                .get(i + 1)
-                .is_some_and(|next| next.trim_start().starts_with("mod tests {"))
-        {
-            break;
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].trim() == "#[cfg(test)]" {
+            let mut next = i + 1;
+            while lines
+                .get(next)
+                .is_some_and(|line| line.trim_start().starts_with("#["))
+            {
+                next += 1;
+            }
+            if lines
+                .get(next)
+                .is_some_and(|line| line.trim_start().starts_with("mod tests {"))
+            {
+                let mut depth = 0i64;
+                let mut end = next;
+                while end < lines.len() {
+                    depth += braces(lines[end]);
+                    if depth <= 0 {
+                        break;
+                    }
+                    end += 1;
+                }
+                for _ in i..=end.min(lines.len() - 1) {
+                    code.push('\n');
+                }
+                i = end + 1;
+                continue;
+            }
         }
-        if !line.trim_start().starts_with("//") {
-            code.push_str(line);
+        if !lines[i].trim_start().starts_with("//") {
+            code.push_str(lines[i]);
         }
         code.push('\n');
+        i += 1;
     }
     code
 }
 
+/// Opening braces less closing braces on `line`.
+fn braces(line: &str) -> i64 {
+    line.chars()
+        .map(|c| match c {
+            '{' => 1,
+            '}' => -1,
+            _ => 0,
+        })
+        .sum()
+}
+
 /// The text from `open` (an opening bracket) to its matching close,
-/// brackets included.
+/// brackets included. `->` and `=>` are not brackets.
 fn bracketed(text: &str, open: usize) -> &str {
-    let mut depth = 0usize;
+    let mut depth = 0i64;
+    let mut previous = ' ';
     for (i, c) in text[open..].char_indices() {
         match c {
             '(' | '<' | '[' => depth += 1,
+            '>' if previous == '-' || previous == '=' => {}
             ')' | '>' | ']' => {
                 depth -= 1;
                 if depth == 0 {
@@ -72,25 +115,50 @@ fn bracketed(text: &str, open: usize) -> &str {
             }
             _ => {}
         }
+        previous = c;
     }
     &text[open..]
+}
+
+/// The top-level, comma-separated items between the outer brackets of
+/// `group`, trimmed.
+fn items(group: &str) -> Vec<&str> {
+    let inner = &group[1..group.len().saturating_sub(1).max(1)];
+    let mut out = Vec::new();
+    let mut depth = 0i64;
+    let mut previous = ' ';
+    let mut start = 0;
+    for (i, c) in inner.char_indices() {
+        match c {
+            '(' | '<' | '[' => depth += 1,
+            '>' if previous == '-' || previous == '=' => {}
+            ')' | '>' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(inner[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+        previous = c;
+    }
+    let last = inner[start..].trim();
+    if !last.is_empty() {
+        out.push(last);
+    }
+    out
 }
 
 /// Whether `ty`, a type starting with `(`, is a tuple of more than one
 /// element. `(String,)` is one element; `(i64, String)` is two.
 fn is_wide_tuple(ty: &str) -> bool {
-    let inner = &ty[1..ty.len() - 1];
-    let mut depth = 0usize;
-    let mut commas = 0usize;
-    for c in inner.chars() {
-        match c {
-            '(' | '<' | '[' => depth += 1,
-            ')' | '>' | ']' => depth -= 1,
-            ',' if depth == 0 => commas += 1,
-            _ => {}
-        }
-    }
-    commas > 1 || (commas == 1 && !inner.trim_end().ends_with(','))
+    items(ty).len() > 1
+}
+
+/// A type's name without its path and generic arguments: `Pair` for
+/// `crate::db::Pair<T>`.
+fn bare_name(ty: &str) -> &str {
+    let ty = ty.split('<').next().unwrap_or(ty).trim();
+    ty.rsplit("::").next().unwrap_or(ty)
 }
 
 /// The names of `type Name = (…);` aliases of a tuple of more than one
@@ -98,24 +166,121 @@ fn is_wide_tuple(ty: &str) -> bool {
 fn wide_tuple_aliases(code: &str) -> HashSet<String> {
     let mut aliases = HashSet::new();
     for (at, _) in code.match_indices("type ") {
+        if code[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            continue;
+        }
         let rest = &code[at + "type ".len()..];
         let Some((name, after)) = rest.split_once('=') else {
             continue;
         };
-        let name = name.trim();
+        let name = bare_name(name);
         if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
             continue;
         }
         let after = after.trim_start();
         if after.starts_with('(') {
-            let offset = rest.len() - after.len();
-            let open = at + "type ".len() + offset;
+            let open = code.len() - after.len();
             if is_wide_tuple(bracketed(code, open)) {
                 aliases.insert(name.to_string());
             }
         }
     }
     aliases
+}
+
+/// The places a `#[derive(…FromRow…)]` sits on a tuple struct.
+fn from_row_tuple_structs(code: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    for (at, _) in code.match_indices("#[derive(") {
+        let attribute = bracketed(code, at + 1);
+        if !attribute.contains("FromRow") {
+            continue;
+        }
+        // Skip any further attributes and doc comments to the item.
+        let mut rest = &code[at + 1 + attribute.len()..];
+        loop {
+            rest = rest.trim_start();
+            if rest.starts_with("#[") {
+                let skip = bracketed(rest, 1).len() + 1;
+                rest = &rest[skip..];
+            } else {
+                break;
+            }
+        }
+        let rest = rest
+            .strip_prefix("pub(crate) ")
+            .or_else(|| rest.strip_prefix("pub(super) "))
+            .or_else(|| rest.strip_prefix("pub "))
+            .unwrap_or(rest);
+        let Some(rest) = rest.strip_prefix("struct ") else {
+            continue;
+        };
+        let name_end = rest
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
+        let mut after = rest[name_end..].trim_start();
+        if after.starts_with('<') {
+            after = after[bracketed(after, 0).len()..].trim_start();
+        }
+        if after.starts_with('(') {
+            found.push(at);
+        }
+    }
+    found
+}
+
+/// Whether the file brings sqlx's `Row` trait into reach, so a `get` in it
+/// may be a row's.
+fn names_sqlx_row(code: &str) -> bool {
+    code.contains("sqlx::Row")
+        || code.lines().any(|line| {
+            let line = line.trim_start();
+            line.starts_with("use sqlx::")
+                && items_of_use(line)
+                    .iter()
+                    .any(|item| bare_name(item) == "Row")
+        })
+}
+
+/// The names a `use sqlx::{…};` line imports, or the one it imports.
+fn items_of_use(line: &str) -> Vec<&str> {
+    let line = line.trim_end_matches(';');
+    match line.find('{') {
+        Some(open) => items(bracketed(line, open)),
+        None => vec![line],
+    }
+}
+
+/// The places a column is read by index with `method` (and its turbofish
+/// form): an argument that is a bare number.
+fn index_reads(code: &str, method: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    for (at, _) in code.match_indices(method) {
+        let before = code[..at].chars().next_back();
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+            continue;
+        }
+        let mut rest = &code[at + method.len()..];
+        if let Some(turbofish) = rest.strip_prefix("::<") {
+            let open = code.len() - turbofish.len() - 1;
+            rest = &code[open + bracketed(code, open).len()..];
+        }
+        if !rest.starts_with('(') {
+            continue;
+        }
+        let open = code.len() - rest.len();
+        let by_index = items(bracketed(code, open))
+            .iter()
+            .any(|arg| !arg.is_empty() && arg.chars().all(|c| c.is_ascii_digit() || c == '_'));
+        if by_index {
+            found.push(at);
+        }
+    }
+    found
 }
 
 fn line_of(code: &str, at: usize) -> usize {
@@ -147,11 +312,20 @@ fn every_server_row_is_read_by_column_name() {
 
     let mut found = Vec::new();
     for (file, code) in &code {
-        for (at, _) in code.match_indices("try_get(") {
-            let arg = &code[at + "try_get(".len()..];
-            if arg.starts_with(|c: char| c.is_ascii_digit()) {
-                found.push(format!("{file}:{}: try_get by index", line_of(code, at)));
+        let mut methods = vec!["try_get", "try_get_unchecked"];
+        if names_sqlx_row(code) {
+            methods.extend(["get", "get_unchecked"]);
+        }
+        for method in methods {
+            for at in index_reads(code, method) {
+                found.push(format!("{file}:{}: {method} by index", line_of(code, at)));
             }
+        }
+        for at in from_row_tuple_structs(code) {
+            found.push(format!(
+                "{file}:{}: FromRow on a tuple struct",
+                line_of(code, at)
+            ));
         }
         for (at, _) in code.match_indices("query_as") {
             let before = code[..at].chars().next_back();
@@ -170,22 +344,12 @@ fn every_server_row_is_read_by_column_name() {
                 continue;
             };
             let open = code.len() - turbofish.len() - 1;
-            let args = bracketed(code, open);
-            let row = args[1..args.len() - 1]
-                .split_once(',')
-                .map_or("", |(_, row)| row)
-                .trim_start();
-            let row = if row.starts_with('(') {
-                bracketed(row, 0)
-            } else {
-                row.split(|c: char| c == ',' || c == '>' || c.is_whitespace())
-                    .next()
-                    .unwrap_or("")
-            };
+            let arguments = items(bracketed(code, open));
+            let row = arguments.get(1).copied().unwrap_or("");
             let wide = if row.starts_with('(') {
                 is_wide_tuple(row)
             } else {
-                aliases.contains(row.rsplit("::").next().unwrap_or(row))
+                aliases.contains(bare_name(row))
             };
             if wide {
                 found.push(format!(
@@ -198,7 +362,8 @@ fn every_server_row_is_read_by_column_name() {
     assert!(
         found.is_empty(),
         "read these columns by name: alias each column and decode into a struct \
-         deriving sqlx::FromRow, or read it with row.try_get(\"<name>\"):\n{}",
+         with named fields deriving sqlx::FromRow, or read it with \
+         row.try_get(\"<name>\"):\n{}",
         found.join("\n")
     );
 }
