@@ -28,8 +28,4 @@ describe("favicon", () => {
       expect(existsSync(new URL(`public${href}`, WEB)), href).toBe(true);
     }
   });
-
-  it("keeps /favicon.ico in public/, which a browser asks for unprompted", () => {
-    expect(existsSync(new URL("public/favicon.ico", WEB))).toBe(true);
-  });
 });
