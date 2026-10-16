@@ -63,3 +63,11 @@ export function canUseConvert(isTauriApp: boolean): boolean {
 export function canReadDesktopLogs(isTauriApp: boolean): boolean {
   return isTauriApp;
 }
+
+/**
+ * The Staging Directory is on the computer running the desktop app, so only
+ * the desktop app measures it (#3087). A browser shows no size for it.
+ */
+export function canMeasureStagingDirectory(isTauriApp: boolean): boolean {
+  return isTauriApp;
+}

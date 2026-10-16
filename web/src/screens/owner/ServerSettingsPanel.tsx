@@ -8,6 +8,7 @@ import { useRouteCache, useRouteMutation } from "../../lib/routeQuery";
 import { updateServerSettings } from "../../lib/serverApi";
 import { useServerInfo } from "../../lib/useServerInfo";
 import { useServerSettings } from "../../lib/useServerSettings";
+import { AllStagingUsage } from "../settings/StagingDirectoryUsage";
 import { DemoAccountCard } from "./DemoAccountCard";
 
 const MIB = 1024 * 1024;
@@ -135,6 +136,8 @@ export function ServerSettingsPanel() {
           </p>
         ) : null}
       </form>
+
+      <AllStagingUsage />
 
       <DemoAccountCard />
 

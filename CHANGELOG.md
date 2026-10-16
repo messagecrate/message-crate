@@ -27,6 +27,12 @@ carry their date on the heading.
   whose record it could not write, was written where nobody could see it.
   It now goes to a log in the Logs Directory, which the owner reads under
   **Logs** on Owner Home as **Desktop app** (#2185).
+- 2026-10-16: **See how much space your Import Runs take on this
+  computer.** In the desktop app, **Settings → System** says how much disk
+  space your own Import Runs take in the Staging Directory, where staged
+  photos and videos wait for upload. The Owner sees the size of the whole
+  Staging Directory under **Server Settings**. The size is measured when
+  the page opens (#3087).
 - 2026-10-15: **A phone's contacts convert to the address book.** Settings →
   Profile → Address book has Convert a vCard file, which turns the .vcf file
   a phone or Google Contacts exports into the address book CSV, to edit in a
