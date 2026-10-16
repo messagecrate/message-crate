@@ -22,6 +22,12 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-16: **A vCard name in another character set converts as written.**
+  Convert a vCard file reads a name in the character set the card names,
+  such as Shift_JIS from a Japanese Android phone, or Windows-1252, whose €
+  came out as a stray control character. A card in a character set Message
+  Crate doesn't know is refused, naming the card and the character set,
+  rather than converted with its name garbled (#3101).
 - 2026-10-16: **Open an Audit Trail entry's lines in the server's log.**
   Each entry on Owner Home's **Audit Trail** that a request made has a
   **View in log** link. It opens **Logs** on the server's log at every level

@@ -1519,9 +1519,11 @@ pub async fn export_csv(
 ///
 /// # Errors
 ///
-/// Returns an error when the CSV cannot be written.
+/// Returns [`::contacts::UnknownCharset`] when a card writes its name,
+/// a number or an email address in a charset the reader cannot read, and an
+/// error when the CSV cannot be written.
 pub fn from_vcard(text: &str, country: Option<&'static phone::Country>) -> Result<Option<String>> {
-    let cards = ::contacts::parse_vcf(text);
+    let cards = ::contacts::parse_vcf(text)?;
     if cards.is_empty() {
         return Ok(None);
     }
