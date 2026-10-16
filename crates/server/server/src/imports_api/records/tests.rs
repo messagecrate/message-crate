@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::{IrImessage, UnsupportedSchemaVersion};
+use message_ir::{ImessageExtensions, UnsupportedSchemaVersion};
 
 use crate::test_support::{MessageLine, conversation_header, message_line};
 
@@ -48,7 +48,7 @@ fn message_with(subject: Option<&str>) -> MessageRecord {
     }
     let mut records = parse_ir_lines([header, message.to_string()]).unwrap();
     match records.pop() {
-        Some(ExportRecord::Message(m)) => m,
+        Some(ExportRecord::Message(m)) => *m,
         _ => panic!("expected message"),
     }
 }
@@ -146,34 +146,29 @@ fn a_reaction_row_is_not_a_message() {
         .at(1_400_773_261_000)
         .outgoing()
         .to_string();
-    let row = |guid: &str, kind: IrMessageKind, text: &str, action: &str| {
+    let row = |guid: &str, kind: MessageKind, text: &str, action: &str| {
         message_line(guid, text)
             .at(1_400_773_262_000)
             .kind(kind)
             .sender("+15555550101")
             .sender_display_name("Sam")
-            .imessage(IrImessage {
+            .imessage(ImessageExtensions {
                 associated_guid: Some("g-hi".into()),
                 associated_part: Some(0),
                 tapback_kind: Some("loved".into()),
                 tapback_action: Some(action.into()),
-                ..IrImessage::default()
+                ..ImessageExtensions::default()
             })
             .to_string()
     };
     let records = parse_ir_lines([
         header,
         target,
-        row("g-love", IrMessageKind::Tapback, "Loved a message", "add"),
-        row(
-            "g-unlove",
-            IrMessageKind::Tapback,
-            "Removed Heart",
-            "remove",
-        ),
+        row("g-love", MessageKind::Tapback, "Loved a message", "add"),
+        row("g-unlove", MessageKind::Tapback, "Removed Heart", "remove"),
         row(
             "g-sticker",
-            IrMessageKind::StickerTapback,
+            MessageKind::StickerTapback,
             "Reacted with a sticker",
             "add",
         ),
@@ -225,7 +220,7 @@ fn parses_concatenated_ir_conversations() {
 
 #[test]
 fn parse_ir_lines_refuses_schema_3_as_a_failure() {
-    let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_identity":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"individual","participants":[]}}"#;
+    let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_identity":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"one-to-one","participants":[]}}"#;
     let failure = parse_ir_lines([header]).unwrap_err();
     assert_eq!(
         failure,

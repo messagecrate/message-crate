@@ -56,17 +56,17 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         owner_phones: owners,
         attachments_dir: None,
         spool: Some(spool),
-        media: media::MediaMode::Disabled,
-        compress: media::CompressOptions::default(),
-        tools: std::sync::Arc::new(media::InstalledTools::default()),
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        files: message_crate_core::AttachmentFiles::Skip,
+        sinks: message_crate_core::Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 
 /// Each `<addr>` of an MMS as (address, type).
-fn addrs(message: &IrMessage) -> Vec<(String, String)> {
+fn addrs(message: &Message) -> Vec<(String, String)> {
     message.source.as_ref().unwrap().fields["addrs"]
         .as_array()
         .unwrap()
@@ -81,7 +81,7 @@ fn addrs(message: &IrMessage) -> Vec<(String, String)> {
 }
 
 /// Each MMS part's name with the bytes its `data` decoded to, if any.
-fn part_payloads(message: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
+fn part_payloads(message: &Message) -> Vec<(String, Option<Vec<u8>>)> {
     message.source.as_ref().unwrap().fields["parts"]
         .as_array()
         .unwrap()
@@ -102,17 +102,17 @@ fn part_payloads(message: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
 }
 
 /// The element attributes the message was written with.
-fn attrs(message: &IrMessage) -> &Value {
+fn attrs(message: &Message) -> &Value {
     &message.source.as_ref().unwrap().fields["attrs"]
 }
 
 /// The `contact_name` attribute the message was written with, if any.
-fn contact_name(message: &IrMessage) -> Option<&str> {
+fn contact_name(message: &Message) -> Option<&str> {
     attrs(message).get("contact_name").and_then(|v| v.as_str())
 }
 
-fn ir_attachment(name: &str, bytes: &[u8]) -> IrAttachment {
-    IrAttachment {
+fn ir_attachment(name: &str, bytes: &[u8]) -> Attachment {
+    Attachment {
         original_name: Some(name.into()),
         bytes: Some(bytes.to_vec()),
         ..message_ir::testutil::sample_attachment()
@@ -127,19 +127,21 @@ fn pair(address: &str, addr_type: &str) -> (String, String) {
 fn a_group_mms_keeps_its_addresses_and_attachment() {
     let mut document = message_ir::testutil::sample_document("look");
     document.conversation.chat_identifier = "chat-group".into();
-    document.conversation.conversation_type = IrConversationType::Group;
+    document.conversation.conversation_type = ConversationType::Group;
     document.conversation.participants = vec![
-        message_ir::IrParticipant {
+        message_ir::Participant {
             identity: Some("+15555550101".into()),
             display_name: Some("Ana".into()),
+            country: None,
         },
-        message_ir::IrParticipant {
+        message_ir::Participant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
+            country: None,
         },
     ];
     let incoming = &mut document.messages[0];
-    incoming.message_kind = IrMessageKind::Mms;
+    incoming.message_kind = MessageKind::Mms;
     incoming.source = None;
     incoming.sender_identity = Some("+15555550102".into());
     incoming.sender_display_name = Some("Lee".into());
@@ -147,7 +149,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     let mut outgoing = incoming.clone();
     outgoing.guid = "outgoing".into();
     outgoing.timestamp_unix_ms += 1000;
-    outgoing.direction = IrDirection::Outgoing;
+    outgoing.direction = Direction::Outgoing;
     outgoing.sender_identity = Some(OWNER.into());
     outgoing.sender_display_name = None;
     outgoing.text = "nice".into();
@@ -160,7 +162,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
         panic!("two messages: {:?}", read[0].messages)
     };
 
-    assert_eq!(incoming.direction, IrDirection::Incoming);
+    assert_eq!(incoming.direction, Direction::Incoming);
     assert_eq!(incoming.text, "look");
     assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550102"));
     // A group's `contact_name` holds the participants' names, as SMS Backup
@@ -183,7 +185,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
         ]
     );
 
-    assert_eq!(outgoing.direction, IrDirection::Outgoing);
+    assert_eq!(outgoing.direction, Direction::Outgoing);
     assert_eq!(outgoing.text, "nice");
     assert_eq!(contact_name(outgoing), Some("Ana, Lee"));
     assert_eq!(
@@ -214,10 +216,10 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
     let message = &read[0].messages[0];
     assert_eq!(
         message.message_kind,
-        IrMessageKind::Sms,
+        MessageKind::Sms,
         "a text stays an <sms>"
     );
-    assert_eq!(message.direction, IrDirection::Incoming);
+    assert_eq!(message.direction, Direction::Incoming);
     assert_eq!(message.sender_identity.as_deref(), Some("+15555550101"));
     assert_eq!(contact_name(message), Some("Sam"));
     assert_eq!(message.text, "hello ir");
@@ -232,9 +234,9 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
     let mut document = message_ir::testutil::sample_document("look at this");
     let message = &mut document.messages[0];
     message.source = None;
-    message.message_kind = IrMessageKind::Sms;
+    message.message_kind = MessageKind::Sms;
     message.subject = Some("Holiday".into());
-    message.attachments = vec![IrAttachment {
+    message.attachments = vec![Attachment {
         mime_type: Some("image/png".into()),
         ..ir_attachment("beach.png", b"png bytes")
     }];
@@ -243,16 +245,13 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
     assert_eq!(read.len(), 1);
     let conversation = &read[0].conversation;
     assert_eq!(conversation.chat_identifier, "+15555550101");
-    assert_eq!(
-        conversation.conversation_type,
-        IrConversationType::Individual
-    );
+    assert_eq!(conversation.conversation_type, ConversationType::OneToOne);
     assert_eq!(
         conversation.participants[0].display_name.as_deref(),
         Some("Sam")
     );
     let read_back = &read[0].messages[0];
-    assert_eq!(read_back.direction, IrDirection::Incoming);
+    assert_eq!(read_back.direction, Direction::Incoming);
     assert_eq!(read_back.sender_identity.as_deref(), Some("+15555550101"));
     assert_eq!(read_back.subject.as_deref(), Some("Holiday"));
     assert_eq!(read_back.text, "look at this");
@@ -270,22 +269,23 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
 fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     let mut document = message_ir::testutil::sample_document("who is in?");
     document.conversation.chat_identifier = "chat-group".into();
-    document.conversation.conversation_type = IrConversationType::Group;
+    document.conversation.conversation_type = ConversationType::Group;
     document
         .conversation
         .participants
-        .push(message_ir::IrParticipant {
+        .push(message_ir::Participant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
+            country: None,
         });
     let incoming = &mut document.messages[0];
     incoming.source = None;
-    incoming.message_kind = IrMessageKind::Sms;
+    incoming.message_kind = MessageKind::Sms;
     incoming.sender_identity = Some("+15555550102".into());
     incoming.sender_display_name = Some("Lee".into());
     let mut outgoing = incoming.clone();
     outgoing.timestamp_unix_ms += 1000;
-    outgoing.direction = IrDirection::Outgoing;
+    outgoing.direction = Direction::Outgoing;
     outgoing.sender_identity = Some(OWNER.into());
     outgoing.sender_display_name = None;
     outgoing.text = "me".into();
@@ -294,7 +294,7 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     let read = round_trip(&[document]);
     assert_eq!(read.len(), 1, "both messages land in one group");
     let conversation = &read[0].conversation;
-    assert_eq!(conversation.conversation_type, IrConversationType::Group);
+    assert_eq!(conversation.conversation_type, ConversationType::Group);
     let mut handles: Vec<_> = conversation
         .participants
         .iter()
@@ -305,13 +305,13 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     let [incoming, outgoing] = read[0].messages.as_slice() else {
         panic!("two messages: {:?}", read[0].messages)
     };
-    assert_eq!(incoming.direction, IrDirection::Incoming);
+    assert_eq!(incoming.direction, Direction::Incoming);
     assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550102"));
     assert_eq!(contact_name(incoming), Some("Sam, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(incoming.text, "who is in?");
     assert!(incoming.attachments.is_empty());
-    assert_eq!(outgoing.direction, IrDirection::Outgoing);
+    assert_eq!(outgoing.direction, Direction::Outgoing);
     assert_eq!(outgoing.text, "me");
     assert_eq!(contact_name(outgoing), Some("Sam, Lee"));
     assert_eq!(attrs(outgoing)["address"], "+15555550101~+15555550102");
@@ -324,13 +324,14 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
 fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     let mut document = message_ir::testutil::sample_document("hi");
     document.conversation.chat_identifier = "chat-group".into();
-    document.conversation.conversation_type = IrConversationType::Group;
+    document.conversation.conversation_type = ConversationType::Group;
     document
         .conversation
         .participants
-        .push(message_ir::IrParticipant {
+        .push(message_ir::Participant {
             identity: None,
             display_name: Some("Lee".into()),
+            country: None,
         });
     document.messages[0].source = None;
 
@@ -338,7 +339,7 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     assert_eq!(read.len(), 1);
     assert_eq!(
         read[0].conversation.conversation_type,
-        IrConversationType::Individual
+        ConversationType::OneToOne
     );
     let message = &read[0].messages[0];
     assert_eq!(contact_name(message), Some("Sam"));
@@ -354,13 +355,14 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
     for (handle, name) in [("+1 555-555-0101", "Sam (work)"), (OWNER, "Me")] {
         let mut document = message_ir::testutil::sample_document("hi");
         document.conversation.chat_identifier = "chat-group".into();
-        document.conversation.conversation_type = IrConversationType::Group;
+        document.conversation.conversation_type = ConversationType::Group;
         document
             .conversation
             .participants
-            .push(message_ir::IrParticipant {
+            .push(message_ir::Participant {
                 identity: Some(handle.into()),
                 display_name: Some(name.into()),
+                country: None,
             });
         document.messages[0].source = None;
 
@@ -368,7 +370,7 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
         assert_eq!(read.len(), 1, "{handle}");
         assert_eq!(
             read[0].conversation.conversation_type,
-            IrConversationType::Individual,
+            ConversationType::OneToOne,
             "{handle}"
         );
         let message = &read[0].messages[0];
@@ -388,7 +390,7 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
     let mut document = message_ir::testutil::sample_document("on my way");
     let message = &mut document.messages[0];
     message.source = None;
-    message.direction = IrDirection::Outgoing;
+    message.direction = Direction::Outgoing;
     message.sender_identity = Some(OWNER.into());
     message.sender_display_name = Some("Me".into());
     message.subject = Some("Tonight".into());
@@ -407,8 +409,8 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
         Some("Sam")
     );
     let read_back = &read[0].messages[0];
-    assert_eq!(read_back.message_kind, IrMessageKind::Sms);
-    assert_eq!(read_back.direction, IrDirection::Outgoing);
+    assert_eq!(read_back.message_kind, MessageKind::Sms);
+    assert_eq!(read_back.direction, Direction::Outgoing);
     assert_eq!(read_back.subject.as_deref(), Some("Tonight"));
     assert_eq!(read_back.text, "on my way");
 }
@@ -518,16 +520,16 @@ fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
     // iMessage's SMS fallback is an SMS, whatever app it came from.
     let mut fallback = imessage.messages[0].clone();
     fallback.guid = "SMS-FALLBACK-0001".into();
-    fallback.service = message_ir::IrService::Sms;
-    fallback.message_kind = IrMessageKind::Sms;
+    fallback.service = message_ir::Transport::Sms;
+    fallback.message_kind = MessageKind::Sms;
     fallback.imessage = None;
     fallback.text = "hello fallback".into();
     imessage.messages.push(fallback);
     // A Mac `chat.db` row with no service is read as an SMS by its kind.
     let mut no_service = imessage.messages[0].clone();
     no_service.guid = "NO-SERVICE-0001".into();
-    no_service.service = message_ir::IrService::Unknown;
-    no_service.message_kind = IrMessageKind::Sms;
+    no_service.service = message_ir::Transport::Unknown;
+    no_service.message_kind = MessageKind::Sms;
     no_service.imessage = None;
     no_service.text = "hello no service".into();
     imessage.messages.push(no_service);
@@ -604,15 +606,19 @@ fn the_archive_counts_the_characters_xml_cannot_carry() {
     assert!(text.contains(r#"body="bell and escape""#), "{text}");
 }
 
-/// The file's `backup_date` is the newest date of the conversations it
-/// writes messages for: a WhatsApp conversation, which writes none, does
-/// not move it.
+/// The file's one `backup_date` is the newest Backup Date of the messages
+/// it writes: of two SMS dated by two backups the newer stands, and a
+/// WhatsApp message, which it does not write, does not move it.
 #[test]
-fn the_backup_date_comes_from_the_conversations_written() {
+fn the_backup_date_comes_from_the_messages_written() {
     let mut sms = message_ir::testutil::sample_document("hello ir");
-    sms.export.backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    let mut older = sms.messages[0].clone();
+    older.guid = "older".into();
+    older.backup_taken_at_unix_ms = Some(1_780_000_000_000);
+    sms.messages[0].backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    sms.messages.push(older);
     let mut whatsapp = message_ir::testutil::sample_whatsapp_document("hello whatsapp");
-    whatsapp.export.backup_taken_at_unix_ms = Some(1_790_793_912_000);
+    whatsapp.messages[0].backup_taken_at_unix_ms = Some(1_790_793_912_000);
 
     let tmp = tempfile::tempdir().unwrap();
     let mut report = message_crate_core::ExportReport::default();

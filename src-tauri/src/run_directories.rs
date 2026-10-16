@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
-use crate::app_directories::{MESSAGE_CRATE_DIRECTORY_NAME, import_run_log};
+use crate::app_directories::import_run_log;
 use crate::commands::paths::{require_absolute, resolve_openable_path, resolve_staging_root};
 
 /// File in the app-data directory that holds the Staging Directory setting
@@ -37,7 +37,7 @@ const LOCK_FILE: &str = "staging.json.lock";
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct Record {
     /// The Staging Directory from Settings. `None` means the default,
-    /// `{home}/message-crate`.
+    /// `{home}/message-crate/staging`.
     root: Option<PathBuf>,
     /// Every run directory this app made and has not deleted.
     directories: Vec<MadeDirectory>,
@@ -60,7 +60,8 @@ struct MadeDirectory {
 pub struct StagingRoot {
     /// The directory new run directories are made in.
     pub root: String,
-    /// `{home}/message-crate`: the directory used when Settings name none.
+    /// `{home}/message-crate/staging`: the directory used when Settings name
+    /// none.
     pub default_root: String,
 }
 
@@ -70,9 +71,9 @@ pub struct StagingRoot {
 pub struct RunDirectories {
     /// Where the record is saved.
     file: PathBuf,
-    /// The home directory, for the default Staging Directory. `None` when the
-    /// operating system reports none.
-    home: Option<PathBuf>,
+    /// The default Staging Directory, `staging` in the Message Crate
+    /// Directory.
+    default_root: PathBuf,
     /// The Logs Directory, where each run's log outlives its directory. A
     /// name whose log is there is not given to a new run, so two runs never
     /// share a log.
@@ -80,10 +81,15 @@ pub struct RunDirectories {
 }
 
 impl RunDirectories {
-    /// The record kept in `file`, read from it on every use, for runs whose
-    /// logs go to `logs`.
-    pub fn at(file: PathBuf, home: Option<PathBuf>, logs: PathBuf) -> Self {
-        Self { file, home, logs }
+    /// The record kept in `file`, read from it on every use, with
+    /// `default_root` as the Staging Directory when Settings name none, for
+    /// runs whose logs go to `logs`.
+    pub fn at(file: PathBuf, default_root: PathBuf, logs: PathBuf) -> Self {
+        Self {
+            file,
+            default_root,
+            logs,
+        }
     }
 
     /// The record as the file holds it now.
@@ -152,37 +158,27 @@ impl RunDirectories {
         }
     }
 
-    /// `{home}/message-crate`.
-    fn default_root(&self) -> Result<PathBuf, String> {
-        self.home
-            .as_ref()
-            .map(|home| home.join(MESSAGE_CRATE_DIRECTORY_NAME))
-            .ok_or_else(|| "Could not determine the user home directory".to_string())
-    }
-
     /// The Staging Directory new run directories are made in.
     ///
     /// # Errors
     ///
-    /// Returns an error when Settings name no directory and the operating
-    /// system reports no home directory.
+    /// Returns an error when the record cannot be read.
     pub fn root(&self) -> Result<PathBuf, String> {
-        match self.read()?.root {
-            Some(root) => Ok(root),
-            None => self.default_root(),
-        }
+        Ok(self
+            .read()?
+            .root
+            .unwrap_or_else(|| self.default_root.clone()))
     }
 
     /// The Staging Directory and its default, for Settings.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operating system reports no home directory, or
-    /// the record cannot be read.
+    /// Returns an error when the record cannot be read.
     pub fn describe(&self) -> Result<StagingRoot, String> {
         Ok(StagingRoot {
             root: self.root()?.display().to_string(),
-            default_root: self.default_root()?.display().to_string(),
+            default_root: self.default_root.display().to_string(),
         })
     }
 
@@ -201,7 +197,7 @@ impl RunDirectories {
         } else {
             resolve_staging_root(trimmed)?;
             let path = PathBuf::from(trimmed);
-            if self.default_root().ok().as_ref() == Some(&path) {
+            if path == self.default_root {
                 None
             } else {
                 Some(path)
@@ -241,7 +237,10 @@ impl RunDirectories {
                 directory = root.join(format!("{base}-{n}"));
                 continue;
             }
-            match std::fs::create_dir(&directory) {
+            // Owner-only whatever the umask: the run's staged conversations
+            // go in it (#2969). The Staging Directory is the person's and
+            // keeps its mode.
+            match file_io::create_dir_owner_only(&directory) {
                 Ok(()) => break,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     n += 1;
@@ -461,7 +460,8 @@ pub fn timestamp_now() -> String {
 }
 
 /// A record of run directories in its own temporary app-data and home
-/// directories, for tests here and in the staging commands.
+/// directories, with the Message Crate Directory in that home, for tests here
+/// and in the staging commands.
 #[cfg(test)]
 pub(crate) struct Scratch {
     pub directories: RunDirectories,
@@ -484,11 +484,22 @@ impl Scratch {
 
     /// The record kept in `app_data`, with `home` as the home directory.
     fn open(app_data: &tempfile::TempDir, home: &tempfile::TempDir) -> RunDirectories {
+        let directory = Self::directory_in(home);
         RunDirectories::at(
             app_data.path().join(RECORD_FILE),
-            Some(home.path().to_path_buf()),
-            crate::app_directories::logs_dir_in(app_data.path()),
+            directory.staging(),
+            directory.logs(),
         )
+    }
+
+    /// The Message Crate Directory in `home`.
+    fn directory_in(home: &tempfile::TempDir) -> crate::app_directories::MessageCrateDirectory {
+        crate::app_directories::MessageCrateDirectory::in_home(home.path(), false)
+    }
+
+    /// The Logs Directory the runs' logs go to.
+    pub fn logs(&self) -> PathBuf {
+        Self::directory_in(&self.home).logs()
     }
 
     /// The same record, as another process or a restarted app opens it.
@@ -539,7 +550,7 @@ mod tests {
     fn a_name_whose_log_is_kept_is_not_given_to_a_new_run() {
         let scratch = Scratch::new();
         let first = scratch.directories.create("imessage-ios", NOW).unwrap();
-        let logs = crate::app_directories::logs_dir_in(scratch.app_data.path());
+        let logs = scratch.logs();
         fs::create_dir_all(&logs).unwrap();
         fs::write(import_run_log(&logs, &first), "the first run's log").unwrap();
         // The first run ended and its directory went; its log stays.
@@ -566,10 +577,34 @@ mod tests {
             .path()
             .canonicalize()
             .unwrap()
-            .join("message-crate");
+            .join("message-crate")
+            .join("staging");
         assert_eq!(run, root.join("staging-iphone-ios-261002-101500"));
         assert_eq!(again, root.join("staging-iphone-ios-261002-101500-2"));
         assert!(run.join(EXPORT_SENTINEL).is_file());
+    }
+
+    /// A run directory holds the conversations it staged until the run ends,
+    /// so no other user of the computer may read it, whatever the umask
+    /// (#2969). The Staging Directory itself is the person's and keeps its
+    /// mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_run_directory_is_its_owner_s_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let scratch = Scratch::new();
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        scratch
+            .directories
+            .set_root(root.path().to_str().unwrap())
+            .unwrap();
+
+        let run = scratch.directories.create("imessage-ios", NOW).unwrap();
+
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&run), 0o700);
+        assert_eq!(mode(root.path()), 0o755);
     }
 
     #[test]
@@ -787,7 +822,7 @@ mod tests {
     fn the_staging_directory_is_stored_and_the_default_is_not() {
         let scratch = Scratch::new();
         let directories = &scratch.directories;
-        let default_root = scratch.home.path().join("message-crate");
+        let default_root = scratch.home.path().join("message-crate").join("staging");
 
         directories.set_root("/data/imports").unwrap();
         let reloaded = scratch.reopen();

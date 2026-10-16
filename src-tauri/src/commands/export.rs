@@ -1,4 +1,4 @@
-//! `export` command — export messages from a Message Crate server.
+//! `export` command: export messages from a Message Crate server.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -55,7 +55,7 @@ pub fn export(
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, None, move || {
         let cfg = ExportConfig {
             out_dir: PathBuf::from(&args.out_dir),
             base_url: args.base_url,
@@ -66,6 +66,9 @@ pub fn export(
             page_limit: DEFAULT_PAGE_LIMIT,
             cancel,
             asset_fetch_workers: DEFAULT_ASSET_FETCH_WORKERS,
+            // The run is given the instant it writes as each file's Export
+            // Date, and never reads the clock itself.
+            exported_at_unix_ms: chrono::Utc::now().timestamp_millis(),
         };
 
         let mut progress = |event: ProgressEvent| match event {

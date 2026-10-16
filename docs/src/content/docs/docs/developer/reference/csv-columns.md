@@ -28,7 +28,7 @@ The diagnostic CSV files the GO SMS Pro import writes (`skipped_*.csv`) follow t
 | Column | Meaning |
 | --- | --- |
 | `chat_identifier` | Identifier for the conversation, usually a peer identity or group identifier. |
-| `conversation_type` | `individual` or `group`. |
+| `conversation_type` | `one-to-one` or `group`. |
 | `group_title` | Group name, or empty when none is known. |
 | `participants_json` | JSON array of participant identities and display names. |
 | `guid` | Stable message identifier. |
@@ -67,7 +67,8 @@ The diagnostic CSV files the GO SMS Pro import writes (`skipped_*.csv`) follow t
 | `export_tool_version` | Source version recorded by the importer. |
 | `owner_identity` | Phone number or email for the person whose backup was exported. |
 | `owner_display_name` | Display name for the owner. |
-| `backup_taken_at_unix_ms` | When the backup the export was read from was made, in Unix milliseconds; blank when the export does not say. |
+| `backup_taken_at_unix_ms` | The message's Backup Date: when the backup this message was read from was made, in Unix milliseconds; blank when nothing says. Rows of one file can carry different dates when an Export Run wrote messages stored from several backups. |
+| `exported_at_unix_ms` | The Export Date: when the file was written, in Unix milliseconds, the same on every row; blank when the export does not say. |
 | `message_owner_identity` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_identity` then stands for the row. |
 | `android_type` | Original Android SMS type or MMS box number, or empty for other sources. |
 | `source_fields_json` | Compact JSON containing source-specific fields that do not have shared columns. |

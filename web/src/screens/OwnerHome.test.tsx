@@ -9,7 +9,8 @@ import { productVersionOf } from "../lib/buildFormat";
 import { ThemeProvider } from "../lib/ThemeProvider";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { Providers } from "../test/providers";
+import { nth } from "../test/nth";
+import { authModule, Providers } from "../test/providers";
 import { MIB } from "../test/units";
 import { fill, setupUser } from "../test/user";
 import OwnerHome from "./OwnerHome";
@@ -40,9 +41,9 @@ const listApiTokens = vi.hoisted(() => vi.fn());
 const listServerLogLines = vi.hoisted(() => vi.fn());
 const listServerLogFiles = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
-}));
+vi.mock("../lib/authContext", () =>
+  authModule({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
+);
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
@@ -150,7 +151,7 @@ beforeEach(() => {
       start_date: "2020-01-01T00:00:00Z",
       end_date: "2020-02-03T00:00:00Z",
       conversations: 2,
-      direct_messages: 12,
+      one_to_one_messages: 12,
       group_messages: 30,
     },
   ]);
@@ -340,10 +341,10 @@ describe("OwnerHome", () => {
         .map((cell) => cell.textContent);
     // A heading row, one row per account in the server's order, and the totals.
     expect(rows).toHaveLength(5);
-    expect(cells(rows[1])).toEqual(["root", "0", "0 B", "0 B"]);
-    expect(cells(rows[2])).toEqual(["alice", "5,000", "6.0 MB", "300 MB"]);
-    expect(cells(rows[3])).toEqual(["bob", "678", "2.0 MB", "100 MB"]);
-    expect(cells(rows[4])).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
+    expect(cells(nth(rows, 1))).toEqual(["root", "0", "0 B", "0 B"]);
+    expect(cells(nth(rows, 2))).toEqual(["alice", "5,000", "6.0 MB", "300 MB"]);
+    expect(cells(nth(rows, 3))).toEqual(["bob", "678", "2.0 MB", "100 MB"]);
+    expect(cells(nth(rows, 4))).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
   });
 
   it("opens /owner/logs on the server's log, at warnings and up", async () => {
@@ -425,12 +426,12 @@ describe("OwnerHome", () => {
     const table = screen.getByRole("table");
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(3);
-    expect(within(rows[1]).getByText("carol")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("deleted")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Account deleted")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Owner")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("carol")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("Account deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("Owner")).toBeInTheDocument();
     expect(
-      within(rows[2]).getByText("Logged in from the website (0.10.0+aaaa1111)"),
+      within(nth(rows, 2)).getByText("Logged in from the website (0.10.0+aaaa1111)"),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Every account/ }));
@@ -438,7 +439,7 @@ describe("OwnerHome", () => {
     await user.click(screen.getByRole("option", { name: "bob" }));
     await settle();
     expect(listAccountAuditTrail).toHaveBeenCalled();
-    expect(listAccountAuditTrail.mock.calls[0][2]).toBe(101);
+    expect(nth(listAccountAuditTrail.mock.calls, 0)[2]).toBe(101);
     expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
   });
 
@@ -609,14 +610,20 @@ describe("OwnerHome", () => {
     await settle();
 
     const rows = screen.getAllByRole("row").slice(1);
-    expect(within(rows[0]).getByRole("button", { name: "Settings for root" })).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Owner")).toBeInTheDocument();
+    expect(
+      within(nth(rows, 0)).getByRole("button", { name: "Settings for root" }),
+    ).toBeInTheDocument();
+    expect(within(nth(rows, 0)).getByText("Owner")).toBeInTheDocument();
     // The owner cannot be disabled and holds no messages to import, export or delete.
-    expect(within(rows[0]).queryByRole("button", { name: /Status of/ })).not.toBeInTheDocument();
-    expect(within(rows[0]).queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(within(rows[1]).getByRole("button", { name: "Settings for bob" })).toBeInTheDocument();
+    expect(
+      within(nth(rows, 0)).queryByRole("button", { name: /Status of/ }),
+    ).not.toBeInTheDocument();
+    expect(within(nth(rows, 0)).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      within(nth(rows, 1)).getByRole("button", { name: "Settings for bob" }),
+    ).toBeInTheDocument();
     // The gear opens the account; the name itself is plain text.
-    expect(within(rows[1]).getByText("bob").closest("button")).toBeNull();
+    expect(within(nth(rows, 1)).getByText("bob").closest("button")).toBeNull();
   });
 
   it("shows an account's preferred name under its username, and searches it too", async () => {
@@ -676,9 +683,33 @@ describe("OwnerHome", () => {
     updateAccount.mockResolvedValue({ ...anAccount, preferred_name: "Robert" });
     await user.clear(name);
     await fill(user, name, "Robert");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    // Moving on to another tab is all it takes. There is no Save to forget (#2985).
+    await user.click(screen.getByRole("tab", { name: "Account" }));
     await settle();
     expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
+  });
+
+  it("shows a display name refused after a tab switch when the owner comes back to Profile", async () => {
+    const user = setupUser();
+    renderHome(["/owner/accounts/101"]);
+    await settle();
+
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+
+    updateAccount.mockRejectedValue(new ApiError(400, "display name is too long"));
+    const name = screen.getByLabelText("Display name");
+    await user.clear(name);
+    await fill(user, name, "Robert");
+    // The refusal arrives after the Profile panel is gone.
+    await user.click(screen.getByRole("tab", { name: "Account" }));
+    await settle();
+    expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
+
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+    expect(screen.getByLabelText("Display name")).toHaveValue("Robert");
+    expect(screen.getByText("Display name is too long")).toBeInTheDocument();
   });
 
   it("removes an identity from an account's Profile once the owner agrees", async () => {

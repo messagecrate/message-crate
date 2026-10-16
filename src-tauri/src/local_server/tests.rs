@@ -5,6 +5,7 @@
 use super::*;
 use httpmock::prelude::*;
 use std::net::TcpListener;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The sockets holding the tests' ports, kept until the test program ends.
@@ -195,13 +196,6 @@ fn the_server_is_told_the_tools_directory() {
 }
 
 #[test]
-fn a_dev_build_keeps_its_data_apart_from_the_installed_app() {
-    let app_data = Path::new("/home/someone/.local/share/app.messagecrate.desktop");
-    assert_eq!(data_dir_in(app_data, false), app_data.join("data"));
-    assert_eq!(data_dir_in(app_data, true), app_data.join("data-dev"));
-}
-
-#[test]
 fn open_to_the_network_listens_on_every_address_at_the_same_port() {
     let launch = Launch {
         open_to_network: true,
@@ -222,6 +216,7 @@ fn at(phase: Phase, wanted_open: bool) -> State {
         phase,
         wanted_open,
         jobs: 0,
+        restarts: Vec::new(),
     }
 }
 
@@ -240,6 +235,92 @@ fn own(open: bool) -> Phase {
         open,
         checking: false,
         unanswered: 0,
+    }
+}
+
+/// The app found its own server had exited at `found_at`, having written
+/// `output`.
+fn exit_found_at(found_at: Instant, output: &str) -> Event {
+    Event::ChildExited {
+        output: output.into(),
+        code: Some(1),
+        found_at,
+    }
+}
+
+/// The app's own server, ready, exits at each of `times` in turn, and each
+/// restart listens again. Returns the state and actions after the last exit.
+fn exits_at(mut state: State, times: &[Instant]) -> (State, Vec<Action>) {
+    let mut actions = Vec::new();
+    for &time in times {
+        if matches!(state.phase, Phase::Starting { .. }) {
+            (state, _) = step(state, Event::Listening);
+        }
+        (state, actions) = step(state, exit_found_at(time, "crashed"));
+    }
+    (state, actions)
+}
+
+/// A ready server that exits on its own, as in a crash, is started again, so
+/// an Upload in progress gets its server back without anyone pressing Retry
+/// (#2089).
+#[test]
+fn the_apps_own_server_is_started_again_when_it_exits() {
+    let now = Instant::now();
+    let (state, actions) = step(at(own(false), false), exit_found_at(now, "crashed"));
+    assert_eq!(actions, [Action::Spawn { open: false }]);
+    assert_eq!(state.phase, Phase::Starting { open: false });
+
+    // Started the way the person wants it now.
+    let (state, actions) = step(at(own(false), true), exit_found_at(now, "crashed"));
+    assert_eq!(actions, [Action::Spawn { open: true }]);
+    assert_eq!(state.phase, Phase::Starting { open: true });
+}
+
+/// A server that keeps exiting is not started forever: after
+/// [`MAX_RESTARTS`] restarts within [`RESTART_WINDOW`], the next exit fails
+/// as before, with what it last wrote.
+#[test]
+fn a_server_that_keeps_exiting_is_started_again_only_a_few_times() {
+    let now = Instant::now();
+    let times: Vec<Instant> = (0..=MAX_RESTARTS)
+        .map(|n| now + Duration::from_secs(n.into()))
+        .collect();
+    let (state, actions) = exits_at(at(own(false), false), &times[..times.len() - 1]);
+    assert_eq!(actions, [Action::Spawn { open: false }]);
+
+    let (state, actions) = exits_at(state, &times[times.len() - 1..]);
+    assert_eq!(actions, []);
+    assert_eq!(
+        state.phase,
+        Phase::Failed {
+            reason: FailureReason::StartFailed,
+            message: "Message Crate stopped 4 times within 10 minutes.".into(),
+            details: "crashed".into(),
+        }
+    );
+
+    // Retry on the login card starts the count again.
+    let (state, actions) = step(state, Event::Requested { open: false });
+    assert_eq!(actions, [Action::Probe]);
+    let (state, _) = step(state, probed(Probe::Free));
+    let (_, actions) = exits_at(state, &[now + RESTART_WINDOW / 2]);
+    assert_eq!(actions, [Action::Spawn { open: false }]);
+}
+
+/// Exits further apart than [`RESTART_WINDOW`] are each started again: only
+/// the restarts within the window count.
+#[test]
+fn exits_far_apart_are_always_started_again() {
+    let now = Instant::now();
+    let times: Vec<Instant> = (0..=MAX_RESTARTS * 3)
+        .map(|n| now + RESTART_WINDOW * n)
+        .collect();
+    let mut state = at(own(false), false);
+    for time in times {
+        let actions;
+        (state, actions) = exits_at(state, &[time]);
+        assert_eq!(actions, [Action::Spawn { open: false }], "{time:?}");
     }
 }
 
@@ -445,6 +526,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "lost".into(),
             code: Some(1),
+            found_at: Instant::now(),
         },
     );
     assert_eq!(actions, [Action::Probe]);
@@ -459,6 +541,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "any words at all".into(),
             code: Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
+            found_at: Instant::now(),
         },
     );
     let (state, actions) = step(state, probed(Probe::Free));
@@ -473,6 +556,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "while reset-demo or another server is active".into(),
             code: Some(1),
+            found_at: Instant::now(),
         },
     );
     let (state, actions) = step(state, probed(Probe::Free));
@@ -483,6 +567,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "database is locked".into(),
             code: None,
+            found_at: Instant::now(),
         },
     );
     let (state, actions) = step(state, probed(Probe::Free));

@@ -7,7 +7,7 @@ use crate::test_support::{
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
     message_line, register_via_api, seed_conversation, stored_time,
 };
-use message_ir::{IrAttachment, IrImessage, IrService, Reaction};
+use message_ir::{Attachment, ImessageExtensions, Reaction, Transport};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -19,7 +19,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
@@ -79,7 +79,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
         &SeedConversation {
             account_id: bob.account_id,
             handle: "+15555550167",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[SeedMessage {
@@ -298,13 +298,13 @@ fn ir_message(
     text: &str,
     is_sticker: bool,
     reactions: Vec<Reaction>,
-    imessage: Option<IrImessage>,
+    imessage: Option<ImessageExtensions>,
     is_reply: bool,
 ) -> String {
     let mut message = message_line(guid, text)
         .at(ms)
         .sender("+15555550123")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             is_sticker,
             size_bytes: Some(12),
             missing_reason: Some("not_found".into()),
@@ -372,9 +372,9 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         "an announcement",
         false,
         vec![reaction_by("loved", None, 2, "+15555550167")],
-        Some(IrImessage {
+        Some(ImessageExtensions {
             announcement: Some("named the conversation Reactions".into()),
-            ..IrImessage::default()
+            ..ImessageExtensions::default()
         }),
         false,
     );
@@ -397,19 +397,21 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     .unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let counts = crate::imports_api::import_jsonl_files_on_conn(
+    let counts = crate::imports_api::pipeline::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
-        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: Some(&dir),
-            mode: crate::imports_api::ImportMode::Append,
-            source: "imessage",
-            account_id,
-            import_id: None,
-            phone_country: None,
-            now: crate::test_support::fixed_instant(),
-        }),
+        &crate::imports_api::pipeline::ImportOptions::fixed(
+            crate::imports_api::pipeline::FixedImportArgs {
+                assets_dir: &assets,
+                asset_root: Some(&dir),
+                mode: message_crate_api_types::ImportMode::Append,
+                source: "imessage",
+                account_id,
+                import_id: None,
+                phone_country: None,
+                now: crate::test_support::fixed_instant(),
+            },
+        ),
     )
     .await
     .unwrap();
@@ -476,26 +478,28 @@ async fn import_conversation_file(
     name: &str,
     contents: &str,
     source: &str,
-) -> crate::imports_api::ImportCounts {
+) -> crate::imports_api::pipeline::ImportCounts {
     let dir = fixture.dir().join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.jsonl"));
     std::fs::write(&path, contents).unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    crate::imports_api::import_jsonl_files_on_conn(
+    crate::imports_api::pipeline::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
-        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: Some(&dir),
-            mode: crate::imports_api::ImportMode::Append,
-            source,
-            account_id,
-            import_id: None,
-            phone_country: None,
-            now: crate::test_support::fixed_instant(),
-        }),
+        &crate::imports_api::pipeline::ImportOptions::fixed(
+            crate::imports_api::pipeline::FixedImportArgs {
+                assets_dir: &assets,
+                asset_root: Some(&dir),
+                mode: message_crate_api_types::ImportMode::Append,
+                source,
+                account_id,
+                import_id: None,
+                phone_country: None,
+                now: crate::test_support::fixed_instant(),
+            },
+        ),
     )
     .await
     .unwrap()
@@ -601,7 +605,7 @@ fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
         .at(1_578_308_040_000)
         .outgoing()
         .subject("Weekend plans")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             missing_reason: Some("not_found".into()),
             ..attachment(
                 "attachments/harbour-map.png",
@@ -904,7 +908,7 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
 /// twice was edited a third time, from the bakery to the park, and the
 /// message never edited has been edited once, from "Nothing changed here".
 ///
-/// The message lines are read into `message_ir::IrMessage` and changed by
+/// The message lines are read into `message_ir::Message` and changed by
 /// field, so the change holds whatever order or spacing the exporter wrote
 /// the fixture's fields in (#1899). The header line is kept as it is.
 fn later_apple_messages_edits() -> String {
@@ -915,7 +919,7 @@ fn later_apple_messages_edits() -> String {
     let mut edited = Vec::new();
     let mut later = format!("{header}\n");
     for line in messages.lines() {
-        let mut message: message_ir::IrMessage =
+        let mut message: message_ir::Message =
             serde_json::from_str(line).expect("each message line is message-ir");
         let (was, now, edited_at) = match message.guid.as_str() {
             "guid-edited-twice" => ("Meet at the bakery", "Meet at the park", 1_578_309_090_000),
@@ -1468,16 +1472,19 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
         reply["tapbacks"],
         serde_json::json!([
             {"part_index": 0, "kind": "liked", "emoji": null,
-             "is_from_me": false, "sender": "+15555550167"},
+             "is_from_me": false, "sender": "+15555550167",
+             "sender_display_name": null},
             {"part_index": 1, "kind": "emoji", "emoji": "🎉",
-             "is_from_me": false, "sender": "+15555550161"}
+             "is_from_me": false, "sender": "+15555550161",
+             "sender_display_name": null}
         ])
     );
     assert_eq!(
         announcement["tapbacks"],
         serde_json::json!([
             {"part_index": 2, "kind": "loved", "emoji": null,
-             "is_from_me": false, "sender": "+15555550167"}
+             "is_from_me": false, "sender": "+15555550167",
+             "sender_display_name": null}
         ])
     );
     assert_eq!(plain["tapbacks"], serde_json::json!([]));
@@ -1495,6 +1502,62 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
     assert_eq!(flags(&plain), (false, false, false), "{plain}");
 }
 
+/// An iMazing reaction names its reactor by display name alone, because the
+/// CSV carries no address. The import kept the identity and dropped the
+/// name, so the reaction was read back from nobody and the web showed it as
+/// from "Someone". The name is now stored on the reaction and read back,
+/// and makes no identity (#2044).
+#[tokio::test]
+async fn a_reaction_named_with_no_identity_is_read_back_by_its_name() {
+    let (fixture, alice) = fixture_with_account().await;
+    let header = conversation_header("imazing", "chat-named-reactor")
+        .group()
+        .title("Named")
+        .participant("+15555550123", Some("Ada"));
+    let named = Reaction {
+        part_index: 0,
+        kind: "loved".into(),
+        emoji: None,
+        is_from_me: false,
+        reactor_identity: None,
+        reactor_display_name: Some("Grace".into()),
+    };
+    let message = message_line("g-named-reaction", "hello")
+        .sender("+15555550123")
+        .reaction(named);
+    import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "named-reactor",
+        &format!("{}{}", header.line(), message.line()),
+        "imazing",
+    )
+    .await;
+
+    let page: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+    let conversation_id = &page["items"][0]["conversation"]["id"];
+    let thread: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations/{conversation_id}/messages"),
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        thread["items"][0]["tapbacks"],
+        serde_json::json!([
+            {"part_index": 0, "kind": "loved", "emoji": null, "is_from_me": false,
+             "sender": null, "sender_display_name": "Grace"}
+        ]),
+        "{thread}"
+    );
+    let mut conn = fixture.conn().await;
+    let named_handles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM handles WHERE raw = 'Grace'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(named_handles, 0, "a reactor's name makes no identity");
+}
+
 /// A message's reply count is the number of replies that name it, counted
 /// when read: a reply whose quoted message was not in the export is a reply
 /// that counts toward nothing, and a reply later flagged as a duplicate stops
@@ -1506,7 +1569,7 @@ async fn the_reply_count_is_the_replies_that_link_to_the_message() {
     let line = |guid: &str, ms: i64| {
         message_line(guid, guid)
             .at(ms)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender("+15555550123")
     };
     let lines = [
@@ -1583,7 +1646,7 @@ async fn the_reply_count_takes_the_replies_that_quote_a_hidden_copy() {
     let line = |guid: &str, text: &str, ms: i64| {
         message_line(guid, text)
             .at(ms)
-            .service(IrService::IMessage)
+            .service(Transport::IMessage)
             .sender("+15555550123")
     };
     // Two chats, so trashing the reply's conversation keeps the message's.
@@ -1760,7 +1823,7 @@ async fn a_date_is_a_day_on_the_accounts_clock() {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
@@ -1809,7 +1872,7 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[

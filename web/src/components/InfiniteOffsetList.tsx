@@ -433,7 +433,11 @@ function SectionedLetterList<T>({
       let first = rows.length;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
-        if (rows[mid].getBoundingClientRect().bottom > viewTop) {
+        // `mid` stays inside `rows`. This runs on every scroll event, where a
+        // throw would break scrolling for a bug in a label, so a missing row
+        // reads as one above the viewport rather than throwing.
+        const row = rows[mid];
+        if (row && row.getBoundingClientRect().bottom > viewTop) {
           first = mid;
           hi = mid - 1;
         } else {
@@ -445,7 +449,7 @@ function SectionedLetterList<T>({
       let end = 0;
       for (let i = first; i < rows.length; i++) {
         const row = rows[i];
-        if (row.getBoundingClientRect().top >= viewBottom) break;
+        if (!row || row.getBoundingClientRect().top >= viewBottom) break;
         const raw = row.getAttribute("data-contact-index");
         const idx = raw == null ? Number.NaN : Number(raw);
         if (!Number.isFinite(idx)) continue;

@@ -177,7 +177,7 @@ The Owner can't add or rename a token, because a token is the account's own cred
 
 The Owner sets the same three things the account's holder sets:
 
-- **Display Name**, saved with **Save**.
+- **Display Name**. It saves when the Owner leaves the field, presses Enter, or moves to another tab.
 - **Time Zone**, the zone the account's message times are shown in. It saves when a zone is chosen.
 - **Identities**, the account holder's own phone numbers and email addresses.
 

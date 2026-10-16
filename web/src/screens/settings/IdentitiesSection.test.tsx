@@ -4,7 +4,8 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { mockedAuth, renderWithProviders as render } from "../../test/providers";
+import { nth } from "../../test/nth";
+import { authModule, renderWithProviders as render } from "../../test/providers";
 import { inTimeZone } from "../../test/timeZone";
 import { fill, setupUser } from "../../test/user";
 import { IdentitiesSection } from "./IdentitiesSection";
@@ -15,7 +16,7 @@ const listAccountIdentities = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/useSettingsAccount", () => ({
   useUpdateSettingsProfile: () => ({ mutateAsync, isPending: false }),
 }));
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   listAccountIdentities: (...a: unknown[]) => listAccountIdentities(...a),
@@ -36,7 +37,7 @@ const identities: Identity[] = [
     start_date: "2020-01-01T12:00:00Z",
     end_date: "2020-02-03T12:00:00Z",
     conversations: 2,
-    direct_messages: 12,
+    one_to_one_messages: 12,
     group_messages: 30,
     orphaned_messages: 0,
     country_unknown: false,
@@ -47,7 +48,7 @@ const identities: Identity[] = [
     start_date: "2021-06-01T12:00:00Z",
     end_date: "2021-06-01T12:00:00Z",
     conversations: 1,
-    direct_messages: 1,
+    one_to_one_messages: 1,
     group_messages: 0,
     orphaned_messages: 0,
     country_unknown: false,
@@ -58,7 +59,7 @@ const identities: Identity[] = [
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: 0,
+    one_to_one_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
     country_unknown: false,
@@ -117,7 +118,7 @@ describe("IdentitiesSection", () => {
     const table = screen.getByRole("grid", { name: "Identities" });
     expect(within(table).getByText("archer@example.com")).toBeInTheDocument();
     expect(within(table).queryByText("30")).not.toBeInTheDocument();
-    const row = within(table).getAllByRole("row")[1];
+    const row = nth(within(table).getAllByRole("row"), 1);
     expect(within(row).getAllByText("—").length).toBeGreaterThanOrEqual(5);
   });
 
@@ -230,7 +231,7 @@ describe("IdentitiesSection", () => {
 
   it("removes nothing and says why when the server lists an identity on a service it does not take", async () => {
     const user = setupUser();
-    listAccountIdentities.mockResolvedValue([{ ...identities[0], service: "sms" }]);
+    listAccountIdentities.mockResolvedValue([{ ...nth(identities, 0), service: "sms" }]);
     render(<IdentitiesSection profile={profile} />);
 
     await settle();
@@ -254,7 +255,7 @@ describe("IdentitiesSection", () => {
     ...profile,
     phones: [{ address: "+15555550100", services: ["phone", "whatsapp"] }],
   } as AccountProfile;
-  const whatsapp: Identity = { ...identities[0], service: "whatsapp" };
+  const whatsapp: Identity = { ...nth(identities, 0), service: "whatsapp" };
 
   it("shows a number on Text Message and on WhatsApp as a row for each until the server answers", () => {
     listAccountIdentities.mockReturnValue(new Promise(() => {}));
@@ -350,16 +351,16 @@ describe("IdentitiesSection", () => {
 
 describe("removeBody", () => {
   it("names only the kind of message the identity has, singular when it is one", () => {
-    expect(removeBody(identities[1])).toBe(
+    expect(removeBody(nth(identities, 1))).toBe(
       "1 one-to-one message will no longer be associated with this account.",
     );
-    expect(removeBody(identities[0])).toBe(
+    expect(removeBody(nth(identities, 0))).toBe(
       "12 one-to-one messages and 30 group messages will no longer be associated with this account.",
     );
   });
 
   it("says so when the identity has no messages", () => {
-    expect(removeBody(identities[2])).toBe(
+    expect(removeBody(nth(identities, 2))).toBe(
       "archer@example.com has no messages. It will no longer count as this account's own.",
     );
   });

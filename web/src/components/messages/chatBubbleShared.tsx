@@ -88,7 +88,11 @@ const TAPBACK_KIND_EMOJI: Record<string, string> = {
   sticker: "🖼️",
 };
 
-/** Who left a tapback: "Me" for the account owner, else the matching participant's name. */
+/**
+ * Who left a tapback: "Me" for the account owner, else the matching
+ * participant's name, else the name the source gave a reactor it had no
+ * address for (#2044), else "Someone".
+ */
 function tapbackSenderName(m: Message, t: MessageTapback): string {
   if (t.is_from_me) return "Me";
   if (t.sender) {
@@ -96,7 +100,7 @@ function tapbackSenderName(m: Message, t: MessageTapback): string {
     if (p) return p.name;
     return t.sender;
   }
-  return "Someone";
+  return t.sender_display_name ?? "Someone";
 }
 
 type TapbackGroup = {

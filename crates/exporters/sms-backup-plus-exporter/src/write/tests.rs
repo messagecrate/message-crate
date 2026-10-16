@@ -2,7 +2,7 @@ use super::*;
 use chrono::TimeZone;
 use mailparse::{MailHeaderMap, parse_mail};
 use message_ir::testutil::{sample_document, sample_imessage_document};
-use message_ir::{IrAttachment, IrConversationType, IrDirection, IrMessageKind, IrParticipant};
+use message_ir::{Attachment, ConversationType, Direction, MessageKind, Participant};
 use std::fs;
 
 const BACKUP_TIME_MS: i64 = 1_791_000_000_000;
@@ -11,8 +11,8 @@ fn archive() -> SmsBackupPlusArchive {
     SmsBackupPlusArchive::new(Utc.timestamp_millis_opt(BACKUP_TIME_MS).unwrap())
 }
 
-fn photo(bytes: &[u8]) -> IrAttachment {
-    IrAttachment {
+fn photo(bytes: &[u8]) -> Attachment {
+    Attachment {
         bytes: Some(bytes.to_vec()),
         ..message_ir::testutil::sample_attachment()
     }
@@ -77,38 +77,26 @@ fn sms_and_mms_document() -> ConversationDocument {
         m.message_kind = kind;
         m.text = text.into();
         m.attachments = attachments;
-        if direction == IrDirection::Outgoing {
+        if direction == Direction::Outgoing {
             m.sender_identity = Some("+15555550100".into());
             m.sender_display_name = Some("Me".into());
         }
         m
     };
     document.messages = vec![
-        message(
-            1,
-            IrDirection::Incoming,
-            IrMessageKind::Sms,
-            "in sms",
-            vec![],
-        ),
-        message(
-            2,
-            IrDirection::Outgoing,
-            IrMessageKind::Sms,
-            "out sms",
-            vec![],
-        ),
+        message(1, Direction::Incoming, MessageKind::Sms, "in sms", vec![]),
+        message(2, Direction::Outgoing, MessageKind::Sms, "out sms", vec![]),
         message(
             3,
-            IrDirection::Incoming,
-            IrMessageKind::Mms,
+            Direction::Incoming,
+            MessageKind::Mms,
             "in mms",
             vec![photo(b"\xff\xd8\xffin")],
         ),
         message(
             4,
-            IrDirection::Outgoing,
-            IrMessageKind::Mms,
+            Direction::Outgoing,
+            MessageKind::Mms,
             "out mms",
             vec![photo(b"\xff\xd8\xffout")],
         ),
@@ -226,10 +214,11 @@ fn no_mail_claims_a_value_the_database_does_not_keep() {
 fn a_group_lists_every_peer_and_names_the_sender() {
     let mut document = sample_document("hello group");
     document.conversation.chat_identifier = "chat-group-1".into();
-    document.conversation.conversation_type = IrConversationType::Group;
-    document.conversation.participants.push(IrParticipant {
+    document.conversation.conversation_type = ConversationType::Group;
+    document.conversation.participants.push(Participant {
         identity: Some("+15555550102".into()),
         display_name: Some("Bo".into()),
+        country: None,
     });
     document.messages[0].sender_identity = Some("+15555550102".into());
     document.messages[0].sender_display_name = Some("Bo".into());
@@ -263,7 +252,7 @@ fn only_sms_and_mms_are_written_and_the_rest_are_counted() {
     imessage.conversation.chat_identifier = "+15555550102".into();
     let mut whatsapp = sample_document("a whatsapp message");
     whatsapp.conversation.chat_identifier = "+15555550103".into();
-    whatsapp.messages[0].service = message_ir::IrService::Whatsapp;
+    whatsapp.messages[0].service = message_ir::Transport::Whatsapp;
     let tmp = tempfile::tempdir().unwrap();
     let mut report = ExportReport::default();
 
@@ -360,8 +349,8 @@ fn a_conversation_with_an_empty_chat_id_writes_into_a_directory_a_fresh_export_r
 #[test]
 fn a_message_of_unknown_service_and_sms_kind_is_written() {
     let mut document = sample_document("an sms of unknown service");
-    document.messages[0].service = message_ir::IrService::Unknown;
-    document.messages[0].message_kind = message_ir::IrMessageKind::Sms;
+    document.messages[0].service = message_ir::Transport::Unknown;
+    document.messages[0].message_kind = message_ir::MessageKind::Sms;
     let tmp = tempfile::tempdir().unwrap();
     let mut report = ExportReport::default();
 
@@ -387,9 +376,10 @@ fn a_message_of_unknown_service_and_sms_kind_is_written() {
 fn the_owner_under_another_spelling_is_not_a_peer() {
     let mut document = sample_document("hello");
     document.export.owner_identity = Some("+15555550100".into());
-    document.conversation.participants.push(IrParticipant {
+    document.conversation.participants.push(Participant {
         identity: Some("+1 (555) 555-0100".into()),
         display_name: Some("Me".into()),
+        country: None,
     });
     let tmp = tempfile::tempdir().unwrap();
     archive()
@@ -433,15 +423,16 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
     let subject_of = |handles: &[&str]| {
         let mut document = sample_document("hello group");
         document.conversation.chat_identifier = "chat-group-1".into();
-        document.conversation.conversation_type = IrConversationType::Group;
+        document.conversation.conversation_type = ConversationType::Group;
         document.conversation.participants = handles
             .iter()
-            .map(|handle| IrParticipant {
+            .map(|handle| Participant {
                 identity: Some((*handle).into()),
                 display_name: Some("Carol".into()),
+                country: None,
             })
             .collect();
-        document.messages[0].direction = IrDirection::Outgoing;
+        document.messages[0].direction = Direction::Outgoing;
         document.messages[0].sender_identity = None;
         let tmp = tempfile::tempdir().unwrap();
         archive()
@@ -474,9 +465,10 @@ fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
     let mut document = sample_document("hi");
     document.conversation.chat_identifier =
         message_ir::ConversationKey::NameOnly("Alice".into()).chat_id();
-    document.conversation.participants = vec![IrParticipant {
+    document.conversation.participants = vec![Participant {
         identity: None,
         display_name: Some("Alice".into()),
+        country: None,
     }];
     document.messages[0].sender_identity = None;
     document.messages[0].sender_display_name = Some("Alice".into());

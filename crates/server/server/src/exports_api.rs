@@ -13,8 +13,10 @@ use message_crate_api_types::{
     CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, ExportStatus,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::api_error::ApiError;
+use crate::auth::ExportAccess;
 use crate::db::conversation_messages::{
     DEFAULT_MESSAGE_SORT, MESSAGE_SORT_KEYS, Message, selection_where,
 };
@@ -27,7 +29,7 @@ use crate::messages_api::message_filter;
 use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, page_from_rows, page_params, parse_sort, parse_status, sorted_page,
 };
-use crate::server::{ApiError, AppState, Created, ExportAccess};
+use crate::server::Created;
 
 /// Most ids one `selection` scope may name in either list, so the `IN` list
 /// stays under SQLite's variable cap; the same figure `POST /v1/contacts/summaries`
@@ -105,7 +107,7 @@ pub async fn start_export_run(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<ExportRun, ApiError> {
     let mut tx = crate::db::begin_write(conn).await?;
-    crate::server::require_account_row(&mut tx, account_id).await?;
+    crate::auth::require_account_row(&mut tx, account_id).await?;
     let filter = scope_filter(&mut tx, account_id, scope, clock).await?;
     let export_id = exports::start_export(
         &mut tx,
@@ -313,12 +315,12 @@ fn not_running(export_id: i64, status: ExportStatus) -> ApiError {
 
 /// Close a running run with `status`, answering it as it now stands.
 async fn close_export(
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     export_id: i64,
     status: ExportStatus,
 ) -> Result<Json<ExportRun>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     running_export(&mut conn, account_id, export_id).await?;
     if !exports::finish_export(&mut conn, account_id, export_id, status, chrono::Utc::now()).await?
     {
@@ -350,13 +352,13 @@ async fn close_export(
     )
 )]
 pub(crate) async fn create_export(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ExportAccess(auth): ExportAccess,
     Json(body): Json<CreateExportRequest>,
 ) -> Result<Created<ExportRun>, ApiError> {
     let account = auth.account_id;
     let tool = body.tool.as_deref().and_then(message_ir::trimmed);
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let now = chrono::Utc::now();
     let clock = crate::db::account_profile::account_clock(&mut conn, account, now).await?;
     let run = start_export_run(
@@ -393,11 +395,11 @@ pub(crate) async fn create_export(
     )
 )]
 pub(crate) async fn list_exports(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ExportAccess(auth): ExportAccess,
     Query(query): Query<ListExportsQuery>,
 ) -> Result<Json<Page<ExportRun>>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     exports_page(&mut conn, auth.account_id, query)
         .await
         .map(Json)
@@ -448,11 +450,11 @@ pub(crate) async fn exports_page(
     )
 )]
 pub(crate) async fn get_export(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ExportAccess(auth): ExportAccess,
     AxumPath(export_id): AxumPath<i64>,
 ) -> Result<Json<ExportRun>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     Ok(Json(
         owned_export(&mut conn, auth.account_id, export_id).await?,
     ))
@@ -481,7 +483,7 @@ pub(crate) async fn get_export(
     )
 )]
 pub(crate) async fn list_export_messages(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ExportAccess(auth): ExportAccess,
     AxumPath(export_id): AxumPath<i64>,
     Query(query): Query<ListExportMessagesQuery>,
@@ -494,7 +496,7 @@ pub(crate) async fn list_export_messages(
         &DEFAULT_MESSAGE_SORT,
     )?;
 
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let run = running_export(&mut conn, account, export_id).await?;
     let total = u64::try_from(run.message_count).unwrap_or(0);
     let body = export_messages(
@@ -502,8 +504,7 @@ pub(crate) async fn list_export_messages(
         ExportPageOpts {
             export_id,
             total,
-            limit: page.limit,
-            offset: page.offset,
+            page,
             order,
         },
     )
@@ -540,12 +541,12 @@ pub(crate) async fn list_export_messages(
     )
 )]
 pub(crate) async fn complete_export(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ExportAccess(auth): ExportAccess,
     AxumPath(export_id): AxumPath<i64>,
     Json(body): Json<CompleteExportRequest>,
 ) -> Result<Json<ExportRun>, ApiError> {
-    close_export(&state, auth.account_id, export_id, body.status.into()).await
+    close_export(&db, auth.account_id, export_id, body.status.into()).await
 }
 
 /// Record that the client gave the run up.
@@ -561,11 +562,11 @@ pub(crate) async fn complete_export(
     )
 )]
 pub(crate) async fn cancel_export(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ExportAccess(auth): ExportAccess,
     AxumPath(export_id): AxumPath<i64>,
 ) -> Result<Json<ExportRun>, ApiError> {
-    close_export(&state, auth.account_id, export_id, ExportStatus::Cancelled).await
+    close_export(&db, auth.account_id, export_id, ExportStatus::Cancelled).await
 }
 
 #[cfg(test)]

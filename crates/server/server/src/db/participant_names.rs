@@ -32,23 +32,18 @@ use sqlx::{Row, SqliteConnection};
 pub use message_crate_api_types::Participant;
 
 use crate::db::sql::group_rows_by_id;
-
-/// Join condition that leaves a trashed contact `c` out. A trashed contact is
-/// not one of a conversation's contacts (CONTEXT.md, "Trash"), and
-/// `GET /v1/contacts/{id}` answers 404 for it, so its participant is named and
-/// linked as if no contact held the identity. Search does the same unless the
-/// query carries `trashed:`.
-fn not_trashed(c: &str) -> String {
-    format!(
-        "NOT EXISTS (SELECT 1 FROM trashed_contacts t
-                     WHERE t.account_id = {c}.account_id AND t.contact_id = {c}.id)"
-    )
-}
+use crate::db::trash::not_trashed_contact;
 
 /// The name shown for the participant row `p`, as a SQL expression, with `c`
-/// the contact its identity is on (joined with [`not_trashed`], so NULL for
-/// a trashed one) and `h` its identity: the contact's name, else what that
-/// backup called them in that conversation, else the identity.
+/// the contact its identity is on (joined with [`not_trashed_contact`], so
+/// NULL for a trashed one) and `h` its identity: the contact's name, else
+/// what that backup called them in that conversation, else the identity.
+///
+/// Every join of `c` here leaves a trashed contact out. A trashed contact is
+/// not one of a conversation's contacts (CONTEXT.md, "Trash"), and
+/// `GET /v1/contacts/{id}` answers 404 for it, so its participant is named
+/// and linked as if no contact held the identity. Search does the same
+/// unless the query carries `trashed:`.
 fn participant_name(p: &str, h: &str, c: &str) -> String {
     format!(
         "COALESCE(NULLIF({c}.preferred_name, ''),
@@ -78,7 +73,7 @@ pub(crate) fn first_participant_name_sql(conv: &str) -> String {
           ORDER BY fp_p.id
           LIMIT 1)",
         name = participant_name("fp_p", "fp_h", "fp_c"),
-        not_trashed = not_trashed("fp_c"),
+        not_trashed = not_trashed_contact("fp_c"),
     )
 }
 
@@ -91,7 +86,7 @@ pub(crate) fn first_participant_name_sql(conv: &str) -> String {
 /// subquery's own alias is `nf_p`.
 pub(crate) fn named_from_chat_handle_sql(conv: &str) -> String {
     format!(
-        "({conv}.conversation_type = 'individual' COLLATE NOCASE
+        "({conv}.conversation_type = 'one-to-one' COLLATE NOCASE
           AND NOT {with_yourself}
           AND NOT EXISTS (SELECT 1 FROM participants nf_p WHERE nf_p.conversation_id = {conv}.id))",
         with_yourself = crate::db::conversations::is_with_yourself_sql(conv)
@@ -153,7 +148,7 @@ async fn load_participant_rows(
                  WHERE p.conversation_id IN ({placeholders})
                  ORDER BY p.conversation_id, p.id",
                 name = participant_name("p", "h", "c"),
-                not_trashed = not_trashed("c"),
+                not_trashed = not_trashed_contact("c"),
             )
         },
         participant_row,
@@ -164,7 +159,7 @@ async fn load_participant_rows(
 /// The chat handle of each conversation in `conversation_ids` as its sole
 /// participant, for conversations that have no participants rows at all.
 ///
-/// Only a one-to-one (`individual`) conversation's chat handle is a person
+/// Only a one-to-one conversation's chat handle is a person
 /// (`docs/architecture/contacts-identities-and-messages.md`, "A group
 /// conversation is not a person"). Any other conversation type is left out,
 /// so it has no participants. The type is compared without case, as the import
@@ -190,7 +185,7 @@ async fn load_from_chat_handle(
         conversation_ids,
         |placeholders| {
             format!(
-                "SELECT conv.id,
+                "SELECT conv.id AS conversation_id,
                         COALESCE(NULLIF(c.preferred_name, ''), h.raw) AS name,
                         h.raw AS handle,
                         COALESCE(NULLIF(trim(h.service), ''), h.handle_type) AS service,
@@ -204,7 +199,7 @@ async fn load_from_chat_handle(
                   AND {not_trashed}
                  WHERE conv.id IN ({placeholders})
                    AND {named_from_chat_handle}",
-                not_trashed = not_trashed("c"),
+                not_trashed = not_trashed_contact("c"),
                 named_from_chat_handle = named_from_chat_handle_sql("conv")
             )
         },
@@ -213,16 +208,16 @@ async fn load_from_chat_handle(
     .await
 }
 
-/// One row of either query above: the conversation id, then the participant
-/// as (name, handle, service, contact id).
+/// One row of either query above, read by column name: `conversation_id`,
+/// then the participant as `name`, `handle`, `service` and `contact_id`.
 fn participant_row(row: &SqliteRow) -> Result<(i64, Participant), sqlx::Error> {
     Ok((
-        row.try_get::<i64, _>(0)?,
+        row.try_get::<i64, _>("conversation_id")?,
         Participant {
-            name: row.try_get(1)?,
-            identity: row.try_get(2)?,
-            service: row.try_get(3)?,
-            contact_id: row.try_get(4)?,
+            name: row.try_get("name")?,
+            identity: row.try_get("handle")?,
+            service: row.try_get("service")?,
+            contact_id: row.try_get("contact_id")?,
         },
     ))
 }

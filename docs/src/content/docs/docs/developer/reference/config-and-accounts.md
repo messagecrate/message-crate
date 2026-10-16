@@ -52,6 +52,8 @@ Before the rebuild drops its tables, the server copies it with `VACUUM INTO` to 
 `reset-demo` refuses a database at another fingerprint before it takes a snapshot, because the snapshot would be rebuilt and its copy kept in the reset's work directory, which is deleted.
 `serve` keeps the copy beside the database and rebuilds it, and a reset can follow.
 The schema is made sure of only when the pool opens and when `reset-demo` builds a database, never by a request, so a request never rebuilds a database the server is serving.
+Every other command refuses to rebuild a database while a server or `reset-demo` has it open, naming the database and saying to stop the server, because the server would go on answering from the empty database until it restarted.
+The command takes the database's operation lock (`<database>.operation.lock`, the lock `serve` and `reset-demo` hold) for the rebuild, and a database at this build's fingerprint opens beside a running server as before.
 
 ### Video and audio conversions
 
@@ -62,7 +64,9 @@ The schema is made sure of only when the pool opens and when `reset-demo` builds
 | `transcode_stall_secs` | `120` (2 minutes) | How many seconds a video or audio conversion may go without moving forward in the file before ffmpeg is stopped. Must be greater than 0; a file that sets 0 is refused with an error naming the key. |
 
 A conversion that keeps moving runs as long as it needs, so a long video on a slow computer is never cut off for its length.
-One that stops moving for this many seconds is stopped, and so is one that runs past twice the file's length, as looping on a damaged file.
+One that stops moving for this many seconds is stopped, and so is a video conversion that runs past twice the file's length, as looping on a damaged file.
+An audio conversion has a time limit instead: twenty times the file's length, at least 10 minutes and at most 6 hours, or an hour when its length isn't known.
+A conversion that passes the length the file states is given at least that hour.
 Reading a file's details, reading the one frame of a Thumbnail or of an image's Preview, and the check that finds ffmpeg have a fixed limit of 15 seconds that no key changes, because each takes well under a second on a working file.
 `serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
 Why the rules: `docs/architecture/media.md`.
@@ -135,7 +139,7 @@ The desktop app kills the server it started when it closes, without this wait, b
 
 The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency (at `DEBUG` for a successful `GET /health` or file of the website), one `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.
 
-`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in its app-data directory. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/server-log.md` in the repository.
+`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in `~/message-crate/data`. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/server-log.md` in the repository.
 
 ## Per-account asset files
 
@@ -178,7 +182,7 @@ from `100` up.
   (stored hashed; shown once when created). GUI sessions use a separate rotating
   token.
 - Four columns on `accounts` govern what a logged-in session may do, each
-  enforced by a guard in `server.rs` rather than left as decoration:
+  enforced by a guard in `auth.rs` rather than left as decoration:
   - `disabled` — may not log in; the owner disabling the account ends its
     session, so enabling it again needs a new login, and an existing API
     token for a disabled account stops working immediately.

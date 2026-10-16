@@ -73,8 +73,8 @@ fn both_spellings(national: &str, full: &str) -> String {
 /// members its group lists.
 async fn conversations_and_members(state: &crate::server::AppState) -> (i64, i64) {
     let mut conn = state.db.acquire().await.unwrap();
-    let individual: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM conversations WHERE conversation_type = 'individual'",
+    let one_to_one: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM conversations WHERE conversation_type = 'one-to-one'",
     )
     .fetch_one(&mut *conn)
     .await
@@ -87,7 +87,7 @@ async fn conversations_and_members(state: &crate::server::AppState) -> (i64, i64
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    (individual, members)
+    (one_to_one, members)
 }
 
 /// The account's phone identities' keys, in order.
@@ -230,7 +230,7 @@ async fn picking_the_country_on_the_contacts_screen_merges_the_two() {
     let mut conn = state.db.acquire().await.unwrap();
     let messages: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.conversation_type = 'individual'",
+         WHERE c.conversation_type = 'one-to-one'",
     )
     .fetch_one(&mut *conn)
     .await

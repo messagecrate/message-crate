@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import Button from "../../components/Button";
 import { errorLine } from "../../lib/apiErrorMessage";
-import type { ToolName, ToolsStatus } from "../../lib/tauri";
-import { toolUsable } from "../../lib/tauri";
+import type { ToolsStatus } from "../../lib/desktop/tools";
+import { toolUsable } from "../../lib/desktop/tools";
 import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
+import type { ToolName } from "../../lib/types";
 import { accentLinkClass } from "../../lib/uiStyles";
 import {
   OTHER_CHECK_POLL_FOR_MS,
@@ -37,7 +38,7 @@ function consequence(
   if (blocked) {
     return need === "whatsapp"
       ? "A WhatsApp import can't start without wtsexporter."
-      : "Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.";
+      : "Convert media and Convert & Compress media need ffmpeg and ffprobe. Copy imports attachments as they are.";
   }
   const waits = nameList(downloading);
   return need === "whatsapp" ? `The import waits for ${waits}.` : `Media waits for ${waits}.`;

@@ -3,21 +3,21 @@
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { renderWithProviders as render } from "../test/providers";
+import { authModule, renderWithProviders as render } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 
 const logout = vi.fn();
 const apiPost = vi.fn(async () => ({}));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({
+vi.mock("../lib/authContext", () =>
+  authModule(() => ({
     login: vi.fn(),
     logout,
     token: "t",
     serverUrl: "",
     accountId: 7,
-  }),
-}));
+  })),
+);
 
 // The account's identities as the server lists them, each with its service; a
 // test sets them to what the owner added.
@@ -33,7 +33,7 @@ vi.mock("../lib/serverApi", () => ({
       start_date: null,
       end_date: null,
       conversations: 0,
-      direct_messages: 0,
+      one_to_one_messages: 0,
       group_messages: 0,
     })),
 }));

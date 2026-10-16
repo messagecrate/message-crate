@@ -10,7 +10,10 @@
 use crate::extract::{Json, Path, Query};
 use axum::extract::State;
 use serde::Serialize;
+use sqlx::SqlitePool;
 
+use crate::api_error::ApiError;
+use crate::auth::FullAccess;
 use crate::db::conversation_messages::{
     DEFAULT_MESSAGE_SORT, MESSAGE_LIST_SORT_KEYS, Message, count_matching_messages,
     default_message_list_sort, load_message_list_page, load_messages, message_list_sort_text,
@@ -18,7 +21,6 @@ use crate::db::conversation_messages::{
 use crate::db::sql::SqlParam;
 use crate::paging::{ListRequest, PageQuery};
 use crate::search::parse::TextTerm;
-use crate::server::{ApiError, AppState, FullAccess};
 
 /// One page of the Messages list and how the server read its search: the
 /// four keys of every page, and `search`, the one key a page carries beside
@@ -135,11 +137,11 @@ pub(crate) fn message_filter(
     )
 )]
 pub(crate) async fn list_messages(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<ListMessagesResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     // No default here: which one applies depends on the query, which is
     // compiled only after the sort has been checked.
     let list = ListRequest::read(
@@ -201,11 +203,11 @@ pub(crate) async fn list_messages(
     )
 )]
 pub(crate) async fn get_message(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(message_id): Path<i64>,
 ) -> Result<Json<Message>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let mut items = load_messages(
         &mut conn,
         "m.account_id = ? AND m.id = ?",

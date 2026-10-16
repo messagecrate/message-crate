@@ -1,16 +1,16 @@
-use crate::emit::{ConvertRequest, convert_json};
+use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::assert_jsonl_resumes;
 use message_crate_core::{ConvertRun, OutputFormat};
 use std::fs;
 use std::path::PathBuf;
 
 #[test]
-fn convert_fixture_json_individual_and_group() {
+fn convert_fixture_json_one_to_one_and_group() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/result.json");
     assert!(fixture.is_file(), "missing {}", fixture.display());
 
     let tmp = tempfile::tempdir().expect("tempdir");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &fixture,
         output: tmp.path(),
         media_search_roots: &[],
@@ -28,9 +28,9 @@ fn convert_fixture_json_individual_and_group() {
     assert_eq!(report.sent, 2);
     assert_eq!(report.received, 2);
 
-    let individual = tmp.path().join("+15555550122__whatsapp.csv");
-    assert!(individual.is_file(), "missing {}", individual.display());
-    let body = fs::read_to_string(&individual).expect("read individual");
+    let one_to_one = tmp.path().join("+15555550122__whatsapp.csv");
+    assert!(one_to_one.is_file(), "missing {}", one_to_one.display());
+    let body = fs::read_to_string(&one_to_one).expect("read one-to-one");
     assert!(body.contains("chat_identifier"));
     assert!(body.contains("whatsapp"));
     assert!(body.contains("Hello from Sam"));
@@ -84,7 +84,7 @@ fn copies_ios_style_media_true_data_paths() {
     fs::write(&json_path, json.to_string()).expect("write json");
 
     let out = tempfile::tempdir().expect("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: out.path(),
         media_search_roots: &[media_root.path().to_path_buf()],
@@ -121,7 +121,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/result.json");
     let tmp = tempfile::tempdir().expect("tempdir");
     let report = assert_jsonl_resumes(tmp.path(), |resume| {
-        convert_json(ConvertRequest {
+        convert_export(ConvertExportArgs {
             json_path: &fixture,
             output: tmp.path(),
             media_search_roots: &[],
@@ -134,7 +134,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             },
         })
     });
-    assert_eq!(report.conversations, 2, "one individual chat and one group");
+    assert_eq!(report.conversations, 2, "one one-to-one chat and one group");
 }
 
 /// Convert `json` into a JSON export and read each conversation back,
@@ -160,7 +160,7 @@ fn convert_with_owner(
     let json_path = dir.path().join("result.json");
     fs::write(&json_path, json.to_string()).expect("write json");
     let out = dir.path().join("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &out,
         media_search_roots: &[dir.path().to_path_buf()],
@@ -457,7 +457,7 @@ fn a_json_without_the_forks_fields_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let json_path = dir.path().join("result.json");
         fs::write(&json_path, json.to_string()).expect("write json");
-        let err = convert_json(ConvertRequest {
+        let err = convert_export(ConvertExportArgs {
             json_path: &json_path,
             output: &dir.path().join("out"),
             media_search_roots: &[],
@@ -535,7 +535,7 @@ fn a_media_path_in_the_media_field_is_copied() {
     fs::write(&json_path, json.to_string()).expect("write json");
 
     let out = dir.path().join("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &out,
         media_search_roots: &[dir.path().to_path_buf()],
@@ -585,7 +585,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
     let json_path = dir.path().join("result.json");
     fs::write(&json_path, photo_only_chat().to_string()).expect("write json");
     let out = dir.path().join("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &out,
         media_search_roots: &[dir.path().to_path_buf()],
@@ -669,7 +669,7 @@ fn guid_of<'a>(document: &'a message_ir::ConversationDocument, text: &str) -> &'
 fn message_of<'a>(
     document: &'a message_ir::ConversationDocument,
     text: &str,
-) -> &'a message_ir::IrMessage {
+) -> &'a message_ir::Message {
     document
         .messages
         .iter()
@@ -811,4 +811,73 @@ fn reactions_are_on_the_message_under_the_reactors_id() {
         ],
         "iPhone shape: a phone id, a phone id resolved from an @lid id, an unmapped @lid id, no id, and the owner"
     );
+}
+
+/// A group event the fork gives a `group_action` text is an announcement
+/// with that text, sent by the member who acted, and keeps the id the text
+/// names in `source.fields`. One whose `group_action` is `null`, of a kind
+/// the backup does not state, is written as before: a message with its
+/// `data` as its text.
+#[test]
+fn a_group_event_with_a_text_is_an_announcement() {
+    use message_ir::{Direction, MessageKind};
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/group-events.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
+            .expect("parse fixture");
+
+    let (_, documents) = convert_with_owner(&json, Some("+15555550100"));
+    let group = documents
+        .values()
+        .find(|document| document.conversation.group_title.as_deref() == Some("Book club"))
+        .expect("the group");
+    let named_id = |message: &message_ir::Message| {
+        message
+            .source
+            .as_ref()
+            .and_then(|source| source.fields.get("group_action_jid"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+
+    for (text, sender, named) in [
+        (
+            "Ada Example joined the group",
+            "+15555550133",
+            "15555550133@s.whatsapp.net",
+        ),
+        (
+            "Cy Example changed the group name to Book club.",
+            "+15555550155",
+            "15555550155@s.whatsapp.net",
+        ),
+        (
+            "Ben Example left the group",
+            "+15555550144",
+            "15555550144@s.whatsapp.net",
+        ),
+    ] {
+        let message = message_of(group, text);
+        assert_eq!(message.message_kind, MessageKind::Announcement, "{text}");
+        assert_eq!(message.direction, Direction::Incoming, "{text}");
+        assert_eq!(message.sender_identity.as_deref(), Some(sender), "{text}");
+        assert_eq!(named_id(message).as_deref(), Some(named), "{text}");
+    }
+
+    let by_owner = message_of(group, "You changed the group name to Reading club.");
+    assert_eq!(by_owner.message_kind, MessageKind::Announcement);
+    assert_eq!(by_owner.direction, Direction::Outgoing);
+    assert_eq!(
+        named_id(by_owner),
+        None,
+        "the fork names no id for the owner"
+    );
+
+    for text in ["Welcome, Ada", "An event the backup does not state"] {
+        let message = message_of(group, text);
+        assert_eq!(message.message_kind, MessageKind::Sms, "{text}");
+        assert_eq!(named_id(message), None, "{text}");
+    }
+    assert_eq!(group.messages.len(), 6);
 }

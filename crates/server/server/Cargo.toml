@@ -13,8 +13,9 @@ argon2 = "0.6.0"
 axum = "0.8.9"
 http-body = "1"
 # The HTTP/1.1 connection `axum::serve` builds, built here with a timer so
-# a connection is held to a header read limit (`connections.rs`, #2100).
-hyper = { version = "1", features = ["server", "http1"] }
+# a connection is held to a header read limit (`connections.rs`, #2100), and
+# the one `healthcheck` sends its request over (`healthcheck.rs`, #2065).
+hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
 http-body-util = "0.1"
 chrono = { workspace = true }
@@ -33,10 +34,14 @@ libc = "0.2"
 # the Unicode lower() the server registers on every SQLite connection.
 libsqlite3-sys = { version = "0.38", default-features = false, features = ["bundled"] }
 media = { path = "../../libs/media" }
+message-csv = { path = "../../libs/csv" }
 message-ir = { workspace = true }
 phone = { workspace = true }
 rand = "0.10.2"
 rayon = "1.12.0"
+# The Owner's password typed at a terminal without echo, for `create-owner`
+# and `reset-owner-password` (#2094).
+rpassword = "7.5.4"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -45,7 +50,7 @@ tempfile = { workspace = true }
 tokio = { version = "1.53.0", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "io-util", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
 toml = "1.1.2"
-tower-http = { version = "0.7.1", features = ["catch-panic", "limit", "cors", "fs", "trace"] }
+tower-http = { version = "0.7.1", features = ["catch-panic", "limit", "cors", "fs", "set-header", "trace"] }
 uuid = { version = "1.18.1", features = ["v4"] }
 message-crate-api-types = { path = "../../libs/api-types", features = ["schema"] }
 message-crate-serve-protocol = { path = "../../libs/serve-protocol" }
@@ -79,6 +84,9 @@ tokio = { version = "1.53.0", features = ["test-util"] }
 # The desktop app's import library, so a test can run an Upload as the app
 # sends one against the server binary.
 message-crate-import = { path = "../../libs/import" }
+# The desktop app's export library, so a test can run an Export Run against
+# the server binary and import what it wrote into another.
+message-crate-export = { path = "../../libs/export" }
 
 [lints]
 workspace = true

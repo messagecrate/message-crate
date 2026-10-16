@@ -154,7 +154,8 @@ export function fieldTokens(query: string): FieldToken[] {
   for (const token of searchTokens(query)) {
     if (token.kind !== "text") continue;
     const match = /^-?([A-Za-z][A-Za-z-]*):(?!\/)/.exec(query.slice(token.start, token.end));
-    if (match) tokens.push({ word: match[1].toLowerCase(), start: token.start, end: token.end });
+    const word = match?.[1];
+    if (word) tokens.push({ word: word.toLowerCase(), start: token.start, end: token.end });
   }
   return tokens;
 }
@@ -186,28 +187,35 @@ export function dropTokens(
   const tokens = searchTokens(query);
   const starts = new Set(drop.map((d) => d.start));
   const gone = tokens.map(() => false);
-  const text = (i: number) => query.slice(tokens[i].start, tokens[i].end);
+  /** Token `i`; every index below comes from `tokens` itself, so one past its end is a bug. */
+  const tokenAt = (i: number): SearchToken => {
+    const token = tokens[i];
+    if (token === undefined) throw new RangeError(`no search token ${i} of ${tokens.length}`);
+    return token;
+  };
+  const text = (i: number) => query.slice(tokenAt(i).start, tokenAt(i).end);
   /** Drop token `i`, and the `not`s before it, which negated it and nothing else. */
   const dropAt = (i: number) => {
     gone[i] = true;
     for (let j = i - 1; j >= 0 && (gone[j] || operator(text(j)) === "not"); j -= 1) {
-      if (tokens[j].kind === "text") gone[j] = true;
+      if (tokenAt(j).kind === "text") gone[j] = true;
     }
   };
   /** The live token at `live[at]`, when it joins nothing: an operator, or a `(` whose `)` is next. */
   const joinsNothing = (live: readonly number[], at: number): boolean => {
     const i = live[at];
-    const before = at > 0 ? live[at - 1] : null;
-    const after = at + 1 < live.length ? live[at + 1] : null;
-    if (tokens[i].kind === "open") return after !== null && tokens[after].kind === "close";
-    if (tokens[i].kind === "close") return false;
+    if (i === undefined) throw new RangeError(`no live token ${at} of ${live.length}`);
+    const before = live[at - 1] ?? null;
+    const after = live[at + 1] ?? null;
+    if (tokenAt(i).kind === "open") return after !== null && tokenAt(after).kind === "close";
+    if (tokenAt(i).kind === "close") return false;
     const op = operator(text(i));
     if (op === null) return false;
     const nothingAfter =
-      after === null || tokens[after].kind === "close" || operator(text(after)) === "binary";
+      after === null || tokenAt(after).kind === "close" || operator(text(after)) === "binary";
     if (op === "not") return nothingAfter;
     const nothingBefore =
-      before === null || tokens[before].kind === "open" || operator(text(before)) !== null;
+      before === null || tokenAt(before).kind === "open" || operator(text(before)) !== null;
     return nothingBefore || nothingAfter;
   };
   const everyToken = tokens.map((_, i) => i);
@@ -222,14 +230,17 @@ export function dropTokens(
     const live = everyToken.filter((i) => !gone[i]);
     const at = live.findIndex(
       (i, n) =>
-        !alreadyLoose.has(i) && (operators || tokens[i].kind === "open") && joinsNothing(live, n),
+        !alreadyLoose.has(i) && (operators || tokenAt(i).kind === "open") && joinsNothing(live, n),
     );
-    if (at < 0) break;
-    if (tokens[live[at]].kind === "open") {
-      gone[live[at + 1]] = true;
-      dropAt(live[at]);
+    const loose = live[at];
+    if (loose === undefined) break;
+    // An open parenthesis joins nothing only when its close is the next live token.
+    const close = live[at + 1];
+    if (tokenAt(loose).kind === "open" && close !== undefined) {
+      gone[close] = true;
+      dropAt(loose);
     } else {
-      gone[live[at]] = true;
+      gone[loose] = true;
     }
   }
   return cutTokens(

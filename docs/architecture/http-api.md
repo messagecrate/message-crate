@@ -542,7 +542,7 @@ the drift the one-shape rule exists to stop.
 A handler that panics answers the same `500 Internal Server Error` problem
 document, with its `request_id`, as any other internal failure: the
 innermost layer of the router catches the panic (`answer_panic` in
-`crates/server/server/src/server.rs`), so every layer outside it, CORS and
+`crates/server/server/src/middleware.rs`), so every layer outside it, CORS and
 the request's log line included, treats the answer as it treats any `500`.
 Why: an uncaught panic closed the connection with no answer, so the person
 saw a network error with no id to report
@@ -559,26 +559,26 @@ alone told them it was up while every page failed. The desktop app's watch
 on its own server asks `GET /v1/server`, which reads the database, so the two
 disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
 
-Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
-waits on an import's write lock, and the limit stays under the time
-`docker/healthcheck.cjs` gives each address it asks (4 seconds, or 2 each
-when it asks both 127.0.0.1 and ::1), so a failure arrives as the server's
-answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
-(`imports_api/mod.rs`) of the pool's `max_connections` (`db/engine.rs`), but
-requests that write wait on SQLite's busy timeout while an import holds the
-write lock, and enough of them can take every connection for that long. The
-check fails then, though a `/v1` read would wait for a connection and get
-one. One failure does not mark the container unhealthy, because Docker needs
-three in a row 30 seconds apart. When `/health` answers with an error, the
-login card asks once more three seconds later and shows Disconnected only
-when both fail, as the desktop app's watch on its own server needs two
-failed checks in a row
-(`checkServerHealthWithRetry` in `web/src/lib/serverHealth.ts`,
+Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never waits
+on an import's write lock, and the limit stays under the time
+`message-crate-server healthcheck` gives each address it asks (4 seconds, or 2
+each when it asks both 127.0.0.1 and ::1), so a failure arrives as the
+server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
+(`imports_api/run_control.rs`) of the pool's `max_connections`
+(`db/engine.rs`), but requests that write wait on SQLite's busy timeout while
+an import holds the write lock, and enough of them can take every connection
+for that long. The check fails then, though a `/v1` read would wait for a
+connection and get one. One failure does not mark the container unhealthy,
+because Docker needs three in a row 30 seconds apart. When `/health` answers
+with an error, the login card asks once more three seconds later and shows
+Disconnected only when both fail, as the desktop app's watch on its own server
+needs two failed checks in a row (`checkServerHealthWithRetry` in
+`web/src/lib/serverHealth.ts`,
 [#2718](https://github.com/messagecrate/message-crate/issues/2718)). A pool
-taken for longer than that, up to the 15-second busy timeout, still fails
-both probes, and the card shows Disconnected until its next probe finds the
-server. That is accepted: while every connection is taken, the card's own
-login would wait as well.
+taken for longer than that, up to the 15-second busy timeout, still fails both
+probes, and the card shows Disconnected until its next probe finds the server.
+That is accepted: while every connection is taken, the card's own login would
+wait as well.
 
 Rejected: `503 Service Unavailable` for `/health`. A server that cannot reach
 its own database is the `500 Internal Server Error` no page could help with.
@@ -595,7 +595,7 @@ it is not a `4xx`.
 A request that reaches a busy database answers `database-busy`, with a
 `Retry-After` of 5 seconds, wherever in the request the database refused it:
 the error's chain is searched for sqlx's `PoolTimedOut` or a SQLite
-`SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/server.rs`),
+`SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/api_error.rs`),
 so no handler has to map it. The refusal leaves one `WARN` line naming the
 type and carrying the chain, and no `ERROR` line
 ([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
@@ -644,7 +644,7 @@ whole batch more
 
 The stop then waits for the requests in flight, every route alike, and for
 the stop of a Demo Account build and of the Thumbnail and Preview pass, for
-up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
 A request still running then is cut off, and the server exits after one
 `WARN` line naming each such request by its id, method and path
 (`crate::in_flight` tracks every request until its answer's body is sent).
@@ -690,7 +690,7 @@ longer read once the upload time limits pass. In detail:
   (`upload-stalled`). An import batch, an attachment and a part of one hold
   their bodies to the limits themselves, from when they start reading. The
   layers hold every other body from when the request arrives
-  (`limit_request_body` in `crates/server/server/src/server.rs`). Why the uploads start their own
+  (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
   clock: an import batch waits for an import slot before it reads, and a
   clock started on arrival would count that wait against its body.
 
@@ -767,15 +767,51 @@ from storing an answer to a request that sent `Authorization`, and a browser
 does not cache a `POST` by default, but a browser's own cache may still write
 a `GET` answer to disk, and a proxy that does not follow the RFC may keep
 one. `no-store` says in the answer itself that nothing may keep it.
-How: one layer in `server.rs` wraps the whole router, so a route added later
-is covered without remembering to, and it sets the header only when the
-answer has none. The OpenAPI document states the rule once, in its
+How: `with_server_layers` in `server.rs` puts one layer,
+`no_store_unless_set` in `middleware.rs`, around the whole router, so a route
+added later is covered without remembering to. The layer sets the header only
+when the answer has none. The OpenAPI document states the rule once, in its
 description, as it does for `405 Method Not Allowed`, and the walk over every
 operation checks it (see [The reference](#the-reference)).
 
 Rejected: `private` for every answer. It still lets the browser write message
 text and a Session token to its disk cache, and the web app fetches afresh
 through its own query cache rather than the browser's.
+
+## Protective headers
+
+Every answer, the website's built files as well as `/v1`, `/health` and the
+OpenAPI UI, carries `Content-Security-Policy`, `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: no-referrer`, unless the route sets the header
+itself (#2073). The policy runs only the server's own script files, never
+inline script. It refuses plugins (`object-src 'none'`), because a plugin
+runs code the script rule does not govern. It forbids any site to frame a
+page (`frame-ancestors 'none'`), so no other site can show the login card
+inside its own page and trick a person into typing there. A `<base>` element
+may point only at the server (`base-uri 'self'`), so injected markup cannot
+send the website's relative script paths elsewhere. No form submits
+anywhere (`form-action 'none'`), because the website sends everything with
+`fetch` and an injected form could post a password to another site. Fonts
+may come only from the server or a `data:` URL (`font-src 'self' data:`), as
+in the desktop window's policy; the website loads no font from another host.
+Styles may be inline, because the website's
+components set `style` attributes. `connect-src`, `img-src` and `media-src`
+allow other hosts over `http:` and `https:`, because the login card's
+**Change server address** points the website at another server, and allow
+`blob:` and `data:`, the attachment and image URLs the website makes itself.
+The policy is `CONTENT_SECURITY_POLICY` in `middleware.rs`, and the desktop
+window's own policy in `src-tauri/tauri.conf.json` follows the same lines.
+Why: the website keeps the Session token in browser storage, and a cookie is
+not an option (see [Credentials and reach](#credentials-and-reach)), so any
+script that runs on the page can read the token and send it anywhere. The
+policy keeps such a script from running at all. No injection is known today.
+How: three `SetResponseHeaderLayer::if_not_present` layers in
+`with_server_layers` wrap the whole router, so a route added later is
+covered. The website's first-paint theme script is `web/public/theme.js`, a
+file of its own, because the policy refuses an inline one.
+Rejected: the policy on the website alone. A `/v1` answer a browser renders,
+such as a JSON body opened in a tab, is a page too, and the OpenAPI UI runs
+under the same policy without change.
 
 ## Credentials and reach
 
@@ -787,7 +823,8 @@ security scheme with its scopes, so every route says which it accepts.
   account's own permissions: `import`, `export`, `delete`. The owner's session
   carries none of those and reaches only the accounts collection, the server
   settings and the installation's storage totals, because the owner holds no
-  messages.
+  messages. It also reads the country list (`GET /v1/phone-countries`),
+  because the owner picks the country of a number on an account it manages.
 - An **API token** is a named credential an account makes for a program, with
   the scopes the person chose from `import` and `export`, capped by the
   account's own. The cap holds on every request, when the token is made, and
@@ -1403,12 +1440,34 @@ about, and it is written for SQLite, the only database engine
 reason). Why no SQL in a handler: a query written into a handler gets written
 twice (the identity counts for contacts and for accounts were).
 
+A handler takes the part of the server's state it reads, never `AppState`
+whole. The database is `State<SqlitePool>`, the configuration is
+`State<Arc<Config>>`, and each other part is a sub-state that `server.rs`
+cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
+`DemoState`, `RefusalWait`, `UploadTimeLimits`, `MediaLinkKey` and
+`WalError`. The import routes take `Importer`, in
+`imports_api/run_control.rs`, which holds what running and ending an Import
+Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
+and the rest) read only the pool, so they work under any router state that
+has one. Why: a handler's signature then names everything it reads, so a
+reader sees its dependencies without reading its body. A change to the Demo
+Account build or to `Importer` does not touch a handler that never takes
+them.
+
+A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
+errors when a statement is all that can fail, and an error type in `db/` when
+the caller must tell outcomes apart (`SavedSearchError::NameTaken`,
+`MessagePageError::Invalid`); the `From` that turns each into a problem type
+is in `api_error.rs`. Why: the command line import and the Demo Account build
+call `db/` too and speak no HTTP, and the answer a route gives for an outcome
+is the handler's choice, not the storage layer's.
+
 Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
 `imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
 sequences its statements, logs them and keeps the counts, and the statements
 are in `db/staging.rs`, the module for the staging tables. The dedupe every
-import batch runs (`dedupe.rs`) is a stage too: it hashes the content keys
-and picks the copy shown, and the statements that read and write
+Import Run runs as it ends (`dedupe.rs`) is a stage too: it hashes the content
+keys and picks the copy shown, and the statements that read and write
 `messages.content_key` and `messages.duplicate_of` for it are in
 `db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
 found in one place, and a stage that carried its own statements would be a

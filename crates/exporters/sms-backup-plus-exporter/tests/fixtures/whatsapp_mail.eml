@@ -1,0 +1,11 @@
+From: Alice <4075550107@unknown.email>
+To: me@example.com
+Subject: WhatsApp with Alice
+X-smssync-datatype: WHATSAPP
+X-smssync-type: 0
+X-smssync-address: 4075550107
+X-smssync-id: 42
+X-smssync-date: 1388577600000
+Content-Type: text/plain; charset=utf-8
+
+A WhatsApp message SMS Backup+ backed up

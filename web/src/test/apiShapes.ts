@@ -67,7 +67,7 @@ export function message(fields: Partial<Schema["Message"]> = {}): Schema["Messag
     conversation: {
       id: 1,
       chat_identifier: "x",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,
@@ -89,7 +89,7 @@ export function imessageMessage(fields: Partial<Schema["Message"]> = {}): Schema
     conversation: {
       id: 1,
       chat_identifier: "x",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,
@@ -154,6 +154,7 @@ export function auditEntry(
     permissions_added: null,
     permissions_removed: null,
     reason: null,
+    request_id: null,
     scope_kind: null,
     scope_list: null,
     source: null,

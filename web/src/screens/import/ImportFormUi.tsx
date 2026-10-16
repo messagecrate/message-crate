@@ -7,8 +7,8 @@ import { focusRingClass } from "../../lib/uiStyles";
 
 export const ATTACHMENT_OPTIONS: { id: AttachmentMediaMode; label: string }[] = [
   { id: "copy", label: "Copy" },
-  { id: "convert", label: "Convert" },
-  { id: "compress", label: "Compress & Convert" },
+  { id: "convert", label: "Convert media" },
+  { id: "compress", label: "Convert & Compress media" },
   { id: "skip", label: "Skip" },
 ];
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorText } from "./apiErrorMessage";
+import { invokeLocalServerStatus, type LocalServerStatus } from "./desktop/localServer";
 import { startLocalServer } from "./localServer";
-import { invokeLocalServerStatus, type LocalServerStatus } from "./tauri";
 
 /** How often a starting server is asked how it is getting on. */
 export const STARTING_POLL_MS = 500;

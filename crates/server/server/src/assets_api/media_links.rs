@@ -14,21 +14,24 @@
 //! another: `docs/architecture/http-api.md`, "Credentials and reach".
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{FromRef, State};
 use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use hmac::{KeyInit, Mac};
 use rand::TryRng;
 use serde::Serialize;
+use sqlx::SqlitePool;
 
+use crate::api_error::ApiError;
 use crate::assets_api::{Sha256, lookup_for_read};
+use crate::auth::{FullAccess, bearer_token, require_asset_read_access, resolve_auth};
+use crate::config::Config;
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
-use crate::server::{
-    ApiError, AppState, Created, FullAccess, bearer_token, require_asset_read_access, resolve_auth,
-};
+use crate::server::Created;
 
 /// How long a media link opens its asset after it is made.
 pub(crate) const MEDIA_LINK_TTL: Duration = Duration::from_secs(60 * 60);
@@ -139,11 +142,6 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// The current Unix second.
-fn now_unix() -> i64 {
-    chrono::Utc::now().timestamp()
-}
-
 /// The account whose store an asset read reaches: the one the
 /// `Authorization` header names, or, when the request sends none, the one
 /// its `media_link` names. Taken by `GET /v1/assets/{sha256}` and
@@ -202,15 +200,21 @@ impl AssetReadAccess {
     }
 }
 
-impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
+impl<S> axum::extract::FromRequestParts<S> for AssetReadAccess
+where
+    S: Send + Sync,
+    SqlitePool: FromRef<S>,
+    MediaLinkKey: FromRef<S>,
+{
     type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
-        state: &AppState,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
+        let db = SqlitePool::from_ref(state);
         if parts.headers.contains_key(header::AUTHORIZATION) {
-            let auth = resolve_auth(&parts.headers, state).await?;
+            let auth = resolve_auth(&parts.headers, &db).await?;
             require_asset_read_access(&auth)?;
             return Ok(Self {
                 account_id: auth.account_id,
@@ -223,11 +227,12 @@ impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
             ));
         };
         let AxumPath(sha256) =
-            <AxumPath<Sha256> as axum::extract::FromRequestParts<AppState>>::from_request_parts(
+            <AxumPath<Sha256> as axum::extract::FromRequestParts<S>>::from_request_parts(
                 parts, state,
             )
             .await?;
-        let account_id = open_media_link(state, &link, &sha256).await?;
+        let account_id =
+            open_media_link(&db, &MediaLinkKey::from_ref(state), &link, &sha256).await?;
         Ok(Self {
             account_id,
             by_media_link: true,
@@ -261,18 +266,24 @@ fn media_link_in(query: Option<&str>) -> Option<String> {
 /// `media-link-invalid` when the link cannot be read, has expired, was signed
 /// for other terms, or its Session has ended; `account-disabled` when its
 /// account is disabled.
-async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Result<i64, ApiError> {
+async fn open_media_link(
+    db: &SqlitePool,
+    key: &MediaLinkKey,
+    link: &str,
+    sha256: &Sha256,
+) -> Result<i64, ApiError> {
     let invalid = |why: &str| ApiError::MediaLinkInvalid(format!("{why}; make a new media link"));
     let Some(link) = ParsedLink::parse(link) else {
         return Err(invalid("the media_link is not a media link"));
     };
-    if link.expires <= now_unix() {
+    let now = chrono::Utc::now();
+    if link.expires <= now.timestamp() {
         return Err(invalid("the media link expired"));
     }
-    let mut conn = state.db.acquire().await?;
-    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id).await?;
+    let mut conn = db.acquire().await?;
+    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id, now).await?;
     let signed = session_hash.is_some_and(|session_hash| {
-        state.media_link_key.verifies(
+        key.verifies(
             &MediaLinkTerms {
                 account_id: link.account_id,
                 sha256,
@@ -342,12 +353,13 @@ pub(crate) struct MediaLink {
     )
 )]
 pub(crate) async fn create_media_link(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
+    State(key): State<MediaLinkKey>,
     FullAccess(auth): FullAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    let held = lookup_for_read(&state, auth.account_id, &sha256)
+    let held = lookup_for_read(&cfg, auth.account_id, &sha256)
         .await?
         .is_some();
     if !held {
@@ -356,8 +368,8 @@ pub(crate) async fn create_media_link(
 
     let session_hash = session_tokens::hash_api_token(&bearer_token(&headers)?);
     let ttl = i64::try_from(MEDIA_LINK_TTL.as_secs()).unwrap_or(i64::MAX);
-    let expires = now_unix().saturating_add(ttl);
-    let link = state.media_link_key.sign(&MediaLinkTerms {
+    let expires = chrono::Utc::now().timestamp().saturating_add(ttl);
+    let link = key.sign(&MediaLinkTerms {
         account_id: auth.account_id,
         sha256: &sha256,
         expires,

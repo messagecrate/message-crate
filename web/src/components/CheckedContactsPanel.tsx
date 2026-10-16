@@ -75,11 +75,11 @@ type ContactRow = {
 function totalsFromSummary(summary: ContactSelectionSummary): ContactTotals {
   return {
     conversations: conversationTotal(
-      summary.individual_conversations,
+      summary.one_to_one_conversations,
       summary.group_conversations,
       summary.orphaned_conversations,
     ),
-    direct_messages: summary.individual_message_count,
+    one_to_one_messages: summary.one_to_one_message_count,
     group_messages: summary.group_message_count,
     orphaned_messages: summary.orphaned_message_count,
     start_date: summary.start_date ?? null,
@@ -106,8 +106,8 @@ function sortValue(row: ContactRow, col: string): string | number {
       return totals?.end_date ?? "";
     case "conversations":
       return totals?.conversations ?? -1;
-    case "direct_messages":
-      return totals?.direct_messages ?? -1;
+    case "one_to_one_messages":
+      return totals?.one_to_one_messages ?? -1;
     case "group_messages":
       return totals?.group_messages ?? -1;
     case "orphaned_messages":
@@ -249,7 +249,7 @@ export default function CheckedContactsPanel({
             <SortableColumn id="conversations" widthClass="w-[14%]" align="right">
               Conversations
             </SortableColumn>
-            <SortableColumn id="direct_messages" widthClass="w-[15%]" align="right">
+            <SortableColumn id="one_to_one_messages" widthClass="w-[15%]" align="right">
               One-to-one
               <br />
               Messages
@@ -299,7 +299,7 @@ export default function CheckedContactsPanel({
                 </Cell>
                 <Cell className={tdRightClass}>
                   <MetricCell loaded={row.totals != null}>
-                    <CountCell value={row.totals?.direct_messages ?? 0} />
+                    <CountCell value={row.totals?.one_to_one_messages ?? 0} />
                   </MetricCell>
                 </Cell>
                 <Cell className={tdRightClass}>

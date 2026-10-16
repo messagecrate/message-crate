@@ -2,7 +2,8 @@
 //!
 //! The core library has a similar error type, but it cannot be sent through
 //! Tauri because it is not serializable. Each struct has the same name and
-//! fields as its TypeScript type in `web/src/lib/types.ts`.
+//! fields as its TypeScript type in `web/src/lib/types.ts`, and the tests in
+//! `events/fixture.rs` check that they agree.
 //!
 //! Every desktop job (an Import Run's stages, an Export, a Convert) reports on
 //! the same `desktop-job:*` channels. The payloads only an Import Run sends are
@@ -10,7 +11,7 @@
 //! [`DesktopJobErrorEvent`].
 
 use message_crate_core::{
-    IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
+    Cancelled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -204,7 +205,6 @@ impl From<ProgressEvent> for WindowEvent {
                 ..counts(Step::Attachments, done, total)
             },
             ProgressEvent::Prepare { done, total } => counts(Step::Prepare, done, total),
-            ProgressEvent::Media { done, total } => counts(Step::Media, done, total),
             ProgressEvent::FileWritten { file, status } => {
                 return Self::FileWritten(ImportFileWrittenEvent { file, status });
             }
@@ -256,6 +256,16 @@ pub struct ImportFileDoneEvent {
     pub status: String,
 }
 
+impl ImportFileDoneEvent {
+    /// The Upload's word for what it did with `file`.
+    pub(crate) fn new(file: String, status: message_crate_import::FileStatus) -> Self {
+        Self {
+            file,
+            status: status.as_str().into(),
+        }
+    }
+}
+
 /// Staging's write queue finished with one conversation file. The window
 /// keeps a Staging row about a conversation apart until its file is written,
 /// and drops an earlier part's row about a file this Staging wrote again
@@ -286,18 +296,61 @@ fn write_status<S: serde::Serializer>(status: &WriteStatus, out: S) -> Result<S:
 pub struct DesktopJobErrorEvent {
     /// Full error chain, for logs and the advanced-details view.
     pub detail: String,
-    /// Friendlier message for the UI, when one is known.
+    /// The sentence the person reads, when one is known. Without it the
+    /// window shows `detail`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_message: Option<String>,
+    /// Whether a Cancel stopped the job, rather than a failure. The window
+    /// reads this, never the text, so context added to the error on its way
+    /// out cannot turn a Cancel into a failure (#2077).
+    pub canceled: bool,
 }
 
-/// A job's error, with its full chain as `detail` and no friendlier message.
+/// What the person reads when the disk is full.
+const STORAGE_FULL_TEXT: &str = "The disk is full. Free some space, then try again.";
+/// What the person reads when the operating system refused a file or a
+/// directory. It promises no path, because not every error on the way out
+/// names one.
+const PERMISSION_DENIED_TEXT: &str =
+    "Message Crate is not allowed to use a file or directory it needs. The log has the details.";
+/// What the person reads when a file or a directory is missing.
+const NOT_FOUND_TEXT: &str =
+    "A file or directory Message Crate needs is missing. The log has the details.";
+
+/// A job's error, with its full chain as `detail`, whether a Cancel stopped
+/// it, and otherwise a sentence for the person when the chain holds a
+/// failure they can act on (#2112). A Cancel needs no sentence: `canceled`
+/// alone carries it, and the window says it in its own words.
 impl From<anyhow::Error> for DesktopJobErrorEvent {
     fn from(err: anyhow::Error) -> Self {
+        let canceled = err.chain().any(|e| e.is::<Cancelled>());
         Self {
             detail: format!("{err:#}"),
-            user_message: None,
+            user_message: (!canceled)
+                .then(|| user_message(&err))
+                .flatten()
+                .map(str::to_string),
+            canceled,
         }
+    }
+}
+
+/// The sentence for a failure the person can act on, found by its type in
+/// `err`'s chain: a session the server refused, or a full disk, a refused
+/// file or directory, or a missing one. `None` for anything else, so the
+/// window shows the chain when nothing better is known.
+fn user_message(err: &anyhow::Error) -> Option<&'static str> {
+    if message_crate_http::is_session_refused(err) {
+        return Some(message_crate_http::SESSION_REFUSED);
+    }
+    let io = err
+        .chain()
+        .find_map(|e| e.downcast_ref::<std::io::Error>())?;
+    match io.kind() {
+        std::io::ErrorKind::StorageFull => Some(STORAGE_FULL_TEXT),
+        std::io::ErrorKind::PermissionDenied => Some(PERMISSION_DENIED_TEXT),
+        std::io::ErrorKind::NotFound => Some(NOT_FOUND_TEXT),
+        _ => None,
     }
 }
 
@@ -333,8 +386,82 @@ where
 }
 
 #[cfg(test)]
+mod fixture;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Cancel reaches the window as a Cancel even after context is added
+    /// to it on the way out, which once turned its text into
+    /// `write a conversation: canceled` and the run into a failure (#2077).
+    #[test]
+    fn a_cancel_under_context_is_still_a_cancel() {
+        let event = DesktopJobErrorEvent::from(
+            anyhow::Error::from(Cancelled).context("write a conversation"),
+        );
+        assert!(event.canceled);
+        assert_eq!(event.user_message, None);
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["canceled"], true);
+    }
+
+    /// A failure is not a Cancel, even when its text says `canceled`.
+    #[test]
+    fn a_failure_that_says_canceled_is_not_a_cancel() {
+        let event = DesktopJobErrorEvent::from(anyhow::anyhow!("canceled"));
+        assert!(!event.canceled);
+        assert_eq!(serde_json::to_value(&event).unwrap()["canceled"], false);
+    }
+
+    /// Each failure a person can act on gets a sentence of its own, found in
+    /// the chain under any context (#2112).
+    #[test]
+    fn a_failure_the_person_can_act_on_gets_a_sentence() {
+        use std::io::{Error, ErrorKind};
+        let io = |kind| {
+            anyhow::Error::from(Error::new(kind, "os error"))
+                .context("write /home/sam/message-crate/staging/chat.jsonl")
+        };
+        let cases = [
+            (
+                io(ErrorKind::StorageFull),
+                "The disk is full. Free some space, then try again.",
+            ),
+            (
+                io(ErrorKind::PermissionDenied),
+                "Message Crate is not allowed to use a file or directory it needs. The log has the details.",
+            ),
+            (
+                io(ErrorKind::NotFound),
+                "A file or directory Message Crate needs is missing. The log has the details.",
+            ),
+            (
+                anyhow::Error::from(message_crate_http::session_refused("Upload a batch"))
+                    .context("upload chat.jsonl"),
+                message_crate_http::SESSION_REFUSED,
+            ),
+        ];
+        for (error, sentence) in cases {
+            let detail = format!("{error:#}");
+            let event = DesktopJobErrorEvent::from(error);
+            assert_eq!(event.user_message.as_deref(), Some(sentence), "{detail}");
+            assert_eq!(event.detail, detail);
+            assert!(!event.canceled);
+        }
+    }
+
+    /// Any other failure has no sentence, so the window shows its chain.
+    #[test]
+    fn any_other_failure_has_no_sentence() {
+        let event = DesktopJobErrorEvent::from(
+            anyhow::Error::from(std::io::Error::other("broken pipe")).context("read the backup"),
+        );
+        assert_eq!(event.user_message, None);
+        assert_eq!(event.detail, "read the backup: broken pipe");
+        let json = serde_json::to_value(&event).unwrap();
+        assert!(json.get("user_message").is_none(), "{json}");
+    }
 
     /// The run's sink writes a line at `INFO` and a warning, such as a failed
     /// wtsexporter run's output, at `WARN`, one line per line of it (#1938).
@@ -412,10 +539,6 @@ mod tests {
         let prepare = progress(ProgressEvent::Prepare { done: 2, total: 3 });
         assert_eq!(prepare.step, Step::Prepare);
         assert_eq!((prepare.done, prepare.total), (2, 3));
-
-        let media = progress(ProgressEvent::Media { done: 1, total: 4 });
-        assert_eq!(media.step, Step::Media);
-        assert_eq!((media.done, media.total), (1, 4));
     }
 
     /// Every step is sent as the lowercase word the window's `step` union in

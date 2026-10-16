@@ -316,7 +316,7 @@ This repository is **messagecrate/message-crate**. The Cargo packages carry the 
 The product has two pieces:
 
 - **The server** — `message-crate-server`. Stores messages in SQLite (`data/messagecrate.db`), serves `/v1/*`, and can host the website from `static/`. Run it with `./scripts/run-dev.sh` (http://127.0.0.1:8080) or Docker. Login is a local account, not a cloud account.
-- **The desktop app** — Tauri v2 around the Vite SPA in `web/`. Reads phone backups, writes JSONL, and imports into a running server. Browse and search also work in the browser against the server; importing a backup needs the desktop app. The installer carries `message-crate-server` and the built website, and the app starts that server at `127.0.0.1:8080` when nothing answers there, with its data in the operating system's app-data directory; it stops it on close. A Message Crate already answering at that address (Docker, `./scripts/run-dev.sh`) is used as it is. Rules: `src-tauri/src/local_server.rs`; why: `docs/adr/0018-the-desktop-app-starts-the-server-it-ships.md`.
+- **The desktop app** — Tauri v2 around the Vite SPA in `web/`. Reads phone backups, writes JSONL, and imports into a running server. Browse and search also work in the browser against the server; importing a backup needs the desktop app. The installer carries `message-crate-server` and the built website, and the app starts that server at `127.0.0.1:8080` when nothing answers there, with its data in `~/message-crate/data`, the Data Directory in the Message Crate Directory; it stops it on close. A Message Crate already answering at that address (Docker, `./scripts/run-dev.sh`) is used as it is. Rules: `src-tauri/src/local_server.rs`; why: `docs/adr/0018-the-desktop-app-starts-the-server-it-ships.md`.
 
 ### Technology stack
 
@@ -329,7 +329,7 @@ The product has two pieces:
 | Website                | Same `web/` SPA. Dev server on port 5173. Production copy in `static/`, served by the server on port 8080.                        |
 | Node                   | Node.js 24 for `web/`, `docs/`, the CI jobs that build them, and the Docker frontend build. `.nvmrc` holds the major and every workflow that installs Node.js reads it. `scripts/check-docker-context.sh` fails when the Dockerfile's frontend-builder stage is on another Node.js major. |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
-| Packaging              | Docker (Node.js 24 frontend build, Rust build, Node.js 20 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
+| Packaging              | Docker (Node.js 24 frontend build, Rust build, Debian 12 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
 | Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` for WhatsApp, downloaded by the app into the Tools Directory (a `pipx` install linked there where the app has no download, such as Linux on ARM). `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
 | Not the product path   | Restored Next.js 16 browse app (`web-next/`), an HTTP client of the server's `/v1` API for evaluating its screens. Kept on purpose; see CLAUDE.md before proposing its removal. |
 
@@ -486,7 +486,7 @@ Or, browser only (no Tauri):
 cd web && npm run dev        # http://localhost:5173, proxies /v1 to :8080
 ```
 
-`cargo tauri dev` uses the server on **127.0.0.1:8080** when one is running, so start `./scripts/run-dev.sh` first to work against the repository's `data/`. With nothing on that port the app starts its own server, built by `src-tauri/build.rs`, with its data in `data-dev` in the app-data directory (`~/.local/share/app.messagecrate.desktop/data-dev` on Linux), and stops it when the window closes. The installed app keeps its data in `data` beside it, and a dev build never opens that directory, because a branch with another Schema Fingerprint would rebuild the installed app's database empty. **Open data directory** in a dev build opens `data-dev`.
+`cargo tauri dev` uses the server on **127.0.0.1:8080** when one is running, so start `./scripts/run-dev.sh` first to work against the repository's `data/`. With nothing on that port the app starts its own server, built by `src-tauri/build.rs`, with its data in `data-dev` in the Message Crate Directory (`~/message-crate/data-dev`), and stops it when the window closes. The installed app keeps its data in `data` beside it, and a dev build never opens that directory, because a branch with another Schema Fingerprint would rebuild the installed app's database empty. The two share the rest of `~/message-crate`: staging, exports, logs, scratch and tools.
 
 Do not run `npm run dev` and `cargo tauri dev` at the same time. Point the app at **http://127.0.0.1:8080** (not `localhost` — that can resolve to IPv6, which the server does not listen on). `web/` and `src-tauri/` usually reload; restart `cargo tauri dev` if they do not.
 
@@ -557,7 +557,7 @@ The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main`
 
 #### Frontend
 
-Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail), the timed-wait rule's canary (`web/src/test/noTimedWaitsInTests.canary.ts`, linted with `--error-on-warnings`; `web/src/test/README.md`, "The check", says why), and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less the one path it lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
+Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail), the timed-wait rule's canary (`web/src/test/noTimedWaitsInTests.canary.ts`, linted with `--error-on-warnings`; `web/src/test/README.md`, "The check", says why), and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less what it lifts: one path, or every `@tauri-apps/` path together, which the override for `src/lib/desktop/` lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
 
 ```bash
 cd web

@@ -98,9 +98,11 @@ const PROMOTE_INDEX_DROP_MIN_STAGING: i64 = 5_000;
 impl Promote<'_> {
     /// Every phase, in order: the source wipe in replace mode, then each
     /// table, the search index, and the content keys the new messages lack.
-    /// The caller runs the full dedupe after the commit, which puts every
-    /// duplicate flag right, those of the stored messages whose content this
-    /// promotion changed included (#1805, #1969).
+    /// The full dedupe runs later, once the whole import is in: at the end
+    /// of the Import Run for an Upload (#2040), and after the last run for
+    /// the server's `import` command and the Demo Account build. It puts
+    /// every duplicate flag right, those of the stored messages whose
+    /// content this promotion changed included (#1805, #1969).
     async fn run(&mut self, wipe_sources: &[String]) -> Result<()> {
         if self.mode == ImportMode::Replace {
             self.wipe_sources(wipe_sources).await?;

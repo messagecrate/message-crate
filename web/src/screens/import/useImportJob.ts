@@ -1,6 +1,20 @@
 import { completionTextFor } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
+import { invokeImessageBackupIdentities } from "../../lib/desktop/backup";
+import { invokeExtract } from "../../lib/desktop/extract";
+import { invokePathStat } from "../../lib/desktop/fs";
+import { awaitDesktopJob, invokeCancel, onDesktopJobEvents } from "../../lib/desktop/job";
+import {
+  invokeCreateRunDir,
+  invokeDeleteRunDir,
+  invokeReadImportRunRecord,
+  invokeSaveImportRunRecord,
+} from "../../lib/desktop/runDir";
+import { invokeStartImportRunLog } from "../../lib/desktop/runLog";
+import { invokeSummarizeStaging, invokeTranscodeStaging } from "../../lib/desktop/staging";
+import { invokeToolsStatus } from "../../lib/desktop/tools";
+import { invokeUpload } from "../../lib/desktop/upload";
 import {
   type ActiveImportRun,
   discardImportRun,
@@ -9,23 +23,6 @@ import {
 } from "../../lib/importRun";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
-import {
-  awaitDesktopJob,
-  invokeCancel,
-  invokeCreateRunDir,
-  invokeDeleteRunDir,
-  invokeExtract,
-  invokeImessageBackupIdentities,
-  invokePathStat,
-  invokeReadImportRunRecord,
-  invokeSaveImportRunRecord,
-  invokeStartImportRunLog,
-  invokeSummarizeStaging,
-  invokeToolsStatus,
-  invokeTranscodeStaging,
-  invokeUpload,
-  onDesktopJobEvents,
-} from "../../lib/tauri";
 import { isTauri } from "../../lib/tauriCheck";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { type ImportRunState, importRunStore, useImportRunState } from "./importRunStore";
@@ -37,43 +34,36 @@ import type { Resume } from "./run/staging";
  * What the app's Import Run works through: the desktop app's commands, the
  * server's routes and the session logged in now, and the one store the
  * screen and the sidebar read.
- *
- * Every entry, `desktop` and `server` alike, calls its import when the run
- * calls it, rather than holding the import itself, so building this reads no
- * export. A test that loads this file with a `vi.mock` of an app module
- * without `importOriginal` gives only the exports it uses, and Vitest throws
- * on reading an export its mock lacks, so holding the imports would fail
- * such a test at load.
  */
 const appDeps: ImportRunDeps = {
   desktop: {
-    isTauri: () => isTauri(),
-    awaitDesktopJob: (...args) => awaitDesktopJob(...args),
-    invokeCancel: () => invokeCancel(),
-    onDesktopJobEvents: (callbacks) => onDesktopJobEvents(callbacks),
-    invokeCreateRunDir: (...args) => invokeCreateRunDir(...args),
-    invokeDeleteRunDir: (...args) => invokeDeleteRunDir(...args),
-    invokeExtract: (...args) => invokeExtract(...args),
-    invokeImessageBackupIdentities: (...args) => invokeImessageBackupIdentities(...args),
-    invokePathStat: (...args) => invokePathStat(...args),
-    invokeReadImportRunRecord: (...args) => invokeReadImportRunRecord(...args),
-    invokeSaveImportRunRecord: (...args) => invokeSaveImportRunRecord(...args),
-    invokeStartImportRunLog: (...args) => invokeStartImportRunLog(...args),
-    invokeSummarizeStaging: (...args) => invokeSummarizeStaging(...args),
-    invokeToolsStatus: () => invokeToolsStatus(),
-    invokeTranscodeStaging: (...args) => invokeTranscodeStaging(...args),
-    invokeUpload: (...args) => invokeUpload(...args),
+    isTauri,
+    awaitDesktopJob,
+    invokeCancel,
+    onDesktopJobEvents,
+    invokeCreateRunDir,
+    invokeDeleteRunDir,
+    invokeExtract,
+    invokeImessageBackupIdentities,
+    invokePathStat,
+    invokeReadImportRunRecord,
+    invokeSaveImportRunRecord,
+    invokeStartImportRunLog,
+    invokeSummarizeStaging,
+    invokeToolsStatus,
+    invokeTranscodeStaging,
+    invokeUpload,
   },
   server: {
-    getServerState: (...args) => getServerState(...args),
-    createImport: (...args) => createImport(...args),
-    completeImport: (...args) => completeImport(...args),
-    setImportStage: (...args) => setImportStage(...args),
-    discardImportRun: (...args) => discardImportRun(...args),
-    getActiveImportRun: (...args) => getActiveImportRun(...args),
-    token: () => getToken(),
-    accountId: () => getAccountId(),
-    baseUrl: () => getBaseUrl(),
+    getServerState,
+    createImport,
+    completeImport,
+    setImportStage,
+    discardImportRun,
+    getActiveImportRun,
+    token: getToken,
+    accountId: getAccountId,
+    baseUrl: getBaseUrl,
   },
   store: importRunStore,
   now: () => performance.now(),

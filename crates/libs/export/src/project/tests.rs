@@ -12,7 +12,7 @@ use message_crate_api_types::{MessageConversation, Participant, Tapback};
 /// compiler or the suite noticing: `handle: String` rejected `"handle": null` and aborted every
 /// Export Run of a conversation holding an address-less participant, and
 /// `conversation.service` read a field the server has never sent, so every
-/// exported message came out `IrService::Unknown`.
+/// exported message came out `Transport::Unknown`.
 const EXPORT_PAGE_JSON: &str = r#"{
       "items": [
         {
@@ -98,8 +98,8 @@ fn the_message_service_round_trips_from_a_real_export_page() {
     assert_eq!(page.items[0].service.as_deref(), Some("iMessage"));
 
     let ir = to_ir_message(&page.items[0], false).unwrap();
-    assert_eq!(ir.service, IrService::IMessage);
-    assert_eq!(ir.message_kind, IrMessageKind::IMessage);
+    assert_eq!(ir.service, Transport::IMessage);
+    assert_eq!(ir.message_kind, MessageKind::IMessage);
     // The attachment maps without a byte length: the server never sends one.
     assert_eq!(ir.attachments.len(), 1);
     assert_eq!(ir.attachments[0].size_bytes, None);
@@ -135,7 +135,7 @@ fn each_message_keeps_its_owner_and_a_split_conversation_names_none_in_the_heade
         [Some("+15555550100"), Some("me@example.com"), None]
     );
 
-    let doc = build_document("imessage", &by_phone, messages);
+    let doc = build_document("imessage", &by_phone, messages, 0);
     assert_eq!(doc.export.owner_identity, None);
 }
 
@@ -179,6 +179,7 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
             emoji: None,
             is_from_me: true,
             sender: None,
+            sender_display_name: None,
         },
         Tapback {
             part_index: 1,
@@ -186,6 +187,15 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
             emoji: Some("🎉".into()),
             is_from_me: false,
             sender: Some("+2".into()),
+            sender_display_name: None,
+        },
+        Tapback {
+            part_index: 0,
+            kind: "liked".into(),
+            emoji: None,
+            is_from_me: false,
+            sender: None,
+            sender_display_name: Some("Grace".into()),
         },
     ];
 
@@ -222,6 +232,14 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
                 reactor_identity: Some("+2".into()),
                 reactor_display_name: None,
             },
+            Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: None,
+                reactor_display_name: Some("Grace".into()),
+            },
         ]
     );
 }
@@ -233,7 +251,7 @@ fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
     let mut sms = seed_message_with_participant(sam());
     sms.service = Some("SMS".into());
     let plain = to_ir_message(&sms, false).unwrap();
-    assert_eq!(plain.message_kind, IrMessageKind::Sms);
+    assert_eq!(plain.message_kind, MessageKind::Sms);
 
     let file: Attachment = serde_json::from_value(
         json!({ "sha256": "ab", "is_sticker": false, "shown_as_is": false }),
@@ -241,49 +259,55 @@ fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
     .unwrap();
     sms.attachments = vec![file.clone(), file.clone(), file];
     let with_files = to_ir_message(&sms, false).unwrap();
-    assert_eq!(with_files.message_kind, IrMessageKind::Mms);
+    assert_eq!(with_files.message_kind, MessageKind::Mms);
 
-    let doc = build_document("sms", &sms, vec![with_files, plain]);
+    let doc = build_document("sms", &sms, vec![with_files, plain], 0);
     assert_eq!(doc.conversation.stats.attachment_count, 3);
     assert_eq!(doc.conversation.stats.message_count, 2);
 }
 
-/// The file says the backup its messages came from when they all came
-/// from one, and nothing when any two differ or none says.
+/// Each message of a conversation stored from two backups is written with
+/// its own stored Backup Date, and a message stored without one is written
+/// without one beside dated ones, so no message takes another backup's date
+/// and no message loses its own (#1967). The file carries the Export Date
+/// the caller gave.
 #[test]
-fn a_document_says_its_backup_only_when_every_message_came_from_it() {
-    let backup_of = |seed: &Message| {
-        build_document("imessage", seed, vec![])
-            .export
-            .backup_taken_at_unix_ms
-    };
-    let dated = |at: Option<&str>| {
+fn each_message_keeps_its_own_backup_date_and_the_file_its_export_date() {
+    let dated = |id: i64, at: Option<&str>| {
         let mut msg = seed_message_with_participant(sam());
+        msg.id = id;
+        msg.guid = format!("guid-{id}");
         msg.backup_taken_at = at.map(str::to_string);
         msg
     };
-    let later = Some("2026-09-30T18:45:12.000Z");
-    let earlier = Some("2026-09-01T10:00:00.000Z");
-
-    assert_eq!(backup_of(&dated(None)), None);
-
-    let mut seed = dated(later);
-    common_backup_taken_at(&mut seed, &dated(later));
-    assert_eq!(backup_of(&seed), Some(1_790_793_912_000));
-
-    let mut seed = dated(earlier);
-    common_backup_taken_at(&mut seed, &dated(later));
-    common_backup_taken_at(&mut seed, &dated(None));
-    assert_eq!(backup_of(&seed), None, "two backups: no one date is right");
-
-    let mut seed = dated(later);
-    common_backup_taken_at(&mut seed, &dated(None));
-    common_backup_taken_at(&mut seed, &dated(later));
+    let rows = [
+        dated(1, Some("2026-09-01T10:00:00.000Z")),
+        dated(2, Some("2026-09-30T18:45:12.000Z")),
+        dated(3, None),
+    ];
+    let messages = rows
+        .iter()
+        .map(|row| to_ir_message(row, true).unwrap())
+        .collect();
+    let doc = build_document("imessage", &rows[0], messages, 1_791_000_000_000);
     assert_eq!(
-        backup_of(&seed),
-        None,
-        "a message without a date stays without one"
+        doc.messages
+            .iter()
+            .map(|m| m.backup_taken_at_unix_ms)
+            .collect::<Vec<_>>(),
+        vec![Some(1_788_256_800_000), Some(1_790_793_912_000), None]
     );
+    assert_eq!(doc.export.exported_at_unix_ms, Some(1_791_000_000_000));
+}
+
+/// A stored backup date the Export Run cannot read fails the message, never
+/// writes it as a message without a date.
+#[test]
+fn a_backup_date_that_is_not_a_time_is_refused() {
+    let mut msg = seed_message_with_participant(sam());
+    msg.backup_taken_at = Some("yesterday".into());
+    let err = to_ir_message(&msg, true).unwrap_err();
+    assert!(format!("{err:#}").contains("backup date"), "{err:#}");
 }
 
 /// Whether the conversation is a group comes from the server's
@@ -293,19 +317,16 @@ fn a_document_is_a_group_when_the_server_says_so() {
     let mut seed = seed_message_with_participant(sam());
     seed.conversation.conversation_type = " group ".into();
     seed.conversation.is_group = false;
-    let doc = build_document("imessage", &seed, vec![]);
+    let doc = build_document("imessage", &seed, vec![], 0);
     assert_eq!(
         doc.conversation.conversation_type,
-        IrConversationType::Individual
+        ConversationType::OneToOne
     );
 
-    seed.conversation.conversation_type = "individual".into();
+    seed.conversation.conversation_type = "one-to-one".into();
     seed.conversation.is_group = true;
-    let doc = build_document("imessage", &seed, vec![]);
-    assert_eq!(
-        doc.conversation.conversation_type,
-        IrConversationType::Group
-    );
+    let doc = build_document("imessage", &seed, vec![], 0);
+    assert_eq!(doc.conversation.conversation_type, ConversationType::Group);
 }
 
 /// A conversation of orphaned messages is exported as one, so importing
@@ -320,10 +341,10 @@ fn a_document_of_orphaned_messages_stays_orphaned() {
     });
     seed.conversation.chat_identifier = "orphaned:+15555550154".into();
     seed.conversation.conversation_type = "orphaned".into();
-    let doc = build_document("imessage", &seed, vec![]);
+    let doc = build_document("imessage", &seed, vec![], 0);
     assert_eq!(
         doc.conversation.conversation_type,
-        IrConversationType::Orphaned
+        ConversationType::Orphaned
     );
 }
 
@@ -336,7 +357,7 @@ fn an_announcement_keeps_its_text() {
 
     let ir = to_ir_message(&msg, false).unwrap();
 
-    assert_eq!(ir.message_kind, IrMessageKind::Announcement);
+    assert_eq!(ir.message_kind, MessageKind::Announcement);
     let imessage = ir
         .imessage
         .expect("an announcement makes an iMessage block");
@@ -384,7 +405,7 @@ fn maps_basic_message() {
     let ir = to_ir_message(&msg, false).unwrap();
     assert_eq!(ir.guid, "basic-guid");
     assert_eq!(ir.text, "hello");
-    assert_eq!(ir.service, IrService::IMessage);
+    assert_eq!(ir.service, Transport::IMessage);
 }
 
 /// The server's mark and the conversation file's are two types, one per
@@ -529,7 +550,7 @@ fn seed_message_with_participant(participant: Participant) -> Message {
         conversation: MessageConversation {
             id: 9,
             chat_identifier: "+1".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             is_group: false,
             group_title: None,
             shown_title: None,

@@ -10,7 +10,7 @@
 //! `#[serde(default)]` on a field the server had removed, and read a
 //! `service` off the conversation the server has never sent there. Each of
 //! those was an Export that failed at runtime, or quietly produced worse data,
-//! with nothing in either crate's tests to catch it — `message-crate-export`'s
+//! with nothing in either crate's tests to catch it. `message-crate-export`'s
 //! "real export page" was a JSON literal it wrote itself, so it agreed with
 //! whatever the mirror said.
 //!
@@ -247,6 +247,74 @@ impl std::fmt::Display for RunIssueKind {
     }
 }
 
+/// What an Import Error is: `skip` when the run left the item out, `error`
+/// when the item failed.
+// `RunIssueKind` says what a run can report; this type says what the server
+// stores, so a note or a `resolved` row cannot be stored as an Import Error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum ImportErrorKind {
+    /// The run left the item out and went on without it.
+    Skip,
+    /// The item failed.
+    Error,
+}
+
+impl ImportErrorKind {
+    /// The wire form: `skip` or `error`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skip => "skip",
+            Self::Error => "error",
+        }
+    }
+
+    /// Read a stored word; anything else names no kind.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "skip" => Some(Self::Skip),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ImportErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The [`RunIssueKind`] that is not an Import Error, refused by
+/// `TryFrom<RunIssueKind> for ImportErrorKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotAnImportError(pub RunIssueKind);
+
+impl std::fmt::Display for NotAnImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "a '{}' row is not an Import Error; expected 'error' or 'skip'",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NotAnImportError {}
+
+impl TryFrom<RunIssueKind> for ImportErrorKind {
+    type Error = NotAnImportError;
+
+    fn try_from(kind: RunIssueKind) -> Result<Self, NotAnImportError> {
+        match kind {
+            RunIssueKind::Skip => Ok(Self::Skip),
+            RunIssueKind::Error => Ok(Self::Error),
+            other @ (RunIssueKind::Note | RunIssueKind::Resolved) => Err(NotAnImportError(other)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod import_mode_tests {
     use super::*;
@@ -290,6 +358,34 @@ mod import_mode_tests {
         }
         assert!(serde_json::from_str::<RunIssueKind>("\"warning\"").is_err());
         assert_eq!(RunIssueKind::parse("warning"), None);
+    }
+
+    /// The same three forms for an Import Error's kind, which takes only
+    /// `skip` and `error` and refuses the two a run reports but never
+    /// stores as an Import Error.
+    #[test]
+    fn an_import_error_kind_is_skip_or_error_and_nothing_else() {
+        for kind in [ImportErrorKind::Skip, ImportErrorKind::Error] {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{}\"", kind.as_str()));
+            assert_eq!(
+                serde_json::from_str::<ImportErrorKind>(&json).unwrap(),
+                kind
+            );
+            assert_eq!(ImportErrorKind::parse(kind.as_str()), Some(kind));
+            let reported = RunIssueKind::parse(kind.as_str()).unwrap();
+            assert_eq!(ImportErrorKind::try_from(reported), Ok(kind));
+        }
+        for word in ["note", "resolved", "warning"] {
+            assert!(
+                serde_json::from_str::<ImportErrorKind>(&format!("\"{word}\"")).is_err(),
+                "{word}"
+            );
+            assert_eq!(ImportErrorKind::parse(word), None, "{word}");
+        }
+        for kind in [RunIssueKind::Note, RunIssueKind::Resolved] {
+            assert_eq!(ImportErrorKind::try_from(kind), Err(NotAnImportError(kind)));
+        }
     }
 }
 
@@ -510,7 +606,7 @@ api_shape! {
     /// the Contact's name, else what that backup called them in that
     /// conversation, else the identity.
     pub struct Participant {
-        /// What to show for this person. Never empty — the server falls back to
+        /// What to show for this person. Never empty: the server falls back to
         /// the identity when nothing else names them, and to the name alone for
         /// someone a backup named without recording any address.
         pub name: String,
@@ -521,8 +617,8 @@ api_shape! {
         /// Platform service, e.g. `imessage`. `None` for the same reason as
         /// `identity`: with no address there is nothing to carry a service on.
         pub service: Option<String>,
-        /// Linked contact id: when the identity is on a Contact, or — for a
-        /// participant with no identity — the contact the server bound the name to
+        /// Linked contact id: when the identity is on a Contact, or, for a
+        /// participant with no identity, the contact the server bound the name to
         /// directly, since that is the only place the link is recorded for
         /// them. Matches the `id` every other contact shape uses, so a caller
         /// can compare the two without converting either.
@@ -717,7 +813,7 @@ api_shape! {
         pub id: i64,
         /// The conversation's identifier as the export wrote it.
         pub chat_identifier: String,
-        /// `individual`, `group`, or `orphaned` for a conversation of
+        /// `one-to-one`, `group`, or `orphaned` for a conversation of
         /// orphaned messages: ones the backup holds without recording which
         /// conversation they were said in.
         pub conversation_type: String,
@@ -798,6 +894,11 @@ api_shape! {
         pub is_from_me: bool,
         /// The identity that reacted, for incoming reactions.
         pub sender: Option<String>,
+        /// The name the source gave the reactor of an incoming reaction
+        /// when it gave no address for them, as an iMazing export does;
+        /// `null` when `sender` is set, and for the account holder's own
+        /// reactions. A name is shown, never matched to a contact.
+        pub sender_display_name: Option<String>,
     }
 }
 
@@ -844,7 +945,7 @@ mod tests {
             conversation: MessageConversation {
                 id: 9,
                 chat_identifier: "+15555550100".into(),
-                conversation_type: "individual".into(),
+                conversation_type: "one-to-one".into(),
                 is_group: false,
                 group_title: None,
                 shown_title: None,
@@ -875,6 +976,7 @@ mod tests {
                 emoji: None,
                 is_from_me: true,
                 sender: None,
+                sender_display_name: None,
             }],
             deletion: Some(Deletion::DeletedInSourceApp),
             earlier_versions: vec![EarlierVersion {
@@ -899,7 +1001,7 @@ mod tests {
             serde_json::json!({
                 "id": 9,
                 "chat_identifier": "+15555550100",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "group_title": null,
                 "shown_title": null,
@@ -938,6 +1040,7 @@ mod tests {
                 "emoji": null,
                 "is_from_me": true,
                 "sender": null,
+                "sender_display_name": null,
             }),
             "{json}"
         );

@@ -5,12 +5,12 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 
 use crate::problem::ProblemType;
-use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
     PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
     log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve, test_fixture,
     with_trigger_lifted,
 };
+use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
 
 /// The items of an Audit Trail page.
 async fn trail(state: &crate::server::AppState, path: &str, token: &str) -> Vec<Value> {
@@ -530,4 +530,49 @@ async fn the_owners_changes_to_an_account_are_recorded() {
     assert!(items[..5].iter().all(|item| item["actor"] == "owner"));
     assert_eq!(items[3]["reason"], "revoked");
     assert_eq!(items[0]["conversations"], 0);
+}
+
+/// An entry carries the id of the request that wrote it, the one in that
+/// response's `x-request-id`, so the owner finds the request's log line by
+/// it (#2276). Two requests leave two ids.
+#[tokio::test]
+async fn an_entry_carries_the_id_of_the_request_that_wrote_it() {
+    let fixture = test_fixture().await;
+    let state = &fixture.state;
+    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let server = serve(state).await;
+    let login = server
+        .post("/v1/session")
+        .json(&json!({ "username": "alice", "password": PASSWORD }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::CREATED);
+    let login_id = login.headers()["x-request-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    let token = login.json::<Value>().await.unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let logout = server
+        .delete("/v1/session")
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    let logout_id = logout.headers()["x-request-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);
+    let items = trail(state, &path, &owner.token).await;
+    assert_eq!(actions(&items[..2]), ["session_ended", "logged_in"]);
+    assert_eq!(items[0]["request_id"], logout_id.as_str());
+    assert_eq!(items[1]["request_id"], login_id.as_str());
+    assert_ne!(login_id, logout_id);
 }

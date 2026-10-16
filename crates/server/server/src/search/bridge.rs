@@ -91,7 +91,7 @@ impl TrashScope {
     /// ` AND <not trashed>` for conversation alias `conv`, or nothing.
     pub(crate) fn conversation_clause(self, conv: &str) -> String {
         match self {
-            Self::LeftOut => format!(" AND {}", super::emit::not_trashed_conversation(conv)),
+            Self::LeftOut => format!(" AND {}", crate::db::trash::not_trashed_conversation(conv)),
             Self::Counted => String::new(),
         }
     }
@@ -99,7 +99,7 @@ impl TrashScope {
     /// ` AND <not trashed>` for contact alias `ct`, or nothing.
     pub(crate) fn contact_clause(self, ct: &str) -> String {
         match self {
-            Self::LeftOut => format!(" AND {}", super::emit::not_trashed_contact(ct)),
+            Self::LeftOut => format!(" AND {}", crate::db::trash::not_trashed_contact(ct)),
             Self::Counted => String::new(),
         }
     }

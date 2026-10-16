@@ -23,7 +23,7 @@ use chat_db_fixture::{
     set_message_date, write_chat_db,
 };
 use common::{config, helper_binary};
-use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage, TimePrecision};
+use message_ir::{ConversationDocument, Deletion, Direction, Message, TimePrecision};
 use message_ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_jsonl,
     read_conversation_mbox,
@@ -168,7 +168,7 @@ fn every_conversation_file_says_when_the_chat_db_was_last_written() {
     assert!(
         dates
             .iter()
-            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+            .all(|d| *d == vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]),
         "{dates:?}"
     );
 }
@@ -199,7 +199,7 @@ fn document_for(output: &Path, chat_identifier: &str) -> ConversationDocument {
 }
 
 /// The message with `guid`, from a document.
-fn message_with_guid<'a>(document: &'a ConversationDocument, guid: &str) -> &'a IrMessage {
+fn message_with_guid<'a>(document: &'a ConversationDocument, guid: &str) -> &'a Message {
     document
         .messages
         .iter()
@@ -230,18 +230,18 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     let phone_chat = document_for(&output, FRIEND_PHONE);
     assert_eq!(phone_chat.export.owner_identity.as_deref(), Some(OWNER));
     let nice = message_with_guid(&phone_chat, "guid-2");
-    assert_eq!(nice.direction, IrDirection::Outgoing);
+    assert_eq!(nice.direction, Direction::Outgoing);
     assert_eq!(nice.sender_identity.as_deref(), Some(OWNER));
     assert_eq!(nice.owner_identity.as_deref(), Some(OWNER));
     let still_me = message_with_guid(&phone_chat, "guid-5");
-    assert_eq!(still_me.direction, IrDirection::Outgoing);
+    assert_eq!(still_me.direction, Direction::Outgoing);
     assert_eq!(
         still_me.sender_identity.as_deref(),
         Some(OWNER),
         "a NULL caller id falls back to the conversation's owner"
     );
     let from_the_car = message_with_guid(&phone_chat, "guid-6");
-    assert_eq!(from_the_car.direction, IrDirection::Outgoing);
+    assert_eq!(from_the_car.direction, Direction::Outgoing);
     assert_eq!(
         from_the_car.sender_identity.as_deref(),
         Some(OWNER),
@@ -250,7 +250,7 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     );
     assert_eq!(from_the_car.owner_identity.as_deref(), Some(OWNER));
     let photo = message_with_guid(&phone_chat, "guid-1");
-    assert_eq!(photo.direction, IrDirection::Incoming);
+    assert_eq!(photo.direction, Direction::Incoming);
     assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
 
     let email_chat = document_for(&output, FRIEND_EMAIL);
@@ -260,7 +260,7 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
         "the email account's chat is owned by the email, with no `E:` prefix"
     );
     let from_mac = message_with_guid(&email_chat, "guid-4");
-    assert_eq!(from_mac.direction, IrDirection::Outgoing);
+    assert_eq!(from_mac.direction, Direction::Outgoing);
     assert_eq!(from_mac.sender_identity.as_deref(), Some(OWNER_EMAIL));
     assert_eq!(from_mac.owner_identity.as_deref(), Some(OWNER_EMAIL));
     let roster: Vec<_> = email_chat
@@ -523,4 +523,76 @@ fn a_second_run_reuses_the_cancelled_flag_only_when_set() {
         .run(imessage_ir_exporter::run)
         .unwrap_err();
     assert_eq!(err.to_string(), "canceled");
+}
+
+/// `chat.db`'s `handle` table names the country Messages read each number
+/// in, and the conversation file carries it for the participant and the
+/// sender, upper case, so the server can read `07700 900123` as a UK number
+/// (#1994). A handle whose `country` is NULL names none.
+///
+/// The committed fixture `tests/fixtures/handle-country/chat.db` holds two
+/// one-to-one SMS conversations, each with one incoming message: one with
+/// handle `07700 900123`, `country` `gb`, and one with handle `07700 900456`,
+/// `country` NULL.
+#[test]
+fn a_handles_country_reaches_the_conversation_file() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("chat.db");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/handle-country/chat.db"),
+        &db_path,
+    )
+    .unwrap();
+    let output = dir.path().join("out");
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
+
+    let documents: Vec<ConversationDocument> = jsonl_files(&output)
+        .iter()
+        .map(|path| read_conversation_jsonl(path).unwrap())
+        .collect();
+    let in_chat = |chat_identifier: &str| {
+        documents
+            .iter()
+            .find(|d| d.conversation.chat_identifier == chat_identifier)
+            .unwrap_or_else(|| panic!("no conversation {chat_identifier}"))
+    };
+
+    let gb = in_chat("07700 900123");
+    assert_eq!(
+        gb.conversation.participants[0].country.as_deref(),
+        Some("GB")
+    );
+    assert_eq!(gb.messages[0].sender_country.as_deref(), Some("GB"));
+
+    let none = in_chat("07700 900456");
+    assert_eq!(none.conversation.participants[0].country, None);
+    assert_eq!(none.messages[0].sender_country, None);
+
+    // The server imports this output from its own copy, and that copy must
+    // be what the exporter writes. Only each message's Backup Date, read
+    // from the fixture file's time, may differ.
+    let comparable = |text: &str| -> Vec<serde_json::Value> {
+        text.lines()
+            .map(|line| {
+                let mut value: serde_json::Value = serde_json::from_str(line).unwrap();
+                if let Some(message) = value.as_object_mut() {
+                    message.remove("backup_taken_at_unix_ms");
+                }
+                value
+            })
+            .collect()
+    };
+    let written: String = jsonl_files(&output)
+        .iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect();
+    let server_copy = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../server/server/tests/fixtures/apple-messages-handle-country.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(comparable(&written), comparable(&server_copy));
 }

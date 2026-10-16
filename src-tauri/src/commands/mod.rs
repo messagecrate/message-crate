@@ -11,6 +11,7 @@
 //! `desktop-job:progress`, `desktop-job:issue`, `desktop-job:file-written`,
 //! `desktop-job:file-done`, `desktop-job:finished`, `desktop-job:error`).
 
+pub mod disk_space;
 pub mod download;
 pub mod events;
 pub mod export;

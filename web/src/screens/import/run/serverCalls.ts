@@ -4,11 +4,11 @@
  */
 
 import { errorLine, errorText } from "../../../lib/apiErrorMessage";
+import type { StagingSummary } from "../../../lib/desktop/staging";
+import { CanceledError } from "../../../lib/desktopJobError";
 import type { ImportStage } from "../../../lib/importRun";
 import { endsSession } from "../../../lib/routeQuery";
-import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { sessionRefused } from "../../../lib/sessionRefusal";
-import type { StagingSummary } from "../../../lib/tauri";
 import type { RunContext } from "./context";
 import { discardRunDirectory } from "./runDirectory";
 import { returnToForm } from "./screen";
@@ -27,7 +27,7 @@ export function accountLeft(ctx: RunContext): boolean {
  * started it has left. The run stays open for that account to resume.
  */
 export function stopIfAccountLeft(ctx: RunContext): void {
-  if (accountLeft(ctx)) throw new Error(CANCELLED_MESSAGE);
+  if (accountLeft(ctx)) throw new CanceledError();
 }
 
 /**

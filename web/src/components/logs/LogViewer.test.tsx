@@ -11,12 +11,13 @@ import {
   stopFakeClock,
 } from "../../test/fakeTimers";
 import { installIntersectionObserver, scrollNear } from "../../test/intersectionObserver";
-import { Providers } from "../../test/providers";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import LogViewer, { LOG_PAGE_SIZE, SEARCH_DELAY_MS } from "./LogViewer";
 import type { LinesRequest, LogSource } from "./logSource";
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const saveMock = vi.mocked(saveFile);
@@ -188,7 +189,7 @@ describe("LogViewer", () => {
 
     expect(saveMock).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(1);
-    const [name, file] = saveMock.mock.calls[0];
+    const [name, file] = nth(saveMock.mock.calls, 0);
     expect(name).toBe("import-sms-261006.log");
     expect(await file.text()).toBe("the whole log\n");
   });

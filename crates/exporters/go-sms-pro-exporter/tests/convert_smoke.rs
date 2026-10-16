@@ -26,9 +26,9 @@ fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
     convert_export(ConvertExportArgs {
         input_dir,
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -117,9 +117,9 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             input_dir: &input,
             output_dir: &output,
-            scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             convert_run: ConvertRun {
+                scratch_dir: cache.path().to_path_buf(),
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()
@@ -151,9 +151,9 @@ fn the_backup_date_is_the_newest_files_modification_time() {
     convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },
@@ -161,6 +161,6 @@ fn the_backup_date_is_the_newest_files_modification_time() {
     .expect("convert");
     assert_eq!(
         jsonl_backup_dates(&output),
-        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+        vec![vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]]
     );
 }

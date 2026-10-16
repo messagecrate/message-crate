@@ -93,7 +93,7 @@ impl MessageGuid {
         &self.0
     }
 
-    /// The `guid` as an owned string, for [`crate::IrMessage::guid`].
+    /// The `guid` as an owned string, for [`crate::Message::guid`].
     pub fn into_string(self) -> String {
         self.0
     }

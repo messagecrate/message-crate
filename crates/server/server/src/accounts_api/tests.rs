@@ -4,6 +4,7 @@ use super::*;
 use crate::db::api_tokens;
 use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
+use crate::server::AppState;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
     delete_json_raw, delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
@@ -58,9 +59,14 @@ async fn api_tokens_never_resolve_to_the_owner() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &owner.token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        &owner.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(auth.is_owner(), "the owner's session is the owner");
     assert!(
         auth.permissions() == Permissions::none(),
@@ -68,13 +74,13 @@ async fn api_tokens_never_resolve_to_the_owner() {
     );
 
     // A token issued on the owner's own account still resolves to a token.
-    let token_auth = crate::server::AuthIdentity {
+    let token_auth = crate::auth::AuthIdentity {
         account_id: auth.account_id,
-        capability: crate::server::AuthCapability::ApiToken(auth.permissions()),
+        capability: crate::auth::AuthCapability::ApiToken(auth.permissions()),
         credential: crate::db::audit_trail::CredentialUsed::Session(None),
     };
     assert!(!token_auth.is_owner());
-    assert!(crate::server::require_owner(&token_auth).is_err());
+    assert!(crate::auth::require_owner(&token_auth).is_err());
 }
 
 /// The owner is refused by every guard that asks for a permission, so none of
@@ -86,19 +92,24 @@ async fn the_owner_holds_no_message_permissions() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &owner.token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        &owner.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
-    assert!(crate::server::require_import_access(&auth).is_err());
-    assert!(crate::server::require_export_access(&auth).is_err());
-    assert!(crate::server::require_delete_access(&auth).is_err());
-    assert!(crate::server::require_import_or_export_access(&auth).is_err());
-    assert!(crate::server::require_full_delete_access(&auth).is_err());
+    assert!(crate::auth::require_import_access(&auth).is_err());
+    assert!(crate::auth::require_export_access(&auth).is_err());
+    assert!(crate::auth::require_delete_access(&auth).is_err());
+    assert!(crate::auth::require_import_or_export_access(&auth).is_err());
+    assert!(crate::auth::require_full_delete_access(&auth).is_err());
     // `FullAccess` means an ordinary account's session; the owner has none.
-    assert!(crate::server::require_full_access(&auth).is_err());
+    assert!(crate::auth::require_full_access(&auth).is_err());
     // The routes under `/v1/accounts/{id}` still admit them, for its own row.
-    assert!(crate::server::require_logged_in(&auth).is_ok());
+    assert!(crate::auth::require_logged_in(&auth).is_ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,9 +1041,14 @@ async fn the_owner_clears_a_permission_and_it_takes_effect() {
     assert!(!row.can_export);
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &bob.token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        &bob.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(!auth.permissions().import);
     assert!(!auth.permissions().export);
     assert!(auth.permissions().delete, "delete was left alone");
@@ -1765,7 +1781,7 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
 
     let message = message_line("g-new", "new")
         .sender("+15555550123")
-        .attachment(message_ir::IrAttachment {
+        .attachment(message_ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/photo.bin",
@@ -1811,7 +1827,8 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
     seed_one_message(&state, alice.account_id).await;
 
     let batch = state
-        .account_import_locks
+        .imports
+        .account_locks
         .lock(alice.account_id.to_string())
         .await;
     let mut delete = crate::request_id::spawn_in_current_span({
@@ -1832,7 +1849,7 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
     // it, and waits.
     let key = alice.account_id.to_string();
     tokio::select! {
-        () = state.account_import_locks.a_task_waits(&key) => {}
+        () = state.imports.account_locks.a_task_waits(&key) => {}
         status = &mut delete => panic!(
             "the delete finished ({status:?}) while a batch held the account's import lock"
         ),
@@ -1865,6 +1882,7 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
         "tool",
         Permissions::all(),
         None,
+        crate::test_support::routed_credential_instant(),
     )
     .await
     .unwrap()
@@ -2271,7 +2289,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
         &SeedConversation {
             account_id: account.account_id,
             handle: "+15555550135",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &two,
@@ -2382,7 +2400,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
                 "start_date": "2020-01-01T00:00:00.000Z",
                 "end_date": "2020-02-02T00:00:00.000Z",
                 "conversations": 2,
-                "direct_messages": 2,
+                "one_to_one_messages": 2,
                 "group_messages": 2,
                 "orphaned_messages": 0
             },
@@ -2393,7 +2411,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
                 "start_date": "2020-02-03T00:00:00.000Z",
                 "end_date": "2020-02-03T00:00:00.000Z",
                 "conversations": 1,
-                "direct_messages": 0,
+                "one_to_one_messages": 0,
                 "group_messages": 1,
                 "orphaned_messages": 0
             }
@@ -2428,7 +2446,7 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
         &SeedConversation {
             account_id: account.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
@@ -2892,8 +2910,11 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
     let status = server
         .get("/v1/session")
         .bearer_auth(&bob.token)
-        .header(crate::server::APP_HEADER, "desktop")
-        .header(crate::server::APP_VERSION_HEADER, "0.8.0+1234abcd")
+        .header(message_crate_api_types::APP_HEADER, "desktop")
+        .header(
+            message_crate_api_types::APP_VERSION_HEADER,
+            "0.8.0+1234abcd",
+        )
         .send()
         .await
         .unwrap()
@@ -3157,7 +3178,7 @@ async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview
         &crate::test_support::SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550142",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {

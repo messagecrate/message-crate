@@ -1,10 +1,9 @@
-import { errorLine, errorText } from "../../../lib/apiErrorMessage";
+import { CanceledError } from "../../../lib/desktopJobError";
 import { getDeviceId } from "../../../lib/deviceId";
 import { buildSourceFingerprint } from "../../../lib/importRun";
 import { importRunCreateBody } from "../../../lib/importSource";
 import { importSourceFor } from "../../../lib/importSources";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
-import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { formSnapshot } from "../formSnapshot";
 import {
   attachmentDoneDetail,
@@ -15,7 +14,7 @@ import {
 } from "../importProgressState";
 import { CLEARED_RUN } from "../importRunStore";
 import type { OpenRun, RunContext } from "./context";
-import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
+import { jobErrorReason, recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport } from "./finish";
 import { mediaToolsMissingFor } from "./media";
 import { saveCarriedRecord } from "./runRecordWrites";
@@ -303,16 +302,15 @@ export async function runImport(
     }
   } catch (e: unknown) {
     if (await leaveIfRefused(ctx, e, runId)) return;
-    const msg = errorText(e);
     // A cancelled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
     // run at `write` is what lets the next Import visit offer that. A
     // `write` stage the server did not record stops the run where the server
     // has it, so it is not completed either. A genuine failure still
     // completes: a broken backup must not lock the account out of importing.
-    const cancelled = msg === CANCELLED_MESSAGE;
+    const cancelled = e instanceof CanceledError;
     const stageNotRecorded = e instanceof StageNotRecordedError;
-    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, errorLine(e));
+    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
     failActiveStep(ctx);
     store.set({ computingSummary: false });
     await finishImport(ctx, {

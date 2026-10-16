@@ -60,7 +60,7 @@ describe("senderName / namesSender", () => {
       conversation: {
         id: 1,
         chat_identifier: "x",
-        conversation_type: "individual",
+        conversation_type: "one-to-one",
         is_group: false,
         group_title: null,
         shown_title: null,
@@ -74,7 +74,7 @@ describe("senderName / namesSender", () => {
     const conversation = {
       id: 1,
       chat_identifier: "x",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,
@@ -94,7 +94,7 @@ describe("senderName / namesSender", () => {
       conversation: {
         id: 1,
         chat_identifier: "x",
-        conversation_type: "individual",
+        conversation_type: "one-to-one",
         is_group: false,
         group_title: null,
         shown_title: null,
@@ -122,7 +122,7 @@ describe("senderName / namesSender", () => {
       conversation: {
         id: 1,
         chat_identifier: "x",
-        conversation_type: "individual",
+        conversation_type: "one-to-one",
         is_group: false,
         group_title: null,
         shown_title: null,
@@ -143,6 +143,7 @@ function tapback(partial: Partial<MessageTapback>): MessageTapback {
     kind: "loved",
     part_index: 0,
     sender: null,
+    sender_display_name: null,
     ...partial,
   };
 }
@@ -196,6 +197,21 @@ describe("tapbackGroups", () => {
   it("names the account owner Me", () => {
     const m = message({ conversation, tapbacks: [tapback({ kind: "liked", is_from_me: true })] });
     expect(tapbackGroups(m)[0]?.senderNames).toEqual(["Me"]);
+  });
+
+  // An iMazing reaction names its reactor with no address. The name is
+  // shown in place of "Someone" (#2044).
+  it("names a reactor with no identity by the name the source gave", () => {
+    const m = message({
+      conversation,
+      tapbacks: [tapback({ kind: "liked", sender_display_name: "Grace" })],
+    });
+    expect(tapbackGroups(m)[0]?.senderNames).toEqual(["Grace"]);
+  });
+
+  it("names a reactor with neither an identity nor a name Someone", () => {
+    const m = message({ conversation, tapbacks: [tapback({ kind: "liked" })] });
+    expect(tapbackGroups(m)[0]?.senderNames).toEqual(["Someone"]);
   });
 
   it("is empty when the message has no tapbacks", () => {

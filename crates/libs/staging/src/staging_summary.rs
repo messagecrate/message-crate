@@ -5,18 +5,18 @@
 //! the way to the screen.
 //!
 //! This is always recomputed from the directory, never read back
-//! from a previously-written `summary_json` — the directory is the truth, and
+//! from a previously-written `summary_json`. The directory is the truth, and
 //! that is what makes resuming at a Review work: reopening the Import Run
 //! recomputes rather than restoring.
 //!
-//! Contact matching is not done here — the server answers which identifiers
+//! Contact matching is not done here. The server answers which identifiers
 //! it already knows, and this returns the distinct identifiers found on
 //! disk for the caller to ask about.
 //!
 //! ## Aliasing
 //!
-//! Staged names are content-addressed, so two attachment records — in the
-//! same document or different ones — can legitimately share one physical
+//! Staged names are content-addressed, so two attachment records (in the
+//! same document or different ones) can legitimately share one physical
 //! file (see `transcode.rs`'s module docs for why). `attachments` counts
 //! every reference, because that is what the documents actually contain, but
 //! `attachment_bytes` and `forecasts` are per physical
@@ -30,7 +30,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use media::{MediaMode, MediaTools, SizeVerdict, classify_probed, estimate_bytes, needs_probe};
-use message_ir::{IrDirection, IrMessage};
+use message_ir::{Direction, Message};
 
 use crate::transcode::{COMMITTED_SUFFIX, TranscodeOptions, conversation_files};
 use message_ir_format::read_conversation_jsonl;
@@ -94,11 +94,11 @@ pub struct StagingSummary {
     /// missing and every reference to a shared, content-addressed file.
     pub attachments: usize,
     /// Bytes on disk under `attachments/` for the files that are actually
-    /// there, counted once per physical file — see the module docs on
-    /// aliasing.
+    /// there, counted once per physical file. The module docs on aliasing
+    /// say why.
     pub attachment_bytes: u64,
-    /// One row per physical file whose verdict is not `fits_as_is` — see the
-    /// module docs on aliasing.
+    /// One row per physical file whose verdict is not `fits_as_is`. The
+    /// module docs on aliasing say why.
     pub forecasts: Vec<AttachmentForecast>,
     /// The largest single attachment the upload accepts, in bytes: the limit
     /// every verdict above was measured against, carried so the screen shows
@@ -135,30 +135,30 @@ pub struct SummaryProgress {
 /// counts plus a per-attachment size forecast, for the reviews.
 ///
 /// Walks the same `*.jsonl` list the Media stage walks. For each attachment
-/// already carrying a `missing_reason` — settled, whether or not its `path`
-/// still points at a file on disk (a `convert_failed` original keeps its
-/// path so a resume can retry it, but it has already been flagged and must
-/// not be forecast again) — this counts it and stops there: no bytes, no
-/// forecast row. The same is true for an attachment with no `path`, or whose
-/// recorded file is not on disk.
+/// already carrying a `missing_reason`, this counts it and stops there: no
+/// bytes, no forecast row. Such an attachment is settled whether or not its
+/// `path` still points at a file on disk (a `convert_failed` original keeps
+/// its path so a resume can retry it, but it has already been flagged and
+/// must not be forecast again). An attachment with no `path`, or whose
+/// recorded file is not on disk, is also counted and goes no further.
 ///
 /// Everything else reads its length from disk (never the document's stale
 /// `size_bytes`). A recorded path whose stem already ends in `-mv` names a
 /// derivative the Media stage has committed and will never touch again
 /// (`pending_in`'s own exclusion rule, in `transcode.rs`); it is classified
 /// on that size alone, with no probe and `estimate_bytes` equal to
-/// `size_bytes` — applying a mode's growth or shrink factor to it would
+/// `size_bytes`. Applying a mode's growth or shrink factor to it would
 /// forecast a transcode that can never happen. Every other file is probed
 /// when [`media::needs_probe`] says it is close enough to the limit to
 /// matter and `options.mode` converts or compresses, then classified with
 /// [`media::classify_probed`]. Under [`MediaMode::Clone`] and
-/// [`MediaMode::Disabled`] the Media stage does nothing: probing is skipped
-/// entirely — not an optimization, since probing would forecast work that
-/// will never run — `estimate_bytes` equals `size_bytes`, and the file is
-/// classified on its current size alone.
+/// [`MediaMode::Disabled`] the Media stage does nothing, so probing is skipped
+/// entirely, `estimate_bytes` equals `size_bytes`, and the file is
+/// classified on its current size alone. Skipping the probe is not an
+/// optimization: probing would forecast work that will never run.
 ///
 /// The probe is best-effort: a failed ffprobe call on one file means
-/// classifying it with no probe in hand, never failing the summary — a Review
+/// classifying it with no probe in hand, never failing the summary. A Review
 /// that cannot render because one file is unreadable is worse than a Review
 /// with one rougher estimate.
 ///
@@ -167,10 +167,10 @@ pub struct SummaryProgress {
 /// every reference, but a shared file's bytes, verdict, and forecast row are
 /// each counted exactly once, on the first reference to its recorded path.
 ///
-/// `on_progress` reports [`SummaryProgress`] over attachments — every
-/// reference, aliased or not, since that is the count the caller sees
-/// growing — at the same cadence the media crate uses (every 100) plus a
-/// final call.
+/// `on_progress` reports [`SummaryProgress`] over attachments at the same
+/// cadence the media crate uses (every 100) plus a final call. It counts
+/// every reference, aliased or not, since that is the count the caller sees
+/// growing.
 ///
 /// # Errors
 ///
@@ -209,8 +209,8 @@ pub fn summarize_staging(
             if let Some(identity) = owner_identity_of(msg, doc.export.owner_identity.as_deref()) {
                 let (sent, received) = owner.entry(identity.to_string()).or_insert((0, 0));
                 match msg.direction {
-                    IrDirection::Outgoing => *sent += 1,
-                    IrDirection::Incoming => *received += 1,
+                    Direction::Outgoing => *sent += 1,
+                    Direction::Incoming => *received += 1,
                 }
             }
             for att in &msg.attachments {
@@ -238,7 +238,7 @@ pub fn summarize_staging(
     let has_media_step = matches!(options.mode, MediaMode::Convert | MediaMode::Compress);
     // Recorded paths already measured and classified, so an aliased second
     // (or third, …) reference to the same physical file contributes to
-    // `attachments` only — see the module docs on aliasing.
+    // `attachments` only. The module docs on aliasing say why.
     let mut classified_paths: HashSet<String> = HashSet::new();
     let mut done = 0usize;
     for att in attachments {
@@ -277,10 +277,10 @@ struct AttachmentRef {
 /// The owner's address on `msg`: its own record, then the sender of an
 /// outgoing message, then the export's one owner address. `None` when all
 /// are blank.
-fn owner_identity_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> Option<&'a str> {
+fn owner_identity_of<'a>(msg: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
     let outgoing_sender = match msg.direction {
-        IrDirection::Outgoing => msg.sender_identity.as_deref(),
-        IrDirection::Incoming => None,
+        Direction::Outgoing => msg.sender_identity.as_deref(),
+        Direction::Incoming => None,
     };
     [msg.owner_identity.as_deref(), outgoing_sender, export_owner]
         .into_iter()
@@ -294,8 +294,8 @@ fn owner_identity_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> O
 ///
 /// Called only for a reference not already settled (no `missing_reason`) and
 /// not already classified via an earlier reference to the same recorded
-/// path — the caller (`summarize_staging`) filters both before calling.
-/// `rel` unsafe, or its file missing from disk, contributes nothing —
+/// path. The caller (`summarize_staging`) filters both before calling.
+/// `rel` unsafe, or its file missing from disk, contributes nothing,
 /// silently, since a document recording a path with no bytes behind it is
 /// exactly the "not there" case this whole function exists to skip.
 fn classify_one(

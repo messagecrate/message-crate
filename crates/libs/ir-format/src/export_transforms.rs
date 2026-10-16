@@ -1,13 +1,12 @@
-//! Obfuscation, and dropping attachment paths when media is disabled, applied
-//! before writing files.
+//! Obfuscation, and dropping attachment paths when no attachment files are
+//! copied, applied before writing files.
 
 use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
-use media::MediaMode;
-use message_crate_core::ExportTransforms;
+use message_crate_core::{AttachmentFiles, ExportTransforms};
 use message_ir::{
-    ConversationDocument, IrAttachment, IrDirection, IrImessage, IrParticipant, MessageGuid,
-    MessageIdentity, Reaction,
+    Attachment, ConversationDocument, Direction, ImessageExtensions, MessageGuid, MessageIdentity,
+    Participant, Reaction,
 };
 use obfuscate::{
     Obfuscator, classify_attachment, placeholder_rel_path, resolve_obfuscator_with_log,
@@ -15,9 +14,10 @@ use obfuscate::{
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Drop attachment paths and bytes when the media mode is disabled, keeping the metadata.
-pub fn clear_attachments_when_disabled(doc: &mut ConversationDocument, mode: MediaMode) {
-    if !matches!(mode, MediaMode::Disabled) {
+/// Drop attachment paths and bytes when no attachment files are copied,
+/// keeping the metadata.
+pub fn clear_attachments_when_skipped(doc: &mut ConversationDocument, files: AttachmentFiles) {
+    if files.copies() {
         return;
     }
     for msg in &mut doc.messages {
@@ -96,7 +96,7 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
             *h = anon.obfuscate_handle(h);
         }
         if let Some(n) = msg.sender_display_name.as_mut() {
-            if msg.direction == IrDirection::Outgoing && n == "Me" {
+            if msg.direction == Direction::Outgoing && n == "Me" {
                 // Keep the conventional outgoing label.
             } else {
                 *n = anon.obfuscate_display_name(n);
@@ -156,7 +156,7 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> Renamed
             .collect();
         msg.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
-            is_from_me: msg.direction == IrDirection::Outgoing,
+            is_from_me: msg.direction == Direction::Outgoing,
             sender: msg.sender_identity.as_deref(),
             timestamp_unix_ms: msg.timestamp_unix_ms,
             text: &msg.text,
@@ -189,7 +189,7 @@ fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<It
 /// `parts` repeats the body, `app` holds link previews, and
 /// `shared_location` holds a place. None of them is read on import, so
 /// obfuscated output drops them whole.
-fn obfuscate_imessage(im: &mut IrImessage, anon: &mut Obfuscator) {
+fn obfuscate_imessage(im: &mut ImessageExtensions, anon: &mut Obfuscator) {
     if let Some(a) = im.announcement.as_mut() {
         *a = anon.obfuscate_text(a);
     }
@@ -212,7 +212,7 @@ fn obfuscate_reactor(reaction: &mut Reaction, anon: &mut Obfuscator) {
 }
 
 /// Obfuscate one participant's identity and display name.
-fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
+fn obfuscate_participant(p: &mut Participant, anon: &mut Obfuscator) {
     if let Some(handle) = p.identity.as_mut() {
         *handle = anon.obfuscate_handle(handle);
     }
@@ -222,7 +222,7 @@ fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
 }
 
 /// Replace an attachment with the placeholder file for its media class.
-fn obfuscate_attachment(att: &mut IrAttachment) {
+fn obfuscate_attachment(att: &mut Attachment) {
     let class = classify_attachment(att.mime_type.as_deref(), att.path.as_deref());
     let rel = placeholder_rel_path(class);
     att.path = Some(rel.to_string());
@@ -245,7 +245,7 @@ pub(crate) struct TransformOutcome {
     pub obfuscated_docs: usize,
 }
 
-/// Apply the export transforms (media mode, obfuscation) to every document.
+/// Apply the export transforms (attachment files, obfuscation) to every document.
 ///
 /// Attachment bytes are not loaded here. Every writer that embeds them reads
 /// each file through [`crate::load_attachment_bytes`] before the sink removes
@@ -258,12 +258,11 @@ pub(crate) fn apply_transforms(
     // Keep MIME/path for placeholder classification when obfuscating.
     if !transforms.obfuscate {
         for doc in docs.iter_mut() {
-            clear_attachments_when_disabled(doc, transforms.media);
+            clear_attachments_when_skipped(doc, transforms.files);
         }
     }
 
-    // Convert/compress runs in `run_attachment_jobs` before documents are
-    // written. Finish only obfuscates and packages.
+    // Finish only obfuscates and packages.
     if !transforms.obfuscate {
         return Ok(TransformOutcome { obfuscated_docs: 0 });
     }

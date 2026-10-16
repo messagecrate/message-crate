@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../lib/desktopJob";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
+import { authModule } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
@@ -21,8 +23,8 @@ vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => true,
 }));
 
-vi.mock("../lib/tauri", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/tauri")>();
+vi.mock("../lib/desktop/export", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/desktop/export")>();
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
     invokeExport: (...args: unknown[]) => invokeExport(...args),
@@ -30,21 +32,22 @@ vi.mock("../lib/tauri", async (importOriginal) => {
     invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
     invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
     invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
-    invokeCancel: (...args: unknown[]) => invokeCancel(...args),
-    // The job's name comes first; the mocks below take what follows it.
-    awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
-    onDesktopJobEvents: vi.fn(async () => () => {}),
   };
 });
+
+vi.mock("../lib/desktop/job", () => ({
+  invokeCancel: (...args: unknown[]) => invokeCancel(...args),
+  // The job's name comes first; the mocks below take what follows it.
+  awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
+  onDesktopJobEvents: vi.fn(async () => () => {}),
+}));
 
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ token: "test-token" }),
-}));
+vi.mock("../lib/authContext", () => authModule({ token: "test-token" }));
 
 afterEach(() => {
   cleanup();
@@ -115,7 +118,10 @@ describe("ExportScreen", () => {
     expect(invokeExport).toHaveBeenCalledTimes(1);
     // Everything is the scope the screen opens in without a query, and it
     // sends a blank query, which message-crate-export reads as the whole account.
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({
+      out_dir: "/home/demo/out",
+      query: "",
+    });
     // JSONL is what an Export already writes, so there is nothing to convert. The
     // export's own directory is finished, which deletes it when it is empty.
     expect(invokeFormat).not.toHaveBeenCalled();
@@ -132,7 +138,7 @@ describe("ExportScreen", () => {
     await settle();
     expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl", "");
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
     expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(screen.getByText(/Export complete/)).toHaveTextContent(
       `Export complete. JSON Lines (.jsonl) saved to ${EXPORT_DIR.dir}.`,
@@ -149,10 +155,10 @@ describe("ExportScreen", () => {
     await settle();
     expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "");
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.exported });
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({ out_dir: EXPORT_DIR.exported });
     // The conversion may not write into the directory that holds its input,
     // so it writes beside it and the finish moves the result up.
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({
       input_dir: EXPORT_DIR.exported,
       output_dir: EXPORT_DIR.converting,
     });
@@ -168,8 +174,8 @@ describe("ExportScreen", () => {
 
     await settle();
     expect(invokeFormat).toHaveBeenCalledTimes(1);
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: exported });
-    expect(invokeFormat.mock.calls[0][0]).toEqual({
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({ out_dir: exported });
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toEqual({
       input_dir: exported,
       output_dir: "/home/demo/out",
       output_format: "csv",
@@ -193,7 +199,7 @@ describe("ExportScreen", () => {
 
     await settle();
     expect(invokeFormat).toHaveBeenCalledTimes(1);
-    const started = invokeFormat.mock.calls[0][0].run_started_ms as number;
+    const started = nth(invokeFormat.mock.calls, 0)[0].run_started_ms as number;
     expect(started).toBeGreaterThan(before);
     expect(started).toBeLessThanOrEqual(exportStepAt);
   });
@@ -391,7 +397,10 @@ describe("ExportScreen", () => {
     expect(invokeExport).toHaveBeenCalledTimes(1);
     // A search typed here, with no hand-off, is for the Messages list.
     expect(screen.getByRole("button", { name: /Search in/ })).toHaveTextContent("Messages");
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "in:#19,#22", list: "messages" });
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({
+      query: "in:#19,#22",
+      list: "messages",
+    });
   });
 
   it("opens in Search with the query it was given, and sends it", async () => {
@@ -414,7 +423,7 @@ describe("ExportScreen", () => {
     await settle();
     expect(invokeExport).toHaveBeenCalledTimes(1);
     // Sent as a Messages query, the server would refuse `messages:` (#959).
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({
       query: "messages:>100 tag:Work",
       list: "conversations",
     });
@@ -432,7 +441,10 @@ describe("ExportScreen", () => {
 
     await settle();
     expect(invokeExport).toHaveBeenCalledTimes(1);
-    expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "tag:Work", list: "messages" });
+    expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({
+      query: "tag:Work",
+      list: "messages",
+    });
   });
 
   it("will not export a Search scope with a blank query", async () => {

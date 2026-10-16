@@ -7,6 +7,7 @@ use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::conversation_messages::{duplicate_chain_sql, earlier_versions_holder_sql};
 use crate::db::conversations::{is_with_yourself_sql, shown_title_sql};
 use crate::db::participant_names::named_from_chat_handle_sql;
+use crate::db::trash::{not_trashed_contact, not_trashed_contact_id, not_trashed_conversation};
 
 use super::bridge::{ListCtx, MessageAgg, Sql, TrashScope};
 use super::error::{QueryError, QueryErrorKind};
@@ -14,36 +15,7 @@ use super::fts;
 use super::parse::{Expr, FieldTerm, TextTerm};
 use super::value::{Cmp, DateCmp, Value, utc_instant};
 use super::{Filter, ListKind};
-use message_ir::{Deletion, IrConversationType};
-
-/// Contact `ct` is not in the trash.
-pub(crate) const NOT_TRASHED_CONTACT: &str = "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = ct.account_id AND tct.contact_id = ct.id)";
-/// Conversation `c` is not in the trash.
-pub(crate) const NOT_TRASHED_CONVERSATION: &str = "NOT EXISTS (SELECT 1 FROM trashed_conversations tc WHERE tc.account_id = c.account_id AND tc.conversation_id = c.id)";
-
-/// Conversation `conv` is not in the trash: [`NOT_TRASHED_CONVERSATION`]
-/// for a subquery whose conversations alias is not `c`. The one clause,
-/// written once, so the lists and the contact counts cannot drift apart.
-pub(crate) fn not_trashed_conversation(conv: &str) -> String {
-    format!(
-        "NOT EXISTS (SELECT 1 FROM trashed_conversations tc WHERE tc.account_id = {conv}.account_id AND tc.conversation_id = {conv}.id)"
-    )
-}
-
-/// Contact `ct` is not in the trash: [`NOT_TRASHED_CONTACT`] for a subquery
-/// whose contacts alias is not `ct`.
-pub(crate) fn not_trashed_contact(ct: &str) -> String {
-    not_trashed_contact_id(&format!("{ct}.account_id"), &format!("{ct}.id"))
-}
-
-/// The contact with id `id_expr` in account `account_expr` is not in the
-/// trash, for a row that carries a contact id without joining `contacts`
-/// (a `contact_handles` or a `participants` row).
-pub(crate) fn not_trashed_contact_id(account_expr: &str, id_expr: &str) -> String {
-    format!(
-        "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = {account_expr} AND tct.contact_id = {id_expr})"
-    )
-}
+use message_ir::{ConversationType, Deletion};
 
 /// Compile a parsed query into one parenthesised WHERE fragment.
 ///
@@ -117,13 +89,13 @@ fn compile_where(
         ListKind::Contacts => {
             if !uses("trashed") {
                 out.push(" AND ");
-                out.push(NOT_TRASHED_CONTACT);
+                out.push(&not_trashed_contact("ct"));
             }
         }
         ListKind::Conversations => {
             if !uses("trashed") {
                 out.push(" AND ");
-                out.push(NOT_TRASHED_CONVERSATION);
+                out.push(&not_trashed_conversation("c"));
             }
             // A thread with only duplicate messages is hidden, unless the
             // query is about one source or one Import Run, whose threads may
@@ -145,7 +117,7 @@ fn compile_where(
                 out.push(
                     " AND EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND ",
                 );
-                out.push(NOT_TRASHED_CONVERSATION);
+                out.push(&not_trashed_conversation("c"));
                 out.push(")");
             }
         }
@@ -193,7 +165,7 @@ fn emit_expr(ctx: &ListCtx, out: &mut Sql, expr: &Expr) -> Result<(), QueryError
 }
 
 /// A contains-or-prefix pattern against `column`, case-insensitive. A prefix means "a word starts with this", so it matches at the
-/// start of the column or just after a space — never only at the very
+/// start of the column or just after a space, never only at the very
 /// start, which would make `avoc*` find less than `avoc`. Anything else, a
 /// phrase included, is an ordinary substring.
 ///
@@ -557,7 +529,7 @@ fn emit_text_word(
                 "NOT EXISTS (SELECT 1 FROM participants p JOIN handles h ON h.id = p.handle_id WHERE p.conversation_id = c.id AND h.handle_type <> 'other')",
             ),
             // The true complement of `none`: some participant has an
-            // address. Never `1=1` — a conversation can hold only people the
+            // address. Never `1=1`, because a conversation can hold only people the
             // source named with no address (see `named_participant` in the
             // fixture), whose identities are of type `other`, and `any` must
             // not match those.
@@ -1093,9 +1065,9 @@ fn emit_kind_word(
     match (term.spec.word, v) {
         ("kind", Value::Choice(k)) => {
             let ty = match *k {
-                "direct" => IrConversationType::Individual,
-                "group" => IrConversationType::Group,
-                "orphaned" => IrConversationType::Orphaned,
+                "direct" => ConversationType::OneToOne,
+                "group" => ConversationType::Group,
+                "orphaned" => ConversationType::Orphaned,
                 _ => return Err(bad_value(term, "needs a value this word accepts")),
             }
             .as_str();
@@ -1168,11 +1140,11 @@ fn emit_kind_word(
         }
         ("trashed", Value::Choice(flag)) => {
             let not_trashed = match ctx.list {
-                ListKind::Contacts => NOT_TRASHED_CONTACT,
-                _ => NOT_TRASHED_CONVERSATION,
+                ListKind::Contacts => not_trashed_contact("ct"),
+                _ => not_trashed_conversation("c"),
             };
             let write = |o: &mut Sql| match *flag {
-                "no" => o.push(not_trashed),
+                "no" => o.push(&not_trashed),
                 "yes" => o.push(&format!("NOT ({not_trashed})")),
                 // "any" lifts the default and filters nothing: the one place
                 // an always-true predicate is legitimate, since the word

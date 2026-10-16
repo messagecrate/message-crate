@@ -8,6 +8,7 @@ use rand::TryRng;
 use sqlx::SqliteConnection;
 
 use crate::db::audit_trail::{self, AuditActor, AuditReason};
+use crate::db::unix_secs;
 
 const TOKEN_ALPHANUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -77,11 +78,21 @@ fn fill_random(buf: &mut [u8]) -> Result<()> {
     Ok(())
 }
 
-/// Current Unix time in seconds.
-fn now_unix_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+/// The `created_at` and `expires_at` a Session row stores, as Unix seconds.
+struct SessionTimes {
+    created_at: u64,
+    expires_at: u64,
+}
+
+impl SessionTimes {
+    /// A Session made at `now` that lasts `ttl_secs`.
+    fn at(now: DateTime<Utc>, ttl_secs: u64) -> Self {
+        let created_at = unix_secs(now);
+        Self {
+            created_at,
+            expires_at: created_at.saturating_add(ttl_secs),
+        }
+    }
 }
 
 /// The app a request says it comes from, and the Build that app reports.
@@ -114,12 +125,17 @@ pub struct Session {
     pub app: Option<ConnectingApp>,
 }
 
-/// Look up the live session this Bearer names (by hash). Expired rows are removed.
+/// Look up the session this Bearer names (by hash) that is live at `now`.
+/// Expired rows are removed.
 ///
 /// # Errors
 ///
 /// Returns an error when the lookup or delete fails.
-pub async fn lookup_session(conn: &mut SqliteConnection, token: &str) -> Result<Option<Session>> {
+pub async fn lookup_session(
+    conn: &mut SqliteConnection,
+    token: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<Session>> {
     let token_hash = hash_api_token(token);
     let found: Option<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT account_id, expires_at, app_kind, app_build \
@@ -127,11 +143,12 @@ pub async fn lookup_session(conn: &mut SqliteConnection, token: &str) -> Result<
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("look up the Session a token names")?;
     let Some((account_id, expires_at, app_kind, app_build)) = found else {
         return Ok(None);
     };
-    let now = now_unix_secs();
+    let now = unix_secs(now);
     // An `expires_at` that does not parse counts as expired.
     if !expires_at.parse::<u64>().is_ok_and(|expires| expires > now) {
         let _ = sqlx::query("DELETE FROM account_session_tokens WHERE token_hash = $1")
@@ -146,8 +163,8 @@ pub async fn lookup_session(conn: &mut SqliteConnection, token: &str) -> Result<
     }))
 }
 
-/// The hash of `account_id`'s live Session token, or `None` when the account
-/// has no Session or it has expired. A media link is signed over it, so the
+/// The hash of `account_id`'s Session token, or `None` when the account
+/// has no Session or it has expired by `now`. A media link is signed over it, so the
 /// link ends when this Session does: by logout, a new login, a password
 /// change, or its expiry.
 ///
@@ -157,14 +174,16 @@ pub async fn lookup_session(conn: &mut SqliteConnection, token: &str) -> Result<
 pub async fn live_session_hash(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<Option<String>> {
     let found: Option<(String, String)> = sqlx::query_as(
         "SELECT token_hash, expires_at FROM account_session_tokens WHERE account_id = $1",
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    let now = now_unix_secs();
+    .await
+    .context("read the account's Session token hash")?;
+    let now = unix_secs(now);
     Ok(found.and_then(|(token_hash, expires_at)| {
         expires_at
             .parse::<u64>()
@@ -196,7 +215,7 @@ pub async fn record_connecting_app(
     .bind(session.account_id)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("record the connecting app for {}", session.account_id))?;
+    .context("record the connecting app on the Session")?;
     Ok(())
 }
 
@@ -215,12 +234,13 @@ pub async fn connecting_app_for_account(
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the app recorded on the account's Session")?;
     Ok(found.and_then(|(kind, build)| ConnectingApp::from_columns(kind, build)))
 }
 
-/// Replace the account's session token with a new one and return the
-/// plaintext once, with the Unix second it now expires at. The Session
+/// Replace the account's session token with a new one made at `now` and
+/// return the plaintext once, with the Unix second it now expires at. The Session
 /// carries on: a password change renews it, and the caller records the
 /// renewed expiry in the Audit Trail.
 ///
@@ -234,11 +254,14 @@ pub async fn connecting_app_for_account(
 pub async fn rotate_account_session_token(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<(String, u64)> {
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
-    let created_at = unix_secs_string();
-    let expires = now_unix_secs().saturating_add(SESSION_TTL_SECS);
+    let SessionTimes {
+        created_at,
+        expires_at: expires,
+    } = SessionTimes::at(now, SESSION_TTL_SECS);
     sqlx::query(
         r"
         INSERT INTO account_session_tokens (account_id, token_hash, created_at, expires_at)
@@ -251,29 +274,31 @@ pub async fn rotate_account_session_token(
     )
     .bind(account_id)
     .bind(token_hash)
-    .bind(created_at)
+    .bind(created_at.to_string())
     .bind(expires.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("rotate session token for {account_id}"))?;
+    .context("replace the account's Session token")?;
     Ok((token, expires))
 }
 
 /// The Audit Trail's `logged_in` entry for the account's session, when a
-/// login made it and it has not expired. An expired row stays until its
+/// login made it and it has not expired by `now`. An expired row stays until its
 /// token is presented again, and its end is read from its expiry, so ending
 /// it again would rewrite when it ended.
 pub(crate) async fn live_login_entry(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<Option<i64>> {
     let found: Option<(Option<i64>, String)> = sqlx::query_as(
         "SELECT login_entry_id, expires_at FROM account_session_tokens WHERE account_id = $1",
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    let now = now_unix_secs();
+    .await
+    .context("read the login entry of the account's Session")?;
+    let now = unix_secs(now);
     // An `expires_at` that does not parse counts as expired, as in `lookup_session`.
     Ok(found.and_then(|(login_entry_id, expires_at)| {
         login_entry_id.filter(|_| expires_at.parse::<u64>().is_ok_and(|expires| expires > now))
@@ -287,7 +312,8 @@ pub(crate) async fn live_login_entry(
 /// `logged_in` entry names the app the request named, and the session row
 /// records that app from the start. Called by every route that opens a
 /// Session for a person: login, claiming the Message Crate, and registering.
-/// The entries it writes are stamped `now`.
+/// The Session and the entries it writes are stamped `now`, and the Session
+/// expires [`SESSION_TTL_SECS`] after it.
 ///
 /// # Errors
 ///
@@ -300,13 +326,15 @@ pub async fn open_session(
     now: DateTime<Utc>,
 ) -> Result<String> {
     let actor = AuditActor::logged_in_as(account_id);
-    if let Some(previous) = live_login_entry(conn, account_id).await? {
+    if let Some(previous) = live_login_entry(conn, account_id, now).await? {
         audit_trail::record_session_end(conn, previous, AuditReason::Replaced, actor, now).await?;
     }
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
-    let created_at = unix_secs_string();
-    let expires = now_unix_secs().saturating_add(SESSION_TTL_SECS);
+    let SessionTimes {
+        created_at,
+        expires_at: expires,
+    } = SessionTimes::at(now, SESSION_TTL_SECS);
     let login_entry_id =
         audit_trail::record_login(conn, (account_id, username), app, expires, now).await?;
     sqlx::query(
@@ -325,19 +353,19 @@ pub async fn open_session(
     )
     .bind(account_id)
     .bind(token_hash)
-    .bind(created_at)
+    .bind(created_at.to_string())
     .bind(expires.to_string())
     .bind(app.map(|app| app.kind.as_str()))
     .bind(app.map(|app| app.build.as_str()))
     .bind(login_entry_id)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("open a session for {account_id}"))?;
+    .context("store the account's new Session")?;
     Ok(token)
 }
 
-/// Create a fresh session token for an account and return the plaintext.
-/// No login made it, so the Audit Trail holds no entry for it: the tests and
+/// Create a session token for an account, made at `now`, and return the
+/// plaintext. No login made it, so the Audit Trail holds no entry for it: the tests and
 /// the credential matrix use it to stand a Session up directly.
 ///
 /// # Errors
@@ -347,11 +375,13 @@ pub async fn open_session(
 pub async fn insert_account_session_token(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<String> {
-    insert_account_session_token_with_ttl(conn, account_id, SESSION_TTL_SECS).await
+    insert_account_session_token_with_ttl(conn, account_id, SESSION_TTL_SECS, now).await
 }
 
-/// Create a fresh session token with a custom lifetime and return the plaintext.
+/// Create a session token made at `now` that lasts `ttl_secs`, and return
+/// the plaintext.
 ///
 /// # Errors
 ///
@@ -361,22 +391,25 @@ pub async fn insert_account_session_token_with_ttl(
     conn: &mut SqliteConnection,
     account_id: i64,
     ttl_secs: u64,
+    now: DateTime<Utc>,
 ) -> Result<String> {
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
-    let created_at = unix_secs_string();
-    let expires_at = format!("{}", now_unix_secs().saturating_add(ttl_secs));
+    let SessionTimes {
+        created_at,
+        expires_at,
+    } = SessionTimes::at(now, ttl_secs);
     sqlx::query(
         "INSERT INTO account_session_tokens (account_id, token_hash, created_at, expires_at)
          VALUES ($1, $2, $3, $4)",
     )
     .bind(account_id)
     .bind(token_hash)
-    .bind(created_at)
-    .bind(expires_at)
+    .bind(created_at.to_string())
+    .bind(expires_at.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("insert session token for {account_id}"))?;
+    .context("insert a Session token")?;
     Ok(token)
 }
 
@@ -395,13 +428,16 @@ pub async fn revoke_session_token(
     now: DateTime<Utc>,
 ) -> Result<bool> {
     let token_hash = hash_api_token(token);
-    let mut tx = crate::db::begin_write(conn).await?;
+    let mut tx = crate::db::begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let found: Option<(i64, Option<i64>)> = sqlx::query_as(
         "SELECT account_id, login_entry_id FROM account_session_tokens WHERE token_hash = $1",
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *tx)
-    .await?;
+    .await
+    .context("look up the Session a token names")?;
     let Some((account_id, login_entry_id)) = found else {
         return Ok(false);
     };
@@ -418,8 +454,9 @@ pub async fn revoke_session_token(
     sqlx::query("DELETE FROM account_session_tokens WHERE token_hash = $1")
         .bind(token_hash)
         .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
+        .await
+        .context("delete the Session")?;
+    tx.commit().await.context("commit the logout")?;
     Ok(true)
 }
 
@@ -445,7 +482,7 @@ pub async fn revoke_account_sessions(
     actor: AuditActor,
     now: DateTime<Utc>,
 ) -> Result<()> {
-    if let Some(login_entry_id) = live_login_entry(tx, account_id).await? {
+    if let Some(login_entry_id) = live_login_entry(tx, account_id, now).await? {
         audit_trail::record_session_end(tx, login_entry_id, AuditReason::Revoked, actor, now)
             .await?;
     }
@@ -453,13 +490,8 @@ pub async fn revoke_account_sessions(
         .bind(account_id)
         .execute(&mut **tx)
         .await
-        .with_context(|| format!("revoke sessions for {account_id}"))?;
+        .context("delete the account's Session")?;
     Ok(())
-}
-
-/// Current Unix time in seconds as a string, for timestamp columns.
-pub(crate) fn unix_secs_string() -> String {
-    format!("{}", now_unix_secs())
 }
 
 #[cfg(test)]
@@ -555,68 +587,121 @@ mod tests {
         assert_eq!(token, format!("mc-user-{expected}"));
     }
 
-    #[tokio::test]
-    async fn lookup_rejects_expired_session() {
-        let (pool, _dir) = crate::test_support::schema_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
-        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
-        let token = insert_account_session_token(&mut conn, 7).await.unwrap();
-        // Force expiry into the past.
-        sqlx::query("UPDATE account_session_tokens SET expires_at = '1'")
-            .execute(&mut *conn)
-            .await
-            .unwrap();
-        assert!(lookup_session(&mut conn, &token).await.unwrap().is_none());
-    }
+    use crate::test_support::fixed_instant;
 
-    /// A session that ran out an hour ago is compared with the real clock.
-    /// An `expires_at` of `'1'` is before any clock reading, so it cannot
-    /// show that the clock is read at all.
-    #[tokio::test]
-    async fn lookup_rejects_a_session_that_expired_an_hour_ago() {
-        let (pool, _dir) = crate::test_support::schema_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
-        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
-        let token = insert_account_session_token(&mut conn, 7).await.unwrap();
-        assert!(lookup_session(&mut conn, &token).await.unwrap().is_some());
-
-        let an_hour_ago = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            - 3600;
-        sqlx::query("UPDATE account_session_tokens SET expires_at = $1")
-            .bind(an_hour_ago.to_string())
-            .execute(&mut *conn)
-            .await
-            .unwrap();
-        assert!(lookup_session(&mut conn, &token).await.unwrap().is_none());
-    }
-
-    /// A login made now is good for thirty days: the row's expiry is that
-    /// far past the clock, give or take the seconds the insert took.
-    #[tokio::test]
-    async fn a_session_expires_thirty_days_after_login() {
-        const THIRTY_DAYS_SECS: u64 = 2_592_000;
-        let (pool, _dir) = crate::test_support::schema_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
-        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
-        let before = now_unix_secs();
-        insert_account_session_token(&mut conn, 7).await.unwrap();
-        let after = now_unix_secs();
-
+    /// The Unix second `expires_at` holds for account 7's session.
+    async fn stored_expiry(conn: &mut SqliteConnection) -> u64 {
         let expires: String = sqlx::query_scalar(
             "SELECT expires_at FROM account_session_tokens WHERE account_id = 7",
         )
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-        let expires: u64 = expires.parse().unwrap();
+        expires.parse().unwrap()
+    }
+
+    #[tokio::test]
+    async fn lookup_rejects_expired_session() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        let token = insert_account_session_token(&mut conn, 7, fixed_instant())
+            .await
+            .unwrap();
+        // Force expiry into the past.
+        sqlx::query("UPDATE account_session_tokens SET expires_at = '1'")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
         assert!(
-            (before + THIRTY_DAYS_SECS..=after + THIRTY_DAYS_SECS).contains(&expires),
-            "expires {} seconds after login",
-            expires - before
+            lookup_session(&mut conn, &token, fixed_instant())
+                .await
+                .unwrap()
+                .is_none()
         );
+    }
+
+    /// The lookup compares the expiry with the instant it is given: the
+    /// session is live up to the second before it expires, and refused from
+    /// that second on, and the refused row is removed.
+    #[tokio::test]
+    async fn lookup_rejects_a_session_from_the_second_it_expires() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        let token = insert_account_session_token_with_ttl(&mut conn, 7, 3600, fixed_instant())
+            .await
+            .unwrap();
+        let expiry = fixed_instant() + chrono::Duration::hours(1);
+
+        let last_second = expiry - chrono::Duration::seconds(1);
+        assert!(
+            lookup_session(&mut conn, &token, last_second)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            live_session_hash(&mut conn, 7, last_second)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(live_session_hash(&mut conn, 7, expiry).await.unwrap(), None);
+        assert!(
+            lookup_session(&mut conn, &token, expiry)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            lookup_session(&mut conn, &token, last_second)
+                .await
+                .unwrap()
+                .is_none(),
+            "the expired row was removed"
+        );
+    }
+
+    /// A login is good for thirty days from the instant it was made, and the
+    /// row's `created_at` is that instant: one login reads one clock.
+    #[tokio::test]
+    async fn a_session_expires_thirty_days_after_login() {
+        const THIRTY_DAYS_SECS: u64 = 2_592_000;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        open_session(&mut conn, 7, "alice", None, fixed_instant())
+            .await
+            .unwrap();
+
+        let login = unix_secs(fixed_instant());
+        let created: String = sqlx::query_scalar(
+            "SELECT created_at FROM account_session_tokens WHERE account_id = 7",
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        assert_eq!(created, login.to_string());
+        assert_eq!(stored_expiry(&mut conn).await, login + THIRTY_DAYS_SECS);
+    }
+
+    /// A password change renews the Session for thirty days from the
+    /// instant of the change.
+    #[tokio::test]
+    async fn a_rotated_session_expires_thirty_days_after_the_rotation() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        insert_account_session_token(&mut conn, 7, fixed_instant())
+            .await
+            .unwrap();
+        let later = fixed_instant() + chrono::Duration::days(3);
+        let (_token, expires) = rotate_account_session_token(&mut conn, 7, later)
+            .await
+            .unwrap();
+        assert_eq!(expires, unix_secs(later) + SESSION_TTL_SECS);
+        assert_eq!(stored_expiry(&mut conn).await, expires);
     }
 
     #[tokio::test]
@@ -624,20 +709,14 @@ mod tests {
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
-        let before = now_unix_secs();
-        let token = insert_account_session_token_with_ttl(&mut conn, 7, 120)
+        let token = insert_account_session_token_with_ttl(&mut conn, 7, 120, fixed_instant())
             .await
             .unwrap();
         assert!(token.starts_with("mc-user-"));
-        let expires: String = sqlx::query_scalar(
-            "SELECT expires_at FROM account_session_tokens WHERE account_id = 7",
-        )
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-        let exp: u64 = expires.parse().unwrap();
-        assert!(exp >= before + 120);
-        assert!(exp <= before + 130);
+        assert_eq!(
+            stored_expiry(&mut conn).await,
+            unix_secs(fixed_instant()) + 120
+        );
     }
 
     #[tokio::test]
@@ -645,13 +724,25 @@ mod tests {
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
-        let token = insert_account_session_token(&mut conn, 7).await.unwrap();
-        assert!(lookup_session(&mut conn, &token).await.unwrap().is_some());
+        let token = insert_account_session_token(&mut conn, 7, fixed_instant())
+            .await
+            .unwrap();
         assert!(
-            revoke_session_token(&mut conn, &token, crate::test_support::fixed_instant())
+            lookup_session(&mut conn, &token, fixed_instant())
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            revoke_session_token(&mut conn, &token, fixed_instant())
                 .await
                 .unwrap()
         );
-        assert!(lookup_session(&mut conn, &token).await.unwrap().is_none());
+        assert!(
+            lookup_session(&mut conn, &token, fixed_instant())
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     -- Conversation identity handle (`handles.id`): the other person in a one-to-one conversation, the group's chat id in a group conversation.
     chat_handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
-    -- Conversation shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'one-to-one' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
     -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,
@@ -297,7 +297,11 @@ CREATE TABLE IF NOT EXISTS tapbacks (
     -- 1 = reaction from the account holder; 0 = from someone else.
     is_from_me INTEGER NOT NULL,
     -- Reactor identity (`handles.id`); NULL when unknown.
-    sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL
+    sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL,
+    -- The name the source gave the reactor when it gave no address for them,
+    -- as an iMazing CSV does; NULL otherwise. Shown, never matched: it makes
+    -- no identity and no contact.
+    sender_display_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_tapbacks_message_id ON tapbacks (message_id);

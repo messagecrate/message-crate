@@ -70,7 +70,7 @@ pub enum CountryError {
     Failed(#[from] anyhow::Error),
 }
 
-impl From<CountryError> for crate::server::ApiError {
+impl From<CountryError> for crate::api_error::ApiError {
     fn from(error: CountryError) -> Self {
         match error {
             CountryError::Refused(message) => Self::validation(message),

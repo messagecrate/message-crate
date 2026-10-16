@@ -7,7 +7,7 @@
 //! when it wrote the file ([`names_on_disk`]).
 
 use crate::chat_directory::regular_files;
-use crate::parse::RawRow;
+use crate::read::RawRow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use message_csv::AttachmentCell;
@@ -390,9 +390,9 @@ pub(crate) fn mime_hint(attachment_type: &str, filename: &str) -> Option<String>
 mod tests {
     use super::*;
     use message_crate_core::{
-        AttachmentJob, CancelFlag, LogSink, MediaConfig, run_attachment_jobs,
+        AttachmentFiles, AttachmentJob, CancelFlag, LogSink, run_attachment_jobs,
     };
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use std::fs;
 
     /// The attachment-type column names the type when iMazing filled it in;
@@ -466,7 +466,7 @@ mod tests {
             "finding the file must not write files"
         );
         let source = source.expect("source path found");
-        let mut att = IrAttachment {
+        let mut att = Attachment {
             path: None,
             original_name: cell.meta.original_name,
             mime_type: cell.meta.mime_type,
@@ -486,7 +486,7 @@ mod tests {
         run_attachment_jobs(
             &mut jobs,
             &attachments,
-            &MediaConfig::default(),
+            AttachmentFiles::Originals,
             |_| fs::read(source).map(Some).or(Ok(None)),
             |_| {},
             &LogSink::none(),

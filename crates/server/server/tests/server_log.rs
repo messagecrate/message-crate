@@ -142,11 +142,11 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         .participant(CONTACT_EMAIL, Some(CONTACT_NAME));
     let message = message_line("g-1", MESSAGE_TEXT)
         .at(1_700_000_000_000)
-        .service(message_ir::IrService::Whatsapp)
-        .kind(message_ir::IrMessageKind::Sms)
+        .service(message_ir::Transport::Whatsapp)
+        .kind(message_ir::MessageKind::Sms)
         .sender(CONTACT_PHONE)
         .sender_display_name(CONTACT_NAME)
-        .attachment(message_ir::IrAttachment {
+        .attachment(message_ir::Attachment {
             digest_sha256: Some(sha256.clone()),
             ..attachment(
                 "attachments/photo.bin",
@@ -302,10 +302,11 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     );
 }
 
-/// Under `serve`, an Import Run's progress, its import, promote and dedupe
-/// lines, goes into the server's log, and nothing reaches standard output
-/// (#1945). The desktop app reads that output through a pipe a crashed app
-/// closes, and a print into it would panic the request part-way.
+/// Under `serve`, an Import Run's progress, the import and promote lines of its
+/// batch and the dedupe lines of its completion, goes into the server's log,
+/// and nothing reaches standard output (#1945). The desktop app reads that
+/// output through a pipe a crashed app closes, and a print into it would panic
+/// the request part-way.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_standard_output() {
     use reqwest::Method;
@@ -340,8 +341,8 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
         .participant(CONTACT_PHONE, Some(CONTACT_NAME));
     let message = message_line("g-1", MESSAGE_TEXT)
         .at(1_700_000_000_000)
-        .service(message_ir::IrService::Whatsapp)
-        .kind(message_ir::IrMessageKind::Sms)
+        .service(message_ir::Transport::Whatsapp)
+        .kind(message_ir::MessageKind::Sms)
         .sender(CONTACT_PHONE);
     let batch = format!("{}{}", header.line(), message.line()).into_bytes();
     let (status, answer) = call(
@@ -353,6 +354,16 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     )
     .await;
     assert_eq!(status, S::OK, "{answer}");
+    // The run's end runs the dedupe (#2040).
+    let (status, completed) = call(
+        base,
+        Method::POST,
+        &format!("/v1/imports/{run_id}/complete"),
+        Some(&alice),
+        json_body(&json!({ "status": "completed" })),
+    )
+    .await;
+    assert_eq!(status, S::OK, "{completed}");
     drop(server);
 
     let printed = std::fs::read_to_string(&stdout_path).unwrap();

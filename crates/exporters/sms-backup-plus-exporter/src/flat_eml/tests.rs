@@ -31,7 +31,7 @@ Hello from Alice\r\n",
 }
 
 #[test]
-fn individual_chat_uses_first_non_owner_address() {
+fn one_to_one_chat_uses_first_non_owner_address() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("msg.eml");
     std::fs::write(
@@ -375,6 +375,19 @@ fn a_call_log_mail_is_not_a_text_message() {
     assert!(message.is_none(), "{:?}", message.map(|m| m.text));
 }
 
+/// SMS Backup+ wrote `X-smssync-type` on a WhatsApp mail too, holding
+/// WhatsApp's own status, so only `X-smssync-datatype` tells it from a text
+/// message (#2912).
+#[test]
+fn a_whatsapp_mail_is_not_a_text_message() {
+    let fixture = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/whatsapp_mail.eml"),
+    )
+    .unwrap();
+    let message = parse(&fixture, &["5555550100"]);
+    assert!(message.is_none(), "{:?}", message.map(|m| m.text));
+}
+
 /// An MMS whose address list names the owner in national form
 /// (`07700900123` for `+447700900123`) is one-to-one with the other number.
 #[test]
@@ -384,7 +397,7 @@ fn the_owner_in_national_form_is_not_a_peer() {
         &["+447700900123"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
 }
 
 fn received_from(address: &str) -> ParsedMessage {
@@ -438,7 +451,7 @@ fn a_name_with_a_digit_does_not_move_the_sender() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, IrConversationType::Group);
+    assert_eq!(message.conversation_type, ConversationType::Group);
     assert_eq!(message.sender.unwrap().key(), "+14075550108");
 }
 
@@ -455,11 +468,7 @@ fn a_group_message_from_nobody_in_the_group_has_no_sender() {
             &["5555550100"],
         )
         .unwrap();
-        assert_eq!(
-            message.conversation_type,
-            IrConversationType::Group,
-            "{from}"
-        );
+        assert_eq!(message.conversation_type, ConversationType::Group, "{from}");
         assert!(message.sender.is_none(), "{from}: {:?}", message.sender);
     }
 }
@@ -474,7 +483,7 @@ fn a_sent_mms_to_three_recipients_is_a_group_of_three() {
     )
     .unwrap();
     assert!(message.is_from_me);
-    assert_eq!(message.conversation_type, IrConversationType::Group);
+    assert_eq!(message.conversation_type, ConversationType::Group);
     let mut keys: Vec<&str> = message.participants.iter().map(Handle::key).collect();
     keys.sort_unstable();
     assert_eq!(keys, ["+14075550150", "+14075550151", "carol@example.org"]);
@@ -497,7 +506,7 @@ fn a_received_group_mms_joins_the_group_the_owner_sent_to() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(received.conversation_type, IrConversationType::Group);
+    assert_eq!(received.conversation_type, ConversationType::Group);
     assert_eq!(received.chat_key, sent.chat_key);
     assert_eq!(received.sender.unwrap().key(), "carol@example.org");
 }
@@ -515,7 +524,7 @@ fn a_received_group_mms_that_does_not_name_the_owner_is_filed_under_its_from() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "carol@example.org");
     assert_eq!(
         message.sender.map(Handle::into_key).as_deref(),
@@ -535,7 +544,7 @@ fn a_received_group_mms_naming_neither_the_owner_nor_a_sender_has_no_sender() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "+14075550150");
     assert!(message.sender.is_none(), "{:?}", message.sender);
     assert_eq!(message.name_alias, None);
@@ -551,7 +560,7 @@ fn a_received_mms_from_one_person_stays_one_to_one() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "+14075550150");
 }
 
@@ -565,7 +574,7 @@ fn a_sent_message_to_one_recipient_stays_one_to_one() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "+14075550150");
 }
 

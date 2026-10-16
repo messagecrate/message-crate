@@ -23,7 +23,6 @@ pub fn run(
         convert_export(ConvertExportArgs {
             input_dir: input,
             output_dir: &output.directory,
-            scratch_dir: &context.scratch_dir,
             owner_phones: &source.owner_phones,
             convert_run,
         })

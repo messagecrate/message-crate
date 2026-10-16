@@ -16,6 +16,11 @@
 //! (`docs/adr/0008-the-owner-holds-no-messages.md`,
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 //!
+//! An entry keeps the id of the request that wrote it
+//! ([`crate::request_id::current`]), so the owner finds that request's lines
+//! in the server's log by it. An entry written outside a request, by a server
+//! command or the first start's Demo Account build, keeps none (#2276).
+//!
 //! A refused login as a username no account holds keeps the username,
 //! trimmed, only when `require_valid_username` accepts it
 //! ([`record_refused_login`]), because a person whose browser fills the
@@ -390,7 +395,7 @@ pub async fn record_run_credential(
     .bind(run_id)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("record what started run {run_id} in {table}"))?;
+    .context("record what started the run")?;
     Ok(())
 }
 
@@ -473,6 +478,12 @@ pub struct AuditEntry {
     /// or `null` when the text typed could not be a username. Kept after the
     /// account is deleted.
     pub username: Option<String>,
+    /// The id of the request that wrote the entry, as its response's
+    /// `x-request-id` and the request's lines in the server's log carry it.
+    /// `null` for an entry written outside a request, by a server command or
+    /// the Demo Account build of the server's first start, and for a run and
+    /// a session that expired, which no one request wrote.
+    pub request_id: Option<String>,
     /// `session_ended`: how the Session ended. `login_refused`: why.
     pub reason: Option<AuditReason>,
     /// The app the request named, `desktop` or `website`.
@@ -549,6 +560,7 @@ impl AuditEntry {
             account_id,
             account_deleted,
             username,
+            request_id: None,
             reason: None,
             app: None,
             app_build: None,
@@ -680,49 +692,53 @@ pub async fn record_about(
 }
 
 /// Record that `actor` is building the Demo Account with the `size` set of
-/// Demo Data, once the build has removed the Demo Account it replaces, if
-/// any: the `reset-demo` command and the build `serve` runs on a new
-/// database (#2686). The owner's build from Owner Home records its own entry
-/// when the owner asks for it, before the build starts.
+/// Demo Data, before the build removes the Demo Account it replaces: the
+/// owner's build from Owner Home, the `reset-demo` command and the build
+/// `serve` runs on a new database all record it here, so every reset is
+/// filed alike (#2977). It is stamped `now`.
 ///
-/// The entry is `demo_account_reset` when the build `replaced` a Demo
-/// Account and `demo_account_added` when there was none. It is about no
-/// account: the old Demo Account is deleted by then, and the new one not
-/// yet written. It is stamped `now`.
+/// The entry is `demo_account_reset` about the Demo Account when there is
+/// one, so it stays in that account's record once the build deletes it. It
+/// is `demo_account_added` about no account when there is none: an entry
+/// with a username and no account reads as one whose account was deleted.
 ///
 /// # Errors
 ///
-/// Returns an error when the insert fails.
-pub async fn record_demo_build_after_removal(
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_demo_build(
     conn: &mut SqliteConnection,
     actor: AuditActor,
     size: DemoDataSize,
-    replaced: bool,
     now: DateTime<Utc>,
 ) -> Result<()> {
-    record(conn, &demo_build_entry(actor, size, replaced, None), now).await?;
+    let demo =
+        account_profile::username_for_account(conn, account_profile::DEMO_ACCOUNT_ID).await?;
+    let about = demo
+        .as_deref()
+        .map(|username| (account_profile::DEMO_ACCOUNT_ID, username));
+    record(conn, &demo_build_entry(actor, size, about), now).await?;
     Ok(())
 }
 
+/// The id of the last Audit Trail entry, or 0 when there is none.
+pub async fn last_audit_entry_id(conn: &mut SqliteConnection) -> Result<i64> {
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM audit_entries")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the last Audit Trail entry")
+}
+
 /// The entry that records a build of the Demo Account by `actor` with the
-/// `size` set: `demo_account_reset` when it `replaced` a Demo Account,
-/// `demo_account_added` when there was none. It is about `account` when one
-/// is given, and about no account otherwise.
-#[must_use]
-pub fn demo_build_entry<'a>(
+/// `size` set: `demo_account_reset` about the Demo Account `replaced`, and
+/// `demo_account_added` about no account when there was none.
+fn demo_build_entry(
     actor: AuditActor,
     size: DemoDataSize,
-    replaced: bool,
-    account: Option<(i64, &'a str)>,
-) -> NewEntry<'a> {
-    let action = if replaced {
-        AuditAction::DemoAccountReset
-    } else {
-        AuditAction::DemoAccountAdded
-    };
-    let entry = match account {
-        Some(account) => NewEntry::about(action, actor, account),
-        None => NewEntry::about_no_account(action, actor),
+    replaced: Option<(i64, &str)>,
+) -> NewEntry<'_> {
+    let entry = match replaced {
+        Some(account) => NewEntry::about(AuditAction::DemoAccountReset, actor, account),
+        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, actor),
     };
     entry.with_details(Details {
         demo_data_size: Some(size),
@@ -742,12 +758,13 @@ async fn insert(
         .transpose()?;
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO audit_entries (
-            at, action, actor, account_id, username, reason, app_kind, app_build,
-            session_entry_id, session_expires_at, details
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            at, request_id, action, actor, account_id, username, reason, app_kind,
+            app_build, session_entry_id, session_expires_at, details
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id",
     )
     .bind(at_text(now))
+    .bind(crate::request_id::current())
     .bind(entry.action.as_str())
     .bind(entry.actor.as_str())
     .bind(entry.account_id)
@@ -760,7 +777,7 @@ async fn insert(
     .bind(details)
     .fetch_one(&mut *conn)
     .await
-    .with_context(|| format!("record the Audit Trail entry {}", entry.action.as_str()))?;
+    .context("insert an Audit Trail entry")?;
     Ok(id)
 }
 
@@ -848,7 +865,8 @@ pub async fn record_session_end(
         sqlx::query_as("SELECT account_id, username FROM audit_entries WHERE id = $1")
             .bind(login_entry_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the login an ending Session belongs to")?;
     let Some((account_id, username)) = login else {
         return Ok(());
     };
@@ -1098,7 +1116,10 @@ pub async fn page(
     if let Some(id) = id {
         count = count.bind(id);
     }
-    let total = count.fetch_one(&mut *conn).await?;
+    let total = count
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the Audit Trail entries")?;
 
     let page_sql = format!(
         "SELECT src, id FROM ({sources}) {filter}
@@ -1108,7 +1129,10 @@ pub async fn page(
     if let Some(id) = id {
         rows = rows.bind(id);
     }
-    let rows = rows.fetch_all(&mut *conn).await?;
+    let rows = rows
+        .fetch_all(&mut *conn)
+        .await
+        .context("read a page of the Audit Trail")?;
 
     let mut items = Vec::with_capacity(rows.len());
     for (src, id) in rows {
@@ -1178,14 +1202,15 @@ pub async fn deleted_accounts_page(
 /// An entry of `audit_entries` as the interface hands it out.
 async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
     let row = sqlx::query(concat!(
-        "SELECT id, at, action, actor, account_id, ",
+        "SELECT id, at, request_id, action, actor, account_id, ",
         account_deleted_sql!("audit_entries"),
         ", username, reason, app_kind, app_build, details
          FROM audit_entries WHERE id = $1"
     ))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Audit Trail entry")?;
     let Some(row) = row else { return Ok(None) };
     let details: Option<String> = row.try_get("details")?;
     let details: Details = match details {
@@ -1218,6 +1243,7 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
         contacts_deleted: details.contacts_deleted,
         asset_max_bytes: details.asset_max_bytes,
         demo_data_size: details.demo_data_size,
+        request_id: row.try_get("request_id")?,
         ..AuditEntry::new(
             row.try_get("id")?,
             action,
@@ -1242,7 +1268,8 @@ async fn load_expiry(conn: &mut SqliteConnection, login_id: i64) -> Result<Optio
     ))
     .bind(login_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the login of an expired Session")?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(AuditEntry {
         reason: Some(AuditReason::Expired),
@@ -1312,7 +1339,8 @@ async fn load_import(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audi
     )))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Import Run for the Audit Trail")?;
     let Some(row) = row else { return Ok(None) };
     let status: String = row.try_get("status")?;
     let status = ImportStatus::parse(&status)
@@ -1338,7 +1366,8 @@ async fn load_export(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audi
     )))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Export Run for the Audit Trail")?;
     let Some(row) = row else { return Ok(None) };
     let status: String = row.try_get("status")?;
     let status = ExportStatus::parse(&status)

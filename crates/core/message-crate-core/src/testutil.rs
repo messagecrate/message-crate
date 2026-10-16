@@ -4,8 +4,8 @@
 //! [`run_log_lines`] (behind `testutil`).
 
 use crate::{
-    ExportReport, IssueSink, OutputConfig, ProgressEvent, ProgressSink, RunContext, RunIssue,
-    RunLogLevel, parse_run_log_line,
+    ExportReport, IssueSink, LogSink, OutputConfig, ProgressEvent, ProgressSink, RunContext,
+    RunIssue, RunLogLevel, parse_run_log_line,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -45,6 +45,47 @@ pub fn attachment_totals() -> (ProgressSink, AttachmentTotals) {
         }
     });
     (progress, totals)
+}
+
+/// Every line and warning a test's log sink received, each with the level
+/// the desktop app would write it at, in the order the run sent them.
+pub type RecordedLog = Arc<Mutex<Vec<(RunLogLevel, String)>>>;
+
+/// A log sink, and every line it receives at `INFO` and every warning at
+/// `WARN`, as the desktop app's run log sink sorts them: what a test of a
+/// line's level asserts on.
+pub fn recorded_log() -> (LogSink, RecordedLog) {
+    let recorded: RecordedLog = Arc::new(Mutex::new(Vec::new()));
+    let lines = Arc::clone(&recorded);
+    let warnings = Arc::clone(&recorded);
+    let sink = LogSink::new(move |line| {
+        lines
+            .lock()
+            .unwrap()
+            .push((RunLogLevel::Info, line.to_string()));
+    })
+    .with_warnings(move |text| {
+        warnings
+            .lock()
+            .unwrap()
+            .push((RunLogLevel::Warn, text.to_string()));
+    });
+    (sink, recorded)
+}
+
+/// The level `recorded` holds the first line starting with `start` at,
+/// `None` when no line starts with it.
+///
+/// # Panics
+///
+/// Panics when the recording's lock is poisoned.
+pub fn level_of(recorded: &RecordedLog, start: &str) -> Option<RunLogLevel> {
+    recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(_, text)| text.starts_with(start))
+        .map(|(level, _)| *level)
 }
 
 /// Each line of the Import Run log at `path` as its level and text, in the
@@ -370,7 +411,7 @@ pub fn jsonl_test_run<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<
         context: RunContext::new(test_scratch_dir()),
         output: OutputConfig {
             media: crate::MediaConfig {
-                mode: media::MediaMode::Disabled,
+                files: crate::AttachmentFiles::Skip,
                 ..crate::MediaConfig::default()
             },
             ..OutputConfig::new(output, crate::OutputFormat::Jsonl)
@@ -433,21 +474,28 @@ pub fn set_modified_unix_ms(path: &Path, unix_ms: i64) {
         .expect("set the file's modification time");
 }
 
-/// Every JSON Lines file's `export.backup_taken_at_unix_ms` under `dir`, in
-/// file name order.
+/// For every JSON Lines file under `dir`, in file name order, the Backup
+/// Dates its messages carry (`backup_taken_at_unix_ms`), each date once, in
+/// the order first met. A file read from one backup gives one date.
 ///
 /// # Panics
 ///
-/// Panics when a file cannot be read or its first line is not JSON.
-pub fn jsonl_backup_dates(dir: &Path) -> Vec<Option<i64>> {
+/// Panics when a file cannot be read or a line is not JSON.
+pub fn jsonl_backup_dates(dir: &Path) -> Vec<Vec<Option<i64>>> {
     jsonl_names(dir)
         .iter()
         .map(|name| {
             let text = fs::read_to_string(dir.join(name)).expect("read jsonl");
-            let header: serde_json::Value =
-                serde_json::from_str(text.lines().next().expect("a header line"))
-                    .expect("the header is JSON");
-            header["export"]["backup_taken_at_unix_ms"].as_i64()
+            let mut dates = Vec::new();
+            for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+                let message: serde_json::Value =
+                    serde_json::from_str(line).expect("a message line is JSON");
+                let date = message["backup_taken_at_unix_ms"].as_i64();
+                if !dates.contains(&date) {
+                    dates.push(date);
+                }
+            }
+            dates
         })
         .collect()
 }

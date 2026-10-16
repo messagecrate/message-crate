@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
+import { awaitDesktopJob, type DesktopJobResult, invokeCancel } from "../lib/desktop/job";
 import type { DesktopJobName } from "../lib/desktopJob";
-import { awaitDesktopJob, type DesktopJobResult, invokeCancel } from "../lib/tauri";
 import type { ImportIssueEvent, ImportProgressEvent } from "../lib/types";
 
 type RunDesktopJobCallbacks = {

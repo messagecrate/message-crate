@@ -16,13 +16,13 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
     convert_export(ConvertExportArgs {
         inputs,
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -235,13 +235,13 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             inputs: &[input.as_path()],
             output_dir: tmp.path(),
-            scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,
             log: &LogSink::none(),
             phone_country: phone::country("US"),
             convert_run: ConvertRun {
+                scratch_dir: cache.path().to_path_buf(),
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()
@@ -358,15 +358,15 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     convert_export(ConvertExportArgs {
         inputs: &[input.path()],
         output_dir: output.path(),
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             transforms: ExportTransforms {
-                media: media::MediaMode::Disabled,
+                files: message_crate_core::AttachmentFiles::Skip,
                 ..ExportTransforms::none()
             },
             output_format: OutputFormat::Jsonl,
@@ -375,7 +375,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     })
     .unwrap();
 
-    let attachments: Vec<message_ir::IrAttachment> = fs::read_dir(output.path())
+    let attachments: Vec<message_ir::Attachment> = fs::read_dir(output.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
@@ -420,13 +420,13 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
     convert_export(ConvertExportArgs {
         inputs: &[input.as_path()],
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },
@@ -437,7 +437,7 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
     assert!(
         dates
             .iter()
-            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+            .all(|d| *d == vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]),
         "{dates:?}"
     );
 }

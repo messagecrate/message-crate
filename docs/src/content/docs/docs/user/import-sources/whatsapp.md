@@ -47,7 +47,7 @@ The phone number the WhatsApp account is registered to is also required, because
 
 ### Room on disk
 
-Staging has `wtsexporter` decrypt `msgstore.db.crypt15` into the Scratch Directory, `scratch` in the operating system's app-data directory, while it reads the backup.
+Staging has `wtsexporter` decrypt `msgstore.db.crypt15` into the Scratch Directory, `~/message-crate/scratch`, while it reads the backup.
 The decrypted database is larger than the `.crypt15` file, because the backup is compressed, and for a long-used WhatsApp account it can run to several GB.
 Nothing knows that size before the database is written, so Staging can't check for room first, as it does for every other backup.
 A disk that is full, or fills part-way, stops the run with `Not enough space on the disk that holds the Scratch Directory: there was no room left to finish reading this backup. Free some space on that disk and run the import again.`
@@ -110,5 +110,7 @@ When the backup doesn't hold it, Import uses **WhatsApp phone number** under **P
 - Status updates aren't imported, because a Status is a post to many people that expires after 24 hours, not a conversation. The run summary counts them, as in `Skipped 4 status updates`. A reply to someone's Status is a message in the one-to-one conversation with that person and is imported.
 - A quoted reply is linked to the message it quotes only when that message is in the same conversation of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message.
 - Channel posts aren't imported, because a Channel is a one-way feed from a publisher that nobody can write back to. The run summary counts them, as in `Skipped 3 channel posts`.
+- A group event, such as a member joining or leaving or the group being renamed, is imported as a line in the conversation that says what happened, as in "Ada joined the group". `wtsexporter` writes that line only for the kinds of event the backup states, and an event of any other kind is imported without it.
+- A poll is imported as the message it is, without its question and options, because `wtsexporter` doesn't read them from the backup.
 
 The run itself is the same as in [Import your backup](/docs/user/your-messages/import-your-backup/#start-the-import).

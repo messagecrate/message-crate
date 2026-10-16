@@ -37,9 +37,9 @@ use super::credential_matrix::{self, Operation, Shared, World};
 use super::dump_openapi_json;
 use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
+use crate::api_error::{BEARER_CHALLENGE, REFUSED_TOKEN_CHALLENGE};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
-use crate::server::{BEARER_CHALLENGE, REFUSED_TOKEN_CHALLENGE};
 use crate::test_support::{self, http_client};
 
 /// The one route nested three deep (`docs/architecture/http-api.md`,
@@ -279,7 +279,7 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
 /// document and any reading of it come from the same code in `shared_parts`.
 async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Value) -> Vec<String> {
     let mut broken = Vec::new();
-    if !crate::server::is_api_path(&op.path) {
+    if !crate::middleware::is_api_path(&op.path) {
         return broken;
     }
     let path = world.path_for(op);
@@ -468,7 +468,9 @@ enum DemoAnswer {
 /// server answers `demo-account-protected`, the document must list it. A
 /// `HEAD` answer has no body to tell the problem type by, so it is skipped.
 async fn demo_account_rule(world: &World<'_>, op: &Operation, spec: &Value) -> DemoAnswer {
-    if !crate::server::is_api_path(&op.path) || op.method == "head" || !takes_a_credential_only(op)
+    if !crate::middleware::is_api_path(&op.path)
+        || op.method == "head"
+        || !takes_a_credential_only(op)
     {
         return DemoAnswer::Other;
     }

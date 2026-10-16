@@ -4,14 +4,15 @@
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
-    ConversationHeader, Deletion, EarlierVersion, IdentityService, IdentityType, IrAttachment,
-    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
+    Attachment, ConversationHeader, Deletion, Direction, EarlierVersion, IdentityService,
+    IdentityType, Message, MessageKind, Participant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
 };
 use serde_json::Value;
 
 use super::ImportFailure;
 use crate::config::validate_source_id;
+use crate::db::staging::EarlierVersionRecord;
 use crate::models::{StoredTime, utc_timestamp_text};
 
 /// One JSONL conversation after IR → database-row mapping.
@@ -19,8 +20,9 @@ use crate::models::{StoredTime, utc_timestamp_text};
 pub enum ExportRecord {
     /// A conversation header record.
     Conversation(ConversationRecord),
-    /// One message record.
-    Message(MessageRecord),
+    /// One message record, boxed: a message holds far more than a header,
+    /// and every record of a file takes the larger variant's room.
+    Message(Box<MessageRecord>),
 }
 
 /// The conversation header of one JSONL conversation.
@@ -31,19 +33,14 @@ pub struct ConversationRecord {
     pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
-    /// Platform service, e.g. `imessage`.
-    pub service: Option<String>,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: String,
     /// Group label, when set.
     pub group_title: Option<String>,
     /// Participants of the conversation.
     pub participants: Vec<ParticipantRecord>,
-    /// IR `export.source` — used as `messages.source` for directory import.
+    /// IR `export.source`, used as `messages.source` for directory import.
     pub export_source: Option<String>,
-    /// When the backup the file was read from was made, in the form a
-    /// message's timestamp takes; `None` when the file does not say.
-    pub backup_taken_at: Option<StoredTime>,
 }
 
 impl ConversationRecord {
@@ -79,6 +76,10 @@ pub struct ParticipantRecord {
     pub handle: HandleValue,
     /// Display-name alias, when the export supplied one.
     pub name_alias: Option<String>,
+    /// The country the file says the source read this identity in, when it
+    /// names one: a phone number written without its `+` code is a number
+    /// there.
+    pub country: Option<&'static phone::Country>,
 }
 
 /// What a conversation file gave for a person: an address, or a name in
@@ -136,6 +137,9 @@ pub struct MessageRecord {
     /// Sender for incoming messages: the address, or the name when the
     /// source named the sender with no address.
     pub sender: Option<HandleValue>,
+    /// The country the file says the source read the sender's identity in,
+    /// as [`ParticipantRecord::country`] says.
+    pub sender_country: Option<&'static phone::Country>,
     /// The account holder's own address on this message, sent from or
     /// received at: the message's owner handle, else the header's.
     pub owner: Option<String>,
@@ -161,20 +165,10 @@ pub struct MessageRecord {
     /// The earlier versions of an edited message, in the order the file
     /// lists them; `text` is the final version.
     pub earlier_versions: Vec<EarlierVersionRecord>,
-}
-
-/// One earlier version of one part of an edited message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EarlierVersionRecord {
-    /// The part of the message this version belongs to.
-    pub part_index: i64,
-    /// The part's text in this version; `None` when the source recorded the
-    /// edit and not the text it replaced, as iMazing does.
-    pub text: Option<String>,
-    /// When this version was written, to the millisecond in the form
-    /// `MessageRecord::timestamp` takes; `None` when the source does not
-    /// record it.
-    pub edited_at: Option<StoredTime>,
+    /// The message's Backup Date: when the backup it was read from was
+    /// made, in the form a message's timestamp takes; `None` when the file
+    /// does not say.
+    pub backup_taken_at: Option<StoredTime>,
 }
 
 /// One attachment of an imported message.
@@ -211,6 +205,15 @@ pub struct TapbackRecord {
     pub is_from_me: bool,
     /// Reactor handle for incoming reactions.
     pub sender: Option<String>,
+    /// The name the source gave the reactor of an incoming reaction when it
+    /// gave no address, as an iMazing CSV does. Shown, never matched: it
+    /// makes no identity. Never set together with `sender`, and never on
+    /// the account holder's own reaction (`tapback_from_reaction`).
+    pub sender_display_name: Option<String>,
+    /// The country staging reads the reactor's identity in. The file names
+    /// none for a reactor, so staging takes the one its conversation names
+    /// for the same identity, as a participant or a sender.
+    pub sender_country: Option<&'static phone::Country>,
 }
 
 /// Strip Apple's attachment object-replacement character (U+FFFC) from body text.
@@ -282,7 +285,7 @@ pub fn parse_ir_lines(
                     detail: "a message appears before the conversation header".into(),
                 });
             }
-            let msg: IrMessage =
+            let msg: Message =
                 serde_json::from_value(value).map_err(|e| ImportFailure::Invalid {
                     line: line_no,
                     detail: format!("the message is not valid: {e}"),
@@ -292,7 +295,7 @@ pub fn parse_ir_lines(
             // already leave removed reactions out.
             if matches!(
                 msg.message_kind,
-                IrMessageKind::Tapback | IrMessageKind::StickerTapback
+                MessageKind::Tapback | MessageKind::StickerTapback
             ) {
                 continue;
             }
@@ -309,7 +312,7 @@ pub fn parse_ir_lines(
                     detail: format!("{e:#}"),
                 }
             })?;
-            out.push(ExportRecord::Message(record));
+            out.push(ExportRecord::Message(Box::new(record)));
         }
     }
     if missing_guid_total > 0 {
@@ -336,8 +339,8 @@ fn is_ir_header(value: &Value) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when the backup date is outside the times a timestamp
-/// can hold.
+/// Returns an error when a participant's `country` is not a country Message
+/// Crate knows.
 fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<ConversationRecord> {
     let export_source = {
         let s = header.export.source.trim();
@@ -347,45 +350,25 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
             Some(s.to_string())
         }
     };
-    let backup_taken_at = header
-        .export
-        .backup_taken_at_unix_ms
-        .map(|ms| {
-            format_utc_timestamp(ms)
-                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
-        })
-        .transpose()?;
     Ok(ConversationRecord {
         line,
         chat_identifier: header.conversation.chat_identifier.clone(),
-        // Platform identity for handles (phone | whatsapp), not SMS/iMessage/RCS.
-        service: Some(
-            if export_source
-                .as_deref()
-                .is_some_and(|s| s.eq_ignore_ascii_case("whatsapp"))
-            {
-                IdentityService::Whatsapp.as_str().to_string()
-            } else {
-                IdentityService::Phone.as_str().to_string()
-            },
-        ),
         conversation_type: header.conversation.conversation_type.as_str().to_string(),
         group_title: header.conversation.group_title.clone(),
         participants: header
             .conversation
             .participants
             .iter()
-            .filter_map(participant_from_ir)
-            .collect(),
+            .filter_map(|p| participant_from_ir(p).transpose())
+            .collect::<Result<_>>()?,
         export_source,
-        backup_taken_at,
     })
 }
 
 /// Map one IR message onto the server's message record. `header_owner` is the
 /// owner the conversation header names, used when the message names none.
 fn message_from_ir(
-    msg: &IrMessage,
+    msg: &Message,
     header_owner: Option<&str>,
     line: usize,
 ) -> Result<MessageRecord> {
@@ -395,7 +378,14 @@ fn message_from_ir(
             msg.timestamp_unix_ms
         )
     })?;
-    let is_from_me = msg.direction == IrDirection::Outgoing;
+    let backup_taken_at = msg
+        .backup_taken_at_unix_ms
+        .map(|ms| {
+            format_utc_timestamp(ms)
+                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
+        })
+        .transpose()?;
+    let is_from_me = msg.direction == Direction::Outgoing;
     let im = msg.imessage.as_ref();
     let text = {
         let t = msg.text.trim();
@@ -411,12 +401,15 @@ fn message_from_ir(
         .iter()
         .map(earlier_version_from_ir)
         .collect::<Result<Vec<_>>>()?;
-    let sender = if is_from_me {
-        None
+    let (sender, sender_country) = if is_from_me {
+        (None, None)
     } else {
-        handle_value(
-            msg.sender_identity.as_deref(),
-            msg.sender_display_name.as_deref(),
+        (
+            handle_value(
+                msg.sender_identity.as_deref(),
+                msg.sender_display_name.as_deref(),
+            ),
+            stated_country(msg.sender_country.as_deref())?,
         )
     };
 
@@ -427,6 +420,7 @@ fn message_from_ir(
         time_precision: msg.time_precision,
         is_from_me,
         sender,
+        sender_country,
         owner: msg
             .owner_identity
             .as_deref()
@@ -436,7 +430,7 @@ fn message_from_ir(
         subject: msg.subject.clone().filter(|s| !s.is_empty()),
         text,
         is_announcement: im.is_some_and(|i| i.announcement.is_some())
-            || matches!(msg.message_kind, IrMessageKind::Announcement),
+            || matches!(msg.message_kind, MessageKind::Announcement),
         announcement: im.and_then(|i| i.announcement.clone()),
         attachments: msg.attachments.iter().map(attachment_from_ir).collect(),
         tapbacks,
@@ -446,6 +440,7 @@ fn message_from_ir(
         }),
         deletion: msg.deletion,
         earlier_versions,
+        backup_taken_at,
     })
 }
 
@@ -475,10 +470,37 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 /// (`docs/architecture/contacts-identities-and-messages.md`). The file
 /// states no type: staging types an address by its service and shape
 /// (`db::handles::handle_type_on`).
-fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
+///
+/// # Errors
+///
+/// Returns an error when the participant's `country` is not a country
+/// Message Crate knows.
+fn participant_from_ir(p: &Participant) -> Result<Option<ParticipantRecord>> {
     let name_alias = p.display_name.clone();
-    let handle = handle_value(p.identity.as_deref(), p.display_name.as_deref())?;
-    Some(ParticipantRecord { handle, name_alias })
+    let Some(handle) = handle_value(p.identity.as_deref(), p.display_name.as_deref()) else {
+        return Ok(None);
+    };
+    Ok(Some(ParticipantRecord {
+        handle,
+        name_alias,
+        country: stated_country(p.country.as_deref())?,
+    }))
+}
+
+/// The country a file names for an identity, as an ISO 3166-1 alpha-2 code.
+///
+/// # Errors
+///
+/// Returns an error naming the code when it is not one of the countries
+/// `GET /v1/phone-countries` lists: a file that names a country names a
+/// real one, and a number is never read in a country nobody stated.
+fn stated_country(code: Option<&str>) -> Result<Option<&'static phone::Country>> {
+    code.map(|code| {
+        phone::country(code).with_context(|| {
+            format!("country {code:?} is not a country GET /v1/phone-countries lists")
+        })
+    })
+    .transpose()
 }
 
 /// The address, else the name the source gave with no address. `None` when
@@ -492,7 +514,7 @@ fn handle_value(address: Option<&str>, name: Option<&str>) -> Option<HandleValue
 }
 
 /// Map one IR attachment onto the server's attachment record.
-fn attachment_from_ir(a: &IrAttachment) -> AttachmentRecord {
+fn attachment_from_ir(a: &Attachment) -> AttachmentRecord {
     AttachmentRecord {
         path: a.path.clone(),
         original_name: a.original_name.clone(),
@@ -506,20 +528,29 @@ fn attachment_from_ir(a: &IrAttachment) -> AttachmentRecord {
 }
 
 /// One of a message's reactions as the row the server stores, under the
-/// person who reacted: the owner when `is_from_me`, else `reactor_identity`.
-/// A reaction is never given the author or the direction of the message it
-/// reacts to, because the reactor is rarely the author.
+/// person who reacted: the owner when `is_from_me`, else `reactor_identity`,
+/// else the name the source gave with no address (#2044). A reaction is
+/// never given the author or the direction of the message it reacts to,
+/// because the reactor is rarely the author.
 fn tapback_from_reaction(reaction: &Reaction) -> TapbackRecord {
+    let (sender, sender_display_name) = if reaction.is_from_me {
+        (None, None)
+    } else {
+        let sender = reaction.reactor_identity.as_deref().and_then(nonempty);
+        let name = match sender {
+            Some(_) => None,
+            None => reaction.reactor_display_name.as_deref().and_then(nonempty),
+        };
+        (sender, name)
+    };
     TapbackRecord {
         part_index: i64::from(reaction.part_index),
         kind: reaction.kind.clone(),
         emoji: reaction.emoji.clone(),
         is_from_me: reaction.is_from_me,
-        sender: if reaction.is_from_me {
-            None
-        } else {
-            reaction.reactor_identity.clone()
-        },
+        sender,
+        sender_display_name,
+        sender_country: None,
     }
 }
 

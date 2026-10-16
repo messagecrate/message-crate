@@ -58,9 +58,9 @@ fn convert(input_dir: &Path, output_dir: &Path) -> ExportReport {
     convert_export(ConvertExportArgs {
         input_dir,
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &[OWNER.into()],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -302,11 +302,11 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &[OWNER.into()],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             transforms: ExportTransforms {
-                media: media::MediaMode::Disabled,
+                files: message_crate_core::AttachmentFiles::Skip,
                 ..ExportTransforms::none()
             },
             output_format: OutputFormat::Csv,

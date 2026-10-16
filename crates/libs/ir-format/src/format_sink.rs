@@ -136,7 +136,7 @@ impl FormatSink {
     /// Unlike [`open_prepared`](Self::open_prepared), nothing is cleaned: the
     /// conversation files and staged attachments the interrupted run left
     /// behind are exactly the work a resumed run gets to skip. The directory
-    /// must already be an export directory — it carries the sentinel — because
+    /// must already be an export directory (it carries the sentinel), because
     /// resuming into anything else is a caller bug, not something to repair
     /// by cleaning.
     ///
@@ -195,9 +195,9 @@ impl FormatSink {
     /// The staged `attachments/` directory is removed so the output directory
     /// holds only the archive.
     ///
-    /// Folds the obfuscated-document count into `report`. Convert and
-    /// compress ran in the staging step before documents reached the sink,
-    /// so finish itself does no media work and reports none.
+    /// Folds the obfuscated-document count into `report`. Finish does no
+    /// media work: an export copies the original attachment files, and
+    /// converting them is the Media Stage's work.
     ///
     /// # Errors
     ///
@@ -243,12 +243,15 @@ fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
 pub fn write_documents_through_sink(
     documents: Vec<message_ir::ConversationDocument>,
     mut sink: FormatSink,
-    log: &message_crate_core::LogSink,
-    progress: &message_crate_core::ProgressSink,
-    cancel: &message_crate_core::CancelFlag,
+    sinks: message_crate_core::Sinks<'_>,
     report: &mut ExportReport,
 ) -> anyhow::Result<()> {
-    use message_crate_core::{CONVERSATION_FILES_PREPARING, ProgressEvent};
+    use message_crate_core::{CONVERSATION_FILES_PREPARING, ProgressEvent, Sinks};
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     let total = documents.len();
     log.emit("");
     log.emit(CONVERSATION_FILES_PREPARING.line(total as u64));
@@ -273,13 +276,12 @@ pub fn write_documents_through_sink(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use media::MediaMode;
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use std::fs;
 
     #[test]
     fn write_documents_through_sink_reports_prepare_progress() {
-        use message_crate_core::{CancelFlag, LogSink, ProgressEvent, ProgressSink};
+        use message_crate_core::{CancelFlag, LogSink, ProgressEvent, ProgressSink, Sinks};
         use std::sync::{Arc, Mutex};
 
         let tmp = crate::export_dir();
@@ -293,9 +295,11 @@ mod tests {
         write_documents_through_sink(
             vec![message_ir::testutil::sample_document("hello")],
             sink,
-            &LogSink::none(),
-            &progress,
-            &CancelFlag::default(),
+            Sinks {
+                log: &LogSink::none(),
+                progress: &progress,
+                cancel: &CancelFlag::default(),
+            },
             &mut report,
         )
         .unwrap();
@@ -318,7 +322,7 @@ mod tests {
         for chat in ["chat1", "chat2"] {
             let mut doc = message_ir::testutil::sample_document(chat);
             doc.conversation.chat_identifier = chat.into();
-            doc.conversation.conversation_type = message_ir::IrConversationType::Group;
+            doc.conversation.conversation_type = message_ir::ConversationType::Group;
             doc.conversation.group_title = Some("Family".into());
             sink.write_document(doc).unwrap();
         }
@@ -425,13 +429,13 @@ mod tests {
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
             let mut doc = message_ir::testutil::sample_document("with media");
-            doc.messages[0].attachments = vec![IrAttachment {
+            doc.messages[0].attachments = vec![Attachment {
                 path: Some(rel.into()),
                 ..message_ir::testutil::sample_attachment()
             }];
 
             let transforms = ExportTransforms {
-                media: MediaMode::Clone,
+                files: message_crate_core::AttachmentFiles::Originals,
                 ..ExportTransforms::none()
             };
             let mut sink = FormatSink::open(tmp.path(), format, transforms).unwrap();

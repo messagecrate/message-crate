@@ -118,7 +118,8 @@ desktop app makes the Logs Directory with mode `0700` and takes group and
 other access off one that has it, each time it opens a run's log, because a
 run log names the phone numbers and email addresses in its file names (below).
 Windows has no such modes, and there the Logs Directory takes the access of
-the user's own app-data directory it is in.
+the Message Crate Directory it is in, which is under the user's own
+profile directory.
 
 Why that is enough: everything on the computer runs as one user of the
 operating system, who can read the Logs Directory with or without Message

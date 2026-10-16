@@ -6889,7 +6889,7 @@
         "tags": [
           "Conversations"
         ],
-        "summary": "One conversation, in the same shape a list row already has — so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.",
+        "summary": "One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.",
         "description": "Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.",
         "operationId": "get_conversation",
         "parameters": [
@@ -9044,7 +9044,7 @@
           "Import"
         ],
         "summary": "Import one message-ir JSONL body.",
-        "description": "Every message needs a non-empty `guid`. A batch with a message without\none is refused with `422`, naming its lines, and nothing in it is stored.\nA message whose `guid` the source already holds is skipped, so a batch\nsent again after its answer was lost stores nothing twice.",
+        "description": "Every message needs a non-empty `guid`. A batch with a message without\none is refused with `422`, naming its lines, and nothing in it is stored.\nA message whose `guid` the source already holds is skipped, so a batch\nsent again after its answer was lost stores nothing twice. A batch hides\nno duplicates: the run's completion or discard hides them, once for the\nwhole run.",
         "operationId": "create_import_batch",
         "parameters": [
           {
@@ -9242,7 +9242,7 @@
           "Import"
         ],
         "summary": "Record the outcome of an Import Run started with POST /v1/imports.",
-        "description": "The answer is the run as it now stands.",
+        "description": "The answer is the run as it now stands.\n\nBefore it records the outcome, the server hides the duplicates of the\nwhole account, within one source and across sources. A batch hides\nnone, so the duplicates a run brings stay shown until the run ends. The\ntime this takes grows with every message the account holds, not with\nthe run's. A dedupe that fails leaves the run running. A server told to\nstop refuses the request with `503 Service Unavailable`\n(`server-stopping`), and the run stays running.",
         "operationId": "complete_import",
         "parameters": [
           {
@@ -9408,6 +9408,19 @@
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
             ]
+          },
+          "503": {
+            "description": "[`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/server-stopping"
+            ]
           }
         },
         "security": [
@@ -9563,7 +9576,7 @@
           "Import"
         ],
         "summary": "Discard a running Import Run, freeing the account's single slot.",
-        "description": "The answer is the run, now `cancelled`, with the issues the request carried.",
+        "description": "The answer is the run, now `cancelled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
         "operationId": "discard_import",
         "parameters": [
           {
@@ -9728,6 +9741,19 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          },
+          "503": {
+            "description": "[`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/server-stopping"
             ]
           }
         },
@@ -10902,6 +10928,7 @@
           "Contacts"
         ],
         "summary": "The countries a phone number written without its `+` code can be read in, by ISO code.",
+        "description": "Any logged-in person reads it, the owner included: the owner picks the country of a number on an account it opens from User Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).",
         "operationId": "list_phone_countries",
         "parameters": [
           {
@@ -10999,6 +11026,11 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "session": [
+              "owner"
+            ]
           }
         ]
       }
@@ -13990,6 +14022,7 @@
           "permissions_added",
           "permissions_removed",
           "reason",
+          "request_id",
           "scope_kind",
           "scope_list",
           "source",
@@ -14203,6 +14236,13 @@
             ],
             "description": "`session_ended`: how the Session ended. `login_refused`: why."
           },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The id of the request that wrote the entry, as its response's\n`x-request-id` and the request's lines in the server's log carry it.\n`null` for an entry written outside a request, by a server command or\nthe Demo Account build of the server's first start, and for a run and\na session that expired, which no one request wrote."
+          },
           "scope_kind": {
             "oneOf": [
               {
@@ -14390,7 +14430,7 @@
           "name",
           "unknown",
           "identities",
-          "direct_conversations",
+          "one_to_one_conversations",
           "group_conversations",
           "orphaned_conversations",
           "total_messages",
@@ -14398,12 +14438,6 @@
           "groups"
         ],
         "properties": {
-          "direct_conversations": {
-            "type": "integer",
-            "format": "int64",
-            "description": "One-to-one conversations the contact appears in.",
-            "minimum": 0
-          },
           "group_conversations": {
             "type": "integer",
             "format": "int64",
@@ -14436,6 +14470,12 @@
           "name": {
             "type": "string",
             "description": "The contact's preferred name; empty when it has none."
+          },
+          "one_to_one_conversations": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-to-one conversations the contact appears in.",
+            "minimum": 0
           },
           "orphaned_conversations": {
             "type": "integer",
@@ -14471,10 +14511,10 @@
         "required": [
           "id",
           "name",
-          "individual_conversations",
+          "one_to_one_conversations",
           "group_conversations",
           "orphaned_conversations",
-          "individual_message_count",
+          "one_to_one_message_count",
           "group_message_count",
           "orphaned_message_count",
           "end_date",
@@ -14505,21 +14545,21 @@
             "format": "int64",
             "description": "Contact id."
           },
-          "individual_conversations": {
+          "name": {
+            "type": "string",
+            "description": "The contact's preferred name; empty when it has none."
+          },
+          "one_to_one_conversations": {
             "type": "integer",
             "format": "int64",
             "description": "One-to-one conversations with the contact.",
             "minimum": 0
           },
-          "individual_message_count": {
+          "one_to_one_message_count": {
             "type": "integer",
             "format": "int64",
             "description": "Messages the contact sent in one-to-one conversations.",
             "minimum": 0
-          },
-          "name": {
-            "type": "string",
-            "description": "The contact's preferred name; empty when it has none."
           },
           "orphaned_conversations": {
             "type": "integer",
@@ -14839,7 +14879,7 @@
           },
           "token": {
             "type": "string",
-            "description": "Plaintext secret — returned once at creation."
+            "description": "Plaintext secret, returned once at creation."
           },
           "token_hint": {
             "type": "string",
@@ -15009,18 +15049,13 @@
             "type": "object",
             "required": [
               "source",
-              "account",
-              "dedupe"
+              "account"
             ],
             "properties": {
               "account": {
                 "type": "integer",
                 "format": "int64",
                 "description": "Id of the account the batch imported into."
-              },
-              "dedupe": {
-                "$ref": "#/components/schemas/DedupeCounts",
-                "description": "What the dedupe after this batch did, counted over the whole account\nrather than the batch alone. Every batch runs it."
               },
               "source": {
                 "type": "string",
@@ -15029,7 +15064,7 @@
             }
           }
         ],
-        "description": "Import result: the import counts and the dedupe counts."
+        "description": "Import result: the batch's import counts. The batch hides no\nduplicates; the run's end does, once for the whole run."
       },
       "CreateImportRequest": {
         "type": "object",
@@ -15210,42 +15245,6 @@
               "null"
             ],
             "description": "The error SQLite gave when the server asked for write-ahead logging\nas it started, in SQLite's words, such as `database is locked`.\n`null` when SQLite gave none: it turned write-ahead logging on, or\nkept another mode without an error."
-          }
-        }
-      },
-      "DedupeCounts": {
-        "type": "object",
-        "description": "What one dedupe did.",
-        "required": [
-          "keys_filled",
-          "exact_groups",
-          "exact_flagged",
-          "near_flagged"
-        ],
-        "properties": {
-          "exact_flagged": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages hidden as exact duplicates. In each group, the source with\nthe most copies sets how many stay shown, and the rest are hidden.",
-            "minimum": 0
-          },
-          "exact_groups": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Groups of messages that share one content key and come from two or\nmore sources. Copies one source alone holds are not a group.",
-            "minimum": 0
-          },
-          "keys_filled": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Content keys the pass wrote: one for each message whose key was\nmissing or whose inputs changed. A content key is a fingerprint of a\nmessage's conversation, direction, sender, time, text and attachments.\nThis is not a count of duplicates.",
-            "minimum": 0
-          },
-          "near_flagged": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages hidden as near duplicates: a message that matches one from\nanother source in the same conversation, from the same sender in the\nsame direction, within 2 seconds, with the same text or the same\nattachments.",
-            "minimum": 0
           }
         }
       },
@@ -15710,7 +15709,7 @@
           "service",
           "country_unknown",
           "conversations",
-          "direct_messages",
+          "one_to_one_messages",
           "group_messages",
           "orphaned_messages",
           "end_date",
@@ -15731,12 +15730,6 @@
             "type": "boolean",
             "description": "True for a phone number written without its `+` code whose country\nnobody has stated: it is stored as the digits typed and matches no\nnumber written with its `+` until a country is picked for it. A\nshort code, under 7 digits, has no `+` form and is never flagged."
           },
-          "direct_messages": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
-            "minimum": 0
-          },
           "end_date": {
             "type": [
               "string",
@@ -15748,6 +15741,12 @@
             "type": "integer",
             "format": "int64",
             "description": "The identity's messages in group conversations, on the same terms.",
+            "minimum": 0
+          },
+          "one_to_one_messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
             "minimum": 0
           },
           "orphaned_messages": {
@@ -15976,6 +15975,14 @@
           }
         }
       },
+      "ImportErrorKind": {
+        "type": "string",
+        "description": "What an Import Error is: `skip` when the run left the item out, `error`\nwhen the item failed.",
+        "enum": [
+          "skip",
+          "error"
+        ]
+      },
       "ImportIssue": {
         "type": "object",
         "description": "One stored import issue.",
@@ -15991,7 +15998,7 @@
             "description": "What the issue is about, such as a conversation file or an\nattachment's path."
           },
           "kind": {
-            "$ref": "#/components/schemas/RunIssueKind",
+            "$ref": "#/components/schemas/ImportErrorKind",
             "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it."
           },
           "reason": {
@@ -16020,7 +16027,7 @@
             "maxLength": 2000
           },
           "kind": {
-            "$ref": "#/components/schemas/RunIssueKind",
+            "$ref": "#/components/schemas/ImportErrorKind",
             "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it, such as an attachment it did not upload. Every\nother kind is refused with `422 Unprocessable Entity`: a note goes in\n`notes`, and the desktop app applies a `resolved` row to the record\nbefore it sends it."
           },
           "reason": {
@@ -16183,7 +16190,7 @@
               "string",
               "null"
             ],
-            "description": "When the backup the run read was made, UTC: the newest date its\nconversation files name (`export.backup_taken_at_unix_ms`). Null until\na file that names one is imported, and for a run whose files name none."
+            "description": "When the backup the run read was made, UTC: the newest Backup Date\nthe messages of its conversation files carry (each message's\n`backup_taken_at_unix_ms`). Null until a file that names one is\nimported, and for a run whose files name none."
           },
           "bytes_uploaded": {
             "type": "integer",
@@ -16492,7 +16499,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Raw identifiers — phone numbers, emails — as they appear in an export."
+            "description": "Raw identifiers (phone numbers, emails) as they appear in an export."
           }
         }
       },
@@ -16784,7 +16791,7 @@
           },
           "conversation_type": {
             "type": "string",
-            "description": "`individual`, `group`, or `orphaned` for a conversation of\norphaned messages: ones the backup holds without recording which\nconversation they were said in."
+            "description": "`one-to-one`, `group`, or `orphaned` for a conversation of\norphaned messages: ones the backup holds without recording which\nconversation they were said in."
           },
           "group_title": {
             "type": [
@@ -17542,6 +17549,7 @@
                 "permissions_added",
                 "permissions_removed",
                 "reason",
+                "request_id",
                 "scope_kind",
                 "scope_list",
                 "source",
@@ -17755,6 +17763,13 @@
                   ],
                   "description": "`session_ended`: how the Session ended. `login_refused`: why."
                 },
+                "request_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The id of the request that wrote the entry, as its response's\n`x-request-id` and the request's lines in the server's log carry it.\n`null` for an entry written outside a request, by a server command or\nthe Demo Account build of the server's first start, and for a run and\na session that expired, which no one request wrote."
+                },
                 "scope_kind": {
                   "oneOf": [
                     {
@@ -17842,10 +17857,10 @@
               "required": [
                 "id",
                 "name",
-                "individual_conversations",
+                "one_to_one_conversations",
                 "group_conversations",
                 "orphaned_conversations",
-                "individual_message_count",
+                "one_to_one_message_count",
                 "group_message_count",
                 "orphaned_message_count",
                 "end_date",
@@ -17876,21 +17891,21 @@
                   "format": "int64",
                   "description": "Contact id."
                 },
-                "individual_conversations": {
+                "name": {
+                  "type": "string",
+                  "description": "The contact's preferred name; empty when it has none."
+                },
+                "one_to_one_conversations": {
                   "type": "integer",
                   "format": "int64",
                   "description": "One-to-one conversations with the contact.",
                   "minimum": 0
                 },
-                "individual_message_count": {
+                "one_to_one_message_count": {
                   "type": "integer",
                   "format": "int64",
                   "description": "Messages the contact sent in one-to-one conversations.",
                   "minimum": 0
-                },
-                "name": {
-                  "type": "string",
-                  "description": "The contact's preferred name; empty when it has none."
                 },
                 "orphaned_conversations": {
                   "type": "integer",
@@ -18444,7 +18459,7 @@
                 "service",
                 "country_unknown",
                 "conversations",
-                "direct_messages",
+                "one_to_one_messages",
                 "group_messages",
                 "orphaned_messages",
                 "end_date",
@@ -18465,12 +18480,6 @@
                   "type": "boolean",
                   "description": "True for a phone number written without its `+` code whose country\nnobody has stated: it is stored as the digits typed and matches no\nnumber written with its `+` until a country is picked for it. A\nshort code, under 7 digits, has no `+` form and is never flagged."
                 },
-                "direct_messages": {
-                  "type": "integer",
-                  "format": "int64",
-                  "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
-                  "minimum": 0
-                },
                 "end_date": {
                   "type": [
                     "string",
@@ -18482,6 +18491,12 @@
                   "type": "integer",
                   "format": "int64",
                   "description": "The identity's messages in group conversations, on the same terms.",
+                  "minimum": 0
+                },
+                "one_to_one_messages": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
                   "minimum": 0
                 },
                 "orphaned_messages": {
@@ -18643,7 +18658,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the backup the run read was made, UTC: the newest date its\nconversation files name (`export.backup_taken_at_unix_ms`). Null until\na file that names one is imported, and for a run whose files name none."
+                  "description": "When the backup the run read was made, UTC: the newest Backup Date\nthe messages of its conversation files carry (each message's\n`backup_taken_at_unix_ms`). Null until a file that names one is\nimported, and for a run whose files name none."
                 },
                 "bytes_uploaded": {
                   "type": "integer",
@@ -19610,7 +19625,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Linked contact id: when the identity is on a Contact, or — for a\nparticipant with no identity — the contact the server bound the name to\ndirectly, since that is the only place the link is recorded for\nthem. Matches the `id` every other contact shape uses, so a caller\ncan compare the two without converting either."
+            "description": "Linked contact id: when the identity is on a Contact, or, for a\nparticipant with no identity, the contact the server bound the name to\ndirectly, since that is the only place the link is recorded for\nthem. Matches the `id` every other contact shape uses, so a caller\ncan compare the two without converting either."
           },
           "identity": {
             "type": [
@@ -19621,7 +19636,7 @@
           },
           "name": {
             "type": "string",
-            "description": "What to show for this person. Never empty — the server falls back to\nthe identity when nothing else names them, and to the name alone for\nsomeone a backup named without recording any address."
+            "description": "What to show for this person. Never empty: the server falls back to\nthe identity when nothing else names them, and to the name alone for\nsomeone a backup named without recording any address."
           },
           "service": {
             "type": [
@@ -19879,16 +19894,6 @@
         "enum": [
           "session",
           "api_token"
-        ]
-      },
-      "RunIssueKind": {
-        "type": "string",
-        "description": "What one row a run reports for its Import Run's record is: `skip` when\nthe run left the item out, `error` when the item failed, `note` when the\nrun did something with it worth knowing that is not a failure, and\n`resolved` when an earlier row about the same item no longer holds.",
-        "enum": [
-          "skip",
-          "error",
-          "note",
-          "resolved"
         ]
       },
       "RunStatus": {
@@ -20164,7 +20169,8 @@
           "kind",
           "is_from_me",
           "emoji",
-          "sender"
+          "sender",
+          "sender_display_name"
         ],
         "properties": {
           "emoji": {
@@ -20193,6 +20199,13 @@
               "null"
             ],
             "description": "The identity that reacted, for incoming reactions."
+          },
+          "sender_display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the source gave the reactor of an incoming reaction\nwhen it gave no address for them, as an iMazing export does;\n`null` when `sender` is set, and for the account holder's own\nreactions. A name is shown, never matched to a contact."
           }
         }
       },
@@ -20467,7 +20480,7 @@
             "description": "The stage the run moves to."
           },
           "summary": {
-            "description": "What the person approved at the Review they just passed, when they passed one.\n\nRecorded here rather than at completion so an approval survives a\nreload: the summary shown at a Review is recomputed from the directory, but\nwhat was approved is a different question and only the run\nremembers it. Absent leaves the stored `summary_json` untouched —\nmost stage changes carry nothing, and treating absent as null would\nthrow away the plan the outcome is later judged against."
+            "description": "What the person approved at the Review they just passed, when they passed one.\n\nRecorded here rather than at completion so an approval survives a\nreload: the summary shown at a Review is recomputed from the directory, but\nwhat was approved is a different question and only the run\nremembers it. Absent leaves the stored `summary_json` untouched, because\nmost stage changes carry nothing, and treating absent as null would\nthrow away the plan the outcome is later judged against."
           }
         }
       },

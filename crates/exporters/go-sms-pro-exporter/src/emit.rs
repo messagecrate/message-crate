@@ -1,10 +1,10 @@
 //! Convert a GO SMS Pro backup into the shared conversation structure
 //! ([`message_ir::ConversationDocument`]) every exporter writes, then write the chosen
-//! output format via [`ExportWriter`].
+//! output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_pdu_attachments;
-use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
-use android_fields::android_source;
+use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_file};
+use android_fields::android_vendor_fields;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
@@ -13,10 +13,10 @@ use message_crate_core::{
 };
 use message_csv::write_guarded_record;
 use message_ir::{
-    ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
-    ProjectionHooks, ensure_conversation,
+    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, Transport, VendorFields, ensure_conversation,
 };
-use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
+use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::{Handle, OwnerHandleSet};
 use std::collections::BTreeMap;
 use std::fs;
@@ -26,8 +26,6 @@ const EXPORT_SOURCE: &str = message_crate_core::Exporter::GoSmsPro.source_id();
 const EXPORT_TOOL: &str = "GO SMS Pro";
 /// This crate's version, recorded as the export tool version.
 const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Cap on retained skip-detail rows; overflow is counted and reported.
-pub(crate) const MAX_SKIP_DETAILS: usize = 20;
 
 /// Messages read from PDU files.
 pub(crate) const PDU_MESSAGES: Counter = Counter::new(
@@ -248,8 +246,8 @@ struct PduTarget {
     chat_id: String,
     is_group: bool,
     group_title: Option<String>,
-    /// The handle keys of a group's non-owner peers; empty for an
-    /// individual chat.
+    /// The handle keys of a group's non-owner peers; empty for a
+    /// one-to-one conversation.
     peers: Vec<String>,
 }
 
@@ -384,6 +382,8 @@ fn is_pdu_file(p: &Path) -> bool {
 /// GO SMS Pro deltas of the shared [`message_ir::pending_to_document`] projection.
 struct GoSmsProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl ProjectionHooks for GoSmsProjection {
@@ -391,8 +391,12 @@ impl ProjectionHooks for GoSmsProjection {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     /// Every handle is a [`Handle`] key already.
@@ -400,7 +404,11 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
@@ -427,7 +435,7 @@ impl ProjectionHooks for GoSmsProjection {
                     .or_insert_with(|| serde_json::Value::String(v.clone()));
             }
         }
-        android_source(conversation, message, fields)
+        android_vendor_fields(conversation, message, fields)
     }
 }
 
@@ -435,8 +443,6 @@ impl ProjectionHooks for GoSmsProjection {
 pub(crate) struct ConvertExportArgs<'a> {
     pub input_dir: &'a Path,
     pub output_dir: &'a Path,
-    /// the Scratch Directory, which the run's attachment spool goes under.
-    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub convert_run: ConvertRun,
 }
@@ -444,9 +450,9 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// Convert a GO SMS Pro export directory into the shared conversation structure
 /// ([`message_ir::ConversationDocument`]), then write the chosen output format.
 ///
-/// When `cancel` is set, cooperative cancellation is checked between XML files
-/// and between PDU files. A cancelled run returns
-/// what [`message_staging::Sinks::cancel`] says.
+/// Cancellation is checked between XML files, between PDU files, and
+/// between conversations. A canceled run returns
+/// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
 ///
@@ -456,16 +462,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input_dir,
         output_dir,
-        scratch_dir,
         owner_phones,
-        convert_run:
-            ConvertRun {
-                transforms,
-                output_format,
-                cancel,
-                resume,
-                issues,
-            },
+        convert_run,
     } = args;
     if !input_dir.is_dir() {
         bail!("input is not a directory: {}", input_dir.display());
@@ -477,74 +475,96 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         .primary_owner_handle()
         .expect("from_phones guarantees a phone owner handle");
 
-    // Clean the previous run's output, or keep it when `resume` is set.
-    let writer =
-        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(scratch_dir);
-    let mut ingest = Ingest {
-        owners: &owners,
-        spool: writer.spool(),
-        conversations: BTreeMap::new(),
-        report: ExportReport::with_issues(issues.clone()),
-        skips: SkipDetails::default(),
-    };
-    let xml_paths = sorted_files(input_dir, &is_xml_file)?;
-    let pdu_paths = sorted_files(input_dir, &is_pdu_file)?;
-    for xml_path in &xml_paths {
-        message_crate_core::check_cancel(&cancel)?;
-        ingest.ingest_xml(xml_path);
-    }
-    for pdu_path in &pdu_paths {
-        message_crate_core::check_cancel(&cancel)?;
-        ingest.ingest_pdu(pdu_path)?;
-    }
-    // GO SMS Pro writes no date of its own, so the backup is as new as the
-    // newest file it wrote.
-    let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
-        xml_paths.iter().chain(&pdu_paths).map(PathBuf::as_path),
-    );
-    message_crate_core::check_cancel(&cancel)?;
-    let Ingest {
-        conversations,
-        mut report,
-        skips,
-        ..
-    } = ingest;
-
-    let hooks = GoSmsProjection {
-        export: message_crate_core::export_meta(
-            EXPORT_SOURCE,
-            EXPORT_TOOL,
-            EXPORT_TOOL_VERSION,
-            Some(owner_identity),
-            None,
-            backup_taken_at_unix_ms,
-        ),
-    };
-    let mut documents = Vec::new();
-    for (chat_id, mut conversation) in conversations {
-        if let Some(document) =
-            project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
-        {
-            documents.push(document);
-        }
-    }
-
-    writer.finish(
-        documents,
-        &mut AttachmentSource::take_bytes,
-        &cancel,
-        &mut report,
-    )?;
-
-    write_skipped_csv(
+    convert_backup(
         &output_dir,
-        &skips.invalid_address,
-        skips.invalid_address_more,
-    )?;
-    write_skipped_csv(&output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
-    write_skipped_csv(&output_dir, &skips.no_party, skips.no_party_more)?;
+        convert_run,
+        WriterSetup {
+            spool: true,
+            archive: None,
+        },
+        |writer, cancel, report| {
+            let mut ingest = Ingest {
+                owners: &owners,
+                spool: writer.spool(),
+                conversations: BTreeMap::new(),
+                report,
+                skips: SkipDetails::default(),
+            };
+            let xml_paths = sorted_files(input_dir, &is_xml_file)?;
+            let pdu_paths = sorted_files(input_dir, &is_pdu_file)?;
+            for xml_path in &xml_paths {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_xml(xml_path);
+            }
+            for pdu_path in &pdu_paths {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_pdu(pdu_path)?;
+            }
+            // GO SMS Pro writes no date of its own, so the backup is as new
+            // as the newest file it wrote.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                xml_paths.iter().chain(&pdu_paths).map(PathBuf::as_path),
+            );
+            let Ingest {
+                conversations,
+                report,
+                skips,
+                ..
+            } = ingest;
+            Ok(ReadBackup {
+                conversations: conversations.into_iter().collect(),
+                project: GoSmsDocuments {
+                    hooks: GoSmsProjection {
+                        export: message_crate_core::export_meta(
+                            EXPORT_SOURCE,
+                            EXPORT_TOOL,
+                            EXPORT_TOOL_VERSION,
+                            Some(owner_identity),
+                            None,
+                        ),
+                        backup_taken_at_unix_ms,
+                    },
+                    output_dir: &output_dir,
+                    skips,
+                },
+                report,
+            })
+        },
+    )
+}
 
-    Ok(report)
+/// The projection of each conversation read, for [`convert_backup`], and
+/// the skipped-row CSVs it writes once the conversations are written.
+struct GoSmsDocuments<'a> {
+    hooks: GoSmsProjection,
+    output_dir: &'a Path,
+    skips: SkipDetails,
+}
+
+impl Project for GoSmsDocuments<'_> {
+    type Conversation = (String, PendingConversation);
+
+    fn project(
+        &mut self,
+        (chat_id, mut conversation): (String, PendingConversation),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        project_conversation(&chat_id, &mut conversation, &self.hooks, report)
+    }
+
+    fn after_write(self, _report: &ExportReport) -> Result<()> {
+        let Self {
+            output_dir, skips, ..
+        } = self;
+        write_skipped_csv(
+            output_dir,
+            &skips.invalid_address,
+            skips.invalid_address_more,
+        )?;
+        write_skipped_csv(output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
+        write_skipped_csv(output_dir, &skips.no_party, skips.no_party_more)?;
+        Ok(())
+    }
 }
 
 /// Every file under `dir` matching `predicate`, in path order so runs are repeatable.
@@ -806,7 +826,7 @@ mod tests {
     }
 
     /// The messages of one conversation as the shared projection writes them.
-    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::IrMessage>, ExportReport) {
+    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::Message>, ExportReport) {
         let hooks = GoSmsProjection {
             export: message_crate_core::export_meta(
                 EXPORT_SOURCE,
@@ -814,8 +834,8 @@ mod tests {
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
                 None,
-                None,
             ),
+            backup_taken_at_unix_ms: None,
         };
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = messages;

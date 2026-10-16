@@ -1,8 +1,7 @@
 use super::*;
-use media::testutil::PNG_1X1_RGB;
-use media::{CompressOptions, MediaMode};
-use message_crate_core::{CancelFlag, LogSink, ProgressSink};
-use message_ir::{ConversationDocument, IrAttachment};
+use message_crate_core::testutil::{level_of, recorded_log};
+use message_crate_core::{AttachmentFiles, CancelFlag, LogSink, ProgressSink, RunLogLevel, Sinks};
+use message_ir::{Attachment, ConversationDocument};
 use message_ir_format::read_conversation_jsonl;
 use std::fs;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -20,8 +19,8 @@ fn no_sinks() -> Sinks<'static> {
     }
 }
 
-fn att(name: &str) -> IrAttachment {
-    IrAttachment {
+fn att(name: &str) -> Attachment {
+    Attachment {
         original_name: Some(name.into()),
         ..message_ir::testutil::sample_attachment()
     }
@@ -55,13 +54,10 @@ fn unit_from(doc: ConversationDocument, sources: Vec<AttachmentSource>) -> Conve
     })
 }
 
-/// A drain in `media` mode, whose convert and compress run a fake ffmpeg
-/// that writes a few bytes for every file.
-fn options(media: MediaMode, resume: bool) -> WriteQueueOptions {
+/// A drain that stages `files` on one writer.
+fn options(files: AttachmentFiles, resume: bool) -> WriteQueueOptions {
     WriteQueueOptions {
-        media,
-        compress: CompressOptions::default(),
-        tools: std::sync::Arc::new(media::testutil::FakeTools::new()),
+        files,
         resume,
         writer_count: 1,
     }
@@ -99,7 +95,7 @@ fn drains_units_and_writes_conversation_files_last() {
             vec![AttachmentSource::Path(src)],
         ),
     ];
-    let report = drain(&out, units, &options(MediaMode::Clone, false)).unwrap();
+    let report = drain(&out, units, &options(AttachmentFiles::Originals, false)).unwrap();
 
     assert_eq!(report.conversations_written, 2);
     assert_eq!(report.conversations_skipped, 0);
@@ -144,7 +140,7 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
             ),
         ]
     };
-    drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
+    drain(&out, build(), &options(AttachmentFiles::Originals, false)).unwrap();
 
     let mut never = |_: &str, _: &mut AttachmentSource| -> Result<Option<Vec<u8>>, LoadError> {
         panic!("a skipped unit must not load anything")
@@ -152,7 +148,7 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
     let report = drain_write_queue_with_loader(
         &out,
         build(),
-        &options(MediaMode::Clone, true),
+        &options(AttachmentFiles::Originals, true),
         &mut never,
         no_sinks(),
     )
@@ -179,13 +175,13 @@ fn resume_rewrites_a_unit_whose_conversation_file_is_missing() {
             ),
         ]
     };
-    drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
+    drain(&out, build(), &options(AttachmentFiles::Originals, false)).unwrap();
 
     let doomed = conversation_file(&out, &doc_with(&test_number(7), 0));
     assert!(doomed.is_file());
     fs::remove_file(&doomed).unwrap();
 
-    let report = drain(&out, build(), &options(MediaMode::Clone, true)).unwrap();
+    let report = drain(&out, build(), &options(AttachmentFiles::Originals, true)).unwrap();
     assert_eq!(report.conversations_written, 1);
     assert_eq!(report.conversations_skipped, 1);
     assert!(doomed.is_file(), "the missing conversation file came back");
@@ -212,7 +208,7 @@ fn resume_rewrites_a_conversation_file_that_is_empty_or_cut_off() {
             ),
         ]
     };
-    drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
+    drain(&out, build(), &options(AttachmentFiles::Originals, false)).unwrap();
 
     let file_for = |who: &str| conversation_file(&out, &doc_with(who, 0));
     let intact = file_for(&test_number(6));
@@ -225,7 +221,7 @@ fn resume_rewrites_a_conversation_file_that_is_empty_or_cut_off() {
     fs::write(&cut_off, &full[..full.len() / 2]).unwrap();
     fs::write(&empty, b"").unwrap();
 
-    let report = drain(&out, build(), &options(MediaMode::Clone, true)).unwrap();
+    let report = drain(&out, build(), &options(AttachmentFiles::Originals, true)).unwrap();
     assert_eq!(report.conversations_written, 2);
     assert_eq!(report.conversations_skipped, 1);
 
@@ -252,7 +248,7 @@ fn disabled_mode_marks_not_copied_and_clears_paths() {
         doc_with(&test_number(6), 1),
         vec![AttachmentSource::Bytes(b"ignored".to_vec())],
     )];
-    drain(&out, units, &options(MediaMode::Disabled, false)).unwrap();
+    drain(&out, units, &options(AttachmentFiles::Skip, false)).unwrap();
 
     let doc =
         read_conversation_jsonl(&conversation_file(&out, &doc_with(&test_number(6), 0))).unwrap();
@@ -277,7 +273,7 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
             AttachmentSource::Bytes(b"present".to_vec()),
         ],
     )];
-    let report = drain(&out, units, &options(MediaMode::Clone, false)).unwrap();
+    let report = drain(&out, units, &options(AttachmentFiles::Originals, false)).unwrap();
     assert_eq!(report.conversations_written, 1);
 
     let doc =
@@ -304,14 +300,12 @@ fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
         ".jpg",
     );
     fs::create_dir_all(out.join("attachments").join(staged).join("occupied")).unwrap();
-    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink_lines = Arc::clone(&lines);
-    let sink = LogSink::new(move |l: &str| sink_lines.lock().unwrap().push(l.to_string()));
+    let (sink, recorded) = recorded_log();
 
     drain_write_queue_with_loader(
         &out,
         vec![unit_from(doc, vec![AttachmentSource::Bytes(bytes)])],
-        &options(MediaMode::Clone, false),
+        &options(AttachmentFiles::Originals, false),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Sinks {
             log: &sink,
@@ -320,12 +314,10 @@ fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
     )
     .unwrap();
 
-    let lines = lines.lock().unwrap().clone();
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("  attachment f0.jpg not staged: ")),
-        "{lines:?}"
+    assert_eq!(
+        level_of(&recorded, "  attachment f0.jpg not staged: "),
+        Some(RunLogLevel::Warn),
+        "the run went on without the attachment: {recorded:?}"
     );
 }
 
@@ -351,7 +343,7 @@ fn progress_lines_cover_all_units_with_global_counts() {
     drain_write_queue_with_loader(
         &out,
         units,
-        &options(MediaMode::Clone, false),
+        &options(AttachmentFiles::Originals, false),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Sinks {
             log: &sink,
@@ -394,7 +386,7 @@ fn parallel_drain_writes_every_unit() {
             )
         })
         .collect();
-    let mut options = options(MediaMode::Clone, false);
+    let mut options = options(AttachmentFiles::Originals, false);
     options.writer_count = 4;
 
     let report = drain_write_queue(&out, units, &options, no_sinks()).unwrap();
@@ -429,7 +421,7 @@ fn parallel_drain_stops_on_the_first_error() {
             )
         })
         .collect();
-    let mut options = options(MediaMode::Clone, false);
+    let mut options = options(AttachmentFiles::Originals, false);
     options.writer_count = 2;
 
     let err = drain_write_queue(&out, units, &options, no_sinks()).unwrap_err();
@@ -485,7 +477,7 @@ fn prepare_counts(events: &[ProgressEvent]) -> Vec<(usize, usize)> {
 fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<AttachmentCounts> {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
-    let mut options = options(MediaMode::Clone, false);
+    let mut options = options(AttachmentFiles::Originals, false);
     options.writer_count = writer_count;
     let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
     let sink_seen = Arc::clone(&seen);
@@ -642,7 +634,7 @@ fn parallel_progress_counts_are_snapshots_that_never_go_back() {
     let total = UNITS * PER_UNIT;
     let hinted = 100 * total as u64;
     let tmp = tempfile::tempdir().unwrap();
-    let mut options = options(MediaMode::Clone, false);
+    let mut options = options(AttachmentFiles::Originals, false);
     options.writer_count = 8;
     let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
     let sink_seen = Arc::clone(&seen);
@@ -709,7 +701,7 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
             )
         })
         .collect();
-    let mut options = options(MediaMode::Clone, false);
+    let mut options = options(AttachmentFiles::Originals, false);
     options.writer_count = 2;
 
     let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
@@ -745,12 +737,6 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
         })
     );
     assert_eq!(prepare_counts(&seen).last(), Some(&(4, 4)));
-    assert!(
-        !seen
-            .iter()
-            .any(|event| matches!(event, ProgressEvent::Media { .. })),
-        "clone mode converts nothing"
-    );
 }
 
 #[test]
@@ -770,7 +756,7 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
             ),
         ]
     };
-    drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
+    drain(&out, build(), &options(AttachmentFiles::Originals, false)).unwrap();
 
     // A resumed run finds both files and skips them; progress still
     // describes the whole import, so it walks 0 -> 1 -> 2 of 2.
@@ -780,7 +766,7 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
     drain_write_queue_with_loader(
         &out,
         build(),
-        &options(MediaMode::Clone, true),
+        &options(AttachmentFiles::Originals, true),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Sinks {
             progress: &sink,
@@ -802,9 +788,7 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     fs::create_dir_all(&out).unwrap();
     let missing = tmp.path().join("gone.jpg");
 
-    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink_lines = Arc::clone(&lines);
-    let sink = LogSink::new(move |l: &str| sink_lines.lock().unwrap().push(l.to_string()));
+    let (sink, recorded) = recorded_log();
 
     let units = vec![unit_from(
         doc_with(&test_number(6), 1),
@@ -813,7 +797,7 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     let report = drain_write_queue(
         &out,
         units,
-        &options(MediaMode::Clone, false),
+        &options(AttachmentFiles::Originals, false),
         Sinks {
             log: &sink,
             ..no_sinks()
@@ -822,14 +806,17 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     .unwrap();
 
     assert_eq!(report.conversations_written, 1, "the drain carries on");
-    let lines = lines.lock().unwrap().clone();
     let said = format!(
         "Attachment {} could not be read: no file there",
         missing.display()
     );
     assert!(
-        lines.contains(&said),
-        "an unreadable attachment says why, as a sentence, before it turns into a chip: {lines:?}"
+        recorded
+            .lock()
+            .unwrap()
+            .contains(&(RunLogLevel::Warn, said)),
+        "an unreadable attachment says why, as a sentence, at WARN, since the run goes on \
+         without it, before it turns into a chip: {recorded:?}"
     );
 
     let doc =
@@ -854,7 +841,13 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
             vec![AttachmentSource::Path(gone.clone())],
         )]
     };
-    drain_write_queue(&out, build(), &options(MediaMode::Clone, false), no_sinks()).unwrap();
+    drain_write_queue(
+        &out,
+        build(),
+        &options(AttachmentFiles::Originals, false),
+        no_sinks(),
+    )
+    .unwrap();
 
     let lines = Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = Arc::clone(&lines);
@@ -862,7 +855,7 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
     let report = drain_write_queue(
         &out,
         build(),
-        &options(MediaMode::Clone, true),
+        &options(AttachmentFiles::Originals, true),
         Sinks {
             log: &sink,
             ..no_sinks()
@@ -894,12 +887,12 @@ fn a_drain_the_disk_cannot_hold_is_refused_before_anything_is_written() {
     let out = tmp.path().join("out");
     fs::create_dir_all(&out).unwrap();
 
-    let err = drain(&out, hinted(), &options(MediaMode::Clone, false)).unwrap_err();
+    let err = drain(&out, hinted(), &options(AttachmentFiles::Originals, false)).unwrap_err();
     assert!(err.to_string().contains("Not enough space"), "{err}");
     let err = drain_write_queue(
         &out,
         hinted(),
-        &options(MediaMode::Clone, false),
+        &options(AttachmentFiles::Originals, false),
         no_sinks(),
     )
     .unwrap_err();
@@ -930,7 +923,7 @@ fn take_bytes_moves_the_bytes_out_of_the_attachment() {
 fn group(chat_id: &str, title: Option<&str>, text: &str) -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document(text);
     doc.conversation.chat_identifier = chat_id.into();
-    doc.conversation.conversation_type = message_ir::IrConversationType::Group;
+    doc.conversation.conversation_type = message_ir::ConversationType::Group;
     doc.conversation.group_title = title.map(str::to_string);
     doc
 }
@@ -969,7 +962,7 @@ fn conversations_that_share_a_file_name_are_each_written() {
         unit_from(group("chat5", Some("family"), "lower-case family"), vec![]),
     ];
 
-    let report = drain(&out, units, &options(MediaMode::Clone, false)).unwrap();
+    let report = drain(&out, units, &options(AttachmentFiles::Originals, false)).unwrap();
 
     assert_eq!(report.conversations_written, 5);
     assert_eq!(
@@ -996,9 +989,9 @@ fn a_resumed_run_finds_the_names_a_clash_was_given() {
             unit_from(group("chat2", Some("Family"), "second"), vec![]),
         ]
     };
-    drain(&out, units(), &options(MediaMode::Clone, false)).unwrap();
+    drain(&out, units(), &options(AttachmentFiles::Originals, false)).unwrap();
 
-    let report = drain(&out, units(), &options(MediaMode::Clone, true)).unwrap();
+    let report = drain(&out, units(), &options(AttachmentFiles::Originals, true)).unwrap();
 
     assert_eq!(
         report.conversations_skipped, 2,
@@ -1017,63 +1010,16 @@ fn the_same_chat_twice_is_refused_rather_than_overwritten() {
         unit_from(group("chat1", Some("Family"), "second"), vec![]),
     ];
 
-    let err = drain(&out, units, &options(MediaMode::Clone, false)).unwrap_err();
+    let err = drain(&out, units, &options(AttachmentFiles::Originals, false)).unwrap_err();
 
     assert!(err.to_string().contains("would both be written"), "{err:#}");
     assert_eq!(staged_texts(&out), vec![], "nothing was written");
 }
 
-#[test]
-fn clone_mode_converts_nothing() {
-    let tmp = tempfile::tempdir().unwrap();
-    let out = tmp.path().join("out");
-    fs::create_dir_all(&out).unwrap();
-    let units = vec![unit_from(
-        doc_with(&test_number(6), 1),
-        vec![AttachmentSource::Bytes(b"plain".to_vec())],
-    )];
-    let report = drain(&out, units, &options(MediaMode::Clone, false)).unwrap();
-    assert_eq!(report.media, media::MediaReport::default());
-}
-
-#[test]
-fn convert_runs_after_the_drain_stages_originals() {
-    let tmp = tempfile::tempdir().unwrap();
-    let out = tmp.path().join("out");
-    fs::create_dir_all(&out).unwrap();
-
-    let mut doc = doc_with(&test_number(6), 1);
-    doc.messages[0].attachments[0].original_name = Some("shot.png".into());
-    let units = vec![unit_from(
-        doc,
-        vec![AttachmentSource::Bytes(PNG_1X1_RGB.to_vec())],
-    )];
-
-    let report = drain(&out, units, &options(MediaMode::Convert, false)).unwrap();
-
-    assert_eq!(report.conversations_written, 1);
-    assert_eq!(
-        report.media.processed, 1,
-        "the convert run after the drain converted the staged original"
-    );
-
-    let written =
-        read_conversation_jsonl(&conversation_file(&out, &doc_with(&test_number(6), 0))).unwrap();
-    let path = written.messages[0].attachments[0].path.as_deref().unwrap();
-    assert!(
-        path.ends_with(".jpg"),
-        "convert repoints the attachment at its derivative: {path}"
-    );
-    assert!(
-        out.join(path).is_file(),
-        "the derivative the conversation names is on disk"
-    );
-}
-
-/// With media turned off the run writes text only, so the size of the
+/// With no attachment files copied the run writes text only, so the size of the
 /// attachments the backup names cannot refuse it, by either drain.
 #[test]
-fn media_disabled_is_not_refused_for_attachments_it_will_not_write() {
+fn skipped_attachments_are_not_refused_for_files_it_will_not_write() {
     let hinted = || {
         let mut unit = unit_from(
             doc_with(&test_number(6), 1),
@@ -1086,7 +1032,7 @@ fn media_disabled_is_not_refused_for_attachments_it_will_not_write() {
 
     let out = tmp.path().join("one");
     fs::create_dir_all(&out).unwrap();
-    let result = drain(&out, hinted(), &options(MediaMode::Disabled, false));
+    let result = drain(&out, hinted(), &options(AttachmentFiles::Skip, false));
     assert!(result.is_ok(), "refused: {:?}", result.err());
 
     let out = tmp.path().join("pool");
@@ -1094,7 +1040,7 @@ fn media_disabled_is_not_refused_for_attachments_it_will_not_write() {
     let result = drain_write_queue(
         &out,
         hinted(),
-        &options(MediaMode::Disabled, false),
+        &options(AttachmentFiles::Skip, false),
         no_sinks(),
     );
     assert!(result.is_ok(), "refused: {:?}", result.err());
@@ -1119,7 +1065,11 @@ fn a_missing_attachment_is_not_counted_against_the_disk() {
         "a Missing source keeps no hint, so nothing sums it"
     );
 
-    let result = drain(tmp.path(), vec![unit], &options(MediaMode::Clone, false));
+    let result = drain(
+        tmp.path(),
+        vec![unit],
+        &options(AttachmentFiles::Originals, false),
+    );
     assert!(result.is_ok(), "refused: {:?}", result.err());
 }
 
@@ -1162,7 +1112,12 @@ fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
             vec![AttachmentSource::Bytes(bytes.to_vec())],
         )
     };
-    drain(&out, vec![unit(6, b"a")], &options(MediaMode::Clone, false)).unwrap();
+    drain(
+        &out,
+        vec![unit(6, b"a")],
+        &options(AttachmentFiles::Originals, false),
+    )
+    .unwrap();
     let first = conversation_files(&out);
     assert_eq!(first.len(), 1);
 
@@ -1177,7 +1132,7 @@ fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
     drain_write_queue_with_loader(
         &out,
         vec![unit(6, b"a"), unit(7, b"b")],
-        &options(MediaMode::Clone, true),
+        &options(AttachmentFiles::Originals, true),
         &mut load,
         Sinks {
             progress: &sink,
@@ -1214,7 +1169,7 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
             )
         })
         .collect();
-    let mut options = options(MediaMode::Clone, false);
+    let mut options = options(AttachmentFiles::Originals, false);
     options.writer_count = 2;
     let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
     let sink_seen = Arc::clone(&seen);
@@ -1240,55 +1195,45 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
     assert_eq!(done, written);
 }
 
-/// A drain that compresses sends why HEVC failed to its log's warnings,
-/// once, from the Media pass after the drain (#2801).
+/// A Cancel seen while a conversation's attachments are staged ends the
+/// drain with [`message_crate_core::Cancelled`] in its error chain, not with
+/// its text, so the desktop app tells it from a failure whatever context is
+/// added on the way out (#2077).
 #[test]
-fn a_compressing_drain_warns_why_hevc_failed() {
+fn a_cancel_while_attachments_are_staged_stays_a_cancel() {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
     fs::create_dir_all(&out).unwrap();
-    let mut doc = doc_with(&test_number(7), 1);
-    doc.messages[0].attachments[0].original_name = Some("clip.mov".into());
+    let cancel = CancelFlag::default();
     let units = vec![unit_from(
-        doc,
-        vec![AttachmentSource::Bytes(b"an h264 video".to_vec())],
+        doc_with(&test_number(8), 2),
+        vec![
+            AttachmentSource::Bytes(b"first".to_vec()),
+            AttachmentSource::Bytes(b"second".to_vec()),
+        ],
     )];
-    let options = WriteQueueOptions {
-        compress: CompressOptions {
-            min_size_bytes: 0,
-            ..CompressOptions::default()
-        },
-        tools: Arc::new(
-            media::testutil::FakeTools::new()
-                .probing(media::testutil::video_probe("h264", 30.0))
-                .failing_on("libx265"),
-        ),
-        ..options(MediaMode::Compress, false)
-    };
-    let warnings = Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink_warnings = Arc::clone(&warnings);
-    let log =
-        LogSink::none().with_warnings(move |w| sink_warnings.lock().unwrap().push(w.to_string()));
 
-    let report = drain_write_queue_with_loader(
+    let error = drain_write_queue_with_loader(
         &out,
         units,
-        &options,
-        &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
+        &options(AttachmentFiles::Originals, false),
+        &mut |_: &str, source: &mut AttachmentSource| {
+            // The Cancel comes while the first attachment loads.
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            load_attachment_source(source)
+        },
         Sinks {
-            log: &log,
+            cancel: &cancel,
             ..no_sinks()
         },
     )
-    .unwrap();
+    .expect_err("a canceled drain fails")
+    .context("write a conversation");
 
-    assert_eq!(report.media.processed, 1);
-    let warnings = warnings.lock().unwrap();
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
-        warnings[0]
-            .starts_with("HEVC encoding failed, so videos were compressed as H.264 instead: ")
-            && warnings[0].ends_with("libx265: fake failure on '<input>'"),
-        "{warnings:?}"
+        error
+            .chain()
+            .any(|e| e.is::<message_crate_core::Cancelled>()),
+        "{error:#}"
     );
 }

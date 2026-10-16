@@ -20,7 +20,7 @@ function toIdentityRow(h: ContactHandle): IdentityRow {
     start_date: h.start_date ?? null,
     end_date: h.end_date ?? null,
     conversations: h.conversations,
-    direct_messages: h.direct_messages,
+    one_to_one_messages: h.one_to_one_messages,
     group_messages: h.group_messages,
     orphaned_messages: h.orphaned_messages,
   };

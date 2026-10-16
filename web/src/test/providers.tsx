@@ -3,8 +3,8 @@
  *
  * Anything using `useRouteQuery` needs two things from the tree: a query client
  * to cache into, and a logged-in account to name the cache entry after. This
- * supplies the first. The second comes from `useAuth`, which tests fake in the
- * usual way — see `mockedAuth` below for the shape.
+ * supplies the first. The second comes from `useAuth`, which a test fakes with
+ * `authModule` below.
  *
  * The client is built once per mounted `Providers`, so no test can read a
  * cache another test filled, and retries are off so a rejected request fails
@@ -22,6 +22,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type RenderOptions, type RenderResult, render } from "@testing-library/react";
 import { type ReactElement, type ReactNode, useState } from "react";
+import type { useAuth } from "../lib/authContext";
 
 /**
  * A query client with retries and background refetching off.
@@ -32,18 +33,24 @@ import { type ReactElement, type ReactNode, useState } from "react";
  * written ahead of the screen that reads it (a seed from a mutation's answer),
  * or one the screen read, stopped reading, and reads again (a conversation
  * selected again after another).
+ *
+ * Every entry is stale at once, so a screen that reads one asks the server
+ * again. A test that seeds an entry and means the screen to show it without
+ * asking passes `neverStale`.
  */
 export function testQueryClient({
   keepUnread = false,
+  neverStale = false,
 }: {
   keepUnread?: boolean;
+  neverStale?: boolean;
 } = {}): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
         refetchOnWindowFocus: false,
-        staleTime: 0,
+        staleTime: neverStale ? Number.POSITIVE_INFINITY : 0,
         gcTime: keepUnread ? Number.POSITIVE_INFINITY : 0,
       },
       mutations: { retry: false },
@@ -69,15 +76,51 @@ export function renderWithProviders(ui: ReactElement, options?: RenderOptions): 
   return render(ui, { wrapper: Providers, ...options });
 }
 
+/** What `useAuth` returns, the whole of it. */
+type AuthValue = ReturnType<typeof useAuth>;
+
 /**
- * What the mocked `useAuth` from `vi.mock("<path>/authContext")` should
- * return, so a server query has an account to name its cache entry after.
+ * What the mocked `useAuth` returns: a logged-in account, so a server query
+ * has an account to name its cache entry after, and every other field the
+ * real context carries, as a function that does nothing.
  *
  * Any id works; what matters is that it is stable within a test, since a
  * changing account id is a different cache entry by design.
  */
 export const mockedAuth = {
+  serverUrl: "http://127.0.0.1:8080",
   accountId: 7,
   token: "test-token",
   isAuthenticated: true,
-};
+  login: async () => {},
+  updateToken: () => {},
+  logout: async () => {},
+  setServer: () => {},
+  retrySavedLogin: () => {},
+} satisfies AuthValue;
+
+/**
+ * The module a test's `vi.mock("<path>/lib/authContext", () => authModule())`
+ * puts in place of the real one: `useAuth` returns `mockedAuth` with
+ * `overrides` laid over it.
+ *
+ * `overrides` is typed against the real context, so a field the app starts
+ * reading is there in every test, and a misspelled one fails to compile.
+ * A test that changes the login between renders passes a function, which is
+ * read on every call; an object is read once.
+ *
+ * The `vi.mock` call stays in each test file, because Vitest hoists only the
+ * `vi.mock` calls written in the test file itself. Vitest runs the factory
+ * when a module first imports `authContext`; when that module is imported
+ * before this one, `authModule` does not exist yet, and the factory imports
+ * it itself: `vi.mock(path, async () => (await import("<path>/test/providers")).authModule())`.
+ */
+export function authModule(overrides: Partial<AuthValue> | (() => Partial<AuthValue>) = {}): {
+  useAuth: () => AuthValue;
+} {
+  if (typeof overrides === "function") {
+    return { useAuth: () => ({ ...mockedAuth, ...overrides() }) };
+  }
+  const value = { ...mockedAuth, ...overrides };
+  return { useAuth: () => value };
+}

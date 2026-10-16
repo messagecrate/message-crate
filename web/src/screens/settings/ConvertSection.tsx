@@ -5,8 +5,8 @@ import FormRow from "../../components/FormRow";
 import PathPicker from "../../components/PathPicker";
 import { useRunDesktopJob } from "../../hooks/useRunDesktopJob";
 import { errorLine, errorText } from "../../lib/apiErrorMessage";
+import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/desktop/export";
 import { writeInExportDir } from "../../lib/exportDir";
-import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauriCheck";
 import { sameDirectory } from "./convertUtils";
 

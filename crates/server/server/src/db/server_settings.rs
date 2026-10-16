@@ -1,10 +1,10 @@
 //! Settings that belong to the whole server rather than to one account.
 //!
 //! One row, at id 1. A database that has never been written to has no row at
-//! all, which reads the same as a row of defaults — `public_registration`
-//! off, `asset_max_bytes` at 512 MiB — so nothing has to seed it.
+//! all, which reads the same as a row of defaults (`public_registration`
+//! off, `asset_max_bytes` at 512 MiB), so nothing has to seed it.
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 /// What the attachment size limit reads as until the owner sets it: 512 MiB.
@@ -41,7 +41,8 @@ pub async fn load(conn: &mut SqliteConnection) -> Result<ServerSettings> {
         "SELECT public_registration, asset_max_bytes FROM server_settings WHERE id = 1",
     )
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the server settings")?;
     Ok(row.map_or_else(
         ServerSettings::default,
         |(public_registration, asset_max_bytes)| ServerSettings {
@@ -67,7 +68,8 @@ pub async fn set_asset_max_bytes(conn: &mut SqliteConnection, bytes: u64) -> Res
     )
     .bind(bytes)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("store the attachment size limit")?;
     Ok(())
 }
 
@@ -80,7 +82,8 @@ pub async fn set_public_registration(conn: &mut SqliteConnection, enabled: bool)
     )
     .bind(i32::from(enabled))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("store the public registration setting")?;
     Ok(())
 }
 

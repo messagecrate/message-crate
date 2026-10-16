@@ -1,5 +1,6 @@
 //! An import that changes a stored message's content puts its duplicate
-//! flag right (#1805), through the dedupe every batch runs (#1969).
+//! flag right (#1805), through the dedupe every Import Run runs when it
+//! ends (#1969, #2040).
 
 use super::*;
 
@@ -28,24 +29,6 @@ fn edited(guid: &str, text: &str) -> MessageLine {
         text: Some("see you at six".into()),
         edited_at_unix_ms: Some(SECOND + 60_000),
     })
-}
-
-/// The guid of the message `guid` is hidden behind, or `None` when it is
-/// shown.
-async fn hidden_behind(state: &crate::server::AppState, guid: &str) -> Option<String> {
-    let mut conn = state.db.acquire().await.unwrap();
-    sqlx::query_scalar(
-        r"
-        SELECT w.guid
-        FROM messages m
-        LEFT JOIN messages w ON w.id = m.duplicate_of
-        WHERE m.guid = $1
-        ",
-    )
-    .bind(guid)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
 }
 
 /// The texts a search for `word` finds.
@@ -174,7 +157,7 @@ async fn an_edit_evaluates_the_copies_around_the_message_again() {
 #[tokio::test]
 async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let (state, _fixture, token) = importer().await;
-    let missing = IrAttachment {
+    let missing = Attachment {
         size_bytes: Some(12),
         missing_reason: Some("not_found".into()),
         ..attachment(
@@ -223,7 +206,7 @@ async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     )
     .await;
     assert!(status.is_success(), "{status}: {text}");
-    let found_file = IrAttachment {
+    let found_file = Attachment {
         digest_sha256: Some(sha),
         size_bytes: Some(bytes.len() as u64),
         ..attachment(

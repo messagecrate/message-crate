@@ -2,8 +2,8 @@
 //! answers, the page that describes it (`docs/architecture/http-api.md`).
 //!
 //! This is the one place a type is declared. Each declaration names the
-//! [`crate::server::ApiError`] variants that answer the type, and
-//! [`crate::server::ApiError::problem_type`] is generated from those names.
+//! [`crate::api_error::ApiError`] variants that answer the type, and
+//! [`crate::api_error::ApiError::problem_type`] is generated from those names.
 //! The OpenAPI document describes the body through [`Problem`], and
 //! `dump-error-docs` ([`crate::error_docs`]) writes one page per type under
 //! `docs/src/content/docs/docs/developer/reference/errors/` from the same
@@ -12,7 +12,7 @@
 use axum::http::StatusCode;
 pub use message_crate_api_types::Problem;
 
-use crate::server::{ApiError, is_database_busy};
+use crate::api_error::{ApiError, is_database_busy};
 
 /// Where the type pages are published; each `type` URL is this plus the slug.
 pub const ERRORS_URL: &str = "https://messagecrate.app/docs/developer/reference/errors/";
@@ -218,11 +218,11 @@ For an import batch, `line` carries the line of the request body that could not 
             Self::UnsupportedMediaType => "The request's `Content-Type` is absent or not one this route accepts. An import body is `application/x-ndjson` or `application/jsonl`; a JSON route takes `application/json`. Send the right header with the same body.".to_string(),
             Self::PayloadTooLarge => format!(
                 "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
-                byte_size(crate::server::MAX_AUTH_BODY_BYTES),
-                byte_size(crate::server::MAX_JSON_BODY_BYTES),
+                byte_size(crate::limits::MAX_AUTH_BODY_BYTES),
+                byte_size(crate::limits::MAX_JSON_BODY_BYTES),
                 byte_size(crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES),
                 byte_size(message_crate_api_types::MAX_IMPORT_BATCH_BYTES),
-                byte_size(crate::server::MAX_REQUEST_BODY_BYTES),
+                byte_size(crate::limits::MAX_REQUEST_BODY_BYTES),
             ),
             Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the owner whether the account is disabled. The server waits about a second before it answers each refused attempt, so a wrong password costs a moment before the next try. That wait is not protection for a Message Crate reachable from the internet: that is the job of the proxy in front of it.".to_string(),
             Self::AuthenticationRequired => "The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. Log in again, or issue a new API token, and send the new token.\n\n\
@@ -339,14 +339,14 @@ mod tests {
     fn the_payload_too_large_page_names_each_body_cap() {
         let page = ProblemType::PayloadTooLarge.page();
         for (cap, text) in [
-            (crate::server::MAX_AUTH_BODY_BYTES, "32 KiB"),
-            (crate::server::MAX_JSON_BODY_BYTES, "32 MiB"),
+            (crate::limits::MAX_AUTH_BODY_BYTES, "32 KiB"),
+            (crate::limits::MAX_JSON_BODY_BYTES, "32 MiB"),
             (
                 crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES,
                 "8 MiB",
             ),
             (message_crate_api_types::MAX_IMPORT_BATCH_BYTES, "16 MiB"),
-            (crate::server::MAX_REQUEST_BODY_BYTES, "512 MiB"),
+            (crate::limits::MAX_REQUEST_BODY_BYTES, "512 MiB"),
         ] {
             assert_eq!(byte_size(cap), text);
             assert!(page.contains(text), "the page does not name {text}: {page}");

@@ -4,15 +4,15 @@
 //! it points at is untouched until [`delete_trashed`] or [`empty_trash`]
 //! removes it for good (or [`purge_account`] and account deletion clear the
 //! markers along with everything else). Both marker operations first check
-//! that the target row belongs to `account_id` — explicitly, through
-//! [`crate::db::ownership`], rather than inferring ownership from whether an
+//! explicitly, through [`crate::db::ownership`], that the target row belongs
+//! to `account_id`, rather than inferring ownership from whether an
 //! insert or delete affected a row. That is what lets [`restore`] tell "not
 //! this account's id" (`false`) apart from "this account's id, and it was not
 //! trashed" (`true`, a no-op): a `DELETE` that matches zero rows looks
 //! identical in both cases.
 //!
 //! Trashing something already trashed, and restoring something not trashed,
-//! both return `true` — these operations are idempotent, per the HTTP routes
+//! both return `true`. These operations are idempotent, per the HTTP routes
 //! built on top of them.
 //!
 //! A conversation and a contact are trashed the same way, so one pair of
@@ -31,7 +31,7 @@
 //! A conversation is deleted outright: the row goes and the schema's cascades
 //! take its messages, attachments, tapbacks, participants and tag memberships
 //! with it. A contact is not deleted: deleting a trashed contact does what a
-//! phone's Delete Contact does — the name and the person's edits go, the row
+//! phone's Delete Contact does. The name and the person's edits go, the row
 //! stays as an Unknown contact holding the same handles, and every
 //! conversation it was in is untouched and now shows the handle. The two are
 //! still one operation to the caller ("Delete" on a trash row), so they share
@@ -40,12 +40,13 @@
 //! An import is the other way out of the trash. When it meets a handle that
 //! belongs to a trashed contact, it makes a fresh contact from the backup, as
 //! a first import would, moves that handle to it, and
-//! [`discard_trashed_contact`] deletes the trashed contact outright — row,
-//! Contact Group memberships and marker — after taking off each handle it
+//! [`discard_trashed_contact`] deletes the trashed contact outright (row,
+//! Contact Group memberships and marker) after taking off each handle it
 //! still held, so one in a conversation goes to a new contact with no name
 //! (ADR-0013). A backup that still holds
 //! the person is the person saying they still talk to them.
 
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
@@ -54,6 +55,39 @@ use crate::db::erase;
 use crate::db::ownership::{owns_contact, owns_conversation};
 use crate::db::sql::{SQLITE_IN_CHUNK, in_placeholders};
 use crate::db::{WriteTx, begin_write};
+
+/// Conversation `conv` is not in the trash, as a SQL condition. Every
+/// statement that leaves trashed conversations out writes it with this
+/// function or [`not_trashed_conversation_id`], so the lists, the counts,
+/// the names and search cannot drift apart.
+pub(crate) fn not_trashed_conversation(conv: &str) -> String {
+    not_trashed_conversation_id(&format!("{conv}.account_id"), &format!("{conv}.id"))
+}
+
+/// The conversation with id `id_expr` in account `account_expr` is not in
+/// the trash, for a row that carries a conversation id without joining
+/// `conversations` (a `messages` row).
+pub(crate) fn not_trashed_conversation_id(account_expr: &str, id_expr: &str) -> String {
+    format!(
+        "NOT EXISTS (SELECT 1 FROM trashed_conversations tc WHERE tc.account_id = {account_expr} AND tc.conversation_id = {id_expr})"
+    )
+}
+
+/// Contact `ct` is not in the trash, as a SQL condition. Every statement
+/// that leaves trashed contacts out writes it with this function or
+/// [`not_trashed_contact_id`].
+pub(crate) fn not_trashed_contact(ct: &str) -> String {
+    not_trashed_contact_id(&format!("{ct}.account_id"), &format!("{ct}.id"))
+}
+
+/// The contact with id `id_expr` in account `account_expr` is not in the
+/// trash, for a row that carries a contact id without joining `contacts`
+/// (a `contact_handles` or a `participants` row).
+pub(crate) fn not_trashed_contact_id(account_expr: &str, id_expr: &str) -> String {
+    format!(
+        "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = {account_expr} AND tct.contact_id = {id_expr})"
+    )
+}
 
 /// A thing that can be put in the trash, named by id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,23 +115,19 @@ impl Trashable {
     }
 
     /// True when `account_id` owns the row this names.
-    async fn is_owned(
-        self,
-        conn: &mut SqliteConnection,
-        account_id: i64,
-    ) -> Result<bool, sqlx::Error> {
+    async fn is_owned(self, conn: &mut SqliteConnection, account_id: i64) -> Result<bool> {
         match self {
-            Self::Conversation(id) => owns_conversation(conn, account_id, id).await,
-            Self::Contact(id) => owns_contact(conn, account_id, id).await,
+            Self::Conversation(id) => owns_conversation(conn, account_id, id)
+                .await
+                .context("check that the account holds the conversation"),
+            Self::Contact(id) => owns_contact(conn, account_id, id)
+                .await
+                .context("check that the account holds the contact"),
         }
     }
 
     /// True when this row carries a trash marker for `account_id`.
-    async fn is_trashed(
-        self,
-        conn: &mut SqliteConnection,
-        account_id: i64,
-    ) -> Result<bool, sqlx::Error> {
+    async fn is_trashed(self, conn: &mut SqliteConnection, account_id: i64) -> Result<bool> {
         let (table, id_column) = self.marker();
         let found: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT 1 FROM {table} WHERE account_id = $1 AND {id_column} = $2"
@@ -105,7 +135,8 @@ impl Trashable {
         .bind(account_id)
         .bind(self.id())
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("check for a trash marker")?;
         Ok(found.is_some())
     }
 }
@@ -115,12 +146,12 @@ impl Trashable {
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails.
+/// Returns an error naming the step when a statement fails.
 pub async fn move_to_trash(
     conn: &mut SqliteConnection,
     account_id: i64,
     target: Trashable,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool> {
     if !target.is_owned(conn, account_id).await? {
         return Ok(false);
     }
@@ -132,7 +163,8 @@ pub async fn move_to_trash(
     .bind(account_id)
     .bind(target.id())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("insert a trash marker")?;
     Ok(true)
 }
 
@@ -142,12 +174,12 @@ pub async fn move_to_trash(
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails.
+/// Returns an error naming the step when a statement fails.
 pub async fn restore(
     conn: &mut SqliteConnection,
     account_id: i64,
     target: Trashable,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool> {
     if !target.is_owned(conn, account_id).await? {
         return Ok(false);
     }
@@ -158,7 +190,8 @@ pub async fn restore(
     .bind(account_id)
     .bind(target.id())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete a trash marker")?;
     Ok(true)
 }
 
@@ -166,12 +199,12 @@ pub async fn restore(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn is_contact_trashed(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool> {
     Trashable::Contact(contact_id)
         .is_trashed(conn, account_id)
         .await
@@ -197,7 +230,7 @@ pub async fn discard_trashed_contact(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
-) -> anyhow::Result<Vec<i64>> {
+) -> Result<Vec<i64>> {
     let held = contacts::identities_of_contact(conn, account_id, contact_id).await?;
     let new_contacts = contacts::take_identities_off(conn, account_id, &held)
         .await?
@@ -219,19 +252,18 @@ pub async fn discard_trashed_contact(
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails.
-pub async fn purge_account(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<(), sqlx::Error> {
+/// Returns an error naming the step when a statement fails.
+pub async fn purge_account(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
     sqlx::query("DELETE FROM trashed_conversations WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("delete the account's trashed conversation markers")?;
     sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("delete the account's trashed contact markers")?;
     Ok(())
 }
 
@@ -254,8 +286,8 @@ pub enum DeleteOutcome {
 ///
 /// Attachments are stored by content hash under
 /// `data_dir/<account>/<assets_dir>/`, one directory for every source of the
-/// account, and several messages — in one conversation or across many, from
-/// one source or several — can point at the same file. A file is therefore
+/// account, and several messages (in one conversation or across many, from
+/// one source or several) can point at the same file. A file is therefore
 /// reported here only after the delete has run and a lookup for the same
 /// sha256 finds no attachment of the account left, from any source, in the
 /// promoted tables or in staging. An original's path is relative to the
@@ -279,7 +311,7 @@ pub enum OrphanedFile {
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails; the transaction is then
+/// Returns an error naming the step when a statement fails; the transaction is then
 /// rolled back.
 pub async fn delete_trashed(
     conn: &mut SqliteConnection,
@@ -287,10 +319,12 @@ pub async fn delete_trashed(
     target: Trashable,
     actor: AuditActor,
     now: chrono::DateTime<chrono::Utc>,
-) -> anyhow::Result<DeleteOutcome> {
+) -> Result<DeleteOutcome> {
     // The checks run inside the write transaction, so a restore cannot commit
     // between the check of the Trash marker and the delete it allows.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     if !target.is_owned(&mut tx, account_id).await? {
         return Ok(DeleteOutcome::NotOwned);
     }
@@ -317,7 +351,7 @@ pub async fn delete_trashed(
         }
         Trashable::Contact(id) => {
             forget_contacts(&mut tx, account_id, &[id], now).await?;
-            tx.commit().await?;
+            tx.commit().await.context("commit the forgotten contact")?;
             Vec::new()
         }
     };
@@ -333,15 +367,17 @@ pub async fn delete_trashed(
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails; the transaction is then
+/// Returns an error naming the step when a statement fails; the transaction is then
 /// rolled back.
 pub async fn empty_trash(
     conn: &mut SqliteConnection,
     account_id: i64,
     actor: AuditActor,
     now: chrono::DateTime<chrono::Utc>,
-) -> anyhow::Result<EmptiedTrash> {
-    let mut tx = begin_write(conn).await?;
+) -> Result<EmptiedTrash> {
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let conversation_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT t.conversation_id
          FROM trashed_conversations t
@@ -351,7 +387,8 @@ pub async fn empty_trash(
     )
     .bind(account_id)
     .fetch_all(&mut *tx)
-    .await?;
+    .await
+    .context("read the account's trashed conversations")?;
     let contact_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT t.contact_id
          FROM trashed_contacts t
@@ -361,7 +398,8 @@ pub async fn empty_trash(
     )
     .bind(account_id)
     .fetch_all(&mut *tx)
-    .await?;
+    .await
+    .context("read the account's trashed contacts")?;
     let orphaned = delete_conversations(&mut tx, account_id, &conversation_ids).await?;
     forget_contacts(&mut tx, account_id, &contact_ids, now).await?;
     // The two calls above cleared the markers for the rows they found; this
@@ -426,7 +464,7 @@ async fn delete_conversations(
     tx: &mut WriteTx<'_>,
     account_id: i64,
     ids: &[i64],
-) -> Result<Vec<OrphanedFile>, sqlx::Error> {
+) -> Result<Vec<OrphanedFile>> {
     let conn: &mut SqliteConnection = tx;
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -448,20 +486,30 @@ async fn delete_conversations(
         for id in chunk {
             q = q.bind(*id);
         }
-        candidates.extend(q.fetch_all(&mut *conn).await?);
+        candidates.extend(
+            q.fetch_all(&mut *conn)
+                .await
+                .context("read the attachment files of the conversations to delete")?,
+        );
     }
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let placeholders = in_placeholders(2, chunk.len());
         // The conversations go first, while their markers still say they are
         // in the Trash.
-        for (table, id_column, trashed) in [
+        for (table, id_column, trashed, step) in [
             (
                 "conversations",
                 "id",
                 " AND id IN (SELECT conversation_id FROM trashed_conversations
                              WHERE account_id = $1)",
+                "delete trashed conversations",
             ),
-            ("trashed_conversations", "conversation_id", ""),
+            (
+                "trashed_conversations",
+                "conversation_id",
+                "",
+                "delete the trash markers of the conversations deleted for good",
+            ),
         ] {
             let sql = format!(
                 "DELETE FROM {table}
@@ -471,7 +519,7 @@ async fn delete_conversations(
             for id in chunk {
                 q = q.bind(*id);
             }
-            q.execute(&mut *conn).await?;
+            q.execute(&mut *conn).await.context(step)?;
         }
     }
     orphaned_files(conn, account_id, candidates).await
@@ -485,7 +533,7 @@ async fn orphaned_files(
     conn: &mut SqliteConnection,
     account_id: i64,
     candidates: Vec<AttachmentFilesRow>,
-) -> Result<Vec<OrphanedFile>, sqlx::Error> {
+) -> Result<Vec<OrphanedFile>> {
     let mut out = Vec::new();
     for (
         sha256,
@@ -531,7 +579,7 @@ async fn original_is_referenced(
     conn: &mut SqliteConnection,
     account_id: i64,
     sha256: &str,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool> {
     let sql = "SELECT 1 FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1 AND a.sha256 = $2
@@ -544,7 +592,8 @@ async fn original_is_referenced(
         .bind(account_id)
         .bind(sha256)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("check whether an attachment still names an original file")?;
     Ok(found.is_some())
 }
 
@@ -554,14 +603,14 @@ async fn original_is_referenced(
 /// and its trash marker goes. The row keeps its origin, because `origin`
 /// records what made the row and an import names a nameless contact
 /// whatever made it. The handles stay linked, so the conversations the
-/// person was in keep showing them as one participant — by handle now, since
-/// the name is blank. Their `last_modified` is set to `now`.
+/// person was in keep showing them as one participant. They show by handle
+/// now, since the name is blank. Their `last_modified` is set to `now`.
 async fn forget_contacts(
     conn: &mut SqliteConnection,
     account_id: i64,
     ids: &[i64],
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), sqlx::Error> {
+) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
@@ -578,7 +627,9 @@ async fn forget_contacts(
         for id in chunk {
             q = q.bind(*id);
         }
-        q.execute(&mut *conn).await?;
+        q.execute(&mut *conn)
+            .await
+            .context("clear the names of trashed contacts")?;
 
         let placeholders = in_placeholders(2, chunk.len());
         let sql = format!(
@@ -591,7 +642,9 @@ async fn forget_contacts(
         for id in chunk {
             q = q.bind(*id);
         }
-        q.execute(&mut *conn).await?;
+        q.execute(&mut *conn)
+            .await
+            .context("delete trashed contacts' Contact Group memberships")?;
 
         let sql = format!(
             "DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id IN ({placeholders})"
@@ -600,7 +653,9 @@ async fn forget_contacts(
         for id in chunk {
             q = q.bind(*id);
         }
-        q.execute(&mut *conn).await?;
+        q.execute(&mut *conn)
+            .await
+            .context("delete trashed contacts' trash markers")?;
     }
     Ok(())
 }

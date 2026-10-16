@@ -89,7 +89,7 @@ export function formatIsoDateOnly(iso: string | null | undefined, zone: string):
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
     const m = iso.match(/^(\d{4}-\d{2}-\d{2})/);
-    return m ? m[1] : null;
+    return m?.[1] ?? null;
   }
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,

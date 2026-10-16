@@ -7,11 +7,14 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
+// `message_crate_api_types` and `message_ir` both name a `Message` and an
+// `Attachment`; the conversation file's are imported here as `IrMessage` and
+// `IrAttachment`.
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
-    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
-    TimePrecision,
+    Attachment as IrAttachment, ConversationDocument, ConversationMeta, ConversationStats,
+    ConversationType, Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions,
+    Message as IrMessage, MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION,
+    TimePrecision, Transport, VendorFields,
 };
 use serde_json::json;
 
@@ -22,15 +25,15 @@ pub fn conversation_key(msg: &Message) -> String {
     format!("{}::{}", msg.source, msg.conversation.chat_identifier)
 }
 
-/// Build one conversation document from a seed message and the mapped rows.
-///
-/// The document's backup date is the seed's `backup_taken_at`, which the
-/// Export Run keeps only while every message of the conversation has the
-/// same one ([`common_backup_taken_at`]), and none otherwise.
+/// Build one conversation document from a seed message and the mapped rows,
+/// written at `exported_at_unix_ms`, the Export Date the run's caller gave.
+/// Each message carries its own stored Backup Date ([`to_ir_message`]), so
+/// a conversation stored from several backups keeps every message's date.
 pub fn build_document(
     source: &str,
     seed: &Message,
     messages: Vec<IrMessage>,
+    exported_at_unix_ms: i64,
 ) -> ConversationDocument {
     // The server says whether the conversation is a group; the Export Run does
     // not read `conversation_type` to decide it again. It reads it only to
@@ -38,13 +41,13 @@ pub fn build_document(
     // conversation, as the API type says: written back as one-to-one, its
     // `orphaned:` key would come back as a person (#1095).
     let conversation_type = if seed.conversation.is_group {
-        IrConversationType::Group
-    } else if IrConversationType::parse(&seed.conversation.conversation_type)
-        == IrConversationType::Orphaned
+        ConversationType::Group
+    } else if ConversationType::parse(&seed.conversation.conversation_type)
+        == ConversationType::Orphaned
     {
-        IrConversationType::Orphaned
+        ConversationType::Orphaned
     } else {
-        IrConversationType::Individual
+        ConversationType::OneToOne
     };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;
@@ -64,10 +67,7 @@ pub fn build_document(
             tool_version: env!("CARGO_PKG_VERSION").into(),
             owner_identity: shared_owner(&messages),
             owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: seed
-                .backup_taken_at
-                .as_deref()
-                .and_then(|at| parse_timestamp_unix_ms(at).ok()),
+            exported_at_unix_ms: Some(exported_at_unix_ms),
         },
         conversation: ConversationMeta {
             chat_identifier: seed.conversation.chat_identifier.clone(),
@@ -86,34 +86,28 @@ pub fn build_document(
     }
 }
 
-/// Clear `seed`'s `backup_taken_at` when `msg`'s differs from it, so the
-/// conversation file names a backup date only when every message of the
-/// conversation came from that one backup. The file carries one date for
-/// all its messages, and any one date would be wrong for some of them when
-/// they differ: the newest would make a message decided by an older backup
-/// win over a backup made between the two, and would date a message that
-/// had none. With no date, an import of the file keeps the rules for files
-/// without one.
-pub fn common_backup_taken_at(seed: &mut Message, msg: &Message) {
-    if msg.backup_taken_at != seed.backup_taken_at {
-        seed.backup_taken_at = None;
-    }
-}
-
-/// Map one exported message into the shared conversation message type.
+/// Map one exported message into the shared conversation message type,
+/// with the Backup Date the server stored for it, or none where it stored
+/// none.
 ///
 /// # Errors
 ///
-/// Returns an error when the timestamp cannot be parsed.
+/// Returns an error when the timestamp or the backup date cannot be parsed.
 pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage> {
     let timestamp_unix_ms = parse_timestamp_unix_ms(msg.timestamp.as_str())
         .with_context(|| format!("message {} timestamp", msg.id))?;
+    let backup_taken_at_unix_ms = msg
+        .backup_taken_at
+        .as_deref()
+        .map(parse_timestamp_unix_ms)
+        .transpose()
+        .with_context(|| format!("message {} backup date", msg.id))?;
 
-    let service = IrService::parse(msg.service.as_deref().unwrap_or(""));
+    let service = Transport::parse(msg.service.as_deref().unwrap_or(""));
     let direction = if msg.is_from_me {
-        IrDirection::Outgoing
+        Direction::Outgoing
     } else {
-        IrDirection::Incoming
+        Direction::Incoming
     };
     let message_kind = infer_kind(msg, service);
 
@@ -130,7 +124,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         guid: reply_to.guid.clone(),
         part_index: reply_to.part_index.and_then(|n| u32::try_from(n).ok()),
     });
-    let imessage = IrImessage {
+    let imessage = ImessageExtensions {
         // An announcement with no text carries no information, so drop it.
         announcement: msg
             .is_announcement
@@ -154,6 +148,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         message_kind,
         sender_identity: msg.sender.clone(),
         sender_display_name: None,
+        sender_country: None,
         owner_identity: msg.owner.clone().filter(|o| !o.trim().is_empty()),
         subject: msg.subject.clone(),
         text: msg.text.clone().unwrap_or_default(),
@@ -168,11 +163,12 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .with_context(|| format!("message {} earlier versions", msg.id))?,
         reply_to,
         imessage: imessage.into_option(),
-        source: IrSource {
+        source: VendorFields {
             android_type: None,
             fields: source_fields,
         }
         .into_option(),
+        backup_taken_at_unix_ms,
     })
 }
 
@@ -222,19 +218,20 @@ fn shared_owner(messages: &[IrMessage]) -> Option<String> {
 }
 
 /// Copy participant handles and display names from the seed export message.
-fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
+fn participants_from_seed(seed: &Message) -> Vec<Participant> {
     let mut participants = Vec::with_capacity(seed.conversation.participants.len());
     for p in &seed.conversation.participants {
-        participants.push(IrParticipant {
+        participants.push(Participant {
             identity: p.identity.clone(),
             // `name` falls back to the raw handle when nothing names the
             // person (ADR-0006). Carrying a bare handle through as a display
             // name would let a later import write it onto a Contact as that
             // person's name, turning a correctly nameless Contact into a
-            // wrongly-named one — so only a name distinct from the handle
+            // wrongly-named one. So only a name distinct from the handle
             // counts as a display name here. A participant with no handle at
             // all has nothing to be identical to, so their name always counts.
             display_name: (p.identity.as_deref() != Some(p.name.as_str())).then(|| p.name.clone()),
+            country: None,
         });
     }
     participants
@@ -304,8 +301,9 @@ fn to_ir_attachment(att: &Attachment) -> IrAttachment {
     }
 }
 
-/// One stored reaction as the conversation file's [`Reaction`]. The server
-/// keeps no reactor name, so none is written. A part index no message can
+/// One stored reaction as the conversation file's [`Reaction`], with the
+/// reactor's name when the server holds one in place of an address. A part
+/// index no message can
 /// have (below zero, or past `u32`) leaves the reaction out rather than
 /// moving it onto another part.
 fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
@@ -315,31 +313,31 @@ fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
         emoji: row.emoji.clone(),
         is_from_me: row.is_from_me,
         reactor_identity: row.sender.clone(),
-        reactor_display_name: None,
+        reactor_display_name: row.sender_display_name.clone(),
     })
 }
 
 /// Choose SMS, MMS, iMessage, or announcement from service and attachments.
-fn infer_kind(msg: &Message, service: IrService) -> IrMessageKind {
+fn infer_kind(msg: &Message, service: Transport) -> MessageKind {
     if msg.is_announcement {
-        return IrMessageKind::Announcement;
+        return MessageKind::Announcement;
     }
-    if !msg.attachments.is_empty() && matches!(service, IrService::Sms | IrService::Rcs) {
-        return IrMessageKind::Mms;
+    if !msg.attachments.is_empty() && matches!(service, Transport::Sms | Transport::Rcs) {
+        return MessageKind::Mms;
     }
     match service {
-        IrService::IMessage => IrMessageKind::IMessage,
-        IrService::Sms | IrService::Rcs => IrMessageKind::Sms,
-        IrService::Whatsapp
-        | IrService::Discord
-        | IrService::Signal
-        | IrService::Telegram
-        | IrService::Slack => IrMessageKind::Unknown,
-        IrService::Unknown => {
+        Transport::IMessage => MessageKind::IMessage,
+        Transport::Sms | Transport::Rcs => MessageKind::Sms,
+        Transport::Whatsapp
+        | Transport::Discord
+        | Transport::Signal
+        | Transport::Telegram
+        | Transport::Slack => MessageKind::Unknown,
+        Transport::Unknown => {
             if msg.attachments.is_empty() {
-                IrMessageKind::Sms
+                MessageKind::Sms
             } else {
-                IrMessageKind::Mms
+                MessageKind::Mms
             }
         }
     }

@@ -1,19 +1,11 @@
 use super::*;
-use media::MediaMode;
-use media::testutil::PNG_1X1_RGB;
-
-fn media_cfg(mode: MediaMode) -> MediaConfig {
-    MediaConfig {
-        mode,
-        ..MediaConfig::default()
-    }
-}
-use message_ir::IrAttachment;
+use crate::CancelFlag;
+use message_ir::Attachment;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn empty_att(name: &str) -> IrAttachment {
-    IrAttachment {
+fn empty_att(name: &str) -> Attachment {
+    Attachment {
         original_name: Some(name.into()),
         ..message_ir::testutil::sample_attachment()
     }
@@ -36,7 +28,7 @@ fn clone_writes_file_and_fills_hash() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |_| Ok(Some(bytes.to_vec())),
             |p| progress.lock().unwrap().push(p),
             &LogSink::none(),
@@ -81,7 +73,7 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| Ok((i == 0).then(|| b"ten bytes!".to_vec())),
             |p| progress.lock().unwrap().push(p),
             &LogSink::none(),
@@ -109,7 +101,7 @@ fn disabled_skips_without_loading() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Disabled),
+            AttachmentFiles::Skip,
             |_| {
                 loaded.store(true, Ordering::Relaxed);
                 Ok(Some(b"x".to_vec()))
@@ -150,7 +142,7 @@ fn missing_source_is_file_missing_and_continues() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
                     Ok(None)
@@ -192,7 +184,7 @@ fn read_error_marks_file_missing_and_continues() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
                     Err(LoadError::Unreadable("permission denied".into()))
@@ -218,7 +210,7 @@ fn read_error_marks_file_missing_and_continues() {
 fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
-    let mut atts: Vec<IrAttachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
+    let mut atts: Vec<Attachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
         .into_iter()
         .map(empty_att)
         .collect();
@@ -235,7 +227,7 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| {
                 asked.push(i);
                 if i == 1 {
@@ -252,7 +244,7 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
         )
         .unwrap_err()
     };
-    assert_eq!(err, "imessage-reader stopped before finishing");
+    assert_eq!(err.to_string(), "imessage-reader stopped before finishing");
     assert_eq!(asked, [0, 1], "nothing is loaded after the fatal error");
     assert!(atts[0].path.is_some(), "the job before it was staged");
     for att in &atts[1..] {
@@ -285,7 +277,7 @@ fn cancel_stops_before_next_job() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
                     cancel.store(true, Ordering::Relaxed);
@@ -298,7 +290,9 @@ fn cancel_stops_before_next_job() {
         )
         .unwrap_err()
     };
-    assert_eq!(err, "canceled");
+    // The Cancel stays a `Cancelled` value, so the desktop app tells it from
+    // a failure by its type rather than its text (#2077).
+    assert!(err.is::<Cancelled>(), "{err:#}");
     assert!(a.path.is_some());
     assert!(b.path.is_none());
 }
@@ -311,7 +305,7 @@ fn empty_jobs_emits_zero_of_zero() {
     run_attachment_jobs(
         &mut [],
         &att_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         |_| Ok(None),
         |p| progress.lock().unwrap().push(p),
         &LogSink::none(),
@@ -325,45 +319,6 @@ fn empty_jobs_emits_zero_of_zero() {
     assert_eq!(last.bytes_total, 0);
 }
 
-#[test]
-fn remap_updates_mime_and_continues_when_one_file_is_unreadable() {
-    let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    std::fs::write(att_dir.join("ok.jpg"), b"jpeg-bytes").unwrap();
-    let mut ok = empty_att("ok.heic");
-    ok.path = Some("attachments/ok.heic".into());
-    ok.mime_type = Some("image/heic".into());
-    let mut missing = empty_att("gone.heic");
-    missing.path = Some("attachments/gone.heic".into());
-    missing.mime_type = Some("image/heic".into());
-    {
-        let mut jobs = [
-            AttachmentJob {
-                attachment: &mut ok,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut missing,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-        ];
-        let mut remap = std::collections::HashMap::new();
-        remap.insert("attachments/ok.heic".into(), "attachments/ok.jpg".into());
-        remap.insert(
-            "attachments/gone.heic".into(),
-            "attachments/gone.jpg".into(),
-        );
-        apply_remap_to_jobs(&mut jobs, &remap, dir.path());
-    }
-    assert_eq!(ok.path.as_deref(), Some("attachments/ok.jpg"));
-    assert_eq!(ok.mime_type.as_deref(), Some("image/jpeg"));
-    assert_eq!(ok.digest_sha256.as_ref().unwrap().len(), 64);
-    assert_eq!(missing.missing_reason.as_deref(), Some("file_missing"));
-    assert!(ok.missing_reason.is_none());
-}
 #[test]
 fn clone_mode_reports_nothing_to_the_log_sink() {
     // Clone converts nothing, so nothing should reach the sink. This
@@ -388,7 +343,7 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |_| Ok(Some(bytes.to_vec())),
             |_| {},
             &sink,
@@ -425,8 +380,8 @@ fn clone_temp_paths_are_unique_per_call() {
 #[test]
 fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     use message_ir::{
-        ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrConversationType,
-        IrDirection, IrMessage, IrMessageKind, IrService,
+        ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
+        ExportMeta, Message, MessageKind, Transport,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -460,24 +415,25 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             tool_version: "0.1.0".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Mms,
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Mms,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: "two files".into(),
@@ -488,6 +444,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];
@@ -495,11 +452,13 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     let saved = stage_attachment_jobs(
         attachment_jobs(document_messages(&mut documents)),
         &attachments_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         load,
-        &LogSink::none(),
-        &ProgressSink::none(),
-        &CancelFlag::default(),
+        Sinks {
+            log: &LogSink::none(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
+        },
     )
     .expect("staging succeeds");
 
@@ -570,7 +529,7 @@ fn staging_the_same_bytes_twice_writes_one_file() {
     run_attachment_jobs(
         &mut jobs,
         &attachments_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         |_| Ok(Some(b"identical bytes".to_vec())),
         |_| {},
         &LogSink::none(),
@@ -656,7 +615,7 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |_| Ok(Some(Vec::new())),
             |_| {},
             &LogSink::none(),
@@ -685,8 +644,8 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
 #[test]
 fn staging_frees_the_bytes_the_documents_were_carrying() {
     use message_ir::{
-        ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrConversationType,
-        IrDirection, IrMessage, IrMessageKind, IrService,
+        ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
+        ExportMeta, Message, MessageKind, Transport,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -704,24 +663,25 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             tool_version: "0.1.0".into(),
             owner_identity: None,
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Mms,
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Mms,
             sender_identity: None,
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: "one file".into(),
@@ -732,6 +692,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];
@@ -744,11 +705,13 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     stage_attachment_jobs(
         attachment_jobs(document_messages(&mut documents)),
         &attachments_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         |_| Ok(Some(b"bytes held on the document".to_vec())),
-        &LogSink::none(),
-        &ProgressSink::none(),
-        &CancelFlag::default(),
+        Sinks {
+            log: &LogSink::none(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
+        },
     )
     .expect("staging succeeds");
 
@@ -760,171 +723,6 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
         documents[0].messages[0].attachments[0].path.is_some(),
         "and the file is on disk"
     );
-}
-
-/// A file ffmpeg could not convert records the last line ffmpeg wrote, with
-/// no path in it: the same reason the desktop app's Media Stage records for
-/// the same failure (`message-staging`'s
-/// `a_failed_conversion_records_the_reason_the_attachment_jobs_record`),
-/// not the whole error, which goes to the log (#2801).
-#[test]
-fn a_failed_conversion_records_the_short_reason_the_media_stage_records() {
-    let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut photo = empty_att("photo.png");
-    photo.mime_type = Some("image/png".into());
-    let warnings = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink_warnings = std::sync::Arc::clone(&warnings);
-    let log =
-        LogSink::none().with_warnings(move |w| sink_warnings.lock().unwrap().push(w.to_string()));
-    {
-        let mut jobs = [AttachmentJob {
-            attachment: &mut photo,
-            timestamp_unix_ms: 1_609_459_200_000,
-            size_hint: None,
-        }];
-        run_attachment_jobs(
-            &mut jobs,
-            &att_dir,
-            &MediaConfig {
-                tools: std::sync::Arc::new(media::testutil::FakeTools::new().failing_on("-q:v")),
-                ..media_cfg(MediaMode::Convert)
-            },
-            |_| Ok(Some(PNG_1X1_RGB.to_vec())),
-            |_| {},
-            &log,
-            &CancelFlag::default(),
-        )
-        .unwrap();
-    }
-
-    assert_eq!(
-        photo.missing_reason.as_deref(),
-        Some("convert_failed: -q:v: fake failure on '<input>'")
-    );
-    let rel = photo.path.as_deref().unwrap_or_default();
-    assert!(rel.ends_with(".png"), "the original is kept: {rel}");
-    // The log keeps the whole error, which names the file by its path.
-    let staged = dir.path().join(rel).display().to_string();
-    let warnings = warnings.lock().unwrap();
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert!(
-        warnings[0].starts_with(&format!("Could not convert {staged}: "))
-            && warnings[0].ends_with(&format!("-q:v: fake failure on '{staged}'")),
-        "{warnings:?}"
-    );
-}
-
-/// Convert must leave each attachment pointing at the file it produced, with
-/// that file's type, and mark the one it could not convert.
-#[test]
-fn convert_points_each_attachment_at_its_converted_file() {
-    let Some(tools) = media::testutil::real_ffmpeg() else {
-        return;
-    };
-    let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut photo = empty_att("photo.png");
-    photo.mime_type = Some("image/png".into());
-    let mut broken = empty_att("broken.png");
-    broken.mime_type = Some("image/png".into());
-    {
-        let mut jobs = [
-            AttachmentJob {
-                attachment: &mut photo,
-                timestamp_unix_ms: 1_609_459_200_000,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut broken,
-                timestamp_unix_ms: 1_609_459_200_000,
-                size_hint: None,
-            },
-        ];
-        run_attachment_jobs(
-            &mut jobs,
-            &att_dir,
-            &MediaConfig {
-                tools: std::sync::Arc::new(tools),
-                ..media_cfg(MediaMode::Convert)
-            },
-            |i| {
-                Ok(Some(if i == 0 {
-                    PNG_1X1_RGB.to_vec()
-                } else {
-                    b"not an image".to_vec()
-                }))
-            },
-            |_| {},
-            &LogSink::none(),
-            &CancelFlag::default(),
-        )
-        .unwrap();
-    }
-
-    let path = photo.path.as_deref().unwrap();
-    assert!(
-        path.starts_with("attachments/") && path.ends_with(".jpg"),
-        "{path}"
-    );
-    assert_eq!(photo.mime_type.as_deref(), Some("image/jpeg"));
-    assert_eq!(photo.missing_reason, None);
-    let converted = std::fs::read(dir.path().join(path)).unwrap();
-    assert!(converted.starts_with(&[0xff, 0xd8]), "the file is a JPEG");
-    assert_eq!(photo.digest_sha256, Some(sha256_hex(&converted)));
-    assert_eq!(photo.size_bytes, Some(converted.len() as u64));
-
-    let reason = broken.missing_reason.as_deref().unwrap_or("");
-    assert!(reason.starts_with("convert_failed: "), "{reason:?}");
-    assert_eq!(broken.mime_type.as_deref(), Some("image/png"));
-}
-
-#[test]
-fn a_convert_error_marks_only_the_attachment_it_names() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut named = empty_att("a.heic");
-    named.path = Some("attachments/a.heic".into());
-    let mut other = empty_att("b.heic");
-    other.path = Some("attachments/b.heic".into());
-    let mut pathless = empty_att("c.heic");
-    {
-        let mut jobs = [
-            AttachmentJob {
-                attachment: &mut named,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut other,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut pathless,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-        ];
-        let failed = media::NotConverted {
-            path: dir.path().join("attachments").join("a.heic"),
-            reason: "ffmpeg failed".into(),
-        };
-        mark_convert_error(&mut jobs, dir.path(), &failed);
-        // A file whose path only ends like an attachment's names nothing.
-        let elsewhere = media::NotConverted {
-            path: dir.path().join("other").join("attachments").join("b.heic"),
-            reason: "ffmpeg failed".into(),
-        };
-        mark_convert_error(&mut jobs, dir.path(), &elsewhere);
-    }
-    assert_eq!(
-        named.missing_reason.as_deref(),
-        Some("convert_failed: ffmpeg failed")
-    );
-    assert_eq!(other.missing_reason, None);
-    assert_eq!(pathless.missing_reason, None);
 }
 
 /// A sender-chosen name whose text after the last dot is long must not stop
@@ -957,7 +755,7 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| Ok(Some(format!("bytes-{i}").into_bytes())),
             |_| {},
             &LogSink::none(),
@@ -988,7 +786,7 @@ fn a_name_with_no_plain_extension_is_staged_without_one() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |_| Ok(Some(b"draft".to_vec())),
             |_| {},
             &LogSink::none(),
@@ -1060,7 +858,7 @@ fn a_failed_write_marks_only_that_attachment_missing() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Clone),
+            AttachmentFiles::Originals,
             |i| {
                 Ok(Some(if i == 0 {
                     blocked_bytes.clone()

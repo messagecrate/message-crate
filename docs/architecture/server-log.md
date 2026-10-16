@@ -24,8 +24,8 @@ server does not slow its own imports by describing them.
 
 Why the Data Directory: it is the one directory a Message Crate is sure to
 have and to be allowed to write, in Docker (the volume) and in the desktop app
-(its app-data directory) alike, and a copy of it is already the whole
-installation.
+(`data` in the Message Crate Directory) alike, and a copy of it is already
+the whole installation.
 
 Only the operating-system user the server runs as can read the files. The
 server makes the Data Directory, and the `logs` directory in it, with mode
@@ -36,7 +36,8 @@ attachments, so another user of the same computer must not read either. A
 directory with no access for anyone else keeps everything inside it from
 them, so the files in it keep the mode the umask gives them. Windows has no
 such modes; there the directories take the access of the one they are made
-in, which for the desktop app is the user's own app-data directory. Rules:
+in, which for the desktop app is the Message Crate Directory, under the
+user's own profile directory. Rules:
 `crates/server/server/src/owner_only.rs`.
 
 Rejected: stderr alone. Docker keeps it only as long as the container, and the
@@ -139,7 +140,7 @@ loading the website asks for one file per asset. At `INFO` those lines bury
 the requests that did something in the owner's Logs panel.
 
 The health route and the website's fallback mark their responses
-(`Routine` in `crates/server/server/src/server.rs`), and the trace layer
+(`Routine` in `crates/server/server/src/middleware.rs`), and the trace layer
 reads the mark. So the rule follows the route that answered, and no path is
 written out a second time.
 
@@ -198,7 +199,7 @@ response's `INFO` line.
 
 A source whose text the error before it already is, or already ends with
 after a `: `, is left out of the chain (`error_chain` in
-`crates/server/server/src/server.rs`). A cause whose words only happen to
+`crates/server/server/src/api_error.rs`). A cause whose words only happen to
 end the step's phrase is kept, because it still says something new. Why:
 `sqlx`'s database error writes "error returned from database:" and the
 database's message, then gives the same message again as its source, so
@@ -210,9 +211,13 @@ that does not say which statement failed sends the owner to the code to
 guess. Why a fixed phrase: a bound value can be a search word or a message's
 text, which a line never holds (below).
 
-`db/conversation_messages.rs` names every statement it runs; the other `db/`
-modules do not all name theirs yet
-([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
+Every statement in `crates/server/server/src/db/` names its step where it
+runs. A shared helper that runs a statement for several callers, such as
+`begin_write`, `free_name` or the ownership checks, leaves the step to each
+caller, which knows what the statement is for. The pragmas the pool runs on
+each new connection (`with_pragmas` in `db/engine.rs`) name none: sqlx
+requires that hook to return its own error type, which holds no step, and a
+failure there shows as the pool's failure to connect.
 
 ## A request's lines carry its id, spawned work included
 
@@ -230,6 +235,22 @@ Why: a tracing span does not cross a spawn on its own, and a warning that
 names no request cannot be matched to the request that caused it or to the
 error its client was shown
 ([#2186](https://github.com/messagecrate/message-crate/issues/2186)).
+
+An Audit Trail entry keeps the id of the request that wrote it, in
+`audit_entries.request_id`, and the Audit Trail hands it out as the entry's
+`request_id`. The two spawn functions carry the id as well as the span, so an
+entry written by work the request started, such as the old Demo Account's
+deletion in the owner's Demo Account build, keeps the id its lines carry. An
+entry written outside a request has none: a server command (`reset-demo`,
+`create-owner` and the rest) and the Demo Account build that `serve` runs on a
+new database before it listens write theirs with a `NULL` id. Import Runs,
+Export Runs and a Session that ran out are read from rows no one request
+wrote, so their `request_id` is `null` too.
+
+Why: an entry says who did what and when, and a line says which request did
+it and how it went, and with no key shared between them the owner matched the
+two by time alone
+([#2276](https://github.com/messagecrate/message-crate/issues/2276)).
 
 ## Trimmed by size only: 5 files of 50 MB
 
@@ -315,7 +336,7 @@ rule by whoever writes it.
 
 The path and query a line names are cut at 2,048 bytes, on a character
 boundary, and end in `...[cut]` when they are (`logged_uri` in
-`crates/server/server/src/server.rs`). Why: a request needs no credential to
+`crates/server/server/src/middleware.rs`). Why: a request needs no credential to
 leave its line, and a URI can be 64 KiB long, so without the cut anyone who
 can reach the port could fill the 250 MB the log keeps with a few thousand
 requests and push every other line off the disk

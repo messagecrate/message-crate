@@ -242,6 +242,17 @@ messages out
 
 WhatsApp is the other way, as above: its `@` ids are `other`.
 
+**A conversation's service is the one its messages came over.** An import
+puts a conversation, its chat handle and its participants on WhatsApp when
+any of its messages came over WhatsApp, and on Text Message otherwise; a
+conversation with no messages is Text Message (`imports_api/staging.rs`,
+`conversation_service`). The source's name plays no part. Why: an Export Run
+writes the source the messages were stored under into `export.source`, so a
+WhatsApp conversation stored under any name but `whatsapp` came back, read by
+that name, as Text Message, and its `@lid` participant became an `email`
+identity there
+([#2050](https://github.com/messagecrate/message-crate/issues/2050)).
+
 **A phone number's type never depends on the message's service.** The service
 only takes away a type it cannot carry, the email address; it never makes a
 phone number anything else. A phone number is a phone number on any service,
@@ -327,9 +338,13 @@ country: the same digits are another number there. The bare identity shows
 **A country comes from three explicit sources and nothing else.** The archive,
 when the source names the phone's country. SMS Backup+ does not. Apple's
 `chat.db` does, in the `country` column of its `handle` table (`us`, `gb`),
-but Message Crate does not read it yet: `imessage-database` 4.3.0's `Handle`
-does not load the column, so the Apple Messages Reader cannot pass it on, and
-the conversation file has no field for it
+and Message Crate reads it: `imessage-database` 4.3.0's `Handle` does not
+load the column, so the Apple Messages Reader reads it with its own query,
+and the conversation file carries it per identity, as a participant's
+`country` and a message's `sender_country`. Staging keys a number written
+without `+` in the country the file names for it, before the run's country,
+and reads a reactor and a one-to-one conversation's id in the country the
+same conversation names for the same address
 ([#1994](https://github.com/messagecrate/message-crate/issues/1994)). The
 import form's country for the run, which applies to every number written
 without `+` in that run: the Import Run records it (`imports.phone_country`,
@@ -635,8 +650,8 @@ otherwise keep an older title against a newer one. A title of only spaces counts
 as no title. The rule is the same in one batch as across several, in any order.
 Why: a group is renamed over time, so the copy whose messages run later carries
 the name the group has now. An old backup uploaded after a newer one can't bring the old
-name back, because its messages stop earlier. The backup date a conversation
-file carries (`export.backup_taken_at_unix_ms`) is missing where a source records
+name back, because its messages stop earlier. The Backup Date a conversation
+file's messages carry (`backup_taken_at_unix_ms`) is missing where a source records
 none, and for several sources is a file's modification time, which copying the
 file can change; the time an exporter ran says nothing about the backup; so
 neither decides the title
@@ -646,9 +661,10 @@ neither decides the title
 backup decides its mark and text.** One message from one source is one row
 (`UNIQUE (account_id, source, guid)` on `messages`, and the same on
 `staging_messages`), so a second backup of the same phone meets the copy
-already there, in the same import or a later one. The conversation file says
-when its backup was made (`export.backup_taken_at_unix_ms`), staging keeps
-that date on each staged row, and `messages.backup_taken_at` keeps the date of
+already there, in the same import or a later one. Each message of the
+conversation file says when the backup it was read from was made (its
+`backup_taken_at_unix_ms`, the Backup Date), staging keeps that date on its
+staged row, and `messages.backup_taken_at` keeps the date of
 the newest backup with a date that the message has met. When both copies
 have a date, the copy from the later backup gives the message its deletion
 mark, mark or no mark, and its text and earlier versions, whatever the
@@ -670,7 +686,9 @@ the same, the same mark or the same text and earlier versions, backs the
 undated part, and it is the dates' to decide from then on
 (`kept_undated_mark_sql`, `backs_undated_sql`). The message API reports no
 backup date for a message that still holds an undated part, so an Export
-Run writes none for its conversation. Why: a row that kept one date for
+Run writes none for that message, and every other message of its
+conversation keeps its own date
+([#1967](https://github.com/messagecrate/message-crate/issues/1967)). Why: a row that kept one date for
 both could hold an undated mark or edit under a dated backup's date, and a
 later import, or a re-import of an export, would then judge it by that date,
 so the order the files were read in decided the result
@@ -687,18 +705,36 @@ was written, not when a part was unsent, so they cannot tell
 [#1804](https://github.com/messagecrate/message-crate/issues/1804),
 [#1924](https://github.com/messagecrate/message-crate/issues/1924)).
 
-**Every Import Run hides duplicates.** After each batch, the server runs the
-full dedupe over the account, within one source and across sources
-(`dedupe_cross_source` in `dedupe.rs`): `POST /v1/imports/{id}/batches`, the
-server's `import` command and the Demo Account build alike. Nothing turns it
-off. It computes every content key again, so it also puts right the flag of a
-stored message whose content the import changed: a later edit changes a
-message's text, and an attachment added or given its file changes what its
-content key hashes. Why: there is no reason ever to leave a duplicate shown,
-and a flag an import made wrong would hide a message behind a copy whose text
-no longer matches, where no search finds it
+**Every Import Run hides duplicates.** When an Import Run ends, the server
+runs the full dedupe over the account, within one source and across sources
+(`dedupe_cross_source` in `dedupe.rs`), once for the whole run. An Upload's
+run ends at `POST /v1/imports/{id}/complete` or `/discard`, or by the server's
+`imports discard` command (`end_run` in `imports_api/run_control.rs`, and
+`discard_running_import_and_dedupe` in `imports_api/pipeline.rs`). A
+completion runs the dedupe before it ends the run, so a dedupe that fails
+leaves the run running and the client completes it again. A discard ends the
+run first and then runs the dedupe, and a dedupe that fails is logged, so a
+dedupe that always fails never keeps the account from giving up its one
+running run; the next run's end hides those duplicates. The server's `import`
+command and the Demo Account build run it once, after their last run. Nothing
+turns it off. It computes every content key again, so it also puts right the
+flag of a stored message whose content the import changed: a later edit
+changes a message's text, and an attachment added or given its file changes
+what its content key hashes. Why: there is no reason ever to leave a duplicate
+shown, and a flag an import made wrong would hide a message behind a copy
+whose text no longer matches, where no search finds it
 ([#1805](https://github.com/messagecrate/message-crate/issues/1805),
 [#1969](https://github.com/messagecrate/message-crate/issues/1969)).
+
+**A batch hides no duplicates.** `POST /v1/imports/{id}/batches` stores its
+messages and leaves the dedupe to the run's end, so the duplicates a run
+brings are shown while it is open. Why: each dedupe works over the whole
+account and holds the write lock, so one after every batch made an import of
+many batches into a large account rehash the account once per batch, while
+every other write waited. No dedupe scoped to a batch gives the full one's
+result, because the rank below reads the open run's growing message count
+and the account's source order
+([#2040](https://github.com/messagecrate/message-crate/issues/2040)).
 
 **Which copy is shown.** Of the copies of one message, the dedupe shows the
 first by these, in order (`rank` in `dedupe.rs`):
@@ -713,12 +749,11 @@ first by these, in order (`rank` in `dedupe.rs`):
 When one source holds a message more often than the others, the message
 stays shown that many times, and those places go to the copies first in this
 order. Why: the copy that carries the most is the one shown, and of two
-backups the larger import is the more complete one. A run's size is the
-count of the messages stamped with it, the ones it added. Every message
-carries that stamp, while the count a run records is written only when it
-completes. A run still going counts what it has added so far, and the
-dedupe after its next batch counts again. The last rank only makes the
-result the same every time
+backups the larger import is the more complete one. A run's size is the count
+of the messages stamped with it, the ones it added. Every message carries that
+stamp, while the count a run records is written only when it completes. The
+dedupe runs as the run ends, when every message it adds is in. The last rank
+only makes the result the same every time
 ([#1969](https://github.com/messagecrate/message-crate/issues/1969)).
 
 **Within one source, a whole-second message is the duplicate of its
@@ -754,6 +789,15 @@ A contact in the trash counts as no contact here: the participant takes the
 backup's name, else the identity, and carries no contact id.
 Why: the contact cannot be opened while it is in the trash, so a link to it
 would lead to `404 Not Found`.
+
+**A reactor the source names with no address is shown by that name and
+makes no identity.** A reaction keeps the name in `tapbacks.sender_display_name`
+when the source gave no address for the person who reacted, as an iMazing
+export does, and the conversation view shows the reaction under it
+(`imports_api/records.rs`, `tapback_from_reaction`). The name is shown,
+never matched to a contact. Why: the name is all the source knows of the
+reactor, and dropped, every such reaction read as from "Someone"
+([#2044](https://github.com/messagecrate/message-crate/issues/2044)).
 
 **Deleting a contact keeps its conversations.** The name and details go. The
 identities stay in their conversations and the person becomes Unknown again.
@@ -1023,5 +1067,5 @@ flowchart LR
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |
 | Writing and loading the address book | `crates/server/server/src/db/address_book.rs` |
 | The display name rule | `crates/server/server/src/db/participant_names.rs` |
-| Whether a conversation is a group | `is_group` in `crates/helpers/imessage-reader/src/session.rs`, `is_group_jid` in `crates/exporters/whatsapp-exporter/src/jid.rs`, `MmsConversation::for_peers` in `crates/libs/sbr/src/conversations.rs`, `pdu_target` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`, `names_a_group` in `crates/exporters/sms-backup-plus-exporter/src/flat_eml.rs`, `session_key` in `crates/exporters/imazing-exporter/src/parse_emit.rs`, `ingest_per_chat_file` and `labelled_conversation` in `crates/exporters/openextract-exporter/src/emit.rs` |
+| Whether a conversation is a group | `is_group` in `crates/helpers/imessage-reader/src/session.rs`, `is_group_jid` in `crates/exporters/whatsapp-exporter/src/jid.rs`, `MmsConversation::for_peers` in `crates/libs/sbr/src/conversations.rs`, `pdu_target` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`, `names_a_group` in `crates/exporters/sms-backup-plus-exporter/src/flat_eml.rs`, `session_key` in `crates/exporters/imazing-exporter/src/emit/session.rs`, `ingest_per_chat_file` and `labelled_conversation` in `crates/exporters/openextract-exporter/src/emit.rs` |
 | Which conversations involve a contact | `involves_contact_expr` in `db/contacts/read.rs`, `conversation_involves` in `search/bridge.rs` |

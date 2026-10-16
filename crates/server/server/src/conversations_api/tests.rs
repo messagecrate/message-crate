@@ -19,14 +19,13 @@ async fn list_conversations(
     q: &str,
     limit: usize,
     offset: usize,
-) -> Result<Page<ConversationSummary>, ApiError> {
+) -> Result<Page<ConversationSummary>, crate::db::SearchListError> {
     list_conversations_sorted(
         conn,
         account_id,
         q,
         &DEFAULT_CONVERSATION_SORT,
-        limit,
-        offset,
+        crate::paging::PageParams { limit, offset },
         crate::search::tests::clock(),
     )
     .await
@@ -267,8 +266,7 @@ async fn list_conversations_sorts_by_date_or_message_count() {
             account,
             "",
             &[crate::paging::SortKey { key, direction }],
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::FIRST_PAGE,
             crate::search::tests::clock(),
         )
         .await
@@ -394,14 +392,13 @@ async fn list_queries_enforce_search_limits() {
             account,
             query,
             &crate::db::contacts::read::DEFAULT_CONTACT_SORT,
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::FIRST_PAGE,
             crate::search::tests::clock(),
         )
         .await
         .unwrap_err();
         assert!(
-            matches!(contact_error, ApiError::SearchQueryInvalid { .. }),
+            matches!(contact_error, crate::db::SearchListError::Query(_)),
             "contact query should be rejected: {query}"
         );
 
@@ -410,7 +407,7 @@ async fn list_queries_enforce_search_limits() {
                 .await
                 .unwrap_err();
         assert!(
-            matches!(conversation_error, ApiError::SearchQueryInvalid { .. }),
+            matches!(conversation_error, crate::db::SearchListError::Query(_)),
             "conversation query should be rejected: {query}"
         );
     }
@@ -923,7 +920,7 @@ async fn list_conversations_filters_by_import_id() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(junk, ApiError::SearchQueryInvalid { .. }));
+    assert!(matches!(junk, crate::db::SearchListError::Query(_)));
 }
 
 /// `sort` reads through the shared parser: an unknown key is refused,
@@ -1024,8 +1021,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
                 key: ConversationSort::Date,
                 direction,
             }],
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::FIRST_PAGE,
             crate::search::tests::clock(),
         )
         .await
@@ -1057,8 +1053,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
         account,
         &q,
         &[],
-        DEFAULT_LIST_LIMIT,
-        0,
+        crate::paging::FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -1113,7 +1108,7 @@ async fn a_conversation_carries_its_first_and_last_message_times_once() {
         &SeedConversation {
             account_id: user.account_id,
             handle: "+15555550161",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.jsonl",
             messages: &messages,
@@ -1294,7 +1289,7 @@ async fn the_conversation_list_labels_each_thread_by_its_sources() {
             &SeedConversation {
                 account_id: user.account_id,
                 handle,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "t.jsonl",
                 messages: &messages,
@@ -1835,7 +1830,7 @@ async fn conversation_delete_removes_files_only_the_deleted_conversation_used() 
         &crate::test_support::SeedConversation {
             account_id: user.account_id,
             handle: "+15550112",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {
@@ -2393,7 +2388,7 @@ async fn a_page_starts_at_one_place_beside_a_message_of_this_conversation() {
         &SeedConversation {
             account_id: user.account_id,
             handle: "+15555550142",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
@@ -2631,7 +2626,7 @@ async fn sources_fixture() -> (TestFixture, RegisteredAccount, i64) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[

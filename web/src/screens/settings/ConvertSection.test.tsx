@@ -4,6 +4,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "./ConvertSection";
 
@@ -23,20 +24,23 @@ vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/tauri")>();
+vi.mock("../../lib/desktop/export", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/desktop/export")>();
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
     invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
     invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
     invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
-    invokeCancel: (...args: unknown[]) => invokeCancel(...args),
-    // The job's name comes first; the mocks below take what follows it.
-    awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
-    onDesktopJobEvents: vi.fn(async () => () => {}),
   };
 });
+
+vi.mock("../../lib/desktop/job", () => ({
+  invokeCancel: (...args: unknown[]) => invokeCancel(...args),
+  // The job's name comes first; the mocks below take what follows it.
+  awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
+  onDesktopJobEvents: vi.fn(async () => () => {}),
+}));
 
 afterEach(() => {
   cleanup();
@@ -116,7 +120,7 @@ describe("ConvertSection", () => {
     await settle();
     expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("convert", "jsonl", "");
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({
       input_dir: "/home/demo/export-json",
       output_dir: CONVERT_DIR,
     });
@@ -145,7 +149,9 @@ describe("ConvertSection", () => {
 
     await settle();
     expect(invokeFormat).toHaveBeenCalledTimes(1);
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_dir: "/home/demo/export-csv" });
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({
+      output_dir: "/home/demo/export-csv",
+    });
     expect(invokeCreateExportDir).not.toHaveBeenCalled();
   });
 
@@ -179,7 +185,7 @@ describe("ConvertSection", () => {
 
     await settle();
     expect(invokeFormat).toHaveBeenCalledTimes(1);
-    expect(invokeFormat.mock.calls[0][0]).toEqual({
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toEqual({
       input_dir: "/home/demo/export-json",
       output_dir: "/home/demo/export-csv",
       output_format: "csv",
@@ -194,7 +200,7 @@ describe("ConvertSection", () => {
 
     await settle();
     expect(invokeFormat).toHaveBeenCalledTimes(1);
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_format: "jsonl" });
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({ output_format: "jsonl" });
   });
 
   it("reports the failure rather than claiming the conversion finished", async () => {

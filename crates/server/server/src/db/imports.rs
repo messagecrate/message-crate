@@ -1,8 +1,8 @@
 //! Per-account Import Run records (one row per Import Run).
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use chrono::Utc;
-use message_crate_api_types::RunIssueKind;
+use message_crate_api_types::ImportErrorKind;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -292,9 +292,9 @@ impl CompleteImportArgs {
 /// One problem to record against an Import Run.
 #[derive(Debug, Clone)]
 pub struct ImportIssueInput {
-    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
-    /// The request handlers refuse every other kind.
-    pub kind: RunIssueKind,
+    /// Issue category: `error` or `skip`, the only kinds an Import Error
+    /// takes.
+    pub kind: ImportErrorKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -322,8 +322,8 @@ pub struct ImportIssueRow {
     pub id: i64,
     /// Run the issue belongs to.
     pub import_id: i64,
-    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
-    pub kind: RunIssueKind,
+    /// Issue category: `error` or `skip`.
+    pub kind: ImportErrorKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -364,11 +364,29 @@ pub enum ImportLookupError {
         /// The stage the move asked for.
         to: ImportStage,
     },
-    /// Database failure. It holds a `sqlx::Error` and nothing else, so a
+    /// Database failure. It holds a failed statement and nothing else, so a
     /// refusal written as an `anyhow` error does not compile into a database
     /// fault (#1682).
     #[error(transparent)]
-    Db(#[from] sqlx::Error),
+    Db(#[from] StatementFailed),
+}
+
+/// A database statement that failed, with the step it was taking, so the
+/// error reads "<step>: <database error>" in the server's log.
+#[derive(Debug, thiserror::Error)]
+#[error("{step}")]
+pub struct StatementFailed {
+    /// What the statement was doing, a fixed phrase.
+    step: &'static str,
+    /// The database error.
+    #[source]
+    source: sqlx::Error,
+}
+
+/// Name the step of a statement whose error becomes an
+/// [`ImportLookupError`]: `.map_err(failed("..."))`.
+fn failed(step: &'static str) -> impl FnOnce(sqlx::Error) -> StatementFailed {
+    move |source| StatementFailed { step, source }
 }
 
 /// Everything recorded when a run begins.
@@ -493,7 +511,9 @@ pub async fn start_import(
     match inserted {
         Ok(id) => Ok(id),
         Err(err) if is_unique_violation(&err) => Err(StartImportError::AlreadyActive),
-        Err(err) => Err(StartImportError::Db(err.into())),
+        Err(err) => Err(StartImportError::Db(
+            anyhow::Error::new(err).context("insert an Import Run"),
+        )),
     }
 }
 
@@ -506,39 +526,39 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
     matches!(db_err.code().as_deref(), Some("2067" | "1555"))
 }
 
-/// Column list for `imports`, in the order reads map to a row.
+/// Column list for `imports`, each read by name in [`import_from_row`].
 const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, started_at, \
      finished_at, message_count, attachment_count, bytes_uploaded, duration_ms, parse_ms, \
      attachments_ms, prepare_ms, upload_ms, summary_json, stage, run_dir, device_id, \
      form_json, source_fingerprint, source_identities, backup_taken_at, phone_country";
 
-/// Map one `imports` row by column position.
+/// Map one `imports` row, reading each column by name.
 fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
     Ok(ImportRow {
-        id: row.try_get(0)?,
-        account_id: row.try_get(1)?,
-        source: row.try_get(2)?,
-        tool: row.try_get(3)?,
-        mode: row.try_get(4)?,
+        id: row.try_get("id")?,
+        account_id: row.try_get("account_id")?,
+        source: row.try_get("source")?,
+        tool: row.try_get("tool")?,
+        mode: row.try_get("mode")?,
         status: {
-            let raw: String = row.try_get(5)?;
+            let raw: String = row.try_get("status")?;
             ImportStatus::parse(&raw).ok_or_else(|| {
                 sqlx::Error::Decode(format!("imports.status holds unknown value '{raw}'").into())
             })?
         },
-        started_at: row.try_get(6)?,
-        finished_at: row.try_get(7)?,
-        message_count: row.try_get(8)?,
-        attachment_count: row.try_get(9)?,
-        bytes_uploaded: row.try_get(10)?,
-        duration_ms: row.try_get(11)?,
-        parse_ms: row.try_get(12)?,
-        attachments_ms: row.try_get(13)?,
-        prepare_ms: row.try_get(14)?,
-        upload_ms: row.try_get(15)?,
-        summary_json: row.try_get(16)?,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+        message_count: row.try_get("message_count")?,
+        attachment_count: row.try_get("attachment_count")?,
+        bytes_uploaded: row.try_get("bytes_uploaded")?,
+        duration_ms: row.try_get("duration_ms")?,
+        parse_ms: row.try_get("parse_ms")?,
+        attachments_ms: row.try_get("attachments_ms")?,
+        prepare_ms: row.try_get("prepare_ms")?,
+        upload_ms: row.try_get("upload_ms")?,
+        summary_json: row.try_get("summary_json")?,
         stage: row
-            .try_get::<Option<String>, _>(17)?
+            .try_get::<Option<String>, _>("stage")?
             .map(|stage| {
                 ImportStage::parse(&stage).ok_or_else(|| {
                     sqlx::Error::Decode(
@@ -547,13 +567,13 @@ fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
                 })
             })
             .transpose()?,
-        run_dir: row.try_get(18)?,
-        device_id: row.try_get(19)?,
-        form_json: row.try_get(20)?,
-        source_fingerprint: row.try_get(21)?,
-        source_identities: row.try_get(22)?,
-        backup_taken_at: row.try_get(23)?,
-        phone_country: row.try_get(24)?,
+        run_dir: row.try_get("run_dir")?,
+        device_id: row.try_get("device_id")?,
+        form_json: row.try_get("form_json")?,
+        source_fingerprint: row.try_get("source_fingerprint")?,
+        source_identities: row.try_get("source_identities")?,
+        backup_taken_at: row.try_get("backup_taken_at")?,
+        phone_country: row.try_get("phone_country")?,
     })
 }
 
@@ -577,7 +597,8 @@ pub async fn note_backup_taken_at(
     .bind(import_id)
     .bind(backup_taken_at)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("record when an Import Run's backup was taken")?;
     Ok(())
 }
 
@@ -595,11 +616,10 @@ pub async fn get_owned_import(
     .bind(import_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    match row {
-        Some(data) => Ok(import_from_row(&data)?),
-        None => Err(ImportLookupError::NotFound { import_id }),
-    }
+    .await
+    .and_then(|row| row.as_ref().map(import_from_row).transpose())
+    .map_err(failed("read an Import Run"))?;
+    row.ok_or(ImportLookupError::NotFound { import_id })
 }
 
 /// The account's import when it is still running.
@@ -652,13 +672,18 @@ pub async fn set_import_stage(
     // The read and the update are one write transaction, so the stage the
     // move is checked from is the stage it replaces, and a run that finished
     // after the caller read it is never given a stage.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .map_err(failed("begin a write transaction"))?;
     let run = require_running_import(&mut tx, account_id, import_id).await?;
     // A running run always has a stage: `start_import` records one and only
     // the writes that finish a run clear it. A running run without one is a
     // row the server did not write, and its move cannot be checked.
-    let from = run.stage.ok_or_else(|| {
-        sqlx::Error::Decode(format!("running import {import_id} has no imports.stage").into())
+    let from = run.stage.ok_or_else(|| StatementFailed {
+        step: "read the stage of a running Import Run",
+        source: sqlx::Error::Decode(
+            format!("running import {import_id} has no imports.stage").into(),
+        ),
     })?;
     if !from.may_move_to(stage) {
         return Err(ImportLookupError::StageMove {
@@ -677,8 +702,11 @@ pub async fn set_import_stage(
     .bind(import_id)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    .await
+    .map_err(failed("move an Import Run to another stage"))?;
+    tx.commit()
+        .await
+        .map_err(failed("commit an Import Run's stage"))?;
     Ok(())
 }
 
@@ -704,7 +732,7 @@ async fn not_running(
 /// Records `cancelled` at the instant `now` with `issues`, the Import Errors
 /// the run recorded before it was given up, and its `notes`, and clears
 /// `stage`, which frees the account's single active slot. Nothing reclaims a
-/// run on a timer — a run is broken by an explicit discard or not at all.
+/// run on a timer. A run is broken by an explicit discard or not at all.
 /// The caller passes the instant, so a test names it rather than reading
 /// the clock.
 ///
@@ -723,7 +751,9 @@ pub async fn discard_import(
 ) -> std::result::Result<(), ImportLookupError> {
     // The update and the inserts are one write transaction, so a discarded
     // run never lands without the issues and notes it was discarded with.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .map_err(failed("begin a write transaction"))?;
     // The status check is in the update, so a run that completed after the
     // caller read it keeps its record instead of being rewritten as cancelled.
     let updated = sqlx::query(
@@ -735,34 +765,30 @@ pub async fn discard_import(
     .bind(import_id)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .map_err(failed("cancel a running Import Run"))?;
     if updated.rows_affected() == 0 {
         drop(tx);
         return Err(not_running(conn, account_id, import_id).await);
     }
     insert_issues(&mut tx, import_id, issues, now).await?;
     insert_notes(&mut tx, import_id, notes, now).await?;
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .map_err(failed("commit the canceled Import Run"))?;
     Ok(())
 }
 
-/// Discard the account's running Import Run, whichever it is, at the instant
-/// `now`, and return the row as it was before the discard; `None` when the
-/// account has no live run.
-///
-/// This is the way out for a command-line operator: a killed
-/// `message-crate-server import` leaves its run open, and the
-/// partial unique index then refuses every later import. The operator knows
-/// the account, not the run id, so the lookup happens here rather than
-/// making them find the id first.
+/// The account's running Import Run, whichever it is; `None` when the
+/// account has no live run. The server's `imports discard` command looks
+/// it up here: the operator knows the account, not the run id.
 ///
 /// # Errors
 ///
-/// Returns the database error.
-pub async fn discard_running_import(
+/// Returns an error naming the step when the query fails.
+pub async fn running_import(
     conn: &mut SqliteConnection,
     account_id: i64,
-    now: chrono::DateTime<Utc>,
 ) -> Result<Option<ImportRow>> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {IMPORT_COLUMNS}
@@ -771,15 +797,10 @@ pub async fn discard_running_import(
     )))
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id, &[], &[], now)
-        .await
-        .map_err(|err| anyhow::anyhow!(err))?;
-    Ok(Some(running))
+    .await
+    .and_then(|row| row.as_ref().map(import_from_row).transpose())
+    .context("read the account's running Import Run")?;
+    Ok(row)
 }
 
 /// Finish a running import at the instant `now`: prefer client counts, else
@@ -805,7 +826,9 @@ pub(crate) async fn complete_import(
     // The check, the counts, the update and the issue inserts are one write
     // transaction: the counts are of the run the update closes, and a failed
     // commit rolls back (sqlx drops the transaction).
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .map_err(failed("begin a write transaction"))?;
     let existing = require_running_import(&mut tx, account_id, import_id).await?;
     let finished_at = now.to_rfc3339();
     let status = args.status.as_str();
@@ -819,7 +842,8 @@ pub(crate) async fn complete_import(
         .bind(import_id)
         .bind(account_id)
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(failed("count the messages an Import Run stamped"))?;
         n
     };
     let attachment_count = if let Some(n) = args.attachment_count {
@@ -835,7 +859,8 @@ pub(crate) async fn complete_import(
         .bind(import_id)
         .bind(account_id)
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(failed("count the attachments of an Import Run's messages"))?;
         n
     };
     let bytes_uploaded = args.bytes_uploaded.unwrap_or(existing.bytes_uploaded);
@@ -872,7 +897,8 @@ pub(crate) async fn complete_import(
     .bind(import_id)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .map_err(failed("mark the Import Run finished"))?;
     if updated.rows_affected() == 0 {
         return Err(ImportLookupError::InvalidRun {
             message: format!("import {import_id} finished while it was being completed"),
@@ -880,7 +906,9 @@ pub(crate) async fn complete_import(
     }
     insert_issues(&mut tx, import_id, &args.issues, now).await?;
     insert_notes(&mut tx, import_id, &args.notes, now).await?;
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .map_err(failed("commit the finished Import Run"))?;
 
     get_owned_import(&mut *conn, account_id, import_id).await
 }
@@ -891,7 +919,7 @@ async fn insert_issues(
     import_id: i64,
     issues: &[ImportIssueInput],
     now: chrono::DateTime<Utc>,
-) -> std::result::Result<(), sqlx::Error> {
+) -> std::result::Result<(), StatementFailed> {
     for issue in issues {
         sqlx::query(
             r"
@@ -907,7 +935,8 @@ async fn insert_issues(
         .bind(&issue.reason)
         .bind(now.to_rfc3339())
         .execute(&mut *conn)
-        .await?;
+        .await
+        .map_err(failed("insert an Import Error of an Import Run"))?;
     }
     Ok(())
 }
@@ -918,7 +947,7 @@ async fn insert_notes(
     import_id: i64,
     notes: &[ImportNoteRow],
     now: chrono::DateTime<Utc>,
-) -> std::result::Result<(), sqlx::Error> {
+) -> std::result::Result<(), StatementFailed> {
     for note in notes {
         sqlx::query(
             r"
@@ -932,7 +961,8 @@ async fn insert_notes(
         .bind(&note.text)
         .bind(now.to_rfc3339())
         .execute(&mut *conn)
-        .await?;
+        .await
+        .map_err(failed("insert a note of an Import Run"))?;
     }
     Ok(())
 }
@@ -947,41 +977,45 @@ pub async fn list_import_issues(
     conn: &mut SqliteConnection,
     import_id: i64,
 ) -> Result<Vec<ImportIssueRow>> {
-    let issue_rows: Vec<(i64, i64, String, String, String, String, String)> = sqlx::query_as(
-        r"
+    let issue_rows: Vec<ImportIssueRow> =
+        sqlx::query_as::<_, (i64, i64, String, String, String, String, String)>(
+            r"
         SELECT id, import_id, kind, stage, item, reason, created_at
         FROM import_issues
         WHERE import_id = $1
         ORDER BY id ASC
         ",
-    )
-    .bind(import_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    Ok(issue_rows
-        .into_iter()
-        .map(|(id, import_id, kind, stage, item, reason, created_at)| {
-            let kind = RunIssueKind::parse(&kind).ok_or_else(|| {
-                sqlx::Error::Decode(
-                    format!("import_issues.kind holds unknown value '{kind}'").into(),
-                )
-            })?;
-            let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
-                sqlx::Error::Decode(
-                    format!("import_issues.stage holds unknown value '{stage}'").into(),
-                )
-            })?;
-            Ok(ImportIssueRow {
-                id,
-                import_id,
-                kind,
-                stage,
-                item,
-                reason,
-                created_at,
-            })
+        )
+        .bind(import_id)
+        .fetch_all(&mut *conn)
+        .await
+        .and_then(|rows| {
+            rows.into_iter()
+                .map(|(id, import_id, kind, stage, item, reason, created_at)| {
+                    let kind = ImportErrorKind::parse(&kind).ok_or_else(|| {
+                        sqlx::Error::Decode(
+                            format!("import_issues.kind holds unknown value '{kind}'").into(),
+                        )
+                    })?;
+                    let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
+                        sqlx::Error::Decode(
+                            format!("import_issues.stage holds unknown value '{stage}'").into(),
+                        )
+                    })?;
+                    Ok(ImportIssueRow {
+                        id,
+                        import_id,
+                        kind,
+                        stage,
+                        item,
+                        reason,
+                        created_at,
+                    })
+                })
+                .collect::<std::result::Result<Vec<_>, sqlx::Error>>()
         })
-        .collect::<std::result::Result<Vec<_>, sqlx::Error>>()?)
+        .context("read the Import Errors of an Import Run")?;
+    Ok(issue_rows)
 }
 
 /// The notes recorded for one import, oldest first. The caller has already
@@ -994,23 +1028,26 @@ pub async fn list_import_notes(
     conn: &mut SqliteConnection,
     import_id: i64,
 ) -> Result<Vec<ImportNoteRow>> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
+    let rows: Vec<ImportNoteRow> = sqlx::query_as::<_, (String, String, String)>(
         "SELECT stage, item, text FROM import_notes WHERE import_id = $1 ORDER BY id ASC",
     )
     .bind(import_id)
     .fetch_all(&mut *conn)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(stage, item, text)| {
-            let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
-                sqlx::Error::Decode(
-                    format!("import_notes.stage holds unknown value '{stage}'").into(),
-                )
-            })?;
-            Ok(ImportNoteRow { stage, item, text })
-        })
-        .collect::<std::result::Result<Vec<_>, sqlx::Error>>()?)
+    .await
+    .and_then(|rows| {
+        rows.into_iter()
+            .map(|(stage, item, text)| {
+                let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
+                    sqlx::Error::Decode(
+                        format!("import_notes.stage holds unknown value '{stage}'").into(),
+                    )
+                })?;
+                Ok(ImportNoteRow { stage, item, text })
+            })
+            .collect::<std::result::Result<Vec<_>, sqlx::Error>>()
+    })
+    .context("read the notes of an Import Run")?;
+    Ok(rows)
 }
 
 /// A JSON text column as a value: the parsed JSON, the raw text when it is
@@ -1079,7 +1116,11 @@ pub async fn list_imports_page(
     if let Some(status) = status {
         count = count.bind(status);
     }
-    let total = count.fetch_one(&mut *conn).await?.max(0) as u64;
+    let total = count
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the account's Import Runs")?
+        .max(0) as u64;
 
     let direction = order
         .iter()
@@ -1108,24 +1149,30 @@ pub async fn list_imports_page(
     if let Some(status) = status {
         query = query.bind(status);
     }
-    let rows = query.bind(limit).bind(offset).fetch_all(&mut *conn).await?;
     let count = |row: &SqliteRow, column: &str| -> Result<u64, sqlx::Error> {
         Ok(row.try_get::<i64, _>(column)?.max(0) as u64)
     };
-    let items = rows
-        .iter()
-        .map(|row| {
-            Ok(ListedImport {
-                row: import_from_row(row)?,
-                issue_count: count(row, "issue_count")?,
-                note_count: count(row, "note_count")?,
-                contacts: crate::db::import_contacts::ContactCounts {
-                    new_count: count(row, "contacts_new")?,
-                    changed_count: count(row, "contacts_changed")?,
-                },
-            })
+    let items = query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&mut *conn)
+        .await
+        .and_then(|rows| {
+            rows.iter()
+                .map(|row| {
+                    Ok(ListedImport {
+                        row: import_from_row(row)?,
+                        issue_count: count(row, "issue_count")?,
+                        note_count: count(row, "note_count")?,
+                        contacts: crate::db::import_contacts::ContactCounts {
+                            new_count: count(row, "contacts_new")?,
+                            changed_count: count(row, "contacts_changed")?,
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>, sqlx::Error>>()
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+        .context("read a page of the account's Import Runs")?;
     Ok((items, total))
 }
 
@@ -1141,7 +1188,8 @@ pub async fn issue_and_note_counts(
     )
     .bind(import_id)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("count an Import Run's Import Errors and notes")?;
     Ok((issues.max(0) as u64, notes.max(0) as u64))
 }
 
@@ -1151,20 +1199,19 @@ pub async fn has_messages(conn: &mut SqliteConnection, import_id: i64) -> Result
     let row = sqlx::query("SELECT 1 FROM messages WHERE import_id = $1 LIMIT 1")
         .bind(import_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("check whether an Import Run has stamped a message")?;
     Ok(row.is_some())
 }
 
 /// Whether the account has a running Import Run. Such a run may have
 /// uploaded files that no row names yet, for a batch it has not sent.
-pub async fn has_running_import(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<bool, sqlx::Error> {
+pub async fn has_running_import(conn: &mut SqliteConnection, account_id: i64) -> Result<bool> {
     let row = sqlx::query("SELECT 1 FROM imports WHERE account_id = $1 AND status = 'running'")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("check whether the account has a running Import Run")?;
     Ok(row.is_some())
 }
 
@@ -1238,7 +1285,8 @@ pub async fn top_attachments_by_size(
     .bind(account_id)
     .bind(limit)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's largest attachments")?;
     Ok(rows
         .into_iter()
         .map(
@@ -1292,21 +1340,24 @@ pub async fn detach_from_account(
     .bind(account_id)
     .bind(now)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("cancel the account's running Import Runs")?;
     sqlx::query(
         "DELETE FROM import_issues
          WHERE import_id IN (SELECT id FROM imports WHERE account_id = $1)",
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the Import Errors of the account's Import Runs")?;
     sqlx::query(
         "DELETE FROM import_notes
          WHERE import_id IN (SELECT id FROM imports WHERE account_id = $1)",
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the notes of the account's Import Runs")?;
     sqlx::query(
         "UPDATE imports SET username = $2, deletion_entry_id = $3, form_json = NULL, run_dir = NULL,
                 source_fingerprint = NULL, source_identities = NULL, summary_json = NULL,
@@ -1317,7 +1368,8 @@ pub async fn detach_from_account(
     .bind(username)
     .bind(deletion_entry_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("mark the account's Import Runs to outlive it")?;
     Ok(())
 }
 

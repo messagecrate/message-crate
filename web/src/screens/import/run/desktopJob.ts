@@ -1,7 +1,10 @@
 import type { ImportIssue } from "../../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../../components/import/importIssueStage";
+import { errorLine } from "../../../lib/apiErrorMessage";
 import { formatAttachmentProgress } from "../../../lib/attachmentProgressCopy";
-import type { DesktopJobResult, RunDirConfig, StagingSummary } from "../../../lib/tauri";
+import type { DesktopJobResult } from "../../../lib/desktop/job";
+import type { RunDirConfig, StagingSummary } from "../../../lib/desktop/staging";
+import { DesktopJobError } from "../../../lib/desktopJobError";
 import { waitingLine } from "../../../lib/toolStatusCopy";
 import type {
   AttachmentMediaMode,
@@ -11,6 +14,7 @@ import type {
   ImportProgressEvent,
 } from "../../../lib/types";
 import {
+  isImportErrorEvent,
   isProgressStepComplete,
   issueFromEvent,
   noteFromEvent,
@@ -171,7 +175,7 @@ function recordIssue(ctx: RunContext, event: ImportIssueEvent): void {
     // In place: an exporter may send a row per item, tens of thousands in a
     // run, and copying the list for each would cost the square of that.
     scratch.notes.push(noteFromEvent(event));
-  } else {
+  } else if (isImportErrorEvent(event)) {
     scratch.issues.push(issueFromEvent(event));
   }
   void saveCarriedRecord(ctx);
@@ -206,6 +210,17 @@ function recordFileWritten(ctx: RunContext, event: ImportFileWrittenEvent): void
   }
 }
 
+/**
+ * The Import Errors row's reason for a desktop job that failed: the sentence
+ * the person reads first, then the error chain a `DesktopJobError` carries,
+ * so the run's record on the server still holds the error chain the
+ * sentence leaves out (#2071, #2112).
+ */
+export function jobErrorReason(e: unknown): string {
+  const line = errorLine(e);
+  return e instanceof DesktopJobError ? `${line} Details: ${e.detail}` : line;
+}
+
 export function recordError(ctx: RunContext, stage: ImportIssueStage, message: string): void {
   ctx.scratch.issues.push({ kind: "error", stage, item: RUN_ERROR_ITEM, reason: message });
 }
@@ -213,7 +228,7 @@ export function recordError(ctx: RunContext, stage: ImportIssueStage, message: s
 /**
  * Run one desktop job to its end, feeding its progress and issues into the
  * run. A job that a Cancel came before is never started, and fails with
- * `CANCELLED_MESSAGE` the way a job cancelled while it runs does.
+ * a `CanceledError` the way a job canceled while it runs does.
  */
 export function runJob(ctx: RunContext, invokeFn: () => Promise<void>): Promise<DesktopJobResult> {
   const guarded = ctx.scratch.runCancel.guard(invokeFn);

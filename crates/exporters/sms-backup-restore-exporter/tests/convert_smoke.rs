@@ -17,9 +17,9 @@ fn convert(
     convert_export(ConvertExportArgs {
         input,
         output_dir: output,
-        scratch_dir: cache.path(),
         owner_phones,
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format,
             ..ConvertRun::default()
         },
@@ -189,9 +189,9 @@ fn cancel_during_the_write_phase_stops_the_export() {
     let err = convert_export(ConvertExportArgs {
         input: &fixture,
         output_dir: &out,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             transforms,
             output_format: OutputFormat::Csv,
             cancel: cancel.clone(),
@@ -315,7 +315,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     assert!(message["service"].as_str() == Some("sms"));
     // Outgoing rows carry owner identity. The fixture includes an SMS type=2
     // (sent) and an MMS where the owner is a recipient; both must share the same
-    // individual conversation after owner-filtered peer resolution.
+    // one-to-one conversation after owner-filtered peer resolution.
     assert_eq!(
         report.conversations, 1,
         "MMS must not fragment into a group conversation"
@@ -365,9 +365,9 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             input: &fixture,
             output_dir: tmp.path(),
-            scratch_dir: cache.path(),
             owner_phones: &[],
             convert_run: ConvertRun {
+                scratch_dir: cache.path().to_path_buf(),
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()

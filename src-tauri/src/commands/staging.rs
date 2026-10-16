@@ -3,9 +3,9 @@
 //!
 //! These back the two reviews a staged import stops at:
 //! `summarize_staging` recomputes what a staged directory holds so the first
-//! review can show it, `transcode_staging` runs the Media stage the
-//! exporter deferred (see `extract::exporter_attachment_media`), and
-//! `delete_run_dir` removes the run directory — when a review is closed
+//! review can show it, `transcode_staging` runs the Media Stage on the
+//! originals Staging copied, and
+//! `delete_run_dir` removes the run directory when a review is closed
 //! without approving, when a paused run is discarded, and when the server
 //! records the run as finished, since nothing will read the directory again.
 //! `read_import_run_record` and `save_import_run_record` keep the record of a
@@ -53,7 +53,7 @@ pub struct RunDirArgs {
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system reports no home directory.
+/// Returns an error when the Staging Directory's record cannot be read.
 #[tauri::command]
 pub fn staging_root(directories: tauri::State<'_, RunDirectories>) -> Result<StagingRoot, String> {
     directories.describe()
@@ -79,18 +79,12 @@ pub fn set_staging_root(
 /// The log of the Import Run whose directory is `run_dir`, in the Logs
 /// Directory. The log is there once the run's Upload has started, and stays
 /// after the run's directory is deleted.
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
 #[tauri::command]
-pub fn import_run_log(app: tauri::AppHandle, run_dir: String) -> Result<String, String> {
-    let logs = super::paths::logs_dir(&app)?;
-    Ok(
-        crate::app_directories::import_run_log(&logs, std::path::Path::new(run_dir.trim()))
-            .display()
-            .to_string(),
-    )
+pub fn import_run_log(app: tauri::AppHandle, run_dir: String) -> String {
+    let logs = super::paths::logs_dir(&app);
+    crate::app_directories::import_run_log(&logs, std::path::Path::new(run_dir.trim()))
+        .display()
+        .to_string()
 }
 
 /// Make a new run directory under the Staging Directory and return its
@@ -163,7 +157,7 @@ pub async fn summarize_staging(
     .map_err(|join_error| format!("summarize_staging did not complete: {join_error}"))?
 }
 
-/// `count == 1` ? "" : "s" — the only pluralization these summaries need.
+/// The only pluralization these summaries need: `""` for one, `"s"` otherwise.
 fn plural_s(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
@@ -176,9 +170,9 @@ fn plural_s(count: usize) -> &'static str {
 /// visible while the Media stage runs, not only after it finishes.
 ///
 /// `too_large` and `failed` get separate clauses on purpose: a `too_large`
-/// file WAS converted — it just came out over the limit and will not be
-/// uploaded — which is a different fact from `failed`, a file the Media stage could
-/// not convert at all. The report has no per-file reasons (those are written
+/// file WAS converted. It just came out over the limit and will not be
+/// uploaded, which is a different fact from `failed`, a file the Media stage
+/// could not convert at all. The report has no per-file reasons (those are written
 /// into the conversation files' `missing_reason` instead), so this can only
 /// speak in counts.
 fn transcode_summary(report: &TranscodeReport) -> String {
@@ -209,14 +203,14 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// a cancel flag of its own, the Media stage runs on a background thread, and
 /// progress/log/finished go back as `desktop-job:*` events so the UI reuses
 /// one progress view. A cancelled Media stage is reported through
-/// `desktop-job:error` the same way any other failure is — exactly how a
-/// cancelled `extract` run already behaves (`extract` never special-cases
+/// `desktop-job:error` the same way any other failure is. That is exactly how
+/// a cancelled `extract` run already behaves (`extract` never special-cases
 /// its own cancellation either; `spawn_job`'s generic `Err` handling covers
 /// both). An earlier version of this command ended a cancelled Media stage
 /// quietly instead (a `desktop-job:log` line, `Ok(())`, no
 /// `desktop-job:error`); that left `awaitDesktopJob`'s promise on the web
-/// side permanently unsettled — no `desktop-job:finished`, no
-/// `desktop-job:error` — wedging the screen with `running` stuck true and no
+/// side permanently unsettled (no `desktop-job:finished`, no
+/// `desktop-job:error`), wedging the screen with `running` stuck true and no
 /// way back except restarting the app. Do not restore the quiet path.
 ///
 /// Each file the Media stage could not convert goes to the window as a
@@ -231,9 +225,9 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 ///
 /// Returns an error if `run_dir` is not a run directory this app made
 /// or holds no media settings, another job is running, or another thread
-/// panicked while holding the shared state lock. Failures during the Media stage —
-/// including a cancellation and ffmpeg/ffprobe being unavailable — are sent
-/// as `desktop-job:error`, verbatim, not returned here.
+/// panicked while holding the shared state lock. Failures during the Media
+/// stage, including a cancellation and ffmpeg/ffprobe being unavailable, are
+/// sent as `desktop-job:error`, verbatim, not returned here.
 #[tauri::command(async)]
 pub fn transcode_staging(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -244,7 +238,7 @@ pub fn transcode_staging(
     args: RunDirArgs,
 ) -> Result<(), String> {
     let (run_dir, options) = staged_directory(&directories, &args.run_dir)?;
-    let run_log = RunLog::open(&super::paths::logs_dir(&app)?, &run_dir);
+    let run_log = RunLog::open(&super::paths::logs_dir(&app), &run_dir);
     let job = start_job(&state, JobName::Media)?;
     let cancel = job.cancel_flag();
     let media_stage_converts = matches!(
@@ -256,7 +250,7 @@ pub fn transcode_staging(
     let issues = events::run_issue_sink(&app, &run_log);
     let downloads = downloads.inner().clone();
     let installed = installed.inner().clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, Some(run_log.clone()), move || {
         if media_stage_converts {
             // ffmpeg or ffprobe still downloading is waited for, and the
             // wait is the Media row's progress line (#1053).
@@ -277,7 +271,7 @@ pub fn transcode_staging(
 
         // Not `move`: the closure only needs `&app_handle` (`emit` takes
         // `&self`), so it borrows the one clone above rather than needing a
-        // second — the same handle is still available by reference below,
+        // second. The same handle is still available by reference below,
         // once this borrow ends at the end of the `transcode_staged` call.
         let outcome = message_staging::transcode_staged(
             &run_dir,
@@ -295,7 +289,7 @@ pub fn transcode_staging(
             },
         );
 
-        // A cancellation is just another `Err` here — `spawn_job` reports it
+        // A cancellation is just another `Err` here. `spawn_job` reports it
         // as `desktop-job:error` with the error chain as `detail`, the same
         // generic path a cancelled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel

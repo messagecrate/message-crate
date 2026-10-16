@@ -1,11 +1,11 @@
 //! Conversation key, sender, date, and row-classification helpers for the
 //! emitter.
 
-use crate::emit::TransportFamily;
-use crate::parse::{RawRow, SourceKind};
+use super::TransportFamily;
+use crate::read::{RawRow, SourceKind};
 use crate::zone::Zone;
 use chrono::NaiveDateTime;
-use message_ir::{ConversationKey, IdentityType, IrParticipant};
+use message_ir::{ConversationKey, IdentityType, Participant};
 use phone::Handle;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -211,18 +211,15 @@ fn one_to_one_address(session: &str, rows: &[&RawRow]) -> Option<Handle> {
 /// Returns the members with an address sorted by handle, then the members
 /// with a name only in roster order, and how many listed names had no
 /// address.
-fn group_members(
-    roster: bool,
-    session: &str,
-    rows: &[&RawRow],
-) -> (Vec<IrParticipant>, Vec<String>) {
-    let mut members: BTreeMap<String, IrParticipant> = BTreeMap::new();
+fn group_members(roster: bool, session: &str, rows: &[&RawRow]) -> (Vec<Participant>, Vec<String>) {
+    let mut members: BTreeMap<String, Participant> = BTreeMap::new();
     let mut add = |handle: Handle, name: &str| {
         let member = members
             .entry(handle.key().to_string())
-            .or_insert_with(|| IrParticipant {
+            .or_insert_with(|| Participant {
                 identity: Some(handle.into_key()),
                 display_name: None,
+                country: None,
             });
         let name = name.trim();
         if member.display_name.is_none() && !name.is_empty() {
@@ -250,7 +247,7 @@ fn group_members(
     }
 
     let mut unresolved = Vec::new();
-    let mut named_only: Vec<IrParticipant> = Vec::new();
+    let mut named_only: Vec<Participant> = Vec::new();
     if roster {
         for label in session.split(" & ").map(str::trim) {
             if label.is_empty() {
@@ -271,15 +268,16 @@ fn group_members(
                 });
                 if !already {
                     unresolved.push(label.to_string());
-                    named_only.push(IrParticipant {
+                    named_only.push(Participant {
                         identity: None,
                         display_name: Some(label.to_string()),
+                        country: None,
                     });
                 }
             }
         }
     }
-    let mut out: Vec<IrParticipant> = members.into_values().collect();
+    let mut out: Vec<Participant> = members.into_values().collect();
     out.extend(named_only);
     (out, unresolved)
 }

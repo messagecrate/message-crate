@@ -132,7 +132,7 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
         .unwrap_err();
 
         assert!(
-            matches!(err, MembershipError::Conflict(_)),
+            matches!(err, MembershipError::NameTaken(_)),
             "{second}: {err:?}"
         );
         let names: Vec<String> = list_sets(tag_spec(), &mut conn, account)
@@ -404,7 +404,7 @@ async fn create_set_refuses_duplicates_and_reserved_names() {
     let err = create_set(group_spec(), &mut conn, account, "family")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::Conflict(_)));
+    assert!(matches!(err, MembershipError::NameTaken(_)));
     let err = create_set(group_spec(), &mut conn, account, "Trash")
         .await
         .unwrap_err();
@@ -434,7 +434,7 @@ async fn rename_set_allows_a_case_change_and_refuses_another_sets_name() {
     let err = rename_set(group_spec(), &mut conn, account, work_id, "family")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::Conflict(_)));
+    assert!(matches!(err, MembershipError::NameTaken(_)));
     let err = rename_set(group_spec(), &mut conn, account, 999_999, "Anything")
         .await
         .unwrap_err();
@@ -939,5 +939,63 @@ async fn set_membership_by_name_still_creates_and_fills_a_group() {
             .await
             .unwrap(),
         vec!["Family"]
+    );
+}
+
+/// The reserved names and their sentences of one spec, as the website reads
+/// them from `web/src/lib/reservedNames.json`.
+fn reserved_names_json(spec: &MembershipSpec) -> serde_json::Value {
+    let special: Vec<serde_json::Value> = spec
+        .special_reserved
+        .iter()
+        .map(|(name, message)| serde_json::json!({ "name": name, "message": message }))
+        .collect();
+    serde_json::json!({
+        "label": spec.reserved_label,
+        "reserved": spec.reserved,
+        "special": special,
+    })
+}
+
+/// The website refuses a reserved Message Tag or Contact Group name before it
+/// asks the server, from `web/src/lib/reservedNames.json`. That file is this
+/// test's output, so a name added to a spec here and not to the file fails
+/// the test, and the form never accepts a name the server refuses.
+#[test]
+fn the_website_reserves_the_same_names_as_the_server() {
+    // The website looks a name up by its lower-case form, as `is_reserved`
+    // does, so a name written here with a capital would never match.
+    for spec in [tag_spec(), group_spec()] {
+        let names = spec
+            .reserved
+            .iter()
+            .chain(spec.special_reserved.iter().map(|(name, _)| name));
+        for name in names {
+            assert_eq!(
+                *name,
+                name.to_ascii_lowercase(),
+                "{name:?} is not lower case"
+            );
+        }
+    }
+    let want = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "contactGroup": reserved_names_json(group_spec()),
+            "messageTag": reserved_names_json(tag_spec()),
+        }))
+        .unwrap()
+    );
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../web/src/lib/reservedNames.json");
+    if std::env::var_os("UPDATE_FIXTURES").is_some() {
+        std::fs::write(&path, &want).unwrap();
+    }
+    let have = std::fs::read_to_string(&path).unwrap_or_default();
+    assert_eq!(
+        have, want,
+        "web/src/lib/reservedNames.json is out of date with the reserved names in \
+         db/named_membership.rs.\nRegenerate with: UPDATE_FIXTURES=1 cargo test -p \
+         message-crate-server the_website_reserves_the_same_names_as_the_server"
     );
 }

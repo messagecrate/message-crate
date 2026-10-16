@@ -1,14 +1,25 @@
 import type { ImportIssue } from "./ImportSummaryPanel";
 import type { ImportIssueStage } from "./importIssueStage";
 
+/**
+ * One row of an issues table: an Import Error, or a note drawn the way an
+ * Import Error is, whose `kind` is `note`.
+ */
+export type IssueTableRow = {
+  kind: ImportIssue["kind"] | "note";
+  stage: ImportIssueStage;
+  item: string;
+  reason: string;
+};
+
 export type ImportIssueGroup = {
-  kind: string;
+  kind: IssueTableRow["kind"];
   stage: ImportIssueStage;
   reason: string;
   items: string[];
 };
 
-export function groupImportIssues(issues: ImportIssue[]): ImportIssueGroup[] {
+export function groupImportIssues(issues: readonly IssueTableRow[]): ImportIssueGroup[] {
   const groups: ImportIssueGroup[] = [];
   const indexByKey = new Map<string, number>();
 

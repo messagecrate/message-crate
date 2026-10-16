@@ -21,7 +21,7 @@ A merge to `main` does not publish an image. CI only builds and pushes `bitrealm
 
 ## Two Compose files
 
-Docker Compose reads a YAML file and starts a container from it. This repository has two of those files. They both listen on port **8080**. They do not do the same thing.
+Docker Compose reads a YAML file and starts a container from it. This repository has two of those files. They both publish the server on port **8080** of `127.0.0.1`, so only the computer that runs Docker reaches it, as the `docker run` command in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server) does. [Run on another machine](/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network) says how to publish it on the network. They do not do the same thing.
 
 `docker/compose.yml` names an image that already exists: `bitrealm/message-crate:latest`. Compose downloads that image from Docker Hub. It does not compile this local checkout. That file is the sample for [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). Do not use that file from a local checkout if the goal is to test local code.
 
@@ -31,10 +31,10 @@ A local checkout’s `.env.example` sets `COMPOSE_FILE=docker/compose.release.ym
 
 Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That script also binds port 8080.
 
-Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three.
+Both files start the container with the same limits. So does every `docker run` command in the user guide that starts the server. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three. A test in the server's crate fails when one of the user guide's `docker run` commands leaves out a limit.
 
 Both files also set `stop_grace_period: 40s`.
-A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, and for its conversions to stop, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, and for its conversions to stop, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
 Docker's default of 10 seconds would kill it part-way, with no line in the log saying why.
 The 10 seconds more leave time for the server to write its log and exit after its own limit, so Docker never has to kill it.
 The documented `docker run` commands carry the same 40 seconds as `--stop-timeout 40`, and a test in the server's crate fails when a Compose file or one of those commands gives no more than the server's limit.
@@ -97,7 +97,7 @@ The file has three stages. Each stage is a temporary image. Only the last stage 
 
 1. **Website.** Node.js 24 installs `web/` dependencies and runs `npm run build`. The output is `web/dist`.
 2. **Server binary.** Rust 1.98.1, the version `rust-toolchain.toml` pins, compiles `message-crate-server` in release mode. The binary carries what it needs to generate Demo Data: the `demo-seed` crate, its two size settings, the Pride and Prejudice text, and the name lists.
-3. **Runtime.** A slim Node.js 20 image gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. Its `HEALTHCHECK` runs `docker/healthcheck.cjs` with Node every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The script reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. `/health` answers `ok` only while the server can take a database connection and run a statement on it, so a server that runs but cannot reach its database reads unhealthy. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The script's header comment has the details.
+3. **Runtime.** Debian 12 (bookworm), `debian:bookworm-slim`, with no Node.js, gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. It runs as user and group 1000, named `app`. Its `HEALTHCHECK` runs `message-crate-server healthcheck` every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The command reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. `/health` answers `ok` only while the server can take a database connection and run a statement on it, so a server that runs but cannot reach its database reads unhealthy. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The module comment of `crates/server/server/src/healthcheck.rs` has the details.
 
 The build context is the **repository root**. `.dockerignore` decides what Docker sends into that context. It must ignore the live data directory at the repo root (`/data`) so a personal database is not copied into the image. It must not ignore `crates/server/demo-seed/data/`. That directory holds the Pride and Prejudice text and the name lists the server compiles in.
 
@@ -236,7 +236,7 @@ That job is the Hub image. `docker/compose.release.yml` is the way to compile th
 
 ## Run the published image
 
-Pull and start `bitrealm/message-crate` from Docker Hub as described in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). That page gives the `docker run` command; `docker/compose.yml` in the repository is the Compose form of it, with the limits under [Two Compose files](#two-compose-files) added. Upgrades that keep the existing database volume are on [Update](/docs/user/features/owner/update/).
+Pull and start `bitrealm/message-crate` from Docker Hub as described in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). That page gives the `docker run` command; `docker/compose.yml` in the repository is the Compose form of it, with the same limits, described under [Two Compose files](#two-compose-files). Upgrades that keep the existing database volume are on [Update](/docs/user/features/owner/update/).
 
 ## Related
 

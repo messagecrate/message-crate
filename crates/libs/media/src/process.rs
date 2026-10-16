@@ -50,8 +50,8 @@ pub struct NotConverted {
 /// any other file in its directory by its path:
 ///
 /// - why ffmpeg was stopped ([`Killed`]);
-/// - the last line ffmpeg wrote before it failed, with each file it was
-///   given written as `<input>` or `<output>`
+/// - the line ffmpeg wrote that names the cause ([`cause_line`]), with
+///   each file it was given written as `<input>` or `<output>`
 ///   ([`FfmpegFailed::without_files`]);
 /// - how ffmpeg exited, when it failed and wrote nothing;
 /// - otherwise the error's first line, with `file` written as `<input>`,
@@ -68,13 +68,8 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         return killed.to_string();
     }
     if let Some(failed) = err.downcast_ref::<FfmpegFailed>() {
-        return match failed
-            .said()
-            .lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-        {
-            Some(last) => failed.without_files(last.trim()),
+        return match cause_line(failed.said()) {
+            Some(cause) => failed.without_files(cause),
             None => failed.to_string(),
         };
     }
@@ -101,6 +96,71 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+/// What ffmpeg writes after a failure that only follows from it: a task
+/// or thread ending, an encoder or a file that then would not open, and
+/// that nothing was written. Each is matched at the start of a line's text,
+/// after its `[<component> @ …]` tags.
+const CONSEQUENCES: [&str; 9] = [
+    "Nothing was written into output file",
+    "Task finished with error code",
+    "Terminating thread with return code",
+    "Could not open encoder before EOF",
+    "Error sending frames to consumers",
+    "Error while opening encoder",
+    "Error selecting an encoder",
+    "Error opening input",
+    "Error opening output",
+];
+
+/// Whether `line` is libx265's own report, which it writes to stderr at
+/// any `-loglevel` and which ends what ffmpeg wrote even when it failed:
+/// an `x265 [info]:` line, or its summary, `encoded <n> frames …`.
+fn is_x265_report(line: &str) -> bool {
+    line.starts_with("x265 [info]:")
+        || line
+            .strip_prefix("encoded ")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Whether `line` of what ffmpeg wrote names no cause: it only follows from
+/// an earlier failure ([`CONSEQUENCES`]), or is libx265's own report
+/// ([`is_x265_report`]).
+fn is_consequence(line: &str) -> bool {
+    if is_x265_report(line) {
+        return true;
+    }
+    let mut text = line;
+    while let Some((_, rest)) = text.strip_prefix('[').and_then(|rest| rest.split_once(']')) {
+        text = rest.trim_start();
+    }
+    CONSEQUENCES
+        .iter()
+        .any(|consequence| text.starts_with(consequence))
+}
+
+/// The line of what ffmpeg `said` that names why it failed, trimmed: the
+/// last line that names a cause ([`is_consequence`]). When every line only
+/// follows from a failure, the first line that is not libx265's report,
+/// which comes nearest the cause. The last line when every line is
+/// libx265's report, and `None` when ffmpeg said nothing.
+///
+/// ffmpeg writes the cause first and what follows from it after, such as
+/// that the encoder did not open and the output muxer's line that nothing
+/// was written, so the last line can be a consequence rather than the
+/// cause (#2959). The search goes back from the end rather than forward
+/// from the start, because a damaged file makes ffmpeg write errors it
+/// carries on past, such as a frame it could not decode, before the one it
+/// stopped on, and the start of what is kept can be any of them.
+fn cause_line(said: &str) -> Option<&str> {
+    let lines = said.lines().map(str::trim).filter(|line| !line.is_empty());
+    lines
+        .clone()
+        .rev()
+        .find(|line| !is_consequence(line))
+        .or_else(|| lines.clone().find(|line| !is_x265_report(line)))
+        .or_else(|| lines.clone().next_back())
 }
 
 /// `err` on one line, with its whole chain, and each file a failed ffmpeg
@@ -400,8 +460,8 @@ pub(crate) use crate::mime::Kind;
 ///
 /// Every non-temp file [`classify`] recognizes, recursively, sorted so two
 /// runs enumerate in the same order. A symlink is skipped and never followed,
-/// so nothing outside `root` is listed. Callers hand the result — or a subset of
-/// it — to [`process_attachment_files`].
+/// so nothing outside `root` is listed. Callers hand the result, or a subset of
+/// it, to [`process_attachment_files`].
 ///
 /// # Errors
 ///
@@ -440,8 +500,8 @@ fn remove_msgmedia_temps(root: &Path) -> Result<()> {
 /// `temp_sibling`), not a stem prefix, and scoped to `path`'s own kind: a
 /// given kind only ever writes one scratch extension (`jpg` for images,
 /// `mp3` for audio, `mp4` for video). Precision here matters because two
-/// source files can share a stem — an iOS Live Photo's `IMG_0001.HEIC` and
-/// `IMG_0001.MOV`, for instance — and a coarser, stem-only match would delete
+/// source files can share a stem (an iOS Live Photo's `IMG_0001.HEIC` and
+/// `IMG_0001.MOV`, for instance), and a coarser, stem-only match would delete
 /// one file's in-flight scratch while converting the other.
 ///
 /// `path` itself can never be swept: `classify` treats a `.msgmedia.tmp.`
@@ -556,7 +616,7 @@ struct Asked<'a> {
 /// Run the media step over one file, committing however `commit` says.
 ///
 /// Returns the produced path, or `None` when the media step leaves this file
-/// alone — either because the mode does not touch it, or because a same-format
+/// alone, either because the mode does not touch it, or because a same-format
 /// re-encode came out no smaller. A format change keeps the derivative even
 /// when it is larger, because the person chose the target format.
 fn run_one(
@@ -666,7 +726,7 @@ pub enum TranscodeOutcome {
 ///
 /// Stats `src` for the two size floors (compress-mode same-format JPEG/MP3).
 /// When `src` may not exist on disk, use [`derivative_name_for_missing`]
-/// instead — a stat failure here silently reads as size 0, which is under
+/// instead. A stat failure here silently reads as size 0, which is under
 /// both floors and answers `None`, the wrong answer for "is there a
 /// candidate name to look for", not "is this live file worth touching".
 #[must_use]
@@ -676,8 +736,8 @@ pub fn derivative_name(src: &Path, mode: MediaMode) -> Option<String> {
     })
 }
 
-/// Same decision tree as [`derivative_name`], but never stats `src` — for a
-/// recorded path already known to be missing from disk.
+/// Same decision tree as [`derivative_name`], but never stats `src`. It is
+/// for a recorded path already known to be missing from disk.
 ///
 /// The two size floors exist to skip a small file that is still there to
 /// measure; a missing file's size is unknowable and irrelevant to the
@@ -851,7 +911,7 @@ fn transcode_as(
 /// is the same: callers must refresh digests after an in-place rewrite.
 fn changed(output_dir: &Path, old_rel: &str, new_path: &Path) -> Result<Outcome> {
     let new_rel = rel_path(output_dir, new_path)?;
-    // Always report Changed — even when the relative path is unchanged (e.g. JPG
+    // Always report Changed, even when the relative path is unchanged (e.g. JPG
     // recompressed in place). Callers must invalidate digest_sha256 for remapped
     // paths; treating same-path rewrites as Skipped left stale fingerprints in
     // JSON Lines files and caused message-crate-import sha256 mismatches after upload.
@@ -916,8 +976,8 @@ fn commit_produced(commit: Commit<'_>, original: &Path, produced: &Path) -> Resu
                 // exists until the caller has patched whatever points at the
                 // original and renamed this derivative into place itself.
                 // A destination equal to the original would
-                // overwrite it here, before any of that has happened — for
-                // example `derivative_name` returning the source's own name
+                // overwrite it here, before any of that has happened. For
+                // example, `derivative_name` returning the source's own name
                 // (a same-format compress) joined onto the source's directory
                 // without a caller-added suffix like `.in_progress`.
                 bail!(
@@ -1050,7 +1110,7 @@ fn convert_audio(
     }
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, Reads::All(path), stop)
+            .transcode(&args, &tmp, Reads::Audio(path), stop)
             .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -1097,7 +1157,7 @@ fn convert_video(
             "+faststart".into(),
         ];
         tools
-            .transcode(&args, &tmp, Reads::All(path), stop)
+            .transcode(&args, &tmp, Reads::Video(path), stop)
             .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
@@ -1119,7 +1179,7 @@ fn remux_mp4(
         "-movflags".into(),
         "+faststart".into(),
     ];
-    tools.transcode(&args, tmp, Reads::All(path), stop)
+    tools.transcode(&args, tmp, Reads::Video(path), stop)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
@@ -1198,7 +1258,7 @@ fn compress_video(
             "-movflags".into(),
             "+faststart".into(),
         ]);
-        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), stop) {
+        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::Video(path), stop) {
             let _ = fs::remove_file(&tmp);
             if !h264_follows(&hevc_err) {
                 return Err(hevc_err.context(format!("compress video {}", path.display())));
@@ -1219,7 +1279,7 @@ fn compress_video(
                 "+faststart".into(),
             ]);
             tools
-                .transcode(&avc_args, &tmp, Reads::All(path), stop)
+                .transcode(&avc_args, &tmp, Reads::Video(path), stop)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
             *hevc_failure = Some(error_line_without_files(&hevc_err));
@@ -1238,8 +1298,8 @@ fn compress_video(
 ///   damaged at that point, and H.264 would stall there too.
 /// - It ran past twice the file's length: no, because a damaged file loops.
 /// - It was stopped: no, because nothing is wrong, and the run is ending.
-/// - A short step over its limit is not a conversion, and never reaches
-///   here; it is not followed either.
+/// - A run over its time limit, a short step or an audio conversion, never
+///   reaches here; it is not followed either.
 fn h264_follows(hevc_err: &anyhow::Error) -> bool {
     match hevc_err.downcast_ref::<Killed>().map(Killed::reason) {
         None | Some(KillReason::StalledBeforeOutput { .. }) => true,
@@ -1248,7 +1308,7 @@ fn h264_follows(hevc_err: &anyhow::Error) -> bool {
             | KillReason::RanPastLength { .. }
             | KillReason::Stopped
             | KillReason::StoppedBeforeStart
-            | KillReason::ShortStepTooLong { .. },
+            | KillReason::TookTooLong { .. },
         ) => false,
     }
 }

@@ -8,8 +8,10 @@ use crate::extract::{Json, Path as AxumPath, Query};
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, FullDeleteAccess};
 use crate::db::contacts::read::{
     CONTACT_SORT_KEYS, ContactSelectionSummary, ContactSummary, DEFAULT_CONTACT_SORT,
     contact_name_and_modified, contact_totals, get_contact_summaries, list_contacts_sorted,
@@ -18,7 +20,6 @@ use crate::db::contacts::read::{
 use crate::db::handles::{self, ApiIdentityService, IdentitiesOf, Identity};
 use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, restore};
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
-use crate::server::{ApiError, AppState, FullAccess, FullDeleteAccess};
 
 pub(crate) mod address_book;
 mod edit;
@@ -105,7 +106,7 @@ pub struct Contact {
     /// Every identity linked to the contact, with per-identity stats.
     pub identities: Vec<Identity>,
     /// One-to-one conversations the contact appears in.
-    pub direct_conversations: u64,
+    pub one_to_one_conversations: u64,
     /// Group conversations the contact appears in.
     pub group_conversations: u64,
     /// Conversations of orphaned messages the contact appears in: the three
@@ -173,7 +174,7 @@ pub async fn get_contact_detail(
         name,
         unknown,
         identities,
-        direct_conversations: totals.direct,
+        one_to_one_conversations: totals.one_to_one,
         group_conversations: totals.groups,
         orphaned_conversations: totals.orphaned,
         total_messages: totals.messages,
@@ -195,7 +196,7 @@ pub(crate) const MAX_MATCH_IDENTIFIERS: usize = 500;
 /// Body for `POST /v1/contacts/unmatched-identities`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct ListUnmatchedIdentitiesRequest {
-    /// Raw identifiers — phone numbers, emails — as they appear in an export.
+    /// Raw identifiers (phone numbers, emails) as they appear in an export.
     identifiers: Vec<String>,
 }
 
@@ -211,7 +212,7 @@ pub(crate) struct ListUnmatchedIdentitiesRequest {
     )
 )]
 pub(crate) async fn list_unmatched_identities(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Json(body): Json<ListUnmatchedIdentitiesRequest>,
 ) -> Result<Json<Page<String>>, ApiError> {
@@ -220,7 +221,7 @@ pub(crate) async fn list_unmatched_identities(
             "at most {MAX_MATCH_IDENTIFIERS} identifiers"
         )));
     }
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let unknown =
         unknown_contact_identifiers(&mut conn, auth.account_id, &body.identifiers).await?;
     Ok(Json(whole_page(unknown, MAX_MATCH_IDENTIFIERS)))
@@ -244,11 +245,11 @@ pub(crate) async fn list_unmatched_identities(
     )
 )]
 pub(crate) async fn list_contacts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<ContactSummary>>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let list = ListRequest::read(
         &mut conn,
         auth.account_id,
@@ -262,8 +263,7 @@ pub(crate) async fn list_contacts(
         auth.account_id,
         &list.q,
         &list.order,
-        list.page.limit,
-        list.page.offset,
+        list.page,
         list.clock,
     )
     .await?;
@@ -282,7 +282,7 @@ pub(crate) async fn list_contacts(
     )
 )]
 pub(crate) async fn list_contact_summaries(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Json(body): Json<ListContactSummariesRequest>,
 ) -> Result<Json<Page<ContactSelectionSummary>>, ApiError> {
@@ -294,7 +294,7 @@ pub(crate) async fn list_contact_summaries(
             "at most {MAX_CONTACT_SUMMARY_IDS} contact ids"
         )));
     }
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let items = get_contact_summaries(&mut conn, auth.account_id, &body.ids).await?;
     Ok(Json(whole_page(items, MAX_CONTACT_SUMMARY_IDS)))
 }
@@ -312,11 +312,11 @@ pub(crate) async fn list_contact_summaries(
     )
 )]
 pub(crate) async fn get_contact(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<Json<Contact>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let detail = get_contact_detail(&mut conn, auth.account_id, contact_id).await?;
     detail
         .map(Json)
@@ -342,12 +342,12 @@ pub(crate) async fn get_contact(
     )
 )]
 pub(crate) async fn update_contact(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(contact_id): AxumPath<i64>,
     Json(body): Json<UpdateContactRequest>,
 ) -> Result<Json<Contact>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     // One write transaction for the edit and the contact it answers with, so
     // a contact deleted meanwhile is `404`, never a half-applied edit.
     let mut tx = crate::db::begin_write(&mut conn).await?;
@@ -382,11 +382,11 @@ pub(crate) async fn update_contact(
     )
 )]
 pub(crate) async fn trash_contact(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     if move_to_trash(&mut conn, auth.account_id, Trashable::Contact(contact_id)).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -407,11 +407,11 @@ pub(crate) async fn trash_contact(
     )
 )]
 pub(crate) async fn restore_contact(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     if restore(&mut conn, auth.account_id, Trashable::Contact(contact_id)).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -436,11 +436,11 @@ pub(crate) async fn restore_contact(
     )
 )]
 pub(crate) async fn delete_contact(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullDeleteAccess(auth): FullDeleteAccess,
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     match delete_trashed(
         &mut conn,
         auth.account_id,

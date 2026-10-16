@@ -11,9 +11,9 @@ Each example below names a file and the item inside it, never a line number, bec
 
 Open every doc comment with a single sentence stating what the item is or does. Put examples, rationale, and error notes in later sentences.
 
-- `crates/server/server/src/server.rs`, `fn is_asset_download` — "`GET /v1/assets/{sha256}` and `GET /v1/assets/{sha256}/preview`: the asset's own bytes or its preview's, each in its own media type." — Bad: the function answers whether a request is an asset download, and the opening names the route and what it serves instead.
+- `crates/server/server/src/middleware.rs`, `fn is_asset_download` — "`GET /v1/assets/{sha256}` and `GET /v1/assets/{sha256}/preview`: the asset's own bytes or its preview's, each in its own media type." — Bad: the function answers whether a request is an asset download, and the opening names the route and what it serves instead.
 - `crates/server/server/src/assets_api.rs`, `fn sha256_hex` — "SHA-256 fingerprint of `data` as 64 lowercase hex digits. SHA-256 is a short fingerprint of the file contents." — Bad: the second sentence restates the first; later sentences must add information.
-- `crates/libs/ir/src/lib.rs`, `struct PendingMessage` — "Intermediate message before conversion to [`IrMessage`]." — Good: one sentence states what the type is.
+- `crates/libs/ir/src/lib.rs`, `struct PendingMessage` — "Intermediate message before conversion to [`Message`]." — Good: one sentence states what the type is.
 
 ## Module `//!` intros state responsibility
 
@@ -35,7 +35,7 @@ Include a concrete example or quantified rationale whenever a field, constant, o
 
 Never write self-contradictory filler, invented terms, or unexplained jargon in doc comments.
 
-- `crates/libs/ir/src/lib.rs`, `IrAttachment::missing_reason` — "None when the attachment was imported; set only when bytes were skipped, to one of a closed set: `file_missing`, `too_large`, `not_copied`, `not_fetched` (`NOT_FETCHED`), `convert_failed: <detail>`, or `unknown: <raw>`." — Good: says exactly when the field is `None` and lists the values it can hold. It replaced "Absent when present", which was self-contradictory and explained nothing.
+- `crates/libs/ir/src/lib.rs`, `Attachment::missing_reason` — "None when the attachment was imported; set only when bytes were skipped, to one of the closed set in [`missing_reason`]: `file_missing`, `too_large`, `not_copied`, `not_fetched`, `no_path`, or `convert_failed: <detail>`." — Good: says exactly when the field is `None` and lists the values it can hold. It replaced "Absent when present", which was self-contradictory and explained nothing.
 - `crates/libs/api-types/src/lib.rs`, `ImportMode::Append` — "Keep existing messages and add only new ones. The default, and what the HTTP API assumes when a request names no mode: it never removes anything." — Good: a plain statement of what the mode does, instead of an invented term such as "resume-safe".
 - `crates/libs/import/src/run.rs`, `ImportConfig::mode` — "`Append` adds to existing data; `Replace` clears then imports (with force)." — Bad: "with force" is unexplained; the reader cannot tell what is forced or what the alternative would be.
 - `crates/libs/ir/src/lib.rs`, `enum IdentityService` — "Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS)." — Good: names the distinction a reader would otherwise get wrong, instead of leaving "service" to mean two things.
@@ -83,5 +83,5 @@ Document the reason behind non-obvious choices — ordering, omitted files, perf
 Point doc links at existing documentation and use [`Item`] rustdoc references. Never use stale relative paths or plain-text mentions.
 
 - `crates/libs/ir/src/lib.rs`, the module intro — "See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page." — Good: an absolute link to the published page. It replaced a relative path into `docs/maintainers/`, which had moved, so rustdoc warned on it and readers landed nowhere.
-- `crates/core/message-crate-core/src/exporters.rs`, `AttachmentMedia::media_mode` — "The [`MediaMode`] this export-form choice maps to." — Good: a rustdoc link to the type. It replaced "The `media::MediaMode` this GUI choice maps to (the same mode the `--media-mode` CLI flag selects)", which named a command-line flag that does not exist (no crate but the server has a command line) and left the type as plain text.
+- `crates/libs/staging/src/write_queue.rs`, `fn drain_write_queue` — "A cancel surfaces as [`Sinks::cancel`] says." — Good: a rustdoc link to the field that says how a cancel ends the drain, instead of the same sentence copied onto every function that takes a cancel flag.
 - `crates/core/message-crate-core/src/config.rs`, `OutputFormat::Eml` — "Per-conversation directory of `.eml` files (see https://messagecrate.app/docs/developer/formats/mail-archive/)." — Good: points at real documentation instead of restating the variant name.

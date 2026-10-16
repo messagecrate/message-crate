@@ -12,11 +12,12 @@
  * mutation.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, testQueryClient } from "../test/providers";
 import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "./savedSearches";
 import {
   createSavedSearch,
@@ -26,7 +27,7 @@ import {
 } from "./serverApi";
 
 const account = { current: 7 };
-vi.mock("./authContext", () => ({ useAuth: () => ({ accountId: account.current }) }));
+vi.mock("./authContext", () => authModule(() => ({ accountId: account.current })));
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),
@@ -55,9 +56,7 @@ beforeEach(() => {
   startFakeClock();
   vi.clearAllMocks();
   account.current = 7;
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
-  });
+  client = testQueryClient();
 });
 
 afterEach(() => {
@@ -86,15 +85,7 @@ describe("useSavedSearches", () => {
   it("does not show one account the saved searches of another", async () => {
     // Entries are kept and treated as fresh here, so a key that did not name
     // the account would serve the first account's list to the second.
-    client = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-          gcTime: Number.POSITIVE_INFINITY,
-          staleTime: Number.POSITIVE_INFINITY,
-        },
-      },
-    });
+    client = testQueryClient({ keepUnread: true, neverStale: true });
 
     list.mockResolvedValue([search(1, "Alice's Family")]);
     const first = renderHook(() => useSavedSearches(), { wrapper });

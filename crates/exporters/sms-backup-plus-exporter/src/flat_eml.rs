@@ -4,7 +4,7 @@ use crate::assets::extract_body;
 use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
 use mailparse::{MailHeaderMap, ParsedMail};
-use message_ir::{IdentityType, IrConversationType};
+use message_ir::{ConversationType, IdentityType};
 use phone::{Country, Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -126,6 +126,19 @@ impl MailHeaders {
     /// only `X-smssync-datatype` tells a call from a text message.
     pub(crate) fn is_call_log(&self) -> bool {
         self.smssync_datatype == Datatype::CallLog
+    }
+
+    /// True for a WhatsApp message SMS Backup+ backed up, which Message
+    /// Crate skips (#2912).
+    ///
+    /// Such a mail carries `X-smssync-type` too, holding WhatsApp's own
+    /// status number rather than an Android message type, so only
+    /// `X-smssync-datatype` tells it from a text message. It is not read as
+    /// WhatsApp either: SMS Backup+ removed the feature after two years
+    /// because it did not work for most people, it never covered group
+    /// chats, and its status number gives no direction.
+    pub(crate) fn is_whatsapp(&self) -> bool {
+        self.smssync_datatype == Datatype::WhatsApp
     }
 }
 
@@ -472,10 +485,10 @@ fn is_sent(headers: &MailHeaders, owner: &Owner) -> bool {
     owner.is_owner_email(addr_spec(&headers.from))
 }
 
-/// True when the EML is one SMS Backup+ message rather than unrelated mail
-/// or a call from the call log.
+/// True when the EML is one SMS Backup+ message rather than unrelated mail,
+/// a call from the call log, or a WhatsApp message.
 fn is_single_sms_eml(headers: &MailHeaders) -> bool {
-    if headers.is_call_log() {
+    if headers.is_call_log() || headers.is_whatsapp() {
         return false;
     }
     if !headers.smssync_type.is_empty() {
@@ -568,7 +581,7 @@ struct FlatAddresses {
 /// Where a flat EML lands and who sent it.
 struct FlatConversation {
     chat_key: String,
-    conversation_type: IrConversationType,
+    conversation_type: ConversationType,
     group_title: Option<String>,
     participants: Vec<Handle>,
     sender: Option<Handle>,
@@ -631,7 +644,7 @@ impl FlatAddresses {
             let (chat_key, title) = group_key(&self.non_owner);
             return FlatConversation {
                 chat_key,
-                conversation_type: IrConversationType::Group,
+                conversation_type: ConversationType::Group,
                 group_title: Some(title),
                 participants: self.non_owner.clone(),
                 sender: if sent {
@@ -649,7 +662,7 @@ impl FlatAddresses {
                 .as_ref()
                 .map(|p| p.key().to_string())
                 .unwrap_or_default(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: peer.iter().cloned().collect(),
             sender: peer.filter(|_| !sent && self.peer_is_sender(headers)),

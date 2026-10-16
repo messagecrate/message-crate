@@ -1,4 +1,11 @@
 import { useAuth } from "../../lib/authContext";
+import {
+  invokeListImportRunLogs,
+  invokeReadImportRunLog,
+  invokeReadImportRunLogLines,
+  type RunLogEntry,
+  type RunLogReader,
+} from "../../lib/desktop/runLog";
 import { canReadImportRunLogs } from "../../lib/desktopFeatures";
 import { useRouteQuery } from "../../lib/routeQuery";
 import {
@@ -7,13 +14,6 @@ import {
   listServerLogFiles,
   listServerLogLines,
 } from "../../lib/serverApi";
-import {
-  invokeListImportRunLogs,
-  invokeReadImportRunLog,
-  invokeReadImportRunLogLines,
-  type RunLogEntry,
-  type RunLogReader,
-} from "../../lib/tauri";
 import { isTauri } from "../../lib/tauriCheck";
 import { useIsOwner } from "../../lib/useIsOwner";
 import { useServerInfo } from "../../lib/useServerInfo";

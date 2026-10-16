@@ -72,11 +72,12 @@ Nothing in the browser or the desktop app can set the Owner's password, because 
 The server program sets it from a command line on the computer that runs Docker.
 
 ```bash title="Set a new Owner password"
-docker exec message-crate \
-  message-crate-server reset-owner-password --password 'the-new-password'
+docker exec -it message-crate message-crate-server reset-owner-password
 ```
 
-The command prints the Owner's username and ends every Session the Owner had open.
+The command asks for the new password and doesn't show it as it's typed.
+It takes the password that way, not on the command line, because a command line is visible to everyone signed in to the computer while the command runs, and stays in the shell's history afterwards.
+It prints the Owner's username and ends every Session the Owner had open.
 
 ### There is no Create Account on the login card
 
@@ -110,6 +111,15 @@ The password is the one chosen when the backup was made.
 The iPhone backup was made without encryption, and the Import form's **Encryption password** holds a value.
 Import continues once the field is empty.
 
+### "… is free on …, the disk that holds the Staging Directory"
+
+The Import form found less than 10 GB free on the disk that holds the Staging Directory, the Scratch Directory, or both.
+A run stops with an error when its disk fills part-way, so freeing space before the run starts saves running it again.
+Freeing space on that disk removes the line the next time the form reads it.
+Moving the Staging Directory to a disk with more room in **Settings → System** works too.
+The Scratch Directory is `~/message-crate/scratch`, so it can't be moved.
+The import can still start with the line showing.
+
 ### A WhatsApp import doesn't stop when cancelled
 
 A run can't be cancelled while `wtsexporter` is working. It ends when the program finishes.
@@ -117,7 +127,7 @@ A run can't be cancelled while `wtsexporter` is working. It ends when the progra
 
 ## ffmpeg, ffprobe and wtsexporter
 
-The desktop app runs three programs it doesn't include: `ffmpeg` and `ffprobe` for the Import form's **Attachments** choices **Convert** and **Compress & Convert**, and `wtsexporter` for a WhatsApp import.
+The desktop app runs three programs it doesn't include: `ffmpeg` and `ffprobe` for the Import form's **Attachments** choices **Convert media** and **Convert & Compress media**, and `wtsexporter` for a WhatsApp import.
 The server the app starts uses `ffmpeg` too, for the Previews and Thumbnails of photos and videos.
 Until it is there they wait, and the server makes them at its next start or after the next Import Run.
 Each time it starts, the app downloads the ones that are missing into its Tools Directory, in the background, and nothing needs doing.
@@ -187,9 +197,9 @@ An older `pipx` can't repair that install in place.
 
 ### ffmpeg or ffprobe not found
 
-The Import form's **Attachments** choices **Convert** and **Compress & Convert** need both `ffmpeg` and `ffprobe`.
+The Import form's **Attachments** choices **Convert media** and **Convert & Compress media** need both `ffmpeg` and `ffprobe`.
 Without them an import with either choice still starts, because Staging reads the original files and needs neither program.
-At the Staging Review, the **Convert media** or **Compress media** button stays disabled until both are there, and **Try again** there downloads them at once.
+At the Staging Review, the **Convert media** or **Convert & Compress media** button stays disabled until both are there, and **Try again** there downloads them at once.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) covers what each choice does.
 
 When the download failed, the reason on the Import form and in **Settings → System** says why, and [The download failed](#the-download-failed) says what to do about it.

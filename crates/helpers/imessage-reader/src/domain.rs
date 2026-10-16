@@ -21,7 +21,7 @@ use rusqlite::{Connection, OpenFlags};
 use crate::{
     backup::{decrypt_backup, restrict_permissions},
     error::{RuntimeError, UNENCRYPTED_BACKUP_CLEAR_PASSWORD},
-    log::{emit, emit_log},
+    log::{emit, emit_log, emit_warning},
     options::ReaderOptions,
 };
 
@@ -140,7 +140,7 @@ pub(crate) fn decrypt_domain(
             Ok(()) => written.files += 1,
             Err(why) => {
                 written.failures += 1;
-                emit_log(format!(
+                emit_warning(format!(
                     "Backup file {relative_path} could not be decrypted: {why}"
                 ));
             }

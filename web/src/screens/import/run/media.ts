@@ -1,16 +1,12 @@
-import { errorLine, errorText } from "../../../lib/apiErrorMessage";
+import type { TranscodeFinishedReport } from "../../../lib/desktop/staging";
+import { ffmpegMissing } from "../../../lib/desktop/tools";
+import { CanceledError } from "../../../lib/desktopJobError";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
-import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
-import {
-  ffmpegMissing,
-  type MediaToolName,
-  type TranscodeFinishedReport,
-} from "../../../lib/tauri";
-import type { AttachmentMediaMode } from "../../../lib/types";
+import type { AttachmentMediaMode, MediaToolName } from "../../../lib/types";
 import { MEDIA_LABEL } from "../importProgressState";
 import { mediaJobVerb } from "../reviewForecast";
 import type { OpenRun, RunContext } from "./context";
-import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
+import { jobErrorReason, recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { saveCarriedRecord } from "./runRecordWrites";
 import {
@@ -80,13 +76,12 @@ export async function runMediaStage(
     const result = await runJob(ctx, () => ctx.desktop.invokeTranscodeStaging({ run_dir: runDir }));
     transcodeReport = result.transcode;
   } catch (e: unknown) {
-    const msg = errorText(e);
-    if (msg === CANCELLED_MESSAGE) {
+    if (e instanceof CanceledError) {
       // The person asked for this: not an error, so no issue row for it.
       cancelled = true;
     } else {
       threw = true;
-      recordError(ctx, ctx.scratch.activeStage, errorLine(e));
+      recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
     }
   }
   const mediaMs = ctx.now() - mediaStartedAt;

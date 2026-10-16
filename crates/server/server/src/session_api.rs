@@ -10,12 +10,16 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::api_error::ApiError;
+use crate::auth::AuthIdentity;
+use crate::credentials::RefusalWait;
 use crate::credentials::{MAX_PASSWORD_BYTES, normalize_username, verify_login_password};
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
 use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
 use crate::extract::Json;
-use crate::server::{ApiError, AppState, AuthIdentity, Created};
+use crate::server::{Created, DemoState};
+use crate::server_api::DemoBuild;
 
 /// Username and password, the body of `POST /v1/session`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -110,12 +114,12 @@ pub(crate) struct Session {
     )
 )]
 pub(crate) async fn get_session(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     auth: AuthIdentity,
 ) -> Result<Json<Session>, ApiError> {
     let account_id = auth.account_id;
-    let username = load_username(&state.db, account_id).await?;
-    let sources = list_account_sources(&state.db, account_id).await?;
+    let username = load_username(&db, account_id).await?;
+    let sources = list_account_sources(&db, account_id).await?;
     Ok(Json(Session {
         sources,
         account_id,
@@ -166,7 +170,9 @@ const INVALID_LOGIN: &str = "invalid username or password";
     )
 )]
 pub async fn create_session(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(demo): State<DemoState>,
+    State(refusal_wait): State<RefusalWait>,
     headers: HeaderMap,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Created<CreateSessionResponse>, ApiError> {
@@ -179,15 +185,15 @@ pub async fn create_session(
     if req.password.len() > MAX_PASSWORD_BYTES {
         return Err(ApiError::validation("password is too long"));
     }
-    let app = crate::server::connecting_app(&headers);
+    let app = crate::auth::connecting_app(&headers);
     // `log_in` has given its connection back by the time it answers, so a
     // refusal waits holding none.
-    match log_in(&state, &username, &req.password, app.as_ref()).await? {
+    match log_in(&db, &demo.build, &username, &req.password, app.as_ref()).await? {
         Some(body) => Ok(Created {
             location: "/v1/session".to_string(),
             body,
         }),
-        None => Err(state.refusal_wait.refuse(INVALID_LOGIN).await),
+        None => Err(refusal_wait.refuse(INVALID_LOGIN).await),
     }
 }
 
@@ -196,12 +202,13 @@ pub async fn create_session(
 /// entry is stamped when it is written, after the password check, so the
 /// entries keep the order the writes land in however long each check took.
 async fn log_in(
-    state: &AppState,
+    db: &SqlitePool,
+    demo_build: &DemoBuild,
     username: &str,
     password: &str,
     app: Option<&ConnectingApp>,
 ) -> Result<Option<CreateSessionResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let account_id = account_profile::lookup_account_by_username(&mut conn, username).await?;
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
@@ -222,7 +229,7 @@ async fn log_in(
         // the run.
         drop(conn);
         let _ = verify_login_password(None, password).await?;
-        let mut conn = state.db.acquire().await?;
+        let mut conn = db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,
             username,
@@ -239,7 +246,7 @@ async fn log_in(
     // build ends it holds part of its data, and a failed build removes it.
     // The login card is told there is no Demo Account, so the answer here is
     // the one for a username that does not exist.
-    if account_id == account_profile::DEMO_ACCOUNT_ID && state.demo_build.is_building() {
+    if account_id == account_profile::DEMO_ACCOUNT_ID && demo_build.is_building() {
         return Ok(None);
     }
 
@@ -250,7 +257,7 @@ async fn log_in(
     // pool. An account changed meanwhile is read afresh below.
     drop(conn);
     let verified = verify_login_password(password_hash.as_deref(), password).await?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let now = Utc::now();
     if !verified {
         audit_trail::record_refused_login(
@@ -320,15 +327,16 @@ async fn logout_on_conn(
     )
 )]
 pub async fn delete_session(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     headers: HeaderMap,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let token = crate::server::bearer_token(&headers)?;
-    let mut conn = state.db.acquire().await?;
-    if logout_on_conn(&mut conn, &token, Utc::now()).await? {
+    let token = crate::auth::bearer_token(&headers)?;
+    let mut conn = db.acquire().await?;
+    let now = Utc::now();
+    if logout_on_conn(&mut conn, &token, now).await? {
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }
-    if api_tokens::lookup_account_for_api_token(&mut conn, &token)
+    if api_tokens::lookup_account_for_api_token(&mut conn, &token, now)
         .await?
         .is_some()
     {

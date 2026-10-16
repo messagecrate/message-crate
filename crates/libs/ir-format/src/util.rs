@@ -1,7 +1,7 @@
 //! Small shared helpers for reading and writing conversation documents.
 
 use anyhow::{Context, Result};
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
@@ -39,7 +39,7 @@ pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Opt
 /// Missing paths yield an empty buffer. IO failures return an error. The
 /// loader every writer that embeds attachment bytes uses, including the
 /// merged archives other crates implement.
-pub fn load_attachment_bytes(att: &IrAttachment, output_dir: &Path) -> Result<Vec<u8>> {
+pub fn load_attachment_bytes(att: &Attachment, output_dir: &Path) -> Result<Vec<u8>> {
     if let Some(b) = &att.bytes {
         return Ok(b.clone());
     }
@@ -52,14 +52,11 @@ pub fn load_attachment_bytes(att: &IrAttachment, output_dir: &Path) -> Result<Ve
 
 /// Read attachment bytes from disk when the relative path exists.
 ///
-/// Missing paths yield `Ok(None)`. IO failures return an error (strict) — callers
+/// Missing paths yield `Ok(None)`. IO failures return an error (strict). Callers
 /// that want lenient behavior map with `.ok().flatten()`.
 ///
 /// The relative path is validated via [`message_ir::safe_attachment_path`].
-pub(crate) fn read_attachment_file(
-    att: &IrAttachment,
-    output_dir: &Path,
-) -> Result<Option<Vec<u8>>> {
+pub(crate) fn read_attachment_file(att: &Attachment, output_dir: &Path) -> Result<Option<Vec<u8>>> {
     let Some(rel) = att.path.as_deref() else {
         return Ok(None);
     };
@@ -98,12 +95,12 @@ pub fn is_complete_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use std::fs;
     use std::io::Write;
 
-    fn att_with_path(rel: &str) -> IrAttachment {
-        IrAttachment {
+    fn att_with_path(rel: &str) -> Attachment {
+        Attachment {
             path: Some(rel.into()),
             ..message_ir::testutil::sample_attachment()
         }

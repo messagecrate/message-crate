@@ -151,7 +151,7 @@ pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option
 ///
 /// Falls back to the position in the message so two pathless attachments in one
 /// conversation stay distinguishable.
-pub(crate) fn attachment_label(att: &message_ir::IrAttachment, index: usize) -> String {
+pub(crate) fn attachment_label(att: &message_ir::Attachment, index: usize) -> String {
     att.original_name
         .as_deref()
         .and_then(message_ir::trimmed)
@@ -207,7 +207,7 @@ mod tests {
             },
             "conversation": {
                 "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "participants": [],
                 "stats": { "message_count": 0, "attachment_count": 0 },
             },

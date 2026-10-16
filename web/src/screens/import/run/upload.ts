@@ -1,13 +1,12 @@
-import { errorLine, errorText } from "../../../lib/apiErrorMessage";
-import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
+import type { DesktopJobResult } from "../../../lib/desktop/job";
+import { CanceledError } from "../../../lib/desktopJobError";
 import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
-import type { DesktopJobResult } from "../../../lib/tauri";
 import { importOutcome } from "../importOutcome";
 import { UPLOAD_LABEL } from "../importProgressState";
 import { wholeRun } from "../runRecord";
 import type { OpenRun, RunContext } from "./context";
-import { recordError, runJob } from "./desktopJob";
+import { jobErrorReason, recordError, runJob } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { currentPart } from "./scratch";
 import { failActiveStep, movePhase, setRowByLabel } from "./screen";
@@ -83,13 +82,12 @@ async function uploadAndFinish(
       }),
     );
   } catch (e: unknown) {
-    const msg = errorText(e);
-    if (msg === CANCELLED_MESSAGE) {
+    if (e instanceof CanceledError) {
       // The person asked for this: not an error, so no issue row for it.
       pausedBeforeStart = true;
     } else {
       threw = true;
-      recordError(ctx, ctx.scratch.activeStage, errorLine(e));
+      recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
       failActiveStep(ctx);
     }
   }

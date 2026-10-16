@@ -334,7 +334,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.ana_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.ana_handle],
     )
@@ -343,7 +343,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.bo_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.bo_handle],
     )
@@ -352,7 +352,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.jane_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.jane_handle],
     )
@@ -361,7 +361,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.sam_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.sam_handle],
     )
@@ -630,7 +630,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         dup_only_handle,
-        "individual",
+        "one-to-one",
         None,
         &[dup_only_handle],
     )
@@ -666,7 +666,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         OTHER_ACCOUNT,
         other_handle,
-        "individual",
+        "one-to-one",
         None,
         &[other_handle],
     )
@@ -901,7 +901,7 @@ mod free_text {
         let alice_handle = handle(&mut conn, ACCOUNT, "+15550001111", "sms").await;
         let alice = contact(&mut conn, ACCOUNT, "Alice Smith", &[alice_handle]).await;
         let with_alice =
-            conversation(&mut conn, ACCOUNT, alice_handle, "individual", None, &[]).await;
+            conversation(&mut conn, ACCOUNT, alice_handle, "one-to-one", None, &[]).await;
         let to_alice = message(
             &mut conn,
             ACCOUNT,
@@ -1290,7 +1290,7 @@ mod text_words {
             &mut conn,
             ACCOUNT,
             late_handle,
-            "individual",
+            "one-to-one",
             None,
             &[late_handle],
         )
@@ -1729,7 +1729,7 @@ mod index_characters {
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, ACCOUNT, "alice").await;
         let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
-        let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
+        let conv = conversation(&mut conn, ACCOUNT, chat, "one-to-one", None, &[chat]).await;
         let mut ids = Vec::new();
         for body in bodies() {
             let m = msg(conv, "2024-06-01T10:00:00Z", false, Some(chat), &body);
@@ -2268,16 +2268,18 @@ mod kind_words {
         let counts = crate::test_support::import_for_account(
             conn,
             &[path],
-            &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-                assets_dir: &assets,
-                asset_root: Some(dir),
-                mode: crate::imports_api::ImportMode::Append,
-                source,
-                account_id: ACCOUNT,
-                import_id: None,
-                phone_country: None,
-                now: crate::test_support::fixed_instant(),
-            }),
+            &crate::imports_api::pipeline::ImportOptions::fixed(
+                crate::imports_api::pipeline::FixedImportArgs {
+                    assets_dir: &assets,
+                    asset_root: Some(dir),
+                    mode: message_crate_api_types::ImportMode::Append,
+                    source,
+                    account_id: ACCOUNT,
+                    import_id: None,
+                    phone_country: None,
+                    now: crate::test_support::fixed_instant(),
+                },
+            ),
         )
         .await
         .unwrap();
@@ -2359,7 +2361,7 @@ mod kind_words {
         let a = ACCOUNT;
         let quiet_h = handle(&mut conn, a, "+15555550121", "sms").await;
         let quiet = contact(&mut conn, a, "Quiet", &[quiet_h]).await;
-        let quiet_c = conversation(&mut conn, a, quiet_h, "individual", None, &[quiet_h]).await;
+        let quiet_c = conversation(&mut conn, a, quiet_h, "one-to-one", None, &[quiet_h]).await;
         let mut sent = msg(
             quiet_c,
             "2024-03-01T10:00:00Z",
@@ -3009,7 +3011,7 @@ mod measure_words {
         // You wrote in 2019 and they replied in 2020.
         let reply_h = handle(&mut conn, a, "+15555550141", "sms").await;
         let reply = contact(&mut conn, a, "Replier", &[reply_h]).await;
-        let reply_c = conversation(&mut conn, a, reply_h, "individual", None, &[reply_h]).await;
+        let reply_c = conversation(&mut conn, a, reply_h, "one-to-one", None, &[reply_h]).await;
         message(
             &mut conn,
             a,
@@ -3025,7 +3027,7 @@ mod measure_words {
         // You texted them in 2019 and they never replied.
         let silent_h = handle(&mut conn, a, "+15555550142", "sms").await;
         let silent = contact(&mut conn, a, "Silent", &[silent_h]).await;
-        let silent_c = conversation(&mut conn, a, silent_h, "individual", None, &[silent_h]).await;
+        let silent_c = conversation(&mut conn, a, silent_h, "one-to-one", None, &[silent_h]).await;
         message(
             &mut conn,
             a,
@@ -4010,7 +4012,7 @@ mod name_keyed_conversation {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
-        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "one-to-one", None, &[]).await;
         named_participant(&mut conn, sarah, "Sarah Vale").await;
         let photo = message(
             &mut conn,
@@ -4045,7 +4047,7 @@ mod name_keyed_conversation {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
-        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "one-to-one", None, &[]).await;
         named_participant(&mut conn, sarah, "Sarah Vale").await;
         let to_sarah = message(
             &mut conn,
@@ -4054,7 +4056,7 @@ mod name_keyed_conversation {
         )
         .await;
         let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
-        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "one-to-one", None, &[]).await;
         let to_nobody = message(
             &mut conn,
             ACCOUNT,
@@ -4096,7 +4098,7 @@ mod name_keyed_conversation {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
-        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "one-to-one", None, &[]).await;
         named_participant(&mut conn, sarah, "Sarah Vale").await;
         let to_sarah = message(
             &mut conn,
@@ -4109,7 +4111,7 @@ mod name_keyed_conversation {
             &mut conn,
             ACCOUNT,
             titled_key,
-            "individual",
+            "one-to-one",
             Some("Theo Marsh"),
             &[],
         )
@@ -4122,7 +4124,7 @@ mod name_keyed_conversation {
         )
         .await;
         let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
-        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "one-to-one", None, &[]).await;
         let to_nobody = message(
             &mut conn,
             ACCOUNT,

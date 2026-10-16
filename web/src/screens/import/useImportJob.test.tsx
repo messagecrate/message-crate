@@ -13,23 +13,22 @@
 // run and deletes the run directory. Every Upload assertion below goes
 // through approve first, because there is no other way to reach it.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { render, renderHook, act as rtlAct, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError, setAccountId } from "../../lib/api";
 import { AuthContext } from "../../lib/authContext";
+import type { DesktopJobResult } from "../../lib/desktop/job";
+import type { StagingSummary } from "../../lib/desktop/staging";
+import type { ToolsStatus } from "../../lib/desktop/tools";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { currentDesktopJob } from "../../lib/desktopJob";
+import { CanceledError, DesktopJobError } from "../../lib/desktopJobError";
 import type { ActiveImportRun } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../../lib/routeQueryKey";
-import type {
-  DesktopJobResult,
-  StagingSummary,
-  ToolsStatus,
-  UploadFinishedReport,
-} from "../../lib/tauri";
 import type {
   AttachmentMediaMode,
   ImportFileDoneEvent,
@@ -41,6 +40,8 @@ import { account } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { importForm } from "../../test/importForm";
 import { seedImportRun } from "../../test/importRun";
+import { nth } from "../../test/nth";
+import { mockedAuth, testQueryClient } from "../../test/providers";
 import { storedForm } from "../../test/storedForm";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
@@ -55,7 +56,7 @@ import {
   initialImportRunState,
 } from "./importRunStore";
 import type { ImportRunDeps } from "./run/context";
-import { createImportRunService } from "./run/service";
+import { createImportRunService, type ImportRunService } from "./run/service";
 import { parseStoredStagingSummary } from "./run/stagingSummary";
 import { useImportJob } from "./useImportJob";
 
@@ -196,12 +197,15 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
 
 /**
  * The run under test, over the app's one store, which the desktop job follows
- * (`importRunStore.ts`).
+ * (`importRunStore.ts`). Each test gets a fresh one, built before the test's
+ * own setup: a test that fails while one of its calls is still held leaves
+ * that run's work and scratch in its own service, so the next test does not
+ * find the run busy.
  */
-const service = createImportRunService(fakeDeps(importRunStore));
+let service: ImportRunService;
 
 /** Where the identity check reads the account profile; each test gets an empty one. */
-let queryClient = new QueryClient();
+let queryClient = testQueryClient();
 
 /** The profile the identity check reads for the account `auth` names, with these addresses. */
 function setProfile(addresses: Pick<AccountProfile, "phones" | "emails">): void {
@@ -215,15 +219,10 @@ function setProfile(addresses: Pick<AccountProfile, "phones" | "emails">): void 
 /** The screen's tree: a query client, and the account `auth` names logged in. */
 function Providers({ children }: { children: ReactNode }) {
   const value = {
-    serverUrl: "http://127.0.0.1:8080",
+    ...mockedAuth,
     token: auth.token,
     accountId: auth.accountId,
     isAuthenticated: auth.token != null,
-    login: async () => {},
-    updateToken: () => {},
-    logout: async () => {},
-    setServer: () => {},
-    retrySavedLogin: () => {},
   };
   return (
     <QueryClientProvider client={queryClient}>
@@ -237,10 +236,37 @@ function renderJob() {
   return renderHook(() => useImportJob(service), { wrapper: Providers });
 }
 
-beforeEach(() => {
-  queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+/** Rejects when the test running now times out. */
+let testTimedOut: Promise<never> = new Promise(() => {});
+
+/**
+ * Testing Library's `act`, given up when the test times out. React counts the
+ * `act` scopes open across the file, and renders inside a scope wait for every
+ * scope to close. A test that times out while it awaits a held call inside
+ * `act` would leave its scope open, and every later test's `renderHook` would
+ * then draw nothing. Racing the call against the test's signal closes the
+ * scope when the test times out, so that failure stays with that test.
+ */
+function act<T>(callback: () => Promise<T>): Promise<T>;
+function act(callback: () => void): void;
+function act(callback: () => unknown): unknown {
+  return rtlAct(() => {
+    const done = callback();
+    return done instanceof Promise ? Promise.race([done, testTimedOut]) : done;
   });
+}
+
+beforeEach(({ signal }) => {
+  testTimedOut = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+  // A test that times out outside `act` has no race to take the rejection.
+  testTimedOut.catch(() => {});
+  service = createImportRunService(fakeDeps(importRunStore));
+  // `setProfile` writes the profile with no observer, and the hook reads it
+  // only through `fetchQuery` when an import starts. `keepUnread` holds the
+  // entry until then, and `neverStale` serves it without asking the server.
+  queryClient = testQueryClient({ keepUnread: true, neverStale: true });
   setAccountId(auth.accountId);
 });
 
@@ -385,7 +411,6 @@ function clearedFields(state: ImportRunState) {
 
 describe("useImportJob wiring", () => {
   beforeEach(() => {
-    service.reset();
     runMock.mockReset();
     // Every test's first run() call is extract; a test that also calls
     // approve() chains a second implementation for the Media stage or
@@ -470,8 +495,8 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(importForm()));
 
     expect(seen).toHaveLength(1);
-    expect(clearedFields(seen[0])).toEqual(CLEARED_RUN);
-    expect(seen[0].resumeError).toBeNull();
+    expect(clearedFields(nth(seen, 0))).toEqual(CLEARED_RUN);
+    expect(nth(seen, 0).resumeError).toBeNull();
   });
 
   it("reads the server's attachment size limit before Staging and leaves Upload to read it from the directory", async () => {
@@ -1965,7 +1990,7 @@ describe("useImportJob wiring", () => {
     // failure, so run() rejects here exactly as it would for a real error.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -1989,7 +2014,7 @@ describe("useImportJob wiring", () => {
     // "cancelled" outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2015,6 +2040,25 @@ describe("useImportJob wiring", () => {
     expect(body.status).toBe("failed");
   });
 
+  it("records a failed stage's sentence and its error chain in the Import Errors row", async () => {
+    // The person reads the sentence, and the run's record keeps what the
+    // sentence leaves out, such as a panic's text (#2071, #2112).
+    runMock.mockReset();
+    runMock.mockRejectedValueOnce(
+      new DesktopJobError(
+        "Staging failed because of a bug in Message Crate.",
+        "the job panicked: index out of bounds",
+      ),
+    );
+    const { result } = renderJob();
+    await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
+
+    expect(result.current.summaryView?.status).toBe("failed");
+    expect(result.current.summaryView?.issues[0]?.reason).toBe(
+      "Staging failed because of a bug in Message Crate. Details: the job panicked: index out of bounds",
+    );
+  });
+
   it("does not complete the run on a cancelled extract, so the copy can be picked up", async () => {
     // A cancellation gets the same recovery as a crash at that
     // stage, and the write stage is resumable now: the conversations already
@@ -2023,7 +2067,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2187,7 +2231,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
@@ -2774,7 +2818,6 @@ describe("useImportJob wiring", () => {
 
 describe("useImportJob resume path", () => {
   beforeEach(() => {
-    service.reset();
     runMock.mockReset();
     // A resumed run only ever calls run() once, for the Upload — and, like
     // the wiring tests above, must actually call the invoke function so
@@ -3217,7 +3260,6 @@ function activeRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
 
 describe("useImportJob resumeAtReview", () => {
   beforeEach(() => {
-    service.reset();
     runMock.mockReset();
     cancelMock.mockReset();
     createImportMock.mockReset();
@@ -3693,7 +3735,6 @@ describe("one desktop app, two accounts (#1085)", () => {
 
   beforeEach(() => {
     auth = ACCOUNT_A;
-    service.reset();
     runMock.mockReset();
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockReset();
@@ -3827,7 +3868,7 @@ describe("one desktop app, two accounts (#1085)", () => {
       await fn();
       extractOfARunning.resolve();
       await extractOfAStopped.promise;
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockImplementation(async () => extractOfAStopped.resolve());

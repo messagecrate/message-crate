@@ -8,8 +8,8 @@ use message_ir::{IdentityService, IdentityType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
 use super::records::{
-    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord, TapbackRecord,
-    clean_body,
+    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord,
+    ParticipantRecord, TapbackRecord, clean_body,
 };
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::db::handles::{
@@ -23,8 +23,9 @@ use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
 use media::MediaMode;
 
+use super::ImportFailure;
 use super::contact_name::ensure_contact_for_handle;
-use super::{ImportCounts, ImportFailure, ImportOptions};
+use super::pipeline::{ImportCounts, ImportOptions};
 
 /// Why staging a file stopped: a refusal the sender can fix by changing the
 /// file, or a fault of the server.
@@ -290,9 +291,12 @@ struct IncomingSender<'a> {
     value: Option<&'a HandleValue>,
     /// Service the message arrived on: `phone` or `whatsapp`.
     service: IdentityService,
+    /// The country the file names for the sender's identity, which a phone
+    /// number written without its `+` code is read in before the run's.
+    country: Option<&'static phone::Country>,
 }
 
-/// True when `address`, read as `handle_type` in the run's `country`, is one
+/// True when `address`, read as `handle_type` in `country`, is one
 /// of the account's identities: the account holder, on any service.
 fn is_account_identity(
     identities: &HashSet<(String, IdentityType)>,
@@ -374,6 +378,7 @@ impl StagingInserts {
             address,
             handle_type,
             Some(sender.service.as_str()),
+            sender.country,
         )
         .await?;
         if flagged {
@@ -394,7 +399,7 @@ impl StagingInserts {
                 &self.identities,
                 address,
                 handle_type,
-                self.handles.country(),
+                self.handles.country_for(sender.country),
             )
         {
             ensure_contact_for_handle(
@@ -411,11 +416,6 @@ impl StagingInserts {
         Ok(Some(handle_id))
     }
 }
-
-/// One participant as the conversation header records it: their address, or
-/// the name the source gave in its place, and the name this backup used for
-/// them.
-type StagedParticipant = (HandleValue, Option<String>);
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
 ///
@@ -477,7 +477,7 @@ pub(super) async fn import_file_to_staging(
                 let source = resolve_conversation_source(opts, &c)?;
                 pending = Some(StagedConversation::from_record(c, source));
             }
-            ExportRecord::Message(m) => messages.push(m),
+            ExportRecord::Message(m) => messages.push(*m),
         }
     }
 
@@ -494,33 +494,22 @@ pub(super) async fn import_file_to_staging(
 /// A conversation header as read from the file, with the source it resolved to.
 struct StagedConversation {
     chat_identifier: String,
-    /// `phone` | `whatsapp` for handle rows, when the header says.
-    header_service: Option<String>,
     conversation_type: String,
     group_title: Option<String>,
-    participants: Vec<StagedParticipant>,
+    participants: Vec<ParticipantRecord>,
     source: String,
-    /// When the backup the file was read from was made, in the form a
-    /// message's timestamp takes; `None` when the file does not say.
-    backup_taken_at: Option<crate::models::StoredTime>,
 }
 
 impl StagedConversation {
     fn from_record(record: ConversationRecord, source: String) -> Self {
         Self {
             chat_identifier: record.chat_identifier,
-            header_service: record.service,
             conversation_type: record.conversation_type,
             // A title of blanks is no title, as the conversation list shows
             // it, so it never replaces a real one in a merge.
             group_title: record.group_title.filter(|t| !t.trim().is_empty()),
-            participants: record
-                .participants
-                .into_iter()
-                .map(|p| (p.handle, p.name_alias))
-                .collect(),
+            participants: record.participants,
             source,
-            backup_taken_at: record.backup_taken_at,
         }
     }
 }
@@ -589,17 +578,40 @@ impl FileStaging<'_> {
                 .max()
                 .cloned()
         });
-        let service = service_for(conversation.header_service.as_deref(), &conversation.source);
+        let service = conversation_service(prepared_messages.iter().map(|(m, _)| m));
+        let stated = StatedCountries::of(&conversation.participants, &prepared_messages);
+        // One address is one identity in a conversation, so every place it
+        // appears is read in the one country the conversation names for it:
+        // a sender record that names no country, beside a participant record
+        // that names `GB`, is the same `+44` number. A reaction names
+        // its reactor by address alone, with no country of its own.
+        for (msg, _) in &mut prepared_messages {
+            msg.sender_country = msg.sender.as_ref().and_then(|s| stated.of_handle(s));
+            for tapback in &mut msg.tapbacks {
+                tapback.sender_country = tapback
+                    .sender
+                    .as_deref()
+                    .and_then(|sender| stated.of_address(sender));
+            }
+        }
 
-        let individual = conversation
+        let one_to_one = conversation
             .conversation_type
-            .eq_ignore_ascii_case("individual");
+            .eq_ignore_ascii_case("one-to-one");
+        // A one-to-one conversation's id is its person's address, read in
+        // the country their participant or sender record names, so the chat
+        // handle is the same identity they are.
+        let chat_country = if one_to_one {
+            stated.of_address(&conversation.chat_identifier)
+        } else {
+            None
+        };
         // Conversation identity: the chat handle. A group's id is the group's
         // key and nobody's address, so it is `Other` whatever its shape (a
         // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
         // `orphaned:` key. A one-to-one conversation's id is an address, typed by the
         // service and its shape like every other (#1933).
-        let chat_handle_type = if individual {
+        let chat_handle_type = if one_to_one {
             handle_type_on(&conversation.chat_identifier, service)
         } else {
             IdentityType::Other
@@ -611,6 +623,7 @@ impl FileStaging<'_> {
             &conversation.chat_identifier,
             chat_handle_type,
             Some(service.as_str()),
+            chat_country,
         )
         .await?;
         if flagged {
@@ -638,7 +651,7 @@ impl FileStaging<'_> {
         // none either, and the received copy of each note has no sender
         // (#1094). Its header's participant, if any, is the holder and
         // `insert_participant` drops it.
-        let chat_is_an_address = individual
+        let chat_is_an_address = one_to_one
             && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
             && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
         let with_yourself = chat_is_an_address
@@ -646,7 +659,7 @@ impl FileStaging<'_> {
                 &self.stmts.identities,
                 &conversation.chat_identifier,
                 chat_handle_type,
-                self.stmts.handles.country(),
+                self.stmts.handles.country_for(chat_country),
             );
         if chat_is_an_address && !with_yourself {
             count_other_identity(chat_handle_type, chat_cached, &mut counts);
@@ -674,13 +687,16 @@ impl FileStaging<'_> {
         )
         .await?;
         counts.conversations = 1;
-        if let (Some(import_id), Some(backup_taken_at)) =
-            (self.stmts.import_id, conversation.backup_taken_at.as_ref())
-        {
+        let newest_backup = prepared_messages
+            .iter()
+            .filter_map(|(msg, _)| msg.backup_taken_at.as_ref())
+            .max();
+        if let (Some(import_id), Some(backup_taken_at)) = (self.stmts.import_id, newest_backup) {
             crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
         }
 
-        for participant in conversation.participants {
+        for mut participant in conversation.participants {
+            participant.country = stated.of_handle(&participant.handle);
             insert_participant(
                 self.tx,
                 self.stmts,
@@ -724,7 +740,6 @@ impl FileStaging<'_> {
                 StagedSource {
                     conversation_id,
                     source: &conversation.source,
-                    backup_taken_at: conversation.backup_taken_at.as_ref(),
                 },
                 self.opts.assets_dir,
                 chunk,
@@ -736,19 +751,67 @@ impl FileStaging<'_> {
     }
 }
 
-/// The service of chat and participant handles: the conversation's own hint,
-/// else WhatsApp for a WhatsApp export, else phone.
-fn service_for(header_service: Option<&str>, source: &str) -> IdentityService {
-    header_service.map_or_else(
-        || {
-            if source.eq_ignore_ascii_case("whatsapp") {
-                IdentityService::Whatsapp
-            } else {
-                IdentityService::Phone
+/// The countries one conversation's file names for its identities, by
+/// address: each participant's `country` and each sender's
+/// `sender_country`. A participant's comes first, then senders' in message
+/// order, so one address takes one country across the conversation, and
+/// every participant, sender, reactor and one-to-one chat id at that
+/// address is read in it.
+struct StatedCountries(HashMap<String, &'static phone::Country>);
+
+impl StatedCountries {
+    fn of(
+        participants: &[ParticipantRecord],
+        messages: &[(MessageRecord, Vec<PreparedAttachment>)],
+    ) -> Self {
+        let mut by_address = HashMap::new();
+        let participants = participants.iter().map(|p| (&p.handle, p.country));
+        let senders = messages.iter().filter_map(|(msg, _)| {
+            msg.sender
+                .as_ref()
+                .map(|sender| (sender, msg.sender_country))
+        });
+        for (value, country) in participants.chain(senders) {
+            if let (HandleValue::Address(address), Some(country)) = (value, country) {
+                by_address.entry(address.clone()).or_insert(country);
             }
-        },
-        IdentityService::parse,
-    )
+        }
+        Self(by_address)
+    }
+
+    /// The country named for `address`, when one is.
+    fn of_address(&self, address: &str) -> Option<&'static phone::Country> {
+        self.0.get(address).copied()
+    }
+
+    /// The country named for `handle`'s address; a name has none.
+    fn of_handle(&self, handle: &HandleValue) -> Option<&'static phone::Country> {
+        match handle {
+            HandleValue::Address(address) => self.of_address(address),
+            HandleValue::Name(_) => None,
+        }
+    }
+}
+
+/// The service of a conversation's chat and participant handles: WhatsApp
+/// when any of its messages came over WhatsApp, else Text Message. The
+/// messages say so whatever the source is named: an Export Run writes the
+/// server's source name into the file, so a WhatsApp conversation stored
+/// under another name was read as Text Message on its next import (#2050).
+/// A conversation with no messages has nothing to say it and is Text
+/// Message.
+fn conversation_service<'a>(
+    messages: impl IntoIterator<Item = &'a MessageRecord>,
+) -> IdentityService {
+    if messages.into_iter().any(|m| {
+        m.service
+            .as_deref()
+            .is_some_and(|s| IdentityService::parse(s) == IdentityService::Whatsapp)
+    }) {
+        IdentityService::Whatsapp
+    } else {
+        IdentityService::Phone
+    }
 }
 
 /// Stage every message's attachments on disk, pairing each message with what
@@ -791,10 +854,15 @@ async fn insert_participant(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     conversation_id: i64,
-    (value, name_alias): StagedParticipant,
+    participant: ParticipantRecord,
     service: IdentityService,
     counts: &mut ImportCounts,
 ) -> Result<()> {
+    let ParticipantRecord {
+        handle: value,
+        name_alias,
+        country,
+    } = participant;
     let handle_type = value.handle_type_on(service);
     let handle = value.as_str();
     // The account holder is never a participant: a member at one of the
@@ -805,7 +873,7 @@ async fn insert_participant(
         &stmts.identities,
         handle,
         handle_type,
-        stmts.handles.country(),
+        stmts.handles.country_for(country),
     ) {
         return Ok(());
     }
@@ -816,6 +884,7 @@ async fn insert_participant(
         handle,
         handle_type,
         Some(service.as_str()),
+        country,
     )
     .await?;
     if flagged {
@@ -880,6 +949,7 @@ async fn resolve_message_rows(
                     is_from_me: msg.is_from_me,
                     value: msg.sender.as_ref(),
                     service: sender_service,
+                    country: msg.sender_country,
                 },
                 counts,
             )
@@ -944,12 +1014,12 @@ struct PendingStagingMessage {
 }
 
 /// Where one conversation's message rows are staged from: its staging
-/// conversation, its source, and when its backup was made.
+/// conversation and its source. Each message's Backup Date is its own
+/// ([`MessageRecord::backup_taken_at`]).
 #[derive(Clone, Copy)]
 struct StagedSource<'a> {
     conversation_id: i64,
     source: &'a str,
-    backup_taken_at: Option<&'a crate::models::StoredTime>,
 }
 
 /// Bulk-insert one chunk of message rows, then their attachments, tapbacks
@@ -1043,7 +1113,7 @@ async fn add_staged_copy(
         && row.attachments.is_empty()
         && row.msg.tapbacks.is_empty()
         && row.msg.deletion.is_none()
-        && staged_source.backup_taken_at.is_none()
+        && row.msg.backup_taken_at.is_none()
         && row.msg.time_precision == message_ir::TimePrecision::Seconds
     {
         return Ok(());
@@ -1063,12 +1133,15 @@ async fn add_staged_copy(
     let copy = StagedCopy {
         body: row.body.as_deref(),
         versions: &row.msg.earlier_versions,
-        undated: staged_source.backup_taken_at.is_none(),
+        undated: row.msg.backup_taken_at.is_none(),
     };
     let order = if held.undated {
         BackupOrder::Undecided
     } else {
-        db_staging::later_backup(staged_source.backup_taken_at, held.backup_taken_at.as_ref())
+        db_staging::later_backup(
+            row.msg.backup_taken_at.as_ref(),
+            held.backup_taken_at.as_ref(),
+        )
     };
     match order {
         BackupOrder::Later => {
@@ -1078,13 +1151,18 @@ async fn add_staged_copy(
         BackupOrder::Undecided => {
             let taken = !row.msg.earlier_versions.is_empty()
                 && db_staging::take_later_staged_copy(tx, staged, &copy).await?;
-            if let (false, Some(backup)) = (taken, staged_source.backup_taken_at) {
+            if let (false, Some(backup)) = (taken, row.msg.backup_taken_at.as_ref()) {
                 db_staging::note_backed_staged_text(tx, staged, &copy, backup).await?;
             }
         }
     }
-    db_staging::add_staged_copy_mark(tx, staged, row.msg.deletion, staged_source.backup_taken_at)
-        .await?;
+    db_staging::add_staged_copy_mark(
+        tx,
+        staged,
+        row.msg.deletion,
+        row.msg.backup_taken_at.as_ref(),
+    )
+    .await?;
 
     let att_rows: Vec<StagingAttachment> = row
         .attachments
@@ -1135,7 +1213,7 @@ async fn insert_message_rows(
             deletion: row.msg.deletion,
             sort_order: row.sort_order,
             import_id: stmts.import_id,
-            backup_taken_at: staged_source.backup_taken_at,
+            backup_taken_at: row.msg.backup_taken_at.as_ref(),
         })
         .collect();
     db_staging::insert_messages(tx, &rows).await
@@ -1198,6 +1276,7 @@ async fn tapback_row(
                 is_from_me: tap.is_from_me,
                 value: reactor.as_ref(),
                 service: row.sender_service,
+                country: tap.sender_country,
             },
             counts,
         )
@@ -1209,6 +1288,7 @@ async fn tapback_row(
         emoji: tap.emoji.clone(),
         is_from_me: tap.is_from_me as i64,
         sender_handle_id,
+        sender_display_name: tap.sender_display_name.clone(),
     })
 }
 

@@ -22,7 +22,7 @@ import {
 
 const invokePathStat = vi.hoisted(() => vi.fn());
 const invokeHomeDir = vi.hoisted(() => vi.fn());
-vi.mock("./tauri", () => ({
+vi.mock("./desktop/fs", () => ({
   invokePathStat: (...a: unknown[]) => invokePathStat(...a),
   invokeHomeDir: (...a: unknown[]) => invokeHomeDir(...a),
 }));

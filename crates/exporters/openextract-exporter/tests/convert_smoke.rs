@@ -283,7 +283,7 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
     assert!(document.conversation.chat_identifier.starts_with("group:"));
     assert_eq!(
         document.conversation.conversation_type,
-        message_ir::IrConversationType::Group
+        message_ir::ConversationType::Group
     );
     assert_eq!(roster(document), vec!["+15555550122", "+15555550133"]);
     let named: Vec<_> = document
@@ -380,7 +380,7 @@ fn an_all_conversations_group_is_apart_from_its_senders() {
     assert_eq!(source.fields["conversation"], "Trip");
     assert_eq!(
         trip.conversation.conversation_type,
-        message_ir::IrConversationType::Group
+        message_ir::ConversationType::Group
     );
     assert_eq!(roster(trip), vec!["+15555550122", "+15555550133"]);
     assert_eq!(
@@ -506,6 +506,6 @@ fn the_backup_date_is_the_csv_files_modification_time() {
     .expect("convert");
     assert_eq!(
         jsonl_backup_dates(output.path()),
-        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+        vec![vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]]
     );
 }

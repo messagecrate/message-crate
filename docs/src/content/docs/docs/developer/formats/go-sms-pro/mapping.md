@@ -56,7 +56,7 @@ Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` hol
 
 | Shared field | Source |
 |---------------|--------|
-| `conversation_type` | Always `individual` for XML SMS; `group` for a PDU with two or more people besides the owner |
+| `conversation_type` | Always `one-to-one` for XML SMS; `group` for a PDU with two or more people besides the owner |
 | `group_title` | Derived for PDU groups; empty for XML |
 | `participants_json` | Peer identities for the conversation |
 | `guid` | SHA-256 of the message identity (`MessageGuid`): chat id, direction, sender, UTC milliseconds, collapsed text, sorted attachment digests. A PDU file records whole seconds, so its milliseconds are zero unless its XML row supplied them |
@@ -104,7 +104,7 @@ The same lines also show `xml_messages_seen` (`Read N messages from the XML`), `
 | `skipped_no_other_party` | `Skipped N messages that name nobody but the owner` | A PDU whose every number is one of the owner phone numbers entered on the Import form, such as an MMS the owner sent to themself. Full list: `skipped_no_party.csv` (`pdu_filename`, `sender`, `recipients`, `is_sent`). |
 | `skipped_unparseable_pdu` | `Skipped N PDU files that could not be read` | A PDU that breaks a WAP-209 or WSP rule, or records a transaction that is not a message (a delivery report, a notification). The first twenty are named under the Import Errors heading of the summary, each a sentence with the rule broken and the byte offset. |
 
-Each `skipped_*.csv` names at most the first twenty records (`MAX_SKIP_DETAILS` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`) and closes with a `...and N more entries not shown` row when there were more, so a large backup does not produce a diagnostic file the size of the export.
+Each `skipped_*.csv` names at most the first twenty records (`MAX_SKIP_DETAILS` in `crates/exporters/go-sms-pro-exporter/src/read.rs`) and closes with a `...and N more entries not shown` row when there were more, so a large backup does not produce a diagnostic file the size of the export.
 A run that skips nothing of that kind writes no file, and removes a stale one left by an earlier run into the same directory.
 
 ## PDU rows

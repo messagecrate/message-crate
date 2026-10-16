@@ -812,7 +812,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One conversation, in the same shape a list row already has — so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
+         * One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
          * @description Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.
          */
         get: operations["get_conversation"];
@@ -1077,7 +1077,9 @@ export interface paths {
          * @description Every message needs a non-empty `guid`. A batch with a message without
          *     one is refused with `422`, naming its lines, and nothing in it is stored.
          *     A message whose `guid` the source already holds is skipped, so a batch
-         *     sent again after its answer was lost stores nothing twice.
+         *     sent again after its answer was lost stores nothing twice. A batch hides
+         *     no duplicates: the run's completion or discard hides them, once for the
+         *     whole run.
          */
         post: operations["create_import_batch"];
         delete?: never;
@@ -1098,6 +1100,14 @@ export interface paths {
         /**
          * Record the outcome of an Import Run started with POST /v1/imports.
          * @description The answer is the run as it now stands.
+         *
+         *     Before it records the outcome, the server hides the duplicates of the
+         *     whole account, within one source and across sources. A batch hides
+         *     none, so the duplicates a run brings stay shown until the run ends. The
+         *     time this takes grows with every message the account holds, not with
+         *     the run's. A dedupe that fails leaves the run running. A server told to
+         *     stop refuses the request with `503 Service Unavailable`
+         *     (`server-stopping`), and the run stays running.
          */
         post: operations["complete_import"];
         delete?: never;
@@ -1142,6 +1152,13 @@ export interface paths {
         /**
          * Discard a running Import Run, freeing the account's single slot.
          * @description The answer is the run, now `cancelled`, with the issues the request carried.
+         *
+         *     The messages the run's batches brought stay in the account, and once it
+         *     has discarded the run the server hides the duplicates of the whole
+         *     account, as a completion does. A dedupe that fails does not undo the
+         *     discard: the next run's end hides them. A server told to stop refuses
+         *     the request with `503 Service Unavailable` (`server-stopping`), and the
+         *     run stays running.
          */
         post: operations["discard_import"];
         delete?: never;
@@ -1268,7 +1285,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The countries a phone number written without its `+` code can be read in, by ISO code. */
+        /**
+         * The countries a phone number written without its `+` code can be read in, by ISO code.
+         * @description Any logged-in person reads it, the owner included: the owner picks the country of a number on an account it opens from User Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).
+         */
         get: operations["list_phone_countries"];
         put?: never;
         post?: never;
@@ -2047,6 +2067,14 @@ export interface components {
             /** @description `session_ended`: how the Session ended. `login_refused`: why. */
             reason: components["schemas"]["AuditReason"] | null;
             /**
+             * @description The id of the request that wrote the entry, as its response's
+             *     `x-request-id` and the request's lines in the server's log carry it.
+             *     `null` for an entry written outside a request, by a server command or
+             *     the Demo Account build of the server's first start, and for a run and
+             *     a session that expired, which no one request wrote.
+             */
+            request_id: string | null;
+            /**
              * @description An Export Run: `everything`, `query` or `selection`. Never the query
              *     or the picked ids.
              */
@@ -2169,11 +2197,6 @@ export interface components {
         Contact: {
             /**
              * Format: int64
-             * @description One-to-one conversations the contact appears in.
-             */
-            direct_conversations: number;
-            /**
-             * Format: int64
              * @description Group conversations the contact appears in.
              */
             group_conversations: number;
@@ -2190,6 +2213,11 @@ export interface components {
             last_modified: string;
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
+            /**
+             * Format: int64
+             * @description One-to-one conversations the contact appears in.
+             */
+            one_to_one_conversations: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact appears in: the three
@@ -2247,18 +2275,18 @@ export interface components {
              * @description Contact id.
              */
             id: number;
+            /** @description The contact's preferred name; empty when it has none. */
+            name: string;
             /**
              * Format: int64
              * @description One-to-one conversations with the contact.
              */
-            individual_conversations: number;
+            one_to_one_conversations: number;
             /**
              * Format: int64
              * @description Messages the contact sent in one-to-one conversations.
              */
-            individual_message_count: number;
-            /** @description The contact's preferred name; empty when it has none. */
-            name: string;
+            one_to_one_message_count: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact is in: the three
@@ -2446,7 +2474,7 @@ export interface components {
             id: number;
             /** @description User-chosen label. */
             label: string;
-            /** @description Plaintext secret — returned once at creation. */
+            /** @description Plaintext secret, returned once at creation. */
             token: string;
             /** @description Masked form for the Settings list (also persisted). */
             token_hint: string;
@@ -2555,18 +2583,16 @@ export interface components {
             /** @description Client/tool name recorded on the run, e.g. `message-crate-export`. */
             tool?: string | null;
         };
-        /** @description Import result: the import counts and the dedupe counts. */
+        /**
+         * @description Import result: the batch's import counts. The batch hides no
+         *     duplicates; the run's end does, once for the whole run.
+         */
         CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
             /**
              * Format: int64
              * @description Id of the account the batch imported into.
              */
             account: number;
-            /**
-             * @description What the dedupe after this batch did, counted over the whole account
-             *     rather than the batch alone. Every batch runs it.
-             */
-            dedupe: components["schemas"]["DedupeCounts"];
             /** @description Source id of the Import Run the batch belongs to, such as `imessage`. */
             source: string;
         };
@@ -2728,37 +2754,6 @@ export interface components {
              *     kept another mode without an error.
              */
             wal_error: string | null;
-        };
-        /** @description What one dedupe did. */
-        DedupeCounts: {
-            /**
-             * Format: int64
-             * @description Messages hidden as exact duplicates. In each group, the source with
-             *     the most copies sets how many stay shown, and the rest are hidden.
-             */
-            exact_flagged: number;
-            /**
-             * Format: int64
-             * @description Groups of messages that share one content key and come from two or
-             *     more sources. Copies one source alone holds are not a group.
-             */
-            exact_groups: number;
-            /**
-             * Format: int64
-             * @description Content keys the pass wrote: one for each message whose key was
-             *     missing or whose inputs changed. A content key is a fingerprint of a
-             *     message's conversation, direction, sender, time, text and attachments.
-             *     This is not a count of duplicates.
-             */
-            keys_filled: number;
-            /**
-             * Format: int64
-             * @description Messages hidden as near duplicates: a message that matches one from
-             *     another source in the same conversation, from the same sender in the
-             *     same direction, within 2 seconds, with the same text or the same
-             *     attachments.
-             */
-            near_flagged: number;
         };
         /**
          * @description Confirmation flag and the current password when one is set: the body an
@@ -3050,12 +3045,6 @@ export interface components {
              *     short code, under 7 digits, has no `+` form and is never flagged.
              */
             country_unknown: boolean;
-            /**
-             * Format: int64
-             * @description The identity's messages in one-to-one conversations, trashed
-             *     conversations and duplicates excluded.
-             */
-            direct_messages: number;
             /** @description When the newest such message was sent, or null when there is none. */
             end_date: string | null;
             /**
@@ -3063,6 +3052,12 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
+            /**
+             * Format: int64
+             * @description The identity's messages in one-to-one conversations, trashed
+             *     conversations and duplicates excluded.
+             */
+            one_to_one_messages: number;
             /**
              * Format: int64
              * @description The identity's messages in conversations of orphaned messages, on the
@@ -3213,6 +3208,12 @@ export interface components {
              */
             tapbacks: number;
         };
+        /**
+         * @description What an Import Error is: `skip` when the run left the item out, `error`
+         *     when the item failed.
+         * @enum {string}
+         */
+        ImportErrorKind: "skip" | "error";
         /** @description One stored import issue. */
         ImportIssue: {
             /**
@@ -3224,7 +3225,7 @@ export interface components {
              * @description `error` when the item failed, or `skip` when the run left it out
              *     without importing it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /** @description Why the item failed or was skipped. */
             reason: string;
             /** @description Stage the issue came from. */
@@ -3245,7 +3246,7 @@ export interface components {
              *     `notes`, and the desktop app applies a `resolved` row to the record
              *     before it sends it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /**
              * @description Why the item failed or was skipped, in one sentence. Stored trimmed;
              *     over 2,000 characters is refused with `422 Unprocessable Entity`.
@@ -3327,9 +3328,10 @@ export interface components {
              */
             attachments_ms: number | null;
             /**
-             * @description When the backup the run read was made, UTC: the newest date its
-             *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-             *     a file that names one is imported, and for a run whose files name none.
+             * @description When the backup the run read was made, UTC: the newest Backup Date
+             *     the messages of its conversation files carry (each message's
+             *     `backup_taken_at_unix_ms`). Null until a file that names one is
+             *     imported, and for a run whose files name none.
              */
             backup_taken_at: string | null;
             /**
@@ -3527,7 +3529,7 @@ export interface components {
         };
         /** @description Body for `POST /v1/contacts/unmatched-identities`. */
         ListUnmatchedIdentitiesRequest: {
-            /** @description Raw identifiers — phone numbers, emails — as they appear in an export. */
+            /** @description Raw identifiers (phone numbers, emails) as they appear in an export. */
             identifiers: string[];
         };
         /**
@@ -3714,7 +3716,7 @@ export interface components {
             /** @description The conversation's identifier as the export wrote it. */
             chat_identifier: string;
             /**
-             * @description `individual`, `group`, or `orphaned` for a conversation of
+             * @description `one-to-one`, `group`, or `orphaned` for a conversation of
              *     orphaned messages: ones the backup holds without recording which
              *     conversation they were said in.
              */
@@ -4264,6 +4266,14 @@ export interface components {
                 /** @description `session_ended`: how the Session ended. `login_refused`: why. */
                 reason: components["schemas"]["AuditReason"] | null;
                 /**
+                 * @description The id of the request that wrote the entry, as its response's
+                 *     `x-request-id` and the request's lines in the server's log carry it.
+                 *     `null` for an entry written outside a request, by a server command or
+                 *     the Demo Account build of the server's first start, and for a run and
+                 *     a session that expired, which no one request wrote.
+                 */
+                request_id: string | null;
+                /**
                  * @description An Export Run: `everything`, `query` or `selection`. Never the query
                  *     or the picked ids.
                  */
@@ -4316,18 +4326,18 @@ export interface components {
                  * @description Contact id.
                  */
                 id: number;
+                /** @description The contact's preferred name; empty when it has none. */
+                name: string;
                 /**
                  * Format: int64
                  * @description One-to-one conversations with the contact.
                  */
-                individual_conversations: number;
+                one_to_one_conversations: number;
                 /**
                  * Format: int64
                  * @description Messages the contact sent in one-to-one conversations.
                  */
-                individual_message_count: number;
-                /** @description The contact's preferred name; empty when it has none. */
-                name: string;
+                one_to_one_message_count: number;
                 /**
                  * Format: int64
                  * @description Conversations of orphaned messages the contact is in: the three
@@ -4620,12 +4630,6 @@ export interface components {
                  *     short code, under 7 digits, has no `+` form and is never flagged.
                  */
                 country_unknown: boolean;
-                /**
-                 * Format: int64
-                 * @description The identity's messages in one-to-one conversations, trashed
-                 *     conversations and duplicates excluded.
-                 */
-                direct_messages: number;
                 /** @description When the newest such message was sent, or null when there is none. */
                 end_date: string | null;
                 /**
@@ -4633,6 +4637,12 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
+                /**
+                 * Format: int64
+                 * @description The identity's messages in one-to-one conversations, trashed
+                 *     conversations and duplicates excluded.
+                 */
+                one_to_one_messages: number;
                 /**
                  * Format: int64
                  * @description The identity's messages in conversations of orphaned messages, on the
@@ -4703,9 +4713,10 @@ export interface components {
                  */
                 attachments_ms: number | null;
                 /**
-                 * @description When the backup the run read was made, UTC: the newest date its
-                 *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-                 *     a file that names one is imported, and for a run whose files name none.
+                 * @description When the backup the run read was made, UTC: the newest Backup Date
+                 *     the messages of its conversation files carry (each message's
+                 *     `backup_taken_at_unix_ms`). Null until a file that names one is
+                 *     imported, and for a run whose files name none.
                  */
                 backup_taken_at: string | null;
                 /**
@@ -5234,8 +5245,8 @@ export interface components {
         Participant: {
             /**
              * Format: int64
-             * @description Linked contact id: when the identity is on a Contact, or — for a
-             *     participant with no identity — the contact the server bound the name to
+             * @description Linked contact id: when the identity is on a Contact, or, for a
+             *     participant with no identity, the contact the server bound the name to
              *     directly, since that is the only place the link is recorded for
              *     them. Matches the `id` every other contact shape uses, so a caller
              *     can compare the two without converting either.
@@ -5248,7 +5259,7 @@ export interface components {
              */
             identity: string | null;
             /**
-             * @description What to show for this person. Never empty — the server falls back to
+             * @description What to show for this person. Never empty: the server falls back to
              *     the identity when nothing else names them, and to the name alone for
              *     someone a backup named without recording any address.
              */
@@ -5427,14 +5438,6 @@ export interface components {
          * @enum {string}
          */
         RunCredential: "session" | "api_token";
-        /**
-         * @description What one row a run reports for its Import Run's record is: `skip` when
-         *     the run left the item out, `error` when the item failed, `note` when the
-         *     run did something with it worth knowing that is not a failure, and
-         *     `resolved` when an earlier row about the same item no longer holds.
-         * @enum {string}
-         */
-        RunIssueKind: "skip" | "error" | "note" | "resolved";
         /**
          * @description How a run stands, as the run's own list spells it: an Import Run's
          *     status, or an Export Run's, which never finishes with issues.
@@ -5646,6 +5649,13 @@ export interface components {
             part_index: number;
             /** @description The identity that reacted, for incoming reactions. */
             sender: string | null;
+            /**
+             * @description The name the source gave the reactor of an incoming reaction
+             *     when it gave no address for them, as an iMazing export does;
+             *     `null` when `sender` is set, and for the account holder's own
+             *     reactions. A name is shown, never matched to a contact.
+             */
+            sender_display_name: string | null;
         };
         /**
          * @description How finely the source recorded a message's time.
@@ -5786,7 +5796,7 @@ export interface components {
              *     Recorded here rather than at completion so an approval survives a
              *     reload: the summary shown at a Review is recomputed from the directory, but
              *     what was approved is a different question and only the run
-             *     remembers it. Absent leaves the stored `summary_json` untouched —
+             *     remembers it. Absent leaves the stored `summary_json` untouched, because
              *     most stage changes carry nothing, and treating absent as null would
              *     throw away the plan the outcome is later judged against.
              */
@@ -12042,6 +12052,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     list_import_contacts: {
@@ -12237,6 +12256,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

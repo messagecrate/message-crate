@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { installIntersectionObserver } from "../../test/intersectionObserver";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { OwnerLogsPanel } from "./OwnerLogsPanel";
 
@@ -17,7 +17,7 @@ const getServerState = vi.hoisted(() => vi.fn());
 const invokeListImportRunLogs = vi.hoisted(() => vi.fn());
 const invokeReadImportRunLogLines = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/tauriCheck", () => ({ isTauri: () => desktop.on }));
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -27,8 +27,8 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),
   getServerState: (...a: unknown[]) => getServerState(...a),
 }));
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/runLog", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/runLog")>()),
   invokeListImportRunLogs: (...a: unknown[]) => invokeListImportRunLogs(...a),
   invokeReadImportRunLogLines: (...a: unknown[]) => invokeReadImportRunLogLines(...a),
 }));

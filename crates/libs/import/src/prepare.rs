@@ -8,7 +8,9 @@
 //! mutable state is the journal behind a mutex.
 
 use message_crate_api_types::ImportMode;
+use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -18,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::parallel_for_each;
-use message_ir::{ConversationDocument, ConversationHeader, IrAttachment, IrMessage};
+use message_ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
 use message_ir_format::read_conversation_jsonl_with_lines;
 
 use crate::directory::{attachment_label, resolve_attachment};
@@ -142,9 +144,13 @@ impl<'a> PrepareContext<'a> {
         }
     }
 
-    /// Lock the shared journal (panics only if another thread panicked while holding it).
+    /// Lock the shared journal.
+    ///
+    /// A prepare that panicked while holding the lock leaves it poisoned. The
+    /// lock is read as it is then, so the rest of the Upload goes on, and the
+    /// worker reports that conversation as failed.
     pub(crate) fn lock_journal(&self) -> MutexGuard<'_, SharedJournal> {
-        self.journal.lock().expect("journal mutex poisoned")
+        self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// True when the journal says this conversation file already fully imported.
@@ -272,7 +278,7 @@ struct AttachmentScan {
 fn scan_attachments(
     ctx: &PrepareContext<'_>,
     name: &str,
-    messages: &[IrMessage],
+    messages: &[Message],
 ) -> Result<AttachmentScan> {
     let mut scan = AttachmentScan {
         projections: Vec::with_capacity(messages.len()),
@@ -302,13 +308,13 @@ fn scan_attachments(
 fn scan_one_attachment(
     ctx: &PrepareContext<'_>,
     name: &str,
-    att: &IrAttachment,
+    att: &Attachment,
     index: usize,
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {
     let Some(rel) = att.path.as_deref().and_then(message_ir::trimmed) else {
         // No path means the bytes were never staged. "Do not copy" exports
-        // look like this, and the reason the exporter set ("not_copied")
+        // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
         // Keep the metadata so the thread still shows the file was there.
         scan.skipped += 1;
@@ -324,7 +330,11 @@ fn scan_one_attachment(
         }
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: att.missing_reason.as_deref().unwrap_or("no_path").into(),
+            reason: att
+                .missing_reason
+                .as_deref()
+                .unwrap_or(missing_reason::NO_PATH)
+                .into(),
             size: att.size_bytes,
         });
     };
@@ -343,7 +353,7 @@ fn scan_one_attachment(
             reason: att
                 .missing_reason
                 .as_deref()
-                .unwrap_or("file_missing")
+                .unwrap_or(missing_reason::FILE_MISSING)
                 .into(),
             size: att.size_bytes,
         });
@@ -365,7 +375,7 @@ fn scan_one_attachment(
         });
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: "too_large".into(),
+            reason: missing_reason::TOO_LARGE.into(),
             size: Some(file_len),
         });
     }
@@ -588,7 +598,7 @@ impl DigestResolver {
     fn cached(&self, abs: &Path) -> Option<String> {
         self.cache
             .lock()
-            .expect("digest cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .get(abs)
             .cloned()
     }
@@ -597,7 +607,7 @@ impl DigestResolver {
     fn remember(&self, abs: &Path, digest: &str) {
         self.cache
             .lock()
-            .expect("digest cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(abs.to_path_buf(), digest.to_string());
     }
 }
@@ -765,7 +775,7 @@ fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> 
         journal = ctx
             .claim_ended
             .wait_timeout(journal, CLAIM_WAIT_POLL)
-            .expect("journal mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .0;
     }
     Ok(())
@@ -864,7 +874,10 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
     if ctx.probe_existing.load(Ordering::Relaxed) {
         return Ok(());
     }
-    let mut done = ctx.preflight_done.lock().expect("preflight mutex poisoned");
+    let mut done = ctx
+        .preflight_done
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     if ctx.probe_existing.load(Ordering::Relaxed) || *done {
         return Ok(());
     }
@@ -955,12 +968,36 @@ impl PrepareQueue {
         workers: usize,
         capacity: usize,
     ) -> Self {
+        Self::start_with(
+            scope,
+            workers,
+            capacity,
+            move |path, name| match prepare_file(ctx, path, name) {
+                Ok(prepared) => PrepareOutcome::Prepared(prepared),
+                Err(_) if ctx.session.check_stop().is_err() => PrepareOutcome::Stopped,
+                Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
+            },
+        )
+    }
+
+    /// Spawn `workers` threads inside `scope` that run `prepare` on each job.
+    fn start_with<'scope, 'env, F>(
+        scope: &'scope Scope<'scope, 'env>,
+        workers: usize,
+        capacity: usize,
+        prepare: F,
+    ) -> Self
+    where
+        F: Fn(&Path, &str) -> PrepareOutcome + Send + Sync + 'scope,
+    {
         let (job_tx, job_rx) = mpsc::sync_channel::<Option<PrepareJob>>(capacity);
         let (result_tx, result_rx) = mpsc::channel::<PrepareResult>();
         let job_rx = Arc::new(Mutex::new(job_rx));
+        let prepare = Arc::new(prepare);
         for _ in 0..workers {
             let result_tx = result_tx.clone();
             let job_rx = Arc::clone(&job_rx);
+            let prepare = Arc::clone(&prepare);
             scope.spawn(move || {
                 loop {
                     let job = {
@@ -970,11 +1007,19 @@ impl PrepareQueue {
                     let Some(job) = job else {
                         break;
                     };
-                    let outcome = match prepare_file(ctx, &job.path, &job.name) {
-                        Ok(prepared) => PrepareOutcome::Prepared(prepared),
-                        Err(_) if ctx.session.check_stop().is_err() => PrepareOutcome::Stopped,
-                        Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
-                    };
+                    // A panic still answers the job, as a failed conversation:
+                    // the import loop waits for every index in order, and the
+                    // other workers keep the result channel open, so a job
+                    // without an answer would hang the Upload.
+                    let outcome =
+                        panic::catch_unwind(AssertUnwindSafe(|| prepare(&job.path, &job.name)))
+                            .unwrap_or_else(|payload| {
+                                PrepareOutcome::Failed(format!(
+                                    "preparing {} panicked: {}",
+                                    job.name,
+                                    panic_message(payload.as_ref())
+                                ))
+                            });
                     let _ = result_tx.send(PrepareResult {
                         idx: job.idx,
                         name: job.name,
@@ -1040,7 +1085,8 @@ impl PrepareQueue {
     ///
     /// # Errors
     ///
-    /// Returns an error when every worker has exited (a worker panicked).
+    /// Returns an error when every worker has exited, which a panic in a
+    /// prepare never causes: the worker answers that job as failed.
     pub(crate) fn wait_one(&mut self) -> Result<()> {
         let result = self
             .result_rx
@@ -1051,19 +1097,33 @@ impl PrepareQueue {
         Ok(())
     }
 
+    /// Tell every worker to exit once it has finished the jobs already sent.
+    fn close_jobs(&self) {
+        for _ in 0..self.workers {
+            let _ = self.job_tx.send(None);
+        }
+    }
+
     /// Tell every worker to exit and collect whatever they were still finishing.
     ///
     /// Their asset stats still count even if the import loop aborted.
     pub(crate) fn shutdown(self) -> Vec<PrepareResult> {
-        for _ in 0..self.workers {
-            let _ = self.job_tx.send(None);
-        }
+        self.close_jobs();
         let mut leftovers: Vec<PrepareResult> = self.ready.into_values().collect();
         while let Ok(result) = self.result_rx.recv() {
             leftovers.push(result);
         }
         leftovers
     }
+}
+
+/// The text a panic was raised with, or a placeholder when it carried none.
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("no message")
 }
 
 #[cfg(test)]
@@ -1240,5 +1300,54 @@ mod tests {
             .flat_map(|c| c.messages.iter().map(|m| m.guid.as_str()))
             .collect();
         assert_eq!(guids, vec!["g0", "g1", "g2", "g3", "g4"]);
+    }
+
+    /// A prepare that panics on one conversation still hands back a result
+    /// for it, as a failure, so the Upload goes on. Without one, the import
+    /// loop waited for that result forever while the other workers held the
+    /// channel open (#2087).
+    ///
+    /// The workers are told to exit once they finish the jobs, so a missing
+    /// result shows as `wait_one` failing on a closed channel rather than as
+    /// a hang. The results are then taken in file order through `wait_one`,
+    /// as the import loop takes them, with the panicking file first.
+    #[test]
+    fn a_panicking_prepare_reports_that_conversation_as_failed() {
+        let names = ["a.jsonl", "b.jsonl", "c.jsonl"];
+        let outcomes = std::thread::scope(|scope| {
+            let mut queue = PrepareQueue::start_with(scope, 3, names.len(), |_path, name| {
+                assert_ne!(name, "a.jsonl", "prepare blew up");
+                PrepareOutcome::Skipped
+            });
+            for (idx, name) in names.into_iter().enumerate() {
+                queue.submit(idx, PathBuf::from(name), name.to_owned());
+            }
+            queue.close_jobs();
+            let mut outcomes = Vec::new();
+            for idx in 0..names.len() {
+                while !queue.is_ready(idx) {
+                    queue
+                        .wait_one()
+                        .expect("every job gets a result before the workers exit");
+                }
+                let result = queue.take(idx).unwrap();
+                outcomes.push(match result.outcome {
+                    PrepareOutcome::Skipped => "skipped".to_owned(),
+                    PrepareOutcome::Failed(error) => error,
+                    _ => "other".to_owned(),
+                });
+            }
+            assert!(queue.is_idle());
+            queue.shutdown();
+            outcomes
+        });
+
+        assert!(
+            outcomes[0].starts_with("preparing a.jsonl panicked: ")
+                && outcomes[0].contains("prepare blew up"),
+            "{:?}",
+            outcomes[0]
+        );
+        assert_eq!(outcomes[1..], ["skipped", "skipped"]);
     }
 }

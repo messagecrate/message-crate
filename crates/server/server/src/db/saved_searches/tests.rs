@@ -28,7 +28,7 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
                 &mut conn,
                 account,
                 second,
-                "kind:individual",
+                "kind:direct",
                 SavedSearchKind::Manual,
             ),
         )
@@ -36,7 +36,7 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
         .unwrap_err();
 
         assert!(
-            matches!(err, SavedSearchError::Conflict(_)),
+            matches!(err, SavedSearchError::NameTaken(_)),
             "{second}: {err:?}"
         );
         let rows = list(&mut conn, account).await.unwrap();
@@ -112,7 +112,7 @@ async fn names_collide_case_insensitively_within_an_account() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(err, SavedSearchError::Conflict(_)), "got {err:?}");
+    assert!(matches!(err, SavedSearchError::NameTaken(_)), "got {err:?}");
 }
 
 #[tokio::test]
@@ -216,7 +216,7 @@ async fn update_rejects_a_name_another_row_already_uses() {
     let err = update(&mut conn, account, second.id, "family", "kind:direct")
         .await
         .unwrap_err();
-    assert!(matches!(err, SavedSearchError::Conflict(_)), "got {err:?}");
+    assert!(matches!(err, SavedSearchError::NameTaken(_)), "got {err:?}");
 }
 
 #[tokio::test]
@@ -453,5 +453,33 @@ async fn deleting_a_saved_search_leaves_the_import_record() {
     assert_eq!(
         still_there, 1,
         "deleting the shortcut must not touch the import record"
+    );
+}
+
+/// A failed statement's error names the step it was taking, so the one
+/// `ERROR` line of a `500` says which statement failed, not only the
+/// database's message (#2667). A temporary `saved_searches` without its
+/// columns hides the real table, so the read fails on its own.
+#[tokio::test]
+async fn a_failed_statement_names_its_step() {
+    let fixture = crate::test_support::test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    sqlx::query("CREATE TEMP TABLE saved_searches (id INTEGER)")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let SavedSearchError::Internal(error) =
+        list(&mut conn, account).await.expect_err("the read fails")
+    else {
+        panic!("a failed statement is an internal error");
+    };
+
+    let chain = crate::api_error::error_chain(&error);
+    assert!(
+        chain.starts_with("read the account's Saved Searches: ")
+            && chain.contains("no such column"),
+        "{chain}"
     );
 }

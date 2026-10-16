@@ -5,6 +5,8 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::progress::ProgressSink;
+
 /// Shared cancel flag for cooperative in-process jobs.
 /// `CancelFlag::default()` is a flag nobody sets, for a run that cannot be
 /// cancelled.
@@ -18,10 +20,11 @@ type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
 /// lines passes [`LogSink::none`]: a library never decides on its own to
 /// print a run's lines.
 ///
-/// A line is something the run did. A warning is the output of a step that
-/// failed. The desktop app writes a warning into the Import Run's log at
-/// warning level (`docs/architecture/import-run-logs.md`). A sink with no
-/// warning callback takes a warning as a line.
+/// A line is something the run did. A warning is something the run went on
+/// without, such as an attachment it could not read or a record it skipped
+/// (`docs/architecture/import-run-logs.md`). The desktop app writes a line
+/// into the Import Run's log at `INFO` and a warning at `WARN`. A sink with
+/// no warning callback takes a warning as a line.
 #[derive(Clone)]
 pub struct LogSink {
     line: LineCallback,
@@ -90,8 +93,11 @@ pub fn is_cancelled(cancel: &CancelFlag) -> bool {
 
 /// Error returned by [`check_cancel`] when cancel was requested.
 ///
-/// Displays as `canceled`, so callers at a `String` edge can use
-/// `.map_err(|e| e.to_string())` and `anyhow` callers can use `?`.
+/// A Cancel is told from a failure by this type, never by its text: the
+/// desktop app looks for it in the error's chain (`DesktopJobErrorEvent` in
+/// `src-tauri/src/commands/events.rs`), so any context added on the way out
+/// keeps it (#2077). Carry it with `?` into an `anyhow::Error` rather than
+/// turning it into a string, which loses the type. It displays as `canceled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("canceled")]
 pub struct Cancelled;
@@ -107,6 +113,22 @@ pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Cancelled> {
     } else {
         Ok(())
     }
+}
+
+/// Where a step of a run reports and what stops it: the log, the progress
+/// events, and the cancel flag. Every staging step takes the three together,
+/// such as the write queue's drains, [`crate::stage_attachment_jobs`], and
+/// the format sink's write. A caller with no log, no progress bar or no cancel passes
+/// [`LogSink::none`], [`ProgressSink::none`] or a `CancelFlag::default()`.
+#[derive(Debug, Clone, Copy)]
+pub struct Sinks<'a> {
+    /// Where the step writes its log lines.
+    pub log: &'a LogSink,
+    /// Where the step sends its progress events.
+    pub progress: &'a ProgressSink,
+    /// Set to stop the step. The step then fails with [`Cancelled`] in its
+    /// error chain (#2077).
+    pub cancel: &'a CancelFlag,
 }
 
 /// Run `f` over `jobs` on up to `workers` scoped threads and return one result

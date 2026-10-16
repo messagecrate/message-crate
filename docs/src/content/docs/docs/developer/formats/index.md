@@ -9,7 +9,7 @@ What each converter writes (and where it falls short). Marks: **yes** / **partia
 
 ## Shared model
 
-All converters build a **common message** per conversation (`ConversationDocument`, schema version 14 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
+All converters build a **common message** per conversation (`ConversationDocument`, schema version 16 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
 
 - The peer is `chat_identifier` — there is **no** dedicated receiver-phone column
 - A participant carries its identity and display name and no type: the server works out each identity's type (`phone` / `email` / `other`) from the service and the address on import. The CSV `identity_type` column carries the sender's type as the server works it out
@@ -44,7 +44,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 |---|---|
 | **GO SMS Pro** | MMS as WAP-209 `.pdu` files; many empty stub PDUs; SMS attachments not in XML |
 | **SMS Backup & Restore** | Call logs ignored; drafts / failed / queued skipped; encrypted ZIP not supported (unlock first) |
-| **SMS Backup+** | Offline `.eml` only (no IMAP); call-log mails skipped; archive attachment→message pairing is guesswork; a peer known only by name gets a conversation of its own; a mail naming nobody is skipped and counted as a parse error |
+| **SMS Backup+** | Offline `.eml` only (no IMAP); call-log and WhatsApp mails skipped; archive attachment→message pairing is guesswork; a peer known only by name gets a conversation of its own; a mail naming nobody is skipped and counted as a parse error |
 | **OpenExtract** | No media extraction; a group is known only from two or more people writing in it, so one where only one other person wrote is read as one-to-one; thin source format; a conversation the export names by a person's name only is matched to a contact by that name on import, or stays Unknown |
 | **iMazing** | Reactions name the reactor by display name only, replies are linked by the quoted date within the conversation, and an edit keeps its time and not its earlier text; WhatsApp groups lack full roster; naive dates are read in the zone chosen in the Import form's **Time zone of the messages** field |
 | **WhatsApp** | Requires the external `wtsexporter`, which the desktop app downloads into its Tools Directory; a one-to-one conversation whose JID is not a phone number (an `@lid` id) keeps the raw id, written as its participant, which the server types `other`; Status updates (`status@broadcast`) and Channel posts (`@newsletter`) are skipped and counted as `skipped_status_updates` and `skipped_channel_posts`; reads only the JSON of Message Crate's fork, `messagecrate/WhatsApp-Chat-Exporter` (`sender_jid`, `sender_lid`, `sender_contact_name`, `sender_push_name` on each message, `members` on each chat), and refuses one without them; a sender's number comes only from a `sender_jid` that is a phone id, so a sender under an `@lid` id the backup cannot map is written under that id, which the server types `other`; a group's participants are its `members` less the owner, plus each sender who is not a member |
@@ -63,11 +63,17 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **Reactions / tapbacks** | no | no | no | no | each message's `reactions`, the reactor by display name only | each message's `reactions` (`reactions_json` in CSV), each under the reactor's WhatsApp id | each message's `reactions` (`reactions_json` in CSV) |
 | **Deleted in the source app / Unsent** | no | no | no | no | each message's `deletion`, Deleted in the source app only | no | each message's `deletion` (`deletion` in CSV) |
 | **Edits / replies** | no | no | no | no | one earlier version in `edits` with its time and no text / each message's `reply_to`, linked by the quoted date within the conversation | each message's `reply_to` (`is_reply` / `reply_to_guid` in CSV) | each message's earlier versions in `edits` (`earlier_versions_json` in CSV) / each message's `reply_to` (`is_reply` / `reply_to_guid` / `reply_to_part` in CSV) |
-| **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` (in `source_fields_json`) | `parts_json`, `app_json`, … |
+| **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` / `group_action_jid` (in `source_fields_json`) | `parts_json`, `app_json`, … |
 | **Timezone** | XML/PDU epoch | XML epoch | EML dates | vendor `Date` | naive, zone from the Import form | epoch from wtsexporter | DB epoch + offset |
 | **Skip diagnostics** | `skipped_*.csv` (invalid address, empty PDU, no party) plus run summary counters | run summary counters | run summary counters | unresolved phone count | run summary counters | run summary counters | run summary counters |
 
-Discord, Signal, Telegram, and Slack are recognized services in the shared model (`IrService`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
+### WhatsApp group events
+
+A group event (a member joined or left, the group was renamed or its picture changed) carries the text the fork of WhatsApp Chat Exporter writes in `group_action`, such as "Ada joined the group". The converter writes such a message with `message_kind` `announcement` and that text as its `text`, the shape an Apple Messages group announcement takes, so the server marks it as an announcement.
+
+Its sender is the member who acted, by the same rules as any group message's sender. `group_action_jid`, the id of the member the text names, is kept in `source.fields`. The fork writes `group_action` only for the kinds of event the backup states, and `null` for any other kind. An event of another kind has no `group_action` text. It is written as any other message, with its text built from `data` and `caption` as for any message.
+
+Discord, Signal, Telegram, and Slack are recognized services in the shared model (each a value of `Transport`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
 
 ## Technical docs
 

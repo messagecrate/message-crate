@@ -13,7 +13,7 @@ import {
 import { focusRingClass } from "../../lib/uiStyles";
 import { ChevronDownIcon, ChevronRightIcon } from "../icons";
 import PlainButton from "../PlainButton";
-import { groupImportIssues, type ImportIssueGroup } from "./groupImportIssues";
+import { groupImportIssues, type ImportIssueGroup, type IssueTableRow } from "./groupImportIssues";
 import type { ImportIssue, ImportNote } from "./ImportSummaryPanel";
 import { ISSUE_STAGE_LABEL } from "./importIssueStage";
 import {
@@ -77,7 +77,7 @@ function rowAriaLabel(group: ImportIssueGroup, expanded: boolean, words: TableWo
  * Import Errors are.
  */
 export function VirtualizedImportNotesTable({ notes }: { notes: ImportNote[] }) {
-  const rows = useMemo<ImportIssue[]>(
+  const rows = useMemo<IssueTableRow[]>(
     () => notes.map(({ stage, item, text }) => ({ kind: "note", stage, item, reason: text })),
     [notes],
   );
@@ -94,7 +94,7 @@ export default function VirtualizedImportIssuesTable({ issues }: { issues: Impor
   return <IssuesTable issues={issues} words={ERROR_WORDS} />;
 }
 
-function IssuesTable({ issues, words }: { issues: ImportIssue[]; words: TableWords }) {
+function IssuesTable({ issues, words }: { issues: readonly IssueTableRow[]; words: TableWords }) {
   const rows = useMemo<IssueRow[]>(
     () => groupImportIssues(issues).map((group, index) => ({ ...group, id: String(index) })),
     [issues],

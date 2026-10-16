@@ -1,19 +1,20 @@
 //! Shared projection from [`PendingConversation`] to [`ConversationDocument`].
 //!
-//! Every exporter used to carry its own copy of this loop. The skeleton —
-//! participants with the single-peer fallback, owner sender handling,
-//! sent/received tallying, the dedupe step, GUID derivation, linking each
-//! reply to the message it quotes, and document assembly — lives here once;
-//! the genuine per-exporter deltas (vendor `source` fields, service
+//! Every exporter but Apple Messages builds its documents here (the
+//! [`ProjectionHooks`] documentation says why Apple Messages does not). The
+//! skeleton lives here once: participants with the single-peer fallback,
+//! owner sender handling, sent/received tallying, the dedupe step, GUID
+//! derivation, linking each reply to the message it quotes, and document
+//! assembly. The genuine per-exporter deltas (vendor `source` fields, service
 //! selection, attachment digests and vendor keys, reply keys, reactions,
 //! attachment mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
-    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind,
-    IrParticipant, IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity,
-    PendingAttachment, PendingConversation, PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION,
-    TimePrecision, format_local_ts, one_copy_per_message, owner_sender,
+    Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
+    Deletion, Direction, EarlierVersion, ExportMeta, Message, MessageCopy, MessageGuid,
+    MessageIdentity, MessageKind, Participant, PendingAttachment, PendingConversation,
+    PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, VendorFields,
+    format_local_ts, one_copy_per_message, owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -79,19 +80,43 @@ pub struct PendingReply {
 
 /// Per-exporter deltas of the shared [`pending_to_document`] projection.
 ///
-/// Only [`export`](Self::export), [`service`](Self::service), and
-/// [`source`](Self::source) are required; every other method has a default
+/// Only [`export`](Self::export), [`service`](Self::service),
+/// [`vendor_fields`](Self::vendor_fields), and
+/// [`backup_taken_at_unix_ms`](Self::backup_taken_at_unix_ms) are required;
+/// every other method has a default
 /// matching the common exporter behavior.
+///
+/// Every exporter projects through these hooks except Apple Messages
+/// (`imessage-ir-exporter`), which builds its documents from the messages
+/// the Apple Messages Reader sends, already in [`Message`] form, for two
+/// reasons. Each message keeps `chat.db`'s own `guid` as its guid, because
+/// that is the name the database's replies (`thread_originator_guid`, read
+/// into [`Message::reply_to`]) and tapbacks (`associated_message_guid`,
+/// read into [`ImessageExtensions::associated_guid`](crate::ImessageExtensions::associated_guid)) give the
+/// message they point at; a [`MessageGuid`] made here would leave every one
+/// of them pointing at nothing. And the dedupe step has nothing to do there:
+/// `chat.db` holds each message once, as one row with a `guid` no other
+/// row has, so no copy repeats another.
 pub trait ProjectionHooks {
     /// Export metadata (source / tool / version / owner) stamped on the document.
     fn export(&self) -> ExportMeta;
 
-    /// Transport of one message (e.g. a constant `IrService::Sms`).
-    fn service(&self, message: &PendingMessage) -> IrService;
+    /// Transport of one message (e.g. a constant `Transport::Sms`).
+    fn service(&self, message: &PendingMessage) -> Transport;
 
     /// Vendor leftovers for one message. The projection applies
-    /// [`IrSource::into_option`], so an empty bag becomes `None`.
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource;
+    /// [`VendorFields::into_option`], so an empty bag becomes `None`.
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields;
+
+    /// The Backup Date of every message projected
+    /// ([`Message::backup_taken_at_unix_ms`]): when the one backup the
+    /// exporter read was made, or `None` when nothing says. Required, so no
+    /// exporter leaves its messages undated by omission.
+    fn backup_taken_at_unix_ms(&self) -> Option<i64>;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -150,10 +175,10 @@ pub trait ProjectionHooks {
         Vec::new()
     }
 
-    /// Map one queued attachment onto the shared [`IrAttachment`] shape.
+    /// Map one queued attachment onto the shared [`Attachment`] shape.
     /// The default is [`PendingAttachment::to_ir`]: metadata only (no path,
     /// no bytes), with the size when the exporter recorded one.
-    fn attachment_to_ir(&self, att: &PendingAttachment, _message: &PendingMessage) -> IrAttachment {
+    fn attachment_to_ir(&self, att: &PendingAttachment, _message: &PendingMessage) -> Attachment {
         att.to_ir()
     }
 
@@ -184,24 +209,15 @@ pub trait ProjectionHooks {
         a.sort_key.cmp(&b.sort_key)
     }
 
-    /// Row shape of one message. The default maps attachment-less rows to
-    /// [`IrMessageKind::Sms`] and the rest to [`IrMessageKind::Mms`].
-    fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
-        if message.attachments.is_empty() {
-            IrMessageKind::Sms
-        } else {
-            IrMessageKind::Mms
-        }
+    /// Row shape of one message. The default is [`default_message_kind`].
+    fn message_kind(&self, message: &PendingMessage) -> MessageKind {
+        default_message_kind(message)
     }
 
     /// Roster written on the document. The default is
     /// [`default_participants`]: `participant_e164s` with display names
     /// gathered from the messages, plus the single-peer chat-id fallback.
-    fn participants(
-        &self,
-        chat_id: &str,
-        conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         default_participants(chat_id, conversation, &|raw| self.normalize_handle(raw))
     }
 
@@ -214,6 +230,16 @@ pub trait ProjectionHooks {
     /// On-disk stem suffix (e.g. `__whatsapp`); the default has none.
     fn packaging_stem_suffix(&self, _conversation: &PendingConversation) -> Option<String> {
         None
+    }
+}
+
+/// The default row shape of one message: [`MessageKind::Sms`] for a row
+/// without attachments, [`MessageKind::Mms`] for one with.
+pub fn default_message_kind(message: &PendingMessage) -> MessageKind {
+    if message.attachments.is_empty() {
+        MessageKind::Sms
+    } else {
+        MessageKind::Mms
     }
 }
 
@@ -251,16 +277,43 @@ struct Prepared {
 /// The skeleton shared by every exporter: participants (with the single-peer
 /// chat-id fallback), the owner sender for outgoing rows, one copy kept per
 /// message ([`one_copy_per_message`]), a [`MessageGuid`] per message, and
-/// document assembly. Timestamps must already be representable — run
+/// document assembly. Timestamps must already be representable. Run
 /// [`prepare_conversation`] (or an equivalent prune) first.
 ///
 /// Returns the document and a [`ProjectionTally`] for the caller to fold into
-/// its report.
+/// its report. [`project_pending`] also says which pending message each of
+/// the document's messages was made from.
 pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
     conversation: &PendingConversation,
     hooks: &H,
 ) -> (ConversationDocument, ProjectionTally) {
+    let projection = project_pending(chat_id, conversation, hooks);
+    (projection.document, projection.tally)
+}
+
+/// What [`project_pending`] made of one pending conversation.
+#[derive(Debug, Clone)]
+pub struct Projection {
+    /// The conversation's document, as [`pending_to_document`] returns it.
+    pub document: ConversationDocument,
+    /// The counts, as [`pending_to_document`] returns them.
+    pub tally: ProjectionTally,
+    /// For each message of [`Self::document`], in order, the index in the
+    /// conversation's `messages` of the pending message it was made from. A
+    /// copy the dedupe step dropped has no entry.
+    pub kept: Vec<usize>,
+}
+
+/// [`pending_to_document`], also naming the pending message each message of
+/// the document was made from, for an exporter that reports something about
+/// each message it kept (SMS Backup & Restore names each one with a part
+/// left out, at the time the dedupe step kept).
+pub fn project_pending<H: ProjectionHooks + ?Sized>(
+    chat_id: &str,
+    conversation: &PendingConversation,
+    hooks: &H,
+) -> Projection {
     let export = hooks.export();
     let (owner_sender_identity, owner_sender_display) = owner_sender(&export);
     let unit = hooks.sort_key_unit();
@@ -298,13 +351,21 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
 
     let mut tally = ProjectionTally::default();
     let mut messages = Vec::with_capacity(conversation.messages.len());
+    let mut kept_indices = Vec::with_capacity(conversation.messages.len());
     let mut replies: Vec<(usize, PendingReply)> = Vec::new();
     let mut guid_by_reply_key: HashMap<String, Option<String>> = HashMap::new();
-    for ((message, p), kept) in conversation.messages.iter().zip(&prepared).zip(kept) {
+    for (index, ((message, p), kept)) in conversation
+        .messages
+        .iter()
+        .zip(&prepared)
+        .zip(kept)
+        .enumerate()
+    {
         let Some((timestamp_unix_ms, time_precision)) = kept else {
             tally.duplicates += 1;
             continue;
         };
+        kept_indices.push(index);
         let role = hooks.role(message);
         tally.messages += 1;
         match role {
@@ -340,20 +401,20 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         } else {
             (p.sender.clone(), message.sender_display_name.clone())
         };
-        let attachments: Vec<IrAttachment> = message
+        let attachments: Vec<Attachment> = message
             .attachments
             .iter()
             .map(|a| hooks.attachment_to_ir(a, message))
             .collect();
 
-        messages.push(IrMessage {
+        messages.push(Message {
             guid,
             timestamp_unix_ms,
             time_precision,
             direction: if outgoing {
-                IrDirection::Outgoing
+                Direction::Outgoing
             } else {
-                IrDirection::Incoming
+                Direction::Incoming
             },
             service: hooks.service(message),
             message_kind: hooks.message_kind(message),
@@ -369,7 +430,9 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             // Linked below, once every guid is known.
             reply_to: None,
             imessage: None,
-            source: hooks.source(conversation, message).into_option(),
+            source: hooks.vendor_fields(conversation, message).into_option(),
+            sender_country: None,
+            backup_taken_at_unix_ms: hooks.backup_taken_at_unix_ms(),
         });
     }
     for (index, reply) in replies {
@@ -395,9 +458,9 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         conversation: ConversationMeta {
             chat_identifier: chat_id.to_string(),
             conversation_type: if conversation.is_group {
-                IrConversationType::Group
+                ConversationType::Group
             } else {
-                IrConversationType::Individual
+                ConversationType::OneToOne
             },
             group_title: hooks.group_title(conversation),
             participants: hooks.participants(chat_id, conversation),
@@ -406,7 +469,11 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         messages,
         packaging_stem_suffix: hooks.packaging_stem_suffix(conversation),
     };
-    (document, tally)
+    Projection {
+        document,
+        tally,
+        kept: kept_indices,
+    }
 }
 
 /// Map of handle → display name from message extras and sender fields.
@@ -445,22 +512,23 @@ pub fn display_names_for_handles(
 
 /// The default roster: `participant_e164s` (with display names gathered from
 /// the messages) plus the single-peer chat-id fallback when the roster is
-/// empty for an individual chat. The conversation that names nobody
+/// empty for a one-to-one chat. The conversation that names nobody
 /// ([`crate::NAMELESS_CHAT_ID`]) has no fallback: it is with nobody, and a
 /// participant made from its key would make it a person.
 pub fn default_participants(
     chat_id: &str,
     conversation: &PendingConversation,
     normalize_handle: &dyn Fn(&str) -> String,
-) -> Vec<IrParticipant> {
+) -> Vec<Participant> {
     let name_by_handle = display_names_for_handles(conversation, normalize_handle);
-    let mut participants: Vec<IrParticipant> = conversation
+    let mut participants: Vec<Participant> = conversation
         .participant_e164s
         .iter()
         .filter(|h| !h.is_empty())
-        .map(|h| IrParticipant {
+        .map(|h| Participant {
             identity: Some(h.clone()),
             display_name: name_by_handle.get(h).cloned(),
+            country: None,
         })
         .collect();
     if participants.is_empty()
@@ -470,19 +538,21 @@ pub fn default_participants(
     {
         if crate::name_of_chat_id(chat_id).is_some() {
             // The source named this person and recorded no address for them,
-            // so the chat id is made from the name — not something to store
-            // as an identity.
-            participants.push(IrParticipant {
+            // so the chat id is made from the name. That chat id is not
+            // something to store as an identity.
+            participants.push(Participant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
+                country: None,
             });
         } else {
-            participants.push(IrParticipant {
+            participants.push(Participant {
                 identity: Some(chat_id.to_string()),
                 display_name: name_by_handle
                     .get(chat_id)
                     .cloned()
                     .or_else(|| conversation.first_contact_name()),
+                country: None,
             });
         }
     }
@@ -549,20 +619,24 @@ mod tests {
                 tool_version: "0".into(),
                 owner_identity: Some("+15555550100".into()),
                 owner_display_name: None,
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             }
         }
 
-        fn service(&self, _message: &PendingMessage) -> IrService {
-            IrService::Sms
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+            None
         }
 
-        fn source(
+        fn service(&self, _message: &PendingMessage) -> Transport {
+            Transport::Sms
+        }
+
+        fn vendor_fields(
             &self,
             _conversation: &PendingConversation,
             _message: &PendingMessage,
-        ) -> IrSource {
-            IrSource::default()
+        ) -> VendorFields {
+            VendorFields::default()
         }
     }
 
@@ -592,16 +666,20 @@ mod tests {
             TestHooks.export()
         }
 
-        fn service(&self, _message: &PendingMessage) -> IrService {
-            IrService::Whatsapp
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+            None
         }
 
-        fn source(
+        fn service(&self, _message: &PendingMessage) -> Transport {
+            Transport::Whatsapp
+        }
+
+        fn vendor_fields(
             &self,
             _conversation: &PendingConversation,
             _message: &PendingMessage,
-        ) -> IrSource {
-            IrSource::default()
+        ) -> VendorFields {
+            VendorFields::default()
         }
 
         fn reply_key(&self, message: &PendingMessage) -> Option<String> {
@@ -669,6 +747,28 @@ mod tests {
     }
 
     #[test]
+    fn a_projection_names_the_pending_message_each_kept_message_was_made_from() {
+        let mut conversation =
+            PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
+        conversation.messages = vec![
+            pending_message(1_609_459_200, false, "hi"),
+            pending_message(1_609_459_200, false, "hi"),
+            pending_message(1_609_459_260, true, "yo"),
+        ];
+
+        let projection = project_pending("+15555550122", &conversation, &TestHooks);
+        assert_eq!(projection.tally.duplicates, 1);
+        let texts: Vec<_> = projection
+            .document
+            .messages
+            .iter()
+            .map(|m| m.text.as_str())
+            .collect();
+        assert_eq!(texts, ["hi", "yo"]);
+        assert_eq!(projection.kept, [0, 2], "the repeated copy has no entry");
+    }
+
+    #[test]
     fn projects_owner_sender_and_tallies_directions() {
         let mut conversation =
             PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
@@ -682,12 +782,12 @@ mod tests {
         assert_eq!(tally.sent, 1);
         assert_eq!(tally.received, 1);
         assert_eq!(document.messages.len(), 2);
-        assert_eq!(document.messages[0].direction, IrDirection::Incoming);
+        assert_eq!(document.messages[0].direction, Direction::Incoming);
         assert_eq!(
             document.messages[0].sender_identity.as_deref(),
             Some("+15555550122")
         );
-        assert_eq!(document.messages[1].direction, IrDirection::Outgoing);
+        assert_eq!(document.messages[1].direction, Direction::Outgoing);
         assert_eq!(
             document.messages[1].sender_identity.as_deref(),
             Some("+15555550100")
@@ -813,12 +913,20 @@ mod tests {
             TestHooks.export()
         }
 
-        fn service(&self, message: &PendingMessage) -> IrService {
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+            None
+        }
+
+        fn service(&self, message: &PendingMessage) -> Transport {
             TestHooks.service(message)
         }
 
-        fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
-            TestHooks.source(conversation, message)
+        fn vendor_fields(
+            &self,
+            conversation: &PendingConversation,
+            message: &PendingMessage,
+        ) -> VendorFields {
+            TestHooks.vendor_fields(conversation, message)
         }
 
         fn sort_key_unit(&self) -> SortKeyUnit {

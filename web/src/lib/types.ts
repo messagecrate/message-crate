@@ -1,5 +1,4 @@
 import type { components } from "./serverApi.types";
-import type { ToolName } from "./tauri";
 
 type Schema = components["schemas"];
 
@@ -98,9 +97,19 @@ export interface ExtractConfig {
 }
 
 export interface DesktopJobErrorEvent {
+  /** The full error chain, for the log. */
   detail: string;
+  /** The sentence the person reads, when one is known; `detail` otherwise. */
   user_message?: string;
+  /** Whether a Cancel stopped the job, rather than a failure. */
+  canceled: boolean;
 }
+
+/** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
+export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
+/** The programs Convert and Compress run. */
+export type MediaToolName = "ffmpeg" | "ffprobe";
 
 /**
  * One typed progress event from the desktop backend (`desktop-job:progress`).
@@ -123,6 +132,15 @@ export interface ImportProgressEvent {
 }
 
 /**
+ * What one row a run reports is: `skip` when the run left the item out,
+ * `error` when the item failed, `note` when it did something with the item
+ * worth knowing that is not a failure, and `resolved` when an earlier row
+ * about the same item no longer holds. Rust's `RunIssueKind`; the server
+ * stores only the first two, as an Import Error's kind (`ImportErrorKind`).
+ */
+export type RunIssueKind = "skip" | "error" | "note" | "resolved";
+
+/**
  * One row for the Import Errors list, or the notes list (`desktop-job:issue`),
  * sent the moment the stage records it.
  */
@@ -135,7 +153,7 @@ export interface ImportIssueEvent {
    * with the same stage and item no longer holds, as when Media converts a
    * file on a later try.
    */
-  kind: components["schemas"]["RunIssueKind"];
+  kind: RunIssueKind;
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;

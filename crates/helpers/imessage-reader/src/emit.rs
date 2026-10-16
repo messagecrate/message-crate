@@ -25,8 +25,8 @@ use imessage_database::{
 };
 use imessage_reader_protocol::{
     Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
-    Message as MessageRecord, ORPHANED_CONVERSATION_TYPE, Participant, Progress, Reaction, ReplyTo,
-    TimePrecision, bare_address, orphaned_chat_id,
+    Message as MessageRecord, ONE_TO_ONE_CONVERSATION_TYPE, ORPHANED_CONVERSATION_TYPE,
+    Participant, Progress, Reaction, ReplyTo, TimePrecision, bare_address, orphaned_chat_id,
 };
 use serde_json::Value;
 
@@ -38,7 +38,7 @@ use crate::{
         balloon_kind_label, balloon_summary, build_balloon_value, build_earlier_versions,
         expressive_label, parse_thread_part, shared_location_label,
     },
-    log::{emit, emit_log},
+    log::{emit, emit_log, emit_warning},
     session::MailSession,
 };
 
@@ -98,7 +98,7 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
             }
             Err(why) => {
                 failures += 1;
-                emit_log(format!(
+                emit_warning(format!(
                     "Message {} (row {} of the messages database) could not be read, so it is left out: {}",
                     msg.guid, msg.rowid, why
                 ));
@@ -121,7 +121,7 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
         total: read,
     }));
     if failures > 0 {
-        emit_log(if failures == 1 {
+        emit_warning(if failures == 1 {
             "1 message could not be read and was left out".to_string()
         } else {
             format!("{failures} messages could not be read and were left out")
@@ -186,7 +186,7 @@ fn display_name_for(session: &MailSession, handle_id: i32) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Participants and conversation type (`individual` / `group`) for one chat room.
+/// Participants and conversation type (`one-to-one` / `group`) for one chat room.
 ///
 /// The members are the chat's `chat_handle_join` rows, each one handle's
 /// own address, less any address of the owner's: Apple lists the owner's own
@@ -196,7 +196,7 @@ fn display_name_for(session: &MailSession, handle_id: i32) -> Option<String> {
 fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>, &'static str) {
     let group = session.is_group(chatroom);
     let mut records: Vec<Participant> = Vec::new();
-    let mut add = |address: &str, display_name: Option<String>| {
+    let mut add = |address: &str, display_name: Option<String>, country: Option<&str>| {
         let address = address.trim();
         if address.is_empty()
             || session.is_owner(address)
@@ -207,23 +207,36 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
         records.push(Participant {
             identity: address.to_string(),
             display_name,
+            country: country.map(str::to_string),
         });
     };
     match session.chat_members.get(&chatroom.rowid) {
         Some(handles) => {
             for &handle_id in handles {
                 if let Some(address) = session.handle_address(handle_id) {
-                    add(address, session.handle_name(handle_id).map(str::to_string));
+                    add(
+                        address,
+                        session.handle_name(handle_id).map(str::to_string),
+                        session.handle_country(handle_id),
+                    );
                 }
             }
         }
         None if !group => {
             let address = chatroom.chat_identifier.as_str();
-            add(address, session.address_name(address));
+            add(
+                address,
+                session.address_name(address),
+                session.address_country(address),
+            );
         }
         None => {}
     }
-    let conversation_type = if group { "group" } else { "individual" };
+    let conversation_type = if group {
+        "group"
+    } else {
+        ONE_TO_ONE_CONVERSATION_TYPE
+    };
     (records, conversation_type)
 }
 
@@ -243,6 +256,7 @@ fn orphaned_conversation(session: &MailSession, message: &Message) -> Conversati
         (!address.is_empty() && !session.is_owner(address)).then(|| Participant {
             identity: address.to_string(),
             display_name: session.handle_name(handle_id).map(str::to_string),
+            country: session.handle_country(handle_id).map(str::to_string),
         })
     });
     ConversationRecord {
@@ -415,6 +429,7 @@ struct RowContext {
     is_from_me: bool,
     sender_identity: Option<String>,
     sender_display_name: Option<String>,
+    sender_country: Option<String>,
     service: String,
 }
 
@@ -441,15 +456,16 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     };
 
     let is_from_me = message.is_from_me();
-    let (sender_identity, sender_display_name) = if is_from_me {
-        (None, None)
+    let (sender_identity, sender_display_name, sender_country) = if is_from_me {
+        (None, None, None)
     } else if let Some(handle_id) = message.handle_id {
         (
             raw_handle(session, handle_id),
             display_name_for(session, handle_id),
+            session.handle_country(handle_id).map(str::to_string),
         )
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     let service = match message.service() {
@@ -462,6 +478,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
         is_from_me,
         sender_identity,
         sender_display_name,
+        sender_country,
         service,
     }
 }
@@ -512,6 +529,7 @@ fn build_record(
         message_kind: kind.to_string(),
         sender_identity: context.sender_identity,
         sender_display_name: context.sender_display_name,
+        sender_country: context.sender_country,
         subject: message.subject.clone().filter(|s| !s.is_empty()),
         text,
         reactions,

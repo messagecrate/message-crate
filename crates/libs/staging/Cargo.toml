@@ -16,6 +16,12 @@ message-crate-core = { path = "../../core/message-crate-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# `GetVolumePathNameW`, which names the volume a directory is on, so the
+# Import form's low-space line tells a volume mounted in a directory of a
+# drive from the drive itself.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 media = { path = "../media", features = ["testutil"] }

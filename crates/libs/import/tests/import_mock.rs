@@ -17,7 +17,7 @@ use message_crate_import::{
     AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, ServerAway, authenticate, run,
 };
 use message_ir::testutil::sample_document;
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -1080,6 +1080,85 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     assert_eq!(report.messages_attempted, 2);
 }
 
+/// A batch mock that accepts the one message whose guid is `guid`.
+fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
+    server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes(guid);
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    })
+}
+
+/// A batch mock that refuses, with a 500, the batch holding `guid`.
+fn mock_batch_refusing<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
+    server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes(guid);
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional batch failure"
+        }));
+    })
+}
+
+/// A replace import that fails partway has already wiped the source on the
+/// server, so the next append must not skip what the journal recorded
+/// before the replace (#2054). The replace clears those rows when it starts:
+/// the append then skips only the conversation the replace imported again,
+/// and sends the one the replace failed.
+#[test]
+fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start_and_complete(&server, 7);
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
+    cfg.batch_size = 1;
+
+    let mut first = mock_batch_accepting(&server, "guid-1");
+    let mut second = mock_batch_accepting(&server, "guid-2");
+    assert!(run(&cfg, None).unwrap().ok);
+    second.delete();
+    let mut refused = mock_batch_refusing(&server, "guid-2");
+    let replace = ImportConfig {
+        mode: ImportMode::Replace,
+        ..cfg.clone()
+    };
+    let replaced = run(&replace, None).unwrap();
+    assert_eq!(replaced.conversations_ok, 1, "{:?}", replaced.results);
+    assert_eq!(replaced.conversations_failed, 1, "{:?}", replaced.results);
+    assert_eq!(refused.calls(), 1);
+
+    refused.delete();
+    first.delete();
+    first = mock_batch_accepting(&server, "guid-1");
+    second = mock_batch_accepting(&server, "guid-2");
+    let appended = run(&cfg, None).unwrap();
+
+    assert!(appended.ok, "{:?}", appended.results);
+    assert_eq!(appended.conversations_skipped, 1);
+    assert_eq!(
+        second.calls(),
+        1,
+        "the conversation the replace failed is sent"
+    );
+    assert_eq!(
+        first.calls(),
+        0,
+        "the conversation the replace imported is skipped"
+    );
+}
+
 #[test]
 fn profiles_attachment_upload_phases() {
     const ASSET_BYTES: &[u8] = b"attachment profile fixture";
@@ -1123,7 +1202,7 @@ fn profiles_attachment_upload_phases() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("fixture.txt"), ASSET_BYTES).unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments.push(IrAttachment {
+    doc.messages[0].attachments.push(Attachment {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
@@ -1195,8 +1274,8 @@ fn profiles_attachment_upload_phases() {
     }
 }
 
-fn ir_attachment(rel: &str, digest: String) -> IrAttachment {
-    IrAttachment {
+fn ir_attachment(rel: &str, digest: String) -> Attachment {
+    Attachment {
         path: Some(rel.into()),
         original_name: Some(rel.rsplit('/').next().unwrap_or(rel).into()),
         mime_type: Some("text/plain".into()),
@@ -1525,7 +1604,7 @@ fn multipart_upload_when_over_proxy_threshold() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("large.bin"), ASSET_BYTES).unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments.push(IrAttachment {
+    doc.messages[0].attachments.push(Attachment {
         path: Some("attachments/large.bin".into()),
         original_name: Some("large.bin".into()),
         mime_type: Some("video/mp4".into()),
@@ -1611,7 +1690,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("bad.bin"), ASSET_BYTES).unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments.push(IrAttachment {
+    doc.messages[0].attachments.push(Attachment {
         path: Some("attachments/bad.bin".into()),
         original_name: Some("bad.bin".into()),
         mime_type: Some("application/octet-stream".into()),
@@ -1806,7 +1885,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
     fs::write(attachment_dir.join("shared.txt"), ASSET_BYTES).unwrap();
 
     let mut doc_a = sample_doc_for("+15555550101", "guid-a");
-    doc_a.messages[0].attachments.push(IrAttachment {
+    doc_a.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
@@ -1814,7 +1893,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
         ..message_ir::testutil::sample_attachment()
     });
     let mut doc_b = sample_doc_for("+15555550102", "guid-b");
-    doc_b.messages[0].attachments.push(IrAttachment {
+    doc_b.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
@@ -2149,7 +2228,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
 
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![
-        IrAttachment {
+        Attachment {
             path: Some("attachments/big.bin".into()),
             original_name: Some("big.bin".into()),
             mime_type: Some("application/octet-stream".into()),
@@ -2157,7 +2236,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             size_bytes: Some(BIG.len() as u64),
             ..message_ir::testutil::sample_attachment()
         },
-        IrAttachment {
+        Attachment {
             path: Some("attachments/small.txt".into()),
             original_name: Some("small.txt".into()),
             mime_type: Some("text/plain".into()),
@@ -2276,14 +2355,14 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
 
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![
-        IrAttachment {
+        Attachment {
             path: Some("attachments/gone.bin".into()),
             original_name: Some("gone.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             size_bytes: Some(1234),
             ..message_ir::testutil::sample_attachment()
         },
-        IrAttachment {
+        Attachment {
             path: Some("attachments/small.txt".into()),
             original_name: Some("small.txt".into()),
             mime_type: Some("text/plain".into()),
@@ -2293,11 +2372,11 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
         },
         // An Export that could not fetch this file said why, and the
         // Import keeps that reason rather than a plain missing file.
-        IrAttachment {
+        Attachment {
             path: Some("attachments/unfetched.pdf".into()),
             original_name: Some("unfetched.pdf".into()),
             mime_type: Some("application/pdf".into()),
-            missing_reason: Some(message_ir::NOT_FETCHED.into()),
+            missing_reason: Some(message_ir::missing_reason::NOT_FETCHED.into()),
             ..message_ir::testutil::sample_attachment()
         },
     ];
@@ -2359,7 +2438,7 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
 
     let dir = tempdir().unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         original_name: Some("IMG_0421.HEIC".into()),
         mime_type: Some("image/heic".into()),
         size_bytes: Some(2048),
@@ -2423,7 +2502,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
 
     let dir = tempdir().unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         original_name: Some("mystery.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         ..message_ir::testutil::sample_attachment()
@@ -2900,17 +2979,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let failed = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-1");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let failed = mock_batch_refusing(&server, "guid-1");
     let refused = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2967,17 +3036,7 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
-    let mut failing = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-2");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let mut failing = mock_batch_refusing(&server, "guid-2");
     let mut others = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")

@@ -22,6 +22,7 @@ mod run_logs;
 mod state;
 mod tool_downloads;
 
+use app_directories::MessageCrateDirectory;
 use export_directories::ExportDirectories;
 use local_server::LocalServer;
 use run_directories::RunDirectories;
@@ -52,31 +53,48 @@ pub fn run() {
         // Where each download into the Tools Directory stands, which
         // Settings → System → Media shows.
         .manage(ToolDownloads::default())
-        // The Staging Directory and the run directories made under it, kept
-        // in the app-data directory; the Export Directory; and the start-up
+        // The Message Crate Directory and everything in it: the Tools
+        // Directory and its downloads, the Staging Directory and the run
+        // directories made under it, the Export Directory, and the start-up
         // sweep of the Scratch and Export Directories.
         .setup(|app| {
+            let home = dirs::home_dir()
+                .ok_or("The operating system reports no home directory for this user")?;
+            let directory = MessageCrateDirectory::in_home(&home, tauri::is_dev());
+            // A directory that cannot be made now is made again by whatever
+            // writes into it first, which reports the failure where it
+            // matters.
+            if let Err(error) = directory.make() {
+                eprintln!("Could not make the Message Crate Directory: {error}");
+            }
             // ffmpeg and ffprobe are looked for on PATH, then in the Tools
             // Directory; wtsexporter only there (#1053). Every command that
             // runs them, and the server the app starts, gets them from the
             // `InstalledTools` kept here.
             // What is missing there is downloaded in the background, and
             // nothing waits for it (`tool_downloads`).
-            let tools_dir = dirs::home_dir().map(|home| app_directories::make_tools_dir_in(&home));
-            let installed = media::InstalledTools::new(tools_dir.clone());
-            if let Some(dir) = tools_dir {
-                tool_downloads::start(dir, installed.clone(), app.state::<ToolDownloads>().inner());
-            }
+            let tools_dir = directory.tools();
+            let installed = media::InstalledTools::new(Some(tools_dir.clone()));
+            tool_downloads::start(
+                tools_dir,
+                installed.clone(),
+                app.state::<ToolDownloads>().inner(),
+            );
             app.manage(installed);
-            let app_data_dir = app.path().app_data_dir()?;
-            let record = app_data_dir.join(run_directories::RECORD_FILE);
+            // The record of run directories is app state, not data, so it
+            // stays in the app-data directory.
+            let record = app
+                .path()
+                .app_data_dir()?
+                .join(run_directories::RECORD_FILE);
             app.manage(RunDirectories::at(
                 record,
-                dirs::home_dir(),
-                app_directories::logs_dir_in(&app_data_dir),
+                directory.staging(),
+                directory.logs(),
             ));
-            app.manage(ExportDirectories::in_app_data(&app_data_dir));
-            std::thread::spawn(move || app_directories::sweep_at_start_up(&app_data_dir));
+            app.manage(ExportDirectories::at(directory.exports()));
+            app.manage(directory.clone());
+            std::thread::spawn(move || app_directories::sweep_at_start_up(&directory));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -93,7 +111,7 @@ pub fn run() {
             commands::local_server::start_local_server,
             commands::local_server::local_server_status,
             commands::local_server::set_open_to_network,
-            commands::local_server::open_data_directory,
+            commands::local_server::open_message_crate_directory,
             commands::upload::upload,
             commands::export::export,
             commands::exports::export_directory,
@@ -113,6 +131,7 @@ pub fn run() {
             commands::staging::delete_run_dir,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
+            commands::disk_space::low_disk_space,
             commands::tools::tools_status,
             commands::tools::retry_tool_downloads,
         ]);

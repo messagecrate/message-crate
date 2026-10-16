@@ -2,7 +2,7 @@ use super::*;
 use crate::write_queue::conversation_file;
 use media::CompressOptions;
 use media::testutil::FakeTools;
-use message_ir::{IrAttachment, IrParticipant};
+use message_ir::{Attachment, Participant};
 use message_ir_format::write_conversation_jsonl_to;
 
 fn summary_options() -> TranscodeOptions {
@@ -30,9 +30,10 @@ fn staged_fixture() -> tempfile::TempDir {
 
     let mut doc_a = message_ir::testutil::sample_document("hi from conversation A");
     doc_a.conversation.chat_identifier = "+15550101".into();
-    doc_a.conversation.participants = vec![IrParticipant {
+    doc_a.conversation.participants = vec![Participant {
         identity: Some("+15550101".into()),
         display_name: Some("A".into()),
+        country: None,
     }];
     let mut second = doc_a.messages[0].clone();
     second.guid = "guid-a2".into();
@@ -40,7 +41,7 @@ fn staged_fixture() -> tempfile::TempDir {
     let mut third = doc_a.messages[0].clone();
     third.guid = "guid-a3".into();
     third.timestamp_unix_ms += 2000;
-    third.attachments = vec![IrAttachment {
+    third.attachments = vec![Attachment {
         path: Some("attachments/photo.png".into()),
         original_name: Some("photo.png".into()),
         mime_type: None,
@@ -58,13 +59,15 @@ fn staged_fixture() -> tempfile::TempDir {
     let mut doc_b = message_ir::testutil::sample_document("hi from conversation B");
     doc_b.conversation.chat_identifier = "+15550100".into();
     doc_b.conversation.participants = vec![
-        IrParticipant {
+        Participant {
             identity: Some("+15550101".into()),
             display_name: None,
+            country: None,
         },
-        IrParticipant {
+        Participant {
             identity: Some("+15550100".into()),
             display_name: Some("B".into()),
+            country: None,
         },
     ];
     let mut second_b = doc_b.messages[0].clone();
@@ -90,7 +93,7 @@ fn staged_fixture_with_missing_reason(reason: &str) -> tempfile::TempDir {
     std::fs::write(&attachment, vec![9u8; 2048]).unwrap();
 
     let mut doc = message_ir::testutil::sample_document("hello");
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         path: Some("attachments/broken.png".into()),
         original_name: Some("broken.png".into()),
         mime_type: None,
@@ -119,7 +122,7 @@ fn staged_fixture_with_sizes(specs: &[(&str, u64)]) -> tempfile::TempDir {
         .map(|(name, size)| {
             let file = std::fs::File::create(attachments_dir.join(name)).unwrap();
             file.set_len(*size).unwrap();
-            IrAttachment {
+            Attachment {
                 path: Some(format!("attachments/{name}")),
                 original_name: Some((*name).to_string()),
                 mime_type: None,
@@ -146,7 +149,7 @@ fn staged_fixture_with_aliased_attachment(size: u64) -> tempfile::TempDir {
         .set_len(size)
         .unwrap();
 
-    let shared_attachment = || IrAttachment {
+    let shared_attachment = || Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
@@ -186,7 +189,7 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
                 .unwrap()
                 .set_len(10)
                 .unwrap();
-            IrAttachment {
+            Attachment {
                 path: Some(format!("attachments/{name}")),
                 original_name: Some(name),
                 mime_type: None,
@@ -408,7 +411,7 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
         .set_len(900 * 1024 * 1024)
         .unwrap();
 
-    let shared_attachment = || IrAttachment {
+    let shared_attachment = || Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
@@ -507,19 +510,19 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
     let mut doc = message_ir::testutil::sample_document("received at the export's owner");
     let template = doc.messages[0].clone();
     let message = |guid: &str,
-                   direction: message_ir::IrDirection,
+                   direction: message_ir::Direction,
                    sender: Option<&str>,
                    owner: Option<&str>| {
         let mut msg = template.clone();
         msg.guid = guid.into();
         msg.direction = direction;
-        if direction == message_ir::IrDirection::Outgoing {
+        if direction == message_ir::Direction::Outgoing {
             msg.sender_identity = sender.map(str::to_string);
         }
         msg.owner_identity = owner.map(str::to_string);
         msg
     };
-    use message_ir::IrDirection::{Incoming, Outgoing};
+    use message_ir::Direction::{Incoming, Outgoing};
     doc.messages.extend([
         message("out-1", Outgoing, Some("owner@example.com"), None),
         message("out-2", Outgoing, Some("+15555550100"), None),

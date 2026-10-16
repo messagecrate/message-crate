@@ -4,12 +4,13 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
+import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
-import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
@@ -58,16 +59,18 @@ function onDesktop() {
   } satisfies ToolsStatus);
 }
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/runLog", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/runLog")>()),
   invokeImportRunLog: (runDir: string) => invokeImportRunLog(runDir),
+}));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/tools")>()),
   invokeToolsStatus: () => desktop.toolsStatus(),
   invokeRetryToolDownloads: () => desktop.retry(),
 }));
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 7, token: "test-token", isAuthenticated: true }),
-}));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -221,7 +224,7 @@ describe("runHeading and the operation line", () => {
 
   it("states the media settings only when they apply", () => {
     expect(attachmentsAsked(form({ attachmentMedia: "copy" }))).toBe("Copy");
-    expect(attachmentsAsked(form())).toBe("Convert · up to 720p, 30 fps, files over 20 MB");
+    expect(attachmentsAsked(form())).toBe("Convert media · up to 720p, 30 fps, files over 20 MB");
   });
 });
 
@@ -279,7 +282,9 @@ describe("ImportRunView", () => {
     expect(screen.queryByText("What you asked for")).not.toBeInTheDocument();
 
     const row = within(stageRow("Staging"));
-    expect(row.getByText("Convert · up to 720p, 30 fps, files over 20 MB")).toBeInTheDocument();
+    expect(
+      row.getByText("Convert media · up to 720p, 30 fps, files over 20 MB"),
+    ).toBeInTheDocument();
     await user.click(row.getByRole("button", { name: runDir }));
     expect(openPathInExplorer).toHaveBeenCalledWith(runDir);
   });
@@ -527,7 +532,7 @@ describe("ImportRunView", () => {
     await user.click(mayExceed);
     expect(review.getByText("212 MB → 84 MB")).toBeInTheDocument();
     expect(review.getByText("46 MB → 52 MB")).toBeInTheDocument();
-    expect(review.getByRole("button", { name: "Compress media" })).toBeEnabled();
+    expect(review.getByRole("button", { name: "Convert & Compress media" })).toBeEnabled();
   });
 
   it("blocks approving when the Media tools are missing", () => {

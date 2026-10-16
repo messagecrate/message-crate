@@ -9,13 +9,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorText } from "../lib/apiErrorMessage";
+import type { StagingSummary } from "../lib/desktop/staging";
 import type { ActiveImportRun } from "../lib/importRun";
 import { keys } from "../lib/queryKeys";
-import type { MediaToolName, StagingSummary } from "../lib/tauri";
+import type { MediaToolName } from "../lib/types";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, renderWithProviders, testQueryClient } from "../test/providers";
+import { authModule, mockedAuth, renderWithProviders, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { storedForm } from "../test/storedForm";
 import { MIB } from "../test/units";
@@ -109,7 +110,8 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/importRun", () => ({
+vi.mock("../lib/importRun", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/importRun")>()),
   getActiveImportRun: (...args: unknown[]) => getActiveImportRunMock(...args),
   discardImportRun: (...args: unknown[]) => discardImportRunMock(...args),
 }));
@@ -128,16 +130,28 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   getAccountProfile: (...args: unknown[]) => apiGetMock(...args),
 }));
 
-vi.mock("../lib/tauri", () => ({
-  invokeHomeDir: vi.fn().mockResolvedValue({ path: "/home/u", os: "linux" }),
+// The desktop commands this screen calls, faked by name. The rest of
+// lib/desktop/ stays real, since useImportJob.ts holds its imports at load.
+vi.mock("../lib/desktop/backup", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/backup")>()),
   invokeIosBackupEncrypted: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../lib/desktop/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/fs")>()),
+  invokeHomeDir: vi.fn().mockResolvedValue({ path: "/home/u", os: "linux" }),
   invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
+}));
+
+vi.mock("../lib/desktop/runDir", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/runDir")>()),
   invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
 }));
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
-vi.mock("../lib/tauriCheck", () => ({
+vi.mock("../lib/tauriCheck", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauriCheck")>()),
   isTauri: () => false,
 }));
 

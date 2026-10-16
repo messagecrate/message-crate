@@ -8,10 +8,9 @@ use crate::config::OutputFormat;
 use crate::counter::{
     ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
     DUPLICATES_DROPPED, ItemKind, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
-    count_of_files, error_and_note_lines, item_line, item_reason,
+    error_and_note_lines, item_line, item_reason,
 };
 use anyhow::{Context, bail};
-use media::MediaReport;
 pub use message_crate_api_types::RunIssueKind;
 use message_ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
@@ -211,8 +210,6 @@ pub struct ExportReport {
     pub duplicates_dropped: u64,
     /// Attachment files saved to the output.
     pub attachments_saved: u64,
-    /// What media conversion did to the staged attachments.
-    pub media: MediaReport,
     /// Documents whose handles, names and bodies were obfuscated.
     pub obfuscated_docs: u64,
     /// What failed, one sentence for each item that names it, such as an
@@ -308,42 +305,10 @@ impl ExportReport {
         })
     }
 
-    /// Refuse a run whose Media stage failed on every file it tried, when
-    /// the mode needed ffmpeg: that is a missing tool, not a bad file.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when `needs_tools` is set, the Media stage reported
-    /// errors, and it processed nothing.
-    pub fn check_media(&self, needs_tools: bool) -> anyhow::Result<()> {
-        if needs_tools && !self.media.errors.is_empty() && self.media.processed == 0 {
-            bail!("media processing failed for all candidate files");
-        }
-        Ok(())
-    }
-
-    /// Human-readable lines about the write tail: the Media stage, with each
-    /// of its failures as the sentence it was written as, and obfuscation.
-    /// Empty when neither did anything.
-    pub fn media_lines(&self) -> Vec<String> {
-        let mut lines = Vec::new();
-        if self.media.processed > 0 || self.media.skipped > 0 || !self.media.errors.is_empty() {
-            lines.push(format!(
-                "Media: processed {}, skipped {}",
-                count_of_files(self.media.processed as u64),
-                count_of_files(self.media.skipped as u64)
-            ));
-            for err in self.media.errors.iter().take(10) {
-                lines.push(format!("  {err}"));
-            }
-            if self.media.errors.len() > 10 {
-                lines.push(format!("  …and {} more", self.media.errors.len() - 10));
-            }
-        }
-        if self.obfuscated_docs > 0 {
-            lines.push(CONVERSATIONS_OBFUSCATED.line(self.obfuscated_docs));
-        }
-        lines
+    /// The line that says how many conversations were obfuscated, `None`
+    /// when none were.
+    pub fn obfuscated_line(&self) -> Option<String> {
+        (self.obfuscated_docs > 0).then(|| CONVERSATIONS_OBFUSCATED.line(self.obfuscated_docs))
     }
 
     /// Append the summary lines to `out`: where the export went, then each
@@ -465,15 +430,17 @@ pub fn prepare_outputs(
     Ok((resolved, output))
 }
 
-/// Standard export metadata: source / tool / version, the owner identity,
-/// and when the backup was made.
+/// Standard export metadata: source / tool / version and the owner
+/// identity. The Export Date is left for the convert step to stamp
+/// (`message_staging::convert_backup`), which is given it by its caller; each
+/// message's Backup Date is the exporter's
+/// [`ProjectionHooks::backup_taken_at_unix_ms`](message_ir::ProjectionHooks::backup_taken_at_unix_ms).
 pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
     owner_identity: Option<String>,
     owner_display_name: Option<String>,
-    backup_taken_at_unix_ms: Option<i64>,
 ) -> message_ir::ExportMeta {
     message_ir::ExportMeta {
         source: source.to_string(),
@@ -481,7 +448,7 @@ pub fn export_meta(
         tool_version: tool_version.to_string(),
         owner_identity,
         owner_display_name,
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms: None,
     }
 }
 
@@ -652,61 +619,6 @@ mod tests {
             names,
             vec![PathBuf::from("a.xml"), PathBuf::from("sub").join("c.xml")]
         );
-    }
-
-    fn report_with_media(processed: usize, errors: &[&str]) -> ExportReport {
-        ExportReport {
-            media: MediaReport {
-                processed,
-                errors: errors.iter().map(|e| (*e).to_string()).collect(),
-                ..MediaReport::default()
-            },
-            ..ExportReport::default()
-        }
-    }
-
-    #[test]
-    fn check_media_refuses_a_pass_that_failed_on_every_file() {
-        let err = report_with_media(0, &["a.heic: ffmpeg not found"])
-            .check_media(true)
-            .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "media processing failed for all candidate files"
-        );
-    }
-
-    #[test]
-    fn check_media_accepts_a_pass_that_processed_a_file() {
-        report_with_media(1, &["a.heic: bad file"])
-            .check_media(true)
-            .unwrap();
-    }
-
-    #[test]
-    fn check_media_accepts_a_pass_with_no_errors() {
-        report_with_media(0, &[]).check_media(true).unwrap();
-    }
-
-    /// The Media stage's failures are sentences of their own, so the log
-    /// shows each as it is, with no `media warning:` before it (#1888).
-    #[test]
-    fn media_lines_show_each_failure_as_its_own_sentence() {
-        let failure = "1 file could not be converted; its conversation entry says why";
-        assert_eq!(
-            report_with_media(1, &[failure]).media_lines(),
-            [
-                "Media: processed 1 file, skipped 0 files".to_string(),
-                format!("  {failure}"),
-            ]
-        );
-    }
-
-    #[test]
-    fn check_media_accepts_failures_when_the_mode_needs_no_tools() {
-        report_with_media(0, &["a.heic: ffmpeg not found"])
-            .check_media(false)
-            .unwrap();
     }
 
     #[test]

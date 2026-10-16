@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<smses count="3" backup_set="0b3e5d71-2c4a-4f8e-9a6d-5e7f8091a2b3" backup_date="1790793912000" type="full">
+  <sms protocol="0" address="+15555550101" date="1790700000000" type="1" body="before the cut" contact_name="Sam" />
+  <mms date="1790710000000" msg_box="2" address="+15555550101" m_type="128">
+    <parts>
+      <part seq="0" ct="text/plain" text="sent before the cut" />
+    </parts>
+    <addrs>
+      <addr address="+15555550100" type="137" />

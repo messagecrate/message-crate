@@ -5,13 +5,17 @@ import { setBaseUrl } from "../lib/api";
 import { errorLine } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/authContext";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
+import {
+  invokeOpenMessageCrateDirectory,
+  type LocalServerStatus,
+} from "../lib/desktop/localServer";
 import { isOwnAddress } from "../lib/localServer";
+import { isPlainHttpOverNetwork } from "../lib/plainHttp";
 import {
   checkServerHealth,
   checkServerHealthWithRetry,
   type ServerHealthStatus,
 } from "../lib/serverHealth";
-import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
 import { isTauri } from "../lib/tauriCheck";
 import {
   accentLinkClass,
@@ -93,12 +97,12 @@ function StartFailed({
           variant="secondary"
           onPress={() => {
             setOpenError(null);
-            invokeOpenDataDirectory().catch((caught: unknown) => {
+            invokeOpenMessageCrateDirectory().catch((caught: unknown) => {
               setOpenError(errorLine(caught));
             });
           }}
         >
-          Open data directory
+          Open Message Crate directory
         </Button>
       </div>
       {openError ? <p className="m-0 mt-1 text-[0.75rem] text-danger">{openError}</p> : null}
@@ -362,6 +366,11 @@ export default function LoginScreen() {
         },
       };
 
+  // The forms send the password to the address the card is on. Over plain
+  // HTTP to another computer it crosses the network as typed, and the card
+  // says so where the password goes in (#2115).
+  const inClear = isPlainHttpOverNetwork(addressName(address));
+
   return (
     <div className={pageCenterClass}>
       <div className={authCardClass}>
@@ -398,9 +407,16 @@ export default function LoginScreen() {
                   state={localStarting && state !== "connected" ? "connecting" : state}
                   address={target || window.location.origin}
                   label={state === "connected" ? undefined : startingLabel(localServer)}
-                  className={`${connection.failed ? "mb-2" : "mb-5"} text-center`}
+                  className={`${connection.failed || inClear ? "mb-2" : "mb-5"} text-center`}
                 />
               )}
+              {inClear ? (
+                <p
+                  className={`m-0 ${connection.failed ? "mb-2" : "mb-5"} text-center text-[0.813rem] text-warn-soft-text`}
+                >
+                  This connection is not encrypted, so the password crosses the network as typed.
+                </p>
+              ) : null}
               {connection.failed ? (
                 <TryFailed connection={connection} failed={connection.failed} />
               ) : null}

@@ -7,10 +7,11 @@ import type { Message } from "../../lib/types";
 import { message as baseMessage } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { mockedAuth, Providers } from "../../test/providers";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -33,7 +34,7 @@ function message(id: number): Message {
     conversation: {
       id: 1,
       chat_identifier: "c",
-      conversation_type: "direct",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,
@@ -229,7 +230,7 @@ describe("useConversationMessages", () => {
         {
           ...message(60),
           matched_earlier_version: true,
-          earlier_versions: [{ ...versions[0], matched: true }],
+          earlier_versions: [{ ...nth(versions, 0), matched: true }],
         },
         { ...message(20), earlier_versions: versions },
       ],
@@ -316,7 +317,7 @@ describe("useConversationMessages", () => {
         {
           ...message(60),
           matched_earlier_version: true,
-          earlier_versions: [{ ...versions[0], matched: true }],
+          earlier_versions: [{ ...nth(versions, 0), matched: true }],
         },
       ],
       total: 1,

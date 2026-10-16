@@ -11,13 +11,16 @@ use crate::extract::{Json, Path, Query};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 use super::{Admits, Reach, require_account_reach};
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, LoggedIn, refuse_for_demo_account};
 use crate::db::account_profile;
 use crate::db::api_tokens;
 use crate::db::audit_trail::{self, AuditAction, Details};
 use crate::db::permissions::Permissions;
-use crate::server::{ApiError, AppState, Created, FullAccess, LoggedIn, refuse_for_demo_account};
+use crate::server::Created;
 
 /// Admit only the account whose tokens the path names, for making and
 /// renaming. The refusal reads the same whether or not the other account
@@ -114,7 +117,7 @@ pub struct CreateApiTokenResponse {
     pub created_at: String,
     /// Unix-seconds expiry; `null` means no expiry.
     pub expires_at: Option<String>,
-    /// Plaintext secret — returned once at creation.
+    /// Plaintext secret, returned once at creation.
     pub token: String,
     /// Masked form for the Settings list (also persisted).
     pub token_hint: String,
@@ -146,12 +149,12 @@ pub struct UpdateApiTokenRequest {
     )
 )]
 pub async fn list_api_tokens(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(account_id): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<ApiToken>>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
 
@@ -215,11 +218,11 @@ fn as_shown_to(
     )
 )]
 pub async fn get_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((account_id, id)): Path<(i64, i64)>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<ApiToken>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
@@ -248,12 +251,12 @@ pub async fn get_api_token(
     )
 )]
 pub async fn create_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(account_id): Path<i64>,
     FullAccess(auth): FullAccess,
     Json(req): Json<CreateApiTokenRequest>,
 ) -> Result<Created<CreateApiTokenResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, HOLDER_ONLY).await?;
     // Every visitor is the Demo Account, so a token it made would outlive the
     // visit, and every later visitor would see its hint and could revoke it.
@@ -264,11 +267,18 @@ pub async fn create_api_token(
     let permissions =
         Permissions::token(req.can_import, req.can_export).intersect(auth.permissions());
     let expires_in_days = req.expires_in_days;
+    let now = chrono::Utc::now();
 
-    let created =
-        api_tokens::create_api_token(&mut conn, account_id, &label, permissions, expires_in_days)
-            .await
-            .map_err(map_label_error)?;
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        account_id,
+        &label,
+        permissions,
+        expires_in_days,
+        now,
+    )
+    .await
+    .map_err(map_label_error)?;
     let token_hint = api_tokens::mask_api_token(&created.token);
     audit_trail::record_about(
         &mut conn,
@@ -280,7 +290,7 @@ pub async fn create_api_token(
             api_token_hint: Some(token_hint.clone()),
             ..Details::default()
         },
-        chrono::Utc::now(),
+        now,
     )
     .await?;
 
@@ -317,11 +327,11 @@ pub async fn create_api_token(
     )
 )]
 pub async fn delete_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((account_id, id)): Path<(i64, i64)>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
     let token = api_tokens::list_api_tokens(&mut conn, account_id)
         .await?
@@ -365,12 +375,12 @@ pub async fn delete_api_token(
     )
 )]
 pub async fn update_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((account_id, id)): Path<(i64, i64)>,
     FullAccess(auth): FullAccess,
     Json(req): Json<UpdateApiTokenRequest>,
 ) -> Result<Json<ApiToken>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, HOLDER_ONLY).await?;
     let label = req.label;
 
@@ -499,15 +509,15 @@ mod tests {
         );
 
         assert_eq!(
-            token_count(&state, account.account_id).await,
+            token_count(&state.db, account.account_id).await,
             0,
             "a refused create stores no token"
         );
     }
 
     /// How many API tokens the account holds, read from the table itself.
-    async fn token_count(state: &AppState, account_id: i64) -> i64 {
-        let mut conn = state.db.acquire().await.unwrap();
+    async fn token_count(db: &SqlitePool, account_id: i64) -> i64 {
+        let mut conn = db.acquire().await.unwrap();
         sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
             .bind(account_id)
             .fetch_one(&mut *conn)
@@ -541,7 +551,7 @@ mod tests {
         }
 
         assert_eq!(
-            token_count(&state, demo).await,
+            token_count(&state.db, demo).await,
             0,
             "a refused create stores no token"
         );

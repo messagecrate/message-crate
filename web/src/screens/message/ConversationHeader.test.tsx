@@ -13,11 +13,12 @@ import {
 import type { Conversation } from "../../lib/types";
 import { participant } from "../../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { mockedAuth, Providers } from "../../test/providers";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -268,7 +269,7 @@ describe("ConversationHeader", () => {
     await user.click(screen.getByRole("button", { name: "More for this conversation" }));
     const rows = screen.getAllByRole("menuitem", { name: "Sources" });
     expect(rows).toHaveLength(2);
-    await user.click(rows[0]);
+    await user.click(nth(rows, 0));
 
     expect(onOpenContact).toHaveBeenCalledWith("7");
   });

@@ -9,6 +9,7 @@ import { Providers } from "../test/providers";
 import { createQueryClient } from "./routeQuery";
 import {
   PATH_PROBE_DEBOUNCE_MS,
+  useAndroidSmsPathStats,
   useImessagePathStats,
   useWhatsappPathStats,
 } from "./useBackupPathStats";
@@ -23,9 +24,13 @@ const desktop = vi.hoisted(() => ({
 
 vi.mock("./tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
 
-vi.mock("./tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./tauri")>()),
+vi.mock("./desktop/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./desktop/fs")>()),
   invokePathStat: (path: string) => desktop.pathStat(path),
+}));
+
+vi.mock("./desktop/backup", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./desktop/backup")>()),
   invokeIosBackupEncrypted: (path: string) => desktop.encrypted(path),
 }));
 
@@ -170,5 +175,46 @@ describe("useWhatsappPathStats", () => {
     await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(desktop.encrypted).toHaveBeenCalledWith("/ios");
     expect(view.result.current.backupEncrypted).toBe(true);
+  });
+});
+
+describe("useAndroidSmsPathStats", () => {
+  type AndroidProps = { source: string; backupPath: string };
+
+  // SMS Backup & Restore takes a file and the other Android sources a
+  // directory, so the form needs to know which one the path is (#2029).
+  it("checks an Android SMS backup path, and asks nothing for another source", async () => {
+    desktop.paths.set("/sms", "directory");
+    const view = renderHook((paths: AndroidProps) => useAndroidSmsPathStats(paths), {
+      initialProps: { source: "sms-backup-restore", backupPath: "/sms" },
+      wrapper: Providers,
+    });
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
+    expect(view.result.current.backup).toEqual(DIRECTORY);
+
+    desktop.pathStat.mockClear();
+    view.rerender({ source: "imessage-ios", backupPath: "/sms" });
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
+    expect(desktop.pathStat).not.toHaveBeenCalled();
+    expect(view.result.current.backup).toBeNull();
+  });
+
+  // The old path's kind says nothing about the new one, so Import must not
+  // start on it while the new path waits for its check.
+  it("empties at once when the path changes", async () => {
+    desktop.paths.set("/sms.xml", "file");
+    desktop.paths.set("/sms", "directory");
+    const view = renderHook((paths: AndroidProps) => useAndroidSmsPathStats(paths), {
+      initialProps: { source: "sms-backup-restore", backupPath: "/sms.xml" },
+      wrapper: Providers,
+    });
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
+    expect(view.result.current.backup).toEqual(FILE);
+
+    view.rerender({ source: "sms-backup-restore", backupPath: "/sms" });
+    expect(view.result.current.backup).toBeNull();
+
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
+    expect(view.result.current.backup).toEqual(DIRECTORY);
   });
 });

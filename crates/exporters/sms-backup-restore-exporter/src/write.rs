@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use message_crate_core::{Counter, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use message_ir::{
-    ConversationDocument, IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind,
-    IrParticipant, nonempty, trimmed,
+    Attachment, ConversationDocument, ConversationType, Direction, Message, MessageKind,
+    Participant, nonempty, trimmed,
 };
 use message_ir_format::{MergedArchive, load_attachment_bytes};
 use phone::OwnerHandleSet;
@@ -54,9 +54,10 @@ impl SbrBackupSession {
     }
 
     /// Write the SMS and MMS of one conversation as SBR `<sms>` or `<mms>`
-    /// elements, note its backup date for the file's `backup_date` when it
-    /// writes any, and count every other message as left out. A conversation
-    /// with no SMS or MMS writes nothing.
+    /// elements, note each one's Backup Date for the file's one
+    /// `backup_date` (the format dates a whole file, so the newest stands),
+    /// and count every other message as left out. A conversation with no SMS
+    /// or MMS writes nothing.
     pub fn append_document(&mut self, document: &ConversationDocument) -> Result<()> {
         self.not_sms_or_mms += document
             .messages
@@ -64,9 +65,9 @@ impl SbrBackupSession {
             .filter(|m| !m.is_sms_or_mms())
             .count() as u64;
         let messages = document_to_sbr_messages(document, &self.output_dir)?;
-        if !messages.is_empty() {
+        for message in document.messages.iter().filter(|m| m.is_sms_or_mms()) {
             self.writer
-                .note_backup_date(document.export.backup_taken_at_unix_ms);
+                .note_backup_date(message.backup_taken_at_unix_ms);
         }
         for message in messages {
             self.writer.write_message(&message)?;
@@ -113,7 +114,7 @@ pub(crate) fn document_to_sbr_messages(
 /// from SBR, else synthesized.
 fn ir_message_to_sbr(
     document: &ConversationDocument,
-    message: &IrMessage,
+    message: &Message,
     owner: &str,
     output_dir: &Path,
 ) -> Result<SbrMessage> {
@@ -145,14 +146,14 @@ fn ir_message_to_sbr(
 }
 
 /// An `<sms>` from the original attributes, with the fields IR owns written back over them.
-fn restore_sms(mut attrs: BTreeMap<String, String>, message: &IrMessage) -> SbrMessage {
+fn restore_sms(mut attrs: BTreeMap<String, String>, message: &Message) -> SbrMessage {
     set_attr(&mut attrs, "date", message.timestamp_unix_ms.to_string());
     set_attr(
         &mut attrs,
         "type",
         match message.direction {
-            IrDirection::Incoming => "1",
-            IrDirection::Outgoing => "2",
+            Direction::Incoming => "1",
+            Direction::Outgoing => "2",
         },
     );
     set_attr(&mut attrs, "body", message.text.clone());
@@ -170,12 +171,12 @@ fn restore_mms(
     mut parts: Vec<BTreeMap<String, String>>,
     mut addrs: Vec<BTreeMap<String, String>>,
     document: &ConversationDocument,
-    message: &IrMessage,
+    message: &Message,
     owner: &str,
     output_dir: &Path,
 ) -> Result<Option<SbrMessage>> {
     if parts.is_empty() && addrs.is_empty() {
-        // Incomplete bag — fall back to synthesis.
+        // Incomplete bag: fall back to synthesis.
         return Ok(None);
     }
     set_attr(&mut attrs, "date", message.timestamp_unix_ms.to_string());
@@ -183,8 +184,8 @@ fn restore_mms(
         &mut attrs,
         "msg_box",
         match message.direction {
-            IrDirection::Incoming => "1",
-            IrDirection::Outgoing => "2",
+            Direction::Incoming => "1",
+            Direction::Outgoing => "2",
         },
     );
     inject_attachment_data(&mut parts, &message.attachments, output_dir)?;
@@ -199,14 +200,14 @@ fn restore_mms(
 /// has attachments, is in a group, or is an MMS; else `<sms>`.
 fn synthesize_sbr(
     document: &ConversationDocument,
-    message: &IrMessage,
+    message: &Message,
     owner: &str,
     output_dir: &Path,
 ) -> Result<SbrMessage> {
-    let is_group = document.conversation.conversation_type == IrConversationType::Group;
+    let is_group = document.conversation.conversation_type == ConversationType::Group;
     let use_mms = is_group
         || !message.attachments.is_empty()
-        || matches!(message.message_kind, IrMessageKind::Mms);
+        || matches!(message.message_kind, MessageKind::Mms);
 
     if use_mms {
         synthesize_mms(document, message, owner, output_dir)
@@ -216,7 +217,7 @@ fn synthesize_sbr(
 }
 
 /// A minimal `<sms>` for a text-only message.
-fn synthesize_sms(document: &ConversationDocument, message: &IrMessage, owner: &str) -> SbrMessage {
+fn synthesize_sms(document: &ConversationDocument, message: &Message, owner: &str) -> SbrMessage {
     let peer = peer_address(document, message);
     let mut attrs = BTreeMap::new();
     set_attr(&mut attrs, "protocol", "0");
@@ -226,8 +227,8 @@ fn synthesize_sms(document: &ConversationDocument, message: &IrMessage, owner: &
         &mut attrs,
         "type",
         match message.direction {
-            IrDirection::Incoming => "1",
-            IrDirection::Outgoing => "2",
+            Direction::Incoming => "1",
+            Direction::Outgoing => "2",
         },
     );
     if let Some(subj) = message.subject.as_deref().filter(|s| !s.is_empty()) {
@@ -250,7 +251,7 @@ fn synthesize_sms(document: &ConversationDocument, message: &IrMessage, owner: &
 /// A minimal `<mms>` with a text part and one part per attachment, reading attachment bytes from the output directory.
 fn synthesize_mms(
     document: &ConversationDocument,
-    message: &IrMessage,
+    message: &Message,
     owner: &str,
     output_dir: &Path,
 ) -> Result<SbrMessage> {
@@ -261,8 +262,8 @@ fn synthesize_mms(
         &mut attrs,
         "msg_box",
         match message.direction {
-            IrDirection::Incoming => "1",
-            IrDirection::Outgoing => "2",
+            Direction::Incoming => "1",
+            Direction::Outgoing => "2",
         },
     );
     set_attr(&mut attrs, "address", address);
@@ -324,13 +325,13 @@ fn synthesize_mms(
 /// The `<addr>` list for a synthesized MMS: the sender as From, everyone else as To.
 fn synthesize_addrs(
     document: &ConversationDocument,
-    message: &IrMessage,
+    message: &Message,
     owner: &str,
 ) -> Vec<BTreeMap<String, String>> {
     let mut addrs = Vec::new();
     let from = match message.direction {
-        IrDirection::Incoming => peer_address(document, message),
-        IrDirection::Outgoing => {
+        Direction::Incoming => peer_address(document, message),
+        Direction::Outgoing => {
             if owner.is_empty() {
                 "insert-address-token".into()
             } else {
@@ -340,10 +341,10 @@ fn synthesize_addrs(
     };
     addrs.push(addr_entry(&from, MMS_ADDR_FROM));
 
-    if message.direction == IrDirection::Incoming && !owner.is_empty() {
+    if message.direction == Direction::Incoming && !owner.is_empty() {
         addrs.push(addr_entry(owner, MMS_ADDR_TO));
     }
-    if document.conversation.conversation_type == IrConversationType::Group {
+    if document.conversation.conversation_type == ConversationType::Group {
         // Every other party is a recipient, as SMS Backup & Restore writes a
         // group MMS in either direction.
         for p in &document.conversation.participants {
@@ -354,7 +355,7 @@ fn synthesize_addrs(
                 addrs.push(addr_entry(handle, MMS_ADDR_TO));
             }
         }
-    } else if message.direction == IrDirection::Outgoing {
+    } else if message.direction == Direction::Outgoing {
         let peer = peer_address(document, message);
         addrs.push(addr_entry(&peer, MMS_ADDR_TO));
     }
@@ -371,12 +372,12 @@ fn addr_entry(address: &str, addr_type: &str) -> BTreeMap<String, String> {
 }
 
 /// The other party's address: the sender for incoming messages, else the chat identifier.
-fn peer_address(document: &ConversationDocument, message: &IrMessage) -> String {
+fn peer_address(document: &ConversationDocument, message: &Message) -> String {
     if let Some(h) = message
         .sender_identity
         .as_deref()
         .filter(|s| !s.is_empty())
-        .filter(|_| message.direction == IrDirection::Incoming)
+        .filter(|_| message.direction == Direction::Incoming)
     {
         return h.to_string();
     }
@@ -393,7 +394,7 @@ fn peer_address(document: &ConversationDocument, message: &IrMessage) -> String 
 
 /// The `address` attribute of an MMS: every participant joined with `~` for groups, else the peer.
 fn mms_address_field(document: &ConversationDocument) -> String {
-    if document.conversation.conversation_type == IrConversationType::Group {
+    if document.conversation.conversation_type == ConversationType::Group {
         document
             .conversation
             .participants
@@ -422,10 +423,10 @@ fn mms_address_field(document: &ConversationDocument) -> String {
 /// value: the sender's display name for an incoming message, else the peer's.
 fn contact_name_alias(
     document: &ConversationDocument,
-    message: &IrMessage,
+    message: &Message,
     owner: &str,
 ) -> Option<String> {
-    if document.conversation.conversation_type == IrConversationType::Group {
+    if document.conversation.conversation_type == ConversationType::Group {
         let participants = participants_read_back(document, owner);
         if participants.len() > 1 {
             let names: Vec<&str> = participants
@@ -435,7 +436,7 @@ fn contact_name_alias(
             return (!names.is_empty()).then(|| names.join(", "));
         }
     }
-    if message.direction == IrDirection::Incoming
+    if message.direction == Direction::Incoming
         && let Some(n) = message.sender_display_name.as_deref().and_then(trimmed)
     {
         return Some(n.to_string());
@@ -454,7 +455,7 @@ fn contact_name_alias(
 fn participants_read_back<'a>(
     document: &'a ConversationDocument,
     owner: &str,
-) -> Vec<&'a IrParticipant> {
+) -> Vec<&'a Participant> {
     let owners = trimmed(owner).and_then(|o| OwnerHandleSet::from_phones(&[o.to_string()]).ok());
     let mut seen = HashSet::new();
     document
@@ -488,7 +489,7 @@ fn participants_read_back<'a>(
 /// unconsumed attachment in list order.
 fn inject_attachment_data(
     parts: &mut [BTreeMap<String, String>],
-    attachments: &[IrAttachment],
+    attachments: &[Attachment],
     output_dir: &Path,
 ) -> Result<()> {
     // Digest → attachment index for exact matching. An attachment is keyed by

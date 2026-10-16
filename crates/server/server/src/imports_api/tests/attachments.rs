@@ -277,7 +277,7 @@ async fn persists_missing_reason_with_null_sha256() {
             message_line("g-missing", "see attached")
                 .mms()
                 .sender("+15555550123")
-                .attachment(IrAttachment {
+                .attachment(Attachment {
                     missing_reason: Some("too_large".into()),
                     size_bytes: Some(999),
                     ..attachment(
@@ -333,7 +333,7 @@ fn conversation_with_attachments(paths: &[&str]) -> String {
     let message = paths.iter().fold(
         message_line("g-att", "see attached").sender("+15555550123"),
         |message, path| {
-            message.attachment(IrAttachment {
+            message.attachment(Attachment {
                 original_name: None,
                 ..attachment(path, "", "application/octet-stream")
             })
@@ -416,7 +416,7 @@ async fn claimed_import_rejects_corrupt_existing_asset() {
 
     let message = message_line("g-corrupt-asset", "missing asset")
         .sender("+15555550123")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/missing.bin",
@@ -520,7 +520,7 @@ async fn import_photo_stating(on_disk: &[u8], stated: &str) -> String {
             conversation_header("imessage", "+15555550123").participant("+15555550123", None),
             message_line("g-photo", "x")
                 .sender("+15555550123")
-                .attachment(message_ir::IrAttachment {
+                .attachment(message_ir::Attachment {
                     digest_sha256: Some(stated.to_string()),
                     ..attachment("photo.bin", "photo.bin", "application/octet-stream")
                 }),

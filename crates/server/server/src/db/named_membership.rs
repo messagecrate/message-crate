@@ -12,7 +12,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::Result as AnyResult;
+use anyhow::{Context as _, Result as AnyResult};
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
@@ -38,25 +38,15 @@ pub enum MembershipError {
     NotFound(String),
     /// The set itself is missing; carries its label (`"tag"` / `"group"`).
     SetNotFound(&'static str),
-    Conflict(String),
+    /// Another set of the account has the name; carries the sentence naming
+    /// it.
+    NameTaken(String),
     Internal(anyhow::Error),
 }
 
-impl From<sqlx::Error> for MembershipError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Internal(e.into())
-    }
-}
-
-impl From<MembershipError> for crate::server::ApiError {
-    fn from(e: MembershipError) -> Self {
-        match e {
-            MembershipError::BadRequest(m) => Self::validation(m),
-            MembershipError::NotFound(m) => Self::NotFound(m),
-            MembershipError::SetNotFound(label) => Self::not_found(label),
-            MembershipError::Conflict(m) => Self::NameTaken(m),
-            MembershipError::Internal(e) => Self::Internal(e),
-        }
+impl From<anyhow::Error> for MembershipError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Internal(e)
     }
 }
 
@@ -230,7 +220,8 @@ async fn find_id(
         .bind(account_id)
         .bind(name)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("find a named set by its name")?;
     Ok(id)
 }
 
@@ -251,7 +242,8 @@ async fn ensure_id(
         .bind(account_id)
         .bind(&name)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("insert a named set")?;
     find_id(spec, conn, account_id, &name)
         .await?
         .ok_or_else(|| {
@@ -327,7 +319,8 @@ async fn member_exists(
         .bind(member_id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("check that the account holds a member")?;
     Ok(found.is_some())
 }
 
@@ -393,7 +386,8 @@ pub async fn set_membership(
                 .bind(id)
                 .bind(account_id)
                 .execute(&mut *conn)
-                .await?
+                .await
+                .context("add a member to a named set")?
                 .rows_affected()
         } else {
             sqlx::query(delete_member_sql(spec))
@@ -401,7 +395,8 @@ pub async fn set_membership(
                 .bind(name_row_id)
                 .bind(account_id)
                 .execute(&mut *conn)
-                .await?
+                .await
+                .context("remove a member from a named set")?
                 .rows_affected()
         };
         if n > 0 {
@@ -441,7 +436,8 @@ pub async fn list_sets(
     let rows = sqlx::query_as::<_, NamedSet>(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's named sets")?;
     Ok(rows
         .into_iter()
         .filter(|set| !is_reserved(spec, &set.name))
@@ -463,7 +459,8 @@ pub async fn get_set(
         .bind(id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?
+        .await
+        .context("read a named set")?
         .ok_or(MembershipError::SetNotFound(spec.label))?;
     // A reserved-name row can only be a leftover (create_set and rename_set
     // both refuse reserved names): list_sets never shows it, so its id must
@@ -486,10 +483,11 @@ pub async fn create_set(
     // One statement checks the name and inserts the row, so a set created
     // under the name meanwhile, in any letter case, makes this a conflict.
     match crate::db::free_name::insert_if_name_free(conn, spec.table, account_id, &name, &[])
-        .await?
+        .await
+        .context("insert a named set under a free name")?
     {
         Some(id) => Ok(NamedSet { id, name }),
-        None => Err(MembershipError::Conflict(format!(
+        None => Err(MembershipError::NameTaken(format!(
             "{} already exists",
             spec.label
         ))),
@@ -509,7 +507,9 @@ pub async fn rename_set(
     let new_name = normalize_name(spec, name)?;
     // The checks and the update are one write transaction, so the name
     // cannot be taken, nor the set deleted, between them.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let old = get_set(spec, &mut tx, account_id, id).await?;
     if old.name == new_name {
         return Ok(old);
@@ -517,7 +517,7 @@ pub async fn rename_set(
     if let Some(other) = find_id(spec, &mut tx, account_id, &new_name).await?
         && other != id
     {
-        return Err(MembershipError::Conflict(format!(
+        return Err(MembershipError::NameTaken(format!(
             "{} already exists",
             spec.label
         )));
@@ -531,8 +531,11 @@ pub async fn rename_set(
         .bind(id)
         .bind(account_id)
         .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
+        .await
+        .context("rename a named set")?;
+    tx.commit()
+        .await
+        .context("commit the named set's new name")?;
     Ok(NamedSet { id, name: new_name })
 }
 
@@ -546,7 +549,9 @@ pub async fn delete_set(
     id: i64,
     now: DateTime<Utc>,
 ) -> Result<(), MembershipError> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     get_set(spec, &mut tx, account_id, id).await?;
     let members_sql = format!(
         "DELETE FROM {mt} WHERE {nc} = $1 RETURNING {mc}",
@@ -557,7 +562,8 @@ pub async fn delete_set(
     let members = sqlx::query_scalar::<_, i64>(AssertSqlSafe(members_sql))
         .bind(id)
         .fetch_all(&mut *tx)
-        .await?;
+        .await
+        .context("delete the members of a named set")?;
     let sql = format!(
         "DELETE FROM {table} WHERE id = $1 AND account_id = $2",
         table = spec.table
@@ -566,7 +572,8 @@ pub async fn delete_set(
         .bind(id)
         .bind(account_id)
         .execute(&mut *tx)
-        .await?;
+        .await
+        .context("delete a named set")?;
     if let Some(hook) = spec.on_change {
         for member in members {
             hook(&mut tx, account_id, member, now)
@@ -574,7 +581,9 @@ pub async fn delete_set(
                 .map_err(MembershipError::Internal)?;
         }
     }
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .context("commit the named set's deletion")?;
     Ok(())
 }
 
@@ -595,7 +604,8 @@ pub async fn list_member_ids_of(
     let rows = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the members of a named set")?;
     Ok(rows)
 }
 
@@ -620,7 +630,9 @@ pub async fn patch_members(
     // The checks and the writes are one write transaction: the set and every
     // id to add are as they were checked when the rows go in, and a failure
     // part-way leaves the set as it was.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let conn: &mut SqliteConnection = &mut tx;
     get_set(spec, conn, account_id, id).await?;
     let remove = clean_ids(remove);
@@ -661,7 +673,8 @@ pub async fn patch_members(
             .bind(member)
             .bind(account_id)
             .execute(&mut *conn)
-            .await?
+            .await
+            .context("add a member to a named set")?
             .rows_affected();
         if n > 0 {
             added += 1;
@@ -679,7 +692,8 @@ pub async fn patch_members(
             .bind(id)
             .bind(account_id)
             .execute(&mut *conn)
-            .await?
+            .await
+            .context("remove a member from a named set")?
             .rows_affected();
         if n > 0 {
             removed += 1;
@@ -690,7 +704,9 @@ pub async fn patch_members(
             }
         }
     }
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .context("commit the named set's member changes")?;
     Ok((added, removed))
 }
 
@@ -716,7 +732,8 @@ pub async fn names_for_item(
         .bind(account_id)
         .bind(item_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the names of the sets an item is in")?;
     Ok(rows)
 }
 
@@ -746,7 +763,10 @@ pub async fn names_for_items(
             for id in chunk {
                 q = q.bind(*id);
             }
-            let rows = q.fetch_all(&mut *conn).await?;
+            let rows = q
+                .fetch_all(&mut *conn)
+                .await
+                .context("read the names of the sets each item is in")?;
             Ok(rows)
         })
     })

@@ -21,7 +21,7 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     std::fs::write(&original, bytes).unwrap();
 
     let mut doc = message_ir::testutil::sample_document("hello from the fixture");
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         path: Some(rel),
         original_name: Some(name.to_string()),
         mime_type: None,
@@ -844,7 +844,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![IrAttachment {
+    doc_b.messages[0].attachments = vec![Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
@@ -993,7 +993,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![IrAttachment {
+    doc_b.messages[0].attachments = vec![Attachment {
         path: Some("attachments/shared.jpg".into()),
         original_name: Some("shared.jpg".into()),
         mime_type: None,
@@ -1084,7 +1084,7 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same file");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![IrAttachment {
+    doc_b.messages[0].attachments = vec![Attachment {
         path: Some(rel.into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
@@ -1098,7 +1098,7 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
 }
 
 /// The one attachment of each conversation file, in the order given.
-fn only_attachments(jsonls: &[&Path]) -> Vec<IrAttachment> {
+fn only_attachments(jsonls: &[&Path]) -> Vec<Attachment> {
     jsonls
         .iter()
         .map(|jsonl| read_conversation_jsonl(jsonl).unwrap().messages[0].attachments[0].clone())
@@ -1257,7 +1257,7 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
     ] {
         let rel = format!("attachments/{name}");
         std::fs::write(dir.path().join(&rel), bytes).unwrap();
-        doc.messages[0].attachments.push(IrAttachment {
+        doc.messages[0].attachments.push(Attachment {
             path: Some(rel),
             original_name: Some(name.to_string()),
             size_bytes: Some(bytes.len() as u64),
@@ -1468,8 +1468,9 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
 /// The reason recorded on an attachment ffmpeg could not convert carries why
 /// ffmpeg failed or was stopped, not only which file it was working on, so
 /// a stalled or looping video says so (#2898). Of what ffmpeg wrote, only
-/// the last line is kept, so a damaged file's thousands of warnings do not
-/// ride along on the attachment.
+/// the line that names the cause, which here is its last line, is kept, so
+/// a damaged file's thousands of warnings do not ride along on the
+/// attachment.
 #[cfg(unix)]
 #[test]
 fn a_failed_conversion_records_why_ffmpeg_failed() {
@@ -1510,13 +1511,12 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
     assert_eq!(reason, "convert_failed: the encoder made no progress");
 }
 
-/// The reason an attachment records when ffmpeg failed on it is the last
-/// line ffmpeg wrote, with no path in it: the same reason the attachment
-/// jobs record for the same failure (`message-crate-core`'s
-/// `a_failed_conversion_records_the_short_reason_the_media_stage_records`)
-/// (#2801). The whole error, path and all, goes in the row for the log.
+/// The reason an attachment records when ffmpeg failed on it is the line
+/// ffmpeg wrote that names the cause, which here is its last line, with no
+/// path in it (#2801, #2959). The whole error, path and all, goes in the
+/// row for the log.
 #[test]
-fn a_failed_conversion_records_the_reason_the_attachment_jobs_record() {
+fn a_failed_conversion_records_the_line_that_names_the_cause() {
     let tools = media::testutil::FakeTools::new().failing_on("-q:v");
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let (issues, rows) = collecting_sink();

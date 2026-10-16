@@ -93,13 +93,13 @@ Every export gets a directory of its own in the Export Directory, named `export-
 With **Save to** left empty, the export is written there.
 [**Settings → System**](/docs/user/features/settings/system/) names the Export Directory under **Exports**, and opens it.
 
-The desktop app keeps the Export Directory in the operating system's app-data directory, under `exports`:
+The desktop app keeps the Export Directory in the Message Crate Directory, `message-crate` in the home directory, under `exports`:
 
 | System | Export Directory |
 |---|---|
-| Linux | `~/.local/share/app.messagecrate.desktop/exports` |
-| macOS | `~/Library/Application Support/app.messagecrate.desktop/exports` |
-| Windows | `%APPDATA%\app.messagecrate.desktop\exports` |
+| Linux | `/home/sam/message-crate/exports` |
+| macOS | `/Users/sam/message-crate/exports` |
+| Windows | `C:\Users\sam\message-crate\exports` |
 
 An export in any format other than JSON Lines first fetches the messages as JSON Lines into its directory, then converts them.
 When it finishes, the JSON Lines copy is deleted and the directory holds only the result, with the hidden `.message-crate-export` file that marks it as an export, so a later export or conversion into it replaces what it holds.

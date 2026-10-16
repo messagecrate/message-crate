@@ -4,7 +4,7 @@ use crate::test_support::{conversation_header, message_line};
 
 const TEST_ACCOUNT: i64 = 7;
 
-/// Import one individual conversation holding one message, `guid`, through
+/// Import one one-to-one conversation holding one message, `guid`, through
 /// the whole pipeline: staging, then promote, in the import's transaction.
 async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, guid: &str) {
     let path = dir.join(format!("{guid}.jsonl"));
@@ -16,7 +16,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     let counts = crate::test_support::import_for_account(
         conn,
         &[path],
-        &super::super::ImportOptions::fixed(super::super::FixedImportArgs {
+        &super::super::pipeline::ImportOptions::fixed(super::super::pipeline::FixedImportArgs {
             assets_dir: &assets,
             asset_root: Some(dir),
             mode: ImportMode::Append,
@@ -100,7 +100,7 @@ async fn promote_message_map_ignores_other_accounts() {
             &SeedConversation {
                 account_id,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "t.json",
                 messages: &[],

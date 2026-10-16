@@ -9,10 +9,11 @@
 //! - nothing answers: the app starts the server and waits for it to listen;
 //! - something else answers: the port is taken, and the app says so.
 //!
-//! The server is given its Data Directory, its address and the website files on
-//! its command line, so there is no config file. A database that does not
-//! exist yet is created with the Demo Account before the server listens,
-//! which is why a first start takes a few seconds longer.
+//! The server is given its Data Directory (`crate::app_directories`), its
+//! address and the website files on its command line, so there is no config
+//! file. A database that does not exist yet is created with the Demo Account
+//! before the server listens, which is why a first start takes a few seconds
+//! longer.
 //!
 //! The server listens on this computer only, unless the person switched on
 //! the setting that opens it to the network; it then listens on every
@@ -50,6 +51,13 @@
 //! stopped rather than that it is ready (#2204). While a desktop job runs it
 //! is not killed, since an import can keep it from answering in time.
 //!
+//! The app's own server that exits on its own once ready, as in a crash or
+//! an out-of-memory kill, is started again, so an Upload in progress gets its
+//! server back without anyone pressing Retry (#2089). It is started again at
+//! most [`MAX_RESTARTS`] times within [`RESTART_WINDOW`]. The exit after
+//! that fails the start, so a server that dies at once is not started
+//! forever. Retry on the login card starts the count again.
+//!
 //! What happens next is decided by one pure function, [`step`], from the
 //! state the app has, the network setting the person wants, and what just
 //! happened. [`LocalServer`] holds that state with the processes and does
@@ -63,7 +71,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::net::{SocketAddr, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -115,6 +123,15 @@ const LOCKED_OUT_PROBES: u32 = 1200;
 /// and while a desktop job runs the kill waits for it to end, since an
 /// import can keep the server from answering in time.
 const UNANSWERED_CHECKS: u32 = 2;
+
+/// How many times the app's own server, once ready, is started again after
+/// it exits on its own within [`RESTART_WINDOW`] (#2089). The exit after that
+/// fails the start, so a server that dies at once is not started forever.
+const MAX_RESTARTS: u32 = 3;
+
+/// How far back the restarts counted against [`MAX_RESTARTS`] reach. A
+/// server that exits once a day is started again every time.
+const RESTART_WINDOW: Duration = Duration::from_secs(10 * 60);
 
 /// What is at an address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,6 +288,9 @@ struct State {
     /// How many desktop jobs run. A ready server is not restarted while any
     /// does, since the job may be an import into it.
     jobs: usize,
+    /// When the app's own server was started again after it exited on its
+    /// own, within the last [`RESTART_WINDOW`]. Retry empties it.
+    restarts: Vec<Instant>,
 }
 
 impl Default for State {
@@ -279,6 +299,7 @@ impl Default for State {
             phase: Phase::Idle,
             wanted_open: false,
             jobs: 0,
+            restarts: Vec::new(),
         }
     }
 }
@@ -314,6 +335,9 @@ enum Event {
         /// Its exit code; `None` when a signal ended it or it could not be
         /// read.
         code: Option<i32>,
+        /// When the app found it had exited. Given with the event, so
+        /// [`step`] reads no clock.
+        found_at: Instant,
     },
     /// The app's server has not listened within [`START_TIMEOUT`].
     Deadline {
@@ -362,6 +386,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             match state.phase {
                 Phase::Idle | Phase::PortTaken | Phase::Failed { .. } => {
                     state.phase = Phase::Probing;
+                    state.restarts.clear();
                     actions.push(Action::Probe);
                 }
                 // Asked again whether it still answers: Retry on the login
@@ -469,7 +494,11 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                 };
             }
         }
-        Event::ChildExited { output, code } => match state.phase {
+        Event::ChildExited {
+            output,
+            code,
+            found_at,
+        } => match state.phase {
             // Another Message Crate may have taken the port first; it is
             // used if it answers.
             Phase::Starting { .. } => {
@@ -484,7 +513,29 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                 };
                 actions.push(Action::Probe);
             }
-            Phase::Own { .. } => own_server_ended(&mut state, "Message Crate stopped.", output),
+            // A crash or an out-of-memory kill: started again, so an Upload
+            // in progress gets its server back, unless it keeps exiting.
+            Phase::Own { .. } => {
+                state.restarts.retain(|&restart| {
+                    found_at.saturating_duration_since(restart) < RESTART_WINDOW
+                });
+                if state.restarts.len() < MAX_RESTARTS as usize {
+                    state.restarts.push(found_at);
+                    state.phase = Phase::Starting {
+                        open: state.wanted_open,
+                    };
+                    actions.push(Action::Spawn {
+                        open: state.wanted_open,
+                    });
+                } else {
+                    let message = format!(
+                        "Message Crate stopped {} times within {} minutes.",
+                        MAX_RESTARTS + 1,
+                        RESTART_WINDOW.as_secs() / 60
+                    );
+                    own_server_ended(&mut state, &message, output);
+                }
+            }
             _ => {}
         },
         Event::Deadline { output } => {
@@ -541,9 +592,9 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
 }
 
 /// The app's own server has ended, whether it was starting or ready: it
-/// exited, it was killed because it stopped answering, or the app is
-/// closing. `message` says which. `details` holds what it last wrote, and
-/// is empty when the app is closing.
+/// exited too often to be started again, it was killed because it stopped
+/// answering, or the app is closing. `message` says which. `details` holds
+/// what it last wrote, and is empty when the app is closing.
 fn own_server_ended(state: &mut State, message: &str, details: String) {
     state.phase = Phase::Failed {
         reason: FailureReason::StartFailed,
@@ -966,7 +1017,14 @@ impl LocalServer {
                     let mut inner = server.lock();
                     if inner.generation == generation {
                         let output = joined(&output);
-                        server.apply(&mut inner, Event::ChildExited { output, code });
+                        server.apply(
+                            &mut inner,
+                            Event::ChildExited {
+                                output,
+                                code,
+                                found_at: Instant::now(),
+                            },
+                        );
                     }
                     return;
                 }
@@ -1067,18 +1125,6 @@ fn joined(output: &Output) -> String {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     lines.iter().cloned().collect::<Vec<_>>().join("\n")
-}
-
-/// The directory inside the app's own data directory that the server keeps its
-/// database and attachments in. It is the whole Message Crate: copying it is
-/// the backup.
-///
-/// A dev build (`cargo tauri dev`) uses `data-dev` beside it. Both builds
-/// share one app-data directory, because `tauri.conf.json` has one identifier,
-/// and a dev build on a branch with another Schema Fingerprint would
-/// otherwise rebuild the installed app's database empty.
-pub fn data_dir_in(app_data_dir: &Path, dev: bool) -> PathBuf {
-    app_data_dir.join(if dev { "data-dev" } else { "data" })
 }
 
 mod process_tree;
