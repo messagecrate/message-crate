@@ -67,8 +67,9 @@ export function toolsDownloading(status: ToolsStatus): boolean {
 }
 
 /**
- * Which of ffmpeg and ffprobe, which Convert and Compress run, cannot be used.
- * One still downloading can: the Media stage waits for it.
+ * Which of ffmpeg and ffprobe, which Convert media and Convert & Compress
+ * media run, cannot be used. One still downloading can: the Media Stage waits
+ * for it.
  */
 export function ffmpegMissing(status: ToolsStatus): MediaToolName[] {
   return (["ffmpeg", "ffprobe"] as const).filter((name) => !toolUsable(status[name]));

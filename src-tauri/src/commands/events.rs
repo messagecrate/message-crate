@@ -214,7 +214,7 @@ impl From<ProgressEvent> for WindowEvent {
 }
 
 /// One row of the Import Run's issues, from an exporter's or the Media
-/// stage's [`RunIssue`], or from the Upload.
+/// Stage's [`RunIssue`], or from the Upload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportIssueEvent {
     /// What the row is, sent as its lowercase word.

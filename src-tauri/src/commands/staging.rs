@@ -227,7 +227,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// Returns an error if `run_dir` is not a run directory this app made
 /// or holds no media settings, another job is running, or another thread
 /// panicked while holding the shared state lock. Failures during the Media
-/// stage, including a cancellation and ffmpeg/ffprobe being unavailable, are
+/// Stage, including a cancellation and ffmpeg/ffprobe being unavailable, are
 /// sent as `desktop-job:error`, verbatim, not returned here.
 #[tauri::command(async)]
 pub fn transcode_staging(

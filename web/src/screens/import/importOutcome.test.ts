@@ -260,7 +260,7 @@ describe("importOutcome against an approved plan", () => {
         {
           kind: "skip",
           stage: "upload",
-          // The committed derivative after the Media stage: same stem,
+          // The committed derivative after the Media Stage: same stem,
           // "-mv" suffix, new extension.
           item: "conversation.jsonl:attachments/2024-01-15-9f2a3b4c-mv.jpg",
           reason: "attachment is 200000000 bytes, over the configured asset max",

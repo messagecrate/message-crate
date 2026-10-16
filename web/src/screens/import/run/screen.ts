@@ -16,12 +16,12 @@ import {
 import { CLEARED_RUN, type ImportRunState } from "../importRunStore";
 import type { RunContext } from "./context";
 
-/** Present-tense verb for the Media stage, following the mode so compress mode never says "Converting". */
+/** Present-tense verb for the Media Stage, following the mode so compress mode never says "Converting". */
 export function mediaVerb(mode: AttachmentMediaMode): string {
   return mode === "compress" ? "Compressing" : "Converting";
 }
 
-/** Sentence shown on the Media row once the Media stage finishes. */
+/** Sentence shown on the Media row once the Media Stage finishes. */
 export function mediaDoneDetail(mode: AttachmentMediaMode): string {
   return mode === "compress" ? "Compression complete" : "Conversion complete";
 }
@@ -43,7 +43,7 @@ export function initialSteps(
  * Stage rows for a run resumed at a review or mid Media: Staging is
  * already done (nothing here re-extracts), Upload is always still pending
  * (nothing here has uploaded yet), and Media (when this mode has it) is done
- * only when `mediaDone` says the Media stage already finished in an earlier run. A
+ * only when `mediaDone` says the Media Stage already finished in an earlier run. A
  * resume at `media` passes `mediaDone: false` and then calls
  * `runMediaStage`, which marks that same row active once it starts.
  */

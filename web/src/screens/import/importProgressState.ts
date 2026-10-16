@@ -103,14 +103,14 @@ export const STAGING_LABEL = "Staging";
 export const MEDIA_LABEL = "Media";
 export const UPLOAD_LABEL = "Upload";
 
-/** Whether this attachment media mode runs a Media stage (convert/compress). */
+/** Whether this attachment media mode runs a Media Stage (convert/compress). */
 function hasMediaStage(mode: AttachmentMediaMode): boolean {
   return mode === "convert" || mode === "compress";
 }
 
 /**
  * The stage rows for this attachment media mode: three under convert and
- * compress, two under copy and skip. There is no Media stage in copy/skip,
+ * compress, two under copy and skip. There is no Media Stage in copy/skip,
  * so a grayed-out row would be promising work that will never run.
  */
 export function stepsFor(mode: AttachmentMediaMode): ImportStep[] {

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorText } from "../../lib/apiErrorMessage";
 import { invokeLocalServerStatus, type LocalServerStatus } from "../../lib/desktop/localServer";
-import { startLocalServer } from "../../lib/localServer";
+import { startFailure, startLocalServer } from "../../lib/localServer";
 
 /** How often a starting server is asked how it is getting on. */
 export const STARTING_POLL_MS = 500;
@@ -9,20 +8,12 @@ export const STARTING_POLL_MS = 500;
 /**
  * How often a ready server is asked again. A Message Crate the app only found
  * (Docker on this computer) can stop at any time; asking lets the app see
- * that and start its own in its place. The app's own server can stop
- * answering while it still runs; asking lets the app see that and stop it.
+ * that and start its own in its place. The app checks its own server on its
+ * own as often, whether the login card asks or not (`CHECK_INTERVAL` in
+ * `src-tauri/src/local_server.rs`), and says what it found through the
+ * notice under the header (`components/LocalServerNotice.tsx`).
  */
 export const READY_POLL_MS = 3000;
-
-/** What the app says when it cannot even ask for its server to be started. */
-function failed(error: unknown): LocalServerStatus {
-  return {
-    status: "failed",
-    reason: "start_failed",
-    message: "Message Crate could not be started.",
-    details: errorText(error),
-  };
-}
 
 /**
  * The desktop app's own Message Crate, for the login card.
@@ -62,11 +53,11 @@ export function useLocalServer(active: boolean): {
             : null;
       if (wait !== null) {
         timer.current = setTimeout(() => {
-          invokeLocalServerStatus().then(settle, (error: unknown) => settle(failed(error)));
+          invokeLocalServerStatus().then(settle, (error: unknown) => settle(startFailure(error)));
         }, wait);
       }
     };
-    startLocalServer().then(settle, (error: unknown) => settle(failed(error)));
+    startLocalServer().then(settle, (error: unknown) => settle(startFailure(error)));
   }, [stop]);
 
   useEffect(() => {

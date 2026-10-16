@@ -83,7 +83,7 @@ export function parseStoredStagingSummary(raw: unknown): StagingSummary | undefi
  *
  * Staging records the run's media settings in the directory, and the summary
  * of the directory carries the mode. From the end of Staging on, the directory is
- * the one source of the mode, so whether the run has a Media stage is read
+ * the one source of the mode, so whether the run has a Media Stage is read
  * from there and never from the stored form. `summary` is absent before
  * Staging has finished, and when a resumed run's stored plan no longer
  * parses; the form's own mode stands then, because nothing else holds one.
