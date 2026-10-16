@@ -347,7 +347,7 @@ export function getContact(id: number): ContactDetail | null {
   const preferredHandleType = preferredHandleTypeOf(handles);
   const dateRange = contactDateRange(handleIds);
   const messageCount = contactMessageSourceCountsForConversations(
-    contactIndividualConversationIds(handleIds),
+    contactOneToOneConversationIds(handleIds),
   ).all;
   const groupMessageCount = contactGroupMessageCountsById([id]).get(id) ?? 0;
 
@@ -418,7 +418,7 @@ function contactPhones(contactId: number): string[] {
   ).map((r) => r.handle);
 }
 
-function contactIndividualConversationIds(
+function contactOneToOneConversationIds(
   handleIds: number[],
   opts?: { includeTrashed?: boolean },
 ): number[] {
@@ -448,7 +448,7 @@ function contactConversationIds(
   const accountId = currentAccountId();
   const db = getDb();
   const placeholders = handleIds.map(() => "?").join(",");
-  const individual = contactIndividualConversationIds(handleIds, opts);
+  const oneToOne = contactOneToOneConversationIds(handleIds, opts);
   const groups = db
     .prepare(
       `SELECT DISTINCT c.id AS id
@@ -458,7 +458,7 @@ function contactConversationIds(
          AND c.conversation_type = 'group' AND p.handle_id IN (${placeholders})`,
     )
     .all(accountId, ...handleIds) as Array<{ id: number }>;
-  const ids = new Set<number>(individual);
+  const ids = new Set<number>(oneToOne);
   for (const r of groups) ids.add(r.id);
   return [...ids];
 }
@@ -685,15 +685,15 @@ export function loadContactThreadsPage(
   const preferredHandle = preferredHandleOf(handles);
   const preferredHandleType = preferredHandleTypeOf(handles);
   const dateRange = contactDateRange(handleIds);
-  const individualIds = contactIndividualConversationIds(handleIds, opts);
+  const oneToOneIds = contactOneToOneConversationIds(handleIds, opts);
   const sourceCounts =
-    contactMessageSourceCountsForConversations(individualIds);
+    contactMessageSourceCountsForConversations(oneToOneIds);
   const allConvIds = handleIds.length
     ? contactConversationIds(handleIds, opts)
     : [];
   // Enable sources that appear in 1:1 or groups so group-only archives stay selectable.
   const anySourceCounts =
-    allConvIds.length === individualIds.length
+    allConvIds.length === oneToOneIds.length
       ? sourceCounts
       : contactMessageSourceCountsForConversations(allConvIds);
   const groupMessageCount =

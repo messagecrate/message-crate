@@ -31,6 +31,9 @@
  */
 
 /** Inclusive lower bound / upper bound, both `YYYY-MM-DD`. */
+/** A conversation's shape, as `conversations.conversation_type` stores it. */
+export type ConversationType = "group" | "one-to-one";
+
 export type DateBounds = {
   from: string | null;
   to: string | null;
@@ -78,7 +81,7 @@ export type ParsedSearchQuery = {
   after: string | null;
   before: string | null;
   source: string | null;
-  conversationType: "group" | "one-to-one" | null;
+  conversationType: ConversationType | null;
   /** Conversation-grouped (default) or one row per matching message. */
   groupBy: "conversation" | "none";
   /** Surrounding messages to include when showing/opening a hit. */
@@ -176,7 +179,7 @@ export type AdvancedSearchForm = {
   lastContact?: DateFilterInput;
   groupCount?: CountFilterInput;
   messageCount?: CountFilterInput;
-  conversationType?: "any" | "group" | "one-to-one";
+  conversationType?: "any" | ConversationType;
   source?: string;
   /** @deprecated Prefer attachmentFilter; true maps to "yes". */
   hasAttachment?: boolean;

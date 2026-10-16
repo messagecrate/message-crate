@@ -6,6 +6,7 @@ import type {
   MessageRow,
   YearThread,
 } from "@/lib/types";
+import type { ConversationType } from "@/lib/searchQuery";
 import { formatSourceLabel } from "@/lib/sourceLabels";
 import {
   memo,
@@ -45,7 +46,7 @@ export type BrowseGroupThreadMeta = {
 export type SearchConversationSection = {
   conversationIds: number[];
   title: string;
-  conversationType: "group" | "one-to-one";
+  conversationType: ConversationType;
 };
 
 /** Isolated from scroll chrome so year-highlight updates do not rebuild bubbles. */

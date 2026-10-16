@@ -6,6 +6,7 @@ import {
   type AdvancedSearchForm as FormState,
   type AttachmentFilter,
   type CountFilterInput,
+  type ConversationType,
   type CountComparator,
   type DateFilterInput,
   type DateFilterMode,
@@ -118,7 +119,7 @@ export function AdvancedSearchForm({
     return m.comparator === "any" ? { comparator: "any", value: "" } : m;
   });
   const [conversationType, setConversationType] = useState<
-    "any" | "group" | "one-to-one"
+    "any" | ConversationType
   >(seed.conversationType ?? "any");
   const [source, setSource] = useState(seed.source ?? "");
 
@@ -409,7 +410,7 @@ export function AdvancedSearchForm({
                 value={conversationType}
                 onChange={(e) =>
                   setConversationType(
-                    e.target.value as "any" | "group" | "one-to-one",
+                    e.target.value as "any" | ConversationType,
                   )
                 }
               >

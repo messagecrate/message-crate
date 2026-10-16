@@ -229,13 +229,13 @@ export function unassignedThreadsBundle(
 
   const phones = [trimmed];
   const groupChats = contactGroupChatThreadsForPhones(phones, source);
-  const individualIds = [conv.id];
+  const oneToOneIds = [conv.id];
   const groupConvIds = groupChats.flatMap((g) =>
     g.conversationIds?.length > 0 ? g.conversationIds : [g.conversationId],
   );
-  const allConvIds = [...new Set([...individualIds, ...groupConvIds])];
+  const allConvIds = [...new Set([...oneToOneIds, ...groupConvIds])];
   const sourceCounts =
-    contactMessageSourceCountsForConversations(individualIds);
+    contactMessageSourceCountsForConversations(oneToOneIds);
   const anySourceCounts =
     contactMessageSourceCountsForConversations(allConvIds);
 

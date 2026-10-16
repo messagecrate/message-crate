@@ -16,6 +16,7 @@ import {
   hasSearchCriteria,
   parseSearchQuery,
   toFtsMatch,
+  type ConversationType,
   type DateBounds,
   type ParsedSearchQuery,
 } from "./searchQuery";
@@ -87,7 +88,7 @@ export type SearchAttachmentSummary = {
 export type SearchMessageHit = {
   messageId: number;
   conversationId: number;
-  conversationType: "group" | "one-to-one";
+  conversationType: ConversationType;
   contactId: number | null;
   title: string;
   chatIdentifier: string;
@@ -104,7 +105,7 @@ export type SearchMessageHit = {
 
 export type SearchConversationHit = {
   conversationId: number;
-  conversationType: "group" | "one-to-one";
+  conversationType: ConversationType;
   /** Contact represented by a direct conversation, when its handle is assigned. */
   contactId: number | null;
   title: string;

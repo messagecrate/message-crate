@@ -1,9 +1,10 @@
 import type { SearchConversationHit } from "@/lib/search";
+import type { ConversationType } from "@/lib/searchQuery";
 
 export type SearchResultKey = `direct:${string}` | `group:${number}`;
 export type SelectedSearchResultGroup = {
   key: SearchResultKey;
-  conversationType: "group" | "one-to-one";
+  conversationType: ConversationType;
   chatIdentifier: string;
   title: string;
   conversationIds: number[];

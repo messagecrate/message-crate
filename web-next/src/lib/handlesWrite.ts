@@ -71,7 +71,7 @@ export function handleIdForRaw(
  * A handle has no trash of its own: what goes in the trash is the handle's
  * 1:1 conversation (`trashed_conversations`), as on the server.
  */
-const INDIVIDUAL_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
+const ONE_TO_ONE_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
    WHERE account_id = ? AND conversation_type = 'one-to-one' AND chat_handle_id = ?`;
 
 /** Take one handle's 1:1 conversation out of the trash. */
@@ -82,7 +82,7 @@ export function untrashHandleConversations(
 ): void {
   db.prepare(
     `DELETE FROM trashed_conversations
-     WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
+     WHERE account_id = ? AND conversation_id IN (${ONE_TO_ONE_CONVERSATIONS_OF_HANDLE})`,
   ).run(accountId, accountId, handleId);
 }
 
@@ -118,7 +118,7 @@ export function trashHandlesInDb(
   // ON CONFLICT, or it reads ON as the start of a join constraint.
   const upsert = db.prepare(
     `INSERT INTO trashed_conversations (account_id, conversation_id, trashed_at)
-     SELECT ?, id, datetime('now') FROM (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})
+     SELECT ?, id, datetime('now') FROM (${ONE_TO_ONE_CONVERSATIONS_OF_HANDLE})
      WHERE true
      ON CONFLICT(account_id, conversation_id) DO UPDATE SET trashed_at = excluded.trashed_at`,
   );
@@ -202,7 +202,7 @@ export function permanentlyDeleteHandle(
           `SELECT tc.conversation_id AS id
            FROM trashed_conversations tc
            WHERE tc.account_id = ?
-             AND tc.conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
+             AND tc.conversation_id IN (${ONE_TO_ONE_CONVERSATIONS_OF_HANDLE})`,
         )
         .all(accountId, accountId, handleId) as Array<{ id: number }>
     ).map((row) => row.id);
