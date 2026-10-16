@@ -28,9 +28,8 @@ pub(crate) struct KeyedLocks {
     /// A `std` mutex: it is only ever held for one map operation, never
     /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
-    /// How many tasks found each key's mutex held and were queued for
-    /// it, so a test can act once a task waits on a key rather than after
-    /// a sleep.
+    /// How many tasks were queued for each key's mutex, so a test can act
+    /// once a task waits on a key rather than after a sleep.
     #[cfg(test)]
     waiting: Arc<tokio::sync::watch::Sender<HashMap<String, usize>>>,
     /// How many tasks that were queued for each key's mutex have since taken
@@ -84,20 +83,22 @@ impl KeyedLocks {
     /// [`Self::a_task_waits`] and [`Self::a_waiting_task_takes`].
     ///
     /// The task counts as waiting only once tokio's mutex has queued it,
-    /// which happens in the first poll of `taking` that returns pending. A
-    /// queued task is handed the mutex in turn, and gives it back unused if
-    /// it stops waiting first. Counted before that poll, a test that frees
-    /// the mutex on the count could free it before the task queued, and the
-    /// task then took the free mutex as it queued, whatever the test did in
-    /// between (#3106). A task whose first poll takes the mutex never
-    /// waited, so it is not counted at all.
+    /// which happens in the first poll of `taking` that returns pending.
+    /// `taking` runs outside tokio's per-task budget, so a pending poll
+    /// always means the mutex queued the task, never that the budget ran
+    /// out. A queued task is handed the mutex in turn, and gives it back
+    /// unused if it stops waiting first. The count must not come before
+    /// that poll: a test that frees the mutex on the count would otherwise
+    /// let the task take the free mutex without ever queuing (#3106). A
+    /// task whose first poll takes the mutex never waited, so it is not
+    /// counted at all.
     #[cfg(test)]
     async fn counted_wait(
         &self,
         key: &str,
         taking: impl std::future::Future<Output = OwnedMutexGuard<()>>,
     ) -> OwnedMutexGuard<()> {
-        let mut taking = std::pin::pin!(taking);
+        let mut taking = std::pin::pin!(tokio::task::unconstrained(taking));
         let mut queued = false;
         let guard = std::future::poll_fn(|cx| {
             let poll = taking.as_mut().poll(cx);
@@ -116,23 +117,24 @@ impl KeyedLocks {
         guard
     }
 
-    /// Wait until a task has found the mutex for `key` held and is waiting
-    /// for it. Each task that waited is counted once, so the next call waits
-    /// for another.
+    /// Wait until a task has been queued for the mutex for `key` and is
+    /// waiting for it. Each task that waited is counted once, so the next
+    /// call waits for another.
     #[cfg(test)]
     pub(crate) async fn a_task_waits(&self, key: &str) {
         take_one_count(&self.waiting, key).await;
     }
 
-    /// Wait until a task that found the mutex for `key` held has taken it.
-    /// Each such task is counted once, so the next call waits for another.
+    /// Wait until a task that was queued for the mutex for `key` has taken
+    /// it. Each such task is counted once, so the next call waits for
+    /// another.
     #[cfg(test)]
     pub(crate) async fn a_waiting_task_takes(&self, key: &str) {
         take_one_count(&self.taken_after_waiting, key).await;
     }
 
-    /// How many tasks that found the mutex for `key` held have taken it
-    /// since [`Self::a_waiting_task_takes`] last counted one.
+    /// How many tasks that were queued for the mutex for `key` have taken
+    /// it since [`Self::a_waiting_task_takes`] last counted one.
     #[cfg(test)]
     pub(crate) fn waiting_tasks_that_took(&self, key: &str) -> usize {
         self.taken_after_waiting
