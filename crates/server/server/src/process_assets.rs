@@ -66,13 +66,10 @@ pub struct ProcessAssetsStats {
     pub previews: u64,
     /// Thumbnails written.
     pub thumbnails: u64,
-    /// Incomplete originals (`.part` files left by a transfer that never
-    /// finished) removed.
-    pub removed: u64,
     /// Damaged Previews and Thumbnails dropped, because they could not be
     /// made again: their original is missing or no longer gets one.
     pub dropped: u64,
-    /// Originals for which nothing was written, removed, dropped or shared:
+    /// Originals for which nothing was written, dropped or shared:
     /// not media, already done, or of a kind the options leave alone.
     pub skipped: u64,
     /// Existing Previews and Thumbnails given to attachment rows of their
@@ -81,8 +78,6 @@ pub struct ProcessAssetsStats {
     pub shared: u64,
     /// Originals whose Preview or Thumbnail could not be made.
     pub not_made: u64,
-    /// Incomplete originals that could not be removed.
-    pub not_removed: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
     /// Originals whose shown-as-is decision (`attachments.shown_as_is`)
@@ -96,12 +91,10 @@ impl ProcessAssetsStats {
         self.scanned += other.scanned;
         self.previews += other.previews;
         self.thumbnails += other.thumbnails;
-        self.removed += other.removed;
         self.dropped += other.dropped;
         self.shared += other.shared;
         self.skipped += other.skipped;
         self.not_made += other.not_made;
-        self.not_removed += other.not_removed;
         self.not_dropped += other.not_dropped;
         self.not_decided += other.not_decided;
     }
@@ -114,11 +107,6 @@ impl ProcessAssetsStats {
         }
         if outcome.thumbnail {
             self.thumbnails += 1;
-        }
-        match outcome.removal {
-            Some(Ok(())) => self.removed += 1,
-            Some(Err(_)) => self.not_removed += 1,
-            None => {}
         }
         self.dropped += outcome.dropped;
         self.shared += outcome.shared;
@@ -152,13 +140,6 @@ impl ProcessAssetsStats {
         let mut failures = Vec::new();
         if self.not_made > 0 {
             failures.push(self.not_made_words());
-        }
-        if self.not_removed > 0 {
-            failures.push(words(
-                self.not_removed,
-                "1 incomplete original that could not be removed",
-                "{n} incomplete originals that could not be removed",
-            ));
         }
         if self.not_dropped > 0 {
             failures.push(words(
@@ -201,8 +182,8 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
 /// its rows ([`read_original`]).
 struct ReadOriginal {
     /// The media type the original's first bytes show
-    /// ([`media::media_type_in_file`]); `None` when it cannot be read, is an
-    /// incomplete `.part`, or its bytes match no signature.
+    /// ([`media::media_type_in_file`]); `None` when it cannot be read or its
+    /// bytes match no signature.
     by_bytes: Option<&'static str>,
     /// The original's media type: the one its bytes show, else the one its
     /// rows say ([`media_type`]). A declared type is only a claim, so a
@@ -219,18 +200,9 @@ struct ReadOriginal {
 
 /// Read `row`'s original, stored under `assets_dir`, for its type and
 /// whether every browser shows it as it is: the one reading both
-/// [`decide_shown_as_is`] and the pass make. An incomplete `.part` original
-/// is never read nor handed to ffprobe: its rows say its type, and it is
-/// not shown as it is.
+/// [`decide_shown_as_is`] and the pass make.
 fn read_original(tools: &dyn MediaTools, assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
     let declared = media_type(row);
-    if is_part_path(&row.assets_path) {
-        return ReadOriginal {
-            by_bytes: None,
-            media_type: declared,
-            decided: Some(false),
-        };
-    }
     let path = assets_dir.join(&row.assets_path);
     let by_bytes = media::media_type_in_file(&path, declared.as_deref());
     let media_type = by_bytes.map(str::to_string).or(declared);
@@ -307,8 +279,7 @@ pub(crate) async fn decide_shown_as_is(
 /// Returns an error when no account is named and the database has none, a
 /// query fails, or an account's asset directories cannot be prepared. An
 /// original whose Preview or Thumbnail cannot be made is counted in
-/// `not_made`, an incomplete original that cannot be removed in
-/// `not_removed`, and a damaged version that cannot be dropped in
+/// `not_made`, and a damaged version that cannot be dropped in
 /// `not_dropped`. Each is said through `progress`, and the run goes on.
 pub async fn run(
     opened: &OpenDb,
@@ -357,8 +328,8 @@ pub async fn run(
 
 /// The line that ends `process-assets`: each count of `stats` in words,
 /// singular for one, and `(dry run)` when nothing was written. The counts of
-/// incomplete originals, damaged versions and shared versions, which most
-/// runs never meet, are left out at zero.
+/// damaged versions and shared versions, which most runs never meet, are
+/// left out at zero.
 fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
     let mut parts = vec![
         words(stats.scanned, "read 1 original", "read {n} originals"),
@@ -368,13 +339,6 @@ fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
             words(stats.thumbnails, "1 Thumbnail", "{n} Thumbnails"),
         ),
     ];
-    if stats.removed > 0 {
-        parts.push(words(
-            stats.removed,
-            "removed 1 incomplete original",
-            "removed {n} incomplete originals",
-        ));
-    }
     if stats.dropped > 0 {
         parts.push(words(
             stats.dropped,
@@ -490,10 +454,6 @@ struct Outcome {
     preview: bool,
     /// A Thumbnail was written, or would be in a dry run.
     thumbnail: bool,
-    /// The original was incomplete: removed, or would be in a dry run, or
-    /// why it could not be removed. `None` when it is not incomplete or no
-    /// file was there.
-    removal: Option<Result<()>>,
     /// Damaged versions dropped, or that would be in a dry run.
     dropped: u64,
     /// Existing versions given to rows that named none, or that would be in
@@ -524,21 +484,15 @@ impl Outcome {
     fn failures(&self) -> impl Iterator<Item = &anyhow::Error> {
         self.not_made
             .iter()
-            .chain(
-                self.removal
-                    .as_ref()
-                    .and_then(|removal| removal.as_ref().err()),
-            )
             .chain(&self.not_dropped)
             .chain(&self.not_decided)
     }
 
-    /// Nothing was written, removed, dropped or shared, and nothing
+    /// Nothing was written, dropped or shared, and nothing
     /// failed.
     fn left_as_it_was(&self) -> bool {
         !self.preview
             && !self.thumbnail
-            && self.removal.is_none()
             && self.dropped == 0
             && self.shared == 0
             && self.failures().next().is_none()
@@ -740,17 +694,6 @@ impl<'a> AccountPass<'a> {
                 .err()
         };
         let versions = match plan(row, self.opts, on_disk) {
-            Plan::RemoveIncomplete => {
-                return Outcome {
-                    removal: match self.remove_incomplete(row, &source_path) {
-                        Ok(true) => Some(Ok(())),
-                        Ok(false) => None,
-                        Err(err) => Some(Err(err)),
-                    },
-                    not_decided,
-                    ..Outcome::default()
-                };
-            }
             Plan::Skip(_) => {
                 return Outcome {
                     not_decided,
@@ -1012,31 +955,6 @@ impl<'a> AccountPass<'a> {
         Ok(true)
     }
 
-    /// Delete a `.part` left by an interrupted upload, or say so in a dry
-    /// run. True when it was removed, or would be in a dry run, and false
-    /// when no file is there.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the file cannot be deleted.
-    fn remove_incomplete(&self, row: &StoredOriginal, source_path: &Path) -> Result<bool> {
-        if !source_path.is_file() {
-            return Ok(false);
-        }
-        if self.opts.dry_run {
-            self.progress.say(format!(
-                "This dry run would remove the incomplete {}",
-                self.label(row)
-            ));
-        } else {
-            crate::asset_store::remove_file(source_path)
-                .with_context(|| format!("remove incomplete {}", source_path.display()))?;
-            self.progress
-                .say(format!("Removed the incomplete {}", self.label(row)));
-        }
-        Ok(true)
-    }
-
     /// Make `version` of one original into the work directory, then store
     /// it.
     fn derive(
@@ -1174,17 +1092,9 @@ fn not_made(err: &anyhow::Error, dirs: &[&Path]) -> (NotMadeKind, String) {
     )
 }
 
-/// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.
-fn is_part_path(path: &str) -> bool {
-    crate::asset_store::has_part_extension(Path::new(path))
-}
-
 /// What one stored original needs, decided before any file is touched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Plan {
-    /// A `.part` left by an interrupted transfer: delete it, never hand it to
-    /// ffmpeg.
-    RemoveIncomplete,
     /// Leave the original and its versions as they are.
     Skip(SkipReason),
     /// What each version needs.
@@ -1264,9 +1174,6 @@ enum PreviewFile {
 /// Decide what one original needs from the row, the options and what is on
 /// disk. No IO happens here: `on_disk` carries the facts the caller read.
 fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
-    if is_part_path(&row.assets_path) {
-        return Plan::RemoveIncomplete;
-    }
     // `kind_of` answers no kind for a GIF, but it is an image and gets a
     // Thumbnail like any other. Whether it gets a Preview is `browser_shows`'s
     // answer, as for every type: every browser shows a GIF, so it gets none,

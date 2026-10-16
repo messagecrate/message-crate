@@ -234,6 +234,10 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **Processing attachments no longer looks for unfinished
+  files.** The server never stores an attachment as an unfinished file, so
+  the line that ends processing, and the Demo Account rebuild's report, no
+  longer count incomplete originals removed or left (#2568).
 - 2026-10-15: The way the desktop app opens an Import Run on the server was
   reworked inside, with nothing visible (#2858).
 - 2026-10-15: **The Import screen says Resume for an interrupted import.**

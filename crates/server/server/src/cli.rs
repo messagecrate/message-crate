@@ -643,11 +643,6 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
         ),
         ("Thumbnails made", stats.process_assets.thumbnails, ""),
         (
-            "incomplete originals removed",
-            stats.process_assets.removed,
-            "left by a transfer that never finished",
-        ),
-        (
             "damaged Previews and Thumbnails dropped",
             stats.process_assets.dropped,
             "they could not be made again",
@@ -666,11 +661,6 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
             "not made",
             stats.process_assets.not_made,
             "originals whose Preview or Thumbnail could not be made",
-        ),
-        (
-            "not removed",
-            stats.process_assets.not_removed,
-            "incomplete originals that could not be removed",
         ),
         (
             "not dropped",
@@ -753,8 +743,8 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// # Errors
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
-/// any original could not be made, an incomplete original could not be
-/// removed, or a damaged version could not be dropped, so a cron job or
+/// any original could not be made or a damaged version could not be
+/// dropped, so a cron job or
 /// script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or

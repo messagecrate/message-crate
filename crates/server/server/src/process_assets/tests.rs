@@ -94,22 +94,6 @@ fn derived_rel_path_layout() {
 }
 
 #[test]
-fn a_part_path_is_removed_and_never_converted() {
-    let opts = ProcessAssetsOptions::default();
-    let mut part = row("aa/upload.part");
-    part.mime_type = Some("video/mp4".to_string());
-    part.original_name = Some("clip.mp4".to_string());
-    assert_eq!(plan(&part, &opts, FRESH), Plan::RemoveIncomplete);
-    // Even when the file is already gone the plan is the same; the executor
-    // deals with an absent file.
-    let gone = OnDisk {
-        original_exists: false,
-        ..FRESH
-    };
-    assert_eq!(plan(&part, &opts, gone), Plan::RemoveIncomplete);
-}
-
-#[test]
 fn an_asset_that_is_not_media_is_skipped() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
@@ -473,65 +457,11 @@ fn preview_file_logs_a_stored_path_it_refuses() {
 }
 
 #[test]
-fn part_paths_are_recognised_in_any_case() {
-    assert!(is_part_path("aa/aabbcc.part"));
-    assert!(is_part_path("upload.PART"));
-    assert!(!is_part_path("aa/aabbcc.mp4"));
-    assert!(!is_part_path("aa/aabbcc"));
-}
-
-#[test]
 fn a_label_names_the_account_and_the_stored_path() {
     let opts = ProcessAssetsOptions::default();
     let dir = tempfile::tempdir().unwrap();
     let pass = pass(&opts, dir.path(), dir.path(), dir.path());
     assert_eq!(pass.label(&row("aa/photo.jpg")), "7/aa/photo.jpg");
-}
-
-#[test]
-fn removing_an_incomplete_upload_deletes_the_part_file() {
-    let opts = ProcessAssetsOptions::default();
-    let dir = tempfile::tempdir().unwrap();
-    let assets = dir.path().join("assets");
-    fs::create_dir_all(assets.join("aa")).unwrap();
-    let part = assets.join("aa/upload.part");
-    fs::write(&part, b"half").unwrap();
-    let pass = pass(&opts, dir.path(), &assets, dir.path());
-
-    assert!(
-        pass.remove_incomplete(&row("aa/upload.part"), &part)
-            .unwrap()
-    );
-
-    assert!(!part.exists());
-    // A file that is already gone is not an error, and nothing is removed.
-    assert!(
-        !pass
-            .remove_incomplete(&row("aa/upload.part"), &part)
-            .unwrap()
-    );
-}
-
-#[test]
-fn a_dry_run_leaves_the_part_file_in_place() {
-    let opts = ProcessAssetsOptions {
-        dry_run: true,
-        ..Default::default()
-    };
-    let dir = tempfile::tempdir().unwrap();
-    let assets = dir.path().join("assets");
-    fs::create_dir_all(assets.join("aa")).unwrap();
-    let part = assets.join("aa/upload.part");
-    fs::write(&part, b"half").unwrap();
-    let pass = pass(&opts, dir.path(), &assets, dir.path());
-
-    // Counted as removed, as a dry run counts what it would make.
-    assert!(
-        pass.remove_incomplete(&row("aa/upload.part"), &part)
-            .unwrap()
-    );
-
-    assert!(part.is_file());
 }
 
 #[test]
@@ -660,41 +590,8 @@ pub(crate) async fn attach_stored_original(
     mime: &str,
     bytes: &[u8],
 ) -> i64 {
-    attach_original_at(opened, conn, message_id, sha, "", Some(mime), bytes).await
-}
-
-/// Store `bytes` as an incomplete original for an attachment of
-/// `message_id`: a file at `<aa>/<sha>.part` and a row pointing at it, with
-/// no MIME type. The store never writes a `.part` file inside a shard
-/// directory (its uploads in progress go under `.incoming/`);
-/// `process-assets` treats one as an interrupted transfer and removes it.
-/// Returns the attachment id.
-pub(crate) async fn attach_incomplete_original(
-    opened: &OpenDb,
-    conn: &mut SqliteConnection,
-    message_id: i64,
-    sha: &str,
-    bytes: &[u8],
-) -> i64 {
-    attach_original_at(opened, conn, message_id, sha, ".part", None, bytes).await
-}
-
-/// Write `bytes` where the store places the original of `sha`, plus
-/// `suffix`, in the account's assets directory, with a MIME sidecar when
-/// `mime` is given, and insert an attachment row of `message_id` naming the
-/// file. Returns the attachment id.
-async fn attach_original_at(
-    opened: &OpenDb,
-    conn: &mut SqliteConnection,
-    message_id: i64,
-    sha: &str,
-    suffix: &str,
-    mime: Option<&str>,
-    bytes: &[u8],
-) -> i64 {
     let assets_dir = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
-    let (sha, rel, _) =
-        crate::test_support::write_stored_original(&assets_dir, sha, suffix, mime, bytes);
+    let (sha, rel, _) = crate::test_support::write_stored_original(&assets_dir, sha, mime, bytes);
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
         "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)
@@ -1785,102 +1682,6 @@ pub(crate) async fn with_read_only<T>(dir: &Path, f: impl Future<Output = T>) ->
     result
 }
 
-/// An incomplete original that is removed counts as removed, not as an
-/// original left as it was, at one and at many (#1849). One already gone
-/// is left as it was.
-#[tokio::test]
-async fn an_incomplete_original_removed_is_counted_as_removed() {
-    let (opened, _dir) = open_db().await;
-    let mut conn = opened.conn().await.unwrap();
-    seed_account(&mut conn, ACCOUNT).await;
-    let message_id = seed_message(&mut conn, "imessage").await;
-    attach_incomplete_original(&opened, &mut conn, message_id, SHA, b"half").await;
-    let dry_run = ProcessAssetsOptions {
-        dry_run: true,
-        ..Default::default()
-    };
-    let removed = |scanned, removed| ProcessAssetsStats {
-        removed,
-        ..stats(scanned, 0, 0, 0, 0)
-    };
-
-    assert_eq!(
-        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
-            .await
-            .unwrap(),
-        removed(1, 1)
-    );
-
-    attach_incomplete_original(&opened, &mut conn, message_id, &"b".repeat(64), b"half").await;
-    assert_eq!(
-        run(
-            &opened,
-            &ON_PATH,
-            &ProcessAssetsOptions::default(),
-            &NOT_STOPPED,
-            Progress::Print
-        )
-        .await
-        .unwrap(),
-        removed(2, 2)
-    );
-    assert_eq!(
-        run(
-            &opened,
-            &ON_PATH,
-            &ProcessAssetsOptions::default(),
-            &NOT_STOPPED,
-            Progress::Print
-        )
-        .await
-        .unwrap(),
-        stats(2, 0, 0, 2, 0),
-        "an incomplete original already gone is left as it was"
-    );
-}
-
-/// An incomplete original that cannot be removed is counted apart from an
-/// original whose Preview or Thumbnail could not be made, because nothing
-/// was being made (#1849).
-#[cfg(unix)]
-#[tokio::test]
-async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
-    let (opened, _dir) = open_db().await;
-    let mut conn = opened.conn().await.unwrap();
-    seed_account(&mut conn, ACCOUNT).await;
-    let message_id = seed_message(&mut conn, "imessage").await;
-    // Two in the read-only shard `aa/`, and one in `bb/` that can go.
-    attach_incomplete_original(&opened, &mut conn, message_id, &"a".repeat(64), b"half").await;
-    let second = format!("{}b", "a".repeat(63));
-    attach_incomplete_original(&opened, &mut conn, message_id, &second, b"half").await;
-    attach_incomplete_original(&opened, &mut conn, message_id, &"b".repeat(64), b"half").await;
-    let shard = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join("aa");
-
-    let Some(counted) = with_read_only(
-        &shard,
-        run(
-            &opened,
-            &ON_PATH,
-            &ProcessAssetsOptions::default(),
-            &NOT_STOPPED,
-            Progress::Print,
-        ),
-    )
-    .await
-    else {
-        return;
-    };
-
-    assert_eq!(
-        counted.unwrap(),
-        ProcessAssetsStats {
-            removed: 1,
-            not_removed: 2,
-            ..stats(3, 0, 0, 0, 0)
-        }
-    );
-}
-
 /// A damaged Preview its original no longer gets, here an MP3 every browser
 /// plays, is dropped and counted as dropped, not as an original left as it
 /// was, at one and at many (#1849). Nothing failed, so nothing is counted
@@ -2416,31 +2217,28 @@ async fn a_live_pass_keeps_its_work_directory_young() {
 }
 
 /// The line that ends `process-assets` words each count singular for one
-/// and plural for every other count (#1825), and names an incomplete
-/// original, a damaged version and a shared version by what happened to
-/// them, not as an original left as it was or one not made (#1849).
+/// and plural for every other count (#1825), and names a damaged version
+/// and a shared version by what happened to them, not as an original left
+/// as it was or one not made (#1849).
 #[test]
 fn the_done_line_counts_one_and_many() {
     let one = ProcessAssetsStats {
         scanned: 1,
         previews: 1,
         thumbnails: 1,
-        removed: 1,
         dropped: 1,
         shared: 1,
         skipped: 1,
         not_made: 1,
-        not_removed: 1,
         not_dropped: 1,
         not_decided: 1,
     };
     assert_eq!(
         done_line(&one, false),
-        "done: read 1 original, made 1 Preview and 1 Thumbnail, removed 1 incomplete original, \
+        "done: read 1 original, made 1 Preview and 1 Thumbnail, \
          dropped 1 damaged Preview or Thumbnail, \
          shared 1 existing Preview or Thumbnail with more attachments, left 1 original as it was, \
          1 original whose Preview or Thumbnail could not be made, \
-         1 incomplete original that could not be removed, \
          1 damaged Preview or Thumbnail that could not be dropped, \
          1 original whose shown-as-is decision could not be recorded"
     );
@@ -2448,29 +2246,26 @@ fn the_done_line_counts_one_and_many() {
         scanned: 9,
         previews: 2,
         thumbnails: 3,
-        removed: 2,
         dropped: 3,
         shared: 2,
         skipped: 0,
         not_made: 2,
-        not_removed: 3,
         not_dropped: 4,
         not_decided: 0,
     };
     assert_eq!(
         done_line(&many, true),
-        "done: read 9 originals, made 2 Previews and 3 Thumbnails, removed 2 incomplete originals, \
+        "done: read 9 originals, made 2 Previews and 3 Thumbnails, \
          dropped 3 damaged Previews or Thumbnails, \
          shared 2 existing Previews or Thumbnails with more attachments, \
          left 0 originals as they were, \
          2 originals whose Preview or Thumbnail could not be made, \
-         3 incomplete originals that could not be removed, \
          4 damaged Previews or Thumbnails that could not be dropped (dry run)"
     );
 }
 
-/// Most runs meet no incomplete original, damaged version or version to
-/// share, so the line leaves those counts out at zero, and still says that
+/// Most runs meet no damaged version or version to share, so the line
+/// leaves those counts out at zero, and still says that
 /// no Preview or Thumbnail failed.
 #[test]
 fn the_done_line_leaves_out_what_the_run_never_met() {
@@ -2498,18 +2293,6 @@ fn the_failures_name_each_count_and_nothing_at_zero() {
         not_made(2).failures().as_deref(),
         Some("2 originals whose Preview or Thumbnail could not be made")
     );
-    let not_removed = |not_removed| ProcessAssetsStats {
-        not_removed,
-        ..ProcessAssetsStats::default()
-    };
-    assert_eq!(
-        not_removed(1).failures().as_deref(),
-        Some("1 incomplete original that could not be removed")
-    );
-    assert_eq!(
-        not_removed(2).failures().as_deref(),
-        Some("2 incomplete originals that could not be removed")
-    );
     let not_dropped = |not_dropped| ProcessAssetsStats {
         not_dropped,
         ..ProcessAssetsStats::default()
@@ -2524,30 +2307,30 @@ fn the_failures_name_each_count_and_nothing_at_zero() {
     );
     assert_eq!(
         ProcessAssetsStats {
-            not_removed: 1,
             not_dropped: 2,
+            not_decided: 1,
             ..ProcessAssetsStats::default()
         }
         .failures()
         .as_deref(),
         Some(
-            "1 incomplete original that could not be removed and \
-             2 damaged Previews or Thumbnails that could not be dropped"
+            "2 damaged Previews or Thumbnails that could not be dropped and \
+             1 original whose shown-as-is decision could not be recorded"
         )
     );
     assert_eq!(
         ProcessAssetsStats {
             not_made: 1,
-            not_removed: 1,
             not_dropped: 1,
+            not_decided: 1,
             ..ProcessAssetsStats::default()
         }
         .failures()
         .as_deref(),
         Some(
             "1 original whose Preview or Thumbnail could not be made, \
-             1 incomplete original that could not be removed and \
-             1 damaged Preview or Thumbnail that could not be dropped"
+             1 damaged Preview or Thumbnail that could not be dropped and \
+             1 original whose shown-as-is decision could not be recorded"
         )
     );
 }
