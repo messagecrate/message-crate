@@ -46,7 +46,7 @@ fn test_number(n: u32) -> String {
 
 fn unit_from(document: ConversationDocument, sources: Vec<AttachmentSource>) -> ConversationUnit {
     let mut it = sources.into_iter();
-    ConversationUnit::from_document(document, |_, _att| {
+    ConversationUnit::from_document(document, |_, _attachment| {
         let source = it.next().unwrap_or(AttachmentSource::Missing);
         let hint = match &source {
             AttachmentSource::Bytes(b) => Some(b.len() as u64),
@@ -286,9 +286,15 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
     let document =
         read_conversation_jsonl(&conversation_file(&out, &document_with(&test_number(6), 0)))
             .unwrap();
-    let atts = &document.messages[0].attachments;
-    assert_eq!(atts[0].missing_reason.as_deref(), Some("file_missing"));
-    assert!(atts[1].path.is_some(), "the readable one still landed");
+    let attachments = &document.messages[0].attachments;
+    assert_eq!(
+        attachments[0].missing_reason.as_deref(),
+        Some("file_missing")
+    );
+    assert!(
+        attachments[1].path.is_some(),
+        "the readable one still landed"
+    );
 }
 
 /// An attachment the drain cannot stage is named in the drain's own log.

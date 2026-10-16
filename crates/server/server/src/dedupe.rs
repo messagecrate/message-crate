@@ -416,7 +416,7 @@ async fn recompute_content_keys(
 struct Cand {
     id: i64,
     source: String,
-    att_count: i64,
+    attachment_count: i64,
     /// Whether its source recorded its time in whole seconds. The flag
     /// decides, never the time: a millisecond time can end in `.000`.
     whole_seconds: bool,
@@ -466,7 +466,7 @@ async fn exact_flags(
             id: row.id,
             whole_seconds: is_whole_seconds(row.id, &row.time_precision)?,
             source: row.source,
-            att_count: row.att_count,
+            attachment_count: row.attachment_count,
             run_messages: row.run_messages,
         });
     }
@@ -560,8 +560,8 @@ fn pick_winner(cands: &[Cand], prio: &HashMap<&str, usize>) -> i64 {
 /// make the order stable.
 fn rank(a: &Cand, b: &Cand, prio: &HashMap<&str, usize>) -> std::cmp::Ordering {
     let priority = |c: &Cand| prio.get(c.source.as_str()).copied().unwrap_or(usize::MAX);
-    b.att_count
-        .cmp(&a.att_count)
+    b.attachment_count
+        .cmp(&a.attachment_count)
         .then(a.whole_seconds.cmp(&b.whole_seconds))
         .then(b.run_messages.cmp(&a.run_messages))
         .then_with(|| priority(a).cmp(&priority(b)))
@@ -589,8 +589,8 @@ struct NearRow {
     sender_norm: String,
     secs: i64,
     body_norm: String,
-    att_fp: String,
-    att_count: i64,
+    attachment_fingerprint: String,
+    attachment_count: i64,
     content_key: String,
     whole_seconds: bool,
     run_messages: i64,
@@ -606,7 +606,8 @@ impl NearRow {
     /// are never twins here.
     fn is_twin_of(&self, other: &NearRow) -> bool {
         let same_body = !self.body_norm.is_empty() && other.body_norm == self.body_norm;
-        let same_attachments = !self.att_fp.is_empty() && other.att_fp == self.att_fp;
+        let same_attachments = !self.attachment_fingerprint.is_empty()
+            && other.attachment_fingerprint == self.attachment_fingerprint;
         let same_key = !self.content_key.is_empty() && other.content_key == self.content_key;
         other.is_from_me == self.is_from_me
             && other.sender_norm == self.sender_norm
@@ -620,7 +621,7 @@ impl NearRow {
         Cand {
             id: self.id,
             source: self.source.clone(),
-            att_count: self.att_count,
+            attachment_count: self.attachment_count,
             whole_seconds: self.whole_seconds,
             run_messages: self.run_messages,
         }
@@ -683,8 +684,8 @@ async fn load_near_rows(
                 },
                 secs,
                 body_norm: normalize_body(row.body.as_deref()),
-                att_count: shas.len() as i64,
-                att_fp: shas.join(","),
+                attachment_count: shas.len() as i64,
+                attachment_fingerprint: shas.join(","),
                 content_key: row.content_key,
                 whole_seconds: is_whole_seconds(row.id, &row.time_precision)?,
                 run_messages: row.run_messages,

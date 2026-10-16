@@ -107,8 +107,8 @@ fn copies_ios_style_media_true_data_paths() {
         "media path must not become message text"
     );
     assert!(body.contains("attachments/"));
-    let att_dir = out.path().join("attachments");
-    let files: Vec<_> = fs::read_dir(&att_dir)
+    let attachments_dir = out.path().join("attachments");
+    let files: Vec<_> = fs::read_dir(&attachments_dir)
         .expect("attachments dir")
         .map(|e| e.unwrap().path())
         .collect();

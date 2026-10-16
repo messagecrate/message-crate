@@ -871,13 +871,19 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
 
     let final_document_a = read_conversation_jsonl(&jsonl_a).unwrap();
     let final_document_b = read_conversation_jsonl(&jsonl_b).unwrap();
-    let att_a = &final_document_a.messages[0].attachments[0];
-    let att_b = &final_document_b.messages[0].attachments[0];
-    assert_eq!(att_a.path.as_deref(), Some("attachments/shared-mv.jpg"));
-    assert_eq!(att_b.path.as_deref(), Some("attachments/shared-mv.jpg"));
-    assert!(att_a.digest_sha256.is_some());
+    let attachment_a = &final_document_a.messages[0].attachments[0];
+    let attachment_b = &final_document_b.messages[0].attachments[0];
     assert_eq!(
-        att_a.digest_sha256, att_b.digest_sha256,
+        attachment_a.path.as_deref(),
+        Some("attachments/shared-mv.jpg")
+    );
+    assert_eq!(
+        attachment_b.path.as_deref(),
+        Some("attachments/shared-mv.jpg")
+    );
+    assert!(attachment_a.digest_sha256.is_some());
+    assert_eq!(
+        attachment_a.digest_sha256, attachment_b.digest_sha256,
         "both documents recompute the same digest from the same on-disk derivative"
     );
 }
@@ -1020,15 +1026,21 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
 
     let final_document_a = read_conversation_jsonl(&jsonl_a).unwrap();
     let final_document_b = read_conversation_jsonl(&jsonl_b).unwrap();
-    let att_a = &final_document_a.messages[0].attachments[0];
-    let att_b = &final_document_b.messages[0].attachments[0];
-    assert_eq!(att_a.path.as_deref(), Some("attachments/shared-mv.jpg"));
-    assert_eq!(att_b.path.as_deref(), Some("attachments/shared-mv.jpg"));
-    assert!(att_a.missing_reason.is_none());
-    assert!(att_b.missing_reason.is_none());
-    assert!(att_a.digest_sha256.is_some());
+    let attachment_a = &final_document_a.messages[0].attachments[0];
+    let attachment_b = &final_document_b.messages[0].attachments[0];
     assert_eq!(
-        att_a.digest_sha256, att_b.digest_sha256,
+        attachment_a.path.as_deref(),
+        Some("attachments/shared-mv.jpg")
+    );
+    assert_eq!(
+        attachment_b.path.as_deref(),
+        Some("attachments/shared-mv.jpg")
+    );
+    assert!(attachment_a.missing_reason.is_none());
+    assert!(attachment_b.missing_reason.is_none());
+    assert!(attachment_a.digest_sha256.is_some());
+    assert_eq!(
+        attachment_a.digest_sha256, attachment_b.digest_sha256,
         "both documents recompute the same digest from the same on-disk derivative"
     );
 }
@@ -1127,18 +1139,18 @@ fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_la
     assert_eq!(report.too_large, 2, "each conversation records the drop");
     assert_eq!(report.missing, 0, "the shared file was dropped, not lost");
     assert!(!original.exists());
-    let atts = only_attachments(&[&jsonl_a, &jsonl_b]);
-    for attachment in &atts {
+    let attachments = only_attachments(&[&jsonl_a, &jsonl_b]);
+    for attachment in &attachments {
         assert_eq!(attachment.missing_reason.as_deref(), Some("too_large"));
         assert_eq!(attachment.path, None);
         assert_eq!(attachment.digest_sha256, None);
     }
     assert!(
-        atts[0].size_bytes.is_some_and(|size| size > 1),
+        attachments[0].size_bytes.is_some_and(|size| size > 1),
         "the converted size, over the limit of 1 byte"
     );
     assert_eq!(
-        atts[0].size_bytes, atts[1].size_bytes,
+        attachments[0].size_bytes, attachments[1].size_bytes,
         "both conversations carry the converted size"
     );
 }
@@ -1193,13 +1205,13 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
         "the resume settles the second conversation"
     );
     assert_eq!(resumed.missing, 0);
-    let atts = only_attachments(&[&jsonl_a, &jsonl_b]);
-    for attachment in &atts {
+    let attachments = only_attachments(&[&jsonl_a, &jsonl_b]);
+    for attachment in &attachments {
         assert_eq!(attachment.missing_reason.as_deref(), Some("too_large"));
         assert_eq!(attachment.path, None);
     }
-    assert!(atts[0].size_bytes.is_some_and(|size| size > 1));
-    assert_eq!(atts[0].size_bytes, atts[1].size_bytes);
+    assert!(attachments[0].size_bytes.is_some_and(|size| size > 1));
+    assert_eq!(attachments[0].size_bytes, attachments[1].size_bytes);
 }
 
 #[test]

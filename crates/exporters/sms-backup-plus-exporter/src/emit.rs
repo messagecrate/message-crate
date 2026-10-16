@@ -187,7 +187,7 @@ fn ensure_conversation_merging_roster<'a>(
 /// projection knows a whole-second copy from a millisecond one.
 fn pending_from_parsed(
     message: ParsedMessage,
-    pending_atts: Vec<PendingAttachment>,
+    pending_attachments: Vec<PendingAttachment>,
 ) -> PendingMessage {
     let name = message.name_alias.clone().unwrap_or_default();
     PendingMessage {
@@ -195,7 +195,7 @@ fn pending_from_parsed(
         is_from_me: message.is_from_me,
         sender: ir::Sender::new(message.sender.map(Handle::into_key), message.name_alias),
         text: message.text,
-        attachments: pending_atts,
+        attachments: pending_attachments,
         extra: {
             let mut e = BTreeMap::new();
             e.insert("smssync_id".into(), message.smssync_id.unwrap_or_default());
@@ -218,7 +218,7 @@ fn pending_from_parsed(
 fn add_message(
     conversations: &mut HashMap<String, PendingConversation>,
     message: ParsedMessage,
-    pending_atts: Vec<PendingAttachment>,
+    pending_attachments: Vec<PendingAttachment>,
     report: &mut ExportReport,
 ) {
     let chat_id = chat_id_for(&message);
@@ -239,7 +239,7 @@ fn add_message(
     report.bump(MESSAGES_BEFORE_DEDUPE, 1);
     conversation
         .messages
-        .push(pending_from_parsed(message, pending_atts));
+        .push(pending_from_parsed(message, pending_attachments));
 }
 
 /// SMS Backup+ deltas of the shared [`ir::project_pending`] projection.
@@ -718,14 +718,14 @@ impl<'a> EmlIngest<'a> {
     ///
     /// Returns an error when an attachment cannot be written to the spool.
     fn add_parsed(&mut self, mut message: ParsedMessage) -> Result<()> {
-        let atts = queue_attachments(&std::mem::take(&mut message.attachments), self.spool)?;
+        let attachments = queue_attachments(&std::mem::take(&mut message.attachments), self.spool)?;
         if let Some(pair) = message.email_number.take() {
             self.email_numbers.record(pair);
         }
         if names_a_member_by_email(&message) {
-            self.by_email.push((message, atts));
+            self.by_email.push((message, attachments));
         } else {
-            self.add_to_conversation(message, atts);
+            self.add_to_conversation(message, attachments);
         }
         Ok(())
     }
@@ -736,9 +736,9 @@ impl<'a> EmlIngest<'a> {
     fn add_members_by_number(&mut self, verbose: Verbose<'_>) {
         let numbers = std::mem::take(&mut self.email_numbers).into_numbers();
         let mut kept = KeptByEmail::default();
-        for (mut message, atts) in std::mem::take(&mut self.by_email) {
+        for (mut message, attachments) in std::mem::take(&mut self.by_email) {
             key_members_by_number(&mut message, &numbers, &mut kept);
-            self.add_to_conversation(message, atts);
+            self.add_to_conversation(message, attachments);
         }
         for (counter, addresses, what, text) in [
             (
@@ -770,7 +770,7 @@ impl<'a> EmlIngest<'a> {
     }
 
     /// Count one message and add it to its conversation.
-    fn add_to_conversation(&mut self, message: ParsedMessage, atts: Vec<PendingAttachment>) {
+    fn add_to_conversation(&mut self, message: ParsedMessage, attachments: Vec<PendingAttachment>) {
         if message.chat_key.is_empty() {
             self.caveats.unknown_chat.insert(message.eml_path.clone());
         }
@@ -779,7 +779,12 @@ impl<'a> EmlIngest<'a> {
                 .owner_not_named
                 .insert(message.eml_path.clone());
         }
-        add_message(&mut self.conversations, message, atts, &mut self.report);
+        add_message(
+            &mut self.conversations,
+            message,
+            attachments,
+            &mut self.report,
+        );
     }
 }
 
@@ -850,8 +855,8 @@ mod tests {
     #[test]
     fn queue_attachments_keeps_message_on_single_failure() {
         let dir = tempfile::tempdir().unwrap();
-        let att_dir = dir.path().join("attachments");
-        std::fs::create_dir_all(&att_dir).unwrap();
+        let attachments_dir = dir.path().join("attachments");
+        std::fs::create_dir_all(&attachments_dir).unwrap();
         // Empty bytes: the runner records file_missing and continues.
         let attachments = vec![
             AttachmentBytes {
@@ -873,7 +878,7 @@ mod tests {
         let queued = queue_attachments(&attachments, Some(&spool)).unwrap();
         assert_eq!(queued.len(), 2);
 
-        let mut atts: Vec<_> = queued.iter().map(PendingAttachment::to_ir).collect();
+        let mut ir_attachments: Vec<_> = queued.iter().map(PendingAttachment::to_ir).collect();
         let mut report = ExportReport::default();
         let mut document = ConversationDocument {
             schema_version: SCHEMA_VERSION,
@@ -903,7 +908,7 @@ mod tests {
                 owner_identity: None,
                 subject: None,
                 text: "hi".into(),
-                attachments: std::mem::take(&mut atts),
+                attachments: std::mem::take(&mut ir_attachments),
                 reactions: Vec::new(),
                 deletion: None,
                 edits: Vec::new(),
@@ -926,7 +931,7 @@ mod tests {
             &LogSink::none(),
         )
         .stage(
-            &att_dir,
+            &attachments_dir,
             staging::load_attachment_source,
             message_crate_core::Sinks {
                 log: &LogSink::none(),
@@ -945,7 +950,7 @@ mod tests {
         );
         assert!(document.messages[0].attachments[1].path.is_some());
         assert_eq!(report.attachments_saved, 1);
-        assert_eq!(std::fs::read_dir(&att_dir).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(&attachments_dir).unwrap().count(), 1);
     }
 
     /// The messages of every conversation as the shared projection writes

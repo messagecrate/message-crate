@@ -28,7 +28,7 @@ fn convert(input: &std::path::Path, output: &std::path::Path) -> Result<ExportRe
     })
 }
 
-fn pending_att(rel_path: &str, digest: Option<&str>) -> PendingAttachment {
+fn pending_attachment(rel_path: &str, digest: Option<&str>) -> PendingAttachment {
     PendingAttachment {
         rel_path: rel_path.into(),
         content_type: String::new(),
@@ -53,19 +53,19 @@ fn digests_of(attachments: Vec<PendingAttachment>) -> Vec<String> {
 #[test]
 fn message_guid_prefers_digest_over_rel_path() {
     // Same digest, different relative paths → same GUID material.
-    let a = pending_att("attachments/old_name.jpg", Some("abc123"));
-    let b = pending_att("attachments/new_name.jpg", Some("abc123"));
+    let a = pending_attachment("attachments/old_name.jpg", Some("abc123"));
+    let b = pending_attachment("attachments/new_name.jpg", Some("abc123"));
     assert_eq!(digests_of(vec![a]), digests_of(vec![b]));
 
     // Digest present wins over path; path alone differs from digest.
-    let with_digest = pending_att("attachments/x.jpg", Some("deadbeef"));
-    let path_only = pending_att("attachments/x.jpg", None);
+    let with_digest = pending_attachment("attachments/x.jpg", Some("deadbeef"));
+    let path_only = pending_attachment("attachments/x.jpg", None);
     assert_ne!(digests_of(vec![with_digest]), digests_of(vec![path_only]));
 
     // Order of attachments must not change the sorted material list.
     let mixed = vec![
-        pending_att("a.jpg", Some("bb")),
-        pending_att("b.jpg", Some("aa")),
+        pending_attachment("a.jpg", Some("bb")),
+        pending_attachment("b.jpg", Some("aa")),
     ];
     assert_eq!(digests_of(mixed), vec!["aa".to_string(), "bb".to_string()]);
 }
@@ -311,9 +311,9 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     let report = convert(&chat, &out).unwrap();
     assert_eq!(report.attachments_saved, 1);
     assert_eq!(report.messages, 1);
-    let att_dir = out.join("attachments");
-    assert!(att_dir.is_dir());
-    let count = fs::read_dir(&att_dir).unwrap().count();
+    let attachments_dir = out.join("attachments");
+    assert!(attachments_dir.is_dir());
+    let count = fs::read_dir(&attachments_dir).unwrap().count();
     assert_eq!(count, 1);
     let body = fs::read_to_string(out.join("+15555550100.csv")).unwrap();
     assert!(body.contains("attachments/"));

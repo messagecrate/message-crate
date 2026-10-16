@@ -656,12 +656,12 @@ impl Ingest<'_> {
             }
         };
         let addresses = PduAddresses::of(&parsed);
-        let atts = queue_pdu_attachments(&parsed, self.spool)?;
+        let attachments = queue_pdu_attachments(&parsed, self.spool)?;
         add_pdu_message(
             &mut self.conversations,
             parsed,
             addresses,
-            atts,
+            attachments,
             self.owners,
             &mut self.report,
             &mut self.skips,

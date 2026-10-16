@@ -4,7 +4,7 @@ use ir::Attachment;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn empty_att(name: &str) -> Attachment {
+fn empty_attachment(name: &str) -> Attachment {
     Attachment {
         original_name: Some(name.into()),
         ..ir::testutil::sample_attachment()
@@ -14,9 +14,9 @@ fn empty_att(name: &str) -> Attachment {
 #[test]
 fn clone_writes_file_and_fills_hash() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut attachment = empty_att("photo.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut attachment = empty_attachment("photo.jpg");
     let bytes = b"hello-photo";
     let progress = Mutex::new(Vec::new());
     {
@@ -27,7 +27,7 @@ fn clone_writes_file_and_fills_hash() {
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |_| Ok(Some(bytes.to_vec())),
             |p| progress.lock().unwrap().push(p),
@@ -57,9 +57,9 @@ fn clone_writes_file_and_fills_hash() {
 #[test]
 fn the_byte_total_ends_at_the_bytes_actually_copied() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut smaller = empty_att("smaller.jpg");
-    let mut missing = empty_att("missing.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    let mut smaller = empty_attachment("smaller.jpg");
+    let mut missing = empty_attachment("missing.jpg");
     let progress = Mutex::new(Vec::new());
     {
         // The source said 100 bytes for a 10-byte file, and 50 for a file
@@ -78,7 +78,7 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| Ok((i == 0).then(|| b"ten bytes!".to_vec())),
             |p| progress.lock().unwrap().push(p),
@@ -95,8 +95,8 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
 #[test]
 fn disabled_skips_without_loading() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut attachment = empty_att("photo.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    let mut attachment = empty_attachment("photo.jpg");
     let loaded = AtomicBool::new(false);
     {
         let mut jobs = [AttachmentJob {
@@ -106,7 +106,7 @@ fn disabled_skips_without_loading() {
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Skip,
             |_| {
                 loaded.store(true, Ordering::Relaxed);
@@ -121,16 +121,22 @@ fn disabled_skips_without_loading() {
     assert!(!loaded.load(Ordering::Relaxed));
     assert_eq!(attachment.missing_reason.as_deref(), Some("not_copied"));
     assert!(attachment.path.is_none());
-    assert!(!att_dir.exists() || std::fs::read_dir(&att_dir).unwrap().next().is_none());
+    assert!(
+        !attachments_dir.exists()
+            || std::fs::read_dir(&attachments_dir)
+                .unwrap()
+                .next()
+                .is_none()
+    );
 }
 
 #[test]
 fn missing_source_is_file_missing_and_continues() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let mut b = empty_att("b.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut a = empty_attachment("a.jpg");
+    let mut b = empty_attachment("b.jpg");
     let mut done = Vec::new();
     {
         let mut jobs = [
@@ -147,7 +153,7 @@ fn missing_source_is_file_missing_and_continues() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
@@ -170,10 +176,10 @@ fn missing_source_is_file_missing_and_continues() {
 #[test]
 fn read_error_marks_file_missing_and_continues() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let mut b = empty_att("b.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut a = empty_attachment("a.jpg");
+    let mut b = empty_attachment("b.jpg");
     {
         let mut jobs = [
             AttachmentJob {
@@ -189,7 +195,7 @@ fn read_error_marks_file_missing_and_continues() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
@@ -215,14 +221,14 @@ fn read_error_marks_file_missing_and_continues() {
 #[test]
 fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut atts: Vec<Attachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
+    let attachments_dir = dir.path().join("attachments");
+    let mut attachments: Vec<Attachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
         .into_iter()
-        .map(empty_att)
+        .map(empty_attachment)
         .collect();
     let mut asked = Vec::new();
     let err = {
-        let mut jobs: Vec<AttachmentJob<'_>> = atts
+        let mut jobs: Vec<AttachmentJob<'_>> = attachments
             .iter_mut()
             .map(|attachment| AttachmentJob {
                 attachment,
@@ -232,7 +238,7 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
             .collect();
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| {
                 asked.push(i);
@@ -252,8 +258,11 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     };
     assert_eq!(err.to_string(), "imessage-reader stopped before finishing");
     assert_eq!(asked, [0, 1], "nothing is loaded after the fatal error");
-    assert!(atts[0].path.is_some(), "the job before it was staged");
-    for attachment in &atts[1..] {
+    assert!(
+        attachments[0].path.is_some(),
+        "the job before it was staged"
+    );
+    for attachment in &attachments[1..] {
         assert_eq!(
             attachment.missing_reason, None,
             "{:?}",
@@ -266,10 +275,10 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
 #[test]
 fn cancel_stops_before_next_job() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let mut b = empty_att("b.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut a = empty_attachment("a.jpg");
+    let mut b = empty_attachment("b.jpg");
     let cancel = AtomicBool::new(false);
     let err = {
         let mut jobs = [
@@ -286,7 +295,7 @@ fn cancel_stops_before_next_job() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
@@ -310,11 +319,11 @@ fn cancel_stops_before_next_job() {
 #[test]
 fn empty_jobs_emits_zero_of_zero() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
+    let attachments_dir = dir.path().join("attachments");
     let progress = Mutex::new(Vec::new());
     run_attachment_jobs(
         &mut [],
-        &att_dir,
+        &attachments_dir,
         AttachmentFiles::Originals,
         |_| Ok(None),
         |p| progress.lock().unwrap().push(p),
@@ -335,9 +344,9 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
     // pins that the new `log` parameter is wired end to end without
     // requiring ffmpeg in this crate's tests.
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut attachment = empty_att("photo.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut attachment = empty_attachment("photo.jpg");
     let bytes = b"hello-photo";
     let lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = std::sync::Arc::clone(&lines);
@@ -352,7 +361,7 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |_| Ok(Some(bytes.to_vec())),
             |_| {},
@@ -413,8 +422,8 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         }
     };
 
-    let first = empty_att("photo.jpg");
-    let mut second = empty_att("clip.mp4");
+    let first = empty_attachment("photo.jpg");
+    let mut second = empty_attachment("clip.mp4");
     second.mime_type = Some("video/mp4".into());
 
     let mut documents = vec![ConversationDocument {
@@ -488,8 +497,8 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     // Each attachment record names its file and carries its digest, so a
     // reader can find the bytes again — and the file holds what the loader
     // gave for that index, which is how the flat index maps to the document.
-    let atts = &documents[0].messages[0].attachments;
-    for (attachment, expected) in atts.iter().zip([FIRST, SECOND]) {
+    let attachments = &documents[0].messages[0].attachments;
+    for (attachment, expected) in attachments.iter().zip([FIRST, SECOND]) {
         let path = attachment.path.as_deref().expect("a path was recorded");
         assert!(path.starts_with("attachments/"), "got {path}");
         assert_eq!(
@@ -511,7 +520,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         assert!(attachment.bytes.is_none(), "in-memory bytes must be freed");
     }
     assert_ne!(
-        atts[0].digest_sha256, atts[1].digest_sha256,
+        attachments[0].digest_sha256, attachments[1].digest_sha256,
         "different bytes, different digests"
     );
 }
@@ -524,8 +533,8 @@ fn staging_the_same_bytes_twice_writes_one_file() {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).expect("attachments dir");
 
-    let mut first = empty_att("a.jpg");
-    let mut second = empty_att("b.jpg");
+    let mut first = empty_attachment("a.jpg");
+    let mut second = empty_attachment("b.jpg");
 
     let mut jobs = vec![
         AttachmentJob {
@@ -572,7 +581,7 @@ fn staging_the_same_bytes_twice_writes_one_file() {
 /// A wrong total makes a long export's progress bar meaningless.
 #[test]
 fn the_size_hint_prefers_the_recorded_size_then_the_bytes_in_hand() {
-    let mut attachment = empty_att("photo.jpg");
+    let mut attachment = empty_attachment("photo.jpg");
     assert_eq!(attachment_size_hint(&attachment), None, "nothing to go on");
 
     attachment.bytes = Some(vec![0u8; 12]);
@@ -615,9 +624,9 @@ fn the_extension_comes_from_the_original_name() {
 #[test]
 fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut attachment = empty_att("empty.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut attachment = empty_attachment("empty.jpg");
 
     {
         let mut jobs = [AttachmentJob {
@@ -627,7 +636,7 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |_| Ok(Some(Vec::new())),
             |_| {},
@@ -641,7 +650,7 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
     assert!(attachment.path.is_none(), "nothing was staged");
     assert!(attachment.digest_sha256.is_none());
     assert_eq!(
-        std::fs::read_dir(&att_dir).unwrap().count(),
+        std::fs::read_dir(&attachments_dir).unwrap().count(),
         0,
         "no file written for an empty source"
     );
@@ -665,7 +674,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).expect("attachments dir");
 
-    let mut carried = empty_att("photo.jpg");
+    let mut carried = empty_attachment("photo.jpg");
     carried.bytes = Some(b"bytes held on the document".to_vec());
 
     let mut documents = vec![ConversationDocument {
@@ -746,10 +755,10 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
 #[test]
 fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
+    let attachments_dir = dir.path().join("attachments");
     let long_name = format!("Notes v1.{}", "x".repeat(240));
-    let mut long = empty_att(&long_name);
-    let mut ok = empty_att("photo.jpg");
+    let mut long = empty_attachment(&long_name);
+    let mut ok = empty_attachment("photo.jpg");
     let result = {
         let mut jobs = [
             AttachmentJob {
@@ -765,7 +774,7 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| Ok(Some(format!("bytes-{i}").into_bytes())),
             |_| {},
@@ -786,8 +795,8 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
 #[test]
 fn a_name_with_no_plain_extension_is_staged_without_one() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut attachment = empty_att("Notes v1.2 (draft?)");
+    let attachments_dir = dir.path().join("attachments");
+    let mut attachment = empty_attachment("Notes v1.2 (draft?)");
     {
         let mut jobs = [AttachmentJob {
             attachment: &mut attachment,
@@ -796,7 +805,7 @@ fn a_name_with_no_plain_extension_is_staged_without_one() {
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |_| Ok(Some(b"draft".to_vec())),
             |_| {},
@@ -843,13 +852,13 @@ fn only_a_short_plain_extension_is_kept() {
 #[test]
 fn a_failed_write_marks_only_that_attachment_missing() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
+    let attachments_dir = dir.path().join("attachments");
     let blocked_bytes = b"blocked".to_vec();
     let blocked_name = attachment_dest_name(1_609_459_200, &sha256_hex(&blocked_bytes), ".jpg");
-    std::fs::create_dir_all(att_dir.join(&blocked_name).join("occupied")).unwrap();
+    std::fs::create_dir_all(attachments_dir.join(&blocked_name).join("occupied")).unwrap();
 
-    let mut blocked = empty_att("blocked.jpg");
-    let mut ok = empty_att("photo.jpg");
+    let mut blocked = empty_attachment("blocked.jpg");
+    let mut ok = empty_attachment("photo.jpg");
     let progress = Mutex::new(Vec::new());
     let lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = std::sync::Arc::clone(&lines);
@@ -871,7 +880,7 @@ fn a_failed_write_marks_only_that_attachment_missing() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
+            &attachments_dir,
             AttachmentFiles::Originals,
             |i| {
                 Ok(Some(if i == 0 {
@@ -902,7 +911,7 @@ fn a_failed_write_marks_only_that_attachment_missing() {
         "{lines:?}"
     );
     // The failed write leaves no temp file behind.
-    let leftovers: Vec<_> = std::fs::read_dir(&att_dir)
+    let leftovers: Vec<_> = std::fs::read_dir(&attachments_dir)
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .filter(|n| n.ends_with(".tmp"))

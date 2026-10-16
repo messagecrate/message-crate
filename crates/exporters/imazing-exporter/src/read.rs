@@ -147,9 +147,9 @@ pub(crate) fn parse_csv_file(path: &Path, kind: SourceKind) -> Result<Vec<RawRow
     let subject_i = headers.iter().position(|h| h == "subject");
     let reactions_i = headers.iter().position(|h| h == "reactions");
     let status_i = headers.iter().position(|h| h == "status");
-    let att_i = headers.iter().position(|h| h == "attachment");
-    let att_type_i = headers.iter().position(|h| h == "attachment type");
-    let att_info_i = headers.iter().position(|h| h == "attachment info");
+    let attachment_i = headers.iter().position(|h| h == "attachment");
+    let attachment_type_i = headers.iter().position(|h| h == "attachment type");
+    let attachment_info_i = headers.iter().position(|h| h == "attachment info");
     let forwarded_i = headers.iter().position(|h| h == "forwarded");
     let replying_i = headers.iter().position(|h| h == "replying to");
     let delivered_i = headers.iter().position(|h| h == "delivered date");
@@ -164,7 +164,7 @@ pub(crate) fn parse_csv_file(path: &Path, kind: SourceKind) -> Result<Vec<RawRow
         let chat_session = field(&rec, chat_i);
         let message_date = field(&rec, date_i);
         let text = field(&rec, text_i);
-        let attachment = att_i.map(|i| field(&rec, i)).unwrap_or_default();
+        let attachment = attachment_i.map(|i| field(&rec, i)).unwrap_or_default();
         if chat_session.is_empty()
             && message_date.is_empty()
             && text.is_empty()
@@ -195,8 +195,12 @@ pub(crate) fn parse_csv_file(path: &Path, kind: SourceKind) -> Result<Vec<RawRow
             text,
             reactions: reactions_i.map(|i| field(&rec, i)).unwrap_or_default(),
             attachment,
-            attachment_type: att_type_i.map(|i| field(&rec, i)).unwrap_or_default(),
-            attachment_info: att_info_i.map(|i| field(&rec, i)).unwrap_or_default(),
+            attachment_type: attachment_type_i
+                .map(|i| field(&rec, i))
+                .unwrap_or_default(),
+            attachment_info: attachment_info_i
+                .map(|i| field(&rec, i))
+                .unwrap_or_default(),
         });
     }
     Ok(rows)

@@ -132,7 +132,7 @@ mod tests {
     use crate::test_support::attachment;
     use imessage_database::tables::messages::models::AttachmentMeta;
 
-    fn att_range(guid: Option<&str>) -> AttributedRange {
+    fn attachment_range(guid: Option<&str>) -> AttributedRange {
         AttributedRange::attachment(
             0,
             1,
@@ -152,12 +152,12 @@ mod tests {
         ];
         let mut resolver = AttachmentResolver::new(&attachments);
         // First body range points at attachment 0 by GUID.
-        assert_eq!(resolver.resolve(&att_range(Some("guid-a"))), 0);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-a"))), 0);
         // Second range has no usable GUID — must take the next free slot (2),
         // not reuse 0.
-        assert_eq!(resolver.resolve(&att_range(None)), 2);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 2);
         // Third range resolves the remaining GUID attachment.
-        assert_eq!(resolver.resolve(&att_range(Some("guid-b"))), 1);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-b"))), 1);
     }
 
     /// With every GUID-less row taken, a range with no GUID falls back to
@@ -171,12 +171,12 @@ mod tests {
             attachment(Some("guid-c")),
         ];
         let mut resolver = AttachmentResolver::new(&attachments);
-        assert_eq!(resolver.resolve(&att_range(Some("guid-a"))), 0);
-        assert_eq!(resolver.resolve(&att_range(None)), 1);
-        assert_eq!(resolver.resolve(&att_range(Some("guid-c"))), 2);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-a"))), 0);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 1);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-c"))), 2);
         // Nothing is left, so the index runs past the rows.
-        assert_eq!(resolver.resolve(&att_range(None)), 3);
-        assert_eq!(resolver.resolve(&att_range(None)), 3);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 3);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 3);
     }
 
     /// A row with a GUID that no range names is still the message's, so a
@@ -186,8 +186,8 @@ mod tests {
     fn positional_takes_an_earlier_unclaimed_guid_row_before_running_out() {
         let attachments = vec![attachment(Some("guid-a")), attachment(None)];
         let mut resolver = AttachmentResolver::new(&attachments);
-        assert_eq!(resolver.resolve(&att_range(None)), 1);
-        assert_eq!(resolver.resolve(&att_range(None)), 0);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 1);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 0);
     }
 
     /// A message body whose ranges refer to one attachment by GUID and one
@@ -201,8 +201,8 @@ mod tests {
         let attachments = vec![attachment(None), attachment(Some("guid-b"))];
 
         message.components = vec![BubbleComponent::Run(vec![
-            att_range(Some("guid-b")),
-            att_range(None),
+            attachment_range(Some("guid-b")),
+            attachment_range(None),
         ])];
         assert_eq!(
             referenced_attachment_indices(&message, &attachments),
@@ -210,9 +210,9 @@ mod tests {
         );
 
         message.components = vec![BubbleComponent::Run(vec![
-            att_range(None),
-            att_range(None),
-            att_range(None),
+            attachment_range(None),
+            attachment_range(None),
+            attachment_range(None),
         ])];
         assert_eq!(
             referenced_attachment_indices(&message, &attachments),

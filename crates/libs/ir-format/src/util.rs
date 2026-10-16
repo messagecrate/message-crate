@@ -102,7 +102,7 @@ mod tests {
     use std::fs;
     use std::io::Write;
 
-    fn att_with_path(rel: &str) -> Attachment {
+    fn attachment_with_path(rel: &str) -> Attachment {
         Attachment {
             path: Some(rel.into()),
             ..ir::testutil::sample_attachment()
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn strict_prefers_in_memory_bytes() {
-        let mut attachment = att_with_path("attachments/missing.bin");
+        let mut attachment = attachment_with_path("attachments/missing.bin");
         attachment.bytes = Some(vec![1, 2, 3]);
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
@@ -151,7 +151,7 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(b"hello").unwrap();
-        let attachment = att_with_path(rel);
+        let attachment = attachment_with_path(rel);
         assert_eq!(
             load_attachment_bytes(&attachment, dir.path()).unwrap(),
             b"hello"
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn read_file_returns_none_for_missing() {
-        let attachment = att_with_path("attachments/missing.bin");
+        let attachment = attachment_with_path("attachments/missing.bin");
         let dir = tempfile::tempdir().unwrap();
         assert!(
             read_attachment_file(&attachment, dir.path())

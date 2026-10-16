@@ -422,14 +422,14 @@ fn merge_attachments(
     let meta: Vec<AttachmentMetaCell> =
         json_header(headers, hn::ATTACHMENT_META, "attachment metadata")?.unwrap_or_default();
 
-    let mut mime_atts = Vec::new();
-    collect_mime_attachments(mail, &mut mime_atts);
+    let mut mime_attachments = Vec::new();
+    collect_mime_attachments(mail, &mut mime_attachments);
 
-    let n = meta.len().max(mime_atts.len());
+    let n = meta.len().max(mime_attachments.len());
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let m = meta.get(i);
-        let (bytes, mime_fallback, name_fallback) = mime_atts
+        let (bytes, mime_fallback, name_fallback) = mime_attachments
             .get(i)
             .cloned()
             .unwrap_or_else(|| (Vec::new(), None, None));

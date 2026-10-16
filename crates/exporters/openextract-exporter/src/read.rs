@@ -82,7 +82,7 @@ pub(crate) fn parse_csv_file(path: &Path) -> Result<Vec<RawRow>> {
     let sender_i = col(&headers, "sender")?;
     let text_i = col(&headers, "text")?;
     let is_from_me_i = col(&headers, "is from me")?;
-    let has_att_i = col(&headers, "has attachments")?;
+    let has_attachments_i = col(&headers, "has attachments")?;
     let conversation_i = headers.iter().position(|h| h == "conversation");
     let direction_i = headers.iter().position(|h| h == "direction");
 
@@ -102,7 +102,7 @@ pub(crate) fn parse_csv_file(path: &Path) -> Result<Vec<RawRow>> {
             continue;
         }
         let is_from_me = message_crate_csv::parse_bool(&field(&rec, is_from_me_i));
-        let has_attachments = message_crate_csv::parse_bool(&field(&rec, has_att_i));
+        let has_attachments = message_crate_csv::parse_bool(&field(&rec, has_attachments_i));
         let conversation = conversation_i
             .map(|i| field(&rec, i))
             .filter(|s| !s.is_empty());
