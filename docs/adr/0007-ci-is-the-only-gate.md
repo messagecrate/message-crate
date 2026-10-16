@@ -71,8 +71,9 @@ On a push, a tag or a manual run it runs like every other job, and the `docker` 
 `release` jobs need it, so a release waits for it (#2683).
 `src-tauri/src/local_server.rs` and everything under
 `src-tauri/src/local_server/` set `local_server` as well as `rust`, and so
-does any change to a workflow. The `windows-local-server` job reads it, the
-same way. Closing the desktop app ends the server it started and every
+does any change to a workflow. The `windows-local-server` job reads it, and
+skips and runs as `windows-config` does, but the ruleset does not require it
+yet (above). Closing the desktop app ends the server it started and every
 process that server started, such as ffmpeg converting a video. On Windows a
 Job Object does that (`src-tauri/src/local_server/process_tree.rs`), and the
 `check-tauri` job runs on Linux, where the process-group code runs instead.
