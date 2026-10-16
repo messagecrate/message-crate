@@ -1,15 +1,18 @@
 //! Convert or compress attachment media under a converter export directory.
 //!
 //! Modes:
-//! - **Disabled**: do not copy or write attachment files (the export form's "Do not copy" choice)
-//! - **Clone**: leave exported files as-is (a no-op after export)
+//! - **Disabled**: do not copy or write attachment files (the Import form's
+//!   **Skip**)
+//! - **Clone**: leave exported files as-is, a no-op after export (**Copy**)
 //! - **Convert**: rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
-//! - **Compress**: re-encode to shrink files, with optional video settings
+//!   (**Convert media**)
+//! - **Compress**: convert, and re-encode to shrink files, with optional video
+//!   settings (**Convert & Compress media**)
 //!
-//! Convert and compress need `ffmpeg` / `ffprobe`, both on `PATH` or both
-//! in the Tools Directory, and nowhere else. The caller says where the Tools
-//! Directory is by the [`InstalledTools`] it passes in; a test passes a fake
-//! [`MediaTools`] instead (`testutil::FakeTools`).
+//! The `convert` and `compress` modes need `ffmpeg` / `ffprobe`, both on
+//! `PATH` or both in the Tools Directory, and nowhere else. The caller says
+//! where the Tools Directory is by the [`InstalledTools`] it passes in; a test
+//! passes a fake [`MediaTools`] instead (`testutil::FakeTools`).
 
 mod estimate;
 #[cfg(any(test, feature = "testutil"))]
@@ -106,7 +109,7 @@ impl MediaMode {
         }
     }
 
-    /// True when the mode requires ffmpeg/ffprobe (Convert or Compress).
+    /// True when the mode requires ffmpeg/ffprobe (`convert` or `compress`).
     pub fn needs_tools(self) -> bool {
         matches!(self, Self::Convert | Self::Compress)
     }

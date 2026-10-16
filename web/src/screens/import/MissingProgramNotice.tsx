@@ -12,7 +12,10 @@ import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy
 import type { ToolName } from "../../lib/types";
 import { accentLinkClass } from "../../lib/uiStyles";
 
-/** What a program is needed for: a WhatsApp import, or Convert and Compress. */
+/**
+ * What a program is needed for: a WhatsApp import, or Convert media and
+ * Convert & Compress media.
+ */
 type ProgramNeed = "whatsapp" | "media";
 
 /** The troubleshooting section for what `need` runs. */
@@ -27,8 +30,9 @@ function nameList(names: readonly ToolName[]): string {
 
 /**
  * What the programs mean for the import: that it can't start or that Convert
- * and Compress can't run when one can't be used (`blocked`), or else that it
- * waits for the ones still downloading (`downloading`), named.
+ * media and Convert & Compress media can't run when one can't be used
+ * (`blocked`), or else that it waits for the ones still downloading
+ * (`downloading`), named.
  */
 function consequence(
   need: ProgramNeed,

@@ -291,8 +291,8 @@ export default function ImportRunView({
   /** Why the contact-match lookup failed, shown in place of the split; null when it did not. */
   unknownContactsError: string | null;
   /**
-   * Convert or compress is chosen and these of ffmpeg and ffprobe can't be
-   * used: approving would only fail later.
+   * Convert media or Convert & Compress media is chosen and these of ffmpeg
+   * and ffprobe can't be used: approving would only fail later.
    */
   mediaToolsMissing?: MediaToolName[];
   /**

@@ -248,7 +248,7 @@ export function runJob(ctx: RunContext, invokeFn: () => Promise<void>): Promise<
 
 /**
  * `invokeSummarizeStaging`, with a listener on the same `desktop-job:progress`
- * channel Staging and the Media stage use. `summarize_staging` (Rust)
+ * channel Staging and the Media Stage use. `summarize_staging` (Rust)
  * emits progress on the `check` step while it walks a big directory, and
  * `applyProgress` already knows to draw that on the Staging row, so this
  * only has to make sure the event reaches it.

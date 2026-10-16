@@ -77,7 +77,7 @@ fn copy_stages_originals_and_skip_stages_none() {
 #[test]
 fn non_imessage_sources_defer_the_media_stage_too() {
     // A non-iMessage source (whatsapp-android here) also stages the
-    // originals when Convert or Compress was chosen.
+    // originals when Convert media or Convert & Compress media was chosen.
     let dump = tempfile::tempdir().unwrap();
     for chosen in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = test_options(vec!["+15555550100".into()]);

@@ -96,7 +96,7 @@ describe("resumeDecisionFor", () => {
     }
   });
 
-  it("sends a run that died converting back to the Media stage", () => {
+  it("sends a run that died converting back to the Media Stage", () => {
     const decision = resumeDecisionFor({
       run: activeImportRun({ stage: "media" }),
       deviceId: "this-device",

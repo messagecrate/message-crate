@@ -301,7 +301,7 @@ export function createImportRunService(deps: ImportRunDeps) {
    * The directory is the truth. Every landing recomputes the summary fresh
    * from the run directory; the run's stored `summary` is read only as the
    * approved plan, for the Staging row on the Media Review and the Media
-   * stage's own bookkeeping.
+   * Stage's own bookkeeping.
    *
    * A recompute failing here is a transient read of the run directory, not
    * a run that failed: only an explicit cancel ends a waiting run, so this

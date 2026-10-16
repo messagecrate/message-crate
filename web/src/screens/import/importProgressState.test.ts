@@ -71,8 +71,8 @@ describe("stepsFor", () => {
     expect(stepsFor("compress").map((s) => s.label)).toEqual(["Staging", "Media", "Upload"]);
   });
 
-  it("has no Media stage under copy or skip", () => {
-    // There is no Media stage in these modes, so a grayed-out row would be
+  it("has no Media Stage under copy or skip", () => {
+    // There is no Media Stage in these modes, so a grayed-out row would be
     // promising work that will never run.
     expect(stepsFor("copy").map((s) => s.label)).toEqual(["Staging", "Upload"]);
     expect(stepsFor("skip").map((s) => s.label)).toEqual(["Staging", "Upload"]);
@@ -104,7 +104,7 @@ describe("stepIndexFor", () => {
     expect(stepIndexFor("upload", "convert")).toBe(2);
   });
 
-  it("shifts Upload up when there is no Media stage", () => {
+  it("shifts Upload up when there is no Media Stage", () => {
     expect(stepIndexFor("upload", "copy")).toBe(1);
   });
 
@@ -222,7 +222,7 @@ describe("nextPhase", () => {
 
   it("is not forward-only: a run resumed mid Media can wait at the Staging Review", () => {
     // `media` on the server with ffmpeg missing: the resume reads the
-    // directory again and waits at the Staging Review, before the Media stage.
+    // directory again and waits at the Staging Review, before the Media Stage.
     const resumed = nextPhase("form", "resume");
     expect(nextPhase(resumed, "stop_at_staging_review")).toBe("staging_review");
   });

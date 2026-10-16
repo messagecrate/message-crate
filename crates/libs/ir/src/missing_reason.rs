@@ -14,8 +14,8 @@ pub const FILE_MISSING: &str = "file_missing";
 /// The file is over the size limit, so its bytes were not kept.
 pub const TOO_LARGE: &str = "too_large";
 
-/// The person chose not to copy attachments ("Do not copy"), so the file is
-/// absent by request, not lost.
+/// The person chose not to copy attachments (the Import form's Skip), so the
+/// file is absent by request, not lost.
 pub const NOT_COPIED: &str = "not_copied";
 
 /// An Export could not fetch the file from the server, so it is not in the

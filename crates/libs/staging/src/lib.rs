@@ -16,9 +16,9 @@
 //! the disk that holds it ([`check_headroom`]).
 //! [`transcode_staged`] converts or compresses staged attachments
 //! afterwards, on its own and resumable. The desktop app runs it as an
-//! Import Run's Media stage, and a local export runs it through the write
+//! Import Run's Media Stage, and a local export runs it through the write
 //! queue. [`summarize_staging`] reads a run directory back for the Staging
-//! Review. The Staging Review and the desktop app's Media stage both work to
+//! Review. The Staging Review and the desktop app's Media Stage both work to
 //! the media settings Staging recorded in the directory
 //! ([`write_media_settings`], [`read_media_settings`]); a local export passes
 //! its own.

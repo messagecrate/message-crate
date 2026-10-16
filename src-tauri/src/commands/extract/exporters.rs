@@ -152,7 +152,7 @@ pub(super) struct ExporterEntry<'a> {
     /// The programs the Tools Directory holds that the exporter runs: a
     /// WhatsApp import runs wtsexporter. Staging copies attachments as they
     /// are whatever the person chose, so it never runs ffmpeg; the Media
-    /// stage does (`transcode_staging`).
+    /// Stage does (`transcode_staging`).
     pub programs: &'static [Program],
     /// The exporter's `run`, given `source`'s own config.
     pub run: RunExporter<'a>,
