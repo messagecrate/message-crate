@@ -32,6 +32,14 @@ Two kinds of path are not saved, and the default stays in force:
 
 Emptying the field returns to the default.
 
+### Space used
+
+The line under the field says how much disk space the account's own Import Runs take in the Staging Directory on this computer, such as "Your Import Runs on this computer take up 1.5 GB."
+It counts each run's directory wherever the Staging Directory pointed when the run started.
+The size is measured when Settings opens and doesn't change while the tab is open.
+A run's directory is deleted when the run ends, and opening Import deletes the directory of any run Message Crate reports as ended, so the number is mostly runs that are paused or waiting at a Review.
+The Owner sees the size of the whole Staging Directory under [Server Settings](/docs/user/features/owner/owner-home/#staging-directory-on-this-computer).
+
 A change applies to the Import Runs started after it.
 An import already staged keeps the directory it was staged in, so it can still be resumed, discarded or cleaned up after the setting moves.
 

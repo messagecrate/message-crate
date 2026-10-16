@@ -427,28 +427,86 @@ impl RunDirectories {
     }
 
     /// The run directories this app made whose Import Run was run by
-    /// `signed_in`, each with that
-    /// run's id. A directory is tied to its run by the first line of the run's
-    /// log ([`message_crate_core::RunLogAccount`]), which the window writes once the server has
-    /// created the run. A directory whose log names no run, or names another
-    /// account or another Message Crate, is left out.
+    /// `signed_in`, each with that run's id. A directory is tied to its run by
+    /// the first line of the run's log ([`message_crate_core::RunLogAccount`]),
+    /// which the window writes once the server has created the run. A
+    /// directory whose log names no run, or names another account or another
+    /// Message Crate, is left out.
     ///
     /// # Errors
     ///
     /// Returns an error when the record cannot be read.
     pub fn runs_of(&self, signed_in: &SignedIn) -> Result<Vec<DirectoryOfRun>, String> {
-        Ok(self
-            .read()?
-            .directories
-            .into_iter()
-            .filter_map(|made| {
-                let account = account_of(&import_run_log(&self.logs, &made.path))?;
+        Ok(self.runs_in(&made_paths(self.read()?), signed_in))
+    }
+
+    /// The directories among `made` whose log ties them to a run of
+    /// `signed_in`, each with that run's id.
+    fn runs_in(&self, made: &[PathBuf], signed_in: &SignedIn) -> Vec<DirectoryOfRun> {
+        made.iter()
+            .filter_map(|path| {
+                let account = account_of(&import_run_log(&self.logs, path))?;
                 signed_in.ran(&account).then(|| DirectoryOfRun {
-                    run_dir: made.path.display().to_string(),
+                    run_dir: path.display().to_string(),
                     import_run_id: account.import_run_id,
                 })
             })
-            .collect())
+            .collect()
+    }
+
+    /// The disk space the run directories of `signed_in`'s Import Runs take
+    /// on this computer, in bytes: the directories [`RunDirectories::runs_of`]
+    /// lists, measured now. A run directory made inside another, as when the
+    /// Staging Directory was set inside a run's directory, counts once, as
+    /// its own run's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn bytes_of(&self, signed_in: &SignedIn) -> Result<u64, String> {
+        // One read, so the runs measured and the runs skipped inside them
+        // come from the same record.
+        let made = made_paths(self.read()?);
+        Ok(self
+            .runs_in(&made, signed_in)
+            .iter()
+            .map(|run| {
+                let run = Path::new(&run.run_dir);
+                directory_bytes(run, &|path| path != run && made.iter().any(|m| m == path))
+            })
+            .sum())
+    }
+
+    /// The disk space the whole Staging Directory takes on this computer, in
+    /// bytes, measured now: everything in the directory Settings name, for
+    /// every account and every Message Crate this computer imported into,
+    /// and every run directory this app made under an earlier setting and
+    /// still keeps. Each byte counts once, wherever one of these directories
+    /// sits inside another.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn bytes_of_all(&self) -> Result<u64, String> {
+        let record = self.read()?;
+        let root = record
+            .root
+            .clone()
+            .unwrap_or_else(|| self.default_root.clone());
+        let mut tops = made_paths(record);
+        // A Staging Directory not made yet holds nothing.
+        if let Ok(root) = root.canonicalize() {
+            tops.push(root);
+        }
+        let inside_another =
+            |path: &PathBuf| tops.iter().any(|top| top != path && path.starts_with(top));
+        let mut counted: Vec<&PathBuf> = tops.iter().filter(|top| !inside_another(top)).collect();
+        counted.sort();
+        counted.dedup();
+        Ok(counted
+            .into_iter()
+            .map(|top| directory_bytes(top, &|_| false))
+            .sum())
     }
 
     /// Delete the directory of the closed Import Run `closed` names, and say
@@ -560,6 +618,41 @@ fn device_of(metadata: &std::fs::Metadata) -> Option<u64> {
 #[cfg(not(unix))]
 fn device_of(_metadata: &std::fs::Metadata) -> Option<u64> {
     None
+}
+
+/// The run directories `record` lists.
+fn made_paths(record: Record) -> Vec<PathBuf> {
+    record
+        .directories
+        .into_iter()
+        .map(|made| made.path)
+        .collect()
+}
+
+/// The bytes the files under `directory` hold, `directory` included, leaving
+/// out every directory under it that `skip` names. A symbolic link counts as
+/// itself and is never followed, so a link out of a run directory does not
+/// count what it points at. An entry that cannot be read counts as nothing:
+/// the total is what could be measured.
+fn directory_bytes(directory: &Path, skip: &dyn Fn(&Path) -> bool) -> u64 {
+    let mut total = 0;
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.is_dir() {
+            if skip(&path) {
+                continue;
+            }
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
+            }
+        } else {
+            total += metadata.len();
+        }
+    }
+    total
 }
 
 /// Whether `path` is a directory with nothing in it.
@@ -1028,6 +1121,120 @@ mod tests {
             signed_in: signed_in(),
             status,
         }
+    }
+
+    /// The bytes of `run`'s sentinel, which every run directory holds.
+    fn sentinel_bytes(run: &Path) -> u64 {
+        fs::metadata(run.join(EXPORT_SENTINEL)).unwrap().len()
+    }
+
+    #[test]
+    fn an_account_s_staged_bytes_are_its_own_runs_and_the_whole_is_every_run() {
+        // #3087: Settings shows an account the space its own Import Runs take
+        // on this computer, and the owner the space every run takes.
+        let scratch = Scratch::new();
+        let mine = scratch.directories.create("whatsapp", NOW).unwrap();
+        let theirs = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &mine, 42, 7, CRATE);
+        tie(&scratch, &theirs, 43, 8, CRATE);
+        fs::create_dir_all(mine.join("media")).unwrap();
+        fs::write(mine.join("media").join("a.jpg"), vec![0; 1000]).unwrap();
+        fs::write(mine.join("chat.jsonl"), vec![0; 24]).unwrap();
+        fs::write(theirs.join("chat.jsonl"), vec![0; 300]).unwrap();
+        fs::write(untied.join("chat.jsonl"), vec![0; 5]).unwrap();
+        let sentinels = sentinel_bytes(&mine) + sentinel_bytes(&theirs) + sentinel_bytes(&untied);
+
+        let directories = scratch.reopen();
+
+        assert_eq!(
+            directories.bytes_of(&signed_in()).unwrap(),
+            1024 + sentinel_bytes(&mine)
+        );
+        assert_eq!(directories.bytes_of_all().unwrap(), 1329 + sentinels);
+    }
+
+    #[test]
+    fn the_whole_staging_directory_is_everything_in_it_and_runs_kept_elsewhere() {
+        // The owner's total is the whole Staging Directory, a file the person
+        // left in it included, and a run still staged under an earlier
+        // setting.
+        let scratch = Scratch::new();
+        let earlier = tempfile::tempdir().unwrap();
+        scratch
+            .directories
+            .set_root(earlier.path().to_str().unwrap())
+            .unwrap();
+        let kept = scratch.directories.create("whatsapp", NOW).unwrap();
+        fs::write(kept.join("chat.jsonl"), vec![0; 70]).unwrap();
+        let now = tempfile::tempdir().unwrap();
+        scratch
+            .directories
+            .set_root(now.path().to_str().unwrap())
+            .unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        fs::write(run.join("chat.jsonl"), vec![0; 300]).unwrap();
+        fs::write(now.path().join("notes.txt"), vec![0; 9]).unwrap();
+        // Beside the earlier run, but not a run: not part of the Staging
+        // Directory any more.
+        fs::write(earlier.path().join("other.txt"), vec![0; 4000]).unwrap();
+
+        assert_eq!(
+            scratch.directories.bytes_of_all().unwrap(),
+            379 + sentinel_bytes(&kept) + sentinel_bytes(&run)
+        );
+    }
+
+    #[test]
+    fn a_run_made_inside_another_run_s_directory_counts_once_as_its_own() {
+        // The Staging Directory was set inside a run's directory, so the next
+        // run was made inside it, and run by another account.
+        let scratch = Scratch::new();
+        let outer = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &outer, 42, 7, CRATE);
+        fs::write(outer.join("chat.jsonl"), vec![0; 100]).unwrap();
+        scratch
+            .directories
+            .set_root(outer.to_str().unwrap())
+            .unwrap();
+        let inner = scratch.directories.create("imessage-ios", NOW).unwrap();
+        tie(&scratch, &inner, 43, 8, CRATE);
+        fs::write(inner.join("chat.jsonl"), vec![0; 5000]).unwrap();
+
+        assert_eq!(
+            scratch.directories.bytes_of(&signed_in()).unwrap(),
+            100 + sentinel_bytes(&outer)
+        );
+        assert_eq!(
+            scratch.directories.bytes_of_all().unwrap(),
+            5100 + sentinel_bytes(&outer) + sentinel_bytes(&inner)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_a_run_directory_is_not_measured_through() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::write(elsewhere.path().join("big.bin"), vec![0; 100_000]).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), run.join("link")).unwrap();
+
+        let bytes = scratch.directories.bytes_of(&signed_in()).unwrap();
+
+        assert!(bytes < 100_000, "{bytes}");
+    }
+
+    #[test]
+    fn a_run_directory_no_longer_on_disk_measures_nothing() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        fs::remove_dir_all(&run).unwrap();
+
+        assert_eq!(scratch.directories.bytes_of(&signed_in()).unwrap(), 0);
+        assert_eq!(scratch.directories.bytes_of_all().unwrap(), 0);
     }
 
     #[test]
