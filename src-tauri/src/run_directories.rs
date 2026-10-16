@@ -427,10 +427,9 @@ impl RunDirectories {
     }
 
     /// The run directories this app made whose Import Run was run by
-    /// `signed_in`, each with that
-    /// run's id. A directory is tied to its run by the first line of the run's
-    /// log ([`message_crate_core::RunLogAccount`]), which the window writes once the server has
-    /// created the run. A directory whose log names no run, or names another
+    /// `signed_in`, each with that run's id. A directory is tied to its run by
+    /// the first line of the run's log ([`message_crate_core::RunLogAccount`]),
+    /// which the window writes once the server has created the run. A directory whose log names no run, or names another
     /// account or another Message Crate, is left out.
     ///
     /// # Errors
@@ -449,6 +448,39 @@ impl RunDirectories {
                 })
             })
             .collect())
+    }
+
+    /// The disk space the run directories of `signed_in`'s Import Runs take
+    /// on this computer, in bytes: the directories [`RunDirectories::runs_of`]
+    /// lists, measured now.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn bytes_of(&self, signed_in: &SignedIn) -> Result<u64, String> {
+        Ok(self
+            .runs_of(signed_in)?
+            .iter()
+            .map(|run| directory_bytes(Path::new(&run.run_dir)))
+            .sum())
+    }
+
+    /// The disk space every run directory this app made takes, in bytes,
+    /// measured now: the whole of what is staged on this computer, for every
+    /// account and every Message Crate, wherever the Staging Directory
+    /// pointed when each run started. A directory no log ties to a run is
+    /// counted too, since it takes space all the same.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn bytes_of_all(&self) -> Result<u64, String> {
+        Ok(self
+            .read()?
+            .directories
+            .iter()
+            .map(|made| directory_bytes(&made.path))
+            .sum())
     }
 
     /// Delete the directory of the closed Import Run `closed` names, and say
@@ -560,6 +592,28 @@ fn device_of(metadata: &std::fs::Metadata) -> Option<u64> {
 #[cfg(not(unix))]
 fn device_of(_metadata: &std::fs::Metadata) -> Option<u64> {
     None
+}
+
+/// The bytes the files under `directory` hold, `directory` included. A
+/// symbolic link counts as itself and is never followed, so a link out of a
+/// run directory does not count what it points at. An entry that cannot be
+/// read counts as nothing: the total is what could be measured.
+fn directory_bytes(directory: &Path) -> u64 {
+    let mut total = 0;
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
+            }
+        } else {
+            total += metadata.len();
+        }
+    }
+    total
 }
 
 /// Whether `path` is a directory with nothing in it.
@@ -1028,6 +1082,63 @@ mod tests {
             signed_in: signed_in(),
             status,
         }
+    }
+
+    /// The bytes of `run`'s sentinel, which every run directory holds.
+    fn sentinel_bytes(run: &Path) -> u64 {
+        fs::metadata(run.join(EXPORT_SENTINEL)).unwrap().len()
+    }
+
+    #[test]
+    fn an_account_s_staged_bytes_are_its_own_runs_and_the_whole_is_every_run() {
+        // #3087: Settings shows an account the space its own Import Runs take
+        // on this computer, and the owner the space every run takes.
+        let scratch = Scratch::new();
+        let mine = scratch.directories.create("whatsapp", NOW).unwrap();
+        let theirs = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &mine, 42, 7, CRATE);
+        tie(&scratch, &theirs, 43, 8, CRATE);
+        fs::create_dir_all(mine.join("media")).unwrap();
+        fs::write(mine.join("media").join("a.jpg"), vec![0; 1000]).unwrap();
+        fs::write(mine.join("chat.jsonl"), vec![0; 24]).unwrap();
+        fs::write(theirs.join("chat.jsonl"), vec![0; 300]).unwrap();
+        fs::write(untied.join("chat.jsonl"), vec![0; 5]).unwrap();
+        let sentinels = sentinel_bytes(&mine) + sentinel_bytes(&theirs) + sentinel_bytes(&untied);
+
+        let directories = scratch.reopen();
+
+        assert_eq!(
+            directories.bytes_of(&signed_in()).unwrap(),
+            1024 + sentinel_bytes(&mine)
+        );
+        assert_eq!(directories.bytes_of_all().unwrap(), 1329 + sentinels);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_a_run_directory_is_not_measured_through() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::write(elsewhere.path().join("big.bin"), vec![0; 100_000]).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), run.join("link")).unwrap();
+
+        let bytes = scratch.directories.bytes_of(&signed_in()).unwrap();
+
+        assert!(bytes < 100_000, "{bytes}");
+    }
+
+    #[test]
+    fn a_run_directory_no_longer_on_disk_measures_nothing() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        fs::remove_dir_all(&run).unwrap();
+
+        assert_eq!(scratch.directories.bytes_of(&signed_in()).unwrap(), 0);
+        assert_eq!(scratch.directories.bytes_of_all().unwrap(), 0);
     }
 
     #[test]

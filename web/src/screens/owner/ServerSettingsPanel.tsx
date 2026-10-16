@@ -3,11 +3,14 @@ import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
 import { textInputClass } from "../../components/TextField";
 import { errorLine } from "../../lib/apiErrorMessage";
+import { canMeasureStagingDirectory } from "../../lib/desktopFeatures";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteMutation } from "../../lib/routeQuery";
 import { updateServerSettings } from "../../lib/serverApi";
+import { isTauri } from "../../lib/tauriCheck";
 import { useServerInfo } from "../../lib/useServerInfo";
 import { useServerSettings } from "../../lib/useServerSettings";
+import { AllStagingUsage } from "../settings/StagingDirectoryUsage";
 import { DemoAccountCard } from "./DemoAccountCard";
 
 const MIB = 1024 * 1024;
@@ -135,6 +138,18 @@ export function ServerSettingsPanel() {
           </p>
         ) : null}
       </form>
+
+      {canMeasureStagingDirectory(isTauri()) ? (
+        <section className="mt-4 rounded-xl border border-border bg-elevated p-4">
+          <h4 className="m-0 text-[0.875rem] font-semibold text-text">
+            Staging Directory on this computer
+          </h4>
+          <AllStagingUsage className="mt-2 text-[0.813rem]" />
+          <p className="mt-2 mb-0 text-[0.75rem] text-muted">
+            Measured when this page opens. Each account sees its own share in Settings → System.
+          </p>
+        </section>
+      ) : null}
 
       <DemoAccountCard />
 

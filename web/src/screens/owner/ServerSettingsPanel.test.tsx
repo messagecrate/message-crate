@@ -11,6 +11,16 @@ import { ServerSettingsPanel } from "./ServerSettingsPanel";
 
 const getServerSettings = vi.hoisted(() => vi.fn());
 const updateServerSettings = vi.hoisted(() => vi.fn());
+const desktop = vi.hoisted(() => ({ isTauri: false }));
+/** What the desktop process measures for every Import Run on this computer. */
+const allStagingBytes = vi.hoisted(() => vi.fn());
+
+vi.mock("../../lib/tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
+
+vi.mock("../../lib/desktop/staging", () => ({
+  invokeAllStagingBytes: () => allStagingBytes(),
+  invokeAccountStagingBytes: vi.fn(),
+}));
 
 vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 
@@ -38,6 +48,9 @@ beforeEach(() => {
     journal: { mode: "wal", wal_error: null },
   });
   updateServerSettings.mockReset();
+  desktop.isTauri = false;
+  allStagingBytes.mockReset();
+  allStagingBytes.mockResolvedValue(0);
   startFakeClock();
 });
 
@@ -125,5 +138,29 @@ describe("ServerSettingsPanel attachment size limit", () => {
       "asset_max_bytes must be at most 9223372036854775807",
     );
     expect(field).toHaveValue(99999999999999);
+  });
+});
+
+describe("ServerSettingsPanel Staging Directory", () => {
+  // #3087: the owner sees how much space every account's Import Runs take
+  // in the Staging Directory on the computer running the desktop app.
+  it("says how much space every account's Import Runs take on this computer", async () => {
+    desktop.isTauri = true;
+    allStagingBytes.mockResolvedValue(3 * 1024 * MIB);
+    renderPanel();
+    await settle();
+
+    expect(screen.getByText("Staging Directory on this computer")).toBeTruthy();
+    expect(
+      screen.getByText("Import Runs of every account take up 3.0 GB on this computer."),
+    ).toBeTruthy();
+  });
+
+  it("shows no Staging Directory in a browser", async () => {
+    renderPanel();
+    await settle();
+
+    expect(allStagingBytes).not.toHaveBeenCalled();
+    expect(screen.queryByText("Staging Directory on this computer")).toBeNull();
   });
 });

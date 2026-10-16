@@ -209,6 +209,17 @@ export const keys = {
   /** The Staging Directory and its default, from the desktop process; used as it is, like `desktopToolsStatus`. */
   desktopStagingDirectory: { all: ["desktop", "staging-directory"] as const },
   /**
+   * The disk space Import Runs take in the Staging Directory on this
+   * computer: one account's on one Message Crate, or every run's. Named with
+   * the account and the Message Crate themselves, since the desktop process
+   * answers for whichever the window names.
+   */
+  desktopStagingBytes: {
+    of: (accountId: number, messageCrateId: string) =>
+      ["desktop", "staging-bytes", accountId, messageCrateId] as const,
+    all: ["desktop", "staging-bytes", "all"] as const,
+  },
+  /**
    * What the desktop process says about the free space of the Staging and
    * Scratch Directories' disks; used as it is, like `desktopToolsStatus`.
    * The answer does not depend on the source: `of(source)` puts it in the

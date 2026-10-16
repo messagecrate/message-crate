@@ -359,6 +359,32 @@ pub fn list_account_run_dirs(
     directories.runs_of(&args)
 }
 
+/// The disk space the signed-in account's Import Runs take in the Staging
+/// Directory on this computer, in bytes, measured now (#3087).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn account_staging_bytes(
+    directories: tauri::State<'_, RunDirectories>,
+    args: SignedIn,
+) -> Result<u64, String> {
+    directories.bytes_of(&args)
+}
+
+/// The disk space every Import Run on this computer takes in the Staging
+/// Directory, for every account, in bytes, measured now. Owner Home shows it
+/// (#3087).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn all_staging_bytes(directories: tauri::State<'_, RunDirectories>) -> Result<u64, String> {
+    directories.bytes_of_all()
+}
+
 /// Delete the directory of an Import Run the server reports as closed, and
 /// write one line in the run's log naming the run and the directory. Returns
 /// whether a directory was removed.

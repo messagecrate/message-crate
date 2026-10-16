@@ -13,7 +13,7 @@ import {
   startFakeClock,
   stopFakeClock,
 } from "../../test/fakeTimers";
-import { renderWithProviders as render } from "../../test/providers";
+import { authModule, renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
@@ -28,6 +28,8 @@ const desktopStaging = vi.hoisted(() => ({
   readError: null as string | null,
 }));
 const setStagingDirectory = vi.hoisted(() => vi.fn());
+/** What the desktop process measures for the signed-in account's Import Runs. */
+const accountStagingBytes = vi.hoisted(() => vi.fn());
 const invokeOpenMessageCrateDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
@@ -36,6 +38,13 @@ const invokeSetOpenToNetwork = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/localServer")>()),
   startLocalServer: () => startLocalServer(),
+}));
+
+vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
+
+vi.mock("../../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/serverApi")>()),
+  getServerState: async () => ({ id: "3f2a9c" }),
 }));
 
 vi.mock("../../lib/tauriCheck", () => ({
@@ -60,6 +69,8 @@ vi.mock("../../lib/desktop/staging", () => ({
     };
   },
   invokeSetStagingDirectory: (root: string) => setStagingDirectory(root),
+  invokeAccountStagingBytes: (accountId: number, messageCrateId: string) =>
+    accountStagingBytes(accountId, messageCrateId),
 }));
 
 vi.mock("../../lib/desktop/tools", async (importOriginal) => {
@@ -82,6 +93,8 @@ beforeEach(() => {
   tauriState.isTauri = true;
   desktopStaging.root = "";
   desktopStaging.readError = null;
+  accountStagingBytes.mockReset();
+  accountStagingBytes.mockResolvedValue(0);
   setStagingDirectory.mockReset();
   setStagingDirectory.mockImplementation(async (root: string) => {
     // The desktop process refuses a relative directory, as resolve_staging_root does.
@@ -103,6 +116,36 @@ beforeEach(() => {
 });
 
 describe("SystemSection", () => {
+  // #3087: an account sees the disk space its own Import Runs take in the
+  // Staging Directory on this computer, measured when Settings opens.
+  it("says how much space the account's Import Runs take on this computer", async () => {
+    accountStagingBytes.mockResolvedValue(1.5 * 1024 * MIB);
+    render(<SystemSection />);
+    await settle();
+
+    expect(accountStagingBytes).toHaveBeenCalledWith(7, "3f2a9c");
+    expect(screen.getByText("Your Import Runs on this computer take up 1.5 GB.")).toBeTruthy();
+  });
+
+  it("says when the Staging Directory could not be measured", async () => {
+    accountStagingBytes.mockRejectedValue("Could not read staging.json");
+    render(<SystemSection />);
+    await settle();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not measure the Staging Directory. Could not read staging.json",
+    );
+  });
+
+  it("measures nothing in a browser", async () => {
+    tauriState.isTauri = false;
+    render(<SystemSection />);
+    await settle();
+
+    expect(accountStagingBytes).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Your Import Runs on this computer/)).toBeNull();
+  });
+
   it("shows this app's version in the browser and in the desktop app", async () => {
     tauriState.isTauri = false;
     render(<SystemSection />);
