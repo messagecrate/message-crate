@@ -14,7 +14,6 @@ go-sms-mms = { path = "../../libs/go-sms-mms" }
 message-crate-core = { path = "../../core/message-crate-core" }
 message-crate-csv = { path = "../../libs/csv" }
 ir = { path = "../../libs/ir" }
-ir-format = { path = "../../libs/ir-format" }
 staging = { path = "../../libs/staging" }
 media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
