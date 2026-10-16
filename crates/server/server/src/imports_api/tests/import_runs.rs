@@ -5,26 +5,31 @@
 use super::*;
 use crate::imports_api::dto::ListImportsQuery;
 use crate::problem::ProblemType;
-use crate::server::AppState;
 use crate::test_support::{
     claim_as_owner, expect_problem, get_raw, get_status, patch_status, post_json_raw,
     register_via_api,
 };
+use crate::server::AppState;
 use axum::http::StatusCode;
+
+/// Start an Import Run over HTTP with `body` and return its id.
+async fn start_run(state: &AppState, token: &str, body: serde_json::Value) -> i64 {
+    let (_, created): (String, serde_json::Value) =
+        post_created_json(state, "/v1/imports", token, body).await;
+    created["id"].as_i64().expect("created run has an id")
+}
 
 /// A fixture holding one running Import Run at `staging_review` whose
 /// `summary_json` already carries `summary` — as if an earlier
 /// `PATCH /v1/imports/{id}` recorded the Staging Review approval.
 async fn run_with_summary(summary: serde_json::Value) -> (TestFixture, RegisteredAccount, i64) {
     let (fixture, account) = fixture_with_account().await;
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let import_id = start_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let import_id = created["id"].as_i64().expect("created run has an id");
     let mut conn = fixture.state.db.acquire().await.unwrap();
     crate::db::imports::set_import_stage(
         &mut conn,
@@ -180,14 +185,13 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
     // The stages and Reviews of an Import Run are named as CONTEXT.md names
     // them. The old spellings are refused, not read as aliases.
     let (fixture, account) = fixture_with_account().await;
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let import_id = start_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let path = format!("/v1/imports/{}", created["id"]);
+    let path = format!("/v1/imports/{import_id}");
 
     let (status, text) = crate::test_support::patch_json_raw(
         &fixture.state,
@@ -216,7 +220,7 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
         serde_json::json!({"stage": "write"}),
     )
     .await;
-    assert_eq!(run["id"], created["id"]);
+    assert_eq!(run["id"], import_id);
 }
 
 /// `POST /v1/imports` takes no stage: every run opens at `parse`, and a
@@ -225,9 +229,8 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
 #[tokio::test]
 async fn a_run_opens_at_parse_whatever_stage_the_body_names() {
     let (fixture, account) = fixture_with_account().await;
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let import_id = start_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage", "stage": "upload" }),
     )
@@ -235,7 +238,7 @@ async fn a_run_opens_at_parse_whatever_stage_the_body_names() {
 
     let run: serde_json::Value = get_json(
         &fixture.state,
-        &format!("/v1/imports/{}", created["id"]),
+        &format!("/v1/imports/{import_id}"),
         &account.token,
     )
     .await;
@@ -245,14 +248,12 @@ async fn a_run_opens_at_parse_whatever_stage_the_body_names() {
 #[tokio::test]
 async fn an_issue_names_the_stage_it_came_from() {
     let (fixture, account) = fixture_with_account().await;
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let id = start_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let id = created["id"].as_i64().unwrap();
     let issue = |stage: &str| {
         serde_json::json!({
             "status": "completed_with_issues",
@@ -310,14 +311,12 @@ async fn completing_a_missing_or_finished_run_answers_its_own_status() {
     let (status, text) = complete(999_999).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let id = start_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let id = created["id"].as_i64().unwrap();
     let (status, text) = complete(id).await;
     assert_eq!(status, axum::http::StatusCode::OK, "{text}");
     let (status, text) = complete(id).await;
@@ -327,7 +326,7 @@ async fn completing_a_missing_or_finished_run_answers_its_own_status() {
 /// What a request can change on an Import Run: status, stage, approved plan
 /// and finish time.
 async fn run_state(
-    state: &crate::server::AppState,
+    state: &AppState,
     import_id: i64,
 ) -> (String, Option<String>, Option<String>, Option<String>) {
     let mut conn = state.db.acquire().await.unwrap();
@@ -347,14 +346,12 @@ async fn run_state(
 async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() {
     let (fixture, alice) = crate::test_support::fixture_with_account().await;
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let bobs_run = start_run(
         &fixture.state,
-        "/v1/imports",
         &bob.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let bobs_run = created["id"].as_i64().unwrap();
     let run = format!("/v1/imports/{bobs_run}");
     let before = run_state(&fixture.state, bobs_run).await;
 
@@ -549,9 +546,8 @@ async fn an_import_stores_its_text_fields_at_the_cap() {
     let tool = "t".repeat(crate::text_caps::MAX_IMPORT_TOOL_CHARS);
     let device_id = "d".repeat(crate::text_caps::MAX_DEVICE_ID_CHARS);
     let run_dir = format!(" {} ", "p".repeat(crate::text_caps::MAX_PATH_CHARS - 2));
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let id = start_run(
         &state,
-        "/v1/imports",
         &token,
         serde_json::json!({
             "source": "imessage",
@@ -561,7 +557,6 @@ async fn an_import_stores_its_text_fields_at_the_cap() {
         }),
     )
     .await;
-    let id = created["id"].as_i64().unwrap();
     let run: serde_json::Value = get_json(&state, &format!("/v1/imports/{id}"), &token).await;
     assert_eq!(run["tool"], tool.as_str());
     assert_eq!(run["run_dir"], run_dir.as_str());
@@ -574,9 +569,8 @@ async fn an_import_stores_its_text_fields_at_the_cap() {
 #[tokio::test]
 async fn an_import_stores_a_blank_tool_device_id_or_run_dir_as_none() {
     let (state, _fixture, token) = importer().await;
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let id = start_run(
         &state,
-        "/v1/imports",
         &token,
         serde_json::json!({
             "source": "imessage",
@@ -586,7 +580,6 @@ async fn an_import_stores_a_blank_tool_device_id_or_run_dir_as_none() {
         }),
     )
     .await;
-    let id = created["id"].as_i64().unwrap();
     let run: serde_json::Value = get_json(&state, &format!("/v1/imports/{id}"), &token).await;
     for field in ["tool", "device_id", "run_dir"] {
         assert_eq!(run[field], serde_json::Value::Null, "{field}: {run}");
@@ -600,14 +593,7 @@ async fn a_completion_names_every_issue_and_note_over_the_cap() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+    let id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
     let long = "x".repeat(2_001);
     let (status, text) = crate::test_support::post_json_raw(
         state,
@@ -729,14 +715,7 @@ async fn a_note_over_the_text_cap_is_refused_and_the_run_stays_running() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+    let id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
     let long = "x".repeat(crate::text_caps::MAX_IMPORT_NOTE_TEXT_CHARS + 1);
 
     for route in ["complete", "discard"] {
@@ -843,14 +822,7 @@ async fn an_import_error_over_the_text_cap_is_refused_and_the_run_stays_running(
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+    let id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
     let long = "x".repeat(2_001);
 
     for (route, field, issue) in [
@@ -944,14 +916,7 @@ async fn a_discard_records_the_issues_it_carries() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+    let id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 
     let discarded: serde_json::Value = post_json(
         state,
@@ -982,14 +947,7 @@ async fn a_completion_records_the_notes_it_carries_apart_from_its_issues() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imazing" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+    let id = start_run(state, token, serde_json::json!({ "source": "imazing" })).await;
     let note = serde_json::json!({
         "stage": "staging",
         "item": "Messages/IMG_0002.jpg",
@@ -1022,14 +980,12 @@ async fn a_discard_records_the_notes_it_carries() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let id = start_run(
         state,
-        "/v1/imports",
         token,
         serde_json::json!({ "source": "sms-backup-plus" }),
     )
     .await;
-    let id = created["id"].as_i64().unwrap();
     let note = serde_json::json!({
         "stage": "staging",
         "item": "1.eml",
@@ -1057,14 +1013,7 @@ async fn an_issue_kind_other_than_error_or_skip_is_refused() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+    let id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 
     for kind in ["note", "warning"] {
         let issues = serde_json::json!([{ "kind": kind, "stage": "staging", "item": "a.jsonl", "reason": "x" }]);
@@ -1107,14 +1056,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
     let state = &fixture.state;
     let token = account.token.as_str();
 
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let completed_id = created["id"].as_i64().unwrap();
+    let completed_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
     let completed: serde_json::Value = post_json(
         state,
         &format!("/v1/imports/{completed_id}/complete"),
@@ -1127,14 +1069,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
     .await;
     assert_eq!(completed["issues"][0]["item"], "a.jsonl", "{completed}");
 
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "imessage" }),
-    )
-    .await;
-    let discarded_id = created["id"].as_i64().unwrap();
+    let discarded_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
     let discarded: serde_json::Value = post_json(
         state,
         &format!("/v1/imports/{discarded_id}/discard"),
@@ -1174,15 +1109,8 @@ async fn an_import_run_reads_the_same_from_every_route() {
 }
 
 /// Start an Import Run and complete it with `issues` skips, returning its id.
-async fn run_with_issues(state: &crate::server::AppState, token: &str, issues: usize) -> i64 {
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "whatsapp" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
+async fn run_with_issues(state: &AppState, token: &str, issues: usize) -> i64 {
+    let id = start_run(state, token, serde_json::json!({ "source": "whatsapp" })).await;
     let issues: Vec<serde_json::Value> = (0..issues)
         .map(|n| {
             serde_json::json!({
@@ -1324,13 +1252,6 @@ async fn running_run(state: &AppState, token: &str) -> Option<serde_json::Value>
     let items = page["items"].as_array().expect("a page of runs");
     assert!(items.len() <= 1, "an account runs one Import Run: {page}");
     items.first().cloned()
-}
-
-/// Start an Import Run over HTTP with `body` and return its id.
-async fn start_run(state: &AppState, token: &str, body: serde_json::Value) -> i64 {
-    let (_, created): (String, serde_json::Value) =
-        post_created_json(state, "/v1/imports", token, body).await;
-    created["id"].as_i64().expect("created run has an id")
 }
 
 #[tokio::test]

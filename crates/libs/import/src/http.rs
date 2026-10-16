@@ -62,6 +62,12 @@ pub(crate) struct AssetUpload<'a> {
 /// a slow machine and for a slot held by another account's batch.
 const ANSWER_WAIT: Duration = Duration::from_secs(300);
 
+/// How long the Upload waits for the answer to a request that sends no
+/// piece and reads a small answer of known size: the server's body limits,
+/// the run's mode, and whether an asset is stored. Such an answer is a few
+/// hundred bytes, so 15 seconds is a server that is not answering.
+const SMALL_READ_WAIT: Duration = Duration::from_secs(15);
+
 /// The part of the server's answer to `GET /v1/server` the Upload reads.
 #[derive(Debug, Deserialize)]
 struct ServerBodyTimes {
@@ -82,7 +88,7 @@ pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<D
     let what = "Reading the server's upload limits";
     let response = http
         .server_request(Method::GET, url, "/v1/server", token)
-        .timeout(Duration::from_secs(15))
+        .timeout(SMALL_READ_WAIT)
         .send()
         .with_context(|| format!("{what} failed"))?;
     let (status, text) = read_body(what, response)?;
@@ -129,7 +135,7 @@ pub(crate) fn run_mode(
     let response = http
         .server_request(Method::GET, url, "/v1/imports", token)
         .query(&[("status", "running"), ("limit", "1")])
-        .timeout(Duration::from_secs(15))
+        .timeout(SMALL_READ_WAIT)
         .send()
         .with_context(|| format!("{what} failed"))?;
     let (status, text) = read_body(&what, response)?;
@@ -214,7 +220,7 @@ impl Session {
         let response = self
             .http
             .request_url(Method::HEAD, url, &self.token)
-            .timeout(Duration::from_secs(15))
+            .timeout(SMALL_READ_WAIT)
             .send()
             .with_context(|| format!("{what} failed"))?;
         let status = response.status();
