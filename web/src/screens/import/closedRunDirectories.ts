@@ -2,11 +2,11 @@ import { useEffect } from "react";
 import { useAuth } from "../../lib/authContext";
 import {
   type ClosedImportStatus,
-  type ImportStatus,
   invokeDeleteClosedRunDir,
   invokeListAccountRunDirs,
   type RunDirOfImportRun,
 } from "../../lib/desktop/runDir";
+import type { ImportStatus } from "../../lib/importRun";
 import { useRouteCache } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
@@ -78,7 +78,7 @@ export function useDeleteClosedRunDirectories(): void {
   useEffect(() => {
     if (!isTauri() || accountId === null || !messageCrateId) return;
     let going = true;
-    const owner = { accountId, messageCrateId };
+    const signedIn = { accountId, messageCrateId };
     void deleteClosedRunDirectories(
       {
         list: () => invokeListAccountRunDirs(accountId, messageCrateId),
@@ -86,7 +86,7 @@ export function useDeleteClosedRunDirectories(): void {
         // session ends here as it does on any screen.
         status: async (id) =>
           (await cache.fetch(["imports", id], (signal) => getImport(id, { signal }))).status,
-        deleteClosed: (run, status) => invokeDeleteClosedRunDir(run, owner, status),
+        deleteClosed: (run, status) => invokeDeleteClosedRunDir(run, signedIn, status),
       },
       () => going,
     );

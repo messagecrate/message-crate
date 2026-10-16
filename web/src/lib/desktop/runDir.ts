@@ -1,8 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { components } from "../serverApi.types";
-
-/** How an Import Run stands, as the server reports it. */
-export type ImportStatus = components["schemas"]["ImportStatus"];
+import type { ImportStatus } from "../importRun";
 
 /**
  * Make a new run directory under the Staging Directory and return its path.
@@ -75,15 +72,15 @@ export type ClosedImportStatus = Exclude<ImportStatus, "running">;
  */
 export async function invokeDeleteClosedRunDir(
   run: RunDirOfImportRun,
-  owner: { accountId: number; messageCrateId: string },
+  signedIn: { accountId: number; messageCrateId: string },
   status: ClosedImportStatus,
 ): Promise<boolean> {
   return invoke("delete_closed_run_dir", {
     args: {
       runDir: run.runDir,
       importRunId: run.importRunId,
-      accountId: owner.accountId,
-      messageCrateId: owner.messageCrateId,
+      accountId: signedIn.accountId,
+      messageCrateId: signedIn.messageCrateId,
       status,
     },
   });

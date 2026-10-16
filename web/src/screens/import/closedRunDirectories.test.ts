@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
-import type { ClosedImportStatus, ImportStatus, RunDirOfImportRun } from "../../lib/desktop/runDir";
+import type { ClosedImportStatus, RunDirOfImportRun } from "../../lib/desktop/runDir";
+import type { ImportStatus } from "../../lib/importRun";
 import { type ClosedRunDirectories, deleteClosedRunDirectories } from "./closedRunDirectories";
 
 const closed: RunDirOfImportRun = { runDir: "/home/sam/message-crate/staging/a", importRunId: 41 };

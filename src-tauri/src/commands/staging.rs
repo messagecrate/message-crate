@@ -36,7 +36,9 @@ use super::events;
 use super::events::{ImportProgressEvent, Step};
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
-use crate::run_directories::{self, ClosedRun, DirectoryOfRun, RunDirectories, StagingRoot};
+use crate::run_directories::{
+    self, ClosedRun, DirectoryOfRun, RunDirectories, SignedIn, StagingRoot,
+};
 use crate::state::{AppState, JobName};
 use crate::tool_downloads::{Program, ToolDownloads};
 
@@ -342,17 +344,6 @@ pub fn delete_run_dir(
     directories.delete(&args.run_dir)
 }
 
-/// Arguments for [`list_account_run_dirs`].
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountRunDirsArgs {
-    /// The signed-in account.
-    pub account_id: i64,
-    /// The id of the Message Crate the window is signed in to, as
-    /// `GET /v1/server` answers it.
-    pub message_crate_id: String,
-}
-
 /// The run directories on this computer of the signed-in account's Import
 /// Runs on the Message Crate it is signed in to, each with its run's id, so
 /// Import can ask the server how each run stands (#2822).
@@ -363,9 +354,9 @@ pub struct AccountRunDirsArgs {
 #[tauri::command(async)]
 pub fn list_account_run_dirs(
     directories: tauri::State<'_, RunDirectories>,
-    args: AccountRunDirsArgs,
+    args: SignedIn,
 ) -> Result<Vec<DirectoryOfRun>, String> {
-    directories.runs_of(args.account_id, &args.message_crate_id)
+    directories.runs_of(&args)
 }
 
 /// Delete the directory of an Import Run the server reports as closed, and

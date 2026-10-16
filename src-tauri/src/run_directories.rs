@@ -77,6 +77,25 @@ pub struct DirectoryOfRun {
     pub import_run_id: i64,
 }
 
+/// An account on one Message Crate: the signed-in account, which a run's log
+/// must name for the app to act on the run's directory.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedIn {
+    /// The account's id on that Message Crate.
+    pub account_id: i64,
+    /// The id of the Message Crate, as `GET /v1/server` answers it.
+    pub message_crate_id: String,
+}
+
+impl SignedIn {
+    /// Whether the run log's account line `account` names this account on
+    /// this Message Crate.
+    fn ran(&self, account: &message_crate_core::RunLogAccount) -> bool {
+        account.account_id == self.account_id && account.message_crate_id == self.message_crate_id
+    }
+}
+
 /// The directory of a closed Import Run, and the run as its log names it.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,11 +104,9 @@ pub struct ClosedRun {
     pub run_dir: String,
     /// The Import Run's id on the Message Crate it imported into.
     pub import_run_id: i64,
-    /// The account that ran it.
-    pub account_id: i64,
-    /// The id of the Message Crate it imported into, as `GET /v1/server`
-    /// answers it.
-    pub message_crate_id: String,
+    /// The account that ran it, on that Message Crate.
+    #[serde(flatten)]
+    pub signed_in: SignedIn,
     /// How the server reports the run ended.
     pub status: ClosedStatus,
 }
@@ -409,8 +426,8 @@ impl RunDirectories {
         self.forget(&directory)
     }
 
-    /// The run directories this app made whose Import Run was run by account
-    /// `account_id` on the Message Crate `message_crate_id`, each with that
+    /// The run directories this app made whose Import Run was run by
+    /// `signed_in`, each with that
     /// run's id. A directory is tied to its run by the first line of the run's
     /// log ([`message_crate_core::RunLogAccount`]), which the window writes once the server has
     /// created the run. A directory whose log names no run, or names another
@@ -419,22 +436,17 @@ impl RunDirectories {
     /// # Errors
     ///
     /// Returns an error when the record cannot be read.
-    pub fn runs_of(
-        &self,
-        account_id: i64,
-        message_crate_id: &str,
-    ) -> Result<Vec<DirectoryOfRun>, String> {
+    pub fn runs_of(&self, signed_in: &SignedIn) -> Result<Vec<DirectoryOfRun>, String> {
         Ok(self
             .read()?
             .directories
             .into_iter()
             .filter_map(|made| {
                 let account = account_of(&import_run_log(&self.logs, &made.path))?;
-                (account.account_id == account_id && account.message_crate_id == message_crate_id)
-                    .then(|| DirectoryOfRun {
-                        run_dir: made.path.display().to_string(),
-                        import_run_id: account.import_run_id,
-                    })
+                signed_in.ran(&account).then(|| DirectoryOfRun {
+                    run_dir: made.path.display().to_string(),
+                    import_run_id: account.import_run_id,
+                })
             })
             .collect())
     }
@@ -455,9 +467,7 @@ impl RunDirectories {
         // Import Run ids are counted per Message Crate, so the run's id alone
         // could name another Message Crate's run, still running there.
         let tied = account_of(&import_run_log(&self.logs, &path)).is_some_and(|account| {
-            account.import_run_id == import_run_id
-                && account.account_id == closed.account_id
-                && account.message_crate_id == closed.message_crate_id
+            account.import_run_id == import_run_id && closed.signed_in.ran(&account)
         });
         if !tied {
             return Err(format!(
@@ -1001,14 +1011,21 @@ mod tests {
         });
     }
 
+    /// Account 7 on [`CRATE`].
+    fn signed_in() -> SignedIn {
+        SignedIn {
+            account_id: 7,
+            message_crate_id: CRATE.to_string(),
+        }
+    }
+
     /// Import Run `id` by account 7 on [`CRATE`], whose directory is `run`,
     /// closed as `status`.
     fn closed(run: &Path, id: i64, status: ClosedStatus) -> ClosedRun {
         ClosedRun {
             run_dir: run.display().to_string(),
             import_run_id: id,
-            account_id: 7,
-            message_crate_id: CRATE.to_string(),
+            signed_in: signed_in(),
             status,
         }
     }
@@ -1026,7 +1043,7 @@ mod tests {
         tie(&scratch, &another_account, 43, 8, CRATE);
         tie(&scratch, &another_crate, 44, 7, "another");
 
-        let runs = scratch.reopen().runs_of(7, CRATE).unwrap();
+        let runs = scratch.reopen().runs_of(&signed_in()).unwrap();
 
         assert_eq!(
             runs,
@@ -1051,7 +1068,7 @@ mod tests {
 
         assert!(deleted);
         assert!(!run.exists());
-        assert!(scratch.reopen().runs_of(7, CRATE).unwrap().is_empty());
+        assert!(scratch.reopen().runs_of(&signed_in()).unwrap().is_empty());
         let log = std::fs::read_to_string(import_run_log(&scratch.logs(), &run)).unwrap();
         let last = log.lines().last().unwrap();
         assert!(last.contains(" INFO "), "{last}");
