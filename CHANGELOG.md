@@ -1556,7 +1556,7 @@ carry their date on the heading.
 - 2026-10-16: **A download cut off by an error shows in the server's log.**
   When an attachment or a log file failed partway through its download, such
   as on a disk error, the server's log showed only the download's start,
-  with status 200, so the Logs panel read it as a download that worked. The
+  as a success, so the Logs panel read it as a download that worked. The
   failure now leaves an error line naming what went wrong, with the
   request's id (#2870).
 - 2026-10-15: **A failed request's log line names the database step that

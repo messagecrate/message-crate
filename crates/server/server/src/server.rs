@@ -442,10 +442,9 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
         // error's chain. A body that fails after its status was sent writes
         // an `error` line of its own (`BodyFailures`, `log_body_failure`).
         // A refused request's problem type is logged where the problem is
-        // built (`log_refusal`). Runs outside
-        // CORS so the status it logs is the one the client receives. The span
-        // carries method and path; its level must match the line's or the
-        // default `info` filter drops it.
+        // built (`log_refusal`). Runs outside CORS so the status it logs is
+        // the one the client receives. The span carries method and path; its
+        // level must match the line's or the default `info` filter drops it.
         .layer(
             TraceLayer::new(tower_http::classify::SharedClassifier::new(BodyFailures))
                 .make_span_with(|request: &axum::extract::Request| {

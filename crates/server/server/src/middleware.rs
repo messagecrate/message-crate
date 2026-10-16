@@ -507,7 +507,7 @@ pub(crate) fn log_body_failure(
     _latency: std::time::Duration,
     _span: &tracing::Span,
 ) {
-    tracing::error!("the response's body failed partway, after its status was sent: {error}");
+    tracing::error!(error = %error, "A response's body failed after its status was sent");
 }
 
 #[cfg(test)]
