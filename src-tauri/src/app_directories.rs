@@ -188,6 +188,40 @@ pub fn import_run_log(logs_dir: &Path, run_dir: &Path) -> PathBuf {
     logs_dir.join(format!("import-{run}.log"))
 }
 
+/// Open `path`, a log in the Logs Directory `logs_dir`, to add to it, making
+/// the Logs Directory first, or keeping it, readable by the user alone
+/// ([`file_io::restrict_to_owner`]), because a run's log names the phone
+/// numbers and email addresses in its file names (#2097). Every log in the
+/// Logs Directory is opened here: an Import Run's ([`RunLog`]) and the
+/// desktop app's own ([`crate::app_log`]).
+///
+/// A Logs Directory that cannot be tightened still takes the log: the error
+/// comes back beside the file, for the caller to write in it
+/// ([`not_tightened_line`]).
+///
+/// # Errors
+///
+/// Returns an error when the Logs Directory cannot be made or the log
+/// cannot be opened.
+pub fn open_in_logs_directory(
+    logs_dir: &Path,
+    path: &Path,
+) -> io::Result<(File, Option<io::Error>)> {
+    file_io::create_dir_all_owner_only(logs_dir)?;
+    let not_tightened = file_io::restrict_to_owner(logs_dir).err();
+    let file = File::options().create(true).append(true).open(path)?;
+    Ok((file, not_tightened))
+}
+
+/// The warning a log takes when its Logs Directory, `logs_dir`, could not
+/// be made readable by this user alone.
+pub fn not_tightened_line(logs_dir: &Path, error: &io::Error) -> String {
+    format!(
+        "Could not make {} readable by this user alone: {error}",
+        logs_dir.display()
+    )
+}
+
 /// An Import Run's log, open for Staging or Media to add lines to. The
 /// Upload's own writer appends to the same file. Every line carries its time
 /// and level ([`message_crate_core::format_run_log`]).
@@ -204,23 +238,14 @@ impl RunLog {
     /// the user alone ([`file_io::restrict_to_owner`]), because a run's log
     /// names the phone numbers and email addresses in its file names (#2097).
     pub fn open(logs_dir: &Path, run_dir: &Path) -> Self {
-        let path = import_run_log(logs_dir, run_dir);
-        let mut not_tightened = None;
-        let file = file_io::create_dir_all_owner_only(logs_dir)
-            .and_then(|()| {
-                // A Logs Directory that cannot be tightened still takes the
-                // log, which says so below.
-                not_tightened = file_io::restrict_to_owner(logs_dir).err();
-                File::options().create(true).append(true).open(&path)
-            })
-            .ok()
-            .map(|file| Arc::new(Mutex::new(file)));
+        let opened = open_in_logs_directory(logs_dir, &import_run_log(logs_dir, run_dir)).ok();
+        let (file, not_tightened) = match opened {
+            Some((file, not_tightened)) => (Some(Arc::new(Mutex::new(file))), not_tightened),
+            None => (None, None),
+        };
         let log = Self { file };
         if let Some(error) = not_tightened {
-            log.warn(&format!(
-                "Could not make {} readable by this user alone: {error}",
-                logs_dir.display()
-            ));
+            log.warn(&not_tightened_line(logs_dir, &error));
         }
         log
     }

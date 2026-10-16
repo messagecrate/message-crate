@@ -26,6 +26,8 @@ use std::sync::{Mutex, OnceLock};
 
 use message_crate_core::{RunLogLevel, format_run_log};
 
+use crate::app_directories::{not_tightened_line, open_in_logs_directory};
+
 /// The desktop app's log's name in the Logs Directory.
 pub const DESKTOP_APP_LOG: &str = "desktop-app.log";
 
@@ -82,32 +84,34 @@ impl AppLog {
     }
 
     /// Add `text` at `level`, opening the log first if no line has been
-    /// written yet. The Logs Directory is made, or kept, readable by the user
-    /// alone, as for a run's log ([`crate::app_directories::RunLog::open`]).
+    /// written yet ([`open_in_logs_directory`]), with a warning before it
+    /// when the Logs Directory could not be made readable by the user alone.
     /// A line that cannot be written goes to standard error.
     pub fn write(&self, level: RunLogLevel, text: &str) {
-        let lines = format_run_log(level, text);
+        let mut lines = String::new();
         let mut file = self
             .file
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if file.is_none() {
-            *file = self.open().ok();
+        if file.is_none()
+            && let Ok((opened, not_tightened)) =
+                open_in_logs_directory(&self.logs_dir, &self.path())
+        {
+            if let Some(error) = not_tightened {
+                lines.push_str(&format_run_log(
+                    RunLogLevel::Warn,
+                    &not_tightened_line(&self.logs_dir, &error),
+                ));
+            }
+            *file = Some(opened);
         }
+        lines.push_str(&format_run_log(level, text));
         let written = file
             .as_mut()
             .is_some_and(|file| file.write_all(lines.as_bytes()).is_ok() && file.flush().is_ok());
         if !written {
             eprint!("{lines}");
         }
-    }
-
-    /// Open the log to add to it, making the Logs Directory first.
-    fn open(&self) -> std::io::Result<File> {
-        file_io::create_dir_all_owner_only(&self.logs_dir)?;
-        // A Logs Directory that cannot be tightened still takes the line.
-        let _ = file_io::restrict_to_owner(&self.logs_dir);
-        File::options().create(true).append(true).open(self.path())
     }
 }
 
