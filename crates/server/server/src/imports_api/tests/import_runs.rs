@@ -4,10 +4,11 @@
 
 use super::*;
 use crate::auth::{ImportAccess, require_import_access, resolve_auth_on_conn};
-use crate::extract::{Json, Path as AxumPath};
+use crate::db::imports::{ImportIssueStage, ImportStage};
+use crate::extract::{Json, Path as AxumPath, Query};
 use crate::imports_api::dto::{
     CompleteImportRequest, CreateImportRequest, DiscardImportRequest, ImportIssueRequest,
-    UpdateImportRequest,
+    ImportRunSummary, ListImportsQuery, UpdateImportRequest,
 };
 use crate::imports_api::run_control::Importer;
 use crate::imports_api::{
@@ -15,9 +16,9 @@ use crate::imports_api::{
 };
 use crate::problem::ProblemType;
 use crate::server::AppState;
-use crate::test_support::ImportingAccount;
 use crate::test_support::{
-    claim_as_owner, expect_problem, get_raw, get_status, patch_status, register_via_api,
+    ImportingAccount, claim_as_owner, expect_problem, fixed_instant, get_raw, get_status,
+    patch_status, register_via_api,
 };
 use axum::extract::{FromRef, State};
 use axum::http::StatusCode;
@@ -1329,14 +1330,11 @@ async fn import_endpoint_honors_can_import_flag() {
 
 /// The account's running Import Run through `GET /v1/imports?status=running`,
 /// as the desktop app finds it.
-async fn running_import(
-    state: &AppState,
-    token: &str,
-) -> Option<crate::imports_api::dto::ImportRunSummary> {
+async fn running_import(state: &AppState, token: &str) -> Option<ImportRunSummary> {
     list_imports(
         State(state.db.clone()),
         import_access(state, token).await,
-        crate::extract::Query(crate::imports_api::dto::ListImportsQuery {
+        Query(ListImportsQuery {
             sort: None,
             status: Some("running".into()),
             limit: None,
@@ -1356,7 +1354,7 @@ async fn running_import(
 /// instead of over HTTP.
 async fn import_access(state: &AppState, token: &str) -> ImportAccess {
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = resolve_auth_on_conn(&mut conn, token, None, crate::test_support::fixed_instant())
+    let auth = resolve_auth_on_conn(&mut conn, token, None, fixed_instant())
         .await
         .unwrap();
     require_import_access(&auth).unwrap();
@@ -1383,13 +1381,13 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
         issues: vec![
             ImportIssueRequest {
                 kind: api_types::ImportErrorKind::Skip,
-                stage: crate::db::imports::ImportIssueStage::Media,
+                stage: ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             },
             ImportIssueRequest {
                 kind: api_types::ImportErrorKind::Error,
-                stage: crate::db::imports::ImportIssueStage::Upload,
+                stage: ImportIssueStage::Upload,
                 item: "archive.zip".into(),
                 reason: "upload failed".into(),
             },
@@ -1428,15 +1426,9 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     assert_eq!(value.run.summary["parse"]["messages"], 10);
     assert_eq!(value.issues.len(), 2);
     assert_eq!(value.issues[0].kind, api_types::ImportErrorKind::Skip);
-    assert_eq!(
-        value.issues[0].stage,
-        crate::db::imports::ImportIssueStage::Media
-    );
+    assert_eq!(value.issues[0].stage, ImportIssueStage::Media);
     assert_eq!(value.issues[1].kind, api_types::ImportErrorKind::Error);
-    assert_eq!(
-        value.issues[1].stage,
-        crate::db::imports::ImportIssueStage::Upload
-    );
+    assert_eq!(value.issues[1].stage, ImportIssueStage::Upload);
 }
 
 #[tokio::test]
@@ -1568,7 +1560,7 @@ async fn active_import_run_is_empty_then_reports_the_live_one() {
         .await
         .expect("a running run is listed");
     assert_eq!(session.id, created.body.id);
-    assert_eq!(session.stage, Some(crate::db::imports::ImportStage::Parse));
+    assert_eq!(session.stage, Some(ImportStage::Parse));
     assert_eq!(
         session.run_dir.as_deref(),
         Some("/home/u/message-crate/staging-260830")
@@ -1732,7 +1724,7 @@ async fn stage_endpoint_advances() {
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(UpdateImportRequest {
-            stage: crate::db::imports::ImportStage::Write,
+            stage: ImportStage::Write,
             summary: None,
         }),
     )
@@ -1740,7 +1732,7 @@ async fn stage_endpoint_advances() {
     .unwrap();
     assert_eq!(
         running_import(&state, &token).await.unwrap().stage,
-        Some(crate::db::imports::ImportStage::Write)
+        Some(ImportStage::Write)
     );
 }
 
