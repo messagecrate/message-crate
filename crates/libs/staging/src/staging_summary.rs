@@ -164,7 +164,7 @@ pub struct SummaryProgress {
 /// each counted exactly once, on the first reference to its recorded path.
 ///
 /// `on_progress` reports [`SummaryProgress`] over attachments every
-/// [`SUMMARY_PROGRESS_EVERY`] plus a final call. It counts
+/// `SUMMARY_PROGRESS_EVERY` plus a final call. It counts
 /// every reference, aliased or not, since that is the count the caller sees
 /// growing.
 ///

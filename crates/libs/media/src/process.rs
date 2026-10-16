@@ -12,10 +12,10 @@ use crate::{CompressOptions, KillReason, Killed, MediaMode};
 /// any other file in its directory by its path:
 ///
 /// - why ffmpeg was stopped ([`Killed`]);
-/// - the line ffmpeg wrote that names the cause ([`cause_line`]), with
+/// - the line ffmpeg wrote that names the cause (`cause_line`), with
 ///   each file it was given written as `<input>` or `<output>`
 ///   ([`FfmpegFailed::without_files`]) and its tags without their
-///   addresses ([`without_addresses`]);
+///   addresses (`without_addresses`);
 /// - how ffmpeg exited, when it failed and wrote nothing;
 /// - otherwise the error's first line, with `file` written as `<input>`,
 ///   and without each step of it that names another file in `file`'s

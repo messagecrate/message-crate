@@ -116,7 +116,7 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// every remaining part of an upload the owner lowered the limit under.
 ///
 /// Every body is held to time as well as size, with the body time limits
-/// ([`BodyTimeLimits`](crate::request_body::BodyTimeLimits)), so a client
+/// ([`BodyTimeLimits`]), so a client
 /// that stops sending a body part-way, or sends a byte now and then, holds its
 /// connection only so long (#2100).
 /// The three uploads ([`reads_its_own_body_in_time`]) are left to hold
