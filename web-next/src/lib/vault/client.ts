@@ -223,21 +223,31 @@ export function dayOf(timestamp: string | null | undefined): string {
   return (timestamp ?? "").slice(0, 10);
 }
 
+/**
+ * The day of an RFC 3339 instant in an IANA time zone, as `YYYY-MM-DD`;
+ * empty when there is no instant.
+ */
+export function dayIn(
+  timestamp: string | null | undefined,
+  timeZone: string,
+): string {
+  if (!timestamp) return "";
+  const instant = new Date(timestamp);
+  if (Number.isNaN(instant.getTime())) return "";
+  // `en-CA` writes a date as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
 /** The calendar year of an RFC 3339 instant in an IANA time zone. */
 export function yearIn(
   timestamp: string | null | undefined,
   timeZone: string,
 ): number | null {
-  if (!timestamp) return null;
-  const instant = new Date(timestamp);
-  if (Number.isNaN(instant.getTime())) return null;
-  const y = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(instant),
-  );
-  return Number.isFinite(y) && y > 0 ? y : null;
-}
-
-export function yearOf(timestamp: string | null | undefined): number | null {
-  const y = Number((timestamp ?? "").slice(0, 4));
+  const y = Number(dayIn(timestamp, timeZone).slice(0, 4));
   return Number.isFinite(y) && y > 0 ? y : null;
 }

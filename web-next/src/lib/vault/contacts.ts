@@ -221,7 +221,7 @@ async function yearThreads(
   const byYear = new Map<number, YearThread>();
   for (const row of rows) {
     if (row.messages === 0) continue;
-    const { dateStart, dateEnd } = yearRange(row.c, row.year);
+    const { dateStart, dateEnd } = yearRange(row.c, row.year, timeZone);
     const bucket = byYear.get(row.year) ?? {
       year: row.year,
       messageCount: 0,
@@ -244,7 +244,7 @@ async function yearThreads(
  * Contact detail plus thread metadata in one pass: yearly 1:1 buckets, the
  * group chats the contact is in, and the backup sources behind them.
  *
- * `source` is an import source id (`GET /v1/session`); the vault's list
+ * `source` is an import source id (`GET /v1/session`); the server's list
  * routes cannot filter by it, so the threads are the same for every source
  * and only the per-source counts change.
  */
@@ -287,7 +287,7 @@ export async function loadContactThreadsPage(
     contact,
     yearly,
     groupChats: groups
-      .map(groupChatThread)
+      .map((c) => groupChatThread(c, profile.time_zone))
       .sort((a, b) => b.dateEnd.localeCompare(a.dateEnd)),
     messageSources: Object.keys(bySource).sort(),
     sourceCounts: {
