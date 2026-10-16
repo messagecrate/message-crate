@@ -291,7 +291,7 @@ async fn a_streamed_batch_over_the_cap_is_payload_too_large() {
 /// `server-stopping`, storing nothing, so the stop waits neither for the rest
 /// of the body nor for a whole import more (#2203). The body here never ends:
 /// before #2878 the read went on until the client stopped sending or the
-/// upload time limits ran out, and the stop waited for it.
+/// body time limits ran out, and the stop waited for it.
 #[tokio::test]
 async fn a_batch_still_arriving_when_the_server_stops_is_refused_and_stores_nothing() {
     use futures_util::StreamExt;

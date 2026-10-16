@@ -61,7 +61,7 @@
 //! - [`sweep_unreferenced`]: every unnamed Asset of an account, when a run
 //!   ends.
 //! - [`sweep_incoming`]: abandoned uploads, the ones nothing was written to
-//!   for `[server] upload_stall_secs`, when a run ends, when the server
+//!   for `[server] body_stall_secs`, when a run ends, when the server
 //!   starts, and when an upload start finds the account at its open-upload
 //!   limit.
 //! - [`sweep_shard_temps`]: temporary files a killed write left in the
@@ -617,7 +617,7 @@ async fn take_out_unnamed(
 /// [`sweep_unreferenced`] once an Import Run of `account_id` has ended, so
 /// the files it was told about or uploaded and never named go, then
 /// [`sweep_incoming`] of the account, so do the uploads nothing was written
-/// to for `stall`, the server's `[server] upload_stall_secs`. A failure is
+/// to for `stall`, the server's `[server] body_stall_secs`. A failure is
 /// logged: the run's end is what the caller answers for.
 pub(crate) async fn sweep_after_run(
     pool: &SqlitePool,
@@ -648,7 +648,7 @@ pub(crate) async fn sweep_unreferenced_logged(
 
 /// [`sweep_incoming`] of every account, once as `serve` starts, so the
 /// uploads a stopped server left go even when no Import Run ends after it.
-/// `stall` is the server's `[server] upload_stall_secs`. A failure is
+/// `stall` is the server's `[server] body_stall_secs`. A failure is
 /// logged: the server starts either way.
 pub(crate) async fn sweep_incoming_at_start(
     pool: &SqlitePool,
@@ -794,7 +794,7 @@ fn sweep_store_dir(
 pub(crate) struct Abandonment {
     /// The time the sweep runs at.
     pub(crate) now: SystemTime,
-    /// `[server] upload_stall_secs`.
+    /// `[server] body_stall_secs`.
     pub(crate) stall: Duration,
 }
 
@@ -819,7 +819,7 @@ impl Abandonment {
 /// the stall limit ([`Abandonment`]), and that no request is using
 /// ([`crate::asset_uploads::unless_in_use`]).
 ///
-/// `stall` is `[server] upload_stall_secs`, the longest the server lets an
+/// `stall` is `[server] body_stall_secs`, the longest the server lets an
 /// upload's body go with no byte arriving. An upload's age is its
 /// manifest's, and neither a part nor a completion rewrites the manifest
 /// while it runs: a part streams into a temp file of its own and is

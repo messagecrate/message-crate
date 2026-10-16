@@ -327,8 +327,8 @@ mod tests {
         server.mock(|when, then| {
             when.method(GET).path("/v1/server");
             then.status(200).json_body(json!({
-                "upload_stall_secs": 60,
-                "upload_piece_secs": 300,
+                "body_stall_secs": 60,
+                "body_piece_secs": 300,
             }));
         });
         server

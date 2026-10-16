@@ -76,8 +76,8 @@ fn mock_server() -> MockServer {
     server.mock(|when, then| {
         when.method(GET).path("/v1/server");
         then.status(200).json_body(json!({
-            "upload_stall_secs": 60,
-            "upload_piece_secs": PIECE_SECS,
+            "body_stall_secs": 60,
+            "body_piece_secs": PIECE_SECS,
         }));
     });
     server
@@ -1657,10 +1657,7 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                 let response = if request_line.starts_with("GET /v1/session ") {
                     answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
                 } else if request_line.starts_with("GET /v1/server ") {
-                    answer(
-                        "200 OK",
-                        r#"{"upload_stall_secs":60,"upload_piece_secs":300}"#,
-                    )
+                    answer("200 OK", r#"{"body_stall_secs":60,"body_piece_secs":300}"#)
                 } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                     let body = String::from_utf8_lossy(&body);
                     let guids: Vec<&str> = ["guid-a", "guid-b"]
@@ -2813,10 +2810,7 @@ fn serve_answering_batches_with(
             let response = if request_line.starts_with("GET /v1/session ") {
                 answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
             } else if request_line.starts_with("GET /v1/server ") {
-                answer(
-                    "200 OK",
-                    r#"{"upload_stall_secs":60,"upload_piece_secs":300}"#,
-                )
+                answer("200 OK", r#"{"body_stall_secs":60,"body_piece_secs":300}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
                 on_batch();

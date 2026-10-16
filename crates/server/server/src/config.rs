@@ -158,21 +158,20 @@ pub struct ServerConfig {
     #[serde(default = "default_asset_part_size")]
     pub asset_part_size: usize,
     /// Seconds a request body may go with no byte arriving before the server
-    /// stops reading it and answers `upload-stalled`. Every body is held to
-    /// it; an upload (an import batch, an attachment, or a part of one) is
-    /// the body large enough to meet it. An attachment upload nothing has been
+    /// stops reading it and answers `body-stalled`. Every body is held to
+    /// it. An attachment upload nothing has been
     /// written to for this long, with no request to it running, is abandoned
     /// and removed (`asset_store::sweep_incoming`). Default 60. Must be
     /// greater than 0.
-    #[serde(default = "default_upload_stall_secs")]
-    pub upload_stall_secs: u64,
+    #[serde(default = "default_body_stall_secs")]
+    pub body_stall_secs: u64,
     /// Seconds a whole request body may take to arrive before the server
     /// stops reading it and answers
-    /// `upload-stalled`, counted from the start of the read for an upload
+    /// `body-stalled`, counted from the start of the read for an upload
     /// and from when the request arrives for any other body. Every body is
-    /// held to it, as to `upload_stall_secs`. Default 300. Must be greater than 0.
-    #[serde(default = "default_upload_piece_secs")]
-    pub upload_piece_secs: u64,
+    /// held to it, as to `body_stall_secs`. Default 300. Must be greater than 0.
+    #[serde(default = "default_body_piece_secs")]
+    pub body_piece_secs: u64,
     /// Cross-Origin Resource Sharing (CORS) origins allowed to call this API,
     /// on top of the packaged desktop app's own origins, which are always
     /// allowed. CORS is the browser rule that decides which other websites may
@@ -210,8 +209,8 @@ impl Default for ServerConfig {
         Self {
             bind: default_server_bind(),
             asset_part_size: default_asset_part_size(),
-            upload_stall_secs: default_upload_stall_secs(),
-            upload_piece_secs: default_upload_piece_secs(),
+            body_stall_secs: default_body_stall_secs(),
+            body_piece_secs: default_body_piece_secs(),
             cors_origins: Vec::new(),
             openapi_ui: default_openapi_ui(),
             static_dir: default_static_dir(),
@@ -250,13 +249,13 @@ fn default_asset_part_size() -> usize {
     crate::asset_uploads::DEFAULT_PART_SIZE
 }
 
-/// serde default for `[server] upload_stall_secs` (one minute).
-fn default_upload_stall_secs() -> u64 {
+/// serde default for `[server] body_stall_secs` (one minute).
+fn default_body_stall_secs() -> u64 {
     60
 }
 
-/// serde default for `[server] upload_piece_secs` (five minutes).
-fn default_upload_piece_secs() -> u64 {
+/// serde default for `[server] body_piece_secs` (five minutes).
+fn default_body_piece_secs() -> u64 {
     300
 }
 
@@ -532,8 +531,8 @@ impl Config {
             bail!("server.asset_part_size must be > 0");
         }
         for (key, secs) in [
-            ("upload_stall_secs", server.upload_stall_secs),
-            ("upload_piece_secs", server.upload_piece_secs),
+            ("body_stall_secs", server.body_stall_secs),
+            ("body_piece_secs", server.body_piece_secs),
         ] {
             if secs == 0 {
                 bail!("[server] {key} must be greater than 0");

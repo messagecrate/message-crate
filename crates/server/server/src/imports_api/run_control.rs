@@ -22,11 +22,11 @@ use crate::db::imports::{self, CompleteImportArgs};
 use crate::extract::Json;
 use crate::media_queue::MediaQueue;
 use crate::progress::Progress;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 use crate::server::{AppState, ImportState};
 
 /// What a handler that runs or ends an Import Run reads: the database, the
-/// configuration, the import locks and slots, the upload time limits, and
+/// configuration, the import locks and slots, the body time limits, and
 /// the queue the run's Assets go on for their Thumbnails and Previews. Cut
 /// from [`AppState`] for each request, so it never holds a copy of its own.
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ pub(crate) struct Importer {
     pub(crate) db: sqlx::SqlitePool,
     pub(crate) cfg: Arc<Config>,
     pub(crate) imports: ImportState,
-    pub(crate) upload_time_limits: UploadTimeLimits,
+    pub(crate) body_time_limits: BodyTimeLimits,
     pub(crate) media_queue: MediaQueue,
 }
 
@@ -44,7 +44,7 @@ impl axum::extract::FromRef<AppState> for Importer {
             db: state.db.clone(),
             cfg: Arc::clone(&state.cfg),
             imports: state.imports.clone(),
-            upload_time_limits: state.upload_time_limits,
+            body_time_limits: state.body_time_limits,
             media_queue: state.media_queue.clone(),
         }
     }
@@ -209,7 +209,7 @@ async fn after_run_ended(
         &importer.db,
         &importer.cfg.paths,
         account,
-        importer.upload_time_limits.stall,
+        importer.body_time_limits.stall,
     )
     .await;
     crate::media_queue::queue_import_run(

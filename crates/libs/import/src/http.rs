@@ -65,12 +65,12 @@ const ANSWER_WAIT: Duration = Duration::from_secs(300);
 #[derive(Debug, Deserialize)]
 struct ServerUploadTimes {
     /// Seconds the server lets a whole piece take to arrive.
-    upload_piece_secs: u64,
+    body_piece_secs: u64,
 }
 
 /// How long a request that sends a piece waits for its answer: the time the
 /// server at `url` states it lets a whole piece take to arrive
-/// (`upload_piece_secs` in `GET /v1/server`), plus [`ANSWER_WAIT`]. Read
+/// (`body_piece_secs` in `GET /v1/server`), plus [`ANSWER_WAIT`]. Read
 /// from the server rather than kept here, because its config file sets it.
 ///
 /// # Errors
@@ -86,7 +86,7 @@ pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<D
         .with_context(|| format!("{what} failed"))?;
     let (status, text) = read_body(what, response)?;
     let stated: ServerUploadTimes = ok_json(what, status, &text)?;
-    Ok(Duration::from_secs(stated.upload_piece_secs) + ANSWER_WAIT)
+    Ok(Duration::from_secs(stated.body_piece_secs) + ANSWER_WAIT)
 }
 
 /// The answer to `POST /v1/assets/{sha256}/uploads`.
@@ -582,8 +582,8 @@ mod tests {
         let _limits = server.mock(|when, then| {
             when.method(GET).path("/v1/server");
             then.status(200).json_body(serde_json::json!({
-                "upload_stall_secs": 5,
-                "upload_piece_secs": 45,
+                "body_stall_secs": 5,
+                "body_piece_secs": 45,
             }));
         });
 

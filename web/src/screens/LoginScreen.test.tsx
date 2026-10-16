@@ -132,8 +132,8 @@ function serveAt(answer: (address: string) => Answer) {
       version: "0.10.0",
       schema_fingerprint: 1,
       asset_max_bytes: 1024,
-      upload_stall_secs: 60,
-      upload_piece_secs: 300,
+      body_stall_secs: 60,
+      body_piece_secs: 300,
     };
   });
 }

@@ -1456,7 +1456,7 @@ export interface paths {
          * Report whether this Message Crate is unclaimed, closed, or open.
          * @description Also reports this Message Crate's id, the server's Build, its Schema
          *     Fingerprint, whether the Demo Account exists, the attachment size limit,
-         *     and the upload time limits.
+         *     and the body time limits.
          */
         get: operations["get_server"];
         put?: never;
@@ -5530,6 +5530,23 @@ export interface components {
              */
             asset_max_bytes: number;
             /**
+             * Format: int64
+             * @description Seconds a whole request body may take to arrive, from the start of
+             *     the read, before the server stops reading it and answers
+             *     `408 Request Timeout` (`body-stalled`): the config file's
+             *     `[server] body_piece_secs`, 300 unless it sets one. The desktop
+             *     app's Upload sizes its wait for each upload from it.
+             */
+            body_piece_secs: number;
+            /**
+             * Format: int64
+             * @description Seconds a request body, such as an import batch, an attachment, or a
+             *     part of one, may go with no byte arriving before the server stops
+             *     reading it and answers `408 Request Timeout` (`body-stalled`): the config
+             *     file's `[server] body_stall_secs`, 60 unless it sets one.
+             */
+            body_stall_secs: number;
+            /**
              * @description Whether the Demo Account exists and is not being built. While it
              *     does, the screen offers a way into it beside whatever `state` shows:
              *     it has no password, so there is nothing to type. During a build it
@@ -5555,23 +5572,6 @@ export interface components {
              *     `open` shows Login and Create Account.
              */
             state: components["schemas"]["ServerState"];
-            /**
-             * Format: int64
-             * @description Seconds a whole request body may take to arrive, from the start of
-             *     the read, before the server stops reading it and answers
-             *     `408 Request Timeout` (`upload-stalled`): the config file's
-             *     `[server] upload_piece_secs`, 300 unless it sets one. The desktop
-             *     app's Upload sizes its wait for each upload from it.
-             */
-            upload_piece_secs: number;
-            /**
-             * Format: int64
-             * @description Seconds a request body, such as an import batch, an attachment, or a
-             *     part of one, may go with no byte arriving before the server stops
-             *     reading it and answers `408 Request Timeout` (`upload-stalled`): the config
-             *     file's `[server] upload_stall_secs`, 60 unless it sets one.
-             */
-            upload_stall_secs: number;
             /**
              * @description The server's Build: its Product Version, plus the commit it was built
              *     from unless it is a release. An app compares the Product Version with
@@ -6097,7 +6097,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -6299,7 +6299,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -6424,7 +6424,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -6628,7 +6628,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -6892,7 +6892,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -7409,7 +7409,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -7536,7 +7536,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -7840,7 +7840,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -8313,7 +8313,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -8707,7 +8707,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9023,7 +9023,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9286,7 +9286,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9484,7 +9484,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9663,7 +9663,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9756,7 +9756,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9860,7 +9860,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -9960,7 +9960,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -10057,7 +10057,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -10322,7 +10322,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -11170,7 +11170,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -11439,7 +11439,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -11711,7 +11711,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -11908,7 +11908,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -12033,7 +12033,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -12165,7 +12165,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -12376,7 +12376,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -12561,7 +12561,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -12824,7 +12824,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -13022,7 +13022,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -13399,7 +13399,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -13666,7 +13666,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -13992,7 +13992,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -14169,7 +14169,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -14556,7 +14556,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;
@@ -14767,7 +14767,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
             408: {
                 headers: {
                     [name: string]: unknown;

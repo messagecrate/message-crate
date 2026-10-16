@@ -35,8 +35,7 @@ use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::request_body::{
-    content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
-    upload_body_bounded,
+    body_time_bounded, content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
 };
 use crate::server::Created;
 use crate::text_caps::{
@@ -603,14 +602,14 @@ pub(crate) async fn create_import_batch(
         }
         // The slot comes before the body, so a batch waiting behind the
         // running imports holds no disk (#2095). The read gives up once the
-        // body stops arriving or takes too long (`upload-stalled`), so a
+        // body stops arriving or takes too long (`body-stalled`), so a
         // client gone part-way, or one that sends a byte now and then, never
         // holds the slot for good.
         let permit = take_import_slot(&importer.imports).await?;
         let temp = batch_bodies::new_dir(&importer.cfg.paths.data_dir)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let body = upload_body_bounded(request.into_body(), importer.upload_time_limits);
+        let body = body_time_bounded(request.into_body(), importer.body_time_limits);
         // A server told to stop while the body arrives stops reading it at
         // once and refuses the batch, as it refuses one waiting for a slot,
         // so the stop never waits for the rest of a body (#2878). Dropping

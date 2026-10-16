@@ -40,7 +40,7 @@ use crate::middleware::{
     mark_routine, no_store_unless_set, require_json_acceptable,
 };
 use crate::open_db::OpenDb;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 
 /// The router's state. A handler never takes it whole: it takes
 /// `State<SqlitePool>`, `State<Arc<Config>>`, or one of the sub-states the
@@ -60,10 +60,10 @@ pub struct AppState {
     /// What an attachment upload holds: the per-file lock and the part size.
     pub(crate) assets: AssetState,
     /// How long an upload body may go with no byte arriving, and may take in
-    /// all, from `[server] upload_stall_secs` and `upload_piece_secs`.
+    /// all, from `[server] body_stall_secs` and `body_piece_secs`.
     /// `GET /v1/server` states them, so the Upload sizes its own wait from
     /// what the server holds.
-    pub(crate) upload_time_limits: UploadTimeLimits,
+    pub(crate) body_time_limits: BodyTimeLimits,
     /// The wait before the answer to a refused login or a wrong current
     /// password. `serve` sleeps; the test harness swaps in one that counts
     /// each wait and returns at once.
@@ -206,7 +206,7 @@ sub_state!(
     SqlitePool => db,
     ImportState => imports,
     AssetState => assets,
-    UploadTimeLimits => upload_time_limits,
+    BodyTimeLimits => body_time_limits,
     RefusalWait => refusal_wait,
     DemoState => demo,
     MediaLinkKey => media_link_key,
@@ -218,11 +218,7 @@ impl AppState {
     /// The state every handler shares, over an opened database. `serve` and the
     /// test harness both come through here, so the locks and the slots are
     /// assembled in one place.
-    pub fn new(
-        opened: OpenDb,
-        asset_part_size: usize,
-        upload_time_limits: UploadTimeLimits,
-    ) -> Self {
+    pub fn new(opened: OpenDb, asset_part_size: usize, body_time_limits: BodyTimeLimits) -> Self {
         let media_tools: Arc<dyn media::MediaTools> = Arc::new(opened.cfg.media_tools());
         Self {
             media_tools,
@@ -233,7 +229,7 @@ impl AppState {
                 complete_locks: KeyedLocks::default(),
                 part_size: asset_part_size,
             },
-            upload_time_limits,
+            body_time_limits,
             refusal_wait: RefusalWait::default(),
             demo: DemoState::default(),
             media_link_key: MediaLinkKey::random(),
@@ -537,7 +533,7 @@ pub(crate) fn test_app_state(pool: SqlitePool, data_dir: &std::path::Path) -> Ap
             wal_error: None,
         },
         asset_uploads::DEFAULT_PART_SIZE,
-        UploadTimeLimits::of(&crate::config::ServerConfig::default()),
+        BodyTimeLimits::of(&crate::config::ServerConfig::default()),
     );
     // A refused login counts its wait rather than sleeping it, so no test
     // sleeps and a test can read how many refusals waited.
