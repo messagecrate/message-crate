@@ -1,10 +1,15 @@
+/**
+ * Testing Library's `act`, given up when the test times out, for a test that
+ * awaits a held call inside `act`. Importing this module registers a
+ * `beforeEach` in the importing test file that records each test's signal.
+ */
+
 import { act as rtlAct } from "@testing-library/react";
 import { beforeEach } from "vitest";
 
 /** The signal of the test running now, which Vitest aborts when the test times out. */
 let testSignal: AbortSignal | null = null;
 
-// Importing this module registers the hook in the importing test file.
 beforeEach(({ signal }) => {
   testSignal = signal;
 });
@@ -26,16 +31,25 @@ function aborted(signal: AbortSignal): Promise<never> {
  * that test.
  *
  * An `afterEach` that runs after the test timed out finds the signal already
- * aborted. Its `act` runs without the race, so it can still end what the test
- * left running.
+ * aborted, so a race would reject at once and the hook could not end what the
+ * test left running. Its `act` starts the call inside a scope that closes at
+ * once and returns the call's promise outside it, so the hook can still await
+ * it, and no scope stays open if it never settles.
  */
 export function act<T>(callback: () => Promise<T>): Promise<T>;
 export function act(callback: () => void): void;
 export function act(callback: () => unknown): unknown {
   const signal = testSignal;
+  if (signal?.aborted) {
+    let done: unknown;
+    rtlAct(() => {
+      done = callback();
+    });
+    return done;
+  }
   return rtlAct(() => {
     const done = callback();
-    if (!(done instanceof Promise) || signal === null || signal.aborted) return done;
+    if (!(done instanceof Promise) || signal === null) return done;
     return Promise.race([done, aborted(signal)]);
   });
 }
