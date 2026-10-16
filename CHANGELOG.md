@@ -448,11 +448,13 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-15: **Settings checks an identity change against the list it
-  shows.** After adding or removing one of an account's identities, Settings
-  now reads the identities list again to confirm the change. A WhatsApp
-  internal id such as `123456789012345@lid`, or a name such as `sam`, is in
-  that list, so removing one is confirmed like any other identity (#2738).
+- 2026-10-15: **Removing an identity that is neither a number nor an
+  email address is now checked.** Settings confirmed an identity removed by
+  looking for it among the account's numbers and email addresses, so a
+  WhatsApp internal id such as `123456789012345@lid`, or a name such as
+  `sam`, was reported removed without being looked for, and adding one would
+  have said the server did not add it. Settings now looks in the list of
+  identities it shows (#2738).
 - 2026-10-14: **Last Login and App are on an account's Account tab.** When
   the owner opens an account from User Accounts, when it last logged in and
   the app it last connected with now sit under its username on **Account**,
