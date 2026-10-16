@@ -153,15 +153,19 @@ jobs:
           cargo fmt --all -- --check
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
-  # ── Rust: Clippy on the workspace ─────────────────────────────────────
-  # src-tauri Clippy lives in check-tauri, which already installs the
+  # ── Rust: Clippy and rustdoc on the workspace ─────────────────────────
+  # Rustdoc fails on any warning, so a broken intra-doc link, or one to an
+  # item that no longer exists, never merges (#3096). Private items are
+  # documented too, so their links are checked as well. It shares this job's
+  # system packages and cache rather than paying for its own. src-tauri's
+  # Clippy and rustdoc live in check-tauri, which already installs the
   # webkit/gtk system packages its build needs.
   clippy:
     name: Clippy (workspace)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -180,6 +184,11 @@ jobs:
 
       - name: Clippy workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rustdoc workspace
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --document-private-items
 
   # ── Rust: build + test ────────────────────────────────────────────────
   # ffmpeg is installed because the transcode, media, reexport and demo-seed
@@ -256,6 +265,11 @@ jobs:
 
       - name: Clippy src-tauri
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rustdoc src-tauri
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
 
       - name: Test src-tauri
         run: cargo test --manifest-path src-tauri/Cargo.toml
@@ -372,9 +386,9 @@ jobs:
   # ── Docs: Astro check + build ─────────────────────────────────────────
   # The site build without rustdoc or the HTTP API catalog: both are copied
   # into public/, which `astro check` never reads and the link checker
-  # excludes, so neither can change whether the site builds. cargo doc
-  # failures are compile failures the test job already catches. The full
-  # build with both, and the deploy, stay in docs.yml on the release tag.
+  # excludes, so neither can change whether the site builds. A rustdoc
+  # warning fails the clippy job and check-tauri. The full build with both,
+  # and the deploy, stay in docs.yml on the release tag.
   docs:
     name: Check and build (docs)
     needs: changes

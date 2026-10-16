@@ -895,7 +895,7 @@ pub async fn replace_demo_account(
 
 /// Record the owner's build of the Demo Account in the Audit Trail, then end
 /// every Session of the Demo Account, so nobody is inside it while it is
-/// removed and built again ([`audit_trail::record_demo_build`]).
+/// removed and built again ([`crate::db::audit_trail::record_demo_build`]).
 async fn record_build_and_end_demo_sessions(
     db: &SqlitePool,
     size: DemoDataSize,

@@ -5,6 +5,8 @@ description: How to write rustdoc comments and HTTP API descriptions that develo
 
 This page is the standard for `///` and `//!` comments and utoipa annotations in the Rust crates. Workspace rustdoc publishes at [/docs/developer/rustdoc/](/docs/developer/rustdoc/); the HTTP catalog at [/docs/developer/rustdoc/http/](/docs/developer/rustdoc/http/). Utoipa annotations on HTTP handlers become the summaries and descriptions shown in that catalog.
 
+CI fails on any rustdoc warning, on the workspace (a step of the `clippy` job in `ci.yml`) and on `src-tauri` (a step of `check-tauri`), and `./scripts/check-pr.sh` runs the same check locally; the commands are in [`AGENTS.md`](https://github.com/messagecrate/message-crate/blob/main/AGENTS.md), "Build, format, and test". So a link to an item that does not exist, or no longer does, fails the pull request. Private items are documented too, so their links are checked. A public item's docs that link to a private item fail as well, because the published rustdoc leaves private items out and the link would lead nowhere: name the private item in backticks without the link brackets.
+
 Each example below names a file and the item inside it, never a line number, because line numbers move with every edit and a stale one is worse than none. When an example stops showing what the page says it shows, replace it with one that does.
 
 ## First sentence states what the item is
@@ -37,7 +39,6 @@ Never write self-contradictory filler, invented terms, or unexplained jargon in 
 
 - `crates/libs/ir/src/lib.rs`, `Attachment::missing_reason` — "None when the attachment was imported; set only when bytes were skipped, to one of the closed set in [`missing_reason`]: `file_missing`, `too_large`, `not_copied`, `not_fetched`, `no_path`, or `convert_failed: <detail>`." — Good: says exactly when the field is `None` and lists the values it can hold. It replaced "Absent when present", which was self-contradictory and explained nothing.
 - `crates/libs/api-types/src/lib.rs`, `ImportMode::Append` — "Keep existing messages and add only new ones. The default, and what the HTTP API assumes when a request names no mode: it never removes anything." — Good: a plain statement of what the mode does, instead of an invented term such as "resume-safe".
-- `crates/libs/import/src/run.rs`, `ImportConfig::mode` — "`Append` adds to existing data; `Replace` clears then imports (with force)." — Bad: "with force" is unexplained; the reader cannot tell what is forced or what the alternative would be.
 - `crates/libs/ir/src/lib.rs`, `enum IdentityService` — "Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS)." — Good: names the distinction a reader would otherwise get wrong, instead of leaving "service" to mean two things.
 
 ## Handler docs describe the operation, not the route

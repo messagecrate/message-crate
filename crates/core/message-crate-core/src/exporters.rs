@@ -186,7 +186,7 @@ pub struct Form {
 #[derive(Debug, Clone)]
 pub struct FormContext<'a> {
     /// The Scratch Directory the run's scratch data goes under
-    /// ([`ExporterConfig::scratch_dir`]).
+    /// ([`RunContext::scratch_dir`]).
     pub scratch_dir: &'a Path,
     /// The run's tools, whose Tools Directory is where the WhatsApp
     /// exporter finds `wtsexporter` ([`MediaTools::tools_dir`]).

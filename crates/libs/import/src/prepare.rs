@@ -7,7 +7,6 @@
 //! worker needs is read-only and lives in [`PrepareContext`]; the only shared
 //! mutable state is the journal behind a mutex.
 
-use api_types::ImportMode;
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
@@ -153,11 +152,12 @@ impl<'a> PrepareContext<'a> {
         self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// True when the journal says this conversation file already fully imported.
+    /// True when the journal says this conversation file already fully
+    /// imported. A replace or forced Upload opens the journal without its
+    /// earlier progress ([`crate::journal::EarlierProgress`]), so it skips
+    /// nothing an earlier Upload sent.
     pub(crate) fn already_imported(&self, name: &str) -> bool {
-        self.cfg.mode == ImportMode::Append
-            && !self.cfg.force
-            && self.lock_journal().journal.has_file(name)
+        self.lock_journal().journal.has_file(name)
     }
 }
 
