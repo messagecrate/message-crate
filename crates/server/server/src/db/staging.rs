@@ -803,8 +803,8 @@ pub async fn replace_staged_text(
 
 /// A `(SELECT ...)` of `rows` rows bound in turn, each with one value per
 /// column of `columns` (such as [`ATTACHMENT_COLUMNS`]), under those
-/// column names: the copies [`add_copy_attachments`] and
-/// [`add_copy_tapbacks`] hand the shared rules.
+/// column names: the copies [`add_copy_attachments`] hands the shared
+/// rules.
 fn bound_rows_sql(columns: &[&str], rows: usize) -> String {
     let aliases: Vec<String> = columns
         .iter()
@@ -862,10 +862,12 @@ pub async fn add_copy_attachments(
 /// the rule promotion adds a copy's tapbacks to a stored message
 /// ([`insert_new_tapbacks_sql`]). Every row's `message_id` is the staged
 /// message's. Returns how many were inserted. The caller passes one copy
-/// at a time, as for [`add_copy_attachments`]. Reactions with no reactor
-/// are counted within one statement, so a copy split over two chunks would
-/// count its second chunk against its first; one message's reactions fit
-/// one chunk, which holds thousands.
+/// at a time, as for [`add_copy_attachments`].
+///
+/// The copy goes into the temp table `_copy_tapbacks` first, in chunks
+/// that fit the bind limit, and the rule then runs once over all of it: a
+/// rule run per chunk would count a later chunk's reactions with no
+/// reactor against the rows an earlier chunk added.
 ///
 /// # Errors
 ///
@@ -874,18 +876,40 @@ pub async fn add_copy_tapbacks(
     conn: &mut SqliteConnection,
     rows: &[StagingTapback],
 ) -> Result<u64> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let columns = TAPBACK_COLUMNS.join(", ");
+    // Two statements on purpose: one prepared statement holds one command.
+    sqlx::query(AssertSqlSafe(format!(
+        "CREATE TEMP TABLE IF NOT EXISTS _copy_tapbacks ({columns})"
+    )))
+    .execute(&mut *conn)
+    .await
+    .context("create the copy's reaction table")?;
+    sqlx::query("DELETE FROM _copy_tapbacks")
+        .execute(&mut *conn)
+        .await
+        .context("empty the copy's reaction table")?;
     let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
-    let mut inserted = 0u64;
     for chunk in rows.chunks(size) {
-        let copies = bound_rows_sql(TAPBACK_COLUMNS, chunk.len());
-        let sql = insert_new_tapbacks_sql("staging_tapbacks", &copies);
-        inserted += bind_tapbacks(sqlx::query(sql), chunk)
+        let sql = format!(
+            "INSERT INTO _copy_tapbacks ({columns}) VALUES {}",
+            values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
+        );
+        bind_tapbacks(sqlx::query(AssertSqlSafe(sql)), chunk)
+            .execute(&mut *conn)
+            .await
+            .context("hold a chunk of a copy's reactions")?;
+    }
+    let copies = format!("(SELECT {columns}, rowid AS seq FROM _copy_tapbacks)");
+    Ok(
+        sqlx::query(insert_new_tapbacks_sql("staging_tapbacks", &copies))
             .execute(&mut *conn)
             .await
             .context("stage a copy's new reactions")?
-            .rows_affected();
-    }
-    Ok(inserted)
+            .rows_affected(),
+    )
 }
 
 // ── Promotion: staging rows into the production tables ───────────────────
@@ -1988,22 +2012,37 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> SqlStr {
 
 /// The statement that inserts into `held` the tapback rows of `copies`
 /// that `held` does not hold yet, where `copies` is a table or
-/// `(SELECT ...)` with the [`TAPBACK_COLUMNS`] whose `message_id` is a row
-/// of `held`'s message. The one rule for when another copy of a reaction
-/// is new, for a stored message ([`promote_tapbacks`]) and for two copies
-/// staged in one import ([`add_copy_tapbacks`]).
+/// `(SELECT ...)` with the [`TAPBACK_COLUMNS`] and `seq`, whose
+/// `message_id` is a row of `held`'s message. The one rule for when
+/// another copy of a reaction is new, for a stored message
+/// ([`promote_tapbacks`]) and for two copies staged in one import
+/// ([`add_copy_tapbacks`]).
 ///
 /// A reaction that names its reactor (a handle, a display name, or the
 /// account holder) is new when no row of `held` matches it field for field.
-/// A reaction with no reactor, which only iMazing writes, cannot be told
-/// from another person's reaction with the same emoji, so those are
-/// counted instead: per message, part, kind and emoji, the copy adds as
-/// many as it holds above the count `held` has. A copy with fewer adds
-/// none and removes none (#3112). `seq` keeps the rows in the order
-/// `copies` gives them, so they are inserted in it and readers that sort
-/// by id see the source's order.
+/// A reaction with no reactor ([`NO_REACTOR`]) cannot be told from another
+/// person's reaction with the same emoji, so those are counted instead:
+/// per message, part, kind and emoji, the copy adds as many as it holds
+/// above the count `held` has. A copy with fewer adds none and removes
+/// none (#3112). iMazing writes only reactions with no reactor, and
+/// WhatsApp writes one when the backup does not name who reacted.
+///
+/// `seq` orders the rows of `copies`, such as by the staging row's id. The
+/// rows are numbered and inserted in that order, so readers that sort
+/// reactions by id see the source's order.
 fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
     let columns = TAPBACK_COLUMNS.join(", ");
+    // A row of `held` that matches the copy's row `st` field for field. A
+    // copy's row with no reactor matches exactly the held rows with no
+    // reactor, so the count below needs no test of its own.
+    let same = r"
+                t.message_id = st.message_id
+                AND t.part_index = st.part_index
+                AND t.kind = st.kind
+                AND t.emoji IS NOT DISTINCT FROM st.emoji
+                AND t.is_from_me = st.is_from_me
+                AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
+                AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name";
     AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
@@ -2016,31 +2055,12 @@ fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
                        PARTITION BY message_id, part_index, kind, emoji, {NO_REACTOR}
                        ORDER BY seq
                    ) AS nth
-            FROM (SELECT {columns}, ROW_NUMBER() OVER () AS seq FROM {copies})
+            FROM {copies}
         ) AS st
         WHERE CASE
-            WHEN st.no_reactor THEN st.nth > (
-                SELECT COUNT(*)
-                FROM {held} t
-                WHERE t.message_id = st.message_id
-                  AND t.part_index = st.part_index
-                  AND t.kind = st.kind
-                  AND t.emoji IS NOT DISTINCT FROM st.emoji
-                  AND t.is_from_me = 0
-                  AND t.sender_handle_id IS NULL
-                  AND t.sender_display_name IS NULL
-            )
-            ELSE NOT EXISTS (
-                SELECT 1
-                FROM {held} t
-                WHERE t.message_id = st.message_id
-                  AND t.part_index = st.part_index
-                  AND t.kind = st.kind
-                  AND t.emoji IS NOT DISTINCT FROM st.emoji
-                  AND t.is_from_me = st.is_from_me
-                  AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
-                  AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name
-            )
+            WHEN st.no_reactor
+                THEN st.nth > (SELECT COUNT(*) FROM {held} t WHERE {same})
+            ELSE NOT EXISTS (SELECT 1 FROM {held} t WHERE {same})
         END
         ORDER BY st.seq
         "
@@ -2057,7 +2077,8 @@ const NO_REACTOR: &str =
 /// (such as [`ATTACHMENT_COLUMNS`]), each under its production message as
 /// the shared rules ([`insert_new_attachments_sql`] and the others) take
 /// them. `columns` starts with `message_id`, which becomes the production
-/// message's id, so the columns keep their order.
+/// message's id, so the columns keep their order. After them comes `seq`,
+/// the staging row's id, which orders the rows ([`insert_new_tapbacks_sql`]).
 fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
     debug_assert_eq!(columns.first(), Some(&"message_id"));
     let rest: Vec<String> = columns[1..]
@@ -2065,7 +2086,7 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
         .map(|name| format!("s.{name}"))
         .collect();
     format!(
-        "(SELECT mm.prod_id AS message_id, {} \
+        "(SELECT mm.prod_id AS message_id, {}, s.id AS seq \
           FROM {table} s JOIN _promote_msg_map mm ON mm.staging_id = s.message_id)",
         rest.join(", ")
     )
