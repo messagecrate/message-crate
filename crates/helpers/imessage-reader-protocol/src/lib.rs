@@ -60,7 +60,7 @@ use serde_json::Value;
 /// 6: [`Event::Attachment`] carries an [`AttachmentFile`], which tells a
 /// file the backup does not hold from one that failed to decrypt.
 /// 7: every address is named an identity: [`Participant::identity`],
-/// [`Message::sender_identity`], [`Message::owner_identity`] and the
+/// `Message::sender_identity`, [`Message::owner_identity`] and the
 /// tapbacks' `reactor_identity` (they were `handle`, `sender_handle`,
 /// `owner_handle` and `reactor_handle`).
 /// 8: a message's reactions are [`Message::reactions`], a list of
@@ -84,14 +84,16 @@ use serde_json::Value;
 /// 15: a message carries [`Message::time_precision`], whether `chat.db`
 /// recorded its time below the second.
 /// 16: a [`Participant`] carries [`Participant::country`] and a message
-/// [`Message::sender_country`], the country `chat.db`'s `handle` row names
+/// `Message::sender_country`, the country `chat.db`'s `handle` row names
 /// for that identity.
 /// 17: [`Event::Warning`] carries a line about something the run went on
 /// without, which [`Event::Log`] carried before.
 /// 18: a one-to-one conversation's [`Conversation::conversation_type`] is
 /// [`ONE_TO_ONE_CONVERSATION_TYPE`] (`one-to-one`), where it was
 /// `individual`.
-pub const PROTOCOL_VERSION: u32 = 18;
+/// 19: a message's sender is one [`Message::sender`], a [`Sender`], where it
+/// was `sender_identity`, `sender_display_name` and `sender_country`.
+pub const PROTOCOL_VERSION: u32 = 19;
 
 /// The [`Conversation::conversation_type`] of a one-to-one conversation: one
 /// with a single other person that the source does not mark as a group.
@@ -408,6 +410,21 @@ pub struct Participant {
     pub country: Option<String>,
 }
 
+/// The person who sent an incoming message, read from the row's `handle`
+/// row. Every fact about a sender travels in this one value, so a new one is
+/// added here and nowhere else in the protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sender {
+    /// Phone number or email address as Messages stores it: the `handle`
+    /// row's `id`.
+    pub identity: String,
+    /// The contact name, when the address book knows one, else the address.
+    pub display_name: Option<String>,
+    /// The country Messages read the identity in, as [`Participant::country`]
+    /// says.
+    pub country: Option<String>,
+}
+
 /// One message row, already classified.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -429,13 +446,9 @@ pub struct Message {
     /// `imessage`, `sms`, `mms`, `tapback`, `sticker_tapback`,
     /// `announcement`, `location_share`, or `balloon`.
     pub message_kind: String,
-    /// The sender's address, for an incoming message.
-    pub sender_identity: Option<String>,
-    /// The sender's contact name, for an incoming message.
-    pub sender_display_name: Option<String>,
-    /// The country Messages read the sender's identity in, as
-    /// [`Participant::country`] says, for an incoming message.
-    pub sender_country: Option<String>,
+    /// Who sent an incoming message. `None` for a message the owner sent,
+    /// and for an incoming row whose `handle` row names no address.
+    pub sender: Option<Sender>,
     /// The subject line, when the message has one.
     pub subject: Option<String>,
     /// The body, or the sentence that stands in for a tapback or

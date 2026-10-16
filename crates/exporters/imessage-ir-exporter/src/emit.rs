@@ -412,11 +412,14 @@ fn message_to_ir(
             });
             (identity, name, None)
         }
-        Direction::Incoming => (
-            record.sender_identity,
-            record.sender_display_name,
-            known_country(record.sender_country),
-        ),
+        Direction::Incoming => match record.sender {
+            Some(sender) => (
+                Some(sender.identity),
+                sender.display_name,
+                known_country(sender.country),
+            ),
+            None => (None, None, None),
+        },
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -977,6 +980,7 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use imessage_reader_protocol::Sender;
     use ir::TimePrecision;
     use ir::testutil::sample_attachment;
     use message_crate_core::ProgressSink;
@@ -1137,7 +1141,11 @@ mod tests {
     #[test]
     fn a_country_message_crate_does_not_know_names_no_country() {
         let mut record = message_record("07700 900123", "g-1", false);
-        record.sender_country = Some("UK".into());
+        record
+            .sender
+            .as_mut()
+            .expect("an incoming record has a sender")
+            .country = Some("UK".into());
         assert_eq!(
             message_to_ir(record, AttachmentEmbed::Disabled, false)
                 .0
@@ -1145,7 +1153,11 @@ mod tests {
             None
         );
         let mut record = message_record("07700 900123", "g-2", false);
-        record.sender_country = Some("GB".into());
+        record
+            .sender
+            .as_mut()
+            .expect("an incoming record has a sender")
+            .country = Some("GB".into());
         assert_eq!(
             message_to_ir(record, AttachmentEmbed::Disabled, false)
                 .0
@@ -1175,9 +1187,11 @@ mod tests {
             outgoing,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_identity: (!outgoing).then(|| "+15555550122".to_string()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: (!outgoing).then(|| Sender {
+                identity: "+15555550122".into(),
+                display_name: None,
+                country: None,
+            }),
             subject: None,
             text: "hi".into(),
             reactions: Vec::new(),
