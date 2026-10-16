@@ -7,6 +7,7 @@ import { useIdentityCountryPick } from "../../components/useIdentityCountryPick"
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
+import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
@@ -17,6 +18,17 @@ import { sectionTitleClass } from "./profileStyles";
 /** Whether `list` has a row at `address` on `service`, both as the server lists them. */
 function listHolds(list: readonly Identity[], { address, service }: ListedIdentity): boolean {
   return list.some((row) => row.address === address && row.service === service);
+}
+
+/**
+ * Whether `stored`, an address as the server lists it, is `typed` as the
+ * person typed it. The server stores an address in lower case and a number
+ * in E.164 when its country is known, so a number is matched by its digits.
+ */
+function storedAs(typed: string, stored: string): boolean {
+  const trimmed = typed.trim();
+  if (stored === trimmed.toLowerCase()) return true;
+  return !trimmed.includes("@") && phonesMatch(trimmed, stored);
 }
 
 /** An identity as the identities list names it: its stored address and listed service. */
@@ -77,6 +89,7 @@ export function IdentitiesSection({
     listAccountIdentities({ signal }, managedAccountId);
   const identities = useRouteQuery(identitiesKey, fetchIdentities);
   const cache = useRouteCache();
+  const refetchIdentities = () => cache.fetch(identitiesKey, fetchIdentities);
   const listed = identities.data;
   const rows: Identity[] = useMemo(() => listed ?? placeholderRows(profile), [listed, profile]);
   const tableRows: IdentityRow[] = useMemo(
@@ -100,7 +113,14 @@ export function IdentitiesSection({
     notChanged: string,
   ) => {
     await updateProfile.mutateAsync(body);
-    const list = await cache.fetch(identitiesKey, fetchIdentities);
+    let list: Identity[];
+    try {
+      list = await refetchIdentities();
+    } catch (e) {
+      throw new Error(
+        `The change was sent, but the identities list could not be read to confirm it. ${errorLine(e)}`,
+      );
+    }
     if (!changed(list)) {
       throw new Error(notChanged);
     }
@@ -109,13 +129,19 @@ export function IdentitiesSection({
   const confirmAdd = async ({ address, service }: { address: string; service: OfferedService }) => {
     setAddError("");
     try {
-      // The server stores the address in its own form (E.164 for a number),
-      // so the identity added is the row on `service` the list did not have
-      // before. The list names each service as the dialog offers it.
-      const before = listed ?? (await cache.fetch(identitiesKey, fetchIdentities));
+      // The list names each service as the dialog offers it. The address is
+      // the server's own form: a row on `service` matches when it is the
+      // typed address in that form, or is new, since a number typed without
+      // its country code is stored with the code the account's country gives.
+      const before = listed ?? (await refetchIdentities());
       await changeAndCheck(
         { identities: [{ address, service: serverService(service) }] },
-        (list) => list.some((row) => row.service === service && !listHolds(before, row)),
+        (list) =>
+          list.some(
+            (row) =>
+              row.service === service &&
+              (storedAs(address, row.address) || !listHolds(before, row)),
+          ),
         "The server did not add that identity.",
       );
       setAdding(false);

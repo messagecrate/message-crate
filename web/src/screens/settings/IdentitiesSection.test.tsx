@@ -158,7 +158,7 @@ describe("IdentitiesSection", () => {
   }
 
   /** A row the server lists for an identity with no messages. */
-  const bare = (address: string, service: string): Identity => ({
+  const listedWithNoMessages = (address: string, service: string): Identity => ({
     ...nth(identities, 2),
     address,
     service,
@@ -166,7 +166,7 @@ describe("IdentitiesSection", () => {
 
   it("adds an email address on the phone service and closes the dialog when the identities list holds it", async () => {
     const user = setupUser();
-    serverLists(identities, (rows) => [...rows, bare("new@example.com", "email")]);
+    serverLists(identities, (rows) => [...rows, listedWithNoMessages("new@example.com", "email")]);
     render(<IdentitiesSection profile={profile} />);
     await settle();
 
@@ -191,7 +191,7 @@ describe("IdentitiesSection", () => {
 
   it("closes the dialog when the server lists the number added in its own form", async () => {
     const user = setupUser();
-    serverLists(identities, (rows) => [...rows, bare("+15555550199", "whatsapp")]);
+    serverLists(identities, (rows) => [...rows, listedWithNoMessages("+15555550199", "whatsapp")]);
     render(<IdentitiesSection profile={profile} />);
     await settle();
 
@@ -229,10 +229,46 @@ describe("IdentitiesSection", () => {
     expect(screen.queryByText("archer@example.com")).not.toBeInTheDocument();
   });
 
+  it("closes the dialog when the number added is one the account holds, typed another way", async () => {
+    const user = setupUser();
+    // The server stores `(555) 555-0100` as the `+15555550100` it already
+    // holds, so the list gains no row.
+    serverLists(identities, (rows) => rows);
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Add identity" }));
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "(555) 555-0100");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("says the change was sent when the identities list cannot be read after it", async () => {
+    const user = setupUser();
+    serverLists(identities, (rows) => rows.filter((row) => row.address !== "archer@example.com"));
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+    listAccountIdentities.mockRejectedValue(new Error("network down"));
+
+    await user.click(screen.getByRole("button", { name: "Remove archer@example.com (Email)" }));
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await settle();
+    expect(
+      within(dialog).getByText(
+        "The change was sent, but the identities list could not be read to confirm it. Network down",
+      ),
+    ).toBeInTheDocument();
+  });
+
   // Neither a number nor an email address: the profile lists neither, and
   // the identities list names each with its service (#2738).
-  const lid = bare("123456789012345@lid", "whatsapp");
-  const sam = bare("sam", "phone");
+  const lid = listedWithNoMessages("123456789012345@lid", "whatsapp");
+  const sam = listedWithNoMessages("sam", "phone");
 
   it.each([
     ["a WhatsApp internal id", lid, "Remove 123456789012345@lid (WhatsApp)"],
