@@ -229,6 +229,10 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The Import screen says Resume for an interrupted import.**
+  When an import stopped during Staging or Media, its button now reads
+  **Resume**, where it read **Pick up** and **Carry on**. The headings read
+  "Resume your last import" and "Resume where you left off" (#2856).
 - 2026-10-15: The way the desktop app sends an import's conversations to
   the server was reworked inside, with nothing visible (#2053).
 - 2026-10-15: **The desktop app keeps everything in one directory.** The
