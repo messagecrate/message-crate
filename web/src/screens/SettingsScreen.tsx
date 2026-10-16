@@ -1,5 +1,5 @@
 import { TabList, TabPanel, Tabs } from "react-aria-components";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import Tab from "../components/Tab";
 import { canUseConvert } from "../lib/desktopFeatures";
 import { parseSelectKey } from "../lib/selectKey";
@@ -110,11 +110,16 @@ export default function SettingsScreen({
   backToAccounts?: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const { profile } = useSettingsAccount(managedAccountId);
-  // Held here, not in the Profile panel, so a tab switch keeps a typed name
-  // and the server's refusal of it.
-  const nameEdit = useNameEdit();
   const managed = managedAccountId !== undefined;
+  // Held here, not in the Profile panel, so a tab switch keeps a typed name
+  // and the server's refusal of it. A refusal that arrives after this screen
+  // has gone names the account and the Profile to go back to.
+  const nameEdit = useNameEdit({
+    profilePath: `${pathname}?tab=profile`,
+    username: managed ? (profile?.username ?? null) : null,
+  });
   const tabs = creating
     ? visibleTabs(isTauri(), true, false)
     : visibleTabs(isTauri(), managed, profile?.is_owner === true);
