@@ -93,6 +93,18 @@ function sessionEnded(entry: AuditEntry): string {
   }
 }
 
+function exportRunClosed(entry: AuditEntry): string {
+  const run = entry.export_run_id == null ? "An Export Run" : `Export Run ${entry.export_run_id}`;
+  switch (entry.reason) {
+    case "replaced":
+      return `${run} canceled: a new Export started`;
+    case "idle":
+      return `${run} canceled: no page was read for an hour`;
+    default:
+      return `${run} canceled by the server`;
+  }
+}
+
 function loginRefused(entry: AuditEntry): string {
   switch (entry.reason) {
     case "unknown_username":
@@ -169,6 +181,8 @@ export function describeAuditEntry(entry: AuditEntry): string {
       return importRun(entry);
     case "export_run":
       return exportRun(entry);
+    case "export_run_closed":
+      return exportRunClosed(entry);
     default:
       entry.action satisfies never;
       return entry.action;

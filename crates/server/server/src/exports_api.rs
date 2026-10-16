@@ -2,6 +2,8 @@
 //! messages it matches and counts them, `GET /v1/exports/{id}/messages` pages
 //! that list, and `complete` (as `completed` or `failed`) or `cancel` closes
 //! the run and drops the list (`docs/architecture/http-api.md`, "Runs").
+//! An account has one running run: a new start, or an hour with no page
+//! read, closes it as `cancelled`.
 //!
 //! Every route here takes the `export` scope on a session or an API token.
 //! A program with an export token reads messages only through a run it
@@ -91,7 +93,9 @@ impl From<ExportRun> for OwnerExportRun {
 /// messages it matches now, count them, and record the run as `running` with
 /// the credential that started it, all in one transaction. The run's pages
 /// read that list, never the scope again, so what a run hands over is fixed
-/// when it is created. The run starts at `now`.
+/// when it is created. The run starts at `now`, and the account's running
+/// run, when it has one, is closed as `cancelled` in the same transaction
+/// ([`exports::start_export`]).
 ///
 /// # Errors
 ///
@@ -335,7 +339,10 @@ async fn close_export(
 /// Start an Export Run: compile the scope, list and count the messages it
 /// matches now, and record the run as `running`. Read that list at
 /// `GET /v1/exports/{id}/messages`, then close the run with `complete` or
-/// `cancel`.
+/// `cancel`. An account has one running run: starting one closes the one
+/// already running as `cancelled`, and a run with no page read for an hour
+/// is closed the same way. Either way its pages then answer
+/// `409 Conflict`.
 #[utoipa::path(
     post,
     path = "/v1/exports",
@@ -497,6 +504,7 @@ pub(crate) async fn list_export_messages(
     )?;
 
     let mut conn = db.acquire().await?;
+    let now = chrono::Utc::now();
     let run = running_export(&mut conn, account, export_id).await?;
     let total = u64::try_from(run.message_count).unwrap_or(0);
     let body = export_messages(
@@ -518,7 +526,7 @@ pub(crate) async fn list_export_messages(
         0
     };
     let reached = i64::try_from(reached).unwrap_or(i64::MAX);
-    if !exports::record_delivered(&mut conn, account, export_id, reached).await? {
+    if !exports::record_delivered(&mut conn, account, export_id, reached, now).await? {
         let run = owned_export(&mut conn, account, export_id).await?;
         return Err(not_running(export_id, run.status));
     }

@@ -1308,6 +1308,27 @@ between pages move the offsets, so pages skipped or repeated messages and
   client steps `offset` by `limit` until it reaches `total`, never by the
   items it got, and never stops on a short or empty page.
 
+An account has at most one running Export Run, held by a partial unique
+index on `exports(account_id) WHERE status = 'running'`, as for Import Runs.
+`POST /v1/exports` replaces the account's running run: in the transaction
+that records the new run, the running one is closed as `cancelled` and its
+list deleted. A start is never refused because a run is open. The server
+also closes as `cancelled` a running run with no page read for an hour,
+counted from its last page or, before the first, from its start; it looks
+once a minute, and when it starts. A client still reading a run closed
+either way gets the `409 Conflict` any run that is not running answers, and
+the desktop app's Export fails with a sentence saying it was canceled. Each
+closure is an `export_run_closed` entry in the Audit Trail, with the reason
+`replaced` (by the person starting the new Export) or `idle` (by the
+server), naming the run.
+Why: every running run holds one row per message it matched, written while
+holding the database's write lock. With no limit, a program with the
+`export` scope could start runs in a loop and grow that table by the
+account's whole message count each time, and a client killed mid-Export
+left its list behind for good (#2080). Replacing rather than refusing keeps
+a person who restarts an Export from being locked out by the run their
+killed app left.
+
 ## The reference
 
 The generated reference, `docs/src/assets/openapi.json`, is produced from the

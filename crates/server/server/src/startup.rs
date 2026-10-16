@@ -86,6 +86,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // Clears a write-ahead log that a read kept from being cleared after a
     // delete for good (#2108).
     crate::db::erase::keep_retrying(state.db.clone());
+    // Closes Export Runs no page was read from for an hour, a server stopped
+    // part-way included (#2080).
+    crate::db::exports::keep_closing_idle_runs(state.db.clone());
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.assets.upload_limits(&state.db).await?;

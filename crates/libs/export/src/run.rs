@@ -247,10 +247,12 @@ pub fn run(
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
     // it ended: cancelled only when the person asked, failed for any other
-    // error. A close that fails after the files are written is a warning,
+    // error. A run the server already closed is left as it is. A close that fails after the files are written is a warning,
     // not a failed export: the directory is complete, only the record is not.
     let action = close_action(&outcome);
-    if let Err(error) = exporter.close_export(export.id, action) {
+    if let Some(action) = action
+        && let Err(error) = exporter.close_export(export.id, action)
+    {
         // A refused completion follows a run whose files are all written;
         // any other refused close follows the error the run returns below.
         let line = if action == CloseAction::Complete(CompleteExportStatus::Completed) {
@@ -300,12 +302,14 @@ pub fn run(
 
 /// How a run that returned `outcome` is closed on the server: completed when
 /// it wrote its conversation files, cancelled when the person stopped it,
-/// and failed for every other error.
-fn close_action<T>(outcome: &Result<T>) -> CloseAction {
+/// and failed for every other error. `None` when the server already closed
+/// it ([`crate::http::RunCanceledOnServer`]): a close would only be refused.
+fn close_action<T>(outcome: &Result<T>) -> Option<CloseAction> {
     match outcome {
-        Ok(_) => CloseAction::Complete(CompleteExportStatus::Completed),
-        Err(error) if error.is::<Cancelled>() => CloseAction::Cancel,
-        Err(_) => CloseAction::Complete(CompleteExportStatus::Failed),
+        Ok(_) => Some(CloseAction::Complete(CompleteExportStatus::Completed)),
+        Err(error) if crate::http::is_run_canceled_on_server(error) => None,
+        Err(error) if error.is::<Cancelled>() => Some(CloseAction::Cancel),
+        Err(_) => Some(CloseAction::Complete(CompleteExportStatus::Failed)),
     }
 }
 
@@ -478,9 +482,10 @@ impl<'a> Export<'a> {
 
     /// Close the run by `action`, retrying a transient failure. The close of
     /// a canceled run is tried once, so Cancel is not kept waiting on a
-    /// server that is away. A completed or failed run keeps every retry
-    /// even when Cancel is pressed during its close, since nothing on the
-    /// server closes a run left running. A failed close is returned as it
+    /// server that is away: a run whose close fails is closed by the server
+    /// once no page of it is read for an hour. A completed or failed run
+    /// keeps every retry even when Cancel is pressed during its close, so
+    /// the server records how it ended rather than as cancelled. A failed close is returned as it
     /// is, never as [`Cancelled`]: the caller logs it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;

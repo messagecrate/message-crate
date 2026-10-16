@@ -28,6 +28,7 @@ An Export Run shows whether it covered everything, a search or picked conversati
 - Logging in, from which app and Build, and how each session ended: logged out, replaced by a newer login, ended by the server, or expired.
 - A refused login: an unknown username, a wrong password, or a disabled account.
 - Each Import Run and Export Run, and what started it: a login, or an API token named by its label and hint.
+- An Export Run the server canceled, and why: a new Export of the account started, or no page of it was read for an hour.
 - The Owner creating the account, disabling or re-enabling it, setting its password, changing its permissions, deleting its messages for good, or deleting it.
 - Every build of the Demo Account, adding it or resetting it, with the set of Demo Data: by the Owner in Owner Home, by the `reset-demo` server command, or by the server's first start on a new Message Crate. A reset is recorded before the old Demo Account is deleted, so it stays among that account's entries, whether it was started from Owner Home or with the `reset-demo` command. An add belongs to no account, since there is none yet, and is read under **Audit Trail** in Owner Home.
 - The account holder changing their password, deleting their messages for good, deleting a conversation from the trash, emptying the trash, making or deleting an API token, and loading or exporting an address book.

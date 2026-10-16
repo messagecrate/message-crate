@@ -7715,7 +7715,7 @@
           "Export"
         ],
         "summary": "Start an Export Run: compile the scope, list and count the messages it matches now, and record the run as `running`.",
-        "description": "Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`.",
+        "description": "Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `cancelled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.",
         "operationId": "create_export",
         "requestBody": {
           "content": {
@@ -13976,6 +13976,7 @@
           "api_token_deleted",
           "address_book_loaded",
           "address_book_exported",
+          "export_run_closed",
           "import_run",
           "export_run"
         ]
@@ -14016,6 +14017,7 @@
           "conversations",
           "credential",
           "demo_data_size",
+          "export_run_id",
           "identities",
           "messages",
           "mode",
@@ -14173,6 +14175,14 @@
             ],
             "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
           },
+          "export_run_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`export_run_closed`: the id of the Export Run the server closed, the\n`id` of that run's own `export_run` entry."
+          },
           "id": {
             "type": "integer",
             "format": "int64",
@@ -14294,7 +14304,7 @@
       },
       "AuditReason": {
         "type": "string",
-        "description": "How a Session ended, or why a login was refused.",
+        "description": "How a Session ended, why a login was refused, or why the server closed an\nExport Run.",
         "enum": [
           "logged_out",
           "replaced",
@@ -14302,7 +14312,8 @@
           "expired",
           "unknown_username",
           "wrong_password",
-          "account_disabled"
+          "account_disabled",
+          "idle"
         ]
       },
       "ClaimServerRequest": {
@@ -17543,6 +17554,7 @@
                 "conversations",
                 "credential",
                 "demo_data_size",
+                "export_run_id",
                 "identities",
                 "messages",
                 "mode",
@@ -17699,6 +17711,14 @@
                     }
                   ],
                   "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
+                },
+                "export_run_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64",
+                  "description": "`export_run_closed`: the id of the Export Run the server closed, the\n`id` of that run's own `export_run` entry."
                 },
                 "id": {
                   "type": "integer",
