@@ -298,9 +298,9 @@ close. If such a test times out, Testing Library's `act` leaves its scope
 open, and every later `render` and `renderHook` in the file draws nothing, so
 one hung test fails the whole file. The `act` in `act.ts` gives up the call
 when Vitest aborts the test's signal, which it does when the test times out,
-so the failure stays with that test. `useImportJob.test.tsx`,
-`logoutDuringUpload.test.tsx`, `ImportScreen.test.tsx`,
-`useConversationMessages.test.tsx` and `namedSetWiring.test.tsx` use it.
+so the failure stays with that test. Importing `act.ts` registers a
+`beforeEach` in the test file that records each test's signal, so the test
+file needs no hook of its own for it.
 
 ```tsx
 import { act } from "../test/act";
