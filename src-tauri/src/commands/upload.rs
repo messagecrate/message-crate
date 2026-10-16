@@ -1,7 +1,7 @@
 //! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
 use import::ImportMode;
-use message_crate_core::CancelFlag;
+use message_crate_core::{CancelFlag, RunIssueStep};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -202,7 +202,6 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
         }
         ProgressEvent::Issue {
             kind,
-            step,
             item,
             reason,
             conversation,
@@ -212,7 +211,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
                 events::ISSUE,
                 events::ImportIssueEvent {
                     kind,
-                    step,
+                    step: RunIssueStep::Upload,
                     item,
                     reason,
                     conversation: Some(conversation),
