@@ -123,7 +123,14 @@ It then loads the website the image serves in a headless browser
 and opens a conversation, and fails on a console error or a 5xx: the web
 app's tests mock the server and the server's tests never load the website,
 so nothing else runs the two together. That step pulls a browser image and
-takes minutes, so `docker-build` in `ci.yml` leaves it out. It gates
+takes minutes, so `docker-build` in `ci.yml` leaves it out.
+A second job runs on GitHub's Windows on ARM runner (`windows-11-arm`). The
+desktop app gives Windows on ARM the Windows x64 ffmpeg and ffprobe, which
+Windows runs under emulation, and nothing else runs them there.
+`scripts/check-windows-arm-ffmpeg.sh` downloads exactly the files
+`src-tauri/src/tool_downloads/pins.rs` pins for that platform, checks their
+pinned SHA-256 as the app does, asks ffprobe about a committed video and
+converts it with ffmpeg the way the media pass does (#2370). The workflow gates
 nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports
