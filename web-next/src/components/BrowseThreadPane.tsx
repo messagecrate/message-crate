@@ -2,6 +2,7 @@
 
 import type {
   ContactDetail,
+  ConversationType,
   GroupParticipant,
   MessageRow,
   YearThread,
@@ -45,7 +46,7 @@ export type BrowseGroupThreadMeta = {
 export type SearchConversationSection = {
   conversationIds: number[];
   title: string;
-  conversationType: "group" | "individual";
+  conversationType: ConversationType;
 };
 
 /** Isolated from scroll chrome so year-highlight updates do not rebuild bubbles. */

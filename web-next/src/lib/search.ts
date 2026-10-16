@@ -19,7 +19,7 @@ import {
   type DateBounds,
   type ParsedSearchQuery,
 } from "./searchQuery";
-import type { ContactListItem } from "./types";
+import type { ContactListItem, ConversationType } from "./types";
 import { openWritableVaultDb } from "./vaultSchema";
 
 /** Query-time phone variants for LIKE matching (raw, E.164, digits). */
@@ -87,7 +87,7 @@ export type SearchAttachmentSummary = {
 export type SearchMessageHit = {
   messageId: number;
   conversationId: number;
-  conversationType: "group" | "individual";
+  conversationType: ConversationType;
   contactId: number | null;
   title: string;
   chatIdentifier: string;
@@ -104,8 +104,8 @@ export type SearchMessageHit = {
 
 export type SearchConversationHit = {
   conversationId: number;
-  conversationType: "group" | "individual";
-  /** Contact represented by a direct conversation, when its handle is assigned. */
+  conversationType: ConversationType;
+  /** Contact represented by a one-to-one conversation, when its handle is assigned. */
   contactId: number | null;
   title: string;
   chatIdentifier: string;
@@ -120,7 +120,7 @@ export type SearchResult = {
   query: string;
   parsed: ParsedSearchQuery;
   totalConversations: number;
-  /** Every distinct contact represented by matching direct conversations. */
+  /** Every distinct contact represented by matching one-to-one conversations. */
   contactIds: number[];
   hits: SearchConversationHit[];
   /** Flat message rows when `group:none`. */
@@ -220,7 +220,7 @@ function contactIdsWithinDayBounds(
        FROM contact_handles cp
        JOIN conversations cv
          ON cv.chat_handle_id = cp.handle_id
-        AND cv.conversation_type = 'individual'
+        AND cv.conversation_type = 'one-to-one'
         AND cv.account_id = cp.account_id
        JOIN messages m ON m.conversation_id = cv.id
        WHERE cp.account_id = ?${hideDupes}
@@ -685,7 +685,7 @@ export function searchVault(
            ON ch.account_id = c.account_id
           AND ch.handle_id = c.chat_handle_id
          WHERE ${whereSql}${dedupe}
-           AND c.conversation_type = 'individual'
+           AND c.conversation_type = 'one-to-one'
          GROUP BY c.id, ch.contact_id
        )
        ORDER BY contact_id`,
@@ -762,7 +762,7 @@ function searchVaultMessages(
            FROM contact_handles ch
            WHERE ch.account_id = c.account_id
              AND ch.handle_id = c.chat_handle_id
-             AND c.conversation_type = 'individual'
+             AND c.conversation_type = 'one-to-one'
            LIMIT 1
          ) AS contact_id
        FROM ${fromSql}
@@ -813,7 +813,7 @@ function searchVaultMessages(
       messageId: row.message_id,
       conversationId: row.conversation_id,
       conversationType:
-        row.conversation_type === "group" ? ("group" as const) : ("individual" as const),
+        row.conversation_type === "group" ? ("group" as const) : ("one-to-one" as const),
       contactId: row.contact_id,
       title: conversationTitle(
         row.conversation_type,
@@ -1006,7 +1006,7 @@ const CONVERSATION_HIT_COLUMNS = `
     FROM contact_handles ch
     WHERE ch.account_id = c.account_id
       AND ch.handle_id = c.chat_handle_id
-      AND c.conversation_type = 'individual'
+      AND c.conversation_type = 'one-to-one'
     LIMIT 1
   ) AS contact_id,
   COUNT(DISTINCT m.id) AS match_count,
@@ -1095,7 +1095,7 @@ function buildHits(
     return {
       conversationId: row.conversation_id,
       conversationType:
-        row.conversation_type === "group" ? "group" : "individual",
+        row.conversation_type === "group" ? "group" : "one-to-one",
       contactId: row.contact_id,
       title: conversationTitle(
         row.conversation_type,
@@ -1366,7 +1366,7 @@ export function searchVaultContacts(
        JOIN conversations c
          ON c.account_id = ch.account_id
         AND (
-          (c.conversation_type = 'individual' AND c.chat_handle_id = ch.handle_id)
+          (c.conversation_type = 'one-to-one' AND c.chat_handle_id = ch.handle_id)
           OR (
             c.conversation_type = 'group'
             AND EXISTS (

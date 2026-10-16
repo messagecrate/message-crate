@@ -30,6 +30,8 @@
  * message date (`>=D`, `<D`, `D1..D2`, bare `D` = before).
  */
 
+import type { ConversationType } from "./types";
+
 /** Inclusive lower bound / upper bound, both `YYYY-MM-DD`. */
 export type DateBounds = {
   from: string | null;
@@ -78,7 +80,7 @@ export type ParsedSearchQuery = {
   after: string | null;
   before: string | null;
   source: string | null;
-  conversationType: "group" | "individual" | null;
+  conversationType: ConversationType | null;
   /** Conversation-grouped (default) or one row per matching message. */
   groupBy: "conversation" | "none";
   /** Surrounding messages to include when showing/opening a hit. */
@@ -176,7 +178,7 @@ export type AdvancedSearchForm = {
   lastContact?: DateFilterInput;
   groupCount?: CountFilterInput;
   messageCount?: CountFilterInput;
-  conversationType?: "any" | "group" | "individual";
+  conversationType?: "any" | ConversationType;
   source?: string;
   /** @deprecated Prefer attachmentFilter; true maps to "yes". */
   hasAttachment?: boolean;
@@ -694,7 +696,7 @@ export function parseSearchQuery(input: string): ParsedSearchQuery {
           const v = value.toLowerCase();
           if (v === "group") out.conversationType = "group";
           else if (v === "direct" || v === "individual" || v === "1-1") {
-            out.conversationType = "individual";
+            out.conversationType = "one-to-one";
           } else if (v === "nofirst") {
             out.noFirstName = true;
           } else if (v === "nolast") {
@@ -991,7 +993,7 @@ export function composeSearchQuery(form: AdvancedSearchForm): string {
 
   if (form.mode !== "contacts") {
     if (form.conversationType === "group") parts.push("is:group");
-    if (form.conversationType === "individual") parts.push("is:direct");
+    if (form.conversationType === "one-to-one") parts.push("is:direct");
     if (form.source?.trim()) parts.push(`source:${form.source.trim()}`);
     const attachment =
       form.attachmentFilter ??

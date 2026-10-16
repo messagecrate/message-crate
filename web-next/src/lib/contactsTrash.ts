@@ -54,7 +54,7 @@ function contactHandlesWithMessages(
              SELECT 1
              FROM conversations c
              JOIN messages m ON m.conversation_id = c.id
-             WHERE c.conversation_type = 'individual'
+             WHERE c.conversation_type = 'one-to-one'
                AND c.chat_handle_id = cp.handle_id
                AND c.account_id = cp.account_id
            )`,
@@ -194,7 +194,7 @@ export function permanentlyDeleteTrashedContacts(ids: number[]): number {
     writeDb.pragma("foreign_keys = ON");
     const delConv = writeDb.prepare(
       `DELETE FROM conversations
-       WHERE account_id = ? AND conversation_type = 'individual' AND chat_handle_id = ?`,
+       WHERE account_id = ? AND conversation_type = 'one-to-one' AND chat_handle_id = ?`,
     );
     const delContactTrash = writeDb.prepare(
       `DELETE FROM trashed_contacts WHERE account_id = ? AND contact_id = ?`,

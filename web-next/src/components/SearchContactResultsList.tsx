@@ -123,7 +123,7 @@ export function SearchContactResultsList({
               >
                 {(() => {
                   const directHits = hits.filter(
-                    (hit) => hit.conversationType === "individual",
+                    (hit) => hit.conversationType === "one-to-one",
                   );
                   const groupHits = hits.filter(
                     (hit) => hit.conversationType === "group",

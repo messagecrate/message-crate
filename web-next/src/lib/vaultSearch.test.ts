@@ -57,7 +57,7 @@ describe("vault search + FTS", () => {
         `INSERT INTO conversations (
            account_id, chat_handle_id, conversation_type,
            group_title, source_file
-         ) VALUES (?, ?, 'individual', NULL, 't.json')`,
+         ) VALUES (?, ?, 'one-to-one', NULL, 't.json')`,
       );
       const insertMsg = db.prepare(
         `INSERT INTO messages (

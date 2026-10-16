@@ -1407,7 +1407,7 @@ export function BrowseShell({
     if (isDeletionUiBlocked()) return;
     if (selectedSearchGroups.length === 0) return;
     const directGroups = selectedSearchGroups.filter(
-      (group) => group.conversationType === "individual",
+      (group) => group.conversationType === "one-to-one",
     );
     const groupGroups = selectedSearchGroups.filter(
       (group) => group.conversationType === "group",
@@ -1808,7 +1808,7 @@ export function BrowseShell({
         (contactId != null
           ? (contacts.find((c) => c.id === contactId)?.displayName ?? null)
           : null) ||
-        (focusedSearchHit?.conversationType === "individual"
+        (focusedSearchHit?.conversationType === "one-to-one"
           ? focusedSearchHit.title
           : null) ||
         "Direct",
@@ -2229,7 +2229,7 @@ export function BrowseShell({
               ...hit.contextAfter.map((m) => m.id),
             ]);
             if (
-              hit.conversationType === "individual" &&
+              hit.conversationType === "one-to-one" &&
               hit.contactId != null &&
               hit.contactId !== contactId
             ) {
@@ -2295,7 +2295,7 @@ export function BrowseShell({
             // keeps the threads effect from clearing the open Direct thread
             // when the contact also has groups.
             if (
-              hit.conversationType === "individual" &&
+              hit.conversationType === "one-to-one" &&
               hit.contactId != null &&
               hit.contactId !== contactId
             ) {

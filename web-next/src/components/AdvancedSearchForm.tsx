@@ -10,6 +10,7 @@ import {
   type DateFilterInput,
   type DateFilterMode,
 } from "@/lib/searchQuery";
+import type { ConversationType } from "@/lib/types";
 import { useState, type ReactNode } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 
@@ -118,7 +119,7 @@ export function AdvancedSearchForm({
     return m.comparator === "any" ? { comparator: "any", value: "" } : m;
   });
   const [conversationType, setConversationType] = useState<
-    "any" | "group" | "individual"
+    "any" | ConversationType
   >(seed.conversationType ?? "any");
   const [source, setSource] = useState(seed.source ?? "");
 
@@ -409,12 +410,12 @@ export function AdvancedSearchForm({
                 value={conversationType}
                 onChange={(e) =>
                   setConversationType(
-                    e.target.value as "any" | "group" | "individual",
+                    e.target.value as "any" | ConversationType,
                   )
                 }
               >
                 <option value="any">All conversations</option>
-                <option value="individual">Direct only</option>
+                <option value="one-to-one">Direct only</option>
                 <option value="group">Group only</option>
               </select>
             </Field>
