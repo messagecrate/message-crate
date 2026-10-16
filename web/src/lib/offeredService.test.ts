@@ -86,14 +86,14 @@ describe("identityValidationError", () => {
     expect(identityValidationError("whatsapp", "+44 20 7946 0958")).toBeNull();
   });
 
-  it("rejects a number that is not one", () => {
-    expect(identityValidationError("phone", "notaphone")).toMatch(/phone number/);
-    expect(identityValidationError("phone", "123")).toMatch(/phone number/);
-    expect(identityValidationError("phone", "you@example.com")).toMatch(/phone number/);
-  });
-
-  it("rejects a number longer than E.164 allows", () => {
-    expect(identityValidationError("phone", "+1234567890123456")).toMatch(/phone number/);
+  it("takes any value on Text Message and WhatsApp, which the server types as other when it is no number", () => {
+    // The server stores a WhatsApp internal id and a sender name as identities
+    // of type other, and a short code as its digits (#2709), so refusing them
+    // here only stops a person adding what an import already adds (#3090).
+    expect(identityValidationError("whatsapp", "123456789012345@lid")).toBeNull();
+    expect(identityValidationError("phone", "sam")).toBeNull();
+    expect(identityValidationError("phone", "AMAZON")).toBeNull();
+    expect(identityValidationError("phone", "72975")).toBeNull();
   });
 
   it("accepts an address and rejects what is not one", () => {
@@ -133,6 +133,16 @@ describe("identityDuplicateKey", () => {
     expect(identityDuplicateKey("phone", "+1 555-555-0119")).not.toBe(
       identityDuplicateKey("phone", "555-555-0119"),
     );
+  });
+
+  it("keeps a WhatsApp internal id apart from the number made of its digits", () => {
+    expect(identityDuplicateKey("whatsapp", "123456789012345@lid")).not.toBe(
+      identityDuplicateKey("whatsapp", "+123456789012345"),
+    );
+  });
+
+  it("matches a sender name regardless of case", () => {
+    expect(identityDuplicateKey("phone", "AMAZON")).toBe(identityDuplicateKey("phone", "amazon"));
   });
 
   it("separates two different accounts", () => {

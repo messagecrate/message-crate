@@ -84,8 +84,8 @@ An Address Book load replaces it only when the file gives the contact a differen
 **Service** is **Text Message**, **Email**, or **WhatsApp**.
 **Identity** is the phone number or the email address.
 
-- A phone number must have 7 to 15 digits. Spaces, dots, dashes, and parentheses are accepted.
-- An email address must have the form `name@example.com`.
+- Under **Email**, the identity must have the form `name@example.com`.
+- **Text Message** and **WhatsApp** take any value, not only a phone number, such as a WhatsApp internal id like `123456789012345@lid` or a sender name like `AMAZON`, as an import adds them. A mistyped phone number is added as typed.
 - The same number on **Text Message** and on **WhatsApp** is two identities, so both can be added.
 - An identity the contact already has is refused with **This identity is already in the list.**
 - An identity that belongs to another contact with a name is refused, because an identity belongs to at most one contact. It must be removed from the other contact first. An identity on a contact with no name moves to this one, and a contact with no name left with no identity goes.

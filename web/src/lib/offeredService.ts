@@ -42,7 +42,7 @@ export function listedServerService(service: string | null | undefined): ServerS
   return known === undefined ? undefined : serverService(known);
 }
 
-/** The example phone number shown in empty fields and in the validation message. */
+/** The example phone number shown in empty fields. */
 export const EXAMPLE_PHONE = "+1 555-555-0119";
 
 /**
@@ -71,27 +71,18 @@ export function identityPlaceholder(service: OfferedService): string {
  * error here: a blank row is one the person has not filled in yet, and the
  * screens that collect handles decide separately how many they need.
  *
- * The number check counts digits rather than matching a shape, so the
- * separators people actually type — spaces, dots, dashes, parentheses — all
- * pass. Seven digits is the shortest real subscriber number and fifteen is the
- * most E.164 allows.
+ * Only a value offered as Email is checked, because the person said it is an
+ * email address. Text Message and WhatsApp take any value, as the server does:
+ * it types a value that is not a number, such as the WhatsApp internal id
+ * `123456789012345@lid` or the sender name `AMAZON`, as an identity of type
+ * other (#2709, #3090). A mistyped number is then stored as other.
  */
 export function identityValidationError(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  if (service === "email") {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
-      ? null
-      : "Enter an email address like you@example.com.";
-  }
-
-  const digits = trimmed.replace(/\D/g, "");
-  const onlyNumberCharacters = /^\+?[\d\s().-]+$/.test(trimmed);
-  if (!onlyNumberCharacters || digits.length < 7 || digits.length > 15) {
-    return `Enter a phone number like ${EXAMPLE_PHONE}.`;
-  }
-  return null;
+  if (!trimmed || service !== "email") return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+    ? null
+    : "Enter an email address like you@example.com.";
 }
 
 /** Shown against the second and later rows carrying an account already listed. */
@@ -104,8 +95,10 @@ export const DUPLICATE_IDENTITY_MESSAGE = "This account is already in the list."
  * The service is part of the key because the same number on Text Message and
  * on WhatsApp is two accounts, not one, and listing both is the right thing to
  * do. Within a service the comparison ignores how the value was typed: an
- * email folds to lower case, and a number falls back to its digits so
- * `+1 (555) 555-0119` and `+15555550119` land on the same key.
+ * value written as a number compares by its digits, so `+1 (555) 555-0119`
+ * and `+15555550119` land on the same key, and any other value folds to lower
+ * case, so a WhatsApp internal id is never taken for the number its digits
+ * spell.
  *
  * The digits are compared whole rather than by their last ten, so a number
  * written once with its country code and once without is not caught. That is
@@ -116,10 +109,9 @@ export const DUPLICATE_IDENTITY_MESSAGE = "This account is already in the list."
 export function identityDuplicateKey(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
+  const writtenAsNumber = /^\+?[\d\s().-]+$/.test(trimmed);
   const normalized =
-    service === "email"
-      ? trimmed.toLowerCase()
-      : trimmed.replace(/\D/g, "") || trimmed.toLowerCase();
+    service !== "email" && writtenAsNumber ? trimmed.replace(/\D/g, "") : trimmed.toLowerCase();
   return `${service}:${normalized}`;
 }
 

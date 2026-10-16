@@ -64,8 +64,12 @@ function runLogLabel(log: LogEntry, usernames: ReadonlyMap<number, string>): str
  * app's own log (#2185) and every Import Run log on this computer, whoever
  * ran the import (#1665). Both stay on this computer, so in a browser the
  * picker offers the server's log alone. Each log reads in the same viewer.
+ *
+ * Given `request`, the server's log opens at every level with the request's
+ * id in the search, so it shows that request's lines alone: an Audit Trail
+ * entry's "View in log" opens it so (#3060).
  */
-export function OwnerLogsPanel() {
+export function OwnerLogsPanel({ request }: { request?: string } = {}) {
   const [picked, setPicked] = useState(SERVER_KEY);
   const reader = useLogReader();
   const onComputer = useDesktopLogs(reader);
@@ -143,7 +147,12 @@ export function OwnerLogsPanel() {
             unreadable={pickedLog.hasLines ? undefined : UNREADABLE_RUN_LOG}
           />
         ) : (
-          <LogViewer key={SERVER_KEY} source={SERVER_LOG} downloads={serverDownloads.downloads} />
+          <LogViewer
+            key={`${SERVER_KEY}:${request ?? ""}`}
+            source={SERVER_LOG}
+            downloads={serverDownloads.downloads}
+            request={request}
+          />
         )}
       </div>
     </section>

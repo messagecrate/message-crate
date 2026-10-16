@@ -380,6 +380,48 @@ describe("OwnerHome", () => {
     expect(screen.queryByRole("heading", { name: "Server Settings" })).not.toBeInTheDocument();
   });
 
+  it("opens the server's log on an Audit Trail entry's request, at every level", async () => {
+    const user = setupUser();
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listServerLogFiles.mockResolvedValue([]);
+    listAuditTrail.mockResolvedValue({
+      items: [
+        {
+          id: 4,
+          action: "logged_in",
+          at: "2026-10-01T09:00:00+00:00",
+          actor: "holder",
+          account_id: 101,
+          username: "bob",
+          request_id: "7f3a9c21",
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    // The log was rotated since, so it no longer holds the request's lines.
+    listServerLogLines.mockResolvedValue({ items: [], limit: 200, has_more: false });
+    renderHome(["/owner/audit-trail"]);
+    await settle();
+
+    await user.click(screen.getByRole("link", { name: "View in log" }));
+    await settle();
+
+    expect(selectedSection()).toBe("Logs");
+    expect(screen.getByRole("textbox", { name: "Search the log" })).toHaveValue("7f3a9c21");
+    expect(screen.getByRole("button", { name: /^Everything/ })).toBeInTheDocument();
+    expect(listServerLogLines).toHaveBeenLastCalledWith(
+      expect.objectContaining({ level: undefined, text: "7f3a9c21" }),
+      expect.anything(),
+    );
+    expect(
+      screen.getByText(
+        "The server's log no longer holds this request's lines: the oldest log files are deleted as the log grows.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("lists every account's Audit Trail, a deleted account's under its old username, and narrows it to one account", async () => {
     const user = setupUser();
     listAccounts.mockResolvedValue([theOwner, anAccount]);
