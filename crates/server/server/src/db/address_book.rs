@@ -906,9 +906,13 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
 ///
 /// The whole load is one transaction. A file that breaks a rule is refused
 /// whole, with one sentence for each bad row, and nothing is written. Each
-/// contact the load changes is stamped `now`. An Edit load deletes for good
-/// the names and identities the file no longer carries, so after it commits
-/// the write-ahead log is cleared of them ([`crate::db::erase`]).
+/// contact the load changes is stamped `now`.
+///
+/// An Edit load deletes for good the identities the file no longer lists,
+/// and the contacts that leaves empty, so after it commits the write-ahead
+/// log is cleared of them ([`crate::db::erase`]). An Append load deletes
+/// nothing and leaves the log as it is, so a name it replaces stays in the
+/// log until a later checkpoint; a rename is not a delete for good.
 ///
 /// # Errors
 ///

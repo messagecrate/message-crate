@@ -290,11 +290,12 @@ async fn deleting_an_account_leaves_no_deleted_text_in_the_file_or_its_log() {
     assert_only_the_kept_text_is_left(&mut conn).await;
 }
 
-/// An Edit load deletes for good the contact details its file no longer
-/// carries: a contact's replaced name, and an identity taken off it that
-/// nothing else uses (#2981).
+/// An Edit load deletes for good an identity its file no longer lists and
+/// nothing else uses, then clears the log (#2981). Clearing the log also
+/// takes out the name the same load replaced, which an Append load's rename
+/// leaves there: a rename is not a delete for good.
 #[tokio::test]
-async fn an_edit_load_leaves_no_trace_of_the_details_it_replaced() {
+async fn an_edit_load_leaves_no_trace_of_an_identity_it_removed_or_a_name_it_replaced() {
     const OLD_NAME: &str = "Qzoldnameocelot";
     const NEW_NAME: &str = "Newname";
     const REMOVED: &str = "+15555550987";

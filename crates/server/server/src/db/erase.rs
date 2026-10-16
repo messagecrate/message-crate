@@ -29,9 +29,9 @@
 //! write transaction, then [`clear_write_ahead_log`] on the connection the
 //! transaction ran on, which only the caller holds once the commit has
 //! consumed the transaction. An Edit load of an address book
-//! ([`crate::db::address_book::load`]) deletes for good the names and
-//! identities its file no longer carries and touches no search index, so it
-//! ends in [`clear_write_ahead_log`] alone.
+//! ([`crate::db::address_book::load`]) deletes for good the identities its
+//! file no longer lists, and the contacts that leaves empty, and touches no
+//! search index, so it ends in [`clear_write_ahead_log`] alone.
 //!
 //! What the files of the database do not cover is outside this module: the
 //! attachment files are unlinked, not overwritten; a copy the owner made,
