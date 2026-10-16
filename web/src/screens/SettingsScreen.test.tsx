@@ -30,10 +30,6 @@ vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
 vi.mock("../hooks/useAuth", () => authModule({ updateToken: vi.fn() }));
 
 afterEach(() => {

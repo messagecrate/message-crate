@@ -6,8 +6,8 @@ import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { setupUser } from "../test/user";
 import PathPicker from "./PathPicker";
 
-const dialog = vi.hoisted(() => ({ open: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: dialog.open }));
+const desktop = vi.hoisted(() => ({ pickPath: vi.fn() }));
+vi.mock("../lib/desktop/fs", () => ({ pickPath: desktop.pickPath }));
 
 beforeEach(() => {
   startFakeClock();
@@ -22,7 +22,7 @@ afterEach(() => {
 describe("PathPicker", () => {
   it("says the file dialog could not be opened when the dialog plugin rejects", async () => {
     // A Tauri command rejects with the plugin's own string, not an Error.
-    dialog.open.mockRejectedValue("dialog unavailable");
+    desktop.pickPath.mockRejectedValue("dialog unavailable");
     const user = setupUser();
     const onChange = vi.fn();
     render(<PathPicker value="" onChange={onChange} />);
@@ -37,8 +37,8 @@ describe("PathPicker", () => {
   });
 
   it("clears the message once a later Browse opens the dialog", async () => {
-    dialog.open.mockRejectedValueOnce(new Error("dialog unavailable"));
-    dialog.open.mockResolvedValueOnce("/backups/chat.db");
+    desktop.pickPath.mockRejectedValueOnce(new Error("dialog unavailable"));
+    desktop.pickPath.mockResolvedValueOnce("/backups/chat.db");
     const user = setupUser();
     const onChange = vi.fn();
     render(<PathPicker value="" onChange={onChange} />);

@@ -37,10 +37,6 @@ import type { ImportFormFieldsProps, ProfilePhones } from "./formSections/types"
 import ImportFormFields from "./ImportFormFields";
 import { type ImportFormState, newImportForm } from "./importForm";
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
 /** The desktop process the form asks where wtsexporter, ffmpeg and ffprobe are. */
 const desktop = vi.hoisted(() => ({
   isTauri: false,

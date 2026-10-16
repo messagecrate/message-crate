@@ -209,6 +209,10 @@
       "plugins": ["./biome-plugins/noTimedWaitsInTests.grit"]
     },
     {
+      "includes": ["src/**/*.ts", "src/**/*.tsx", "!src/lib/desktop/**"],
+      "plugins": ["./biome-plugins/noTauriMocksOutsideDesktop.grit"]
+    },
+    {
       "includes": ["**/*.test.tsx"],
       "linter": {
         "rules": {

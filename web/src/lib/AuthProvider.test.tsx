@@ -14,7 +14,6 @@ const setBaseUrl = vi.fn();
 const isTauri = vi.fn();
 const onCloseRequested = vi.fn();
 const destroy = vi.fn();
-const getCurrentWindow = vi.fn();
 
 let currentToken: string | null = null;
 
@@ -55,8 +54,9 @@ vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => getCurrentWindow(),
+vi.mock("./desktop/window", () => ({
+  onWindowCloseRequested: (...args: unknown[]) => onCloseRequested(...args),
+  destroyWindow: () => destroy(),
 }));
 
 beforeEach(() => {
@@ -96,16 +96,11 @@ describe("AuthProvider logout", () => {
     isTauri.mockReset();
     onCloseRequested.mockReset();
     destroy.mockReset();
-    getCurrentWindow.mockReset();
 
     isTauri.mockReturnValue(false);
     get.mockResolvedValue({ preferred_name: "Sam", phones: ["+1"], emails: [] });
     post.mockResolvedValue({ ok: true });
     destroy.mockResolvedValue(undefined);
-    getCurrentWindow.mockReturnValue({
-      onCloseRequested,
-      destroy,
-    });
   });
 
   it("tells the server to end the session before clearing the token", async () => {
