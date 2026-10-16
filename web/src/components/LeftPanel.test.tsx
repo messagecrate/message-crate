@@ -148,6 +148,27 @@ describe("LeftPanel", () => {
     expect(alice.querySelector('[class*="size-[15px]"]')).not.toBeNull();
   });
 
+  it("marks the open Saved Search row as the current page, and no other", () => {
+    savedSearchState.savedSearches = [
+      { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
+      { id: 2, name: "Photos", query: "has:photo", kind: "manual" },
+    ];
+    renderPanel([`/?q=${encodeURIComponent("from:alice")}`]);
+    expect(screen.getByRole("button", { name: "From Alice" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Photos" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks no Saved Search row when none is open", () => {
+    savedSearchState.savedSearches = [
+      { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
+    ];
+    renderPanel(["/"]);
+    expect(screen.getByRole("button", { name: "From Alice" })).not.toHaveAttribute("aria-current");
+  });
+
   it("closes the saved-search options menu on Escape", async () => {
     savedSearchState.savedSearches = [
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
