@@ -475,7 +475,7 @@ impl<'a> ImportPipeline<'a> {
             return Ok(false);
         }
         // A replace's first batch wipes the source on the server, so the
-        // journal's earlier rows stop being true as it goes out.
+        // journal's earlier rows stop being true once that batch goes out.
         self.lock_journal().journal.forget_before_first_batch()?;
         self.inflight = Some(self.spawn_import(batch));
         if wait {

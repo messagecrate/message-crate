@@ -223,8 +223,9 @@ pub enum EarlierProgress {
     /// say what the server holds, and a later append that read them after
     /// a failed replace would skip what the replace removed. The server
     /// wipes the source with the first batch, so the rows are deleted just
-    /// before that batch is sent ([`RunJournal::forget_before_first_batch`]):
-    /// a replace that stops before it has wiped nothing, and keeps them.
+    /// before that batch is sent ([`RunJournal::forget_before_first_batch`]).
+    /// A replace that stops before that batch has wiped nothing, so the rows
+    /// stay.
     Forget,
 }
 
@@ -366,8 +367,9 @@ impl RunJournal {
     }
 
     /// Rewrite the journal file from the in-memory sets (see [`compact`]).
-    /// A replace that sent no batch wiped nothing, so its journal is left
-    /// as it is: the in-memory sets lack the rows of earlier Uploads.
+    /// A replace that sent no batch wiped nothing, so its journal stays as
+    /// it is. Rewriting it from the in-memory sets would drop the earlier
+    /// Uploads' rows.
     ///
     /// # Errors
     ///
