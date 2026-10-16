@@ -107,7 +107,7 @@ const FFMPEG_FILES: &[FfmpegFiles] = &[
     },
     WINDOWS_X64,
     // Windows on ARM gets the x64 files, which Windows runs under
-    // emulation. Whether they run there is not checked yet (#2370).
+    // emulation.
     FfmpegFiles {
         arch: "aarch64",
         ..WINDOWS_X64
