@@ -973,8 +973,8 @@ carry their date on the heading.
 
 - 2026-10-16: **Cancel stops a WhatsApp import while it decrypts an
   encrypted iPhone backup.** Cancel waited for Message Crate to finish
-  decrypting WhatsApp's files, which takes long when the backup holds a lot
-  of WhatsApp media. It now stops the decrypt at once (#3034).
+  decrypting WhatsApp's files, which takes a long time when the backup holds
+  a lot of WhatsApp media. It now stops the decrypt at once (#3034).
 - 2026-10-16: **A WhatsApp import counts its media before it copies them.**
   The disk space check before an import, and the bytes on the progress bar,
   left out every WhatsApp photo, video and voice message, so a large media
