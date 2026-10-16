@@ -9,12 +9,12 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/** Revoke the vault session (`POST /v1/auth/logout`) and clear the cookies. */
+/** End the Session (`DELETE /v1/session`) and clear the cookies. */
 export async function POST() {
   const token = await getSessionTokenFromCookies();
   if (token) {
     try {
-      await vaultFetch("/v1/auth/logout", { method: "POST", token });
+      await vaultFetch("/v1/session", { method: "DELETE", token });
     } catch {
       // The cookie is cleared either way; a dead token is harmless.
     }

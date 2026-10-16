@@ -5,17 +5,16 @@
 import { labelSlug } from "@/lib/labelSlug";
 import { RESERVED_LABEL_NAMES } from "@/lib/reservedLabels";
 
-import { memo, vaultJson, type Schemas } from "./client";
+import { memo, vaultAll, type Schemas } from "./client";
 
 type NamedSet = Schemas["NamedSet"];
 
 const LABELS_TTL_MS = 5_000;
 
 async function contactGroups(): Promise<NamedSet[]> {
-  return memo("contact-groups", LABELS_TTL_MS, async () => {
-    const list = await vaultJson<Schemas["NamedSetList"]>("/v1/contact-groups");
-    return list.items;
-  });
+  return memo("contact-groups", LABELS_TTL_MS, () =>
+    vaultAll<NamedSet>("/v1/contact-groups"),
+  );
 }
 
 /** Contact Group names, A–Z, minus the reserved section names. */
@@ -38,10 +37,7 @@ async function groupIdByName(name: string): Promise<number | null> {
 export async function listLabelMemberContactIds(name: string): Promise<number[]> {
   const id = await groupIdByName(name);
   if (id == null) return [];
-  const members = await vaultJson<Schemas["MemberIdList"]>(
-    `/v1/contact-groups/${id}/members`,
-  );
-  return members.items;
+  return vaultAll<number>(`/v1/contact-groups/${id}/members`);
 }
 
 export async function labelFromSlug(slug: string): Promise<string | null> {

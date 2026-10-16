@@ -1,31 +1,35 @@
-/** Home dashboard counts, assembled from `/v1` list totals and the count route. */
+/**
+ * Home dashboard counts, assembled from `/v1` list totals and the account's
+ * storage.
+ */
 import type { HomeStats } from "@/lib/types";
 
-import { listSources } from "./account";
-import { dayOf, qs, vaultJson, type Schemas } from "./client";
+import { listSources, loadStorageUsage } from "./account";
+import { dayOf, vaultCount } from "./client";
 import { listContacts } from "./contacts";
 import { allConversations } from "./conversations";
 
-type Count = Schemas["ExportCountResponse"];
-
-async function count(q: string): Promise<Count> {
-  return vaultJson<Count>(`/v1/export/messages/count${qs({ q })}`);
+/** Messages matching `q`: the `total` of `GET /v1/messages`. */
+async function countMessages(q: string): Promise<number> {
+  return vaultCount("/v1/messages", { q });
 }
 
 export async function homeStats(): Promise<HomeStats> {
-  const [contacts, conversations, sources, all, sent] = await Promise.all([
-    listContacts("all"),
-    allConversations(),
-    listSources(),
-    count(""),
-    count("from:me"),
-  ]);
+  const [contacts, conversations, sources, messages, sentMessages, storage] =
+    await Promise.all([
+      listContacts("all"),
+      allConversations(),
+      listSources(),
+      countMessages(""),
+      countMessages("from:me"),
+      loadStorageUsage(),
+    ]);
 
   let dateStart: string | null = null;
   let dateEnd: string | null = null;
   for (const c of conversations) {
-    const start = dayOf(c.date_range_start);
-    const end = dayOf(c.date_range_end) || dayOf(c.last_message_at);
+    const start = dayOf(c.first_message_at);
+    const end = dayOf(c.last_message_at);
     if (start && (!dateStart || start < dateStart)) dateStart = start;
     if (end && (!dateEnd || end > dateEnd)) dateEnd = end;
   }
@@ -51,13 +55,13 @@ export async function homeStats(): Promise<HomeStats> {
       (c) => c.messageCount === 0 && c.groupMessageCount === 0,
     ).length,
     groupChats: conversations.filter((c) => c.is_group).length,
-    messages: all.messages,
+    messages,
     // Hidden cross-source duplicates are not reported by the API.
     messageDuplicates: 0,
     contacts: contacts.length,
-    sentMessages: sent.messages,
-    receivedMessages: Math.max(0, all.messages - sent.messages),
-    attachments: all.attachments,
+    sentMessages,
+    receivedMessages: Math.max(0, messages - sentMessages),
+    attachments: storage.attachmentCount,
     sources: sources.length,
     dateStart,
     dateEnd,

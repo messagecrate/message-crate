@@ -37,7 +37,7 @@ export function clearAccountCookieOptions() {
   return cookie(ACCOUNT_COOKIE, "", 0);
 }
 
-/** The vault session token, sent as `Authorization: Bearer` on every `/v1` call. */
+/** The Session token, sent as `Authorization: Bearer` on every `/v1` call. */
 export function sessionCookieOptions(token: string) {
   return cookie(SESSION_COOKIE, token, COOKIE_MAX_AGE);
 }
