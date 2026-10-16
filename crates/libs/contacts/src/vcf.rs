@@ -11,9 +11,9 @@ pub struct VcfCard {
     pub n_given: String,
     /// `N` middle name component.
     pub n_middle: String,
-    /// `TEL` values in the order the card lists them, each once.
+    /// `TEL` values in the order the card lists them.
     pub phones: Vec<String>,
-    /// `EMAIL` values in the order the card lists them, each once.
+    /// `EMAIL` values in the order the card lists them.
     pub emails: Vec<String>,
 }
 
@@ -68,9 +68,20 @@ pub fn parse_vcf(text: &str) -> Vec<VcfCard> {
 }
 
 /// Join vCard continuation lines (starting with a space or tab) onto the line before.
+///
+/// A vCard 2.1 value in quoted-printable continues instead on the next line
+/// when it ends with a soft line break, an `=`, which is dropped.
 fn unfold_lines(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in text.lines() {
+        if let Some(last) = out.last_mut()
+            && is_quoted_printable(last)
+            && last.ends_with('=')
+        {
+            last.pop();
+            last.push_str(line);
+            continue;
+        }
         if line.starts_with(' ') || line.starts_with('\t') {
             if let Some(last) = out.last_mut() {
                 last.push_str(&line[1..]);
@@ -82,10 +93,56 @@ fn unfold_lines(text: &str) -> Vec<String> {
     out
 }
 
+/// Whether a property line's parameters say its value is quoted-printable
+/// (`ENCODING=QUOTED-PRINTABLE`, or a bare `QUOTED-PRINTABLE` in vCard 2.1).
+fn is_quoted_printable(line: &str) -> bool {
+    let Some((name, _)) = line.split_once(':') else {
+        return false;
+    };
+    name.split(';').skip(1).any(|param| {
+        let value = param.rsplit_once('=').map_or(param, |(_, value)| value);
+        value.eq_ignore_ascii_case("QUOTED-PRINTABLE")
+    })
+}
+
+/// Decode a quoted-printable value: each `=` and two hex digits is one
+/// byte. The bytes are read as UTF-8, which Android writes with
+/// `CHARSET=UTF-8`, and as Latin-1 when they are not UTF-8.
+fn decode_quoted_printable(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = bytes
+            .get(at + 1..at + 3)
+            .and_then(|pair| std::str::from_utf8(pair).ok())
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok());
+        match (bytes[at], hex) {
+            (b'=', Some(byte)) => {
+                out.push(byte);
+                at += 3;
+            }
+            (byte, _) => {
+                out.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8(out)
+        .unwrap_or_else(|e| e.into_bytes().iter().map(|&b| char::from(b)).collect())
+}
+
 /// Apply one `PROP;params:value` line to the card being built.
 fn apply_line(card: &mut VcfCard, line: &str) {
     let Some((name, value)) = line.split_once(':') else {
         return;
+    };
+    let decoded;
+    let value = if is_quoted_printable(line) {
+        decoded = decode_quoted_printable(value);
+        decoded.as_str()
+    } else {
+        value
     };
     let prop = name.split(';').next().unwrap_or(name);
     let prop_upper = prop.to_ascii_uppercase();
@@ -103,15 +160,26 @@ fn apply_line(card: &mut VcfCard, line: &str) {
             card.n_given = part(1);
             card.n_middle = part(2);
         }
-        "TEL" => push_once(&mut card.phones, unescape(value)),
-        "EMAIL" => push_once(&mut card.emails, unescape(value)),
+        "TEL" => push_value(&mut card.phones, without_tel_scheme(&unescape(value))),
+        "EMAIL" => push_value(&mut card.emails, unescape(value)),
         _ => {}
     }
 }
 
-/// Add `value` to `list` unless it is blank or already there.
-fn push_once(list: &mut Vec<String>, value: String) {
-    if !value.is_empty() && !list.contains(&value) {
+/// A number without the `tel:` a vCard 4.0 `TEL;VALUE=uri` value starts
+/// with, such as `tel:+1-555-555-0100`.
+fn without_tel_scheme(value: &str) -> String {
+    match value.get(..4) {
+        Some(scheme) if scheme.eq_ignore_ascii_case("tel:") => value[4..].trim().to_string(),
+        _ => value.to_string(),
+    }
+}
+
+/// Add `value` to `list` unless it is blank. A value the card repeats is
+/// added again: each `TEL` and `EMAIL` line is one row of the address book,
+/// and the load reads one identity listed twice under a contact as one.
+fn push_value(list: &mut Vec<String>, value: String) {
+    if !value.is_empty() {
         list.push(value);
     }
 }
@@ -219,11 +287,34 @@ mod tests {
     }
 
     #[test]
-    fn parse_vcf_keeps_one_phone_for_a_repeated_or_empty_tel() {
+    fn parse_vcf_keeps_every_tel_line_and_skips_an_empty_one() {
         let text = "BEGIN:VCARD\nFN:Ada\nTEL;TYPE=CELL:+15555550119\n\
              TEL;TYPE=HOME:+15555550119\nTEL:\nEND:VCARD\n";
         let cards = parse_vcf(text);
-        assert_eq!(cards[0].phones, vec!["+15555550119"]);
+        assert_eq!(cards[0].phones, vec!["+15555550119", "+15555550119"]);
+    }
+
+    /// vCard 4.0 writes a number as a `tel:` URI.
+    #[test]
+    fn parse_vcf_takes_the_tel_scheme_off_a_number() {
+        let text =
+            "BEGIN:VCARD\nVERSION:4.0\nTEL;VALUE=uri;TYPE=cell:tel:+1-555-555-0100\nEND:VCARD\n";
+        assert_eq!(parse_vcf(text)[0].phones, vec!["+1-555-555-0100"]);
+    }
+
+    /// Android's contacts export is vCard 2.1, which writes a name outside
+    /// ASCII in quoted-printable, continued on the next line after a
+    /// trailing `=`.
+    #[test]
+    fn parse_vcf_decodes_a_quoted_printable_value_across_soft_line_breaks() {
+        let text = "BEGIN:VCARD\r\nVERSION:2.1\r\n\
+             N;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:Dupr=C3=A9;=C3=89milie;;;\r\n\
+             FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=C3=89milie Dupr=C3=A9 de la Fo=\r\n\
+             nta=C3=AEne\r\nTEL;CELL:555-0100\r\nEND:VCARD\r\n";
+        let cards = parse_vcf(text);
+        assert_eq!(cards[0].fn_raw, "Émilie Dupré de la Fontaîne");
+        assert_eq!(cards[0].n_given, "Émilie");
+        assert_eq!(cards[0].phones, vec!["555-0100"]);
     }
 
     #[test]

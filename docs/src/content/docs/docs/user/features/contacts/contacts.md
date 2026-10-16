@@ -218,7 +218,7 @@ The service says which kinds of identity it can be, and the identity's shape pic
 
 - **Text Message** takes a phone number, an email address, or any other name, such as a sender like `AMAZON`.
 - **Email** takes an email address only.
-- **WhatsApp** takes a phone number, or one of WhatsApp's own ids that Export wrote. It never takes an email address.
+- **WhatsApp** takes a phone number, or one of WhatsApp's own ids, such as `123456789012345@lid`. It never takes an email address.
 
 A contact with three identities is three rows, and its name and Contact Groups repeat on each.
 A contact with no identity is one row with `service` and `identity` blank.
@@ -296,7 +296,8 @@ To move an identity between two named contacts, both must be in the file.
 
 ### Convert a vCard file
 
-A phone and Google Contacts export contacts as a vCard file, ending in `.vcf`.
+A phone and Google Contacts export contacts as a vCard file, ending in `.vcf`, and the file must be UTF-8 text, which they write.
+Versions 2.1, 3.0 and 4.0 of vCard are read.
 Message Crate does not load a vCard file, because a card lists every number and address whether or not a message ever used it, and can't say which service a number is on.
 It converts one into the address book instead, to edit and then load.
 
