@@ -1,11 +1,12 @@
 import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
-import AuthSubmitButton from "../../components/AuthSubmitButton";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import { claimServer } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 import CredentialFields from "./CredentialFields";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**
  * Create the owner, which is the only thing an unclaimed Message Crate offers.
@@ -27,6 +28,7 @@ export default function ClaimForm({
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const keep = useKeepLoggedIn();
   const { busy, error, run } = useAsyncAction();
 
   const submit = (event: FormEvent) => {
@@ -45,7 +47,7 @@ export default function ClaimForm({
       const url = serverUrl.trim();
       setBaseUrl(url);
       const res = await claimServer({ username: username.trim(), password });
-      await login(url, res.token, res.account_id);
+      await login(url, res.token, res.account_id, keep.lifetime);
     });
   };
 
@@ -63,9 +65,9 @@ export default function ClaimForm({
         disabled={disabled}
       />
 
-      <AuthSubmitButton disabled={busy || disabled}>
+      <KeepLoggedInSubmit choice={keep} disabled={busy || disabled}>
         {busy ? "Creating…" : "Create Owner"}
-      </AuthSubmitButton>
+      </KeepLoggedInSubmit>
 
       <div className="mt-auto">
         <AuthErrorFooter error={error} className="h-16" />
