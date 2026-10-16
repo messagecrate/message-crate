@@ -309,6 +309,8 @@ pub(super) async fn run_import_path(
         }
         guard = importer.imports.account_locks.lock(account.to_string()) => guard,
     };
+    #[cfg(test)]
+    drop(importer.imports.after_account_lock.read().await);
 
     // One pooled connection held for the whole import; the batch's import
     // slot keeps enough of the pool free for other requests.

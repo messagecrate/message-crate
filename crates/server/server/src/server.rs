@@ -108,6 +108,11 @@ pub(crate) struct ImportState {
     /// body stops reading and is refused with `server-stopping` at once,
     /// rather than making the stop wait for the rest of the body (#2878).
     pub(crate) stopping: tokio_util::sync::CancellationToken,
+    /// Read by each batch once it holds its account's import lock and before
+    /// it reads its file, so a test that holds it for writing pauses a batch
+    /// at that point rather than racing it.
+    #[cfg(test)]
+    pub(crate) after_account_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 impl Default for ImportState {
@@ -116,6 +121,8 @@ impl Default for ImportState {
             account_locks: KeyedLocks::default(),
             slots: crate::imports_api::run_control::import_slots(),
             stopping: tokio_util::sync::CancellationToken::new(),
+            #[cfg(test)]
+            after_account_lock: Arc::default(),
         }
     }
 }
