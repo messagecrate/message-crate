@@ -25,7 +25,7 @@ const COPY: Record<ResumableKind, PanelCopy> = {
     secondary: { label: "Discard this import", action: "discard" },
   },
   restart: {
-    heading: () => "Resume your last import",
+    heading: () => "Your last import did not finish",
     body: () =>
       "The extract did not finish. Starting again reuses your settings and reads the backup from the beginning.",
     primary: { label: "Start over", action: "resume" },
