@@ -21,7 +21,11 @@ import {
   vaultPage,
   type Schemas,
 } from "./client";
-import { getConversation, type Participant } from "./conversations";
+import {
+  conversationYearQuery,
+  getConversation,
+  type Participant,
+} from "./conversations";
 import { displayName, preferredNameOf } from "./names";
 
 export { DEFAULT_MESSAGE_PAGE_SIZE, MAX_MESSAGE_PAGE_SIZE };
@@ -99,7 +103,7 @@ function keepSource(rows: MessageRow[], source?: string | null): MessageRow[] {
 /**
  * Every message of the conversations in one calendar year, oldest first. A
  * conversation's message list takes no filter, so a year inside one is the
- * search `in:#id date:YYYY` on `GET /v1/messages`.
+ * search {@link conversationYearQuery} on `GET /v1/messages`.
  */
 export async function messagesForConversationYear(
   conversationIds: number | number[],
@@ -110,7 +114,7 @@ export async function messagesForConversationYear(
   const ids = idList(conversationIds);
   const pages = await mapPool(ids, POOL, (id) =>
     vaultAll<Message>("/v1/messages", {
-      q: `in:#${id} date:${year}`,
+      q: conversationYearQuery(id, year),
       sort: "date",
     }),
   );

@@ -8,6 +8,7 @@
  */
 import type { GroupChatThread, GroupParticipant, GroupYearRow } from "@/lib/types";
 
+import { loadProfile } from "./account";
 import {
   dayOf,
   mapPool,
@@ -15,6 +16,7 @@ import {
   vaultAll,
   vaultCount,
   vaultJsonOrNull,
+  yearIn,
   yearOf,
   type Schemas,
 } from "./client";
@@ -96,10 +98,14 @@ export function groupTitle(c: Conversation): {
   return { title: fallback, titleFull: people.full || fallback, namedTitle: null };
 }
 
-/** Calendar years a conversation's messages span, oldest first. */
-export function conversationYears(c: Conversation): number[] {
-  const start = yearOf(c.first_message_at) ?? yearOf(c.last_message_at);
-  const end = yearOf(c.last_message_at);
+/**
+ * Calendar years a conversation's messages span, oldest first, in the
+ * account's time zone: the zone the server reads `date:YYYY` in.
+ */
+export function conversationYears(c: Conversation, timeZone: string): number[] {
+  const start =
+    yearIn(c.first_message_at, timeZone) ?? yearIn(c.last_message_at, timeZone);
+  const end = yearIn(c.last_message_at, timeZone);
   if (start == null || end == null) return [];
   const years: number[] = [];
   for (let y = Math.min(start, end); y <= Math.max(start, end); y += 1) {
@@ -108,11 +114,18 @@ export function conversationYears(c: Conversation): number[] {
   return years;
 }
 
-export type YearCount = { messages: number };
+/**
+ * The search for one conversation's messages in one year. A search leaves
+ * the trash out unless asked, and a trashed conversation can still be
+ * opened, so the query asks (`trashed:any`), as web/ does.
+ */
+export function conversationYearQuery(conversationId: number, year: number): string {
+  return `in:#${conversationId} trashed:any date:${year}`;
+}
 
 /**
- * Messages of one conversation in one year that also match `extra`, the
- * `total` of `GET /v1/messages?q=in:#id date:YYYY …`.
+ * Messages of one conversation in one year that also match `extra`: the
+ * `total` of `GET /v1/messages` for {@link conversationYearQuery}.
  */
 export async function countConversationYear(
   conversationId: number,
@@ -120,7 +133,7 @@ export async function countConversationYear(
   extra = "",
 ): Promise<number> {
   return vaultCount("/v1/messages", {
-    q: `in:#${conversationId} date:${year} ${extra}`.trim(),
+    q: `${conversationYearQuery(conversationId, year)} ${extra}`.trim(),
   });
 }
 
@@ -131,8 +144,9 @@ export async function countConversationYear(
  */
 export async function yearCounts(
   c: Conversation,
-): Promise<Array<{ year: number } & YearCount>> {
-  const years = conversationYears(c);
+  timeZone: string,
+): Promise<Array<{ year: number; messages: number }>> {
+  const years = conversationYears(c, timeZone);
   if (years.length === 0) return [];
   if (years.length === 1) {
     return [{ year: years[0]!, messages: c.message_count }];
@@ -145,12 +159,17 @@ export async function yearCounts(
     .filter((row) => row.messages > 0);
 }
 
+/** The day of a conversation's first message, else of its last. */
+export function conversationStartDay(c: Conversation): string {
+  return dayOf(c.first_message_at) || dayOf(c.last_message_at);
+}
+
 /** Clip a conversation's date range to one calendar year. */
-function yearRange(
+export function yearRange(
   c: Conversation,
   year: number,
 ): { dateStart: string; dateEnd: string } {
-  const start = dayOf(c.first_message_at) || dayOf(c.last_message_at);
+  const start = conversationStartDay(c);
   const end = dayOf(c.last_message_at);
   const first = `${year}-01-01`;
   const last = `${year}-12-31`;
@@ -163,7 +182,7 @@ function yearRange(
 function groupYearRow(
   c: Conversation,
   year: number,
-  count: YearCount,
+  messages: number,
   years: number[],
 ): GroupYearRow {
   const { title, titleFull, namedTitle } = groupTitle(c);
@@ -179,7 +198,7 @@ function groupYearRow(
     participantNames: participants.map((p) => p.name),
     participantHandles: participants.map((p) => p.handle),
     participants,
-    messageCount: count.messages,
+    messageCount: messages,
     dateStart,
     dateEnd,
     conversationDateStart: dayOf(c.first_message_at) || dateStart,
@@ -192,12 +211,16 @@ function groupYearRow(
 export async function listGroupYearRows(
   section: ConversationSection = "active",
 ): Promise<GroupYearRow[]> {
-  const groups = (await allConversations(section)).filter((c) => c.is_group);
+  const [conversations, profile] = await Promise.all([
+    allConversations(section),
+    loadProfile(),
+  ]);
+  const groups = conversations.filter((c) => c.is_group);
   const rows = await mapPool(groups, COUNT_POOL, async (c) => {
-    const years = conversationYears(c);
-    const counts = await yearCounts(c);
+    const years = conversationYears(c, profile.time_zone);
+    const counts = await yearCounts(c, profile.time_zone);
     return counts.map((count) =>
-      groupYearRow(c, count.year, count, years),
+      groupYearRow(c, count.year, count.messages, years),
     );
   });
   return rows
@@ -222,7 +245,7 @@ export function groupChatThread(c: Conversation): GroupChatThread {
     participants,
     year,
     messageCount: c.message_count,
-    dateStart: dayOf(c.first_message_at) || dayOf(c.last_message_at),
+    dateStart: conversationStartDay(c),
     dateEnd: dayOf(c.last_message_at),
   };
 }

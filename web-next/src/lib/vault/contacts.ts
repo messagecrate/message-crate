@@ -13,6 +13,7 @@ import type {
   YearThread,
 } from "@/lib/types";
 
+import { loadProfile } from "./account";
 import {
   dayOf,
   mapPool,
@@ -30,6 +31,7 @@ import {
   directContactId,
   groupChatThread,
   participantContactIds,
+  yearRange,
   type Conversation,
   type ContactStats,
 } from "./conversations";
@@ -199,28 +201,27 @@ export type ContactSourceCounts = {
  * Year buckets across a contact's direct conversations. One conversation per
  * source can carry the same person, so a year may hold several ids.
  */
-async function yearThreads(directs: Conversation[]): Promise<YearThread[]> {
-  const perConversation = await mapPool(directs, COUNT_POOL, async (c) => {
-    const years = conversationYears(c);
-    return mapPool(years, COUNT_POOL, async (year) => {
-      const [messages, attachments] = await Promise.all([
-        years.length === 1
-          ? c.message_count
-          : countConversationYear(c.id, year),
-        countConversationYear(c.id, year, "attachment:any"),
-      ]);
-      return { c, year, messages, attachments };
-    });
+async function yearThreads(
+  directs: Conversation[],
+  timeZone: string,
+): Promise<YearThread[]> {
+  // One pool across every (conversation, year) pair, so a contact with many
+  // conversations still has at most COUNT_POOL pairs counting at once.
+  const pairs = directs.flatMap((c) => {
+    const years = conversationYears(c, timeZone);
+    return years.map((year) => ({ c, year, onlyYear: years.length === 1 }));
+  });
+  const rows = await mapPool(pairs, COUNT_POOL, async ({ c, year, onlyYear }) => {
+    const [messages, attachments] = await Promise.all([
+      onlyYear ? c.message_count : countConversationYear(c.id, year),
+      countConversationYear(c.id, year, "attachment:any"),
+    ]);
+    return { c, year, messages, attachments };
   });
   const byYear = new Map<number, YearThread>();
-  for (const row of perConversation.flat()) {
+  for (const row of rows) {
     if (row.messages === 0) continue;
-    const start = dayOf(row.c.first_message_at) || dayOf(row.c.last_message_at);
-    const end = dayOf(row.c.last_message_at);
-    const first = `${row.year}-01-01`;
-    const last = `${row.year}-12-31`;
-    const dateStart = start > first ? start : first;
-    const dateEnd = end < last ? end : last;
+    const { dateStart, dateEnd } = yearRange(row.c, row.year);
     const bucket = byYear.get(row.year) ?? {
       year: row.year,
       messageCount: 0,
@@ -261,9 +262,10 @@ export async function loadContactThreadsPage(
   const contact = await getContact(contactId);
   if (!contact) return null;
   void source; // accepted for the route's sake; see the doc comment
-  const conversations = await allConversations(
-    opts?.includeTrashed ? "trash" : "active",
-  );
+  const [conversations, profile] = await Promise.all([
+    allConversations(opts?.includeTrashed ? "trash" : "active"),
+    loadProfile(),
+  ]);
   const directs = conversations.filter(
     (c) => !c.is_group && directContactId(c) === contactId,
   );
@@ -271,7 +273,7 @@ export async function loadContactThreadsPage(
     (c) => c.is_group && participantContactIds(c).includes(contactId),
   );
   const [yearly, sources] = await Promise.all([
-    yearThreads(directs),
+    yearThreads(directs, profile.time_zone),
     mapPool(directs, COUNT_POOL, (c) => conversationSources(c.id)),
   ]);
   const bySource: Record<string, number> = {};
