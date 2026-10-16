@@ -130,9 +130,9 @@ async fn s6_1_with_follows_an_identity_an_address_book_moved() {
         &mut conn,
         TEST_ACCOUNT,
         &format!(
-            "contact_id,display_name,groups,service,identity_type,identity\n\
-             {a},Ada,,,,\n\
-             ,Bea,,phone,phone,+15555550123\n"
+            "contact_id,display_name,service,identity,groups\n\
+             {a},Ada,,,\n\
+             ,Bea,Text Message,+15555550123,\n"
         ),
         crate::db::address_book::LoadMode::Append,
         crate::test_support::fixed_instant(),

@@ -192,8 +192,9 @@ and the identities list named it `email`
 not carry is refused.** `IdentityService::carries` lists every pair, and an
 import stores no other. An identity added by hand to an account or a contact
 is typed by the rule above, so it takes a type its service carries. A row of
-an address book load states its type. A row whose service does not carry that
-type is refused, and the reason names the service and the type. Why: the check
+an address book load is typed by the rule above too, and a row whose address
+its service cannot carry, such as an email address on WhatsApp, is refused,
+naming the service and the address (below). Why: the check
 refused an email address on WhatsApp and let every other pair through, so a
 new service or type would have been carried everywhere without anyone
 deciding it. Now a new one does not compile until someone does
@@ -513,21 +514,64 @@ import's contact was the only nameless kind (#1058). See
 Contacts and identities arrive with message imports; the address book is
 how a person takes what the account holds out to a spreadsheet, corrects it,
 and puts it back. The file is Message Crate's own CSV, one row per identity:
-`contact_id, display_name, groups, service, identity_type, identity`. Export
+`contact_id, display_name, service, identity, groups`. Export
 fills `contact_id` from `contacts.id`; on load, rows that share an id are one
 contact, a blank id makes a new contact, and any other text groups new rows
 under a key of the person's choosing. `display_name` and `groups` (Contact
 Group names, separated by `;`) describe the contact, so they repeat on each
 of its rows and must agree or be blank; two rows of one contact that disagree
-refuse the load. `service` and `identity_type` take the values the `handles`
-table stores. Why: an address book from a phone puts every number and email
+refuse the load. Why: an address book from a phone puts every number and email
 on the card into the database as a text-message identity whether or not a
 message ever used it, cannot say which service an address belongs to, and
 carries numbers formatted every way at once. A file Message Crate writes itself
 has none of those problems, and a spreadsheet is the right tool for naming
 fifty Unknowns at once. Rejected: reading vCard or a vendor's CSV directly.
-A conversion from vCard to this file, for editing before a load, is
-separate work.
+
+**The file names a service in the screen's words and states no type.**
+`service` takes `Text Message`, `Email` or `WhatsApp`, the words the screen
+where an identity is added offers (`OFFERED_SERVICE_OPTIONS` in
+`web/src/lib/offeredService.ts`), ignoring case, and never the stored values
+`phone` and `whatsapp`. A load types each row by the rule above: the service
+decides which types are valid (`IdentityService::carries`) and the address's
+shape picks among them, as adding an identity on the screen does. `Email` is
+an email address on Text Message, and a row whose address is not one is
+refused. An identity written exactly as the account keys it on the row's
+service is that identity, with the type it was stored with, so an exported
+file loads back as it was. A WhatsApp id such as `…@lid` is `other` on
+WhatsApp, held or new, and is never read as an email address there: a new
+`@` address on WhatsApp is `other` when its domain is one an import stores
+that way (`lid`, `g.us`, `broadcast`, `newsletter`, in lower case), and any
+other, `…@s.whatsapp.net` included, is an email address, which WhatsApp
+cannot carry, so the row is refused. Adding an identity on the screen
+stores such an address as `other` instead; the load refuses it because a
+person who writes an email address on WhatsApp in a sheet has made a
+mistake the sheet can fix. Export writes `Email` for an email address and
+the service's own word for anything else. Why: a
+person editing the sheet reads the services by the names the screen gives
+them, and a type column could only disagree with the service and the address,
+which together already decide it. Rejected: an `identity_type` column, which
+the file carried until the vCard conversion (#916) and which let a row say a
+type its address was not.
+
+**A vCard file converts to the address book, and the conversion loads
+nothing.** `POST /v1/contacts/vcard-address-book` takes one vCard file and a
+country for numbers saved without `+`, and answers the address book for the
+person to edit and load: one row per `TEL` and `EMAIL` on each card, under
+`contact_id` `card1`, `card2`, … by the card's position, so each card loads
+as one new contact. `display_name` is the card's `FN`, or its `N` assembled.
+A number is `Text Message` and an email address `Email`, never `WhatsApp`,
+because a card cannot say a number is on WhatsApp. A number saved without
+`+` is written in its `+` form in the chosen country when it is valid there,
+and any other number is written as typed, for the load to key. `groups` is
+blank: `CATEGORIES` holds Google's own labels, not the person's Contact
+Groups. Nothing else is checked or deduplicated, so the strict load names
+whatever the file cannot do, such as one number on two cards. Why: the
+measured exports (a Google Contacts file of 497 cards with numbers written a
+dozen ways and 214 without `+`, and an iPhone's contacts as iMazing writes
+them) need a country to read most of their numbers, and a spreadsheet is
+still the right place to decide which of a person's 500 cards belong in
+Message Crate. The conversion runs on the server so the website offers it
+as the desktop app does.
 
 **A load is Append or Edit, and touches only the contacts in the file.**
 Append creates the contacts the file names, renames the ones it holds,
@@ -571,8 +615,8 @@ rather than being guessed at.
 
 **A load is strict, and refuses whole.** A phone is keyed by the one rule
 above, an email is lowercased and must be one `@` with text on both sides,
-an unknown `service` or `identity_type` is an error, so is an `identity_type`
-the row's service does not carry (above), and so is a row with more
+an unknown `service` is an error, so is an address the row's service does
+not carry (above), and so is a row with more
 fields than the header, whose cells cannot be matched to the columns. A row
 with fewer fields reads its missing trailing cells as blank, because a
 spreadsheet can drop empty cells at the end of a row and no column moves.
@@ -1065,7 +1109,7 @@ flowchart LR
 | Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |
 | Making, naming, and replacing a contact during import | `crates/server/server/src/imports_api/contact_name.rs` |
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |
-| Writing and loading the address book | `crates/server/server/src/db/address_book.rs` |
+| Writing and loading the address book, and converting a vCard file to it | `crates/server/server/src/db/address_book.rs`, and the vCard reader in `crates/libs/contacts` |
 | The display name rule | `crates/server/server/src/db/participant_names.rs` |
 | Whether a conversation is a group | `is_group` in `crates/helpers/imessage-reader/src/session.rs`, `is_group_jid` in `crates/exporters/whatsapp-exporter/src/jid.rs`, `MmsConversation::for_peers` in `crates/libs/sbr/src/conversations.rs`, `pdu_target` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`, `names_a_group` in `crates/exporters/sms-backup-plus-exporter/src/flat_eml.rs`, `session_key` in `crates/exporters/imazing-exporter/src/emit/session.rs`, `ingest_per_chat_file` and `labelled_conversation` in `crates/exporters/openextract-exporter/src/emit.rs` |
 | Which conversations involve a contact | `involves_contact_expr` in `db/contacts/read.rs`, `conversation_involves` in `search/bridge.rs` |

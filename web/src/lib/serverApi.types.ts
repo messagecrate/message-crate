@@ -614,7 +614,20 @@ export interface paths {
         put?: never;
         /**
          * Load an address book into this account.
-         * @description The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `groups`, `service`, `identity_type` and `identity`, as `POST /v1/contacts/address-book` writes it.
+         * @description The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `service`, `identity` and `groups`, as `POST /v1/contacts/address-book` writes it.
+         *
+         *     `service` is `Text Message`, `Email` or `WhatsApp`, the words the screen
+         *     where an identity is added offers, ignoring case. The file states no
+         *     type: the service decides which types are valid and the address's shape
+         *     picks among them, as adding an identity does. `Text Message` carries a
+         *     phone number, an email address or any other name; `Email` is an email
+         *     address on Text Message; `WhatsApp` carries a phone number or one of
+         *     WhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),
+         *     which are `other`. An identity written exactly as the account keys it on
+         *     that service is that identity, whatever its type, so an exported file
+         *     loads back as it was. A row whose address the service cannot carry, such
+         *     as an email address on `WhatsApp` (an `@` address at any other domain),
+         *     is refused, where adding an identity stores it as `other`.
          *
          *     Rows that share a `contact_id` are one contact. An id the account holds
          *     names that contact, a blank id makes a new contact for that row, and any
@@ -664,11 +677,12 @@ export interface paths {
         /**
          * Write the address book for the contacts a search matches, the checked ones among them, or every contact when the body names neither.
          * @description The answer is `text/csv`, not JSON: one row per identity, with the
-         *     columns `contact_id`, `display_name`, `groups`, `service`, `identity_type`
-         *     and `identity`. A contact's name and its Contact Group names, separated
-         *     by `;`, repeat on each of its rows. A contact with no name has a blank
-         *     `display_name`, and a contact with no identity is one row with the last
-         *     three columns blank. Contacts in the trash are left out.
+         *     columns `contact_id`, `display_name`, `service`, `identity` and `groups`.
+         *     `service` is `Text Message`, `Email` for an email address on Text
+         *     Message, or `WhatsApp`. A contact's name and its Contact Group names,
+         *     separated by `;`, repeat on each of its rows. A contact with no name has
+         *     a blank `display_name`, and a contact with no identity is one row with
+         *     `service` and `identity` blank. Contacts in the trash are left out.
          *
          *     A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return
          *     is written with a `'` in front, in every column, because a spreadsheet
@@ -710,6 +724,46 @@ export interface paths {
         put?: never;
         /** Report which identifiers this account has no contact for. */
         post: operations["list_unmatched_identities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/contacts/vcard-address-book": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write an address book from a vCard file, for the person to edit and then load with `POST /v1/contacts`.
+         * @description The body is the file itself, one or more cards. Nothing is read from or stored in the account.
+         *
+         *     The answer is `text/csv` in the address book's columns: one row for each
+         *     `TEL` and each `EMAIL` on each card. `contact_id` is `card1`, `card2`, …
+         *     by the card's position in the file, so a card's rows load as one new
+         *     contact. `display_name` is the card's `FN`, or its `N` assembled when it
+         *     has no `FN`, and blank when it has neither. `service` is `Text Message`
+         *     for a number and `Email` for an email address, never `WhatsApp`, because
+         *     a card cannot say a number is on WhatsApp. `groups` is blank:
+         *     `CATEGORIES` is not carried over. A card with no number and no email
+         *     address gives no rows.
+         *
+         *     A number written without `+` is written in its `+` form in `country` when
+         *     it is a valid number there. A number written with `+`, one that is not
+         *     valid in `country`, and every number when no `country` is given are
+         *     written exactly as the card has them. Nothing else is checked: the load
+         *     refuses what it cannot store and names the rows. Cells are written with
+         *     the `'` the export puts before a cell a spreadsheet would run.
+         *
+         *     A body that holds no `BEGIN:VCARD` line answers
+         *     `422 Unprocessable Entity`.
+         */
+        post: operations["get_vcard_address_book"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9899,6 +9953,103 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_vcard_address_book: {
+        parameters: {
+            query?: {
+                /** @description The country a number written without its `+` code is read in, as an ISO 3166-1 code that `GET /v1/phone-countries` lists, such as `US`. Absent, every number is written as the card has it. */
+                country?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The vCard file: one or more cards. */
+        requestBody: {
+            content: {
+                "text/vcard": string;
+            };
+        };
+        responses: {
+            /** @description The address book, as an attachment named `address-book.csv` */
+            200: {
+                headers: {
+                    /** @description `attachment; filename="address-book.csv"` */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
+             */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

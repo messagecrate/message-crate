@@ -1,9 +1,9 @@
-//! A vCard (VCF) parser.
+//! A vCard (VCF) reader.
 //!
-//! Message Crate does not read a vCard as an address book: its address book
-//! is its own CSV, which the server writes and loads. [`parse_vcf`] is kept
-//! for the conversion from a vCard to that CSV (issue #916), and nothing in
-//! the workspace calls it until then.
+//! Message Crate does not load a vCard as an address book: its address book
+//! is its own CSV, which the server writes and loads. The server reads a
+//! vCard with [`parse_vcf`] only to convert it to that CSV, for a person to
+//! edit and then load.
 
 mod vcf;
 

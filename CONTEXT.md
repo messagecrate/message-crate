@@ -218,7 +218,8 @@ is for taking contacts out to a spreadsheet, correcting them, and putting them
 back; contacts themselves arrive with message imports. A load is Append,
 which adds and renames and removes nothing, or Edit, which makes each contact
 in the file match its rows. A phone's vCard is not an address book Message
-Crate reads.
+Crate reads: Convert a vCard file under Settings writes the Address Book
+from one, for editing before a load.
 _Avoid_: Contacts file, VCF, vCard
 
 **Identity**:
