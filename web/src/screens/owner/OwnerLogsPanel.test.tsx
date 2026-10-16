@@ -14,8 +14,8 @@ const listServerLogFiles = vi.hoisted(() => vi.fn());
 const listAccounts = vi.hoisted(() => vi.fn());
 const getAccountProfile = vi.hoisted(() => vi.fn());
 const getServerState = vi.hoisted(() => vi.fn());
-const invokeListImportRunLogs = vi.hoisted(() => vi.fn());
-const invokeReadImportRunLogLines = vi.hoisted(() => vi.fn());
+const invokeListLogs = vi.hoisted(() => vi.fn());
+const invokeReadLogLines = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/tauriCheck", () => ({ isTauri: () => desktop.on }));
@@ -29,8 +29,8 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
 }));
 vi.mock("../../lib/desktop/runLog", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/desktop/runLog")>()),
-  invokeListImportRunLogs: (...a: unknown[]) => invokeListImportRunLogs(...a),
-  invokeReadImportRunLogLines: (...a: unknown[]) => invokeReadImportRunLogLines(...a),
+  invokeListLogs: (...a: unknown[]) => invokeListLogs(...a),
+  invokeReadLogLines: (...a: unknown[]) => invokeReadLogLines(...a),
 }));
 
 const page = (text: string) => ({
@@ -87,8 +87,8 @@ describe("OwnerLogsPanel", () => {
       { id: 2, name: "server-000002.log", bytes: 10, modified_at: "2026-10-08T12:00:00Z" },
       { id: 1, name: "server-000001.log", bytes: 50, modified_at: "2026-10-07T12:00:00Z" },
     ]);
-    invokeListImportRunLogs.mockResolvedValue([ALICE_RUN]);
-    invokeReadImportRunLogLines.mockResolvedValue(page("chat.jsonl failed: the server refused"));
+    invokeListLogs.mockResolvedValue([ALICE_RUN]);
+    invokeReadLogLines.mockResolvedValue(page("chat.jsonl failed: the server refused"));
     startFakeClock();
   });
 
@@ -105,7 +105,7 @@ describe("OwnerLogsPanel", () => {
     expect(screen.getByText("the server refused a login")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download server-000002.log" })).toBeInTheDocument();
     // The owner reads every run log on this computer.
-    expect(invokeListImportRunLogs).toHaveBeenCalledWith({
+    expect(invokeListLogs).toHaveBeenCalledWith({
       messageCrateId: HERE,
       accountId: 1,
       owner: true,
@@ -116,7 +116,7 @@ describe("OwnerLogsPanel", () => {
     await settle();
 
     expect(screen.getByText("chat.jsonl failed: the server refused")).toBeInTheDocument();
-    expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
+    expect(invokeReadLogLines).toHaveBeenCalledWith(
       { messageCrateId: HERE, accountId: 1, owner: true },
       ALICE_RUN.name,
       expect.objectContaining({ level: "warn" }),
@@ -125,10 +125,8 @@ describe("OwnerLogsPanel", () => {
   });
 
   it("picks the desktop app's own log as Desktop app, apart from the Import Runs", async () => {
-    invokeListImportRunLogs.mockResolvedValue([DESKTOP_APP_LOG, ALICE_RUN]);
-    invokeReadImportRunLogLines.mockResolvedValue(
-      page("The server's processes will not end with it"),
-    );
+    invokeListLogs.mockResolvedValue([DESKTOP_APP_LOG, ALICE_RUN]);
+    invokeReadLogLines.mockResolvedValue(page("The server's processes will not end with it"));
     const user = setupUser();
     renderPanel();
     await settle();
@@ -143,7 +141,7 @@ describe("OwnerLogsPanel", () => {
     await settle();
 
     expect(screen.getByText("The server's processes will not end with it")).toBeInTheDocument();
-    expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
+    expect(invokeReadLogLines).toHaveBeenCalledWith(
       { messageCrateId: HERE, accountId: 1, owner: true },
       "desktop-app.log",
       expect.objectContaining({ level: "warn" }),
@@ -161,6 +159,6 @@ describe("OwnerLogsPanel", () => {
     await user.click(screen.getByRole("button", { name: /Log$/ }));
     const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(["The server's log"]);
-    expect(invokeListImportRunLogs).not.toHaveBeenCalled();
+    expect(invokeListLogs).not.toHaveBeenCalled();
   });
 });

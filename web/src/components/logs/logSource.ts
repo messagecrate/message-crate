@@ -1,9 +1,9 @@
 import { useAuth } from "../../lib/authContext";
 import {
-  invokeListImportRunLogs,
-  invokeReadImportRunLog,
-  invokeReadImportRunLogLines,
-  type RunLogEntry,
+  invokeListLogs,
+  invokeReadLog,
+  invokeReadLogLines,
+  type LogEntry,
   type RunLogReader,
 } from "../../lib/desktop/runLog";
 import { canReadImportRunLogs } from "../../lib/desktopFeatures";
@@ -42,7 +42,7 @@ export type LogDownload = {
 };
 
 /**
- * A log the viewer reads: the server's, or one Import Run's on this computer.
+ * A log the viewer reads: the server's, or one in this computer's Logs Directory.
  * The viewer reads both the same way, a page of lines at a time, newest first.
  */
 export type LogSource = {
@@ -57,12 +57,15 @@ export const SERVER_LOG: LogSource = {
   readLines: (request, signal) => listServerLogLines(request, { signal }),
 };
 
-/** One Import Run's log on this computer, read by `reader`. */
-export function runLogSource(reader: RunLogReader, name: string): LogSource {
+/**
+ * One log in this computer's Logs Directory, an Import Run's or the desktop
+ * app's own, read by `reader` through the desktop app.
+ */
+export function desktopLogSource(reader: RunLogReader, name: string): LogSource {
   return {
     key: ["logs", "run", reader.messageCrateId, reader.owner, name],
     // The desktop app cannot cancel the read, so the signal goes unused.
-    readLines: (request) => invokeReadImportRunLogLines(reader, name, request),
+    readLines: (request) => invokeReadLogLines(reader, name, request),
   };
 }
 
@@ -73,9 +76,9 @@ export function runLogSource(reader: RunLogReader, name: string): LogSource {
 export const UNREADABLE_RUN_LOG =
   "This log was written before its lines carried a time and a level, so it cannot be shown here. Download it to read it.";
 
-/** The download of one Import Run's log, whole, under its own name. */
-export function runLogDownload(reader: RunLogReader, name: string): LogDownload {
-  return { name, read: () => invokeReadImportRunLog(reader, name) };
+/** The download of one log in this computer's Logs Directory, whole, under its own name. */
+export function desktopLogDownload(reader: RunLogReader, name: string): LogDownload {
+  return { name, read: () => invokeReadLog(reader, name) };
 }
 
 /**
@@ -112,15 +115,19 @@ export function useRunLogReader(): RunLogReader | null {
   return { messageCrateId, accountId, owner: isOwner };
 }
 
-/** The Import Run logs on this computer `reader` may read, newest first. */
-export function useRunLogs(reader: RunLogReader | null): {
-  logs: RunLogEntry[];
+/**
+ * The logs in this computer's Logs Directory that `reader` may read, newest
+ * first: its Import Run logs, and for the owner every one and the desktop
+ * app's own.
+ */
+export function useDesktopLogs(reader: RunLogReader | null): {
+  logs: LogEntry[];
   loading: boolean;
   error: Error | null;
 } {
   const listing = useRouteQuery(
     ["logs", "runs", reader?.messageCrateId, reader?.owner],
-    () => (reader ? invokeListImportRunLogs(reader) : Promise.resolve([])),
+    () => (reader ? invokeListLogs(reader) : Promise.resolve([])),
     { enabled: reader !== null },
   );
   return {

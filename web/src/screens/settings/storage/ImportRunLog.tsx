@@ -2,11 +2,11 @@ import { useState } from "react";
 import Button from "../../../components/Button";
 import LogViewer from "../../../components/logs/LogViewer";
 import {
-  runLogDownload,
-  runLogSource,
+  desktopLogDownload,
+  desktopLogSource,
   UNREADABLE_RUN_LOG,
+  useDesktopLogs,
   useRunLogReader,
-  useRunLogs,
 } from "../../../components/logs/logSource";
 import { canReadImportRunLogs } from "../../../lib/desktopFeatures";
 import { isTauri } from "../../../lib/tauriCheck";
@@ -25,7 +25,7 @@ export default function ImportRunLog({ importRunId }: { importRunId: number }) {
 function RunLogOnThisComputer({ importRunId }: { importRunId: number }) {
   const [open, setOpen] = useState(false);
   const reader = useRunLogReader();
-  const { logs } = useRunLogs(reader);
+  const { logs } = useDesktopLogs(reader);
   // Run ids start again at 1 on every Message Crate, so the run's log is the
   // one from this Message Crate with its id.
   const log = logs.find(
@@ -48,8 +48,8 @@ function RunLogOnThisComputer({ importRunId }: { importRunId: number }) {
       </div>
       {open ? (
         <LogViewer
-          source={runLogSource(reader, log.name)}
-          downloads={[runLogDownload(reader, log.name)]}
+          source={desktopLogSource(reader, log.name)}
+          downloads={[desktopLogDownload(reader, log.name)]}
           unreadable={log.hasLines ? undefined : UNREADABLE_RUN_LOG}
         />
       ) : null}

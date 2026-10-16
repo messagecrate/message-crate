@@ -106,7 +106,7 @@ impl LogKind {
 /// One log on this computer: an Import Run's, or the desktop app's own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RunLogEntry {
+pub struct LogEntry {
     /// The file's name in the Logs Directory, such as
     /// `import-iphone-ios-261004-143000.log`. A download is named the same.
     pub name: String,
@@ -166,7 +166,7 @@ pub struct LinesPage {
 ///
 /// Returns an error when the directory cannot be read. A log in it that
 /// cannot be read is left out.
-pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
+pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<LogEntry>> {
     let entries = match fs::read_dir(logs_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -196,7 +196,7 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
             continue;
         };
         let modified: chrono::DateTime<chrono::Utc> = modified.into();
-        logs.push(RunLogEntry {
+        logs.push(LogEntry {
             name,
             kind,
             this_message_crate: account

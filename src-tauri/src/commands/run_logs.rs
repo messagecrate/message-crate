@@ -9,7 +9,7 @@ use message_crate_core::RunLogAccount;
 
 use super::paths::logs_dir;
 use crate::app_directories::RunLog;
-use crate::run_logs::{self, LinesPage, LinesQuery, Reader, RunLogEntry};
+use crate::run_logs::{self, LinesPage, LinesQuery, LogEntry, Reader};
 
 /// Arguments for [`start_import_run_log`].
 #[derive(Debug, serde::Deserialize)]
@@ -37,15 +37,12 @@ pub fn start_import_run_log(app: tauri::AppHandle, args: StartRunLogArgs) {
 ///
 /// Returns an error when the Logs Directory cannot be read.
 #[tauri::command(async)]
-pub fn list_import_run_logs(
-    app: tauri::AppHandle,
-    reader: Reader,
-) -> Result<Vec<RunLogEntry>, String> {
+pub fn list_logs(app: tauri::AppHandle, reader: Reader) -> Result<Vec<LogEntry>, String> {
     run_logs::list(&logs_dir(&app), &reader)
-        .map_err(|error| format!("Could not list the Import Run logs: {error}"))
+        .map_err(|error| format!("Could not list the logs in the Logs Directory: {error}"))
 }
 
-/// Arguments for [`read_import_run_log_lines`].
+/// Arguments for [`read_log_lines`].
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadLinesArgs {
@@ -64,14 +61,11 @@ pub struct ReadLinesArgs {
 /// Returns an error when the log is not one `reader` may read, or cannot be
 /// read.
 #[tauri::command(async)]
-pub fn read_import_run_log_lines(
-    app: tauri::AppHandle,
-    args: ReadLinesArgs,
-) -> Result<LinesPage, String> {
+pub fn read_log_lines(app: tauri::AppHandle, args: ReadLinesArgs) -> Result<LinesPage, String> {
     run_logs::read_lines(&logs_dir(&app), &args.reader, &args.name, &args.query)
 }
 
-/// Arguments for [`read_import_run_log`].
+/// Arguments for [`read_log`].
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadLogArgs {
@@ -91,9 +85,6 @@ pub struct ReadLogArgs {
 /// Returns an error when the log is not one `reader` may read, or cannot be
 /// read.
 #[tauri::command(async)]
-pub fn read_import_run_log(
-    app: tauri::AppHandle,
-    args: ReadLogArgs,
-) -> Result<tauri::ipc::Response, String> {
+pub fn read_log(app: tauri::AppHandle, args: ReadLogArgs) -> Result<tauri::ipc::Response, String> {
     run_logs::read_whole(&logs_dir(&app), &args.reader, &args.name).map(tauri::ipc::Response::new)
 }

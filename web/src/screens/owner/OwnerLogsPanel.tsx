@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Header, ListBoxSection } from "react-aria-components";
 import LogViewer from "../../components/logs/LogViewer";
 import {
-  runLogDownload,
-  runLogSource,
+  desktopLogDownload,
+  desktopLogSource,
   SERVER_LOG,
   UNREADABLE_RUN_LOG,
+  useDesktopLogs,
   useRunLogReader,
-  useRunLogs,
   useServerLogDownloads,
 } from "../../components/logs/logSource";
 import Select, {
@@ -16,7 +16,7 @@ import Select, {
   selectSectionHeaderClass,
 } from "../../components/Select";
 import { errorLine } from "../../lib/apiErrorMessage";
-import type { RunLogEntry } from "../../lib/desktop/runLog";
+import type { LogEntry } from "../../lib/desktop/runLog";
 import { formatDateTime } from "../../lib/formatDate";
 import { sectionHintClass } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
@@ -27,8 +27,19 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
 /** The picker's key for the server's log. */
 const SERVER_KEY = "server";
 
-/** The picker's key for an Import Run log. */
-function runKey(name: string): string {
+/** What the hint under the picker says of the server's log. */
+const SERVER_LOG_HINT =
+  "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says.";
+
+/** What the hint under the picker says of each kind of log on this computer, after its name. */
+const LOG_HINTS: Record<LogEntry["kind"], string> = {
+  importRun: "A log names counts, files and what went wrong, never what a message says.",
+  desktopApp:
+    "What the desktop app went on without outside an Import Run, such as a download it could not record.",
+};
+
+/** The picker's key for a log on this computer. */
+function logKey(name: string): string {
   return `run:${name}`;
 }
 
@@ -38,7 +49,7 @@ function runKey(name: string): string {
  * username; one of another Message Crate by its number and that server's
  * address.
  */
-function runLogLabel(log: RunLogEntry, usernames: ReadonlyMap<number, string>): string {
+function runLogLabel(log: LogEntry, usernames: ReadonlyMap<number, string>): string {
   const when = formatDateTime(log.modifiedAt);
   const account = log.account;
   if (!account) return `${log.name}, ${when}`;
@@ -57,15 +68,17 @@ function runLogLabel(log: RunLogEntry, usernames: ReadonlyMap<number, string>): 
 export function OwnerLogsPanel() {
   const [picked, setPicked] = useState(SERVER_KEY);
   const reader = useRunLogReader();
-  const runs = useRunLogs(reader);
+  const onComputer = useDesktopLogs(reader);
   const { accounts } = useOwnerAccounts();
   const usernames = new Map(accounts.map((account) => [account.account_id, account.username]));
   const serverDownloads = useServerLogDownloads();
 
-  const pickedRun =
-    reader && picked !== SERVER_KEY ? runs.logs.find((log) => runKey(log.name) === picked) : null;
-  const desktopApp = runs.logs.find((log) => log.kind === "desktopApp");
-  const importRuns = runs.logs.filter((log) => log.kind === "importRun");
+  const pickedLog =
+    reader && picked !== SERVER_KEY
+      ? onComputer.logs.find((log) => logKey(log.name) === picked)
+      : null;
+  const desktopApp = onComputer.logs.find((log) => log.kind === "desktopApp");
+  const importRuns = onComputer.logs.filter((log) => log.kind === "importRun");
 
   return (
     <section>
@@ -77,7 +90,7 @@ export function OwnerLogsPanel() {
             aria-label="Log"
             size="sm"
             className="w-[22rem] max-w-full"
-            selectedKey={pickedRun ? picked : SERVER_KEY}
+            selectedKey={pickedLog ? picked : SERVER_KEY}
             onSelectionChange={(key) => {
               if (key != null) setPicked(String(key));
             }}
@@ -86,7 +99,7 @@ export function OwnerLogsPanel() {
               The server's log
             </ListBoxItem>
             {reader && desktopApp ? (
-              <ListBoxItem id={runKey(desktopApp.name)} className={itemClassName}>
+              <ListBoxItem id={logKey(desktopApp.name)} className={itemClassName}>
                 Desktop app
               </ListBoxItem>
             ) : null}
@@ -98,7 +111,7 @@ export function OwnerLogsPanel() {
                   return (
                     <ListBoxItem
                       key={log.name}
-                      id={runKey(log.name)}
+                      id={logKey(log.name)}
                       textValue={label}
                       className={itemClassName}
                     >
@@ -112,24 +125,22 @@ export function OwnerLogsPanel() {
         </div>
       </div>
       <p className={sectionHintClass}>
-        {pickedRun?.kind === "desktopApp"
-          ? `${pickedRun.name}, kept in the Logs Directory on this computer. What the desktop app went on without outside an Import Run, such as a download it could not record.`
-          : pickedRun
-            ? `${pickedRun.name}, kept in the Logs Directory on this computer. A log names counts, files and what went wrong, never what a message says.`
-            : "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says."}
+        {pickedLog
+          ? `${pickedLog.name}, kept in the Logs Directory on this computer. ${LOG_HINTS[pickedLog.kind]}`
+          : SERVER_LOG_HINT}
       </p>
-      {runs.error ? (
+      {onComputer.error ? (
         <p role="alert" className="mt-2 text-[0.813rem] text-danger">
-          {errorLine(runs.error, "Could not list the logs on this computer.")}
+          {errorLine(onComputer.error, "Could not list the logs on this computer.")}
         </p>
       ) : null}
       <div className="mt-3">
-        {pickedRun && reader ? (
+        {pickedLog && reader ? (
           <LogViewer
-            key={pickedRun.name}
-            source={runLogSource(reader, pickedRun.name)}
-            downloads={[runLogDownload(reader, pickedRun.name)]}
-            unreadable={pickedRun.hasLines ? undefined : UNREADABLE_RUN_LOG}
+            key={pickedLog.name}
+            source={desktopLogSource(reader, pickedLog.name)}
+            downloads={[desktopLogDownload(reader, pickedLog.name)]}
+            unreadable={pickedLog.hasLines ? undefined : UNREADABLE_RUN_LOG}
           />
         ) : (
           <LogViewer key={SERVER_KEY} source={SERVER_LOG} downloads={serverDownloads.downloads} />
