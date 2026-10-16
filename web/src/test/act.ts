@@ -1,7 +1,6 @@
 /**
- * Testing Library's `act`, given up when the test times out, for a test that
- * awaits a held call inside `act`. Importing this module registers a
- * `beforeEach` in the importing test file that records each test's signal.
+ * Importing this module registers a `beforeEach` in the importing test file
+ * that records each test's signal.
  */
 
 import { act as rtlAct } from "@testing-library/react";
@@ -32,9 +31,9 @@ function aborted(signal: AbortSignal): Promise<never> {
  *
  * An `afterEach` that runs after the test timed out finds the signal already
  * aborted, so a race would reject at once and the hook could not end what the
- * test left running. Its `act` starts the call inside a scope that closes at
- * once and returns the call's promise outside it, so the hook can still await
- * it, and no scope stays open if it never settles.
+ * test left running. Its `act` starts the call inside a synchronous scope,
+ * which closes at once. It returns the call's promise outside that scope, so
+ * the hook can still await it. No scope stays open if the call never settles.
  */
 export function act<T>(callback: () => Promise<T>): Promise<T>;
 export function act(callback: () => void): void;
