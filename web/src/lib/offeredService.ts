@@ -106,11 +106,11 @@ export const DUPLICATE_IDENTITY_MESSAGE = "This account is already in the list."
  *
  * The service is part of the key because the same number on Text Message and
  * on WhatsApp is two accounts, not one, and listing both is the right thing to
- * do. Within a service the comparison ignores how the value was typed: an
- * value written as a number, with at least one digit, compares by its digits, so `+1 (555) 555-0119`
- * and `+15555550119` land on the same key, and any other value folds to lower
- * case, so a WhatsApp internal id is never taken for the number its digits
- * spell.
+ * do. Within a service the comparison ignores how the value was typed: a
+ * value written as a number, with at least one digit, compares by its digits,
+ * so `+1 (555) 555-0119` and `+15555550119` land on the same key. Any other
+ * value folds to lower case, so a WhatsApp internal id is never taken for the
+ * number its digits spell.
  *
  * The digits are compared whole rather than by their last ten, so a number
  * written once with its country code and once without is not caught. That is

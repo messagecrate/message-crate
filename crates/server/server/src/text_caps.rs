@@ -29,7 +29,9 @@ pub const MAX_COLLECTION_NAME_CHARS: usize = 80;
 pub const MAX_API_TOKEN_LABEL_CHARS: usize = 120;
 /// Most characters in an identity address a person types: an email address's
 /// local part (64) and domain (255) with the `@` between them come to 320, and
-/// a phone number is far shorter.
+/// a phone number is far shorter. The web app refuses a longer one before it
+/// asks, with its own copy of this number, `MAX_IDENTITY_CHARS` in
+/// `web/src/lib/offeredService.ts`: change the two together.
 pub const MAX_IDENTITY_ADDRESS_CHARS: usize = 320;
 /// Most characters in an Import Error's `item` or `reason`.
 pub const MAX_IMPORT_ERROR_TEXT_CHARS: usize = 2_000;

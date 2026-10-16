@@ -54,9 +54,9 @@ export const REQUEST_NOT_IN_LOG =
  *
  * Given `request`, it opens at every level with the request's id in the
  * search, so only that request's lines show. Every request leaves a line at
- * `INFO`, so finding none means the log was rotated past it or its level
- * (`RUST_LOG`) is set above `INFO`, and the viewer says so rather than that
- * no line matches.
+ * `INFO`, so finding none means the log was rotated past it or `RUST_LOG`
+ * leaves out its `INFO` lines, as `RUST_LOG=warn` does. The viewer says so
+ * rather than that no line matches.
  */
 export default function LogViewer({
   source,
