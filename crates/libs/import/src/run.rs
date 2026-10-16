@@ -167,6 +167,10 @@ pub(crate) struct Session {
     /// attachment, or a part of one) waits for its answer, from the limit
     /// the server states ([`crate::http::piece_wait`]).
     pub piece_wait: std::time::Duration,
+    /// The mode of the Import Run the Upload posts into, read from the
+    /// server at login ([`crate::http::run_mode`]). The Upload goes by it
+    /// as the server does (#3144).
+    pub mode: ImportMode,
 }
 
 impl Session {
@@ -300,8 +304,8 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
             paths.input.display()
         );
     }
-    let (session, mode) = match login(cfg, &mut out) {
-        Ok(logged_in) => logged_in,
+    let session = match login(cfg, &mut out) {
+        Ok(session) => session,
         // A session that has already ended is refused at the first request,
         // and stops the run the same way as one refused later.
         Err(error) if message_crate_http::is_session_refused(&error) => {
@@ -313,7 +317,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let journal = RunJournal::open(
         paths.journal.clone(),
         ServerTarget::new(&session.url, &session.username),
-        earlier_progress(mode, cfg.force),
+        earlier_progress(session.mode, cfg.force),
         &mut |line| out.show_at(RunLogLevel::Warn, line),
     )?;
     out.expect_files(files.len());
@@ -362,7 +366,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         server_away: away,
         account: session.auth.account_id,
         username: session.username.clone(),
-        mode,
+        mode: Some(session.mode),
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
@@ -420,7 +424,7 @@ fn halt_line(session_refused: bool, away: Option<ServerAway>) -> Option<String> 
 ///
 /// Returns an error when the HTTP client cannot be built, the session token
 /// is rejected, or the server does not answer the Import Run.
-fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<(Session, ImportMode)> {
+fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
@@ -431,8 +435,8 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<(Session, Imp
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
     let piece_wait = crate::http::piece_wait(&http, &url, &cfg.token)?;
-    let mode = crate::http::run_mode(&http, &url, &cfg.token, cfg.import_id)?;
-    let session = Session {
+    let mode = crate::http::run_mode(&http, &url, &cfg.token, cfg.import_id, piece_wait)?;
+    Ok(Session {
         http,
         url,
         token: cfg.token.clone(),
@@ -442,8 +446,8 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<(Session, Imp
         refused: Arc::new(AtomicBool::new(false)),
         away: Arc::new(OnceLock::new()),
         piece_wait,
-    };
-    Ok((session, mode))
+        mode,
+    })
 }
 
 /// The report of a run whose session the server refused at login: nothing
@@ -463,8 +467,8 @@ fn refused_at_login(files: &[PathBuf], started_at: String, run_started: Instant)
             .map(|path| crate::report::FileResult::canceled(&file_label(path)))
             .collect(),
         // Nothing was sent, and no account answered: every count is 0, the
-        // account 0 and the username empty. No Import Run was read, so the
-        // mode is the default, `append`.
+        // account 0 and the username empty. No Import Run was read, so
+        // there is no mode.
         ..ImportReport::default()
     }
 }

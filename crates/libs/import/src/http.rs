@@ -102,6 +102,11 @@ struct ImportRunMode {
 /// posts into, because the server wipes the source by the run's mode
 /// (#3144).
 ///
+/// The answer carries every issue and note the run recorded, which has no
+/// bound: a WhatsApp run can record 20,000 skipped files. So it waits as
+/// long as for a piece, `piece_wait` ([`piece_wait`]), not a fixed few
+/// seconds.
+///
 /// # Errors
 ///
 /// Returns an error when the server cannot be reached, refuses the session
@@ -111,12 +116,13 @@ pub(crate) fn run_mode(
     url: &str,
     token: &str,
     import_id: i64,
+    piece_wait: Duration,
 ) -> Result<ImportMode> {
     let what = format!("Reading Import Run {import_id}");
     let path = format!("/v1/imports/{import_id}");
     let response = http
         .server_request(Method::GET, url, &path, token)
-        .timeout(Duration::from_secs(15))
+        .timeout(piece_wait)
         .send()
         .with_context(|| format!("{what} failed"))?;
     let (status, text) = read_body(&what, response)?;
@@ -498,6 +504,7 @@ mod tests {
             refused: Default::default(),
             away: Default::default(),
             piece_wait: Duration::from_secs(5),
+            mode: ImportMode::Append,
         }
     }
 

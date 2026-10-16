@@ -865,7 +865,33 @@ fn an_upload_into_a_replace_run_sends_what_the_journal_records() {
         2,
         "the replace run is sent the conversation"
     );
-    assert_eq!(report.mode, ImportMode::Replace);
+    assert_eq!(report.mode, Some(ImportMode::Replace));
+}
+
+/// A forced Upload skips nothing an earlier Upload sent: it opens the
+/// journal without its earlier progress, so the conversation the journal
+/// records goes out again.
+#[test]
+fn a_forced_upload_sends_what_the_journal_records() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_import_document());
+    let cfg = mock_server_config(dir.path(), server.base_url());
+    let batches = mock_batch_accepting(&server, "guid-1");
+    assert!(run(&cfg, None).unwrap().ok);
+    assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+
+    let forced = ImportConfig { force: true, ..cfg };
+    let report = run(&forced, None).unwrap();
+
+    assert!(report.ok, "{:?}", report.results);
+    assert_eq!(report.conversations_skipped, 0);
+    assert_eq!(
+        batches.calls(),
+        2,
+        "the forced Upload sends the conversation"
+    );
 }
 
 /// A replace Upload that stops before it sends its first batch has wiped
@@ -3508,6 +3534,7 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
 
     assert!(report.session_refused);
     assert!(report.canceled);
+    assert_eq!(report.mode, None, "no Import Run was read");
     let not_started = "The server no longer accepts this session, so the Upload did not start. \
                        The next Upload sends every conversation.";
     assert!(read_log(dir.path()).contains(not_started));

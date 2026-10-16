@@ -127,8 +127,11 @@ pub struct ImportReport {
     pub account: i64,
     /// Username the server reports for that account.
     pub username: String,
-    /// `append` or `replace`.
-    pub mode: ImportMode,
+    /// The mode of the Import Run the Upload posted into, `append` or
+    /// `replace`. `None` for an Upload whose session the server refused at
+    /// login, which read no run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ImportMode>,
     /// Unix seconds when the run started, as a string.
     pub started_at: String,
     /// Unix seconds when the run finished, as a string.
@@ -361,7 +364,7 @@ mod tests {
             server_away: None,
             account: 1,
             username: "user".into(),
-            mode: ImportMode::Append,
+            mode: Some(ImportMode::Append),
             started_at: "2026-08-29T00:00:00Z".into(),
             finished_at: "2026-08-29T00:01:00Z".into(),
             elapsed_ms: 60_000,

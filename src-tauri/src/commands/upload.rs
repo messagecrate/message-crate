@@ -428,7 +428,7 @@ mod tests {
             server_away: None,
             account: 1,
             username: "user".into(),
-            mode: ImportMode::Append,
+            mode: Some(ImportMode::Append),
             started_at: "2026-08-11T00:00:00Z".into(),
             finished_at: "2026-08-11T00:00:01Z".into(),
             elapsed_ms: 1_000,
