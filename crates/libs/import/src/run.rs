@@ -435,7 +435,7 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
     let piece_wait = crate::http::piece_wait(&http, &url, &cfg.token)?;
-    let mode = crate::http::run_mode(&http, &url, &cfg.token, cfg.import_id, piece_wait)?;
+    let mode = crate::http::run_mode(&http, &url, &cfg.token, cfg.import_id)?;
     Ok(Session {
         http,
         url,

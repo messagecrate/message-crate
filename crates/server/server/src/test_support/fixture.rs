@@ -134,50 +134,6 @@ impl TestFixture {
             .await
             .unwrap()
     }
-
-    /// Insert an account, `importer`, under the id the database hands out,
-    /// open a session on it, and start one running Import Run for it, all
-    /// straight into the database, for a test that calls an import handler
-    /// function directly rather than over HTTP. The session is made at
-    /// [`crate::test_support::fixed_instant`] and expires 7 days after it,
-    /// so the router, which checks expiry against the clock, refuses it; a
-    /// test that sends a token over HTTP makes its own at
-    /// [`crate::test_support::routed_credential_instant`].
-    pub async fn account_with_running_import(&self) -> ImportingAccount {
-        let account_id = self.account("importer").await;
-        let mut conn = self.conn().await;
-        let token = crate::db::session_tokens::insert_account_session_token(
-            &mut conn,
-            account_id,
-            crate::test_support::fixed_instant(),
-        )
-        .await
-        .unwrap();
-        let import_id = crate::db::imports::start_import(
-            &mut conn,
-            &crate::db::imports::StartImportArgs::new(
-                account_id,
-                "ios",
-                "append",
-                Some("message-crate-server"),
-            ),
-            crate::test_support::fixed_start_instant(),
-        )
-        .await
-        .unwrap();
-        ImportingAccount { token, import_id }
-    }
-}
-
-/// An account with a session made at
-/// [`crate::test_support::fixed_instant`] and a running Import Run, from
-/// [`TestFixture::account_with_running_import`].
-pub struct ImportingAccount {
-    /// A session token for the account, made at
-    /// [`crate::test_support::fixed_instant`].
-    pub token: String,
-    /// The id of its running Import Run.
-    pub import_id: i64,
 }
 
 #[cfg(test)]
