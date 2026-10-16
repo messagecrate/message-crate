@@ -6,36 +6,21 @@ import IdentityTable, { type IdentityRow } from "../../components/IdentityTable"
 import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { identityType } from "../../lib/backupIdentity";
-import {
-  listedServerService,
-  type OfferedService,
-  type ServerService,
-  serverService,
-} from "../../lib/offeredService";
-import { phonesMatch } from "../../lib/phoneTokens";
+import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
 import { keys } from "../../lib/queryKeys";
-import { useRouteQuery } from "../../lib/routeQuery";
+import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
 import { useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
 
-/**
- * Whether `profile` holds `address` on `service`, however the address was
- * typed. The profile names every service a number is an identity under, so a
- * number on Text Message and on WhatsApp is told apart by its services. An
- * email address is on the phone service, because WhatsApp carries none.
- */
-function profileHolds(profile: AccountProfile, address: string, service: ServerService): boolean {
-  if (identityType(address) === "email") {
-    const needle = address.trim().toLowerCase();
-    return profile.emails.some((email) => email.toLowerCase() === needle);
-  }
-  return profile.phones.some(
-    (phone) => phone.services.includes(service) && phonesMatch(address, phone.address),
-  );
+/** Whether `list` has a row at `address` on `service`, both as the server lists them. */
+function listHolds(list: readonly Identity[], { address, service }: ListedIdentity): boolean {
+  return list.some((row) => row.address === address && row.service === service);
 }
+
+/** An identity as the identities list names it: its stored address and listed service. */
+type ListedIdentity = Pick<Identity, "address" | "service">;
 
 /** The profile's own identities as placeholder rows, shown until the server lists them. */
 function placeholderRows(profile: AccountProfile): Identity[] {
@@ -85,10 +70,13 @@ export function IdentitiesSection({
   // Until the server answers, the profile's own identities are shown with no
   // counts, so the table never waits on a fetch and never shows a number
   // that is not the server's.
-  const identities = useRouteQuery(
-    managed ? keys.ownerAccounts.identities(managedAccountId) : keys.accountProfile.identities,
-    (signal) => listAccountIdentities({ signal }, managedAccountId),
-  );
+  const identitiesKey = managed
+    ? keys.ownerAccounts.identities(managedAccountId)
+    : keys.accountProfile.identities;
+  const fetchIdentities = (signal: AbortSignal) =>
+    listAccountIdentities({ signal }, managedAccountId);
+  const identities = useRouteQuery(identitiesKey, fetchIdentities);
+  const cache = useRouteCache();
   const listed = identities.data;
   const rows: Identity[] = useMemo(() => listed ?? placeholderRows(profile), [listed, profile]);
   const tableRows: IdentityRow[] = useMemo(
@@ -102,30 +90,34 @@ export function IdentitiesSection({
   );
 
   /**
-   * Send `body`, then require that the account the server answers with holds
-   * `address` on `service` (`listed`) or no longer does. A server that
-   * answers without making the change leaves the dialog open with
-   * `notChanged`.
+   * Send `body`, then read the identities list the table shows again and
+   * require `changed` of it. A server that answers without making the change
+   * leaves the dialog open with `notChanged`.
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, service }: { address: string; service: ServerService },
-    { listed, notChanged }: { listed: boolean; notChanged: string },
+    changed: (list: Identity[]) => boolean,
+    notChanged: string,
   ) => {
-    const changed = await updateProfile.mutateAsync(body);
-    if (profileHolds(changed, address, service) !== listed) {
+    await updateProfile.mutateAsync(body);
+    const list = await cache.fetch(identitiesKey, fetchIdentities);
+    if (!changed(list)) {
       throw new Error(notChanged);
     }
   };
 
   const confirmAdd = async ({ address, service }: { address: string; service: OfferedService }) => {
     setAddError("");
-    const identity = { address, service: serverService(service) };
     try {
-      await changeAndCheck({ identities: [identity] }, identity, {
-        listed: true,
-        notChanged: "The server did not add that identity.",
-      });
+      // The server stores the address in its own form (E.164 for a number),
+      // so the identity added is the row on `service` the list did not have
+      // before. The list names each service as the dialog offers it.
+      const before = listed ?? (await cache.fetch(identitiesKey, fetchIdentities));
+      await changeAndCheck(
+        { identities: [{ address, service: serverService(service) }] },
+        (list) => list.some((row) => row.service === service && !listHolds(before, row)),
+        "The server did not add that identity.",
+      );
       setAdding(false);
     } catch (e) {
       setAddError(errorLine(e));
@@ -145,11 +137,8 @@ export function IdentitiesSection({
       }
       await changeAndCheck(
         { remove_identities: [{ address, service }] },
-        { address, service },
-        {
-          listed: false,
-          notChanged: "The server did not remove that identity.",
-        },
+        (list) => !listHolds(list, removeTarget),
+        "The server did not remove that identity.",
       );
       setRemoveTarget(null);
     } catch (e) {
