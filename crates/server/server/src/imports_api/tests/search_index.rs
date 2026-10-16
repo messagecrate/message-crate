@@ -109,9 +109,9 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
     fs::create_dir_all(&assets).unwrap();
-    let att_dir = tmp.path().join("attachments");
-    fs::create_dir_all(&att_dir).unwrap();
-    fs::write(att_dir.join("receipt.pdf"), b"%PDF-fixture").unwrap();
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
+    fs::write(attachments_dir.join("receipt.pdf"), b"%PDF-fixture").unwrap();
 
     let path = write_jsonl(
         tmp.path(),

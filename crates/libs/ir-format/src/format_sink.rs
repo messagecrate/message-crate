@@ -122,13 +122,13 @@ impl FormatSink {
     ) -> Result<(Self, PathBuf)> {
         fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
         clean_previous_ir_output(output)?;
-        let att_dir = output.join("attachments");
+        let attachments_dir = output.join("attachments");
         if transforms.copies_attachments() {
-            fs::create_dir_all(&att_dir)
-                .with_context(|| format!("create {}", att_dir.display()))?;
+            fs::create_dir_all(&attachments_dir)
+                .with_context(|| format!("create {}", attachments_dir.display()))?;
         }
         let sink = Self::open(output, format, transforms)?;
-        Ok((sink, att_dir))
+        Ok((sink, attachments_dir))
     }
 
     /// Reopen `output` to continue an interrupted export.
@@ -155,13 +155,13 @@ impl FormatSink {
                 output.display()
             );
         }
-        let att_dir = output.join("attachments");
+        let attachments_dir = output.join("attachments");
         if transforms.copies_attachments() {
-            fs::create_dir_all(&att_dir)
-                .with_context(|| format!("create {}", att_dir.display()))?;
+            fs::create_dir_all(&attachments_dir)
+                .with_context(|| format!("create {}", attachments_dir.display()))?;
         }
         let sink = Self::open(output, format, transforms)?;
-        Ok((sink, att_dir))
+        Ok((sink, attachments_dir))
     }
 
     /// Output format this sink will write.
@@ -229,9 +229,9 @@ impl FormatSink {
 
 /// Drop transform staging under `attachments/` after media has been embedded.
 fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
-    let att_dir = output_dir.join("attachments");
-    if att_dir.is_dir() {
-        fs::remove_dir_all(&att_dir)?;
+    let attachments_dir = output_dir.join("attachments");
+    if attachments_dir.is_dir() {
+        fs::remove_dir_all(&attachments_dir)?;
     }
     Ok(())
 }
@@ -423,8 +423,8 @@ mod tests {
     fn mail_archives_embed_the_staged_bytes_and_drop_attachments_dir() {
         for format in [OutputFormat::Eml, OutputFormat::Mbox] {
             let tmp = crate::export_dir();
-            let att_dir = tmp.path().join("attachments");
-            fs::create_dir_all(&att_dir).unwrap();
+            let attachments_dir = tmp.path().join("attachments");
+            fs::create_dir_all(&attachments_dir).unwrap();
             let rel = "attachments/photo.jpg";
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
@@ -442,7 +442,7 @@ mod tests {
             sink.write_document(document).unwrap();
             sink.finish(&mut ExportReport::default()).unwrap();
 
-            assert!(!att_dir.exists(), "{format:?}");
+            assert!(!attachments_dir.exists(), "{format:?}");
             let back = match format {
                 OutputFormat::Eml => {
                     crate::read_conversation_eml_dir(&tmp.path().join("+15555550101"))
@@ -463,9 +463,9 @@ mod tests {
     #[test]
     fn format_sink_csv_keeps_attachments_dir() {
         let tmp = crate::export_dir();
-        let att_dir = tmp.path().join("attachments");
-        fs::create_dir_all(&att_dir).unwrap();
-        fs::write(att_dir.join("photo.jpg"), b"jpeg-bytes").unwrap();
+        let attachments_dir = tmp.path().join("attachments");
+        fs::create_dir_all(&attachments_dir).unwrap();
+        fs::write(attachments_dir.join("photo.jpg"), b"jpeg-bytes").unwrap();
 
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
@@ -519,14 +519,14 @@ mod tests {
                 .is_err()
         );
 
-        let (_sink, att_dir) =
+        let (_sink, attachments_dir) =
             FormatSink::open_prepared(tmp.path(), OutputFormat::Jsonl, ExportTransforms::none())
                 .unwrap();
-        std::fs::create_dir_all(&att_dir).unwrap();
+        std::fs::create_dir_all(&attachments_dir).unwrap();
         std::fs::write(tmp.path().join("keep.jsonl"), "x").unwrap();
-        std::fs::write(att_dir.join("keep.jpg"), "y").unwrap();
+        std::fs::write(attachments_dir.join("keep.jpg"), "y").unwrap();
 
-        let (_sink, att_dir2) =
+        let (_sink, resumed_attachments_dir) =
             FormatSink::open_resume(tmp.path(), OutputFormat::Jsonl, ExportTransforms::none())
                 .unwrap();
 
@@ -535,7 +535,7 @@ mod tests {
             "a resumed run keeps the conversations the interrupted one wrote"
         );
         assert!(
-            att_dir2.join("keep.jpg").is_file(),
+            resumed_attachments_dir.join("keep.jpg").is_file(),
             "and the attachments they point at"
         );
     }

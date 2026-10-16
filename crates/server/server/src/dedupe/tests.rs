@@ -1681,13 +1681,13 @@ async fn load_gen_rows(conn: &mut SqliteConnection) -> HashMap<i64, GenRow> {
     .fetch_all(&mut *conn)
     .await
     .unwrap();
-    let atts: Vec<(i64, String)> =
+    let attachment_digests: Vec<(i64, String)> =
         sqlx::query_as("SELECT message_id, sha256 FROM attachments ORDER BY message_id, sha256")
             .fetch_all(&mut *conn)
             .await
             .unwrap();
     let mut shas: HashMap<i64, Vec<String>> = HashMap::new();
-    for (id, sha) in atts {
+    for (id, sha) in attachment_digests {
         shas.entry(id).or_default().push(sha);
     }
     raw.into_iter()

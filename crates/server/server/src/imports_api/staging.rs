@@ -1043,7 +1043,7 @@ async fn flush_staging_message_chunk(
     }
     let mut by_sort = insert_message_rows(tx, stmts, staged_source, chunk).await?;
 
-    let mut att_rows = Vec::new();
+    let mut attachment_rows = Vec::new();
     let mut tap_rows = Vec::new();
     let mut version_rows = Vec::new();
     let mut copies = Vec::new();
@@ -1058,7 +1058,7 @@ async fn flush_staging_message_chunk(
             continue;
         };
         counts.messages += 1;
-        att_rows.extend(
+        attachment_rows.extend(
             row.attachments
                 .iter()
                 .map(|prepared| attachment_row(message_id, prepared, assets_dir)),
@@ -1074,7 +1074,7 @@ async fn flush_staging_message_chunk(
         );
     }
 
-    counts.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
+    counts.attachments += db_staging::insert_attachments(tx, &attachment_rows).await?;
     counts.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
     db_staging::insert_earlier_versions(tx, &version_rows).await?;
     for row in copies {
@@ -1170,12 +1170,12 @@ async fn add_staged_copy(
     )
     .await?;
 
-    let att_rows: Vec<StagingAttachment> = row
+    let attachment_rows: Vec<StagingAttachment> = row
         .attachments
         .iter()
         .map(|prepared| attachment_row(staged, prepared, assets_dir))
         .collect();
-    counts.attachments += db_staging::add_copy_attachments(tx, &att_rows).await?;
+    counts.attachments += db_staging::add_copy_attachments(tx, &attachment_rows).await?;
     let mut tap_rows = Vec::with_capacity(row.msg.tapbacks.len());
     for tap in &row.msg.tapbacks {
         tap_rows.push(tapback_row(tx, stmts, counts, staged, row, tap).await?);

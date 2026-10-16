@@ -166,13 +166,13 @@ async fn staging_chunks_56_messages_and_keeps_children_on_right_rows() {
         .await
         .unwrap();
     assert_eq!(n, 56);
-    let first_atts: i64 = sqlx::query_scalar(
+    let first_attachments: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM attachments WHERE message_id = (SELECT id FROM messages WHERE guid = 'g-00')",
     )
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let last_atts: i64 = sqlx::query_scalar(
+    let last_attachments: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM attachments WHERE message_id = (SELECT id FROM messages WHERE guid = 'g-55')",
     )
     .fetch_one(&mut *conn)
@@ -184,8 +184,8 @@ async fn staging_chunks_56_messages_and_keeps_children_on_right_rows() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(first_atts, 1);
-    assert_eq!(last_atts, 1);
+    assert_eq!(first_attachments, 1);
+    assert_eq!(last_attachments, 1);
     assert_eq!(second_taps, 1);
 }
 

@@ -216,7 +216,7 @@ pub async fn content_key_inputs(
     // One scan for attachment hashes belonging to this account's message id range.
     let min_id = rows.first().map_or(0, |r| r.id);
     let max_id = rows.last().map_or(0, |r| r.id);
-    let att_rows = sqlx::query_as::<_, AttachmentDigest>(
+    let attachment_rows = sqlx::query_as::<_, AttachmentDigest>(
         r"
         SELECT a.message_id, a.sha256
         FROM attachments a
@@ -235,7 +235,7 @@ pub async fn content_key_inputs(
     .await
     .context("read the messages' attachment digests")?;
     let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
-    for AttachmentDigest { message_id, sha256 } in att_rows {
+    for AttachmentDigest { message_id, sha256 } in attachment_rows {
         shas_by_msg.entry(message_id).or_default().push(sha256);
     }
 
@@ -376,7 +376,7 @@ pub struct ExactRow {
     pub source: String,
     pub content_key: String,
     /// How many of its attachments have a digest.
-    pub att_count: i64,
+    pub attachment_count: i64,
     pub time_precision: String,
     /// How many messages its Import Run brought; 0 for a message no run
     /// stamped.
@@ -393,7 +393,7 @@ pub async fn exact_rows(conn: &mut SqliteConnection, account_id: i64) -> Result<
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
     sqlx::query_as::<_, ExactRow>(AssertSqlSafe(format!(
         r"
-        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0) AS att_count,
+        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0) AS attachment_count,
                m.time_precision, COALESCE(rc.n, 0) AS run_messages
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
@@ -491,7 +491,7 @@ pub async fn attachment_digests(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<HashMap<i64, Vec<String>>> {
-    let att_rows = sqlx::query_as::<_, AttachmentDigest>(
+    let attachment_rows = sqlx::query_as::<_, AttachmentDigest>(
         r"
         SELECT a.message_id, a.sha256
         FROM attachments a
@@ -507,7 +507,7 @@ pub async fn attachment_digests(
     .await
     .context("read the account's attachment digests")?;
     let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
-    for AttachmentDigest { message_id, sha256 } in att_rows {
+    for AttachmentDigest { message_id, sha256 } in attachment_rows {
         shas_by_msg.entry(message_id).or_default().push(sha256);
     }
     Ok(shas_by_msg)

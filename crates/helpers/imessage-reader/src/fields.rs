@@ -123,8 +123,8 @@ pub(crate) fn build_part_records(message: &Message, attachments: &[Attachment]) 
                 let mut effects = Vec::new();
                 let mut emoji_image = false;
 
-                for (range, att_idx) in resolved {
-                    if let Some(idx) = att_idx {
+                for (range, attachment_idx) in resolved {
+                    if let Some(idx) = attachment_idx {
                         if idx < attachments.len() {
                             attachment_indices.push(idx);
                         }
