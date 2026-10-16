@@ -5,6 +5,7 @@ import { ApiError } from "./api";
 import {
   checkSavedLogin,
   forgetSavedLogin,
+  isSavedLoginKept,
   loadSavedLogin,
   loadServerAddress,
   saveLogin,
@@ -27,13 +28,14 @@ vi.mock("./serverApi", () => ({
 const HERE = "http://127.0.0.1:8080";
 const ELSEWHERE = "http://crate.example:8080";
 
-function saveLoginFor(serverUrl: string) {
-  saveLogin({ serverUrl, token: "session-token", accountId: 7, isAuthenticated: true });
+function saveLoginFor(serverUrl: string, keep = true) {
+  saveLogin({ serverUrl, token: "session-token", accountId: 7, isAuthenticated: true }, keep);
 }
 
 describe("saved login", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("reads back the login it saved", () => {
@@ -84,6 +86,64 @@ describe("saved login", () => {
       isAuthenticated: false,
     });
     expect(loadSavedLogin()?.serverUrl).toBe(ELSEWHERE);
+  });
+});
+
+describe("a login kept for this visit only", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it("is restored while the visit lasts", () => {
+    saveServerAddress(HERE);
+    saveLoginFor(HERE, false);
+
+    expect(startingAuthState()).toEqual({
+      serverUrl: HERE,
+      token: "session-token",
+      accountId: 7,
+      isAuthenticated: true,
+    });
+    expect(isSavedLoginKept()).toBe(false);
+  });
+
+  it("is not found once the stored state is read from localStorage alone", () => {
+    saveServerAddress(HERE);
+    saveLoginFor(HERE, false);
+
+    // A closed tab, or a new one: the browser starts it with an empty
+    // sessionStorage and the same localStorage.
+    sessionStorage.clear();
+
+    expect(loadSavedLogin()).toBeNull();
+    expect(startingAuthState().isAuthenticated).toBe(false);
+    expect(loadServerAddress()).toBe(HERE);
+  });
+
+  it("replaces a login kept from an earlier visit", () => {
+    saveLoginFor(HERE, true);
+    saveLoginFor(HERE, false);
+    sessionStorage.clear();
+
+    expect(loadSavedLogin()).toBeNull();
+  });
+
+  it("is replaced by a kept login", () => {
+    saveLoginFor(HERE, false);
+    saveLoginFor(HERE, true);
+    sessionStorage.clear();
+
+    expect(loadSavedLogin()?.token).toBe("session-token");
+    expect(isSavedLoginKept()).toBe(true);
+  });
+
+  it("is forgotten on logout", () => {
+    saveLoginFor(HERE, false);
+
+    forgetSavedLogin();
+
+    expect(loadSavedLogin()).toBeNull();
   });
 });
 

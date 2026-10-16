@@ -772,6 +772,56 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Username is required.")).toBeInTheDocument();
   });
 
+  /** Fill the login form with a login the faked server accepts, without submitting it. */
+  async function fillLogin(user: ReturnType<typeof setupUser>) {
+    serverLoginMock.mockResolvedValue({ token: "mc-user-ada", account_id: 7, username: "ada" });
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+  }
+
+  it("offers Keep me logged in on the website, ticked, and keeps the login", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("checkbox", { name: "Keep me logged in" })).toBeChecked();
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-ada", 7, true);
+  });
+
+  it("logs in for this visit only with Keep me logged in unticked", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    await user.click(screen.getByRole("checkbox", { name: "Keep me logged in" }));
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-ada", 7, false);
+  });
+
+  it("offers no Keep me logged in in the desktop app, and keeps the login", async () => {
+    tauriState.isTauri = true;
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    expect(screen.queryByRole("checkbox", { name: "Keep me logged in" })).not.toBeInTheDocument();
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("http://127.0.0.1:8080", "mc-user-ada", 7, true);
+  });
+
   it("calls the new-account action Continue, since profile setup finishes it", async () => {
     stubServer();
     const user = setupUser();

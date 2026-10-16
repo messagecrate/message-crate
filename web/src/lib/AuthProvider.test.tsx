@@ -95,6 +95,7 @@ function seedSession(serverUrl = "http://127.0.0.1:8080") {
 describe("AuthProvider logout", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     currentToken = null;
     post.mockReset();
     get.mockReset();
@@ -232,6 +233,35 @@ describe("AuthProvider logout", () => {
 
     expect(post).not.toHaveBeenCalled();
     expect(result.current.isAuthenticated).toBe(false);
+  });
+
+  it("keeps a login for this visit only out of localStorage, through a password change", async () => {
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("./authContext");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.login("http://127.0.0.1:8080", "visit-token", 7, false);
+    });
+    expect(sessionStorage.getItem(STORAGE_KEY)).toContain("visit-token");
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    act(() => {
+      result.current.updateToken("changed-token");
+    });
+    expect(sessionStorage.getItem(STORAGE_KEY)).toContain("changed-token");
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    await act(async () => {
+      await result.current.logout();
+    });
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it("registers a Tauri close handler that logs out then destroys the window", async () => {

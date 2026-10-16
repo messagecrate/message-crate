@@ -9,6 +9,7 @@ import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
 import {
   checkSavedLogin,
   forgetSavedLogin,
+  isSavedLoginKept,
   loadSavedLogin,
   saveLogin,
   saveServerAddress,
@@ -132,7 +133,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (serverUrl: string, token: string, accountId: number) => {
+    async (serverUrl: string, token: string, accountId: number, keep = true) => {
       const epoch = ++authEpoch.current;
       // One call, and it cannot be incomplete: every cached entry is named
       // with the account that filled it, so this only releases memory.
@@ -155,7 +156,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
       };
       saveServerAddress(serverUrl);
-      saveLogin(newState);
+      saveLogin(newState, keep);
       setState(newState);
       setRestored(true);
     },
@@ -167,7 +168,8 @@ function SessionProvider({ children }: { children: ReactNode }) {
     setState((s) => {
       if (!s.isAuthenticated) return s;
       const next: AuthState = { ...s, token };
-      saveLogin(next);
+      // The new token is kept where the login it replaces was.
+      saveLogin(next, isSavedLoginKept());
       return next;
     });
   }, []);

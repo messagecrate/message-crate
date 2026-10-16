@@ -1,5 +1,6 @@
 /**
- * The one way `web/src` reads and writes `localStorage`.
+ * The one way `web/src` reads and writes `localStorage`, and `sessionStorage`
+ * for a value kept only for this visit.
  *
  * A browser set to block site data throws `SecurityError` from the
  * `localStorage` getter itself, and a full or private-mode storage throws from
@@ -8,19 +9,31 @@
  * still opens, and a change applies for the visit without being saved.
  */
 
+/**
+ * How long a saved value lasts. `"kept"` is `localStorage`, kept until it is
+ * removed. `"visit"` is `sessionStorage`, which the browser clears when the
+ * tab closes, and which a new tab does not share.
+ */
+export type PrefLifetime = "kept" | "visit";
+
+/** The browser storage for `lifetime`. Throws where the browser blocks site data. */
+function storageFor(lifetime: PrefLifetime): Storage {
+  return lifetime === "visit" ? window.sessionStorage : window.localStorage;
+}
+
 /** The saved value for `key`, or `null` when nothing is saved or storage is blocked. */
-export function readPref(key: string): string | null {
+export function readPref(key: string, lifetime: PrefLifetime = "kept"): string | null {
   try {
-    return window.localStorage.getItem(key);
+    return storageFor(lifetime).getItem(key);
   } catch {
     return null;
   }
 }
 
 /** Save `value` under `key`. A blocked or full storage drops the write. */
-export function writePref(key: string, value: string): void {
+export function writePref(key: string, value: string, lifetime: PrefLifetime = "kept"): void {
   try {
-    window.localStorage.setItem(key, value);
+    storageFor(lifetime).setItem(key, value);
   } catch {
     // Blocked or full storage: the value lasts only for this visit.
   }
@@ -37,9 +50,9 @@ export function accountKey(accountId: number, key: string): string {
 }
 
 /** Remove the value saved under `key`. A blocked storage leaves nothing to remove. */
-export function removePref(key: string): void {
+export function removePref(key: string, lifetime: PrefLifetime = "kept"): void {
   try {
-    window.localStorage.removeItem(key);
+    storageFor(lifetime).removeItem(key);
   } catch {
     // Blocked storage: nothing was saved there.
   }

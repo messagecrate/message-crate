@@ -17,7 +17,12 @@ export interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (serverUrl: string, token: string, accountId: number) => Promise<void>;
+  /**
+   * Log in with a session the server issued. `keep` false keeps the saved
+   * login for this visit only, as "Keep me logged in" unticked asks; it
+   * defaults to true, the login kept for the next visit.
+   */
+  login: (serverUrl: string, token: string, accountId: number, keep?: boolean) => Promise<void>;
   /** Save a new session token after the user changes their password. */
   updateToken: (token: string) => void;
   /**
