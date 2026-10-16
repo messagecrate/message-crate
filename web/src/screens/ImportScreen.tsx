@@ -39,6 +39,7 @@ import {
 } from "../lib/useBackupPathStats";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
+import { useDeleteClosedRunDirectories } from "./import/closedRunDirectories";
 import type { ProfilePhones } from "./import/formSections/types";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
@@ -92,6 +93,7 @@ async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
 }
 
 export default function ImportScreen() {
+  useDeleteClosedRunDirectories();
   const fetchAccountProfile = useFetchAccountProfile();
   const cache = useRouteCache();
   const markAccountStale = useMarkAccountStale();

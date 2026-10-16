@@ -62,6 +62,19 @@ account sees a log whose line names its own id and the id of the Message
 Crate it is signed in to, because account 7 of another Message Crate is
 another account. A log with no account line is the owner's alone.
 
+The line is also what ties a run's directory in the Staging Directory to its
+run (#2822). When an account opens Import, the desktop app lists the run
+directories whose log names that account and the Message Crate it is signed
+in to, asks the server how each run stands, and deletes the directory of
+every run the server reports as closed. It adds one `INFO` line to the run's
+log naming the run and the directory. A run that is running, a run the
+server does not report, and a directory whose log has no account line all
+keep their directory.
+
+Why the log and not the server's `run_dir`: the server holds the path of a
+running run only for Resume, and a directory is on one computer. The log is
+on the computer that holds the directory, and it names the run.
+
 Why the Message Crate's id and not the address: two Message Crates can answer
 at one address. The desktop app's own server and a Docker one both answer at
 `http://127.0.0.1:8080`, and a database rebuilt with `create-database` starts

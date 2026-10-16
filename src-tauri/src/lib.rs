@@ -129,6 +129,8 @@ pub fn run() {
             commands::staging::summarize_staging,
             commands::staging::transcode_staging,
             commands::staging::delete_run_dir,
+            commands::staging::list_account_run_dirs,
+            commands::staging::delete_closed_run_dir,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
             commands::disk_space::low_disk_space,

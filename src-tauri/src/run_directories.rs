@@ -23,8 +23,9 @@ use std::path::{Path, PathBuf};
 
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
-use crate::app_directories::import_run_log;
+use crate::app_directories::{RunLog, import_run_log};
 use crate::commands::paths::{require_absolute, resolve_openable_path, resolve_staging_root};
+use crate::run_logs::account_of;
 
 /// File in the app-data directory that holds the Staging Directory setting
 /// and the run directories this app made.
@@ -63,6 +64,40 @@ pub struct StagingRoot {
     /// `{home}/message-crate/staging`: the directory used when Settings name
     /// none.
     pub default_root: String,
+}
+
+/// A run directory this app made, and the Import Run its log says it holds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryOfRun {
+    /// The directory, as it was recorded when it was made.
+    pub run_dir: String,
+    /// The Import Run's id on the Message Crate it imported into.
+    pub import_run_id: i64,
+}
+
+/// How a closed Import Run ended, in the words the server's `status` uses.
+/// `running` is not one of them, so a running run's directory cannot be
+/// handed to [`RunDirectories::delete_closed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClosedStatus {
+    Completed,
+    CompletedWithIssues,
+    Failed,
+    Cancelled,
+}
+
+impl ClosedStatus {
+    /// The status as the server writes it.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::CompletedWithIssues => "completed_with_issues",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
 }
 
 /// The Staging Directory and the run directories made under it, kept in
@@ -335,6 +370,73 @@ impl RunDirectories {
         remove_sentinel_last(&directory)
             .map_err(|error| format!("Could not delete {}: {error}", directory.display()))?;
         self.forget(&directory)
+    }
+
+    /// The run directories this app made whose Import Run was run by account
+    /// `account_id` on the Message Crate `message_crate_id`, each with that
+    /// run's id. A directory is tied to its run by the first line of the run's
+    /// log ([`message_crate_core::RunLogAccount`]), which the window writes once the server has
+    /// created the run. A directory whose log names no run, or names another
+    /// account or another Message Crate, is left out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn runs_of(
+        &self,
+        account_id: i64,
+        message_crate_id: &str,
+    ) -> Result<Vec<DirectoryOfRun>, String> {
+        Ok(self
+            .read()?
+            .directories
+            .into_iter()
+            .filter_map(|made| {
+                let account = account_of(&import_run_log(&self.logs, &made.path))?;
+                (account.account_id == account_id && account.message_crate_id == message_crate_id)
+                    .then(|| DirectoryOfRun {
+                        run_dir: made.path.display().to_string(),
+                        import_run_id: account.import_run_id,
+                    })
+            })
+            .collect())
+    }
+
+    /// Delete the directory `dir` of Import Run `import_run_id`, which the
+    /// server reports as `status`, and say so in the run's log, naming the run
+    /// and the directory. A closed run's files are never read again. Returns
+    /// whether a directory was removed: one already gone is only forgotten,
+    /// and the log says nothing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the run's log does not name `import_run_id`, so
+    /// the directory is not tied to that run, or when
+    /// [`RunDirectories::delete`] fails.
+    pub fn delete_closed(
+        &self,
+        dir: &str,
+        import_run_id: i64,
+        status: ClosedStatus,
+    ) -> Result<bool, String> {
+        let path = require_absolute(dir)?;
+        let log = import_run_log(&self.logs, &path);
+        if account_of(&log).map(|account| account.import_run_id) != Some(import_run_id) {
+            return Err(format!(
+                "{} is not the directory of Import Run {import_run_id}",
+                path.display()
+            ));
+        }
+        let on_disk = std::fs::symlink_metadata(&path).is_ok();
+        self.delete(dir)?;
+        if on_disk {
+            RunLog::open(&self.logs, &path).line(&format!(
+                "Deleted the directory of Import Run {import_run_id}, {}, because the server reports the run as {}",
+                path.display(),
+                status.as_str()
+            ));
+        }
+        Ok(on_disk)
     }
 
     /// Drop `directory` from the record.
@@ -839,6 +941,123 @@ mod tests {
         directories.set_root("/data/imports").unwrap();
         directories.set_root("  ").unwrap();
         assert_eq!(directories.root().unwrap(), default_root);
+    }
+
+    /// The Message Crate the runs below imported into.
+    const CRATE: &str = "3f2a9c";
+
+    /// Start the log of the run whose directory is `run` with the line that
+    /// ties it to Import Run `id` by `account` on `message_crate`, as the
+    /// window does once the server has created the run.
+    fn tie(scratch: &Scratch, run: &Path, id: i64, account: i64, message_crate: &str) {
+        RunLog::open(&scratch.logs(), run).account(&message_crate_core::RunLogAccount {
+            import_run_id: id,
+            account_id: account,
+            server: "http://127.0.0.1:8080".to_string(),
+            message_crate_id: message_crate.to_string(),
+        });
+    }
+
+    #[test]
+    fn the_runs_of_an_account_are_its_own_directories_on_that_message_crate() {
+        // #2822: Import cleans up only the directories it can tie to the
+        // signed-in account's runs on the Message Crate it is signed in to.
+        let scratch = Scratch::new();
+        let mine = scratch.directories.create("whatsapp", NOW).unwrap();
+        let another_account = scratch.directories.create("whatsapp", NOW).unwrap();
+        let another_crate = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &mine, 42, 7, CRATE);
+        tie(&scratch, &another_account, 43, 8, CRATE);
+        tie(&scratch, &another_crate, 44, 7, "another");
+
+        let runs = scratch.reopen().runs_of(7, CRATE).unwrap();
+
+        assert_eq!(
+            runs,
+            [DirectoryOfRun {
+                run_dir: mine.display().to_string(),
+                import_run_id: 42,
+            }]
+        );
+        assert!(untied.exists());
+    }
+
+    #[test]
+    fn a_closed_run_s_directory_is_deleted_and_its_log_says_so() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+
+        let deleted = scratch
+            .reopen()
+            .delete_closed(run.to_str().unwrap(), 42, ClosedStatus::Cancelled)
+            .unwrap();
+
+        assert!(deleted);
+        assert!(!run.exists());
+        assert!(scratch.reopen().runs_of(7, CRATE).unwrap().is_empty());
+        let log = std::fs::read_to_string(import_run_log(&scratch.logs(), &run)).unwrap();
+        let last = log.lines().last().unwrap();
+        assert!(last.contains(" INFO "), "{last}");
+        assert!(
+            last.contains(&format!(
+                "Deleted the directory of Import Run 42, {}, because the server reports the run as cancelled",
+                run.display()
+            )),
+            "{last}"
+        );
+    }
+
+    #[test]
+    fn a_closed_run_s_directory_already_gone_is_forgotten_without_a_log_line() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        fs::remove_dir_all(&run).unwrap();
+        let log = import_run_log(&scratch.logs(), &run);
+        let before = fs::read_to_string(&log).unwrap();
+
+        let deleted = scratch
+            .directories
+            .delete_closed(run.to_str().unwrap(), 42, ClosedStatus::Completed)
+            .unwrap();
+
+        assert!(!deleted);
+        assert!(scratch.directories.read().unwrap().directories.is_empty());
+        assert_eq!(fs::read_to_string(&log).unwrap(), before);
+    }
+
+    #[test]
+    fn a_directory_whose_log_names_another_run_is_not_deleted_as_closed() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+
+        let err = scratch
+            .directories
+            .delete_closed(run.to_str().unwrap(), 41, ClosedStatus::Failed)
+            .unwrap_err();
+        assert!(err.contains("not the directory of Import Run 41"), "{err}");
+        assert!(
+            scratch
+                .directories
+                .delete_closed(untied.to_str().unwrap(), 42, ClosedStatus::Failed)
+                .is_err()
+        );
+
+        assert!(run.exists());
+        assert!(untied.exists());
+    }
+
+    #[test]
+    fn running_is_not_a_closed_status() {
+        assert!(serde_json::from_str::<ClosedStatus>("\"running\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<ClosedStatus>("\"completed_with_issues\"").unwrap(),
+            ClosedStatus::CompletedWithIssues
+        );
     }
 
     #[test]
