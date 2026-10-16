@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { ApiError } from "../lib/api";
 import { APP_BUILD } from "../lib/build";
 import { productVersionOf } from "../lib/buildFormat";
+import { clearNameRefusals } from "../lib/nameRefusals";
 import { ThemeProvider } from "../lib/ThemeProvider";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
@@ -104,6 +105,10 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  // A test that leaves a refused name in the field sends it again as its
+  // screen unmounts, and that refusal is held for the top of the page, which
+  // outlives the test. The next test starts without it.
+  clearNameRefusals();
   // jsdom has no matchMedia, and the theme reads the system color scheme from it.
   vi.stubGlobal("matchMedia", () => ({
     matches: false,

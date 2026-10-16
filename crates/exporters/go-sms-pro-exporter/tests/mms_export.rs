@@ -112,10 +112,10 @@ fn a_pdu_picture_is_one_attachment_with_its_bytes_staged() {
     let attachments: Vec<serde_json::Value> =
         serde_json::from_str(&row["attachments_json"]).expect("attachments_json");
     assert_eq!(attachments.len(), 1, "{attachments:?}");
-    let att = &attachments[0];
-    assert_eq!(att["mime_type"], "image/jpeg");
-    assert_eq!(att["original_name"], "IMG_1.jpg");
-    let path = att["path"].as_str().expect("path");
+    let attachment = &attachments[0];
+    assert_eq!(attachment["mime_type"], "image/jpeg");
+    assert_eq!(attachment["original_name"], "IMG_1.jpg");
+    let path = attachment["path"].as_str().expect("path");
     assert!(
         path.starts_with("attachments/") && path.ends_with(".jpg"),
         "{path}"

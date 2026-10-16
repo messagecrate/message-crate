@@ -287,14 +287,14 @@ fn synthesize_mms(
         parts.push(part);
         seq += 1;
     }
-    for att in &message.attachments {
-        let bytes = load_attachment_bytes(att, output_dir)?;
-        let mime = att
+    for attachment in &message.attachments {
+        let bytes = load_attachment_bytes(attachment, output_dir)?;
+        let mime = attachment
             .mime_type
             .as_deref()
             .filter(|s| !s.is_empty())
             .unwrap_or("application/octet-stream");
-        let name = att
+        let name = attachment
             .original_name
             .as_deref()
             .filter(|s| !s.is_empty())
@@ -497,8 +497,12 @@ fn inject_attachment_data(
     // which is exactly when the fallback below takes over.
     let mut by_digest: HashMap<&str, Vec<usize>> = HashMap::new();
     let mut consumed = vec![false; attachments.len()];
-    for (index, att) in attachments.iter().enumerate() {
-        if let Some(digest) = att.digest_sha256.as_deref().filter(|d| !d.is_empty()) {
+    for (index, attachment) in attachments.iter().enumerate() {
+        if let Some(digest) = attachment
+            .digest_sha256
+            .as_deref()
+            .filter(|d| !d.is_empty())
+        {
             by_digest.entry(digest).or_default().push(index);
         }
     }
