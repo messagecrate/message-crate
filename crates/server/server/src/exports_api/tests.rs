@@ -5,9 +5,9 @@ use crate::paging::{PageParams, SortKey};
 use crate::problem::ProblemType;
 use crate::test_support::{
     ConversationRow, MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture,
-    delete_status, expect_problem, fixture_with_account, get_json, get_raw, post_created_json,
-    post_json, post_json_raw, post_status, register_via_api, seed_conversation, stored_time,
-    test_fixture,
+    claim_as_owner, delete_status, expect_problem, fixture_with_account, get_json, get_raw,
+    get_status, patch_status, post_created_json, post_json, post_json_raw, post_status,
+    register_via_api, seed_conversation, stored_time, test_fixture,
 };
 use api_types::ExportQueryList;
 use axum::http::StatusCode;
@@ -1866,4 +1866,44 @@ async fn a_page_past_the_end_counts_as_a_page_read() {
     let (ids, total) = run_page_ids(&fixture, &alice.token, id, "offset=3&limit=1").await;
     assert_eq!((ids.len(), total), (0, 3));
     assert!(last_read().await.is_some());
+}
+
+/// The `ExportAccess` extractor guards `GET /v1/exports`: with `can_export`
+/// off, the endpoint refuses; turned back on, it succeeds.
+#[tokio::test]
+async fn export_endpoint_honors_can_export_flag() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "export-guard-keeper", "hunter2hunter2").await;
+    let user = register_via_api(&state, "export-guard-user", "hunter2hunter2").await;
+
+    assert_eq!(
+        patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_export": false }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    // can_export=false refuses GET /v1/exports.
+    let (status, text) = get_raw(&state, "/v1/exports", &user.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
+
+    assert_eq!(
+        patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_export": true }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get_status(&state, "/v1/exports", &user.token).await,
+        StatusCode::OK,
+        "can_export=true must allow GET /v1/exports"
+    );
 }
