@@ -128,7 +128,7 @@ pub struct ExtractArgs {
     /// The server's attachment size limit, in bytes, as the app read it from
     /// `GET /v1/server` when the Import Run was created. Staging records it
     /// with the run's media settings, where the Staging Review's forecast
-    /// and the Media stage read it.
+    /// and the Media Stage read it.
     pub asset_max_bytes: u64,
 }
 
@@ -292,7 +292,7 @@ fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
     })
 }
 
-/// Build the `CompressOptions` the Media stage will use, from the
+/// Build the `CompressOptions` the Media Stage will use, from the
 /// max-resolution/fps/min-size fields the Import form sends.
 ///
 /// `CompressOptions` only takes effect under [`media::MediaMode::Compress`],
