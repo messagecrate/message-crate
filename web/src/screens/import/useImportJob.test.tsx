@@ -9,7 +9,7 @@
 //
 // It also pins the two-Review flow added afterward: startImport now stops at
 // the Staging Review instead of uploading straight through, approve runs the Media
-// stage (when there is one) and stops at the Media Review, and cancelRun closes the
+// Stage (when there is one) and stops at the Media Review, and cancelRun closes the
 // run and deletes the run directory. Every Upload assertion below goes
 // through approve first, because there is no other way to reach it.
 
@@ -3594,7 +3594,7 @@ describe("useImportJob resumeAtReview", () => {
   it("shows the Media Stage on a resume at the Staging Review when the directory says compress and the form says copy", async () => {
     // Staging recorded compress in the directory; the stored form says copy.
     // After Staging the directory is the one source, so the run has a Media
-    // stage and approving runs it.
+    // Stage and approving runs it.
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ mediaMode: "compress" }));
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),

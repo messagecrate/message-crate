@@ -383,7 +383,7 @@ fn run_staging(
 /// validation problems are joined with `; `. Staging stages the original
 /// attachment files or none ([`AttachmentFiles`]), so the compress fields
 /// are not checked here: [`media_settings_for`] checks them, and the Media
-/// stage checks ffmpeg against the person's choice. `installed` is passed
+/// Stage checks ffmpeg against the person's choice. `installed` is passed
 /// on, so the WhatsApp exporter finds `wtsexporter` in its Tools Directory.
 fn build_exporter_config(
     scratch_dir: &Path,
