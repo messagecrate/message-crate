@@ -3,6 +3,7 @@
 import { cleanup, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../hooks/useToolsStatus";
 import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
@@ -14,7 +15,6 @@ import {
 } from "../../lib/importSources/androidSms";
 import { PATH_MISSING } from "../../lib/pathChecks";
 import type { AttachmentChoices } from "../../lib/types";
-import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../lib/useToolsStatus";
 import {
   emptyWhatsappPathStats,
   WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,

@@ -42,7 +42,7 @@ vi.mock("../lib/serverApi", () => ({
 const blankProfile = { preferred_name: null, time_zone: "UTC" };
 let profile: { preferred_name: string | null; time_zone: string } = blankProfile;
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile, loading: false, error: "" }),
 }));
 

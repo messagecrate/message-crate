@@ -1,4 +1,4 @@
-import { useServerSettings } from "../../lib/useServerSettings";
+import { useServerSettings } from "./useServerSettings";
 
 /**
  * Says so on every Owner Home section when the database runs without

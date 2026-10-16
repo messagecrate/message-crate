@@ -38,7 +38,7 @@ URL would either leak the bytes or revoke a URL still on screen. The cost is
 that two components showing the same attachment each download it.
 
 **The `/health` check.** `checkServerHealth` in `web/src/lib/serverHealth.ts`
-calls `fetch` itself, and `web/src/lib/useServerHealth.ts` runs its own backoff
+calls `fetch` itself, and `web/src/screens/auth/useServerHealth.ts` runs its own backoff
 and polling. The check answers whether a server is listening at an address, and
 on the login screen that address is the one the person is still typing, which
 is not yet the server `apiClient` talks to. It carries no session and returns no

@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import Button from "../../components/Button";
+import {
+  OTHER_CHECK_POLL_FOR_MS,
+  useRetryToolDownloads,
+  useToolsStatus,
+} from "../../hooks/useToolsStatus";
 import { errorLine } from "../../lib/apiErrorMessage";
 import type { ToolsStatus } from "../../lib/desktop/tools";
 import { toolUsable } from "../../lib/desktop/tools";
 import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
 import type { ToolName } from "../../lib/types";
 import { accentLinkClass } from "../../lib/uiStyles";
-import {
-  OTHER_CHECK_POLL_FOR_MS,
-  useRetryToolDownloads,
-  useToolsStatus,
-} from "../../lib/useToolsStatus";
 
 /** What a program is needed for: a WhatsApp import, or Convert and Compress. */
 type ProgramNeed = "whatsapp" | "media";

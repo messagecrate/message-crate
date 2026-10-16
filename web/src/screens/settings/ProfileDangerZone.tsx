@@ -4,6 +4,7 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
+import { useDeleteAccount, useDeleteAccountMessages } from "../../hooks/useOwnerAccounts";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { type AccountRunDirectories, accountRunDirectories } from "../../lib/importRun";
@@ -11,7 +12,6 @@ import { keys } from "../../lib/queryKeys";
 import { useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
-import { useDeleteAccount, useDeleteAccountMessages } from "../owner/useOwnerAccounts";
 import { dangerButtonClass } from "./profileStyles";
 
 const NO_DIRECTORIES: AccountRunDirectories = { found: [], unreadable: [] };

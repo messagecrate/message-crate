@@ -1,3 +1,5 @@
+import { useIsOwner } from "../../hooks/useIsOwner";
+import { useServerInfo } from "../../hooks/useServerInfo";
 import { useAuth } from "../../lib/authContext";
 import {
   invokeListImportRunLogs,
@@ -15,8 +17,6 @@ import {
   listServerLogLines,
 } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
-import { useIsOwner } from "../../lib/useIsOwner";
-import { useServerInfo } from "../../lib/useServerInfo";
 
 /** What the level filter shows: errors, warnings and up, or every line. */
 export type LevelFilter = "error" | "warn" | "all";

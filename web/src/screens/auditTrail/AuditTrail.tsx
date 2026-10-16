@@ -1,6 +1,6 @@
+import { type AuditTrailOf, useAuditTrail } from "../../hooks/useAuditTrail";
 import { sectionHintClass } from "../settings/storage/storageUtils";
 import AuditTrailTable from "./AuditTrailTable";
-import { type AuditTrailOf, useAuditTrail } from "./useAuditTrail";
 
 /**
  * One Audit Trail, read and shown: a loading line, the error, or the table

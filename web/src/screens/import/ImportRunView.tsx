@@ -8,6 +8,7 @@ import VirtualizedImportIssuesTable, {
 } from "../../components/import/VirtualizedImportIssuesTable";
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { invokeImportRunLog } from "../../lib/desktop/runLog";
 import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
@@ -20,7 +21,6 @@ import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
 import type { AttachmentMediaMode, MediaToolName } from "../../lib/types";
-import { useToolsStatus } from "../../lib/useToolsStatus";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import {
   type ImportPhase,

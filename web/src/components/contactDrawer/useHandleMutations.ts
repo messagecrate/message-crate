@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useIdentityCountryPick } from "../../hooks/useIdentityCountryPick";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
 import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
-import { useIdentityCountryPick } from "../useIdentityCountryPick";
 import { formatOfferedServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
+import { useAccountProfile } from "../../hooks/useAccountProfile";
 import { phoneNumbers } from "../../lib/account";
 import { phonesMatch } from "../../lib/phoneTokens";
 import type { Conversation, Participant } from "../../lib/types";
-import { useAccountProfile } from "../../lib/useAccountProfile";
 
 /**
  * The contacts "Make a Contact Group from these people" would add: everyone

@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useWindowWidth } from "../hooks/useWindowWidth";
 import type { SearchScope } from "../lib/recentSearches";
 import { otherResultsView } from "../lib/resultsView";
 import type { SearchList } from "../lib/searchFields";
-import { useWindowWidth } from "../lib/useWindowWidth";
 import { Z_APP_HEADER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import AppAccountMenu from "./AppAccountMenu";

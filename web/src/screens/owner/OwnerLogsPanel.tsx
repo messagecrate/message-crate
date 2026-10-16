@@ -15,11 +15,11 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClass,
 } from "../../components/Select";
+import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { errorLine } from "../../lib/apiErrorMessage";
 import type { RunLogEntry } from "../../lib/desktop/runLog";
 import { formatDateTime } from "../../lib/formatDate";
 import { sectionHintClass } from "../settings/storage/storageUtils";
-import { useOwnerAccounts } from "./useOwnerAccounts";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");

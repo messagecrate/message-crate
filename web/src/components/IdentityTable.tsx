@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
+import { useOrphanedColumn } from "../hooks/useOrphanedColumn";
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatOfferedServiceLabel } from "../lib/offeredService";
 import { countOf } from "../lib/plural";
@@ -9,7 +10,6 @@ import Button from "./Button";
 import { TrashIcon } from "./icons";
 import { type IdentityRow, identityTotals, sortIdentityRows } from "./identityRows";
 import PlainButton from "./PlainButton";
-import { useOrphanedColumn } from "./useOrphanedColumn";
 
 export type { IdentityRow } from "./identityRows";
 

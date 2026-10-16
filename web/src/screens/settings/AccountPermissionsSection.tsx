@@ -1,9 +1,9 @@
 import Checkbox from "../../components/Checkbox";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
+import { type ManagedAccountChanges, useUpdateAccount } from "../../hooks/useOwnerAccounts";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { parseSelectKey } from "../../lib/selectKey";
-import { type ManagedAccountChanges, useUpdateAccount } from "../owner/useOwnerAccounts";
 import { sectionTitleClass } from "./profileStyles";
 
 const STATUSES = ["active", "disabled"] as const;

@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
+import { useOrphanedColumn } from "../hooks/useOrphanedColumn";
 import { errorLine } from "../lib/apiErrorMessage";
 import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
@@ -23,7 +24,6 @@ import {
 } from "./contactDrawer/handleTableStyles";
 import DataCard, { dataCardHeaderRowClass } from "./DataCard";
 import { conversationTotal } from "./identityRows";
-import { useOrphanedColumn } from "./useOrphanedColumn";
 
 type ContactTotals = ReturnType<typeof contactTotals>;
 

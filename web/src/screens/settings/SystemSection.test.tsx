@@ -3,11 +3,11 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render as renderPlain, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DOWNLOAD_POLL_MS } from "../../hooks/useToolsStatus";
 import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
-import { DOWNLOAD_POLL_MS } from "../../lib/useToolsStatus";
 import {
   advanceTimersAndSettle,
   settle,

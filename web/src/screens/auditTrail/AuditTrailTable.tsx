@@ -1,4 +1,5 @@
 import ScrollingTableCard from "../../components/ScrollingTableCard";
+import { AUDIT_TRAIL_PAGE_SIZE } from "../../hooks/useAuditTrail";
 import { type AuditEntry, auditActorLabel, describeAuditEntry } from "../../lib/auditTrail";
 import { formatDateTime } from "../../lib/formatDate";
 import PageControl from "../settings/storage/PageControl";
@@ -8,7 +9,6 @@ import {
   tdClass,
   thClass,
 } from "../settings/storage/storageUtils";
-import { AUDIT_TRAIL_PAGE_SIZE } from "./useAuditTrail";
 
 /** The Account column: the username, marked when the account has since been deleted. */
 function accountCell(entry: AuditEntry) {

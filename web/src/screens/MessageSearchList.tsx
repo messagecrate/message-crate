@@ -3,6 +3,7 @@ import ListRangeHeader from "../components/ListRangeHeader";
 import MessageSearchRow from "../components/MessageSearchRow";
 import SortMenu, { type SortField } from "../components/SortMenu";
 import VirtualList from "../components/VirtualList";
+import { useDebouncedQuery } from "../hooks/useDebouncedQuery";
 import { errorLine } from "../lib/apiErrorMessage";
 import { MAX_LIST_OFFSET } from "../lib/listPaging";
 import {
@@ -17,7 +18,6 @@ import { keys } from "../lib/queryKeys";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
 import { listMessages } from "../lib/serverApi";
 import type { FreeTextTerm, Message, MessageSearch } from "../lib/types";
-import { useDebouncedQuery } from "../lib/useDebouncedQuery";
 
 /** Rows read at a time as the person scrolls. */
 const PAGE_SIZE = 40;

@@ -237,7 +237,7 @@ vi.mock("./import/ResumeImportPanel", () => ({
 }));
 
 const { default: ImportScreen } = await import("./ImportScreen");
-const { useImportAttention } = await import("./import/useImportAttention");
+const { useImportAttention } = await import("../components/useImportAttention");
 
 function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary {
   return {

@@ -11,8 +11,9 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useContactGroups } from "../hooks/useContactGroups";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { authModule, Providers } from "../test/providers";
+import { Providers } from "../test/providers";
 import { apiClient } from "./api";
 import { useContactGroupActions } from "./contactGroups";
 import {
@@ -25,9 +26,8 @@ import {
   listSavedSearches,
   listSearchFields,
 } from "./serverApi";
-import { useContactGroups } from "./useContactGroups";
 
-vi.mock("./authContext", () => authModule());
+vi.mock("./authContext", async () => (await import("../test/providers")).authModule());
 
 vi.mock("./api", () => ({
   apiClient: {

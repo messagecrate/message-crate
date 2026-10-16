@@ -73,11 +73,11 @@ import {
   HEALTH_RECHECK_AFTER_FAILURE_MS,
   HEALTH_URL_DEBOUNCE_MS,
 } from "../lib/serverHealth";
-import { STARTING_POLL_MS } from "../lib/useLocalServer";
-import type { ServerState } from "../lib/useServerState";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
+import { STARTING_POLL_MS } from "./auth/useLocalServer";
+import type { ServerState } from "./auth/useServerState";
 import LoginScreen from "./LoginScreen";
 
 const checkServerHealthMock = vi.mocked(checkServerHealth);

@@ -7,6 +7,8 @@ import { PersonIcon, PhoneIcon } from "../components/icons";
 import Select, { ListBoxItem, selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import TimeZoneField from "../components/TimeZoneField";
+import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useAuth } from "../lib/authContext";
 import { newId } from "../lib/newId";
 import {
@@ -31,8 +33,6 @@ import {
   authTitleClass,
   pageCenterClass,
 } from "../lib/uiStyles";
-import { useAccountProfile } from "../lib/useAccountProfile";
-import { useAsyncAction } from "../lib/useAsyncAction";
 
 /** The zone an account has until someone chooses one (`accounts.time_zone`'s default). */
 const DEFAULT_TIME_ZONE = "UTC";

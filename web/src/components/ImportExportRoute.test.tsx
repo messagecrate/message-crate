@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => state.isTauri }));
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: state.profile, loading: state.loading, error: "" }),
 }));
 vi.mock("../lib/authContext", async () =>

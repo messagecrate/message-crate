@@ -1,10 +1,10 @@
-import { useSettingsAccount } from "../../lib/useSettingsAccount";
 import ExportHistoryTable from "./storage/ExportHistoryTable";
 import ImportHistoryTable from "./storage/ImportHistoryTable";
 import StorageUsageCard from "./storage/StorageUsageCard";
 import { toImportSummaryView } from "./storage/storageUtils";
 import TopAttachmentsTable from "./storage/TopAttachmentsTable";
 import { useStorageData } from "./storage/useStorageData";
+import { useSettingsAccount } from "./useSettingsAccount";
 
 /**
  * The Storage tab: what an account holds, and its import and export history.
