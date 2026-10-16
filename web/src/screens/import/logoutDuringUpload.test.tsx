@@ -26,7 +26,7 @@ import { ApiError, getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import type { DesktopJobResult } from "../../lib/desktop/job";
 import type { UploadFinishedReport } from "../../lib/desktop/upload";
-import { isUploadRunning } from "../../lib/runningUpload";
+import { isUploadRunning, registerRunningUpload } from "../../lib/runningUpload";
 import { act } from "../../test/act";
 import { deferred } from "../../test/deferred";
 import { advanceTimersAndSettle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
@@ -148,8 +148,22 @@ let service: ImportRunService;
 /** The run the test started, which settles once the run has stopped. */
 let running: Promise<void> | null = null;
 
+/**
+ * Forget an Upload an earlier test left registered in `lib/runningUpload`
+ * (#3131). A test that times out while a call its run makes is held never
+ * ends that run, and `endRun` cannot end it either, so the Upload's own
+ * `ended` never runs and the next test's logout would ask about it.
+ * Registering a stand-in and ending it leaves no Upload registered, and the
+ * held run's `ended`, should it ever run, finds the registration is not its
+ * own and leaves it alone.
+ */
+function forgetLeftoverUpload(): void {
+  registerRunningUpload(async () => {})();
+}
+
 /** A fresh run and fresh fakes, for both groups of tests below. */
 function resetRun(): void {
+  forgetLeftoverUpload();
   localStorage.clear();
   service = createImportRunService(fakeDeps());
   running = null;
