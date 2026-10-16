@@ -2179,13 +2179,14 @@ fn the_not_done_line_names_each_count_and_is_silent_at_zero() {
     assert_eq!(
         not_done_line(&ProcessAssetsStats {
             not_made: 2,
-            not_removed: 1,
+            not_dropped: 1,
             ..ProcessAssetsStats::default()
         })
         .as_deref(),
         Some(
             "The Demo Account has 2 originals whose Preview or Thumbnail could not be made \
-             and 1 incomplete original that could not be removed. Its build goes on all the same"
+             and 1 damaged Preview or Thumbnail that could not be dropped. Its build goes on all \
+             the same"
         )
     );
 }
