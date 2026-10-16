@@ -170,7 +170,7 @@ fn lines_come_newest_first_filtered_by_level_and_text_a_page_at_a_time() {
     }
     log.issue(&message_crate_core::RunIssue {
         kind: message_crate_core::RunIssueKind::Skip,
-        step: "attachments".into(),
+        step: message_crate_core::RunIssueStep::Attachments,
         item: "a.jpg".into(),
         reason: "the file is missing".into(),
         conversation: None,

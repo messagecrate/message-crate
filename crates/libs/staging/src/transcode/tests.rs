@@ -294,14 +294,10 @@ fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
     assert_eq!(issues.len(), 1, "{issues:?}");
     let conversation = jsonl.file_name().unwrap().to_str().unwrap();
     assert_eq!(
-        (
-            issues[0].kind,
-            issues[0].step.as_str(),
-            issues[0].item.clone()
-        ),
+        (issues[0].kind, issues[0].step, issues[0].item.clone()),
         (
             RunIssueKind::Skip,
-            "media",
+            RunIssueStep::Media,
             format!("{conversation}:attachments/broken.png")
         )
     );

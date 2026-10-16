@@ -12,14 +12,14 @@
 //!
 //! Every optional field is set in at least one payload, and every value of
 //! each enum a payload carries appears in one, so the web test sees each
-//! field and each word the window can receive. An issue row's `step` is the
-//! exception: Rust carries it as a `String`, not an enum, so its one word
-//! here is a sample and the stages' other words are not checked.
+//! field and each word the window can receive.
 
 use std::path::PathBuf;
 
 use import::FileStatus;
-use message_crate_core::{Canceled, ProgressEvent, RunIssue, RunIssueKind, WriteStatus};
+use message_crate_core::{
+    Canceled, ProgressEvent, RunIssue, RunIssueKind, RunIssueStep, WriteStatus,
+};
 use serde_json::Value;
 
 use super::{
@@ -74,17 +74,24 @@ fn payloads() -> Value {
         )
         .map(to_json);
 
+    // One per kind, then one per step.
+    let issue_row = |kind, step| {
+        ImportIssueEvent::from(&RunIssue {
+            kind,
+            step,
+            item: "/backup/IMG_0001.MOV".into(),
+            reason: "could not be decrypted".into(),
+            conversation: Some("c.jsonl".into()),
+        })
+    };
     let issue = every!(RunIssueKind: Skip, Error, Note, Resolved)
         .into_iter()
-        .map(|kind| {
-            ImportIssueEvent::from(&RunIssue {
-                kind,
-                step: "attachments".into(),
-                item: "/backup/IMG_0001.MOV".into(),
-                reason: "could not be decrypted".into(),
-                conversation: Some("c.jsonl".into()),
-            })
-        })
+        .map(|kind| issue_row(kind, RunIssueStep::Attachments))
+        .chain(
+            every!(RunIssueStep: Parse, Attachments, Media, Upload)
+                .into_iter()
+                .map(|step| issue_row(RunIssueKind::Skip, step)),
+        )
         .map(to_json);
 
     let file_done = every!(FileStatus: Ok, Failed, Skipped)

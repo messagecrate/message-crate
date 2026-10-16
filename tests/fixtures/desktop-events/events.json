@@ -62,6 +62,34 @@
       "kind": "resolved",
       "reason": "could not be decrypted",
       "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "parse"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "media"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "upload"
     }
   ],
   "desktop-job:progress": [

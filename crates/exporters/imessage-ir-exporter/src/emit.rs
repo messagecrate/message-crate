@@ -29,7 +29,7 @@ use ir::{
 use ir_format::FormatSink;
 use message_crate_core::{
     Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
-    RunIssueKind, item_line, item_reason,
+    RunIssueKind, RunIssueStep, item_line, item_reason,
 };
 use staging::{
     AttachmentSource, ConversationUnit, CountedAttachments, Disk, ExportWriter, ExportWriterParts,
@@ -597,7 +597,7 @@ impl NotDecrypted {
         options.log.warn(line.clone());
         options.convert_run.issues.emit(RunIssue {
             kind: RunIssueKind::Error,
-            step: "attachments".into(),
+            step: RunIssueStep::Attachments,
             item,
             reason: item_reason(ItemKind::Attachment, &what_happened),
             conversation: conversation.map(str::to_string),
