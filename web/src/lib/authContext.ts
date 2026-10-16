@@ -8,6 +8,7 @@
  */
 import { createContext, useContext } from "react";
 import type { AccountRunDirectories } from "./importRun";
+import type { PrefLifetime } from "./storage";
 
 export interface AuthState {
   serverUrl: string;
@@ -18,11 +19,16 @@ export interface AuthState {
 
 interface AuthContextValue extends AuthState {
   /**
-   * Log in with a session the server issued. `keep` false keeps the saved
-   * login for this visit only, as "Keep me logged in" unticked asks; it
-   * defaults to true, the login kept for the next visit.
+   * Log in with a session the server issued. `lifetime` `"visit"` keeps the
+   * saved login for this visit only, as "Keep me logged in" unticked asks;
+   * it defaults to `"kept"`, the login kept for the next visit.
    */
-  login: (serverUrl: string, token: string, accountId: number, keep?: boolean) => Promise<void>;
+  login: (
+    serverUrl: string,
+    token: string,
+    accountId: number,
+    lifetime?: PrefLifetime,
+  ) => Promise<void>;
   /** Save a new session token after the user changes their password. */
   updateToken: (token: string) => void;
   /**

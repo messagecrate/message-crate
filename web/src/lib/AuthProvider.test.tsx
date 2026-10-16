@@ -247,7 +247,7 @@ describe("AuthProvider logout", () => {
     });
 
     await act(async () => {
-      await result.current.login("http://127.0.0.1:8080", "visit-token", 7, false);
+      await result.current.login("http://127.0.0.1:8080", "visit-token", 7, "visit");
     });
     expect(sessionStorage.getItem(STORAGE_KEY)).toContain("visit-token");
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();

@@ -5,13 +5,14 @@ import { ApiError } from "./api";
 import {
   checkSavedLogin,
   forgetSavedLogin,
-  isSavedLoginKept,
   loadSavedLogin,
   loadServerAddress,
   saveLogin,
   saveServerAddress,
+  savedLoginLifetime,
   startingAuthState,
 } from "./savedLogin";
+import type { PrefLifetime } from "./storage";
 
 const getSession = vi.fn();
 const setToken = vi.fn();
@@ -28,8 +29,8 @@ vi.mock("./serverApi", () => ({
 const HERE = "http://127.0.0.1:8080";
 const ELSEWHERE = "http://crate.example:8080";
 
-function saveLoginFor(serverUrl: string, keep = true) {
-  saveLogin({ serverUrl, token: "session-token", accountId: 7, isAuthenticated: true }, keep);
+function saveLoginFor(serverUrl: string, lifetime: PrefLifetime = "kept") {
+  saveLogin({ serverUrl, token: "session-token", accountId: 7, isAuthenticated: true }, lifetime);
 }
 
 describe("saved login", () => {
@@ -97,7 +98,7 @@ describe("a login kept for this visit only", () => {
 
   it("is restored while the visit lasts", () => {
     saveServerAddress(HERE);
-    saveLoginFor(HERE, false);
+    saveLoginFor(HERE, "visit");
 
     expect(startingAuthState()).toEqual({
       serverUrl: HERE,
@@ -105,12 +106,12 @@ describe("a login kept for this visit only", () => {
       accountId: 7,
       isAuthenticated: true,
     });
-    expect(isSavedLoginKept()).toBe(false);
+    expect(savedLoginLifetime()).toBe("visit");
   });
 
-  it("is not found once the stored state is read from localStorage alone", () => {
+  it("is not found in a new tab", () => {
     saveServerAddress(HERE);
-    saveLoginFor(HERE, false);
+    saveLoginFor(HERE, "visit");
 
     // A closed tab, or a new one: the browser starts it with an empty
     // sessionStorage and the same localStorage.
@@ -122,28 +123,45 @@ describe("a login kept for this visit only", () => {
   });
 
   it("replaces a login kept from an earlier visit", () => {
-    saveLoginFor(HERE, true);
-    saveLoginFor(HERE, false);
+    saveLoginFor(HERE, "kept");
+    saveLoginFor(HERE, "visit");
     sessionStorage.clear();
 
     expect(loadSavedLogin()).toBeNull();
   });
 
   it("is replaced by a kept login", () => {
-    saveLoginFor(HERE, false);
-    saveLoginFor(HERE, true);
+    saveLoginFor(HERE, "visit");
+    saveLoginFor(HERE, "kept");
     sessionStorage.clear();
 
     expect(loadSavedLogin()?.token).toBe("session-token");
-    expect(isSavedLoginKept()).toBe(true);
+    expect(savedLoginLifetime()).toBe("kept");
   });
 
   it("is forgotten on logout", () => {
-    saveLoginFor(HERE, false);
+    saveLoginFor(HERE, "visit");
 
     forgetSavedLogin();
 
     expect(loadSavedLogin()).toBeNull();
+  });
+
+  it("leaves a login another tab kept when it is forgotten", () => {
+    // Another tab kept its login; this tab then logged in for this visit
+    // only, which a tab of its own does without touching the other's.
+    localStorage.setItem(
+      "message-crate-auth",
+      JSON.stringify({ serverUrl: HERE, token: "other-tab-token", accountId: 8 }),
+    );
+    sessionStorage.setItem(
+      "message-crate-auth",
+      JSON.stringify({ serverUrl: HERE, token: "session-token", accountId: 7 }),
+    );
+
+    forgetSavedLogin();
+
+    expect(loadSavedLogin()?.token).toBe("other-tab-token");
   });
 });
 

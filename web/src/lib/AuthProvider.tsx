@@ -9,14 +9,15 @@ import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
 import {
   checkSavedLogin,
   forgetSavedLogin,
-  isSavedLoginKept,
   loadSavedLogin,
   saveLogin,
   saveServerAddress,
+  savedLoginLifetime,
   startingAuthState,
 } from "./savedLogin";
 import { logout as serverLogout } from "./serverApi";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
+import type { PrefLifetime } from "./storage";
 import { onSessionRefused } from "./sessionRefusal";
 import { fetchAccountProfileFor } from "./useAccountProfile";
 import { useLogoutOnWindowClose } from "./windowCloseLogout";
@@ -133,7 +134,12 @@ function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (serverUrl: string, token: string, accountId: number, keep = true) => {
+    async (
+      serverUrl: string,
+      token: string,
+      accountId: number,
+      lifetime: PrefLifetime = "kept",
+    ) => {
       const epoch = ++authEpoch.current;
       // One call, and it cannot be incomplete: every cached entry is named
       // with the account that filled it, so this only releases memory.
@@ -156,7 +162,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
       };
       saveServerAddress(serverUrl);
-      saveLogin(newState, keep);
+      saveLogin(newState, lifetime);
       setState(newState);
       setRestored(true);
     },
@@ -169,7 +175,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       if (!s.isAuthenticated) return s;
       const next: AuthState = { ...s, token };
       // The new token is kept where the login it replaces was.
-      saveLogin(next, isSavedLoginKept());
+      saveLogin(next, savedLoginLifetime());
       return next;
     });
   }, []);

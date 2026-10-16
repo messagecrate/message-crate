@@ -6,10 +6,12 @@
  *
  * The saved login is kept in one of two places, chosen by "Keep me logged
  * in" on the website's login card. Ticked, it is in `localStorage` and the
- * next visit starts logged in. Unticked, it is in `sessionStorage`, which the
- * browser clears when the tab closes, so the login lasts for this visit only
- * (#2205). The server address is always in `localStorage`: it is a setting,
- * not part of the login.
+ * next visit starts logged in. Unticked, it is in `sessionStorage`, which a
+ * new tab starts without and the browser clears when the tab closes (#2205).
+ * The browser brings that back with a tab it reopens or a session it
+ * restores, and a duplicated tab gets a copy, so only logging out ends the
+ * Session itself. The server address is always in `localStorage`: it is a
+ * setting, not part of the login.
  */
 import { ApiError } from "./api";
 import { applyApiSession } from "./apiSession";
@@ -33,7 +35,7 @@ const SERVER_ADDRESS_KEY = "message-crate-server-address";
  * Where the saved login is: `"visit"` when it is kept for this visit only,
  * else `"kept"`, which is also the answer when none is saved.
  */
-function savedLoginLifetime(): PrefLifetime {
+export function savedLoginLifetime(): PrefLifetime {
   return readPref(SAVED_LOGIN_KEY, "visit") === null ? "kept" : "visit";
 }
 
@@ -44,19 +46,13 @@ export function loadSavedLogin(): SavedLogin | null {
   return parsePersistedAuth(raw);
 }
 
-/** Whether the saved login is kept past this visit. True when none is saved. */
-export function isSavedLoginKept(): boolean {
-  return savedLoginLifetime() === "kept";
-}
-
 /**
- * Save `state` as the login. `keep` false keeps it for this visit only. The
- * login is saved in one place: saving it in one removes it from the other,
- * so an earlier kept login is not restored on the next visit.
+ * Save `state` as the login, for `lifetime`. The login is saved in one place:
+ * saving it in one removes it from the other, so an earlier kept login is
+ * not restored on the next visit.
  */
-export function saveLogin(state: AuthState, keep: boolean): void {
-  const lifetime: PrefLifetime = keep ? "kept" : "visit";
-  removePref(SAVED_LOGIN_KEY, keep ? "visit" : "kept");
+export function saveLogin(state: AuthState, lifetime: PrefLifetime): void {
+  removePref(SAVED_LOGIN_KEY, lifetime === "kept" ? "visit" : "kept");
   writePref(
     SAVED_LOGIN_KEY,
     JSON.stringify({
@@ -68,10 +64,13 @@ export function saveLogin(state: AuthState, keep: boolean): void {
   );
 }
 
-/** Delete the saved login. The server address stays: it is a setting. */
+/**
+ * Delete the saved login from where it is. A login kept by another tab stays
+ * when this tab's login was for this visit only. The server address stays: it
+ * is a setting.
+ */
 export function forgetSavedLogin(): void {
-  removePref(SAVED_LOGIN_KEY, "kept");
-  removePref(SAVED_LOGIN_KEY, "visit");
+  removePref(SAVED_LOGIN_KEY, savedLoginLifetime());
 }
 
 /**

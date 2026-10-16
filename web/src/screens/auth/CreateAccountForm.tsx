@@ -1,9 +1,9 @@
 import type { FormEvent } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
-import AuthSubmitButton from "../../components/AuthSubmitButton";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import CredentialFields from "./CredentialFields";
+import { KeepLoggedInSubmit, useKeepLoggedIn } from "./KeepLoggedIn";
 import { useCreateAccountForm } from "./useCreateAccountForm";
 
 /**
@@ -27,6 +27,7 @@ export default function CreateAccountForm({
   disabled?: boolean;
 }) {
   const { login } = useAuth();
+  const keep = useKeepLoggedIn();
   const {
     username,
     setUsername,
@@ -48,7 +49,7 @@ export default function CreateAccountForm({
       }
       // Awaited so the empty-profile check inside `login` runs before this form
       // drops its busy state, sending the new account on to profile setup.
-      await login(serverUrl.trim(), created.token, created.account_id);
+      await login(serverUrl.trim(), created.token, created.account_id, keep.lifetime);
     },
   });
 
@@ -72,9 +73,9 @@ export default function CreateAccountForm({
 
       {/* "Continue", not "Create account": this step opens the account but does
           not finish it — the profile setup screen it leads to does. */}
-      <AuthSubmitButton disabled={busy || disabled}>
+      <KeepLoggedInSubmit choice={keep} disabled={busy || disabled}>
         {busy ? "Continuing…" : "Continue"}
-      </AuthSubmitButton>
+      </KeepLoggedInSubmit>
 
       {/* Pushed to the foot of the panel so the message lands just above the
           rule that closes the card, clear of the action that produced it. The
