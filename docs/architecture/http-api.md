@@ -710,13 +710,6 @@ none of its answer for the body stall time is closed. In detail:
   how long a whole answer takes to send: an export download or a large
   attachment takes as long as the client's link needs.
 
-Why the answer is held to the body stall time rather than a figure of its
-own: a client that reads none of an answer is as stuck as one that sends
-none of a body, and one figure for "no byte moved" is one to explain. Why
-the limit sits on the connection rather than on the answer's body: while
-the client reads nothing, the server is waiting to write and does not ask
-the body for more, so a timer in the body would never be looked at.
-
 Why: `axum::serve` builds each connection without a timer, and hyper reads
 its own 30-second header limit only with one set, so a device that opened a
 connection and sent nothing, or sent its headers or a JSON body a byte at a
@@ -724,10 +717,17 @@ time, held a task and a file handle for as long as it liked, and any number
 of devices could. On a home network one misbehaving device could starve a
 server that has one database file and two import slots. The header read
 limit and the connection cap are fixed in the code, not config keys,
-because no setup needs others: a working client sends its headers at once. Why the body limits are the
-upload ones rather than figures of their own: every other body is smaller
-than an import batch, so the limits a batch arrives inside hold it too, and
-one pair of figures is one to explain.
+because no setup needs others: a working client sends its headers at once.
+Why the body limits are the upload ones rather than figures of their own:
+every other body is smaller than an import batch, so the limits a batch
+arrives inside hold it too, and one pair of figures is one to explain.
+
+Why the answer is held to the body stall time rather than a figure of its
+own: a client that reads none of an answer is as stuck as one that sends
+none of a body, and one figure for "no byte moved" is one to explain. Why
+the limit sits on the connection rather than on the answer's body: while
+the client reads nothing, the server is waiting to write and does not ask
+the body for more, so a timer in the body would never be looked at.
 
 Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
 in place of the cap on connections. A connection that never sends its
