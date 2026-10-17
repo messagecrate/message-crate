@@ -1,9 +1,11 @@
 import { useState } from "react";
 import Button from "../../components/Button";
-import { useAuth } from "../../lib/auth";
-import { useRouteCache } from "../../lib/routeQuery";
+import { textInputClass } from "../../components/TextField";
+import { useAuth } from "../../hooks/useAuth";
+import { useRouteMutation } from "../../hooks/useRouteQuery";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { changePassword, setAccountPassword } from "../../lib/serverApi";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
 
 /**
  * Change an account's password: the logged-in account's own, or, given
@@ -34,12 +36,31 @@ export function ChangePasswordSection({
   managedAccountId?: number;
 }) {
   const { updateToken } = useAuth();
-  const cache = useRouteCache();
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg, setPwMsg] = useState("");
   const [pwOk, setPwOk] = useState(false);
+  const own = managedAccountId === undefined;
+
+  // The API Tokens and `has_password` on the profile change with the
+  // password, so the account's screens fetch again once the write settles.
+  const save = useRouteMutation({
+    mutationFn: async (body: {
+      password: string;
+      password_confirmation: string;
+      current_password?: string;
+    }) => {
+      if (managedAccountId === undefined) {
+        const res = await changePassword(body);
+        // Changing the password rotates the session, so the old token is dead.
+        if (res.token) updateToken(res.token);
+      } else {
+        // Someone else's password: the owner's own session is untouched.
+        await setAccountPassword(managedAccountId, body);
+      }
+    },
+  });
 
   /**
    * Store `password` as the new one, confirmed by `confirmation`; an empty
@@ -52,26 +73,16 @@ export function ChangePasswordSection({
     setPwOk(false);
     try {
       const body = { password, password_confirmation: confirmation };
-      const own = managedAccountId === undefined;
-      if (own) {
-        const res = await changePassword(
-          requireCurrent ? { ...body, current_password: currentPw } : body,
-        );
-        // Changing the password rotates the session, so the old token is dead.
-        if (res.token) updateToken(res.token);
-      } else {
-        // Someone else's password: the owner's own session is untouched.
-        await setAccountPassword(managedAccountId, body);
-      }
-      // The API Tokens and `has_password` on the profile changed with it.
-      cache.invalidateAccount();
+      await save.mutateAsync(
+        own && requireCurrent ? { ...body, current_password: currentPw } : body,
+      );
       setPwOk(true);
       setPwMsg(passwordMessage(password !== "", own));
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
     } catch (e) {
-      setPwMsg(e instanceof Error ? e.message : String(e));
+      setPwMsg(errorLine(e));
     }
   };
 
@@ -90,7 +101,7 @@ export function ChangePasswordSection({
               onChange={(e) => setCurrentPw(e.target.value)}
               autoComplete="current-password"
               disabled={disabled}
-              className={inputClassName}
+              className={textInputClass}
             />
           </label>
         )}
@@ -102,7 +113,7 @@ export function ChangePasswordSection({
             onChange={(e) => setNewPw(e.target.value)}
             autoComplete="new-password"
             disabled={disabled}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <label className="mb-2 block">
@@ -113,7 +124,7 @@ export function ChangePasswordSection({
             onChange={(e) => setConfirmPw(e.target.value)}
             autoComplete="new-password"
             disabled={disabled}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <div className="mt-4 flex flex-wrap gap-2">

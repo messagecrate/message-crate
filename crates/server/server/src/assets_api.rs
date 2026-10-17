@@ -7,33 +7,37 @@
 //! and the multipart upload routes also live here; multipart staging itself is in `asset_uploads`.
 
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, Read, Write};
-use std::path::Path;
+use std::fs;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
-use crate::db::attachment_versions::Version;
+use crate::db::attachment_versions::{OriginalRows, Version};
 use crate::extract::{Json, Path as AxumPath};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
+use crate::api_error::{ApiError, run_blocking};
 use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
-use crate::server::{
-    ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
-    content_type_base, discard_body, read_body_limited, resolve_import_account,
-    stream_body_to_file, upload_content_type,
+use crate::auth::{AuthIdentity, ImportAccess, ImportOrExportAccess, resolve_import_account};
+use crate::request_body::{
+    body_time_bounded, content_type_base, discard_body, stream_body_to_file, upload_content_type,
 };
+use crate::server::{AssetState, Created};
 
 pub(crate) mod media_links;
 mod ranges;
 
+use crate::config::Config;
+use crate::request_body::BodyTimeLimits;
 use media_links::AssetReadAccess;
+use sqlx::SqlitePool;
 
 /// Read/write chunk for hashing and copying files: 1 MiB.
 pub(crate) const COPY_BUFFER_BYTES: usize = 1024 * 1024;
@@ -47,6 +51,9 @@ pub struct AssetStats {
     pub deduped: u64,
     /// Source files not found on disk.
     pub missing: u64,
+    /// Why HEVC failed, from the first video the import compressed as H.264
+    /// instead; the server logs that one happened, once per import.
+    pub hevc_fallback: media::HevcFallback,
 }
 
 /// One stored attachment: fingerprint, relative path, and MIME type.
@@ -61,7 +68,7 @@ pub struct StoredAsset {
 }
 
 /// Why the asset store refused or failed, by kind. The HTTP status for each
-/// kind is chosen once, in `server.rs`; no handler picks one.
+/// kind is chosen once, in `api_error.rs`; no handler picks one.
 #[derive(Debug, thiserror::Error)]
 pub enum AssetError {
     /// The bytes do not hash to the fingerprint they were sent under.
@@ -86,6 +93,14 @@ pub enum AssetError {
         "another request to this upload holds its lock; send this request again when that one finishes"
     )]
     Locked,
+    /// The account already has as many uploads in progress as it may have
+    /// open at once: its state refuses one more, and no rewrite of the
+    /// request gets past that until one of them ends.
+    #[error(
+        "this account already has {} uploads in progress, the most it may have open at once. Complete or abort one of them before starting another",
+        crate::asset_uploads::MAX_OPEN_UPLOADS
+    )]
+    TooManyUploads,
     /// The server could not store the file: its own I/O, or a state of its
     /// store it refuses to write over. Nothing the caller can change.
     #[error(transparent)]
@@ -122,7 +137,7 @@ impl Sha256 {
 
     /// The fingerprint of `data`.
     pub fn of_bytes(data: &[u8]) -> Self {
-        Self(sha256_hex(data))
+        Self(file_io::sha256_hex(data))
     }
 
     /// The fingerprint as 64 lower-case hex digits.
@@ -151,18 +166,6 @@ impl<'de> Deserialize<'de> for Sha256 {
     }
 }
 
-/// Encode bytes as lowercase hex.
-pub fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// SHA-256 fingerprint of `data` as 64 lowercase hex digits.
-///
-/// SHA-256 is a short fingerprint of the file contents.
-pub fn sha256_hex(data: &[u8]) -> String {
-    hex_encode(&Sha256Hasher::digest(data))
-}
-
 /// Relative path under the assets root: first two hex digits as a directory, then
 /// the full fingerprint, then `ext`. `.jpeg` is stored as `.jpg`.
 pub fn shard_rel_path(sha256: &Sha256, ext: &str) -> String {
@@ -176,13 +179,29 @@ pub fn shard_rel_path(sha256: &Sha256, ext: &str) -> String {
 /// Upload and import paths that skip sending bytes because "the file is already
 /// here" must use this function. A truncated or replaced file is then never
 /// treated as the real content.
+///
+/// A stored file that cannot be read is not here either, so the client
+/// sends the bytes again. Any error other than the file being gone, such as
+/// a failed read or a symlink put in its place, is written to the server's
+/// log with the file's path, so a failing disk or a permission change is not
+/// hidden behind the re-upload.
 pub fn lookup_by_sha256(assets_root: &Path, sha256: &Sha256) -> Option<StoredAsset> {
     let stored = lookup_by_sha256_unverified(assets_root, sha256)?;
     let path = assets_root.join(&stored.assets_path);
-    if hash_file(&path).ok()? != stored.sha256 {
-        return None;
+    match hash_file(&path) {
+        Ok(actual) if actual == stored.sha256 => Some(stored),
+        Ok(_) => None,
+        Err(error) => {
+            if !is_not_found(&error) {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = format!("{error:#}"),
+                    "A stored Asset could not be checked, so it was treated as not stored"
+                );
+            }
+            None
+        }
     }
-    Some(stored)
 }
 
 /// Find the stored path and MIME type for a SHA-256 fingerprint without reading
@@ -193,7 +212,7 @@ pub fn lookup_by_sha256(assets_root: &Path, sha256: &Sha256) -> Option<StoredAss
 /// received. Hashing the whole file first would read every download twice.
 pub fn lookup_by_sha256_unverified(assets_root: &Path, sha256: &Sha256) -> Option<StoredAsset> {
     let assets_path = shard_rel_path(sha256, "");
-    if !is_regular_file(&assets_root.join(&assets_path)) {
+    if file_io::ensure_regular_file(&assets_root.join(&assets_path)).is_err() {
         return None;
     }
     let mime_type = read_mime_metadata(assets_root, sha256);
@@ -248,11 +267,12 @@ fn store_verified_inner(
     copy_ready: impl FnOnce(),
     selection_ready: impl FnOnce(),
 ) -> Result<(StoredAsset, bool), AssetError> {
-    ensure_regular_file(source)?;
+    file_io::ensure_regular_file(source)?;
     // The export's claim, else a guess from the source file's name. The stored
-    // file has no extension, so it can say nothing about its own type.
-    let mime_type = resolve_mime(export_mime, source);
-    let already = install_blob(
+    // file has no extension, so its name can say nothing about its type; its
+    // bytes decide where they can ([`record_media_type`]).
+    let declared = resolve_mime(export_mime, source);
+    let already = install_asset(
         source,
         assets_root,
         claimed,
@@ -260,9 +280,7 @@ fn store_verified_inner(
         copy_ready,
         selection_ready,
     )?;
-    if let Some(mime) = mime_type.as_deref() {
-        store_mime_metadata(assets_root, claimed, mime)?;
-    }
+    let mime_type = record_media_type(assets_root, claimed, declared.as_deref())?;
     Ok((
         StoredAsset {
             assets_path: shard_rel_path(claimed, ""),
@@ -286,7 +304,7 @@ fn store_verified_inner(
 ///    while writing, and refuse to keep the file unless the written bytes match
 ///    the claimed fingerprint. The bytes that land on disk are therefore always
 ///    bytes this call checked, even if the source changed underneath.
-fn install_blob(
+fn install_asset(
     source: &Path,
     assets_root: &Path,
     claimed_sha256: &Sha256,
@@ -387,8 +405,8 @@ fn copy_to_verified_temp(
 ) -> Result<tempfile::NamedTempFile, AssetError> {
     let mut temporary = crate::asset_store::shard_temp_file(shard)
         .with_context(|| format!("create temporary asset in {}", shard.display()))?;
-    let mut src =
-        open_nofollow_read(source).with_context(|| format!("open source {}", source.display()))?;
+    let mut src = file_io::open_nofollow(source)
+        .with_context(|| format!("open source {}", source.display()))?;
     let mut hasher = Sha256Hasher::new();
     let mut buf = vec![0u8; COPY_BUFFER_BYTES];
     loop {
@@ -407,7 +425,7 @@ fn copy_to_verified_temp(
         .flush()
         .and_then(|()| temporary.as_file().sync_all())
         .with_context(|| format!("flush temporary asset for {}", source.display()))?;
-    let actual = hex_encode(&hasher.finalize());
+    let actual = hex::encode(hasher.finalize());
     if actual != claimed_sha256.as_str() {
         return Err(AssetError::Mismatch {
             claimed: claimed_sha256.clone(),
@@ -429,7 +447,7 @@ pub fn hash_and_store(
     export_mime: Option<&str>,
     stats: &mut AssetStats,
 ) -> Result<Option<StoredAsset>> {
-    if !is_regular_file(source) {
+    if file_io::ensure_regular_file(source).is_err() {
         stats.missing += 1;
         return Ok(None);
     }
@@ -445,7 +463,17 @@ pub fn hash_and_store(
     Ok(Some(stored))
 }
 
+/// Whether an I/O error somewhere in `err` is a file or directory not found.
+pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
+        .any(|io| io.kind() == std::io::ErrorKind::NotFound)
+}
+
 /// SHA-256 fingerprint of the file at `path`, as 64 lowercase hex digits.
+///
+/// `file_io::file_sha256_nofollow`, so a symlink at `path` is refused rather
+/// than followed; tests also see each path it hashes through `hashed`.
 ///
 /// # Errors
 ///
@@ -453,18 +481,7 @@ pub fn hash_and_store(
 pub(crate) fn hash_file(path: &Path) -> Result<String> {
     #[cfg(test)]
     hashed::record(path);
-    let file = open_nofollow_read(path)?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256Hasher::new();
-    let mut buf = [0u8; COPY_BUFFER_BYTES];
-    loop {
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hex_encode(&hasher.finalize()))
+    file_io::file_sha256_nofollow(path)
 }
 
 /// Every path [`hash_file`] was asked to read, so a test can show that a
@@ -497,29 +514,82 @@ pub(crate) mod hashed {
     }
 }
 
-/// Read the MIME sidecar for `sha`, if present and non-empty.
+/// Read the MIME sidecar for `sha`, when it holds a media type
+/// ([`media::checked_media_type`]). A sidecar longer than a media type can
+/// be, or holding anything else, reads as none, so the Asset is served as
+/// `application/octet-stream` rather than under a type cut short or one
+/// that was never checked.
 fn read_mime_metadata(assets_root: &Path, sha: &Sha256) -> Option<String> {
-    let file = open_nofollow_read(&sidecar_path(assets_root, sha)).ok()?;
+    let file = file_io::open_nofollow(&sidecar_path(assets_root, sha)).ok()?;
     let mut mime = String::new();
-    file.take(1024).read_to_string(&mut mime).ok()?;
+    // One byte past the longest type, with room for a trailing line break,
+    // tells a sidecar over the cap from one at it.
+    file.take(media::MEDIA_TYPE_MAX_LEN as u64 + 2)
+        .read_to_string(&mut mime)
+        .ok()?;
     let mime = mime.trim();
-    if mime.is_empty() {
-        None
-    } else {
-        Some(mime.to_string())
+    if mime.len() > media::MEDIA_TYPE_MAX_LEN {
+        return None;
     }
+    media::checked_media_type(mime)
 }
 
-/// Write the MIME sidecar for `sha` unless one already exists. Empty types are not recorded.
-fn store_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str) -> Result<()> {
-    let mime = mime.trim();
-    if mime.is_empty() {
-        return Ok(());
+/// Decide the media type of the Asset stored as `sha`, record it in its
+/// MIME sidecar, and answer it (`docs/architecture/media.md`, rule 2).
+///
+/// The stored bytes decide when they match a signature
+/// ([`media::media_type_in_file`]). A recorded type the bytes allow stays,
+/// so of the types one signature fits (an MP4 or an `.m4a`) the first
+/// declared is kept and a later import cannot flip it. A recorded type the
+/// bytes rule out is replaced by the one they show, with `declared` choosing
+/// among a signature's types, so a wrong first claim does not stay the
+/// Asset's type. A file whose bytes say nothing keeps the first type
+/// declared for it, and `declared` is written only when the sidecar holds
+/// none. `declared` is taken only when it is a media type
+/// ([`media::checked_media_type`]); `application/octet-stream` says nothing
+/// and is not recorded.
+///
+/// The answer is the type the sidecar holds afterwards, so every
+/// attachment row of the Asset names the type it is served under.
+///
+/// # Errors
+///
+/// Returns an error when the sidecar cannot be written.
+pub(crate) fn record_media_type(
+    assets_root: &Path,
+    sha: &Sha256,
+    declared: Option<&str>,
+) -> Result<Option<String>> {
+    let declared = declared
+        .and_then(media::checked_media_type)
+        .filter(|mime| mime != "application/octet-stream");
+    let stored = assets_root.join(shard_rel_path(sha, ""));
+    let recorded = read_mime_metadata(assets_root, sha);
+    if let Some(recorded) = recorded.as_deref()
+        && media::media_type_in_file(&stored, Some(recorded)) == Some(recorded)
+    {
+        return Ok(Some(recorded.to_string()));
     }
+    if let Some(shown) = media::media_type_in_file(&stored, declared.as_deref()) {
+        write_mime_metadata(assets_root, sha, shown, true)?;
+        return Ok(Some(shown.to_string()));
+    }
+    if let Some(recorded) = recorded {
+        return Ok(Some(recorded));
+    }
+    if let Some(declared) = declared.as_deref() {
+        write_mime_metadata(assets_root, sha, declared, false)?;
+    }
+    // A racing store may have written its own first; the sidecar holds the
+    // answer either way.
+    Ok(read_mime_metadata(assets_root, sha).or(declared))
+}
+
+/// Write `mime` as the MIME sidecar of `sha`: over the one there when
+/// `replace`, else only when there is none, so the first of two racing
+/// writes stays.
+fn write_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str, replace: bool) -> Result<()> {
     let path = sidecar_path(assets_root, sha);
-    if read_mime_metadata(assets_root, sha).is_some() {
-        return Ok(());
-    }
     let Some(parent) = path.parent() else {
         return Err(anyhow::anyhow!("asset MIME metadata has no parent"));
     };
@@ -528,19 +598,24 @@ fn store_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str) -> Result<(
     temporary.write_all(mime.as_bytes())?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
-    match temporary.persist_noclobber(&path) {
-        Ok(_) => Ok(()),
+    let installed = if replace {
+        temporary.persist(&path).map(drop)
+    } else {
+        temporary.persist_noclobber(&path).map(drop)
+    };
+    match installed {
+        Ok(()) => Ok(()),
         Err(err) if err.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
         Err(err) => Err(err.error).with_context(|| format!("install {}", path.display())),
     }
 }
 
-/// The export's MIME claim when it has one, else a guess from the file extension.
-fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
-    if let Some(mime) = export_mime
-        && !mime.is_empty()
-    {
-        return Some(mime.to_string());
+/// The export's MIME claim when it is a media type
+/// ([`media::checked_media_type`]), else a guess from the file extension: a
+/// claim that is not a type says no more than a missing one (#2101).
+pub(crate) fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
+    if let Some(mime) = export_mime.and_then(media::checked_media_type) {
+        return Some(mime);
     }
     let ext = source.extension().and_then(|e| e.to_str());
     guess_mime(ext)
@@ -556,44 +631,6 @@ fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
 /// therefore need to be in the shared table.
 fn guess_mime(ext: Option<&str>) -> Option<String> {
     media::mime_for_ext(ext?).map(str::to_string)
-}
-
-/// True for a plain file; symlinks are never followed into the asset store.
-fn is_regular_file(path: &Path) -> bool {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => meta.is_file() && !meta.file_type().is_symlink(),
-        Err(_) => false,
-    }
-}
-
-/// Fail unless `path` is a regular file, not a symlink.
-fn ensure_regular_file(path: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(path).with_context(|| format!("stat {}", path.display()))?;
-    if meta.file_type().is_symlink() {
-        bail!("refusing to follow symlink: {}", path.display());
-    }
-    if !meta.is_file() {
-        bail!("asset source is not a file: {}", path.display());
-    }
-    Ok(())
-}
-
-/// Open `path` for reading without following a symlink.
-fn open_nofollow_read(path: &Path) -> Result<File> {
-    ensure_regular_file(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
-            .with_context(|| format!("open {}", path.display()))
-    }
-    #[cfg(not(unix))]
-    {
-        File::open(path).with_context(|| format!("open {}", path.display()))
-    }
 }
 
 /// Stored asset fingerprint and path.
@@ -613,7 +650,7 @@ pub(crate) struct Asset {
 }
 
 impl Asset {
-    /// Response body for a blob that is now in the store.
+    /// Response body for an Asset that is now in the store.
     fn stored(asset: StoredAsset, already_present: bool) -> Json<Self> {
         Json(Self {
             sha256: asset.sha256,
@@ -623,27 +660,26 @@ impl Asset {
     }
 }
 
-/// Resolve the account an asset route targets and look the blob up by
+/// Resolve the account an asset route targets and look the Asset up by
 /// sha256 in that account's one assets directory.
 ///
 /// The probe and every write decide whether a client may skip sending bytes,
-/// so the stored blob is hashed here, and a truncated or replaced file is
+/// so the stored file is hashed here, and a truncated or replaced file is
 /// not found. A read looks up without hashing ([`lookup_for_read`]).
 async fn resolve_asset_lookup(
-    state: &AppState,
+    cfg: &Arc<Config>,
     auth: &AuthIdentity,
     sha256: &Sha256,
 ) -> Result<(i64, Option<StoredAsset>), ApiError> {
     let account = resolve_import_account(auth);
 
-    let cfg = Arc::clone(&state.cfg);
+    let cfg = Arc::clone(cfg);
     let sha_lookup = sha256.clone();
-    let existing = tokio::task::spawn_blocking(move || {
+    let existing = run_blocking("asset lookup", move || {
         let assets_dir = cfg.paths.assets_dir_for_account(account);
-        lookup_by_sha256(&assets_dir, &sha_lookup)
+        Ok::<_, ApiError>(lookup_by_sha256(&assets_dir, &sha_lookup))
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))?;
+    .await?;
     Ok((account, existing))
 }
 
@@ -663,13 +699,13 @@ async fn resolve_asset_lookup(
     )
 )]
 pub(crate) async fn head_asset(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     ImportOrExportAccess(auth): ImportOrExportAccess,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Json<Asset>, ApiError> {
-    let (_account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let (_account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
     let Some(stored) = existing else {
-        return Err(ApiError::NotFound("asset not found".into()));
+        return Err(ApiError::not_found("asset"));
     };
     Ok(Asset::stored(stored, true))
 }
@@ -695,10 +731,11 @@ pub(crate) async fn head_asset(
     responses(
         (
             status = 200,
-            description = "The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored",
+            description = "The asset's bytes, in the media type its first bytes show or else the one it was stored with, or `application/octet-stream` when neither is known",
             content_type = "*/*",
             headers(
                 ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read"),
                 ("ETag" = String, description = "The fingerprint, quoted")
             )
         ),
@@ -709,6 +746,7 @@ pub(crate) async fn head_asset(
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
                 ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read"),
                 ("ETag" = String, description = "The fingerprint, quoted")
             )
         ),
@@ -716,24 +754,26 @@ pub(crate) async fn head_asset(
     )
 )]
 pub(crate) async fn get_asset(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
-    let account = reader.account_id;
-    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
-        return Err(ApiError::NotFound("asset not found".into()));
-    };
-
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    stream_file(
-        &assets_dir.join(&stored.assets_path),
-        stored.mime_type,
-        &headers,
-        Some(format!("\"{sha256}\"")),
-    )
-    .await
+) -> Response {
+    reader
+        .answer(async |account| {
+            let Some(stored) = lookup_for_read(&cfg, account, &sha256).await? else {
+                return Err(ApiError::not_found("asset"));
+            };
+            let assets_dir = cfg.paths.assets_dir_for_account(account);
+            stream_file(
+                &assets_dir.join(&stored.assets_path),
+                stored.mime_type,
+                &headers,
+                Some(format!("\"{sha256}\"")),
+            )
+            .await
+        })
+        .await
 }
 
 /// Download the preview of a stored asset: the JPEG, MP4 or MP3 the server
@@ -760,7 +800,10 @@ pub(crate) async fn get_asset(
             status = 200,
             description = "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
             content_type = "*/*",
-            headers(("Accept-Ranges" = String, description = "`bytes`"))
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
+            )
         ),
         (
             status = 206,
@@ -768,19 +811,21 @@ pub(crate) async fn get_asset(
             content_type = "*/*",
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
-                ("Accept-Ranges" = String, description = "`bytes`")
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
             )
         ),
         crate::problem::openapi::RangeNotSatisfiable
     )
 )]
 pub(crate) async fn get_asset_preview(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
-    stream_version(&state, reader, &headers, &sha256, Version::Preview).await
+) -> Response {
+    stream_version(&db, &cfg, reader, &headers, &sha256, Version::Preview).await
 }
 
 /// Download the thumbnail of a stored image or video: a JPEG at most 560
@@ -809,7 +854,10 @@ pub(crate) async fn get_asset_preview(
             status = 200,
             description = "The thumbnail's bytes, in the thumbnail's own media type",
             content_type = "*/*",
-            headers(("Accept-Ranges" = String, description = "`bytes`"))
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
+            )
         ),
         (
             status = 206,
@@ -817,50 +865,69 @@ pub(crate) async fn get_asset_preview(
             content_type = "*/*",
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
-                ("Accept-Ranges" = String, description = "`bytes`")
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
             )
         ),
         crate::problem::openapi::RangeNotSatisfiable
     )
 )]
 pub(crate) async fn get_asset_thumbnail(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
-    stream_version(&state, reader, &headers, &sha256, Version::Thumbnail).await
+) -> Response {
+    stream_version(&db, &cfg, reader, &headers, &sha256, Version::Thumbnail).await
 }
 
 /// Answer the `version` of the original `sha256` in the reader's own store,
 /// so another account's fingerprint names nothing here: `404 Not Found` for
 /// an original the account does not hold, or one with no such version yet.
 async fn stream_version(
-    state: &AppState,
+    db: &SqlitePool,
+    cfg: &Arc<Config>,
     reader: AssetReadAccess,
     headers: &HeaderMap,
     sha256: &Sha256,
     version: Version,
-) -> Result<Response, ApiError> {
-    let account = reader.account_id;
-    let Some(stored) = lookup_for_read(state, account, sha256).await? else {
-        return Err(ApiError::NotFound("asset not found".into()));
-    };
-    let file = crate::db::attachment_versions::file_of(
-        &mut *state.db.acquire().await?,
-        version,
-        account,
-        &stored.sha256,
-    )
-    .await?;
-    let Some((path, mime_type)) = file else {
-        return Err(ApiError::NotFound(format!(
-            "asset has no {} yet",
-            version.to_string().to_lowercase()
-        )));
-    };
-    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(&converted_dir.join(path), mime_type, headers, None).await
+) -> Response {
+    reader
+        .answer(async |account| {
+            let Some(stored) = lookup_for_read(cfg, account, sha256).await? else {
+                return Err(ApiError::not_found("asset"));
+            };
+            let file = crate::db::attachment_versions::file_of(
+                &mut *db.acquire().await?,
+                version,
+                OriginalRows {
+                    account_id: account,
+                    original_sha: &stored.sha256,
+                },
+            )
+            .await?;
+            let no_version = || {
+                ApiError::NotFound(format!(
+                    "asset has no {} yet",
+                    version.to_string().to_lowercase()
+                ))
+            };
+            let Some((path, mime_type)) = file else {
+                return Err(no_version());
+            };
+            let converted_dir = cfg.paths.assets_converted_dir_for_account(account);
+            let Some(full) = crate::asset_store::join_stored(
+                &converted_dir,
+                &path,
+                account,
+                &version.describe_of(sha256.as_str()),
+            ) else {
+                return Err(no_version());
+            };
+            stream_file(&full, mime_type, headers, None).await
+        })
+        .await
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read
@@ -869,22 +936,24 @@ async fn stream_version(
 /// asset. The probe and the writes hash it ([`resolve_asset_lookup`]),
 /// because they decide whether a client may skip sending the bytes.
 pub(crate) async fn lookup_for_read(
-    state: &AppState,
+    cfg: &Arc<Config>,
     account: i64,
     sha256: &Sha256,
 ) -> Result<Option<StoredAsset>, ApiError> {
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let sha256 = sha256.clone();
-    tokio::task::spawn_blocking(move || lookup_by_sha256_unverified(&assets_dir, &sha256))
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))
+    run_blocking("asset lookup", move || {
+        Ok::<_, ApiError>(lookup_by_sha256_unverified(&assets_dir, &sha256))
+    })
+    .await
 }
 
 /// Answer the file at `path` in `mime_type`, or `application/octet-stream`
 /// when none is known: the whole file, or the one byte range the request's
 /// `Range` selects ([`ranges::select`]). `etag` is the file's strong entity
 /// tag when it has one, which an `If-Range` must name for a range to be
-/// served.
+/// served. The reader's `Cache-Control` is added by
+/// [`AssetReadAccess::answer`], the only way a read reaches its account.
 async fn stream_file(
     path: &Path,
     mime_type: Option<String>,
@@ -993,7 +1062,9 @@ async fn stream_file(
 
 /// Refuse a raw-bytes body that names no media type. Any type is accepted,
 /// because it is the asset's own (`image/jpeg`, or `application/octet-stream`
-/// when the client does not know); what is refused is saying nothing.
+/// when the client does not know); what is refused is saying nothing. A
+/// value that is not a `type/subtype` media type is kept as no type at all
+/// when the Asset is stored ([`record_media_type`]).
 fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
     match content_type_base(headers) {
         Some(base) if !base.is_empty() => Ok(()),
@@ -1029,43 +1100,49 @@ fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
     )
 )]
 pub(crate) async fn replace_asset(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(body_time_limits): State<BodyTimeLimits>,
     ImportAccess(auth): ImportAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
     request: Request,
 ) -> Result<Response, ApiError> {
     require_content_type(&headers)?;
-    let (account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let (account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
 
     let mime = upload_content_type(&headers);
-    let max_body_bytes = usize::try_from(state.asset_max_bytes().await?).unwrap_or(usize::MAX);
+    let max_body_bytes =
+        usize::try_from(asset_uploads::asset_max_bytes(&db).await?).unwrap_or(usize::MAX);
 
+    // The body is held to the server's body time limits, as an import
+    // batch's is: a client that stops sending part-way, or sends a byte now
+    // and then, holds the connection and the temp file only so long.
+    let body = body_time_bounded(request.into_body(), body_time_limits);
     if let Some(stored) = existing {
-        discard_body(request.into_body(), max_body_bytes).await?;
+        discard_body(body, max_body_bytes).await?;
         return Ok(Asset::stored(stored, true).into_response());
     }
 
     // Write the upload into the account assets tree. Storing it copies it into
     // place and then removes it (`consume_source`).
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let incoming_dir = assets_dir.join(".incoming");
-    tokio::fs::create_dir_all(&incoming_dir)
-        .await
-        .map_err(|e| {
-            ApiError::Internal(anyhow::anyhow!("mkdir {}: {e}", incoming_dir.display()))
-        })?;
-    // Named from the checked fingerprint, so the file is always inside
-    // `incoming_dir`.
-    let tmp_path = incoming_dir.join(format!(
-        "{sha256}-{}.part",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos())
-    ));
+    let sha = sha256.clone();
+    let tmp_path = run_blocking("asset upload temp", move || {
+        reserve_upload_temp(
+            &incoming_dir,
+            &sha,
+            &mut crate::asset_uploads::new_upload_id,
+        )
+    })
+    .await?;
+    // The sweep of abandoned uploads leaves the temp alone until it is
+    // removed below, however long storing it takes.
+    let _in_use = asset_uploads::hold(&tmp_path);
     // An empty body is checked like any other: the empty file is stored when
     // the claim is its fingerprint and refused when it is not.
-    if let Err(err) = stream_body_to_file(request.into_body(), &tmp_path, max_body_bytes).await {
+    if let Err(err) = stream_body_to_file(body, &tmp_path, max_body_bytes).await {
         let _ = tokio::fs::remove_file(&tmp_path).await;
         return Err(err);
     }
@@ -1073,7 +1150,7 @@ pub(crate) async fn replace_asset(
     let sha = sha256.clone();
     let tmp_for_store = tmp_path.clone();
     let assets_dir_store = assets_dir.clone();
-    let stored = tokio::task::spawn_blocking(move || {
+    let stored = run_blocking("asset upload", move || {
         std::fs::create_dir_all(&assets_dir_store)
             .with_context(|| format!("create {}", assets_dir_store.display()))?;
         store_verified(
@@ -1089,8 +1166,7 @@ pub(crate) async fn replace_asset(
     // body that does not match the fingerprint included, leaves it, and it
     // is removed here before the answer, so a refused upload keeps nothing.
     let _ = tokio::fs::remove_file(&tmp_path).await;
-    let (stored, already_present) =
-        stored.map_err(|e| ApiError::Internal(anyhow::anyhow!("asset upload task: {e}")))??;
+    let (stored, already_present) = stored?;
     // A racing upload of the same bytes may have stored them first; then
     // this request made nothing.
     if already_present {
@@ -1104,6 +1180,29 @@ pub(crate) async fn replace_asset(
     .into_response())
 }
 
+/// A new, empty `{sha256}-{id}.part` temp in `incoming_dir` for a raw upload,
+/// named with an id from `next_id` through
+/// [`crate::asset_uploads::create_with_new_id`]. Named from the checked
+/// fingerprint, so the file is always inside `incoming_dir`. The file is made
+/// with `create_new`, which fails on one that exists, so no two uploads write
+/// into one temp. `next_id` is a parameter only so a test can hand two
+/// uploads the same id.
+fn reserve_upload_temp(
+    incoming_dir: &Path,
+    sha256: &Sha256,
+    next_id: &mut impl FnMut() -> String,
+) -> Result<PathBuf> {
+    let (_, path) = crate::asset_uploads::create_with_new_id(incoming_dir, next_id, |id| {
+        let path = incoming_dir.join(format!("{sha256}-{id}.part"));
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map(|_| path)
+    })?;
+    Ok(path)
+}
+
 /// Total bytes and optional MIME type for a chunked upload.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateAssetUploadRequest {
@@ -1111,8 +1210,11 @@ pub(crate) struct CreateAssetUploadRequest {
     /// in the Server Settings is refused with `422 Unprocessable Entity`.
     bytes: u64,
     /// Media type of the file, such as `image/jpeg`. The server stores it
-    /// beside the Asset and serves the Asset with it. Null, blank or left
-    /// out stores none.
+    /// beside the Asset and serves the Asset with it, unless the file's
+    /// first bytes show another type, which is stored instead. A value that
+    /// is not a `type/subtype` pair of tokens of at most 255 bytes, null,
+    /// blank or left out stores none, and the Asset is served as
+    /// `application/octet-stream`.
     #[serde(default)]
     mime: Option<String>,
 }
@@ -1171,26 +1273,30 @@ pub(crate) struct ReplaceAssetUploadPartResponse {
             body = CreateAssetUploadResponse,
             description = "The asset is already stored; nothing was created"
         ),
-        crate::problem::openapi::AssetUploadInvalid
+        crate::problem::openapi::AssetUploadInvalid,
+        crate::problem::openapi::StateConflict
     )
 )]
 pub(crate) async fn create_asset_upload(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(assets): State<AssetState>,
+    State(body_time_limits): State<BodyTimeLimits>,
     ImportAccess(auth): ImportAccess,
     AxumPath(sha256): AxumPath<Sha256>,
     Json(body): Json<CreateAssetUploadRequest>,
 ) -> Result<Response, ApiError> {
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let mime = body.mime.clone();
     let bytes = body.bytes;
     let sha = sha256.clone();
-    let limits = state.upload_limits().await?;
-    let result = tokio::task::spawn_blocking(move || {
-        asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits)
+    let limits = assets.upload_limits(&db).await?;
+    let stall = body_time_limits.stall;
+    let result = run_blocking("upload start", move || {
+        asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits, stall)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload start task: {e}")))??;
+    .await?;
 
     // Only a fresh upload is a creation. An asset already in the store made
     // nothing, so it answers 200 OK with where the bytes already are.
@@ -1239,7 +1345,8 @@ pub(crate) async fn create_asset_upload(
     )
 )]
 pub(crate) async fn replace_asset_upload_part(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
+    State(body_time_limits): State<BodyTimeLimits>,
     ImportAccess(auth): ImportAccess,
     headers: HeaderMap,
     AxumPath((sha256, upload_id, part)): AxumPath<(Sha256, String, u32)>,
@@ -1247,39 +1354,33 @@ pub(crate) async fn replace_asset_upload_part(
 ) -> Result<Json<ReplaceAssetUploadPartResponse>, ApiError> {
     require_content_type(&headers)?;
     let account = resolve_import_account(&auth);
-    if part == 0 {
-        return Err(ApiError::validation("part number must be >= 1"));
-    }
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    // The part size this upload started with, not the one the Server
-    // Settings give now: lowering the limit holds from the next upload.
-    let part_size = {
-        let assets_dir = assets_dir.clone();
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
+    // The part streams into a temp file of its own, and the manifest records
+    // it only once all of it is in, so the manifest can look abandoned while
+    // the part arrives: the sweep of abandoned uploads must leave the upload
+    // alone meanwhile (#2652).
+    let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
+    // Refuses a part number the upload has no part for before the body is
+    // read. Dropping the temp, on any early return or when the client goes
+    // away part-way, removes its file.
+    let mut temp = {
         let sha = sha256.clone();
         let uid = upload_id.clone();
-        tokio::task::spawn_blocking(move || {
-            asset_uploads::session_part_size(&assets_dir, &sha, &uid)
+        run_blocking("upload part", move || {
+            asset_uploads::begin_part(&assets_dir, &sha, &uid, part)
         })
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload part task: {e}")))??
+        .await?
     };
-    let declared = headers
-        .get(header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
-    if declared.is_some_and(|bytes| bytes > part_size as u64) {
-        return Err(ApiError::PayloadTooLarge(format!(
-            "a part of this upload is at most {part_size} bytes"
-        )));
+    // The part size this upload started with, not the one the Server
+    // Settings give now: lowering the limit holds from the next upload.
+    if crate::request_body::declared_over(&headers, temp.part_size()) {
+        return Err(ApiError::PayloadTooLarge);
     }
-    let body = read_body_limited(request.into_body(), part_size).await?;
-    let sha = sha256.clone();
-    let uid = upload_id.clone();
-    let written = tokio::task::spawn_blocking(move || {
-        asset_uploads::put_part(&assets_dir, &sha, &uid, part, &body)
-    })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload part task: {e}")))??;
+    // One read of the body is in memory at a time, never the whole part
+    // (#2114).
+    temp.receive(body_time_bounded(request.into_body(), body_time_limits))
+        .await?;
+    let written = run_blocking("upload part", move || asset_uploads::put_part(temp)).await?;
     Ok(Json(ReplaceAssetUploadPartResponse {
         part,
         bytes: written,
@@ -1310,17 +1411,18 @@ pub(crate) async fn replace_asset_upload_part(
     )
 )]
 pub(crate) async fn complete_asset_upload(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
+    State(assets): State<AssetState>,
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Response, ApiError> {
-    let (account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let (account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
     if let Some(stored) = existing {
         // Drop staging if a concurrent single-PUT won the race.
-        let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+        let assets_dir = cfg.paths.assets_dir_for_account(account);
         let sha = sha256.clone();
         let uid = upload_id.clone();
-        let dropped = tokio::task::spawn_blocking(move || {
+        let dropped = crate::request_id::spawn_blocking_in_current_span(move || {
             asset_uploads::abort_upload(&assets_dir, &sha, &uid)
         })
         .await
@@ -1336,19 +1438,21 @@ pub(crate) async fn complete_asset_upload(
         return Ok(Asset::stored(stored, true).into_response());
     }
 
-    let _guard = state
-        .asset_complete_locks
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
+    // Joining and storing a large upload writes nothing to its manifest, so
+    // the sweep of abandoned uploads must leave it alone meanwhile (#2652).
+    let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
+    let _guard = assets
+        .complete_locks
         .lock(format!("{account}:{sha256}"))
         .await;
 
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let (stored, already_present) = tokio::task::spawn_blocking(move || {
+    let (stored, already_present) = run_blocking("upload complete", move || {
         asset_uploads::complete_upload(&assets_dir, &sha, &uid)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload complete task: {e}")))??;
+    .await?;
 
     // A racing single PUT of the same bytes may have stored them first; then
     // this completion made nothing.
@@ -1397,18 +1501,18 @@ pub(crate) struct AssetUpload {
     )
 )]
 pub(crate) async fn get_asset_upload(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Json<AssetUpload>, ApiError> {
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let manifest =
-        tokio::task::spawn_blocking(move || asset_uploads::read_upload(&assets_dir, &sha, &uid))
-            .await
-            .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload read task: {e}")))??;
+    let manifest = run_blocking("upload read", move || {
+        asset_uploads::read_upload(&assets_dir, &sha, &uid)
+    })
+    .await?;
     Ok(Json(AssetUpload {
         upload_id,
         sha256: manifest.sha256,
@@ -1435,17 +1539,18 @@ pub(crate) async fn get_asset_upload(
     )
 )]
 pub(crate) async fn delete_asset_upload(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    tokio::task::spawn_blocking(move || asset_uploads::abort_upload(&assets_dir, &sha, &uid))
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload abort task: {e}")))??;
+    run_blocking("upload abort", move || {
+        asset_uploads::abort_upload(&assets_dir, &sha, &uid)
+    })
+    .await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 

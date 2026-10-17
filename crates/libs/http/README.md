@@ -9,7 +9,7 @@ probe; `ok_json` reads every server answer, turning a failure into the `detail`
 sentence of the server's RFC 7807 problem document rather than a status code;
 and `classify_retry` decides which failures are worth trying again.
 
-`message-crate-import` and `message-crate-export` use this crate, and the desktop app reaches
+`import` and `export` use this crate, and the desktop app reaches
 `AuthError` through their re-exports.
 
 ## Build and test

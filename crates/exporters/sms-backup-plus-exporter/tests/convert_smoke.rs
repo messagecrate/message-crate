@@ -3,7 +3,7 @@ use anyhow::Result;
 use message_crate_core::testutil::{
     assert_csv_export, assert_csv_row, assert_jsonl_resumes, csv_files, csv_rows,
 };
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, LogSink, OutputFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,17 +16,16 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
     convert_export(ConvertExportArgs {
         inputs,
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        log: None,
-        issues: None,
-        resume: false,
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
 }
 
@@ -236,17 +235,17 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             inputs: &[input.as_path()],
             output_dir: tmp.path(),
-            scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
-            log: None,
-            issues: None,
-            resume,
+            log: &LogSink::none(),
             phone_country: phone::country("US"),
+            convert_run: ConvertRun {
+                scratch_dir: cache.path().to_path_buf(),
+                output_format: OutputFormat::Jsonl,
+                resume,
+                ..ConvertRun::default()
+            },
         })
     });
 }
@@ -256,7 +255,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
 /// SMS Backup+ takes that header from the Android message id, which is unique
 /// only within one device's database and is reused after a wipe or a restore,
 /// so a mailbox holding two backups easily carries the same id on unrelated
-/// messages. The shared dedupe step (`message_ir::one_copy_per_message`)
+/// messages. The shared dedupe step (`ir::one_copy_per_message`)
 /// never reads the header for exactly that reason, and this test puts two
 /// colliding files through the exporter, so a change that started keying on
 /// the id would fail here rather than drop one of every colliding pair. `flat_smssync_276_alex.eml` and `flat_smssync_276_sam.eml` were
@@ -359,37 +358,33 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     convert_export(ConvertExportArgs {
         inputs: &[input.path()],
         output_dir: output.path(),
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms {
-            media: media::MediaMode::Disabled,
-            ..ExportTransforms::none()
-        },
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        log: None,
-        issues: None,
-        resume: false,
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            transforms: ExportTransforms {
+                files: message_crate_core::AttachmentFiles::Skip,
+                ..ExportTransforms::none()
+            },
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .unwrap();
 
-    let attachments: Vec<message_ir::IrAttachment> = fs::read_dir(output.path())
+    let attachments: Vec<ir::Attachment> = fs::read_dir(output.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
-        .flat_map(|path| {
-            message_ir_format::read_conversation_jsonl(&path)
-                .unwrap()
-                .messages
-        })
+        .flat_map(|path| ir_format::read_conversation_jsonl(&path).unwrap().messages)
         .flat_map(|message| message.attachments)
         .collect();
     let picture = attachments
         .iter()
-        .find(|att| att.mime_type.as_deref() == Some("image/jpeg"))
+        .find(|attachment| attachment.mime_type.as_deref() == Some("image/jpeg"))
         .expect("the picture is an attachment");
     assert_eq!(picture.path, None, "nothing was copied");
     assert_eq!(picture.size_bytes, Some(22));
@@ -421,17 +416,16 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
     convert_export(ConvertExportArgs {
         inputs: &[input.as_path()],
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        log: None,
-        issues: None,
-        resume: false,
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
     let dates = jsonl_backup_dates(&output);
@@ -439,7 +433,7 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
     assert!(
         dates
             .iter()
-            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+            .all(|d| *d == vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]),
         "{dates:?}"
     );
 }

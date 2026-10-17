@@ -1,7 +1,7 @@
 //! Builds the Demo Account's phone numbers, all from ranges set aside for fiction.
 //!
 //! The Demo Account ships with every Message Crate, so a number that could be
-//! dialled might belong to a real person, who would then appear beside made-up
+//! dialed might belong to a real person, who would then appear beside made-up
 //! names and messages. Two ranges are reserved so that cannot happen:
 //!
 //! - North American numbers 555-0100 to 555-0199, in every area code (NANPA).
@@ -14,7 +14,7 @@ use rand::Rng;
 use rand::RngExt;
 use rand::seq::IndexedRandom;
 
-/// Demo owner phone number. Matches the value in `crates/server/demo-seed/config/seed.toml`.
+/// Demo owner phone number. Written into `config/seed.toml` by [`crate::bundle::write_seed_toml`].
 pub const OWNER_PHONE: &str = "+14155550100";
 
 /// North American area codes. Each holds the 100 fictional numbers
@@ -88,7 +88,7 @@ pub fn generate_phone(
 /// The phone-number chat identifier of the group at `index`: a different
 /// number for each index, or `None` once the 400 numbers of [`GROUP_AREA`]
 /// are used up.
-pub fn group_chat_phone(index: usize) -> Option<String> {
+pub fn group_conversation_phone(index: usize) -> Option<String> {
     let area = *GROUP_AREA.get(index / US_LINES.len())?;
     let line = US_LINES.start + u16::try_from(index % US_LINES.len()).ok()?;
     Some(format_us(area, line))
@@ -97,7 +97,7 @@ pub fn group_chat_phone(index: usize) -> Option<String> {
 /// Build a North American number in the 555-0100 to 555-0199 range.
 ///
 /// It draws an exchange and four digits, as the generator did when its
-/// numbers could be dialled, so the draws after it stay where they were. The
+/// numbers could be dialed, so the draws after it stay where they were. The
 /// exchange is not used, and the last two digits pick the line.
 fn us_phone(rng: &mut impl Rng) -> String {
     let area = *US_AREA.choose(rng).unwrap_or(&415);
@@ -117,7 +117,7 @@ const OLD_INTL_LENGTHS: [usize; 7] = [10, 9, 9, 10, 10, 10, 10];
 /// Build a UK mobile number in Ofcom's drama range.
 ///
 /// It draws a country and that country's number of digits, as the generator
-/// did when its numbers could be dialled, so the draws after it stay where
+/// did when its numbers could be dialed, so the draws after it stay where
 /// they were. The last three digits pick the line.
 fn uk_phone(rng: &mut impl Rng) -> String {
     let national_len = *OLD_INTL_LENGTHS.choose(rng).unwrap_or(&10);
@@ -169,14 +169,14 @@ mod tests {
     }
 
     #[test]
-    fn group_chat_phones_are_distinct_and_never_a_number_a_person_can_draw() {
+    fn group_conversation_phones_are_distinct_and_never_a_number_a_person_can_draw() {
         let people: HashSet<String> = all_fictional_phones().collect();
         let groups: Vec<String> = (0..400)
-            .map(|index| group_chat_phone(index).expect("400 group numbers"))
+            .map(|index| group_conversation_phone(index).expect("400 group numbers"))
             .collect();
         let distinct: HashSet<&String> = groups.iter().collect();
         assert_eq!(distinct.len(), 400);
         assert!(groups.iter().all(|phone| !people.contains(phone)));
-        assert_eq!(group_chat_phone(400), None);
+        assert_eq!(group_conversation_phone(400), None);
     }
 }

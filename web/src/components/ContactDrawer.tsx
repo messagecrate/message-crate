@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useUpdateContact } from "../hooks/useUpdateContact";
 import { ApiError } from "../lib/api";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { type ContactDetail, useContactDetail, useUpdateContact } from "../lib/contactDetail";
+import { errorLine } from "../lib/apiErrorMessage";
+import type { ContactBrowseScope, ContactBrowseTarget } from "../lib/contactBrowseQuery";
+import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
-import { useTrashContact } from "../lib/trash";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import { UNKNOWN_GROUP_LABEL } from "../lib/unknownGroup";
 import { Z_CONTACT_DRAWER } from "../lib/zLayers";
 import Button from "./Button";
 import ContactLabel from "./ContactLabel";
 import { ContactDrawerHandles } from "./contactDrawer/ContactDrawerHandles";
 import {
-  type ContactBrowseKind,
   type ContactPreview,
   contactConversations,
   previewHandleStubRows,
@@ -19,6 +19,8 @@ import {
 import { PencilIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import { RIGHT_PANE_MIN_WIDTH } from "./RightPane";
+import { useContactDetail } from "./useContactDetail";
+import { useTrashContact } from "./useTrashContact";
 
 /**
  * Overlay mode only: the list column's right edge, which `overlayDrawerLeft`
@@ -120,11 +122,7 @@ type ContactDrawerProps = {
   contactId: string | null;
   preview?: ContactPreview | null;
   onClose: () => void;
-  onBrowseConversations?: (args: {
-    contactId: string;
-    kind: ContactBrowseKind;
-    handle?: string;
-  }) => void;
+  onBrowseConversations?: (target: ContactBrowseTarget) => void;
   /** `docked` = flex sibling (contacts page). `overlay` = fixed panel (e.g. from messages). */
   variant?: "docked" | "overlay";
 };
@@ -259,9 +257,9 @@ function OneContactDrawer({
   const displayGroups =
     storedGroups && isUnknown ? [UNKNOWN_GROUP_LABEL, ...storedGroups] : storedGroups;
 
-  const browse = (args: { kind: ContactBrowseKind; handle?: string }) => {
+  const browse = (scope: ContactBrowseScope) => {
     if (!onBrowseConversations || !contactId) return;
-    onBrowseConversations({ contactId, kind: args.kind, handle: args.handle });
+    onBrowseConversations({ ...scope, contactId });
   };
 
   // The contact just left the list this drawer was opened from, so close it
@@ -283,7 +281,7 @@ function OneContactDrawer({
       setEditingName(false);
     } catch (err) {
       savingNameRef.current = false;
-      setNameError(apiErrorMessage(err, "Could not save the name"));
+      setNameError(errorLine(err, "Could not save the name"));
     }
   };
 
@@ -378,7 +376,7 @@ function OneContactDrawer({
                 disabled={!detailMatches}
                 onClick={() => setEditingName(true)}
               >
-                <PencilIcon />
+                <PencilIcon className="shrink-0" />
               </Button>
             </div>
           )
@@ -387,7 +385,7 @@ function OneContactDrawer({
           <div>
             {trashContact.error && (
               <div className="mb-3 rounded border border-danger-soft-border bg-danger-soft-bg px-3 py-2 text-[0.75rem] text-danger">
-                {apiErrorMessage(trashContact.error, "Could not move this contact to trash.")}
+                {errorLine(trashContact.error, "Could not move this contact to trash.")}
               </div>
             )}
             <div className="mb-1.5">
@@ -430,7 +428,7 @@ function OneContactDrawer({
             <PlainButton
               aria-label="Close"
               onPress={onClose}
-              className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRing}`}
+              className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRingClass}`}
             >
               ×
             </PlainButton>
@@ -467,7 +465,7 @@ function ContactLoadFailed({
         <PlainButton
           aria-label="Close"
           onPress={onClose}
-          className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRing}`}
+          className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRingClass}`}
         >
           ×
         </PlainButton>
@@ -481,7 +479,7 @@ function ContactLoadFailed({
         ) : (
           <>
             <p className="m-0 font-semibold">This contact could not be loaded.</p>
-            <p className="m-0 mt-1">{apiErrorMessage(error, "The server did not answer.")}</p>
+            <p className="m-0 mt-1">{errorLine(error, "The server did not answer.")}</p>
           </>
         )}
       </div>

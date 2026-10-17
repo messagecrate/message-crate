@@ -129,25 +129,10 @@ pub(crate) fn referenced_attachment_indices(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::attachment;
     use imessage_database::tables::messages::models::AttachmentMeta;
 
-    fn stub_attachment(guid: Option<&str>) -> Attachment {
-        Attachment {
-            rowid: 0,
-            guid: guid.map(str::to_string),
-            filename: None,
-            uti: None,
-            mime_type: None,
-            transfer_name: None,
-            total_bytes: 0,
-            is_sticker: false,
-            hide_attachment: 0,
-            emoji_description: None,
-            copied_path: None,
-        }
-    }
-
-    fn att_range(guid: Option<&str>) -> AttributedRange {
+    fn attachment_range(guid: Option<&str>) -> AttributedRange {
         AttributedRange::attachment(
             0,
             1,
@@ -161,18 +146,18 @@ mod tests {
     #[test]
     fn positional_skips_guid_claimed_indices() {
         let attachments = vec![
-            stub_attachment(Some("guid-a")),
-            stub_attachment(Some("guid-b")),
-            stub_attachment(None),
+            attachment(Some("guid-a")),
+            attachment(Some("guid-b")),
+            attachment(None),
         ];
         let mut resolver = AttachmentResolver::new(&attachments);
         // First body range points at attachment 0 by GUID.
-        assert_eq!(resolver.resolve(&att_range(Some("guid-a"))), 0);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-a"))), 0);
         // Second range has no usable GUID — must take the next free slot (2),
         // not reuse 0.
-        assert_eq!(resolver.resolve(&att_range(None)), 2);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 2);
         // Third range resolves the remaining GUID attachment.
-        assert_eq!(resolver.resolve(&att_range(Some("guid-b"))), 1);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-b"))), 1);
     }
 
     /// With every GUID-less row taken, a range with no GUID falls back to
@@ -181,17 +166,17 @@ mod tests {
     #[test]
     fn positional_takes_the_next_unclaimed_row_when_every_row_has_a_guid() {
         let attachments = vec![
-            stub_attachment(Some("guid-a")),
-            stub_attachment(Some("guid-b")),
-            stub_attachment(Some("guid-c")),
+            attachment(Some("guid-a")),
+            attachment(Some("guid-b")),
+            attachment(Some("guid-c")),
         ];
         let mut resolver = AttachmentResolver::new(&attachments);
-        assert_eq!(resolver.resolve(&att_range(Some("guid-a"))), 0);
-        assert_eq!(resolver.resolve(&att_range(None)), 1);
-        assert_eq!(resolver.resolve(&att_range(Some("guid-c"))), 2);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-a"))), 0);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 1);
+        assert_eq!(resolver.resolve(&attachment_range(Some("guid-c"))), 2);
         // Nothing is left, so the index runs past the rows.
-        assert_eq!(resolver.resolve(&att_range(None)), 3);
-        assert_eq!(resolver.resolve(&att_range(None)), 3);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 3);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 3);
     }
 
     /// A row with a GUID that no range names is still the message's, so a
@@ -199,10 +184,10 @@ mod tests {
     /// when it comes before them.
     #[test]
     fn positional_takes_an_earlier_unclaimed_guid_row_before_running_out() {
-        let attachments = vec![stub_attachment(Some("guid-a")), stub_attachment(None)];
+        let attachments = vec![attachment(Some("guid-a")), attachment(None)];
         let mut resolver = AttachmentResolver::new(&attachments);
-        assert_eq!(resolver.resolve(&att_range(None)), 1);
-        assert_eq!(resolver.resolve(&att_range(None)), 0);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 1);
+        assert_eq!(resolver.resolve(&attachment_range(None)), 0);
     }
 
     /// A message body whose ranges refer to one attachment by GUID and one
@@ -213,11 +198,11 @@ mod tests {
         let fixture = crate::test_support::FixtureDb::write();
         let session = fixture.session();
         let mut message = crate::test_support::FixtureDb::messages(&session).remove(1);
-        let attachments = vec![stub_attachment(None), stub_attachment(Some("guid-b"))];
+        let attachments = vec![attachment(None), attachment(Some("guid-b"))];
 
         message.components = vec![BubbleComponent::Run(vec![
-            att_range(Some("guid-b")),
-            att_range(None),
+            attachment_range(Some("guid-b")),
+            attachment_range(None),
         ])];
         assert_eq!(
             referenced_attachment_indices(&message, &attachments),
@@ -225,9 +210,9 @@ mod tests {
         );
 
         message.components = vec![BubbleComponent::Run(vec![
-            att_range(None),
-            att_range(None),
-            att_range(None),
+            attachment_range(None),
+            attachment_range(None),
+            attachment_range(None),
         ])];
         assert_eq!(
             referenced_attachment_indices(&message, &attachments),

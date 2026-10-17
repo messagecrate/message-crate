@@ -1,3 +1,7 @@
+import { errorText } from "./apiErrorMessage";
+import { invokePathStat, type PathStat } from "./desktop/fs";
+import { invokeDeleteRunDir } from "./desktop/runDir";
+import { type DesktopOs, describeUnreadable, desktopOs, unknownPathMessage } from "./pathChecks";
 import {
   discardImport,
   listEveryImport,
@@ -5,10 +9,12 @@ import {
   setImportStage as setStage,
 } from "./serverApi";
 import type { components } from "./serverApi.types";
-import { invokePathStat, type PathStat } from "./tauri";
 
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
+
+/** How an Import Run stands: the server's `ImportStatus`. */
+export type ImportStatus = components["schemas"]["ImportStatus"];
 
 /** Identity of the backup an Import Run was started from. */
 export type SourceFingerprint = {
@@ -52,24 +58,74 @@ export async function getActiveImportRun(signal?: AbortSignal): Promise<ActiveIm
   };
 }
 
+/** An Import Run's directory Message Crate left in place, and why. */
+export type DirectoryReason = { path: string; reason: string };
+
+/**
+ * The directories of the account's Import Runs on this computer: `found`,
+ * the ones to delete with the account, and `unreadable`, the ones the
+ * operating system would not let Message Crate read. Those may be here with
+ * the account's data, or the run may have been on another computer. Message
+ * Crate cannot tell, and cannot delete them either, so they are named with
+ * the system's reason once the account is deleted (#2651).
+ */
+export type AccountRunDirectories = {
+  found: string[];
+  unreadable: DirectoryReason[];
+};
+
 /**
  * The directories of the account's Import Runs that are on this
  * computer, for deleting with the account (#1491).
  *
  * The server keeps where each run staged its files, but the directories are on
  * whichever computer ran it, so each one is looked for here and only the
- * directories found are named. Desktop app only: it asks the app for each path.
+ * directories found are named. A directory the operating system would not
+ * describe is not taken for missing: it comes back in `unreadable`.
+ * Desktop app only: it asks the app for each path.
  */
-export async function accountRunDirectories(signal?: AbortSignal): Promise<string[]> {
+export async function accountRunDirectories(signal?: AbortSignal): Promise<AccountRunDirectories> {
   const runs = await listEveryImport({ signal });
   const paths = [...new Set(runs.flatMap((run) => (run.run_dir ? [run.run_dir] : [])))];
-  const found = await Promise.all(
-    paths.map(async (path) => {
-      const stat = await invokePathStat(path);
-      return stat.exists && stat.isDirectory ? path : null;
-    }),
+  const stats = await Promise.all(
+    paths.map(async (path) => ({ path, stat: await invokePathStat(path) })),
   );
-  return found.filter((path): path is string => path !== null);
+  const directories: AccountRunDirectories = { found: [], unreadable: [] };
+  // The operating system is the same for every directory, so it is asked once.
+  let osAnswer: Promise<DesktopOs | null> | undefined;
+  const os = () => {
+    osAnswer ??= desktopOs();
+    return osAnswer;
+  };
+  for (const { path, stat } of stats) {
+    if (stat.unreadable) {
+      directories.unreadable.push({
+        path,
+        reason: unknownPathMessage(await describeUnreadable(stat.unreadable, os), "it"),
+      });
+    } else if (stat.exists && stat.isDirectory) {
+      directories.found.push(path);
+    }
+  }
+  return directories;
+}
+
+/**
+ * Delete the directories of a deleted account's Import Runs, one at a time,
+ * and return the ones that could not be deleted. Desktop app only.
+ */
+export async function deleteRunDirectories(
+  directories: readonly string[],
+): Promise<DirectoryReason[]> {
+  const undeleted: DirectoryReason[] = [];
+  for (const path of directories) {
+    try {
+      await invokeDeleteRunDir({ run_dir: path });
+    } catch (e) {
+      undeleted.push({ path, reason: errorText(e) });
+    }
+  }
+  return undeleted;
 }
 
 /**
@@ -89,7 +145,7 @@ export async function setImportStage(
 
 /**
  * Close an Import Run the user gave up on, freeing the account's slot. The run is
- * recorded as cancelled with `issues`, the Import Errors it recorded before,
+ * recorded as canceled with `issues`, the Import Errors it recorded before,
  * and `notes`.
  */
 export async function discardImportRun(
@@ -108,8 +164,13 @@ export async function discardImportRun(
  * describe the directory entry rather than its contents, and neither moves
  * when a file inside it grows. `checkSourceFingerprint` reads this
  * fingerprint back on resume, so a change inside a directory goes unseen there.
+ *
+ * Null for a backup the operating system would not describe: its size and
+ * modified time are unknown, and recording zeros would read as a changed
+ * backup once the app may read it.
  */
-export function buildSourceFingerprint(path: string, stat: PathStat): SourceFingerprint {
+export function buildSourceFingerprint(path: string, stat: PathStat): SourceFingerprint | null {
+  if (stat.unreadable) return null;
   return {
     path,
     size_bytes: stat.sizeBytes,

@@ -4,15 +4,15 @@
 //! functions here only parse, validate, and print; the work lives in the
 //! module each one calls (`import_cli`, `dedupe`, `reset_demo`, and so on).
 //! Every command that reads the database opens it the same way: the config with
-//! `--db` applied, through [`OpenDb`].
+//! `--db` applied, through `OpenDb`.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::imports_api::ImportMode;
 use anyhow::{Result, bail};
+use api_types::ImportMode;
 use clap::{Args, Command, CommandFactory, Parser, Subcommand};
 
 use crate::config::{Config, ServeFlags, validate_source_id};
@@ -33,7 +33,7 @@ pub struct Cli {
 /// One subcommand per CLI operation: import, serve, and maintenance.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+    /// Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
     Import(ImportArgs),
 
     /// Work on an account's Import Runs (`discard` clears a stranded one)
@@ -71,37 +71,39 @@ pub enum Commands {
     ProcessAssets(ProcessAssetsArgs),
 
     /// Claim an unclaimed Message Crate by creating its owner. Refuses one
-    /// that already has an owner.
+    /// that already has an owner. The password is read from standard input:
+    /// typed without echo at a terminal, or else the first line.
     CreateOwner(CreateOwnerArgs),
 
     /// Set a new password for the owner, ending their sessions. Refuses a
-    /// Message Crate that has no owner yet.
+    /// Message Crate that has no owner yet. The password is read from
+    /// standard input: typed without echo at a terminal, or else the first
+    /// line.
     ResetOwnerPassword(ResetOwnerPasswordArgs),
+
+    /// Ask `/health` of the `serve` this container runs, at the address it
+    /// listens on, and exit 0 when it answers ok, 1 when not. The release
+    /// image's Docker health check. Linux only: it reads `/proc`
+    Healthcheck,
 }
 
-/// Options for `create-owner`.
+/// Options for `create-owner`. The password is read from standard input
+/// (`owner_cli::read_password`), never taken as an argument.
 #[derive(Debug, Args)]
 pub struct CreateOwnerArgs {
     /// Login username for the owner
     #[arg(long)]
     pub username: String,
 
-    /// Password for the owner; must satisfy the server's password policy
-    #[arg(long)]
-    pub password: String,
-
     /// Path to config.toml
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
 }
 
-/// Options for `reset-owner-password`.
+/// Options for `reset-owner-password`. The new password is read from
+/// standard input (`owner_cli::read_password`).
 #[derive(Debug, Args)]
 pub struct ResetOwnerPasswordArgs {
-    /// New password for the owner; must satisfy the password policy
-    #[arg(long)]
-    pub password: String,
-
     /// Path to config.toml
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
@@ -259,7 +261,7 @@ pub struct ServeArgs {
     /// The desktop app passes its own id, so a server it started does not
     /// outlive a crash of the app. Without it the server runs until it is
     /// stopped
-    #[arg(long = message_crate_serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
+    #[arg(long = serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
     pub exit_with_parent: Option<u32>,
 }
 
@@ -331,6 +333,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::ProcessAssets(args) => run_process_assets(args).await,
         Commands::CreateOwner(args) => run_create_owner(args).await,
         Commands::ResetOwnerPassword(args) => run_reset_owner_password(args).await,
+        Commands::Healthcheck => run_healthcheck().await,
     }
 }
 
@@ -339,36 +342,59 @@ pub async fn run(cli: Cli) -> Result<()> {
 /// [`OPERATION_LOCK_HELD_EXIT_CODE`] when another server, or reset-demo, holds
 /// the database `serve` was asked to open; 1 for every other failure.
 ///
-/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
 #[must_use]
 pub fn exit_code(error: &anyhow::Error) -> u8 {
     if error
         .downcast_ref::<crate::operation_lock::OperationLockHeld>()
         .is_some()
     {
-        message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
+        serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
     } else {
         1
     }
 }
 
-/// Claim this Message Crate and report the owner's username.
+/// Claim this Message Crate with the password from standard input.
 async fn run_create_owner(args: CreateOwnerArgs) -> Result<()> {
+    let password = crate::owner_cli::read_password("Owner password: ")?;
+    create_owner_with(args, &password).await
+}
+
+/// Claim this Message Crate and report the owner's username.
+async fn create_owner_with(args: CreateOwnerArgs, password: &str) -> Result<()> {
     let cfg = Config::load(&args.config)?;
     let opened = OpenDb::open(cfg).await?;
-    let username = crate::owner_cli::create_owner(&opened, &args.username, &args.password).await?;
+    let username = crate::owner_cli::create_owner(&opened, &args.username, password).await?;
     opened.close().await;
     println!("Message Crate claimed. Log in as {username}.");
     Ok(())
 }
 
-/// Set the owner's password and report the username to log in with.
+/// Set the owner's password from standard input.
 async fn run_reset_owner_password(args: ResetOwnerPasswordArgs) -> Result<()> {
+    let password = crate::owner_cli::read_password("New Owner password: ")?;
+    reset_owner_password_with(args, &password).await
+}
+
+/// Set the owner's password and report the username to log in with.
+async fn reset_owner_password_with(args: ResetOwnerPasswordArgs, password: &str) -> Result<()> {
     let cfg = Config::load(&args.config)?;
     let opened = OpenDb::open(cfg).await?;
-    let username = crate::owner_cli::reset_owner_password(&opened, &args.password).await?;
+    let username = crate::owner_cli::reset_owner_password(&opened, password).await?;
     opened.close().await;
     println!("Owner password set. Log in as {username}.");
+    Ok(())
+}
+
+/// Print what the health check found, and fail with it when the server is
+/// not healthy, so the exit status is 1.
+async fn run_healthcheck() -> Result<()> {
+    let outcome = crate::healthcheck::check().await;
+    if !outcome.healthy {
+        bail!("{}", outcome.message);
+    }
+    println!("{}", outcome.message);
     Ok(())
 }
 
@@ -393,7 +419,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
             args.media
         )
     })?;
-    let opened = OpenDb::open(cfg).await?;
+    let opened = OpenDb::open_to_write_data_dir(cfg).await?;
     let account = opened.account_id(&args.account).await?;
 
     let counts = crate::import_cli::run(
@@ -429,10 +455,19 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let discarded = crate::db::imports::discard_running_import(&mut conn, account).await?;
+    let discarded = crate::imports_api::pipeline::discard_running_import_and_dedupe(
+        &mut conn,
+        account,
+        chrono::Utc::now(),
+        crate::progress::Progress::Print,
+    )
+    .await?;
     drop(conn);
     if discarded.is_some() {
-        crate::asset_store::sweep_after_run(&opened.db, &opened.cfg.paths, account).await;
+        // Only the unreferenced files: `.incoming/` is left to `serve`,
+        // which may be running and is the only one that knows which uploads
+        // its requests are using (#2652).
+        crate::asset_store::sweep_unreferenced_logged(&opened.db, &opened.cfg.paths, account).await;
     }
     opened.close().await;
     print!(
@@ -462,7 +497,7 @@ fn format_discarded_import(
 }
 
 /// The counts from one import stage, one line each, ready to print.
-fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
+fn format_import_counts(import: &crate::imports_api::pipeline::ImportCounts) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "  files:         {}", import.files);
     let _ = writeln!(out, "  conversations: {}", import.conversations);
@@ -480,7 +515,7 @@ fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     let _ = writeln!(out, "  tapbacks:      {}", import.tapbacks);
     let _ = writeln!(
         out,
-        "  media files stored:  {} (unique blobs under assets/)",
+        "  media files stored:  {} (Assets new to assets/)",
         import.assets_copied
     );
     let _ = writeln!(
@@ -496,7 +531,7 @@ fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     if import.phones_needing_review > 0 {
         let _ = writeln!(
             out,
-            "  phones needing review: {} (ambiguous numbers — fix them in Message Crate)",
+            "  phones needing review: {} (ambiguous numbers to fix in Message Crate)",
             import.phones_needing_review
         );
     }
@@ -531,7 +566,7 @@ async fn run_dedupe(args: DedupeArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let priority = crate::dedupe::source_priority_from_db(&mut conn, account).await?;
+    let priority = crate::db::dedupe::sources_in_import_order(&mut conn, account).await?;
 
     println!("Cross-source dedupe on {}", opened.location().display());
     println!("  config:       {}", args.config.display());
@@ -585,7 +620,7 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     println!();
     println!("Media files on disk (assets/)");
     println!(
-        "  unique files stored:   {} (content-addressed blobs)",
+        "  unique files stored:   {} (Assets, each named by its content hash)",
         stats.import.assets_copied
     );
     println!(
@@ -603,15 +638,10 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     let rows = [
         (
             "Previews made",
-            stats.process_assets.derived,
+            stats.process_assets.previews,
             "JPEG/MP4/MP3 copies of originals a browser may not show",
         ),
         ("Thumbnails made", stats.process_assets.thumbnails, ""),
-        (
-            "incomplete originals removed",
-            stats.process_assets.removed,
-            "left by a transfer that never finished",
-        ),
         (
             "damaged Previews and Thumbnails dropped",
             stats.process_assets.dropped,
@@ -633,14 +663,14 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
             "originals whose Preview or Thumbnail could not be made",
         ),
         (
-            "not removed",
-            stats.process_assets.not_removed,
-            "incomplete originals that could not be removed",
-        ),
-        (
             "not dropped",
             stats.process_assets.not_dropped,
             "damaged Previews and Thumbnails that could not be dropped",
+        ),
+        (
+            "not decided",
+            stats.process_assets.not_decided,
+            "originals whose shown-as-is decision could not be recorded",
         ),
     ];
     for (label, count, what) in rows {
@@ -676,7 +706,7 @@ async fn run_serve(args: ServeArgs) -> Result<()> {
     let exit_with_parent = args.exit_with_parent;
     let cfg = serve_config(args)?;
     let _ = cfg.require_server()?;
-    crate::server::run(cfg, exit_with_parent).await
+    crate::startup::run(cfg, exit_with_parent).await
 }
 
 /// The config `serve` runs on: the directory `--data-dir` names, or else the
@@ -718,20 +748,21 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// # Errors
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
-/// any original could not be made, an incomplete original could not be
-/// removed, or a damaged version could not be dropped, so a cron job or
-/// script that runs the command sees a non-zero exit status.
+/// any original could not be made, a damaged version could not be dropped,
+/// or an original's shown-as-is decision could not be recorded, so a cron
+/// job or script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.
 async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
-    let opened = OpenDb::open(cfg).await?;
+    let tools = cfg.media_tools();
+    let opened = OpenDb::open_to_write_data_dir(cfg).await?;
     let stop = Arc::new(AtomicBool::new(false));
-    let stopper = tokio::spawn({
+    let stopper = crate::request_id::spawn_in_current_span({
         let stop = Arc::clone(&stop);
         async move {
-            crate::server::stop_requested().await;
+            crate::startup::stop_requested().await;
             eprintln!(
                 "process-assets is stopping. The Preview or Thumbnail being made is stopped and its part-made file removed"
             );
@@ -739,12 +770,13 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             // The handlers stay installed, so without this a second Ctrl-C
             // would do nothing. It ends the command at once, with 130, the
             // status a shell gives a command Ctrl-C ended (128 + SIGINT).
-            crate::server::stop_requested().await;
+            crate::startup::stop_requested().await;
             std::process::exit(130);
         }
     });
     let stats = crate::process_assets::run(
         &opened,
+        &tools,
         &crate::process_assets::ProcessAssetsOptions {
             force: args.force,
             dry_run: args.dry_run,
@@ -754,6 +786,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             account: None,
         },
         &stop,
+        crate::progress::Progress::Print,
     )
     .await;
     stopper.abort();

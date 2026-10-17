@@ -9,7 +9,7 @@ import { useManagedApiTokens } from "./useApiTokens";
  * owner never sees any part of a token's secret.
  */
 export function ManagedApiTokensSection({ accountId }: { accountId: number }) {
-  const { items, loadError, busy, actionError, revokeTarget, setRevokeTarget, revoke } =
+  const { tokens, loadError, busy, actionError, revokeTarget, setRevokeTarget, revoke } =
     useManagedApiTokens(accountId);
 
   return (
@@ -23,7 +23,7 @@ export function ManagedApiTokensSection({ accountId }: { accountId: number }) {
         </div>
       )}
 
-      <ApiTokensTable items={items} busy={busy} composing={false} onRevoke={setRevokeTarget} />
+      <ApiTokensTable tokens={tokens} busy={busy} composing={false} onRevoke={setRevokeTarget} />
 
       <p className="mt-3 text-[0.75rem] leading-relaxed text-muted">
         The account's programs use these API Tokens to import and export its messages. Revoking a

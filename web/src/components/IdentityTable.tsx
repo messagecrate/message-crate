@@ -1,14 +1,15 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
+import { useOrphanedColumn } from "../hooks/useOrphanedColumn";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatOfferedServiceLabel } from "../lib/offeredService";
-import { useTimeZone } from "../lib/timeZone";
-import { focusRing } from "../lib/uiStyles";
+import { countOf } from "../lib/plural";
+import { focusRingClass } from "../lib/uiStyles";
 import Button from "./Button";
 import { TrashIcon } from "./icons";
 import { type IdentityRow, identityTotals, sortIdentityRows } from "./identityRows";
 import PlainButton from "./PlainButton";
-import { useOrphanedColumn } from "./useOrphanedColumn";
 
 export type { IdentityRow } from "./identityRows";
 
@@ -20,7 +21,7 @@ const numberCellClass = `${cellClass} whitespace-nowrap text-right tabular-nums`
 const headerClass =
   "px-2 py-1.5 text-[0.688rem] font-semibold uppercase tracking-[0.04em] text-muted outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset cursor-pointer hover:text-accent data-hovered:text-accent whitespace-nowrap";
 const mutedClass = "text-muted";
-const linkClass = `border-none bg-transparent p-0 text-[0.813rem] font-semibold leading-snug text-accent underline decoration-accent/80 underline-offset-2 cursor-pointer hover:decoration-accent focus-visible:rounded-sm ${focusRing}`;
+const linkClass = `border-none bg-transparent p-0 text-[0.813rem] font-semibold leading-snug text-accent underline decoration-accent/80 underline-offset-2 cursor-pointer hover:decoration-accent focus-visible:rounded-sm ${focusRingClass}`;
 
 function Dash() {
   return <span className={mutedClass}>—</span>;
@@ -101,7 +102,7 @@ export default function IdentityTable({
   loading = false,
   busy = false,
   totalConversations,
-  emptyText = "No identities yet.",
+  emptyText = "No identities yet",
   ariaLabel = "Identities",
   onRemove,
   onBrowse,
@@ -157,14 +158,12 @@ export default function IdentityTable({
         <Count
           value={row.conversations}
           loading={loading}
-          browseLabel={`Open ${row.conversations.toLocaleString()} conversation${
-            row.conversations === 1 ? "" : "s"
-          }`}
+          browseLabel={`Open ${countOf(row.conversations, "conversation")}`}
           onBrowse={browse}
         />
       </Cell>
       <Cell className={numberCellClass}>
-        <Count value={row.direct_messages} loading={loading} />
+        <Count value={row.one_to_one_messages} loading={loading} />
       </Cell>
       <Cell className={numberCellClass}>
         <Count value={row.group_messages} loading={loading} />
@@ -204,10 +203,10 @@ export default function IdentityTable({
         <Column id="conversations" allowsSorting className={`${headerClass} text-right`}>
           {({ sortDirection }) => <Heading sortDirection={sortDirection}>Conversations</Heading>}
         </Column>
-        <Column id="direct_messages" allowsSorting className={`${headerClass} text-right`}>
+        <Column id="one_to_one_messages" allowsSorting className={`${headerClass} text-right`}>
           {({ sortDirection }) => (
             <Heading sortDirection={sortDirection}>
-              Direct <span className="block">messages</span>
+              One-to-one <span className="block">messages</span>
             </Heading>
           )}
         </Column>
@@ -276,7 +275,7 @@ export default function IdentityTable({
                   title="Remove identity"
                   onPress={() => onRemove(row)}
                 >
-                  <TrashIcon />
+                  <TrashIcon className="shrink-0" />
                 </Button>
               ) : null}
             </Cell>

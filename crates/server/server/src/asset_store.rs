@@ -5,10 +5,12 @@
 //! directories for all of the account's sources, so one file imported from two
 //! sources is stored once:
 //!
-//! - `<assets_dir>/<aa>/<sha256><ext>` is an original, named by its
-//!   SHA-256 and sharded by the fingerprint's first two characters.
+//! - `<assets_dir>/<aa>/<sha256>` is an original, named by its SHA-256 with
+//!   no extension and sharded by the fingerprint's first two characters.
 //! - `<assets_dir>/<aa>/.<sha256>.mime` is the MIME sidecar beside an
-//!   original whose name carries no type.
+//!   original, written when the store knows the original's MIME type,
+//!   from the export's claim or guessed from the source file's name, and
+//!   never rewritten once there.
 //! - `<assets_dir>/.incoming/` holds uploads in progress: `{sha256}-*.part`
 //!   files and multipart directories `{sha256}/{upload_id}/`.
 //! - `<assets_converted_dir>/<aa>/<sha256><ext>` is a Preview or a
@@ -58,7 +60,10 @@
 //!   run can belong to a missing account, so it needs no run check.
 //! - [`sweep_unreferenced`]: every unnamed Asset of an account, when a run
 //!   ends.
-//! - [`sweep_incoming`]: abandoned upload temps, by age.
+//! - [`sweep_incoming`]: abandoned uploads, the ones nothing was written to
+//!   for `[server] body_stall_secs`, when a run ends, when the server
+//!   starts, and when an upload start finds the account at its open-upload
+//!   limit.
 //! - [`sweep_shard_temps`]: temporary files a killed write left in the
 //!   shard directories, by age.
 //!
@@ -69,7 +74,7 @@ use std::collections::HashSet;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
 use sqlx::{SqliteConnection, SqlitePool};
@@ -248,6 +253,36 @@ pub(crate) fn join_under(dir: &Path, relative: &str) -> Option<PathBuf> {
     (safe && !relative.is_empty()).then(|| dir.join(rel))
 }
 
+/// The original `sha256`, as a log line names it: `Asset <sha256>`, the
+/// `describes` of [`join_stored`] for an original.
+pub(crate) fn describe_original(sha256: &str) -> String {
+    format!("Asset {sha256}")
+}
+
+/// [`join_under`] for a path read from the database, logging a path it
+/// refuses with the account and `describes`, which says as much as the
+/// caller knows of what the row stores (such as `Preview of <sha256>`), so
+/// the damaged row can be found. Serving a Preview or Thumbnail, removing
+/// a deleted attachment's files, the media pass's read of an original, and
+/// its check and removal of a Preview or Thumbnail go through it.
+pub(crate) fn join_stored(
+    dir: &Path,
+    assets_path: &str,
+    account_id: i64,
+    describes: &str,
+) -> Option<PathBuf> {
+    let path = join_under(dir, assets_path);
+    if path.is_none() {
+        tracing::warn!(
+            account_id,
+            assets_path,
+            describes,
+            "A stored path is not a plain relative path, so the server neither opens nor removes its file"
+        );
+    }
+    path
+}
+
 /// Remove one file. A file already gone is not an error, because removing it
 /// was the goal.
 ///
@@ -318,27 +353,26 @@ fn remove_each(account_id: i64, paths: &[PathBuf], mut removal: Option<&mut Remo
 /// MIME sidecar. A stored path that would leave its directory is logged and
 /// passed over.
 fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<PathBuf> {
-    let (dir, assets_path, sidecar) = match file {
+    let (dir, assets_path, sidecar, describes) = match file {
         OrphanedFile::Original {
             sha256,
             assets_path,
         } => {
             let dir = paths.assets_dir_for_account(account_id);
             let sidecar = stored_sidecar_path(&dir, sha256);
-            (dir, assets_path, sidecar)
+            (dir, assets_path, sidecar, describe_original(sha256))
         }
+        // One converted file can be the Preview and the Thumbnail of several
+        // originals, and goes only once no row names it, so no single
+        // original or version describes it.
         OrphanedFile::Derived { assets_path } => (
             paths.assets_converted_dir_for_account(account_id),
             assets_path,
             None,
+            "Preview or Thumbnail".to_string(),
         ),
     };
-    let Some(path) = join_under(&dir, assets_path) else {
-        tracing::warn!(
-            account_id,
-            assets_path,
-            "A stored attachment path is not a plain relative path, so its file is left alone"
-        );
+    let Some(path) = join_stored(&dir, assets_path, account_id, &describes) else {
         return Vec::new();
     };
     std::iter::once(path).chain(sidecar).collect()
@@ -368,7 +402,7 @@ pub(crate) async fn remove_all_attachment_files(
 /// Whether files of `account_id` may be taken out of its store now: its
 /// account row exists and it has no running Import Run. Call it with the
 /// write lock held (see the module notes).
-async fn may_take_out(conn: &mut SqliteConnection, account_id: i64) -> Result<bool, sqlx::Error> {
+async fn may_take_out(conn: &mut SqliteConnection, account_id: i64) -> anyhow::Result<bool> {
     Ok(account_exists(conn, account_id).await? && !has_running_import(conn, account_id).await?)
 }
 
@@ -415,13 +449,13 @@ async fn unless_import_running_then<F, D>(
 {
     let pool = pool.clone();
     let paths = paths.clone();
-    let task = tokio::spawn(async move {
+    let task = crate::request_id::spawn_in_current_span(async move {
         let mut conn = pool.acquire().await?;
         let mut tx = begin_write(&mut conn).await?;
         if !may_take_out(&mut tx, account_id).await? {
             return Ok(());
         }
-        let removal_dir = tokio::task::spawn_blocking(move || {
+        let removal_dir = crate::request_id::spawn_blocking_in_current_span(move || {
             let mut removal = RemovalDir::new(&paths, account_id);
             move_out(&mut removal);
             removal.into_dir()
@@ -431,9 +465,11 @@ async fn unless_import_running_then<F, D>(
         tx.commit().await?;
         drop(conn);
         if let Some(dir) = removal_dir {
-            tokio::task::spawn_blocking(move || delete(account_id, vec![dir]))
-                .await
-                .context("deleting removed files stopped")?;
+            crate::request_id::spawn_blocking_in_current_span(move || {
+                delete(account_id, vec![dir])
+            })
+            .await
+            .context("deleting removed files stopped")?;
         }
         anyhow::Ok(())
     });
@@ -455,7 +491,7 @@ async fn run_blocking_logged<F>(account_id: i64, work: F)
 where
     F: FnOnce() + Send + 'static,
 {
-    if let Err(error) = tokio::task::spawn_blocking(work).await {
+    if let Err(error) = crate::request_id::spawn_blocking_in_current_span(work).await {
         tracing::warn!(account_id, %error, "The task removing files did not finish");
     }
 }
@@ -491,9 +527,9 @@ pub(crate) fn remove_account_dir(paths: &PathsConfig, account_id: i64) -> io::Re
 /// between the two would remove it.
 ///
 /// A file is named when its fingerprint, the part of its name before the
-/// first dot, is the `sha256`, `derived_sha256` or `thumbnail_sha256` of an
+/// first dot, is the `sha256`, `preview_sha256` or `thumbnail_sha256` of an
 /// attachment of the account, or the name of a file an `assets_path`,
-/// `derived_assets_path` or `thumbnail_assets_path` points at. A name that is not a 64-hex fingerprint is not the server's,
+/// `preview_assets_path` or `thumbnail_assets_path` points at. A name that is not a 64-hex fingerprint is not the server's,
 /// and is left alone, as is `.incoming/`.
 ///
 /// # Errors
@@ -522,14 +558,16 @@ where
 {
     let pool = pool.clone();
     let paths = paths.clone();
-    tokio::spawn(async move {
+    crate::request_id::spawn_in_current_span(async move {
         let mut conn = pool.acquire().await?;
         let (removed, to_delete) = take_out_unnamed(&mut conn, paths, account_id).await?;
         drop(conn);
         if !to_delete.is_empty() {
-            tokio::task::spawn_blocking(move || delete(account_id, to_delete))
-                .await
-                .context("deleting swept files stopped")?;
+            crate::request_id::spawn_blocking_in_current_span(move || {
+                delete(account_id, to_delete)
+            })
+            .await
+            .context("deleting swept files stopped")?;
         }
         Ok(removed)
     })
@@ -555,7 +593,7 @@ async fn take_out_unnamed(
         return Ok((0, Vec::new()));
     }
     let named = named_fingerprints(&mut tx, account_id).await?;
-    let taken_out = tokio::task::spawn_blocking(move || {
+    let taken_out = crate::request_id::spawn_blocking_in_current_span(move || {
         let mut to_delete: Vec<PathBuf> = std::fs::read_dir(removing_dir(&paths, account_id))
             .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
             .unwrap_or_default();
@@ -583,15 +621,74 @@ async fn take_out_unnamed(
 }
 
 /// [`sweep_unreferenced`] once an Import Run of `account_id` has ended, so
-/// the files it was told about or uploaded and never named go. A failure is
+/// the files it was told about or uploaded and never named go, then
+/// [`sweep_incoming`] of the account, so do the uploads nothing was written
+/// to for `stall`, the server's `[server] body_stall_secs`. A failure is
 /// logged: the run's end is what the caller answers for.
-pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, account_id: i64) {
+pub(crate) async fn sweep_after_run(
+    pool: &SqlitePool,
+    paths: &PathsConfig,
+    account_id: i64,
+    stall: Duration,
+) {
+    sweep_unreferenced_logged(pool, paths, account_id).await;
+    sweep_incoming_of(paths, vec![account_id], stall).await;
+}
+
+/// [`sweep_unreferenced`] once an Import Run of `account_id` has ended or
+/// been discarded, logging a failure: the run's end is what the caller
+/// answers for.
+pub(crate) async fn sweep_unreferenced_logged(
+    pool: &SqlitePool,
+    paths: &PathsConfig,
+    account_id: i64,
+) {
     if let Err(error) = sweep_unreferenced(pool, paths, account_id).await {
         tracing::warn!(
             account_id,
             error = format!("{error:#}"),
             "Unreferenced files could not be swept after an Import Run"
         );
+    }
+}
+
+/// [`sweep_incoming`] of every account, once as `serve` starts, so the
+/// uploads a stopped server left go even when no Import Run ends after it.
+/// `stall` is the server's `[server] body_stall_secs`. A failure is
+/// logged: the server starts either way.
+pub(crate) async fn sweep_incoming_at_start(
+    pool: &SqlitePool,
+    paths: &PathsConfig,
+    stall: Duration,
+) {
+    let account_ids = match pool.acquire().await {
+        Ok(mut conn) => crate::db::account_profile::account_ids(&mut conn).await,
+        Err(error) => Err(error.into()),
+    };
+    match account_ids {
+        Ok(account_ids) => sweep_incoming_of(paths, account_ids, stall).await,
+        Err(error) => tracing::warn!(
+            error = format!("{error:#}"),
+            "Abandoned uploads could not be swept as the server started"
+        ),
+    }
+}
+
+/// [`sweep_incoming`] of the assets directory of each of `account_ids`, on
+/// the blocking pool, because it walks the directory.
+async fn sweep_incoming_of(paths: &PathsConfig, account_ids: Vec<i64>, stall: Duration) {
+    let dirs: Vec<PathBuf> = account_ids
+        .into_iter()
+        .map(|account_id| paths.assets_dir_for_account(account_id))
+        .collect();
+    let swept = crate::request_id::spawn_blocking_in_current_span(move || {
+        for dir in &dirs {
+            sweep_incoming(dir, Abandonment::from_now(stall));
+        }
+    })
+    .await;
+    if let Err(error) = swept {
+        tracing::warn!(error = %error, "The sweep of abandoned uploads stopped");
     }
 }
 
@@ -604,7 +701,7 @@ pub(crate) const PREVIEW_GRACE_SECS: u64 = 60 * 60;
 async fn named_fingerprints(
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<HashSet<String>, sqlx::Error> {
+) -> anyhow::Result<HashSet<String>> {
     Ok(
         crate::db::attachment_versions::named_files(conn, account_id)
             .await?
@@ -621,10 +718,10 @@ async fn named_fingerprints(
 fn fingerprints(row: crate::db::attachment_versions::NamedFiles) -> impl Iterator<Item = String> {
     let paths = [
         row.assets_path,
-        row.derived_assets_path,
+        row.preview_assets_path,
         row.thumbnail_assets_path,
     ];
-    [row.sha256, row.derived_sha256, row.thumbnail_sha256]
+    [row.sha256, row.preview_sha256, row.thumbnail_sha256]
         .into_iter()
         .flatten()
         .chain(paths.into_iter().flatten().filter_map(|path| {
@@ -636,7 +733,8 @@ fn fingerprints(row: crate::db::attachment_versions::NamedFiles) -> impl Iterato
 }
 
 /// The 64-hex fingerprint a stored file's name starts with, lowercased:
-/// `<sha256><ext>` for a file, `.<sha256>.mime` for a sidecar. `None` for
+/// `<sha256>` for an original, which has no extension, `<sha256><ext>` for
+/// a Preview or a Thumbnail, `.<sha256>.mime` for a sidecar. `None` for
 /// any other name, such as a temporary file.
 pub(crate) fn fingerprint_of(name: &str) -> Option<String> {
     let stem = match name.strip_prefix('.') {
@@ -696,20 +794,59 @@ fn sweep_store_dir(
     removed
 }
 
-/// Age after which an upload temp under `.incoming/` counts as abandoned: a
-/// `{sha}-*.part` file or a multipart session directory `{sha}/{upload_id}/`.
-/// A live upload keeps writing its temp while a sweep runs, so only a temp
-/// left untouched this long is removed.
-pub(crate) const STALE_UPLOAD_SECS: u64 = 24 * 60 * 60;
+/// When an upload under `.incoming/` counts as abandoned: nothing was
+/// written to it for `stall` before `now`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Abandonment {
+    /// The time the sweep runs at.
+    pub(crate) now: SystemTime,
+    /// `[server] body_stall_secs`.
+    pub(crate) stall: Duration,
+}
 
-/// Remove abandoned `{sha}-*.part` temps and multipart session directories under
-/// `originals_dir/.incoming/`, and return how many it removed (or would
-/// remove, in a dry run).
+impl Abandonment {
+    /// Abandoned after `stall`, as the clock reads now.
+    pub(crate) fn from_now(stall: Duration) -> Self {
+        Self {
+            now: SystemTime::now(),
+            stall,
+        }
+    }
+
+    /// Whether nothing was written to `path` for the stall limit.
+    fn idle(self, path: &Path) -> io::Result<bool> {
+        modified_at_least(path, self.now, self.stall.as_secs())
+    }
+}
+
+/// Remove the abandoned uploads under `originals_dir/.incoming/`, and
+/// return how many it removed: each `{sha}-*.part` temp and each multipart
+/// upload's directory `{sha}/{upload_id}/` that nothing was written to for
+/// the stall limit ([`Abandonment`]), and that no request is using
+/// ([`crate::asset_uploads::unless_in_use`]).
+///
+/// `stall` is `[server] body_stall_secs`, the longest the server lets an
+/// upload's body go with no byte arriving. An upload's age is its
+/// manifest's, and neither a part nor a completion rewrites the manifest
+/// while it runs: a part streams into a temp file of its own and is
+/// recorded only once the whole of it has arrived, and a completion writes
+/// nothing to the manifest. So a request using an upload keeps it whatever
+/// its files say.
+/// Between two requests nothing holds it: nothing resumes an upload once
+/// its client stops, because the client keeps the upload id in memory only,
+/// and the desktop app sends each part as soon as the one before it is
+/// answered.
+///
+/// An abandoned upload's directory is first renamed to
+/// `.incoming/.removing-{id}/`, while no request can start using it, and
+/// deleted after: so the deletion, however long, holds nothing a request
+/// waits for. A `.removing-` directory a stopped sweep left is deleted by
+/// the next.
 ///
 /// The server writes and removes these files while the sweep runs, so a
 /// file that is gone by the time the sweep reaches it is passed over, and
 /// any other failure is logged and the sweep goes on.
-pub(crate) fn sweep_incoming(originals_dir: &Path, dry_run: bool) -> u64 {
+pub(crate) fn sweep_incoming(originals_dir: &Path, at: Abandonment) -> u64 {
     let incoming = originals_dir.join(".incoming");
     let entries = match std::fs::read_dir(&incoming) {
         Ok(entries) => entries,
@@ -728,18 +865,89 @@ pub(crate) fn sweep_incoming(originals_dir: &Path, dry_run: bool) -> u64 {
                 continue;
             }
         };
-        if path.is_file() && has_part_extension(&path) {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if name.starts_with(REMOVING_PREFIX) {
+            remove_set_aside(&path);
+        } else if path.is_file() && has_part_extension(&path) {
             parts.push(path);
-        } else if path.is_dir() {
+        } else if path.is_dir() && !name.starts_with('.') {
             sha_dirs.push(path);
         }
     }
-    let now = SystemTime::now();
-    let mut removed = remove_stale_files(&parts, now, STALE_UPLOAD_SECS, dry_run);
+    let mut removed = 0;
+    for part in &parts {
+        // Checked and removed while no request can start using it: one
+        // unlink, so nothing waits long for it.
+        if crate::asset_uploads::unless_in_use(part, || remove_abandoned_part(part, at))
+            == Some(true)
+        {
+            removed += 1;
+        }
+    }
     for sha_dir in &sha_dirs {
-        removed += remove_stale_sessions(sha_dir, now, dry_run);
+        removed += remove_stale_sessions(sha_dir, at);
     }
     removed
+}
+
+/// How the name of an abandoned upload's directory starts once the sweep has
+/// set it aside under `.incoming/` to delete it.
+const REMOVING_PREFIX: &str = ".removing-";
+
+/// Remove the `.part` temp `part` if it is abandoned at `at`, and say whether
+/// it did.
+fn remove_abandoned_part(part: &Path, at: Abandonment) -> bool {
+    match at.idle(part) {
+        Ok(true) => {}
+        Ok(false) => return false,
+        Err(err) => {
+            log_sweep_error("read", part, &err);
+            return false;
+        }
+    }
+    match remove_file(part) {
+        Ok(()) => true,
+        Err(err) => {
+            log_sweep_error("removed", part, &err);
+            false
+        }
+    }
+}
+
+/// Rename the upload directory `session` to a new `.removing-` name in
+/// `incoming` if it is abandoned at `at`, and return the new path. Once
+/// renamed, a request to the upload finds it gone, as after an abort.
+fn set_aside_if_abandoned(session: &Path, incoming: &Path, at: Abandonment) -> Option<PathBuf> {
+    match upload_session_is_stale(session, at) {
+        Ok(true) => {}
+        Ok(false) => return None,
+        Err(err) => {
+            log_sweep_error("read", session, &err);
+            return None;
+        }
+    }
+    let aside = incoming.join(format!(
+        "{REMOVING_PREFIX}{}",
+        crate::asset_uploads::new_upload_id()
+    ));
+    match std::fs::rename(session, &aside) {
+        Ok(()) => Some(aside),
+        Err(err) => {
+            log_sweep_error("set aside", session, &err);
+            None
+        }
+    }
+}
+
+/// Delete a directory the sweep set aside, and say whether it went.
+fn remove_set_aside(aside: &Path) -> bool {
+    match remove_tree(aside) {
+        Ok(()) => true,
+        Err(err) => {
+            log_sweep_error("removed", aside, &err);
+            false
+        }
+    }
 }
 
 /// Age after which a temporary file in a shard directory counts as left by a
@@ -845,10 +1053,13 @@ fn remove_stale_files(files: &[PathBuf], now: SystemTime, secs: u64, dry_run: bo
 }
 
 /// Remove each multipart session directory under `sha_dir`
-/// (`.incoming/{sha256}/{upload_id}/`) that is stale at `now`, then
-/// `sha_dir` itself once it is empty. Returns how many sessions it removed
-/// (or would remove, in a dry run).
-fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 {
+/// (`.incoming/{sha256}/{upload_id}/`) that is abandoned at `at` and that
+/// no request is using, then `sha_dir` itself once it is empty. Returns how
+/// many sessions it removed.
+fn remove_stale_sessions(sha_dir: &Path, at: Abandonment) -> u64 {
+    let Some(incoming) = sha_dir.parent() else {
+        return 0;
+    };
     let entries = match std::fs::read_dir(sha_dir) {
         Ok(entries) => entries,
         Err(err) => {
@@ -868,51 +1079,36 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
         if !session.is_dir() {
             continue;
         }
-        match upload_session_is_stale(&session, now) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(err) => {
-                log_sweep_error("read", &session, &err);
-                continue;
-            }
-        }
-        if dry_run {
-            println!(
-                "This dry run would remove the stale upload session {}",
-                session.display()
-            );
+        // Checked and set aside while no request can start using it, so a
+        // part that arrives then finds the upload gone. The rename is one
+        // step, and the deletion runs after, holding nothing.
+        let aside = crate::asset_uploads::unless_in_use(&session, || {
+            set_aside_if_abandoned(&session, incoming, at)
+        })
+        .flatten();
+        if aside.is_some_and(|aside| remove_set_aside(&aside)) {
             removed += 1;
-            continue;
-        }
-        match remove_tree(&session) {
-            Ok(()) => removed += 1,
-            Err(err) => log_sweep_error("removed", &session, &err),
         }
     }
     let is_empty = std::fs::read_dir(sha_dir).is_ok_and(|mut rest| rest.next().is_none());
     if is_empty {
-        if dry_run {
-            println!(
-                "This dry run would remove the empty directory {}",
-                sha_dir.display()
-            );
-        } else {
-            // A new upload for this fingerprint may have made a session in
-            // the meantime, and then the directory stays.
-            let _ = std::fs::remove_dir(sha_dir);
-        }
+        // A new upload for this fingerprint may have made a session in the
+        // meantime, and then the directory stays.
+        let _ = std::fs::remove_dir(sha_dir);
     }
     removed
 }
 
-/// True when a multipart upload session's manifest (or, failing that, its
-/// directory) is older than the abandoned-upload limit.
-fn upload_session_is_stale(session: &Path, now: SystemTime) -> io::Result<bool> {
+/// True when a multipart upload is abandoned at `at`. Every part written
+/// rewrites the manifest after the part, so the manifest's modified time is
+/// the upload's last write; an upload with no manifest yet goes by its
+/// directory's.
+fn upload_session_is_stale(session: &Path, at: Abandonment) -> io::Result<bool> {
     let manifest = session.join("manifest.json");
     if manifest.is_file() {
-        modified_at_least(&manifest, now, STALE_UPLOAD_SECS)
+        at.idle(&manifest)
     } else {
-        modified_at_least(session, now, STALE_UPLOAD_SECS)
+        at.idle(session)
     }
 }
 

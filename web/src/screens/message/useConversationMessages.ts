@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouteCache, useRouteInfiniteQuery, useRouteQuery } from "../../hooks/useRouteQuery";
 import { matchedVersionIndexes, withMatchedVersions } from "../../lib/earlierVersionMatch";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteInfiniteQuery, useRouteQuery } from "../../lib/routeQuery";
 import { quote } from "../../lib/searchQuery";
 import { listMessages } from "../../lib/serverApi";
 import { yearIn } from "../../lib/timeZone";
@@ -16,8 +16,6 @@ import {
   type WindowPageParam,
   type WindowStart,
 } from "./conversationWindow";
-
-export { PAGE_SIZE } from "./conversationWindow";
 
 /**
  * Calendar years covered by a conversation's first and last message instants,
@@ -51,7 +49,7 @@ export function conversationYears(
  * "Methods"). A search leaves the trash out unless asked, and a trashed
  * conversation can still be opened, so the query asks.
  */
-export function threadQueryFor(conversationId: number, date: string | null, term: string): string {
+function conversationQueryFor(conversationId: number, date: string | null, term: string): string {
   const parts = [`in:#${conversationId}`, "trashed:any"];
   if (date !== null) parts.push(`date:${date}`);
   const trimmed = term.trim();
@@ -60,7 +58,7 @@ export function threadQueryFor(conversationId: number, date: string | null, term
 }
 
 /**
- * Where the thread scrolls once the messages it needs are on screen: to the
+ * Where the conversation scrolls once the messages it needs are on screen: to the
  * newest message at the bottom, or to one message. `seq` counts the jumps, so
  * a second jump to the same place scrolls again.
  */
@@ -138,7 +136,7 @@ export function useConversationMessages(
   );
   const highlightId = highlight?.id ?? null;
   // A new search in the address drops or changes the versions the result was
-  // found by, for the same message, without opening the thread again.
+  // found by, for the same message, without opening the conversation again.
   const openKey = openMatched.join(",");
   const [seenOpenKey, setSeenOpenKey] = useState(openKey);
   if (openKey !== seenOpenKey) {
@@ -206,7 +204,7 @@ export function useConversationMessages(
   const jumpToYear = async (year: number) => {
     setJumpError(null);
     setHighlight(null);
-    const q = threadQueryFor(conversationId, `>=${year}`, "");
+    const q = conversationQueryFor(conversationId, `>=${year}`, "");
     try {
       const page = await cache.fetch(
         keys.conversations.find(conversationId, q, "date", 0, 1),
@@ -226,7 +224,7 @@ export function useConversationMessages(
   const [matchIndex, setMatchIndex] = useState(0);
 
   const finding = findOpen && findTerm.trim().length > 0;
-  const matchQuery = threadQueryFor(conversationId, null, findTerm);
+  const matchQuery = conversationQueryFor(conversationId, null, findTerm);
   const matchOffset = Math.floor(matchIndex / PAGE_SIZE) * PAGE_SIZE;
   const matches = useRouteQuery(
     keys.conversations.find(conversationId, matchQuery, "-date", matchOffset, PAGE_SIZE),
@@ -286,7 +284,7 @@ export function useConversationMessages(
     setMatchIndex((i) => (i + 1) % matchTotal);
   };
 
-  /** ✕: Find closes where the person is; the thread stays where it is. */
+  /** ✕: Find closes where the person is; the conversation stays where it is. */
   const closeFind = () => {
     setFindOpen(false);
     setFindTermState("");

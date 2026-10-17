@@ -86,7 +86,7 @@ Everything else is a word, a colon, and a value.
 - Case never matters.
 - `#12` means the thing with that id: `group:#7`, `with:#42`, `in:#19`. An id that names nothing matches nothing, so a Saved Search that names a deleted Contact Group still runs.
 - `none` means empty and `any` means not empty, on the words whose row below lists them: `name:none`, `tag:none`, `attachment:any`.
-- Dates name a span: `2024` is the year, `2024-05` the month, `2024-05-01` the day, `7d` or `2w` or `3m` or `1y` the last that long, plus `today` and `yesterday`. A span reaches back 3,650 days at most, so `10y` works and `11y` is refused. Add `>=` for from its start, `<` for before its start, `>` for after its end, `<=` for up to its end, or `a..b` for a range: `date:2019`, `date:>=2019`, `date:<1m`, `date:2019..2021`. Days start and end in the Account's Time Zone, so a message sent at 11:59 pm on New Year's Eve belongs to the old year wherever the server runs.
+- Dates name a span: `2024` is the year, `2024-05` the month, `2024-05-01` the day, `7d` or `2w` or `3m` or `1y` the last that long, plus `today` and `yesterday`. A `d`, `w`, `m` or `y` span may count 3,650 days at most. A week counts 7 days toward that limit, a month 31 and a year 365. So `10y` and `117m` work, and `11y` and `118m` are refused. A date written out, such as `2024` or `2024-05-01`, has no such limit, and neither does a range between two of them. Add `>=` for from its start, `<` for before its start, `>` for after its end, `<=` for up to its end, or `a..b` for a range: `date:2019`, `date:>=2019`, `date:<1m`, `date:2019..2021`. Days start and end in the Account's Time Zone, so a message sent at 11:59 pm on New Year's Eve belongs to the old year wherever the server runs.
 - Sizes are `500k`, `1M`, `2G`, or plain bytes. Counts are plain numbers. Both take the same `>`, `>=`, `<`, `<=`, and `a..b`.
 - A comma inside an unquoted value means either: `service:imessage,sms`. Repeating a word means both: `tag:Work tag:Urgent`.
 - `-` in front of anything means not: `-tag:Work`, `-avocado`, `-(toast or guacamole)`. It includes the rows that have no value for the word, so `-last-message:2019` on Contacts includes Contacts who never sent a message. `not` does the same as a word of its own: `not tag:Work`.
@@ -98,7 +98,7 @@ Everything else is a word, a colon, and a value.
 
 A word the list does not have is refused with a message that says so.
 The message names the lists the word works on, or offers the nearest word when the word is a misspelling.
-`from:me` on Contacts answers "from: is not a Contacts word. It works on Messages."
+`from:me` on Contacts answers "from: is not a Contacts word; it works on Messages".
 On **Messages**, a word that works only in the other list of the switch is underlined instead, as [Where a search runs](#where-a-search-runs) says.
 
 A search is at most 2,048 bytes, 32 plain words, and 32 levels of parentheses.
@@ -135,7 +135,7 @@ The tiles mark which lists accept the word: <ListTiles on="C" /> Contacts, <List
 | `group:` | in this Contact Group: on Contacts, the contact; elsewhere, someone in the conversation | name, `pre*`, `#id`, `none`, `unknown` | <ListTiles on="C V M" /> |
 | `tag:` | the conversation carries this Message Tag; on Contacts, one of the contact's conversations does | name, `pre*`, `#id`, `none` | <ListTiles on="C V M" /> |
 | `kind:` | one-to-one (`direct`), group, or orphaned conversation: one holding messages the backup did not say which conversation they were in | `direct`, `group`, `orphaned` | <ListTiles on="C V M" /> |
-| `service:` | how the message travelled | `imessage`, `sms`, `mms`, `rcs`, `whatsapp` | <ListTiles on="C V M" /> |
+| `service:` | how the message traveled | `imessage`, `sms`, `mms`, `rcs`, `whatsapp` | <ListTiles on="C V M" /> |
 | `source:` | which kind of backup it was imported from | `imessage`, `whatsapp`, `sms-backup-restore`, `imazing`, `openextract`, `go-sms-pro`, `sms-backup-plus` | <ListTiles on="V M" /> |
 | `import:` | brought in by this Import Run | `#id`, `last` | <ListTiles on="V M" /> |
 | `date:` | when a message was sent; on Contacts, the contact sent a message then; on Conversations, the conversation has a message from then | date | <ListTiles on="C V M" /> |

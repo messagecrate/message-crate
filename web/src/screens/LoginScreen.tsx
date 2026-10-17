@@ -1,16 +1,29 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Button from "../components/Button";
 import PlainButton from "../components/PlainButton";
+import { useAuth } from "../hooks/useAuth";
 import { setBaseUrl } from "../lib/api";
-import { useAuth } from "../lib/auth";
+import { errorLine } from "../lib/apiErrorMessage";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
-import { isOwnAddress, type LocalServerStatus, openDataDirectory } from "../lib/localServer";
-import { checkServerHealth, type ServerHealthStatus } from "../lib/serverHealth";
-import { isTauri } from "../lib/tauri-check";
-import { accentLink, authCard, authCardBody, authScreenTitle, pageCenter } from "../lib/uiStyles";
-import { useLocalServer } from "../lib/useLocalServer";
-import { useServerHealth } from "../lib/useServerHealth";
-import { useServerState } from "../lib/useServerState";
+import {
+  invokeOpenMessageCrateDirectory,
+  type LocalServerStatus,
+} from "../lib/desktop/localServer";
+import { isOwnAddress } from "../lib/localServer";
+import { isPlainHttpOverNetwork } from "../lib/plainHttp";
+import {
+  checkServerHealth,
+  checkServerHealthWithRetry,
+  type ServerHealthStatus,
+} from "../lib/serverHealth";
+import { isTauri } from "../lib/tauriCheck";
+import {
+  accentLinkClass,
+  authCardBodyClass,
+  authCardClass,
+  authScreenTitleClass,
+  pageCenterClass,
+} from "../lib/uiStyles";
 import {
   type Connection,
   connectionReducer,
@@ -21,6 +34,9 @@ import ExploreDemoAccountButton from "./auth/ExploreDemoAccountButton";
 import LocalAuthTabs from "./auth/LocalAuthTabs";
 import ServerSettingsScreen from "./auth/ServerSettingsScreen";
 import ServerStatus, { type ServerConnection } from "./auth/ServerStatus";
+import { useLocalServer } from "./auth/useLocalServer";
+import { useServerHealth } from "./auth/useServerHealth";
+import { useServerState } from "./auth/useServerState";
 
 /** Placeholder shaped like the form, so the card does not flicker into shape. */
 function FormSkeleton() {
@@ -81,12 +97,12 @@ function StartFailed({
           variant="secondary"
           onPress={() => {
             setOpenError(null);
-            openDataDirectory().catch((caught: unknown) => {
-              setOpenError(caught instanceof Error ? caught.message : String(caught));
+            invokeOpenMessageCrateDirectory().catch((caught: unknown) => {
+              setOpenError(errorLine(caught));
             });
           }}
         >
-          Open data directory
+          Open Message Crate directory
         </Button>
       </div>
       {openError ? <p className="m-0 mt-1 text-[0.75rem] text-danger">{openError}</p> : null}
@@ -214,8 +230,10 @@ export default function LoginScreen() {
       // JSON). The body is discarded either way — only reachability matters.
       // The API client's base URL is left alone until the address answers,
       // so a request made meanwhile still goes to the Message Crate the card
-      // is on.
-      const reachable = await checkServerHealth(trimmed, controller.signal);
+      // is on. A failed probe is asked once more before the card says
+      // Disconnected: a server whose database an import keeps busy can miss
+      // one (#2718).
+      const reachable = await checkServerHealthWithRetry(trimmed, controller.signal);
       if (connectRun.current !== run) return;
       if (reachable) {
         setBaseUrl(trimmed);
@@ -348,10 +366,15 @@ export default function LoginScreen() {
         },
       };
 
+  // The forms send the password to the address the card is on. Over plain
+  // HTTP to another computer it crosses the network as typed, and the card
+  // says so where the password goes in (#2115).
+  const inClear = isPlainHttpOverNetwork(addressName(address));
+
   return (
-    <div className={pageCenter}>
-      <div className={authCard}>
-        <div className={authCardBody}>
+    <div className={pageCenterClass}>
+      <div className={authCardClass}>
+        <div className={authCardBodyClass}>
           {settingsOpen ? (
             <ServerSettingsScreen
               draft={draft}
@@ -376,7 +399,7 @@ export default function LoginScreen() {
             />
           ) : (
             <>
-              <h1 className={`${authScreenTitle} mb-2`}>Message Crate</h1>
+              <h1 className={`${authScreenTitleClass} mb-2`}>Message Crate</h1>
               {/* A failed start says so in the card itself; the status above it
                   would only repeat "Disconnected". */}
               {localFailed && state !== "connected" ? null : (
@@ -384,9 +407,16 @@ export default function LoginScreen() {
                   state={localStarting && state !== "connected" ? "connecting" : state}
                   address={target || window.location.origin}
                   label={state === "connected" ? undefined : startingLabel(localServer)}
-                  className={`${connection.failed ? "mb-2" : "mb-5"} text-center`}
+                  className={`${connection.failed || inClear ? "mb-2" : "mb-5"} text-center`}
                 />
               )}
+              {inClear ? (
+                <p
+                  className={`m-0 ${connection.failed ? "mb-2" : "mb-5"} text-center text-[0.813rem] text-warn-soft-text`}
+                >
+                  This connection is not encrypted, so the password crosses the network as typed.
+                </p>
+              ) : null}
               {connection.failed ? (
                 <TryFailed connection={connection} failed={connection.failed} />
               ) : null}
@@ -426,7 +456,7 @@ export default function LoginScreen() {
               ) : null}
               <div className="mt-4 text-center">
                 <PlainButton
-                  className={accentLink}
+                  className={accentLinkClass}
                   onPress={() => {
                     setDraft(address);
                     setTested(null);

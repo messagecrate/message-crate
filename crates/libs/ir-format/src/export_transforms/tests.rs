@@ -1,98 +1,53 @@
 use super::*;
-use media::MediaMode;
-use message_crate_core::{ExportReport, OutputFormat};
-use message_ir::{
-    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, IrConversationType,
-    IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource, MessageGuid,
-    MessageIdentity, Reaction, ReplyTo, SCHEMA_VERSION,
+use ir::{
+    ConversationMeta, ConversationStats, ConversationType, EarlierVersion, ExportMeta,
+    ImessageExtensions, Message, MessageGuid, MessageIdentity, MessageKind, Participant, Reaction,
+    ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
 };
+use message_crate_core::AttachmentFiles;
+use message_crate_core::{ExportReport, OutputFormat};
 use serde_json::{Value, json};
 use std::fs;
 
-fn doc_with_image_attachment() -> ConversationDocument {
-    ConversationDocument {
-        schema_version: SCHEMA_VERSION,
-        export: ExportMeta {
-            source: "test".into(),
-            tool: "test".into(),
-            tool_version: "0".into(),
-            owner_identity: None,
-            owner_display_name: None,
-            backup_taken_at_unix_ms: None,
-        },
-        conversation: ConversationMeta {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
-            group_title: None,
-            participants: vec![IrParticipant {
-                identity: Some("+15555550101".into()),
-                display_name: Some("Sam".into()),
-            }],
-            stats: ConversationStats::default(),
-        },
-        messages: vec![IrMessage {
-            guid: "guid-1".into(),
-            timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            owner_identity: None,
-            subject: None,
-            text: "hi".into(),
-            attachments: vec![IrAttachment {
-                path: Some("photo.jpg".into()),
-                original_name: Some("photo.jpg".into()),
-                mime_type: Some("image/jpeg".into()),
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
-                size_bytes: None,
-                missing_reason: None,
-                bytes: None,
-            }],
-            reactions: vec![],
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        }],
-        packaging_stem_suffix: None,
-    }
+/// `ir`'s sample conversation, its one message `hi` with a JPEG
+/// attached.
+fn document_with_image_attachment() -> ConversationDocument {
+    let mut document = ir::testutil::sample_document("hi");
+    document.messages[0].attachments = vec![Attachment {
+        path: Some("photo.jpg".into()),
+        ..ir::testutil::sample_attachment()
+    }];
+    document
 }
 
 /// Obfuscate one document as an export of it alone.
-fn obfuscate_one(doc: &mut ConversationDocument, anon: &mut Obfuscator) {
-    obfuscate_documents(std::slice::from_mut(doc), anon);
+fn obfuscate_one(document: &mut ConversationDocument, anon: &mut Obfuscator) {
+    obfuscate_documents(std::slice::from_mut(document), anon);
 }
 
 #[test]
 fn obfuscate_drops_the_vendor_bag() {
-    let mut doc = message_ir::testutil::sample_document("secret");
-    assert!(doc.messages[0].source.is_some());
+    let mut document = ir::testutil::sample_document("secret");
+    assert!(document.messages[0].source.is_some());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_one(&mut doc, &mut anon);
+    obfuscate_one(&mut document, &mut anon);
     assert!(
-        doc.messages[0].source.is_none(),
+        document.messages[0].source.is_none(),
         "obfuscated output must not carry vendor fields"
     );
 }
 
 #[test]
 fn obfuscate_replaces_the_owner_address_on_each_message() {
-    let mut doc = message_ir::testutil::sample_document("secret");
-    doc.messages[0].owner_identity = Some("+15555550100".into());
+    let mut document = ir::testutil::sample_document("secret");
+    document.messages[0].owner_identity = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_one(&mut doc, &mut anon);
-    let owner = doc.messages[0].owner_identity.as_deref();
+    obfuscate_one(&mut document, &mut anon);
+    let owner = document.messages[0].owner_identity.as_deref();
     assert_ne!(owner, Some("+15555550100"));
     assert_eq!(
         owner,
-        doc.export.owner_identity.as_deref(),
+        document.export.owner_identity.as_deref(),
         "one address becomes one fake address wherever it appears"
     );
 }
@@ -101,19 +56,22 @@ fn obfuscate_replaces_the_owner_address_on_each_message() {
 /// so it stays. A real name on a sent message is the owner's and must go.
 #[test]
 fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
-    let mut doc = doc_with_image_attachment();
-    let mut labelled = doc.messages[0].clone();
-    labelled.direction = IrDirection::Outgoing;
-    labelled.sender_display_name = Some("Me".into());
-    let mut named = labelled.clone();
-    named.sender_display_name = Some("Alex Rivera".into());
-    doc.messages = vec![labelled, named];
+    let mut document = document_with_image_attachment();
+    let mut labeled = document.messages[0].clone();
+    labeled.direction = Direction::Outgoing;
+    labeled.sender.display_name = Some("Me".into());
+    let mut named = labeled.clone();
+    named.sender.display_name = Some("Alex Rivera".into());
+    document.messages = vec![labeled, named];
 
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_one(&mut doc, &mut anon);
+    obfuscate_one(&mut document, &mut anon);
 
-    assert_eq!(doc.messages[0].sender_display_name.as_deref(), Some("Me"));
-    let replaced = doc.messages[1].sender_display_name.as_deref().unwrap();
+    assert_eq!(
+        document.messages[0].sender.display_name.as_deref(),
+        Some("Me")
+    );
+    let replaced = document.messages[1].sender.display_name.as_deref().unwrap();
     assert_ne!(replaced, "Alex Rivera");
     assert_ne!(replaced, "Me");
 }
@@ -121,29 +79,33 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
 #[test]
 fn obfuscate_skips_staged_media_and_writes_placeholders() {
     let tmp = crate::export_dir();
-    let att = tmp.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
     // Pretend an exporter staged a real file (should be removed).
-    fs::write(att.join("real-photo.jpg"), b"REAL_JPEG_BYTES_SHOULD_GO").unwrap();
+    fs::write(
+        attachments_dir.join("real-photo.jpg"),
+        b"REAL_JPEG_BYTES_SHOULD_GO",
+    )
+    .unwrap();
 
-    let mut docs = vec![doc_with_image_attachment()];
+    let mut documents = vec![document_with_image_attachment()];
     let transforms = ExportTransforms {
-        media: MediaMode::Convert,
+        files: AttachmentFiles::Originals,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ),
         ..ExportTransforms::none()
     };
-    let outcome = apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
-    assert_eq!(outcome.obfuscated_docs, 1);
+    let outcome = apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
+    assert_eq!(outcome.obfuscated_documents, 1);
 
-    assert!(!att.join("real-photo.jpg").exists());
-    assert!(att.join("placeholder.jpg").is_file());
-    assert!(att.join("placeholder.mp4").is_file());
-    assert!(att.join("placeholder.bin").is_file());
+    assert!(!attachments_dir.join("real-photo.jpg").exists());
+    assert!(attachments_dir.join("placeholder.jpg").is_file());
+    assert!(attachments_dir.join("placeholder.mp4").is_file());
+    assert!(attachments_dir.join("placeholder.bin").is_file());
     assert_eq!(
-        docs[0].messages[0].attachments[0].path.as_deref(),
+        documents[0].messages[0].attachments[0].path.as_deref(),
         Some("attachments/placeholder.jpg")
     );
 }
@@ -151,18 +113,18 @@ fn obfuscate_skips_staged_media_and_writes_placeholders() {
 #[test]
 fn obfuscate_keeps_mime_when_media_disabled() {
     let tmp = crate::export_dir();
-    let mut docs = vec![doc_with_image_attachment()];
+    let mut documents = vec![document_with_image_attachment()];
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ),
         ..ExportTransforms::none()
     };
-    apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
+    apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
     assert_eq!(
-        docs[0].messages[0].attachments[0].path.as_deref(),
+        documents[0].messages[0].attachments[0].path.as_deref(),
         Some("attachments/placeholder.jpg")
     );
 }
@@ -172,45 +134,49 @@ fn obfuscate_keeps_mime_when_media_disabled() {
 #[test]
 fn obfuscate_drops_the_real_files_size() {
     let tmp = crate::export_dir();
-    let mut docs = vec![doc_with_image_attachment()];
-    docs[0].messages[0].attachments[0].size_bytes = Some(5);
+    let mut documents = vec![document_with_image_attachment()];
+    documents[0].messages[0].attachments[0].size_bytes = Some(5);
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ),
         ..ExportTransforms::none()
     };
-    apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
-    assert_eq!(docs[0].messages[0].attachments[0].size_bytes, None);
+    apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
+    assert_eq!(documents[0].messages[0].attachments[0].size_bytes, None);
 }
 
 #[test]
-fn convert_at_finish_leaves_cloned_file() {
+fn finish_leaves_a_copied_file_as_it_is() {
     let tmp = crate::export_dir();
-    let att = tmp.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    fs::write(att.join("keep.bin"), b"already-cloned").unwrap();
-    let mut docs = vec![doc_with_image_attachment()];
-    docs[0].messages[0].attachments[0].path = Some("attachments/keep.bin".into());
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
+    fs::write(attachments_dir.join("keep.bin"), b"already-cloned").unwrap();
+    let mut documents = vec![document_with_image_attachment()];
+    documents[0].messages[0].attachments[0].path = Some("attachments/keep.bin".into());
     let transforms = ExportTransforms {
-        media: MediaMode::Convert,
+        files: AttachmentFiles::Originals,
         ..ExportTransforms::none()
     };
-    let outcome = apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
-    assert_eq!(outcome.obfuscated_docs, 0);
+    let outcome = apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
+    assert_eq!(outcome.obfuscated_documents, 0);
     assert_eq!(
-        docs[0].messages[0].attachments[0].path.as_deref(),
+        documents[0].messages[0].attachments[0].path.as_deref(),
         Some("attachments/keep.bin")
     );
-    assert_eq!(fs::read(att.join("keep.bin")).unwrap(), b"already-cloned");
+    assert_eq!(
+        fs::read(attachments_dir.join("keep.bin")).unwrap(),
+        b"already-cloned"
+    );
 }
 
-/// A group chat in which every string holds its own `LEAK-<n>` marker, except
-/// the values listed in [`KEPT_AS_IS`]. Every `Option` is set, so a field
-/// added to the IR later has to be filled in here and the walk then checks it.
-fn doc_with_a_marker_in_every_field() -> ConversationDocument {
+/// A group conversation in which every string holds its own `LEAK-<n>`
+/// marker, except the values listed in [`KEPT_AS_IS`]. Every `Option` is set,
+/// so a field added to the IR later has to be filled in here and the walk then
+/// checks it.
+fn document_with_a_marker_in_every_field() -> ConversationDocument {
     ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
@@ -219,15 +185,16 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             tool_version: "10.20".into(),
             owner_identity: Some("LEAK-01".into()),
             owner_display_name: Some("LEAK-02".into()),
-            backup_taken_at_unix_ms: Some(1_790_793_912_000),
+            exported_at_unix_ms: Some(1_791_000_000_000),
         },
         conversation: ConversationMeta {
             chat_identifier: "LEAK-03".into(),
-            conversation_type: IrConversationType::Group,
+            conversation_type: ConversationType::Group,
             group_title: Some("LEAK-04".into()),
-            participants: vec![IrParticipant {
+            participants: vec![Participant {
                 identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
+                country: None,
             }],
             stats: ConversationStats {
                 message_count: 1,
@@ -236,29 +203,30 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 last_timestamp_unix_ms: Some(1_400_773_261_000),
             },
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "LEAK-27".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::IMessage,
-            message_kind: IrMessageKind::IMessage,
-            sender_identity: Some("LEAK-07".into()),
-            sender_display_name: Some("LEAK-08".into()),
+            time_precision: ir::TimePrecision::Milliseconds,
+            direction: Direction::Incoming,
+            service: Transport::IMessage,
+            message_kind: MessageKind::IMessage,
+            sender: ir::Sender {
+                identity: Some("LEAK-07".into()),
+                display_name: Some("LEAK-08".into()),
+                country: None,
+            },
             owner_identity: Some("LEAK-09".into()),
             subject: Some("LEAK-10".into()),
             text: "LEAK-11".into(),
-            attachments: vec![IrAttachment {
+            attachments: vec![Attachment {
                 path: Some("attachments/LEAK-12.jpg".into()),
                 original_name: Some("LEAK-13.jpg".into()),
-                mime_type: Some("image/jpeg".into()),
                 digest_sha256: Some("LEAK-14".into()),
-                is_sticker: false,
                 transcription: Some("LEAK-15".into()),
                 sticker_effect: Some("shiny".into()),
                 size_bytes: Some(4),
                 missing_reason: Some("file_missing".into()),
-                bytes: None,
+                ..ir::testutil::sample_attachment()
             }],
             reactions: vec![Reaction {
                 part_index: 0,
@@ -271,14 +239,14 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             deletion: None,
             edits: vec![EarlierVersion {
                 part_index: 0,
-                text: "LEAK-19".into(),
+                text: Some("LEAK-19".into()),
                 edited_at_unix_ms: Some(1),
             }],
             reply_to: Some(ReplyTo {
                 guid: Some("LEAK-28".into()),
                 part_index: Some(0),
             }),
-            imessage: Some(IrImessage {
+            imessage: Some(ImessageExtensions {
                 send_effect: Some("slam".into()),
                 shared_location: Some("LEAK-16".into()),
                 announcement: Some("LEAK-17".into()),
@@ -293,10 +261,11 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 tapback_emoji: Some("👍".into()),
                 tapback_action: Some("added".into()),
             }),
-            source: Some(IrSource {
+            source: Some(VendorFields {
                 android_type: Some(1),
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
+            backup_taken_at_unix_ms: Some(1_790_793_912_000),
         }],
         packaging_stem_suffix: None,
     }
@@ -378,9 +347,9 @@ fn string_leaves(value: &Value, path: &str, out: &mut Vec<(String, String)>) {
 
 #[test]
 fn obfuscated_export_keeps_no_string_from_the_source() {
-    let doc = doc_with_a_marker_in_every_field();
+    let document = document_with_a_marker_in_every_field();
     let mut leaves = Vec::new();
-    string_leaves(&serde_json::to_value(&doc).unwrap(), "", &mut leaves);
+    string_leaves(&serde_json::to_value(&document).unwrap(), "", &mut leaves);
     for (path, value) in &leaves {
         let kept = KEPT_AS_IS.iter().any(|(p, _)| p == path);
         assert_eq!(
@@ -392,7 +361,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
 
     let tmp = crate::export_dir();
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
@@ -400,13 +369,13 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
         ..ExportTransforms::none()
     };
     let mut sink = crate::FormatSink::open(tmp.path(), OutputFormat::Json, transforms).unwrap();
-    sink.write_document(doc).unwrap();
+    sink.write_document(document).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
 
     let mut written = String::new();
     for entry in fs::read_dir(tmp.path()).unwrap() {
         let path = entry.unwrap().path();
-        // A group chat's file is named after its title.
+        // A group conversation's file is named after its title.
         let name = path.file_name().unwrap().to_string_lossy();
         assert!(!name.contains("LEAK-"), "obfuscated export wrote {name}");
         if path.extension().and_then(|e| e.to_str()) == Some("json") {
@@ -426,12 +395,12 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
 /// reaction was; only who reacted is replaced.
 #[test]
 fn obfuscate_keeps_each_reaction_and_replaces_only_who_reacted() {
-    let mut doc = doc_with_a_marker_in_every_field();
+    let mut document = document_with_a_marker_in_every_field();
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_one(&mut doc, &mut anon);
+    obfuscate_one(&mut document, &mut anon);
 
-    let [reaction] = doc.messages[0].reactions.as_slice() else {
-        panic!("one reaction is kept: {:?}", doc.messages[0].reactions);
+    let [reaction] = document.messages[0].reactions.as_slice() else {
+        panic!("one reaction is kept: {:?}", document.messages[0].reactions);
     };
     assert_eq!(reaction.part_index, 0);
     assert_eq!(reaction.kind, "emoji");
@@ -456,22 +425,22 @@ fn obfuscate_keeps_each_reaction_and_replaces_only_who_reacted() {
 #[test]
 fn media_disabled_clears_each_attachment_path_bytes_and_fingerprint() {
     let tmp = crate::export_dir();
-    let mut docs = vec![doc_with_image_attachment()];
-    let att = &mut docs[0].messages[0].attachments[0];
-    att.bytes = Some(vec![1, 2, 3]);
-    att.digest_sha256 = Some("ab".repeat(32));
+    let mut documents = vec![document_with_image_attachment()];
+    let attachment = &mut documents[0].messages[0].attachments[0];
+    attachment.bytes = Some(vec![1, 2, 3]);
+    attachment.digest_sha256 = Some("ab".repeat(32));
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         ..ExportTransforms::none()
     };
-    apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
+    apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
 
-    let att = &docs[0].messages[0].attachments[0];
-    assert_eq!(att.path, None);
-    assert_eq!(att.bytes, None);
-    assert_eq!(att.digest_sha256, None);
+    let attachment = &documents[0].messages[0].attachments[0];
+    assert_eq!(attachment.path, None);
+    assert_eq!(attachment.bytes, None);
+    assert_eq!(attachment.digest_sha256, None);
     assert_eq!(
-        att.mime_type.as_deref(),
+        attachment.mime_type.as_deref(),
         Some("image/jpeg"),
         "the metadata stays"
     );
@@ -495,28 +464,28 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
         })
         .into_string()
     };
-    let mut doc = doc_with_image_attachment();
-    doc.messages[0].attachments.clear();
-    doc.messages[0].guid = original("hi", doc.messages[0].timestamp_unix_ms);
-    let mut reply = doc.messages[0].clone();
+    let mut document = document_with_image_attachment();
+    document.messages[0].attachments.clear();
+    document.messages[0].guid = original("hi", document.messages[0].timestamp_unix_ms);
+    let mut reply = document.messages[0].clone();
     reply.guid = original("hi", reply.timestamp_unix_ms + 1);
     reply.timestamp_unix_ms += 1;
     reply.reply_to = Some(ReplyTo {
-        guid: Some(doc.messages[0].guid.clone()),
+        guid: Some(document.messages[0].guid.clone()),
         part_index: None,
     });
-    doc.messages.push(reply);
-    let before: Vec<String> = doc.messages.iter().map(|m| m.guid.clone()).collect();
+    document.messages.push(reply);
+    let before: Vec<String> = document.messages.iter().map(|m| m.guid.clone()).collect();
 
-    let obfuscated = |doc: &ConversationDocument| {
-        let mut doc = doc.clone();
-        obfuscate_one(&mut doc, &mut Obfuscator::new([7u8; 32]));
-        doc
+    let obfuscated = |document: &ConversationDocument| {
+        let mut document = document.clone();
+        obfuscate_one(&mut document, &mut Obfuscator::new([7u8; 32]));
+        document
     };
-    let after = obfuscated(&doc);
-    for (old, msg) in before.iter().zip(&after.messages) {
-        assert_ne!(&msg.guid, old, "the original guid is kept");
-        assert_eq!(msg.guid.len(), 64);
+    let after = obfuscated(&document);
+    for (old, message) in before.iter().zip(&after.messages) {
+        assert_ne!(&message.guid, old, "the original guid is kept");
+        assert_eq!(message.guid.len(), 64);
     }
     assert_ne!(after.messages[0].guid, after.messages[1].guid);
     assert_eq!(
@@ -528,22 +497,22 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
         "the reply points at its target's new guid"
     );
     assert_eq!(
-        obfuscated(&doc).messages[0].guid,
+        obfuscated(&document).messages[0].guid,
         after.messages[0].guid,
         "one seed gives one guid"
     );
-    let mut other_seed = doc.clone();
+    let mut other_seed = document.clone();
     obfuscate_one(&mut other_seed, &mut Obfuscator::new([8u8; 32]));
     assert_ne!(other_seed.messages[0].guid, after.messages[0].guid);
 }
 
 /// Two conversations for the cross-conversation tests: A holds one message,
 /// and B holds one that `link` points at A's message's id.
-fn two_conversations(link: impl FnOnce(&mut IrMessage, &str)) -> Vec<ConversationDocument> {
-    let mut a = doc_with_image_attachment();
+fn two_conversations(link: impl FnOnce(&mut Message, &str)) -> Vec<ConversationDocument> {
+    let mut a = document_with_image_attachment();
     a.messages[0].attachments.clear();
     a.messages[0].guid = "a-target".into();
-    let mut b = doc_with_image_attachment();
+    let mut b = document_with_image_attachment();
     b.conversation.chat_identifier = "+15555550102".into();
     b.messages[0].attachments.clear();
     b.messages[0].guid = "b-link".into();
@@ -551,17 +520,17 @@ fn two_conversations(link: impl FnOnce(&mut IrMessage, &str)) -> Vec<Conversatio
     vec![a, b]
 }
 
-fn obfuscate_all(docs: &mut [ConversationDocument]) {
+fn obfuscate_all(documents: &mut [ConversationDocument]) {
     let tmp = crate::export_dir();
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ),
         ..ExportTransforms::none()
     };
-    apply_transforms(docs, tmp.path(), &transforms).unwrap();
+    apply_transforms(documents, tmp.path(), &transforms).unwrap();
 }
 
 /// A reply (`reply_to.guid`) or a tapback (`associated_guid`).
@@ -572,30 +541,30 @@ enum Link {
 }
 
 impl Link {
-    /// Make `msg` name `target` by this link.
-    fn set(self, msg: &mut IrMessage, target: &str) {
+    /// Make `message` name `target` by this link.
+    fn set(self, message: &mut Message, target: &str) {
         let target = Some(target.to_owned());
         match self {
             Link::Reply => {
-                msg.reply_to = Some(ReplyTo {
+                message.reply_to = Some(ReplyTo {
                     guid: target,
                     part_index: None,
                 });
             }
             Link::Tapback => {
-                msg.imessage = Some(IrImessage {
+                message.imessage = Some(ImessageExtensions {
                     associated_guid: target,
-                    ..IrImessage::default()
+                    ..ImessageExtensions::default()
                 });
             }
         }
     }
 
-    /// The id this link names in `msg`.
-    fn target(self, msg: &IrMessage) -> Option<&str> {
+    /// The id this link names in `message`.
+    fn target(self, message: &Message) -> Option<&str> {
         match self {
-            Link::Reply => msg.reply_to.as_ref()?.guid.as_deref(),
-            Link::Tapback => msg.imessage.as_ref()?.associated_guid.as_deref(),
+            Link::Reply => message.reply_to.as_ref()?.guid.as_deref(),
+            Link::Tapback => message.imessage.as_ref()?.associated_guid.as_deref(),
         }
     }
 }
@@ -606,12 +575,12 @@ impl Link {
 #[test]
 fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
     for link in [Link::Reply, Link::Tapback] {
-        let mut docs = two_conversations(|msg, target| link.set(msg, target));
-        obfuscate_all(&mut docs);
-        assert_ne!(docs[0].messages[0].guid, "a-target", "{link:?}");
+        let mut documents = two_conversations(|message, target| link.set(message, target));
+        obfuscate_all(&mut documents);
+        assert_ne!(documents[0].messages[0].guid, "a-target", "{link:?}");
         assert_eq!(
-            link.target(&docs[1].messages[0]),
-            Some(docs[0].messages[0].guid.as_str()),
+            link.target(&documents[1].messages[0]),
+            Some(documents[0].messages[0].guid.as_str()),
             "{link:?} points at its target's new guid"
         );
     }
@@ -624,20 +593,22 @@ fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
 fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
     for link in [Link::Reply, Link::Tapback] {
         for linking_first in [true, false] {
-            let mut docs = two_conversations(|msg, _| msg.imessage = Some(IrImessage::default()));
-            let mut copy = docs[0].messages[0].clone();
+            let mut documents = two_conversations(|message, _| {
+                message.imessage = Some(ImessageExtensions::default())
+            });
+            let mut copy = documents[0].messages[0].clone();
             copy.imessage = None;
             copy.reply_to = None;
-            docs[1].messages.insert(0, copy);
-            link.set(&mut docs[1].messages[1], "a-target");
+            documents[1].messages.insert(0, copy);
+            link.set(&mut documents[1].messages[1], "a-target");
             if linking_first {
-                docs.reverse();
+                documents.reverse();
             }
-            obfuscate_all(&mut docs);
+            obfuscate_all(&mut documents);
             let (linking, other) = if linking_first {
-                (&docs[0], &docs[1])
+                (&documents[0], &documents[1])
             } else {
-                (&docs[1], &docs[0])
+                (&documents[1], &documents[0])
             };
             let case = format!("{link:?}, linking_first={linking_first}");
             assert_ne!(
@@ -657,13 +628,17 @@ fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
 /// out, keeps the keyed stand-in: its original id does not survive.
 #[test]
 fn obfuscate_replaces_a_target_outside_the_export_with_its_stand_in() {
-    let mut docs = two_conversations(|msg, _| Link::Reply.set(msg, "not-exported"));
-    obfuscate_all(&mut docs);
-    let target = Link::Reply.target(&docs[1].messages[0]).unwrap().to_owned();
+    let mut documents = two_conversations(|message, _| Link::Reply.set(message, "not-exported"));
+    obfuscate_all(&mut documents);
+    let target = Link::Reply
+        .target(&documents[1].messages[0])
+        .unwrap()
+        .to_owned();
     assert_ne!(target, "not-exported");
     assert_eq!(target.len(), 64);
     assert!(
-        docs.iter()
+        documents
+            .iter()
             .flat_map(|d| &d.messages)
             .all(|m| m.guid != target)
     );

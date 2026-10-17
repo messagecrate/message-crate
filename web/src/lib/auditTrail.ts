@@ -8,23 +8,44 @@
  * (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
  */
 
+import { formatBytes } from "./formatBytes";
+import { countOf, joinWithAnd } from "./plural";
 import type { components } from "./serverApi.types";
 
 export type AuditEntry = components["schemas"]["AuditEntry"];
 type AuditActor = components["schemas"]["AuditActor"];
+type DemoDataSize = components["schemas"]["DemoDataSize"];
 
 const APP_NAMES = { desktop: "desktop app", website: "website" } as const;
 
-/** "3 conversations", "1 conversation". */
-function count(n: number | null | undefined, one: string, many = `${one}s`): string {
-  const value = n ?? 0;
-  return `${value.toLocaleString()} ${value === 1 ? one : many}`;
+/**
+ * The words for each set of Demo Data. A map rather than the wire value, so
+ * a set the server adds fails the type-check until it has words here.
+ */
+const DEMO_DATA_SIZES: Record<DemoDataSize, string> = { medium: "medium", large: "large" };
+
+/** " with the large set", or nothing when the entry names no set. */
+function withDemoDataSize(entry: AuditEntry): string {
+  return entry.demo_data_size ? ` with the ${DEMO_DATA_SIZES[entry.demo_data_size]} set` : "";
 }
 
-/** "import", "import and export", "import, export and delete". */
+/** "Attachment size limit set to 100 MB", or "changed" when the entry names no limit. */
+function assetLimitChanged(entry: AuditEntry): string {
+  if (entry.asset_max_bytes == null) return "Attachment size limit changed";
+  return `Attachment size limit set to ${formatBytes(entry.asset_max_bytes)}`;
+}
+
+/** "3 conversations", "1 conversation"; a count the entry lacks reads as 0. */
+function countOrZero(n: number | null | undefined, one: string, many?: string): string {
+  return countOf(n ?? 0, one, many);
+}
+
+/**
+ * "import", "import and export", "import, export and delete", for a line of
+ * text: both callers pass a list they checked is not empty.
+ */
 function permissions(names: string[]): string {
-  if (names.length === 1) return names[0];
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return joinWithAnd(names) ?? "";
 }
 
 /** " from the website (0.10.0+343fe0d8)", or nothing when no app was named. */
@@ -44,7 +65,7 @@ function startedBy(entry: AuditEntry): string {
 
 function importRun(entry: AuditEntry): string {
   const source = entry.source ? ` from ${entry.source}` : "";
-  return `Import Run${source}, ${entry.status ?? "running"}: ${count(entry.messages, "message")}, ${count(entry.attachments, "attachment")}${startedBy(entry)}`;
+  return `Import Run${source}, ${entry.status ?? "running"}: ${countOrZero(entry.messages, "message")}, ${countOrZero(entry.attachments, "attachment")}${startedBy(entry)}`;
 }
 
 function exportRun(entry: AuditEntry): string {
@@ -54,7 +75,7 @@ function exportRun(entry: AuditEntry): string {
       : entry.scope_kind === "selection"
         ? "picked conversations and messages"
         : "everything";
-  return `Export Run of ${scope}, ${entry.status ?? "running"}: ${count(entry.messages, "message")} in ${count(entry.conversations, "conversation")}${startedBy(entry)}`;
+  return `Export Run of ${scope}, ${entry.status ?? "running"}: ${countOrZero(entry.messages, "message")} in ${countOrZero(entry.conversations, "conversation")}${startedBy(entry)}`;
 }
 
 function sessionEnded(entry: AuditEntry): string {
@@ -72,10 +93,25 @@ function sessionEnded(entry: AuditEntry): string {
   }
 }
 
+function exportRunClosed(entry: AuditEntry): string {
+  const run = entry.export_run_id == null ? "An Export Run" : `Export Run ${entry.export_run_id}`;
+  switch (entry.reason) {
+    case "replaced":
+      return `${run} canceled: a new Export started`;
+    case "idle":
+      return `${run} canceled: no page was read for an hour`;
+    default:
+      return `${run} canceled by the server`;
+  }
+}
+
 function loginRefused(entry: AuditEntry): string {
   switch (entry.reason) {
     case "unknown_username":
-      return `Login refused: no account is named “${entry.username ?? ""}”${fromApp(entry)}`;
+      // The server keeps no username when the text typed could not be one,
+      // since it may be a password typed into the wrong field.
+      if (entry.username == null) return `Login refused: not a valid username${fromApp(entry)}`;
+      return `Login refused: no account is named “${entry.username}”${fromApp(entry)}`;
     case "wrong_password":
       return `Login refused: wrong password${fromApp(entry)}`;
     case "account_disabled":
@@ -116,29 +152,37 @@ export function describeAuditEntry(entry: AuditEntry): string {
     case "permissions_changed":
       return permissionsChanged(entry);
     case "messages_deleted":
-      return `Messages deleted for good: ${count(entry.conversations, "conversation")}, ${count(entry.attachments, "attachment")}`;
+      return `Messages deleted for good: ${countOrZero(entry.conversations, "conversation")}, ${countOrZero(entry.attachments, "attachment")}`;
     case "conversation_deleted":
       return "A conversation deleted for good from the trash";
     case "trash_emptied":
-      return `Trash emptied: ${count(entry.conversations, "conversation")} deleted, ${count(entry.contacts, "contact")} made Unknown`;
+      return `Trash emptied: ${countOrZero(entry.conversations, "conversation")} deleted, ${countOrZero(entry.contacts, "contact")} made Unknown`;
     case "account_deleted":
       return "Account deleted";
     case "registration_opened":
       return "Opened Message Crate to new accounts";
     case "registration_closed":
       return "Closed Message Crate to new accounts";
+    case "asset_limit_changed":
+      return assetLimitChanged(entry);
+    case "demo_account_added":
+      return `Demo Account added${withDemoDataSize(entry)}`;
+    case "demo_account_reset":
+      return `Demo Account reset${withDemoDataSize(entry)}`;
     case "api_token_created":
       return `API token “${entry.api_token_label ?? ""}” made (${entry.api_token_hint ?? ""})`;
     case "api_token_deleted":
       return `API token “${entry.api_token_label ?? ""}” deleted (${entry.api_token_hint ?? ""})`;
     case "address_book_loaded":
-      return `Address book loaded (${entry.mode ?? "append"}): ${count(entry.contacts_created, "contact")} added, ${entry.contacts_updated ?? 0} changed, ${entry.contacts_deleted ?? 0} removed`;
+      return `Address book loaded (${entry.mode ?? "append"}): ${countOrZero(entry.contacts_created, "contact")} added, ${(entry.contacts_updated ?? 0).toLocaleString()} changed, ${(entry.contacts_deleted ?? 0).toLocaleString()} removed`;
     case "address_book_exported":
-      return `Address book exported: ${count(entry.contacts, "contact")}, ${count(entry.identities, "Identity", "Identities")}`;
+      return `Address book exported: ${countOrZero(entry.contacts, "contact")}, ${countOrZero(entry.identities, "Identity", "Identities")}`;
     case "import_run":
       return importRun(entry);
     case "export_run":
       return exportRun(entry);
+    case "export_run_closed":
+      return exportRunClosed(entry);
     default:
       entry.action satisfies never;
       return entry.action;
@@ -149,6 +193,7 @@ const ACTOR_LABELS: Record<AuditActor, string> = {
   owner: "Owner",
   holder: "Account holder",
   command_line: "Server command",
+  start_up: "Server's first start",
   server: "Server",
   anonymous: "Login screen",
 };

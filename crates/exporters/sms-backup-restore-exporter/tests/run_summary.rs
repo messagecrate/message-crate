@@ -1,11 +1,13 @@
 //! `run()`, the entry point the desktop app calls, and the counts its summary
 //! shows. The smoke tests call `convert_export` directly, so a `run()` that
-//! wrote nothing, or a report that dropped a skip count or a file's parse
-//! error, passed them.
+//! wrote nothing, or a report that dropped a skip count, passed them.
 
 use crate::emit::{ConvertExportArgs, convert_export};
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{ExportTransforms, OutputFormat, SmsBackupRestoreConfig, SourceConfig};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
+use message_crate_core::{
+    CancelFlag, ConvertRun, LogSink, OutputFormat, ProgressSink, RunIssueKind, RunIssueStep,
+    SmsBackupRestoreConfig,
+};
 use std::fs;
 use std::path::Path;
 
@@ -33,16 +35,10 @@ const SKIPS_XML: &str = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes'
 </smses>
 "#;
 
-/// A backup file holding `SKIPS_XML`, cut off mid-element after its last
-/// message, so the read keeps every message and names the file it could not
-/// read in full.
+/// A backup file holding `SKIPS_XML`.
 fn backup_file(root: &Path) -> std::path::PathBuf {
     let input = root.join("sms-1.xml");
-    let cut = SKIPS_XML.replace(
-        "</smses>\n",
-        "  <sms address=\"+15555550102\" date=\"1\" body=\"cut",
-    );
-    fs::write(&input, cut).unwrap();
+    fs::write(&input, SKIPS_XML).unwrap();
     input
 }
 
@@ -51,16 +47,16 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     let tmp = tempfile::tempdir().unwrap();
     let input = backup_file(tmp.path());
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(
+    let mut config = jsonl_test_run(
         &[&input],
         &output,
-        SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+        SmsBackupRestoreConfig {
             owner_phones: vec!["+15555550100".into()],
-        }),
+        },
     );
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("\"hello\""), "{written}");
@@ -72,7 +68,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         "  Read 2 MMS",
         "  Left out 1 message part that could not be read",
         "  Left out 1 character reference that is not a character",
-        "  Skipped 1 draft or unsent message",
+        "  Skipped 1 draft or message never sent",
         "  Skipped 1 MMS with no participants",
         "  Skipped 1 message with no usable address",
         "  Skipped 1 message of an unknown type",
@@ -84,32 +80,23 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
             result.messages
         );
     }
-    // The file it could not read is a sentence naming it, under the Import
-    // Errors heading, and the summary ends there: the messages kept with
-    // something left out are counted, not listed, so there is no Notes
-    // heading (#1920).
-    let heading = result
-        .messages
-        .iter()
-        .position(|l| l == "  Import Errors")
-        .unwrap_or_else(|| panic!("no Import Errors heading in {:?}", result.messages));
-    let errors = &result.messages[heading + 1..];
-    assert_eq!(errors.len(), 1, "{:?}", result.messages);
-    let broken_file = input.display().to_string();
+    // A message skipped in a file that is valid XML is counted, not an
+    // Import Error, and the messages kept with something left out are
+    // counted, not listed, so the summary has neither heading (#1920).
     assert!(
-        errors[0].starts_with(&format!(
-            "    The file {broken_file} could not be read in full: "
-        )),
-        "{}",
-        errors[0]
+        !result
+            .messages
+            .iter()
+            .any(|l| l == "  Import Errors" || l == "  Notes"),
+        "{:?}",
+        result.messages
     );
-    // The file it could not read is an Import Error naming it (#1626), and
-    // each message kept with something left out is a note naming the file
+    // Each message kept with something left out is a note naming the file
     // and the message (#1707).
     let issues = issues.lock().unwrap();
-    let rows: Vec<(message_crate_core::RunIssueKind, &str, &str, &str)> = issues
+    let rows: Vec<(RunIssueKind, RunIssueStep, &str, &str)> = issues
         .iter()
-        .map(|i| (i.kind, i.step.as_str(), i.item.as_str(), i.reason.as_str()))
+        .map(|i| (i.kind, i.step, i.item.as_str(), i.reason.as_str()))
         .collect();
     let sms_1 = input.display().to_string();
     let hey = format!("{sms_1} (message of 2014-05-22T15:42:01Z with +15555550101)");
@@ -118,21 +105,15 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         rows,
         [
             (
-                message_crate_core::RunIssueKind::Error,
-                "parse",
-                sms_1.as_str(),
-                rows[0].3
-            ),
-            (
-                message_crate_core::RunIssueKind::Note,
-                "parse",
+                RunIssueKind::Note,
+                RunIssueStep::Parse,
                 hey.as_str(),
                 "1 character reference in this message is not a character and was left out. \
                  The message itself is kept."
             ),
             (
-                message_crate_core::RunIssueKind::Note,
-                "parse",
+                RunIssueKind::Note,
+                RunIssueStep::Parse,
                 photo.as_str(),
                 "1 part of this message could not be read and was left out. The message \
                  itself is kept."
@@ -143,20 +124,20 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
 
 /// Convert logs what the read counted the moment the read returns, and an
 /// import's summary gives the same counts after its write. Both give every
-/// count and every error in the same words and the same order (#1700).
+/// count in the same words and the same order (#1700).
 #[test]
 fn convert_and_import_word_every_count_and_error_alike() {
     let tmp = tempfile::tempdir().unwrap();
     let input = backup_file(tmp.path());
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
+    let config = jsonl_test_run(
         &[&input],
         &output,
-        SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+        SmsBackupRestoreConfig {
             owner_phones: vec!["+15555550100".into()],
-        }),
+        },
     );
-    let imported = crate::run(&config).expect("run").messages;
+    let imported = config.run(crate::run).expect("run").messages;
     let owner = ["+15555550100".to_string()];
     let (_, report) = crate::read_backup(
         &input,
@@ -164,18 +145,18 @@ fn convert_and_import_word_every_count_and_error_alike() {
             owner_phones: &owner,
             attachments_dir: None,
             spool: None,
-            media: media::MediaMode::Disabled,
-            compress: media::CompressOptions::default(),
-            log: None,
-            progress: None,
-            cancel: None,
+            files: message_crate_core::AttachmentFiles::Skip,
+            sinks: message_crate_core::Sinks {
+                log: &LogSink::none(),
+                progress: &ProgressSink::none(),
+                cancel: &CancelFlag::default(),
+            },
         },
     )
     .expect("read");
     let converted = report.log_lines();
-    // Ten counts, then the Import Errors heading and the one file under it.
-    assert_eq!(converted.len(), 12, "{converted:?}");
-    assert_eq!(converted[10], "Import Errors", "{converted:?}");
+    // Ten counts, and no Import Errors heading.
+    assert_eq!(converted.len(), 10, "{converted:?}");
     // Every line Convert logs is a line of the import's summary, in the same
     // order, whatever each sets it in by.
     let mut rest = imported.iter().map(|l| l.trim_start());
@@ -195,13 +176,12 @@ fn the_report_counts_conversations_and_directions() {
     let report = convert_export(ConvertExportArgs {
         input: &input,
         output_dir: &tmp.path().join("out"),
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
 
@@ -209,5 +189,42 @@ fn the_report_counts_conversations_and_directions() {
     assert_eq!(report.sent, 1);
     assert_eq!(report.received, 2);
     assert_eq!(report.skipped_invalid_date, 1);
-    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+}
+
+/// An Import Run of a backup that is not valid XML fails, naming the file,
+/// and writes no conversation (#2028).
+#[test]
+fn a_run_of_a_backup_cut_off_partway_fails_and_writes_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("sms-1.xml");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cut_off_backup.xml"),
+        &input,
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+    let config = jsonl_test_run(
+        &[&input],
+        &output,
+        SmsBackupRestoreConfig {
+            owner_phones: Vec::new(),
+        },
+    );
+
+    let error = config.run(crate::run).unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains(&format!("{} is not valid XML", input.display())),
+        "{message}"
+    );
+    let written: Vec<_> = fs::read_dir(&output)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "jsonl"))
+        .collect();
+    assert!(written.is_empty(), "{written:?}");
 }

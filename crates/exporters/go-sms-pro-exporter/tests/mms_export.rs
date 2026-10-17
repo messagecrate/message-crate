@@ -10,7 +10,7 @@
 use crate::emit::{ConvertExportArgs, convert_export};
 use go_sms_mms::testutil::{BuildPart, PduBuilder};
 use message_crate_core::testutil::{csv_files, csv_rows};
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, OutputFormat};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,13 +58,12 @@ fn convert(input_dir: &Path, output_dir: &Path) -> ExportReport {
     convert_export(ConvertExportArgs {
         input_dir,
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &[OWNER.into()],
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert_export")
 }
@@ -113,10 +112,10 @@ fn a_pdu_picture_is_one_attachment_with_its_bytes_staged() {
     let attachments: Vec<serde_json::Value> =
         serde_json::from_str(&row["attachments_json"]).expect("attachments_json");
     assert_eq!(attachments.len(), 1, "{attachments:?}");
-    let att = &attachments[0];
-    assert_eq!(att["mime_type"], "image/jpeg");
-    assert_eq!(att["original_name"], "IMG_1.jpg");
-    let path = att["path"].as_str().expect("path");
+    let attachment = &attachments[0];
+    assert_eq!(attachment["mime_type"], "image/jpeg");
+    assert_eq!(attachment["original_name"], "IMG_1.jpg");
+    let path = attachment["path"].as_str().expect("path");
     assert!(
         path.starts_with("attachments/") && path.ends_with(".jpg"),
         "{path}"
@@ -203,7 +202,7 @@ fn a_pdu_naming_only_the_owner_is_skipped_and_listed() {
         skipped.lines().collect::<Vec<_>>(),
         [
             "pdu_filename,sender,recipients,is_sent",
-            "I_1609459700_1_0.pdu,+15555550100,+15555550100,0"
+            "I_1609459700_1_0.pdu,'+15555550100,'+15555550100,0"
         ]
     );
 }
@@ -303,16 +302,16 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &[OWNER.into()],
-        transforms: ExportTransforms {
-            media: media::MediaMode::Disabled,
-            ..ExportTransforms::none()
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            transforms: ExportTransforms {
+                files: message_crate_core::AttachmentFiles::Skip,
+                ..ExportTransforms::none()
+            },
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
         },
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
     })
     .expect("convert_export");
 

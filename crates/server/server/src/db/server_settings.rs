@@ -1,26 +1,26 @@
 //! Settings that belong to the whole server rather than to one account.
 //!
 //! One row, at id 1. A database that has never been written to has no row at
-//! all, which reads the same as a row of defaults — `public_registration`
-//! off, `asset_max_bytes` at 512 MiB — so nothing has to seed it.
+//! all, which reads the same as a row of defaults (`public_registration`
+//! off, `asset_max_bytes` at 512 MiB), so nothing has to seed it.
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
-
-use crate::db::schema;
 
 /// What the attachment size limit reads as until the owner sets it: 512 MiB.
 pub const DEFAULT_ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
-/// The server's settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The server settings the owner controls.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 pub struct ServerSettings {
-    /// Anyone reaching the server may create their own account. Off unless the
-    /// owner turns it on.
+    /// Anyone reaching the server may create their own account.
     pub public_registration: bool,
-    /// The attachment size limit: the largest asset the server accepts, as one
-    /// `PUT` or as the declared total of a multipart upload, in bytes. This
-    /// row is the only place it lives.
+    /// The attachment size limit, in bytes: the largest asset the server
+    /// accepts. 536870912 (512 MiB) until the owner changes it.
+    // The limit holds for one `PUT` and for the declared total of a
+    // multipart upload alike. This row is the only place it lives.
     pub asset_max_bytes: u64,
 }
 
@@ -37,20 +37,24 @@ impl Default for ServerSettings {
 
 /// Read the server's settings, or the defaults when nothing has been written.
 pub async fn load(conn: &mut SqliteConnection) -> Result<ServerSettings> {
-    schema::ensure_accounts_schema(conn).await?;
-    let row: Option<(i64, i64)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        public_registration: i64,
+        asset_max_bytes: i64,
+    }
+    let row = sqlx::query_as::<_, Row>(
         "SELECT public_registration, asset_max_bytes FROM server_settings WHERE id = 1",
     )
     .fetch_optional(&mut *conn)
-    .await?;
-    Ok(row.map_or_else(
-        ServerSettings::default,
-        |(public_registration, asset_max_bytes)| ServerSettings {
-            public_registration: public_registration != 0,
+    .await
+    .context("read the server settings")?;
+    Ok(
+        row.map_or_else(ServerSettings::default, |row| ServerSettings {
+            public_registration: row.public_registration != 0,
             // The column is only ever written from a `u64` that fits.
-            asset_max_bytes: u64::try_from(asset_max_bytes).unwrap_or(0),
-        },
-    ))
+            asset_max_bytes: u64::try_from(row.asset_max_bytes).unwrap_or(0),
+        }),
+    )
 }
 
 /// Set the attachment size limit, creating the settings row if this is the
@@ -61,7 +65,6 @@ pub async fn load(conn: &mut SqliteConnection) -> Result<ServerSettings> {
 ///
 /// Returns an error when `bytes` does not fit the column, or the write fails.
 pub async fn set_asset_max_bytes(conn: &mut SqliteConnection, bytes: u64) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     let bytes = i64::try_from(bytes)?;
     sqlx::query(
         "INSERT INTO server_settings (id, asset_max_bytes) VALUES (1, $1)
@@ -69,21 +72,22 @@ pub async fn set_asset_max_bytes(conn: &mut SqliteConnection, bytes: u64) -> Res
     )
     .bind(bytes)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("store the attachment size limit")?;
     Ok(())
 }
 
 /// Turn public registration on or off, creating the settings row if this is
 /// the first thing ever written to it.
 pub async fn set_public_registration(conn: &mut SqliteConnection, enabled: bool) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     sqlx::query(
         "INSERT INTO server_settings (id, public_registration) VALUES (1, $1)
          ON CONFLICT(id) DO UPDATE SET public_registration = excluded.public_registration",
     )
     .bind(i32::from(enabled))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("store the public registration setting")?;
     Ok(())
 }
 
@@ -93,7 +97,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unwritten_database_reads_as_closed() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         assert!(
             !load(&mut conn).await.unwrap().public_registration,
@@ -103,7 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_setting_round_trips_and_can_be_turned_back_off() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
 
         set_public_registration(&mut conn, true).await.unwrap();
@@ -125,7 +129,7 @@ mod tests {
     /// 2 GiB, which a 32-bit column would not hold.
     #[tokio::test]
     async fn the_limit_and_registration_are_written_independently() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         assert_eq!(
             load(&mut conn).await.unwrap().asset_max_bytes,

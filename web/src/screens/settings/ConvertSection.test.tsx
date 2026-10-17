@@ -1,15 +1,17 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "./ConvertSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
 const invokeFormat = vi.hoisted(() => vi.fn());
 const invokeCancel = vi.hoisted(() => vi.fn());
-const awaitTauriJob = vi.hoisted(() => vi.fn());
+const awaitDesktopJob = vi.hoisted(() => vi.fn());
 const invokeCreateExportDir = vi.hoisted(() => vi.fn());
 const invokeFinishExportDir = vi.hoisted(() => vi.fn());
 const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
@@ -18,35 +20,36 @@ const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
 const CONVERT_DIR =
   "/home/demo/.local/share/app.messagecrate.desktop/exports/convert-2026-10-04-1430-jsonl";
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/tauri")>();
+vi.mock("../../lib/desktop/export", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/desktop/export")>();
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
     invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
     invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
     invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
-    invokeCancel: (...args: unknown[]) => invokeCancel(...args),
-    // The job's name comes first; the mocks below take what follows it.
-    awaitTauriJob: (_job: string, ...args: unknown[]) => awaitTauriJob(...args),
-    onExtractEvents: vi.fn(async () => () => {}),
   };
 });
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
+vi.mock("../../lib/desktop/job", () => ({
+  invokeCancel: (...args: unknown[]) => invokeCancel(...args),
+  // The job's name comes first; the mocks below take what follows it.
+  awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
+  onDesktopJobEvents: vi.fn(async () => () => {}),
 }));
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   tauriState.isTauri = true;
   invokeCreateExportDir.mockResolvedValue({
     dir: CONVERT_DIR,
@@ -55,8 +58,8 @@ beforeEach(() => {
   });
   invokeFinishExportDir.mockResolvedValue(CONVERT_DIR);
   invokeDiscardExportDir.mockResolvedValue(undefined);
-  // The hook's `run` goes through awaitTauriJob: call the invoke and resolve.
-  awaitTauriJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
+  // The hook's `run` goes through awaitDesktopJob: call the invoke and resolve.
+  awaitDesktopJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
     await invokeFn();
     return { summary: "Format conversion complete." };
   });
@@ -72,7 +75,7 @@ async function fillDirectories(input: string, output: string, formatLabel?: stri
   await fill(user, screen.getByLabelText("Output directory"), output);
   if (formatLabel) {
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: formatLabel }));
+    await user.click(screen.getByRole("option", { name: formatLabel }));
   }
   return user;
 }
@@ -87,9 +90,9 @@ describe("ConvertSection", () => {
         "An Export is running. Convert can start once it ends.",
       );
     } finally {
-      release();
+      act(() => release());
     }
-    await waitFor(() => expect(convertButton()).toBeEnabled());
+    expect(convertButton()).toBeEnabled();
   });
 
   it("shows the desktop-only stub when not in Tauri", () => {
@@ -114,19 +117,20 @@ describe("ConvertSection", () => {
     await fill(user, screen.getByLabelText("Input directory"), "/home/demo/export-json");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR));
+    await settle();
+    expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("convert", "jsonl", "");
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({
       input_dir: "/home/demo/export-json",
       output_dir: CONVERT_DIR,
     });
-    expect(await screen.findByText(/Conversion complete/)).toHaveTextContent(
+    expect(screen.getByText(/Conversion complete/)).toHaveTextContent(
       `Conversion complete. JSON Lines (.jsonl) written to ${CONVERT_DIR}.`,
     );
   });
 
   it("deletes its own directory when the conversion fails", async () => {
-    awaitTauriJob.mockImplementation(async () => {
+    awaitDesktopJob.mockImplementation(async () => {
       throw new Error("no conversation files in /home/demo/empty");
     });
     const user = setupUser();
@@ -134,7 +138,8 @@ describe("ConvertSection", () => {
     await fill(user, screen.getByLabelText("Input directory"), "/home/demo/empty");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(CONVERT_DIR));
+    await settle();
+    expect(invokeDiscardExportDir).toHaveBeenCalledWith(CONVERT_DIR);
     expect(invokeFinishExportDir).not.toHaveBeenCalled();
   });
 
@@ -142,13 +147,16 @@ describe("ConvertSection", () => {
     const user = await fillDirectories("/home/demo/export-json", "/home/demo/export-csv");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_dir: "/home/demo/export-csv" });
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({
+      output_dir: "/home/demo/export-csv",
+    });
     expect(invokeCreateExportDir).not.toHaveBeenCalled();
   });
 
   it("refuses the same directory for input and output and says so", async () => {
-    // message-reexport would reject this anyway, but only after the job had
+    // The `reexport` crate would reject this anyway, but only after the job had
     // started; the screen states the rule before the button is live.
     const user = await fillDirectories("/home/demo/export", "/home/demo/export/");
 
@@ -175,45 +183,49 @@ describe("ConvertSection", () => {
     );
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokeFormat.mock.calls[0][0]).toEqual({
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toEqual({
       input_dir: "/home/demo/export-json",
       output_dir: "/home/demo/export-csv",
       output_format: "csv",
       started_from: "convert",
     });
-    expect(await screen.findByText(/Conversion complete\. CSV \(\.csv\) written to/)).toBeTruthy();
+    expect(screen.getByText(/Conversion complete\. CSV \(\.csv\) written to/)).toBeTruthy();
   });
 
   it("defaults the output format to JSON Lines", async () => {
     const user = await fillDirectories("/home/demo/export-xml", "/home/demo/export-jsonl");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_format: "jsonl" });
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
+    expect(nth(invokeFormat.mock.calls, 0)[0]).toMatchObject({ output_format: "jsonl" });
   });
 
   it("reports the failure rather than claiming the conversion finished", async () => {
-    awaitTauriJob.mockImplementation(async () => {
+    awaitDesktopJob.mockImplementation(async () => {
       throw new Error("input and output directories must be different");
     });
     const user = await fillDirectories("/home/demo/link-to-export", "/home/demo/export");
     await user.click(convertButton());
+    await settle();
 
-    expect(await screen.findByText("input and output directories must be different")).toBeTruthy();
+    expect(screen.getByText("Input and output directories must be different")).toBeTruthy();
     expect(screen.queryByText(/Conversion complete/)).toBeNull();
   });
 
   it("names the directory and format the conversion wrote to after the form changes", async () => {
     const user = await fillDirectories("/home/demo/export-json", "/a", "CSV (.csv)");
     await user.click(convertButton());
-    await screen.findByText(/Conversion complete/);
+    await settle();
+    expect(screen.getByText(/Conversion complete/)).toBeInTheDocument();
 
     const field = screen.getByLabelText("Output directory");
     await user.clear(field);
     await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: "JSON Lines (.jsonl)" }));
+    await user.click(screen.getByRole("option", { name: "JSON Lines (.jsonl)" }));
 
     expect(screen.getByText(/Conversion complete/)).toHaveTextContent(
       "Conversion complete. CSV (.csv) written to /a.",
@@ -225,7 +237,7 @@ describe("ConvertSection", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await held;
       await invokeFn();
       return { summary: "Format conversion complete." };
@@ -236,7 +248,8 @@ describe("ConvertSection", () => {
     expect(screen.getByLabelText("Input directory")).toBeDisabled();
     expect(screen.getByLabelText("Output directory")).toBeDisabled();
     release();
-    await screen.findByText(/Conversion complete/);
+    await settle();
+    expect(screen.getByText(/Conversion complete/)).toBeInTheDocument();
     expect(screen.getByLabelText("Output directory")).toBeEnabled();
   });
 });

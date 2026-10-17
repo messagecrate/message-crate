@@ -1,4 +1,7 @@
 use super::*;
+use message_crate_core::OutputFormat;
+#[cfg(unix)]
+use message_crate_core::testutil::{DirectoryProbe, with_directory_mode};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
@@ -18,15 +21,14 @@ fn convert(input: &std::path::Path, output: &std::path::Path) -> Result<ExportRe
         input,
         output,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
 }
 
-fn pending_att(rel_path: &str, digest: Option<&str>) -> PendingAttachment {
+fn pending_attachment(rel_path: &str, digest: Option<&str>) -> PendingAttachment {
     PendingAttachment {
         rel_path: rel_path.into(),
         content_type: String::new(),
@@ -41,8 +43,7 @@ fn digests_of(attachments: Vec<PendingAttachment>) -> Vec<String> {
     attachment_digests(&PendingMessage {
         sort_key: 0,
         is_from_me: false,
-        sender_identity: String::new(),
-        sender_display_name: None,
+        sender: ir::Sender::default(),
         text: String::new(),
         attachments,
         extra: BTreeMap::new(),
@@ -52,19 +53,19 @@ fn digests_of(attachments: Vec<PendingAttachment>) -> Vec<String> {
 #[test]
 fn message_guid_prefers_digest_over_rel_path() {
     // Same digest, different relative paths → same GUID material.
-    let a = pending_att("attachments/old_name.jpg", Some("abc123"));
-    let b = pending_att("attachments/new_name.jpg", Some("abc123"));
+    let a = pending_attachment("attachments/old_name.jpg", Some("abc123"));
+    let b = pending_attachment("attachments/new_name.jpg", Some("abc123"));
     assert_eq!(digests_of(vec![a]), digests_of(vec![b]));
 
     // Digest present wins over path; path alone differs from digest.
-    let with_digest = pending_att("attachments/x.jpg", Some("deadbeef"));
-    let path_only = pending_att("attachments/x.jpg", None);
+    let with_digest = pending_attachment("attachments/x.jpg", Some("deadbeef"));
+    let path_only = pending_attachment("attachments/x.jpg", None);
     assert_ne!(digests_of(vec![with_digest]), digests_of(vec![path_only]));
 
     // Order of attachments must not change the sorted material list.
     let mixed = vec![
-        pending_att("a.jpg", Some("bb")),
-        pending_att("b.jpg", Some("aa")),
+        pending_attachment("a.jpg", Some("bb")),
+        pending_attachment("b.jpg", Some("aa")),
     ];
     assert_eq!(digests_of(mixed), vec!["aa".to_string(), "bb".to_string()]);
 }
@@ -82,7 +83,7 @@ Bob Sample,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
     assert_eq!(report.conversations, 1);
-    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
+    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 0);
     assert_eq!(report.messages, 2);
     let csv_path = out.join("+13215550100.csv");
     let body = fs::read_to_string(&csv_path).unwrap();
@@ -93,7 +94,7 @@ Bob Sample,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
 }
 
 #[test]
-fn name_without_any_address_becomes_a_name_only_chat() {
+fn name_without_any_address_becomes_a_name_only_conversation() {
     let dir = tempfile::tempdir().unwrap();
     write(
         &dir,
@@ -104,7 +105,7 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     );
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
-    assert!(report.extra(message_crate_core::NAME_ONLY_CHAT) >= 1);
+    assert!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION) >= 1);
     assert_eq!(report.conversations, 1);
     let file = out.join("name_Mystery_Person.csv");
     assert!(file.is_file());
@@ -274,11 +275,10 @@ Bob,2026-03-08 02:30:00,SMS,Incoming,+15555550100,Bob,Read,,,Gap,,,\n",
         input: dir.path(),
         output: &out,
         timezone: Some("America/New_York"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .unwrap();
     assert_eq!(report.messages, 1);
@@ -311,9 +311,9 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     let report = convert(&chat, &out).unwrap();
     assert_eq!(report.attachments_saved, 1);
     assert_eq!(report.messages, 1);
-    let att_dir = out.join("attachments");
-    assert!(att_dir.is_dir());
-    let count = fs::read_dir(&att_dir).unwrap().count();
+    let attachments_dir = out.join("attachments");
+    assert!(attachments_dir.is_dir());
+    let count = fs::read_dir(&attachments_dir).unwrap().count();
     assert_eq!(count, 1);
     let body = fs::read_to_string(out.join("+15555550100.csv")).unwrap();
     assert!(body.contains("attachments/"));
@@ -341,7 +341,7 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     )
     .unwrap();
     // Write and search but no read: the CSV opens, the listing does not.
-    let Some(result) = crate::test_support::with_directory_mode(&chat, 0o300, || {
+    let Some(result) = with_directory_mode(&chat, 0o300, DirectoryProbe::List, || {
         convert(&csv, &dir.path().join("out"))
     }) else {
         return;
@@ -417,13 +417,13 @@ const MESSAGES_HEADER: &str = "Chat Session,Message Date,Service,Type,Sender ID,
 
 /// Convert one Messages CSV holding `rows` to JSON and read each
 /// conversation back.
-fn convert_rows(rows: &str) -> Vec<message_ir::ConversationDocument> {
+fn convert_rows(rows: &str) -> Vec<ir::ConversationDocument> {
     convert_files(&[("Messages.csv", &format!("{MESSAGES_HEADER}{rows}"))])
 }
 
 /// Write each `(path, contents)` under one input directory, convert it to JSON,
 /// and read each conversation back, sorted by chat id.
-fn convert_files(files: &[(&str, &str)]) -> Vec<message_ir::ConversationDocument> {
+fn convert_files(files: &[(&str, &str)]) -> Vec<ir::ConversationDocument> {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
     for (path, contents) in files {
@@ -436,18 +436,14 @@ fn convert_files(files: &[(&str, &str)]) -> Vec<message_ir::ConversationDocument
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     let mut documents: Vec<_> = fs::read_dir(&out)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .map(|path| message_ir_format::read_conversation_json(&path).unwrap())
+        .map(|path| ir_format::read_conversation_json(&path).unwrap())
         .collect();
     documents.sort_by(|a, b| {
         a.conversation
@@ -469,12 +465,12 @@ fn a_number_in_the_chat_name_is_the_roster() {
             "{session},2020-01-01 12:00:00,SMS,Outgoing,,,Sent,,,Hi Bob,,,\n"
         ));
         assert_eq!(documents.len(), 1, "{session}");
-        let doc = &documents[0];
+        let document = &documents[0];
         assert_eq!(
-            doc.conversation.chat_identifier, "+13215550100",
+            document.conversation.chat_identifier, "+13215550100",
             "{session}"
         );
-        let roster: Vec<_> = doc
+        let roster: Vec<_> = document
             .conversation
             .participants
             .iter()
@@ -482,6 +478,54 @@ fn a_number_in_the_chat_name_is_the_roster() {
             .collect();
         assert_eq!(roster, vec!["+13215550100"], "{session}");
     }
+}
+
+/// A reply names its quoted message by the date it quotes, within the same
+/// chat: the sender the cell names is not compared, because iMazing does
+/// not write it as `Sender Name` does, and a second two kept messages share
+/// names neither of them, so that reply keeps no link (#2030).
+#[test]
+fn a_reply_links_by_the_quoted_date_alone() {
+    let documents = convert_rows(
+        "Bob,2020-01-01 12:00:00,SMS,Incoming,+13215550100,Bob,Read,,,First,,,\n\
+Bob,2020-01-01 12:00:00,SMS,Incoming,+13215550100,Bob,Read,,,Second in the same second,,,\n\
+Bob,2020-01-01 12:01:00,SMS,Incoming,+13215550100,Bob,Read,,,Third,,,\n\
+Bob,2020-01-01 12:02:00,SMS,Outgoing,,,Sent,\"\u{21a9} Robert, 2020-01-01 12:01:00: \u{ab} Third \u{bb}\",,To the third,,,\n\
+Bob,2020-01-01 12:03:00,SMS,Outgoing,,,Sent,\"\u{21a9} Bob, 2020-01-01 12:00:00: \u{ab} First \u{bb}\",,To one of two,,,\n",
+    );
+    let messages = &documents[0].messages;
+    let by_text = |text: &str| messages.iter().find(|m| m.text == text).unwrap();
+    assert_eq!(
+        by_text("To the third").reply_to,
+        Some(ir::ReplyTo {
+            guid: Some(by_text("Third").guid.clone()),
+            part_index: None,
+        })
+    );
+    assert_eq!(
+        by_text("To one of two").reply_to,
+        Some(ir::ReplyTo {
+            guid: None,
+            part_index: None,
+        })
+    );
+    assert!(by_text("Third").reply_to.is_none());
+}
+
+/// A reply whose quoted date is its own second, when the quoted message is
+/// not in the export, does not link to itself: it is a reply with no link.
+#[test]
+fn a_reply_never_quotes_itself() {
+    let documents = convert_rows(
+        "Bob,2020-01-01 12:00:00,SMS,Outgoing,,,Sent,\"\u{21a9} Bob, 2020-01-01 12:00:00: \u{ab} Gone \u{bb}\",,Same second as the reply,,,\n",
+    );
+    assert_eq!(
+        documents[0].messages[0].reply_to,
+        Some(ir::ReplyTo {
+            guid: None,
+            part_index: None,
+        })
+    );
 }
 
 /// A Subject column value is the message's subject; an empty one is none.
@@ -525,8 +569,8 @@ Bob,2020-01-01 12:01:00,SMS,Notification,,,,,,Bob left the conversation,,,\n",
         .iter()
         .find(|m| m.text == "Bob left the conversation")
         .unwrap();
-    assert_eq!(notification.sender_identity, None);
-    assert_eq!(notification.sender_display_name, None);
+    assert_eq!(notification.sender.identity, None);
+    assert_eq!(notification.sender.display_name, None);
 }
 
 /// An incoming message whose row names no sender is from the chat's peer:
@@ -542,12 +586,12 @@ Bob Mail,2020-01-01 12:01:00,iMessage,Incoming,,,Read,,,Still me,,,\n",
     );
     let senders: Vec<(&str, Option<&str>, Option<&str>)> = documents
         .iter()
-        .flat_map(|doc| &doc.messages)
+        .flat_map(|document| &document.messages)
         .map(|m| {
             (
                 m.text.as_str(),
-                m.sender_identity.as_deref(),
-                m.sender_display_name.as_deref(),
+                m.sender.identity.as_deref(),
+                m.sender.display_name.as_deref(),
             )
         })
         .collect();
@@ -563,8 +607,9 @@ Bob Mail,2020-01-01 12:01:00,iMessage,Incoming,,,Read,,,Still me,,,\n",
 }
 
 /// The handles on a document's roster, in the order the document lists them.
-fn roster(doc: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
-    doc.conversation
+fn roster(document: &ir::ConversationDocument) -> Vec<Option<&str>> {
+    document
+        .conversation
         .participants
         .iter()
         .map(|p| p.identity.as_deref())
@@ -621,7 +666,7 @@ Book Club,2020-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Hey,,,\n
         assert_eq!(documents.len(), 1, "{rows}");
         assert_eq!(
             documents[0].conversation.conversation_type,
-            message_ir::IrConversationType::Group,
+            ir::ConversationType::Group,
             "{rows}"
         );
     }
@@ -634,7 +679,7 @@ fn an_incoming_row_without_a_sender_in_a_short_code_chat_is_from_the_short_code(
     let documents = convert_rows("262966,2020-01-01 12:00:00,SMS,Incoming,,,Read,,,Your code,,,\n");
     assert_eq!(documents[0].conversation.chat_identifier, "262966");
     assert_eq!(
-        documents[0].messages[0].sender_identity.as_deref(),
+        documents[0].messages[0].sender.identity.as_deref(),
         Some("262966")
     );
 }
@@ -699,20 +744,16 @@ fn a_same_named_file_in_two_chat_directories_goes_to_its_own_chat() {
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     for (number, bytes) in [
         ("+15555550111", "alice-photo"),
         ("+15555550122", "bob-photo"),
     ] {
-        let doc =
-            message_ir_format::read_conversation_json(&out.join(format!("{number}.json"))).unwrap();
-        let path = doc.messages[0].attachments[0]
+        let document =
+            ir_format::read_conversation_json(&out.join(format!("{number}.json"))).unwrap();
+        let path = document.messages[0].attachments[0]
             .path
             .as_deref()
             .expect("the attachment was copied");
@@ -737,14 +778,11 @@ Alice Example & Bob Example,2020-01-01 12:01:00,iMessage,Outgoing,,,Sent,,,Hey,,
     );
     assert_eq!(documents.len(), 1);
     let conversation = &documents[0].conversation;
-    assert_eq!(
-        conversation.conversation_type,
-        message_ir::IrConversationType::Group
-    );
+    assert_eq!(conversation.conversation_type, ir::ConversationType::Group);
     assert!(
         conversation
             .chat_identifier
-            .starts_with(message_ir::GROUP_CHAT_ID_PREFIX),
+            .starts_with(ir::GROUP_CHAT_ID_PREFIX),
         "{}",
         conversation.chat_identifier
     );
@@ -763,7 +801,7 @@ Alice Example & Bob Example,2020-01-01 12:01:00,iMessage,Outgoing,,,Sent,,,Hey,,
 /// and the output directory (kept alive by the temporary directory).
 struct ChatDirectoryExport {
     report: ExportReport,
-    doc: message_ir::ConversationDocument,
+    document: ir::ConversationDocument,
     out: PathBuf,
     _dir: tempfile::TempDir,
 }
@@ -772,7 +810,7 @@ impl ChatDirectoryExport {
     /// The contents of each copied attachment of the message with `text`, in order.
     fn attachment_bodies(&self, text: &str) -> Vec<String> {
         let message = self
-            .doc
+            .document
             .messages
             .iter()
             .find(|m| m.text == text)
@@ -799,11 +837,11 @@ fn convert_chat_directory(rows: &str, files: &[(&str, &str)]) -> ChatDirectoryEx
 }
 
 /// Convert one chat directory holding the CSV `(name, contents)` and the named
-/// `files` to JSON, and read back the conversation written to `doc_name`.
+/// `files` to JSON, and read back the conversation written to `document_name`.
 fn convert_chat_directory_with(
     (csv_name, csv): (&str, &str),
     files: &[(&str, &str)],
-    doc_name: &str,
+    document_name: &str,
 ) -> ChatDirectoryExport {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
@@ -818,17 +856,13 @@ fn convert_chat_directory_with(
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
-    let doc = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
+    let document = ir_format::read_conversation_json(&out.join(document_name)).unwrap();
     ChatDirectoryExport {
         report,
-        doc,
+        document,
         out,
         _dir: dir,
     }
@@ -854,10 +888,10 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
             ("2020-01-01 12 02 00 - Bob - stray.bin", "stray"),
         ],
     );
-    assert_eq!(export.doc.messages.len(), 2);
+    assert_eq!(export.document.messages.len(), 2);
     assert_eq!(export.attachment_bodies("photo"), vec!["picture", "video"]);
     assert_eq!(
-        export.doc.messages[0].attachments[1]
+        export.document.messages[0].attachments[1]
             .original_name
             .as_deref(),
         Some("IMG_0001.mov")
@@ -1016,7 +1050,7 @@ fn a_chat_directory_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_li
     );
     assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
     let messages =
-        message_ir_format::read_conversation_json(&export.out.join("+15555550100.json")).unwrap();
+        ir_format::read_conversation_json(&export.out.join("+15555550100.json")).unwrap();
     let live = messages
         .messages
         .iter()
@@ -1040,7 +1074,7 @@ fn a_chat_directory_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_li
 /// #1080: a group's key is not built from who wrote, so a group in which one
 /// other person wrote is not that person's one-to-one conversation.
 #[test]
-fn a_group_where_one_person_wrote_is_not_their_direct_chat() {
+fn a_group_where_one_person_wrote_is_not_their_one_to_one_conversation() {
     let documents = convert_rows(
         "Alice Example & Bob Example,2020-01-01 12:00:00,iMessage,Incoming,+15555550111,Alice Example,Read,,,In the group,,,\n\
 Alice Example,2020-01-01 12:01:00,iMessage,Incoming,+15555550111,Alice Example,Read,,,Just us,,,\n",
@@ -1048,7 +1082,7 @@ Alice Example,2020-01-01 12:01:00,iMessage,Incoming,+15555550111,Alice Example,R
     assert_eq!(
         documents.len(),
         2,
-        "the group merged into Alice's direct chat"
+        "the group merged into Alice's one-to-one conversation"
     );
 }
 
@@ -1087,8 +1121,8 @@ fn an_incoming_group_row_without_a_sender_has_no_made_up_sender() {
             .iter()
             .find(|m| m.text == "Who")
             .unwrap();
-        assert_eq!(who.sender_identity, None, "{session}");
-        assert_eq!(who.sender_display_name, None, "{session}");
+        assert_eq!(who.sender.identity, None, "{session}");
+        assert_eq!(who.sender.display_name, None, "{session}");
     }
 }
 
@@ -1106,7 +1140,7 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,{second},Bob,Read,,,From the other,,,\
         let conversation = &documents[0].conversation;
         assert_eq!(
             conversation.conversation_type,
-            message_ir::IrConversationType::Individual,
+            ir::ConversationType::OneToOne,
             "{second}"
         );
         assert_eq!(conversation.chat_identifier, "+15555550122", "{second}");
@@ -1170,11 +1204,7 @@ Book Club,2021-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Yes,,,\n
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     assert_eq!(report.conversations, 2);
@@ -1195,7 +1225,7 @@ fn a_groups_chat_id_does_not_depend_on_row_order() {
     );
 }
 
-/// A one-to-one chat keeps its address when the person later writes from a
+/// A one-to-one conversation keeps its address when the person later writes from a
 /// second one, even an address that sorts first.
 #[test]
 fn a_one_to_one_conversation_keeps_its_address_when_a_second_one_writes() {
@@ -1222,10 +1252,7 @@ Climbing,2020-01-01 12:01:00,,Incoming,+15555550122,Chris,Read,,Hey,\n"
     )]);
     assert_eq!(documents.len(), 1);
     let conversation = &documents[0].conversation;
-    assert_eq!(
-        conversation.conversation_type,
-        message_ir::IrConversationType::Group
-    );
+    assert_eq!(conversation.conversation_type, ir::ConversationType::Group);
     assert_eq!(conversation.participants.len(), 2);
 }
 
@@ -1250,10 +1277,13 @@ Climbing,2020-01-01 12:08:00,iMessage,Incoming,+15555550144,Dan,Read,,,Cheers,,,
     let ids = |files: &[(&str, &str)]| {
         let mut ids: Vec<(String, String)> = convert_files(files)
             .into_iter()
-            .map(|doc| {
+            .map(|document| {
                 (
-                    doc.conversation.participants[0].identity.clone().unwrap(),
-                    doc.conversation.chat_identifier,
+                    document.conversation.participants[0]
+                        .identity
+                        .clone()
+                        .unwrap(),
+                    document.conversation.chat_identifier,
                 )
             })
             .collect();
@@ -1377,7 +1407,10 @@ Climbing,2020-01-01 12:08:00,iMessage,Incoming,+15555550144,Dan,Read,,,Cheers,,,
         documents[0].conversation.chat_identifier,
         documents[1].conversation.chat_identifier
     );
-    let message_counts: Vec<usize> = documents.iter().map(|doc| doc.messages.len()).collect();
+    let message_counts: Vec<usize> = documents
+        .iter()
+        .map(|document| document.messages.len())
+        .collect();
     assert!(
         message_counts.contains(&1) && message_counts.contains(&3),
         "{message_counts:?}"
@@ -1428,16 +1461,12 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_directory() {
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
-    let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
+    let document = ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
     let file_of = |text: &str| {
-        let message = doc
+        let message = document
             .messages
             .iter()
             .find(|m| m.text == text)
@@ -1507,17 +1536,13 @@ fn convert_fixture(name: &str) -> ChatDirectoryExport {
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
-    let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
+    let document = ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
     ChatDirectoryExport {
         report,
-        doc,
+        document,
         out,
         _dir: dir,
     }
@@ -1526,7 +1551,7 @@ fn convert_fixture(name: &str) -> ChatDirectoryExport {
 impl ChatDirectoryExport {
     /// The contents of every message's copied attachments, in message order.
     fn pictures(&self) -> Vec<Vec<String>> {
-        self.doc
+        self.document
             .messages
             .iter()
             .map(|message| {
@@ -1586,7 +1611,7 @@ fn rows_without_their_files_repeat_the_copies_another_export_tells_apart() {
 fn a_row_alone_in_its_second_keeps_its_id_beside_a_second_export() {
     let guid_of_third = |export: &ChatDirectoryExport| {
         export
-            .doc
+            .document
             .messages
             .iter()
             .find(|m| m.timestamp_unix_ms == 1_577_880_420_000)
@@ -1610,7 +1635,7 @@ fn a_sender_id_that_is_no_address_is_still_the_sender() {
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].conversation.chat_identifier, "+15555550101");
     assert_eq!(
-        documents[0].messages[0].sender_identity.as_deref(),
+        documents[0].messages[0].sender.identity.as_deref(),
         Some("AMAZON")
     );
 }
@@ -1625,11 +1650,11 @@ fn a_tel_number_and_a_tab_padded_number_are_one_address() {
 \"\t555-555-0101\",2020-01-01 12:01:00,SMS,Outgoing,,,Sent,,,From the padded chat,,,\n",
     );
     assert_eq!(documents.len(), 1);
-    let doc = &documents[0];
+    let document = &documents[0];
     // No country is stated, so the number keeps its digits (#1676).
-    assert_eq!(doc.conversation.chat_identifier, "5555550101");
-    assert_eq!(doc.messages.len(), 2);
-    let participants: Vec<_> = doc
+    assert_eq!(document.conversation.chat_identifier, "5555550101");
+    assert_eq!(document.messages.len(), 2);
+    let participants: Vec<_> = document
         .conversation
         .participants
         .iter()

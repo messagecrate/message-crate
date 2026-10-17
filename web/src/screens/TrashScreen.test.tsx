@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -17,12 +17,12 @@ import {
 } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
 import { participant } from "../test/apiShapes";
-import { mockedAuth, Providers } from "../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
-import { SLOW_STATE_WAIT } from "../test/waits";
 import TrashScreen from "./TrashScreen";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
@@ -82,7 +82,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     last_message_at: "2024-01-01T10:00:00Z",
     service: "sms",
     is_group: false,
-    label: null,
+    shown_title: null,
     tags: [],
     ...overrides,
   };
@@ -140,16 +140,19 @@ describe("TrashScreen", () => {
     getConversationMock.mockResolvedValue(conversation());
     restoreConversationMock.mockResolvedValue(undefined);
     restoreContactMock.mockResolvedValue(undefined);
+    startFakeClock();
   });
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("reports the trash count and prompts selection when nothing is selected", async () => {
     renderAt("/trash");
+    await settle();
 
-    expect(await screen.findByText(/in Trash\. Select one on the left to view it\./)).toBeTruthy();
+    expect(screen.getByText(/in Trash\. Select one on the left to view it\./)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
   });
 
@@ -158,9 +161,10 @@ describe("TrashScreen", () => {
     // send it (the server would answer 422) and must say who the word is for;
     // the conversations pane still answers normally (#331).
     renderAt("/trash?tq=participants%3A%3E3");
+    await settle();
 
-    expect(await screen.findByText("participants: applies to conversations only")).toBeTruthy();
-    expect(await screen.findByText(/1 conversation matching this search in Trash/)).toBeTruthy();
+    expect(screen.getByText("participants: applies to conversations only")).toBeTruthy();
+    expect(screen.getByText(/1 conversation matching this search in Trash/)).toBeTruthy();
     expect(listContactsMock).not.toHaveBeenCalled();
     expect(listConversationsMock).toHaveBeenCalled();
   });
@@ -168,65 +172,79 @@ describe("TrashScreen", () => {
   it("explains a contacts-only word in the conversations pane and lists contacts normally", async () => {
     listContactsMock.mockResolvedValue(contactPage([contact(7, "Ada Lovelace")]));
     renderAt("/trash?tq=conversations%3A0");
+    await settle();
 
-    expect(await screen.findByText("conversations: applies to contacts only")).toBeTruthy();
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+    expect(screen.getByText("conversations: applies to contacts only")).toBeTruthy();
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     expect(listConversationsMock).not.toHaveBeenCalled();
   });
 
   it("names a word neither list knows once, and not as the other list's word", async () => {
     // `re` is a search word of neither list (#1234).
     renderAt("/trash?tq=re:lunch");
+    await settle();
 
-    expect(await screen.findByText("re: is not a search word")).toBeTruthy();
+    expect(screen.getByText("re: is not a search word")).toBeTruthy();
     expect(screen.queryByText("re: applies to contacts only")).toBeNull();
     expect(screen.queryByText("re: applies to conversations only")).toBeNull();
     expect(listConversationsMock).not.toHaveBeenCalled();
     expect(listContactsMock).not.toHaveBeenCalled();
   });
 
-  it("shows the error, and blames no list, when the search words cannot be loaded", async () => {
-    // With no registry, `trashed:` (which the page adds itself) read as a word
-    // both lists refuse (#1234).
-    listSearchFieldsMock.mockRejectedValue(new Error("Server unreachable"));
-    renderAt("/trash");
+  it.each([
+    ["both lists", ["conversations", "contacts"]],
+    ["the conversations list", ["conversations"]],
+    ["the contacts list", ["contacts"]],
+  ] as const)(
+    "shows the error, and blames no list, when the search words of %s cannot be loaded",
+    async (_which, failing) => {
+      // With no registry, `trashed:` (which the page adds itself) read as a word
+      // both lists refuse (#1234). A list whose words failed to load has none,
+      // which would refuse every word, so the screen reads no words from it and
+      // asks neither list, even when the other list's words loaded.
+      listSearchFieldsMock.mockImplementation(async (list) => {
+        if (failing.some((name) => name === list)) throw new Error("Server unreachable");
+        return fieldsFor(list as keyof typeof FIELD_WORDS);
+      });
+      renderAt("/trash");
+      await settle();
 
-    expect(
-      await screen.findByText(
-        "Could not load the search words. Server unreachable",
-        {},
-        SLOW_STATE_WAIT,
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByText(/applies to/)).toBeNull();
-    expect(screen.queryByText("Trash is empty.")).toBeNull();
-  });
+      expect(screen.getByText("Could not load the search words. Server unreachable")).toBeTruthy();
+      expect(screen.queryByText(/applies to/)).toBeNull();
+      expect(screen.queryByText("Trash is empty")).toBeNull();
+      expect(listConversationsMock).not.toHaveBeenCalled();
+      expect(listContactsMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("shows the error, not an empty Trash, when trashed contacts cannot be loaded", async () => {
     listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
     listContactsMock.mockRejectedValue(new Error("Server unreachable"));
     renderAt("/trash");
+    await settle();
 
-    expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
-    expect(screen.queryByText("Trash is empty.")).toBeNull();
-    expect(screen.queryByText("No contacts in Trash.")).toBeNull();
+    expect(screen.getByText("Server unreachable")).toBeTruthy();
+    expect(screen.queryByText("Trash is empty")).toBeNull();
+    expect(screen.queryByText("No contacts in Trash")).toBeNull();
     expect(screen.getByRole("button", { name: "Empty Trash" })).toBeTruthy();
   });
 
   it("shows the error, not an empty Trash, when trashed conversations cannot be counted", async () => {
     listConversationsMock.mockRejectedValue(new Error("Server unreachable"));
     renderAt("/trash");
+    await settle();
 
-    expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
-    expect(screen.queryByText("Trash is empty.")).toBeNull();
-    expect(screen.queryByText("No conversations in Trash.")).toBeNull();
+    expect(screen.getByText("Server unreachable")).toBeTruthy();
+    expect(screen.queryByText("Trash is empty")).toBeNull();
+    expect(screen.queryByText("No conversations in Trash")).toBeNull();
   });
 
   it("reads correctly when the trash is empty", async () => {
     listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
     renderAt("/trash");
+    await settle();
 
-    expect(await screen.findByText("Trash is empty.")).toBeTruthy();
+    expect(screen.getByText("Trash is empty")).toBeTruthy();
     expect(screen.queryByText("Conversations")).toBeNull();
     expect(screen.queryByText("Contacts")).toBeNull();
   });
@@ -234,30 +252,30 @@ describe("TrashScreen", () => {
   it("shows Restore for a selected trashed conversation and calls the restore mutation", async () => {
     const user = setupUser();
     renderAt("/trash?tsel=42");
+    await settle();
 
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     const button = screen.getByRole("button", { name: "Restore" });
 
     await user.click(button);
+    await settle();
 
-    await waitFor(() => {
-      expect(restoreConversationMock).toHaveBeenCalledWith(42, expect.anything());
-    });
+    expect(restoreConversationMock).toHaveBeenCalledWith(42, expect.anything());
   });
 
   it("clears the selection once restore succeeds, leaving the row out of the trash view", async () => {
     const user = setupUser();
     renderAt("/trash?tsel=42");
+    await settle();
 
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Restore" }));
+    await settle();
 
-    await waitFor(() => {
-      expect(screen.queryByText("Ada Lovelace")).toBeNull();
-      expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
-    });
+    expect(screen.queryByText("Ada Lovelace")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
     expect(
-      screen.getByText(/in Trash\. Select one on the left to view it\.|Trash is empty\./),
+      screen.getByText(/in Trash\. Select one on the left to view it\.|Trash is empty/),
     ).toBeTruthy();
   });
 
@@ -265,11 +283,13 @@ describe("TrashScreen", () => {
     restoreConversationMock.mockRejectedValue(new Error("Could not restore this conversation."));
     const user = setupUser();
     renderAt("/trash?tsel=42");
+    await settle();
 
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Restore" }));
+    await settle();
 
-    expect(await screen.findByText("Could not restore this conversation.")).toBeTruthy();
+    expect(screen.getByText("Could not restore this conversation.")).toBeTruthy();
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
   });
 
@@ -277,8 +297,9 @@ describe("TrashScreen", () => {
     it("lists trashed contacts, asking the server for them with trashed:yes", async () => {
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       renderAt("/trash");
+      await settle();
 
-      expect(await screen.findByText("Grace Hopper")).toBeTruthy();
+      expect(screen.getByText("Grace Hopper")).toBeTruthy();
       expect(listContactsMock).toHaveBeenCalledWith(
         expect.objectContaining({ q: "trashed:yes" }),
         expect.anything(),
@@ -287,7 +308,7 @@ describe("TrashScreen", () => {
 
     it("restores a contact from its row and drops it from the list", async () => {
       const user = setupUser();
-      // The server, modelled: restoring takes the contact out of the trash, so
+      // The server, modeled: restoring takes the contact out of the trash, so
       // the refetch the mutation triggers answers with an empty page.
       let trashed = [contact(7, "Grace Hopper")];
       listContactsMock.mockImplementation(async () => contactPage(trashed));
@@ -295,31 +316,31 @@ describe("TrashScreen", () => {
         trashed = [];
       });
       renderAt("/trash");
+      await settle();
 
-      await user.click(await screen.findByRole("button", { name: "Restore Grace Hopper" }));
+      await user.click(screen.getByRole("button", { name: "Restore Grace Hopper" }));
+      await settle();
 
-      await waitFor(() => {
-        expect(restoreContactMock).toHaveBeenCalledWith(7, expect.anything());
-      });
+      expect(restoreContactMock).toHaveBeenCalledWith(7, expect.anything());
 
-      await waitFor(() => {
-        expect(screen.queryByText("Grace Hopper")).toBeNull();
-      });
-      expect(screen.getByText("No contacts in Trash.")).toBeTruthy();
+      expect(screen.queryByText("Grace Hopper")).toBeNull();
+      expect(screen.getByText("No contacts in Trash")).toBeTruthy();
     });
 
     it("says so when conversations are in the trash but no contacts are", async () => {
       renderAt("/trash");
+      await settle();
 
-      expect(await screen.findByText("No contacts in Trash.")).toBeTruthy();
+      expect(screen.getByText("No contacts in Trash")).toBeTruthy();
       expect(screen.getByText(/in Trash\. Select one on the left to view it\./)).toBeTruthy();
     });
 
     it("shows both sections when the trash holds conversations and contacts", async () => {
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       renderAt("/trash");
+      await settle();
 
-      expect(await screen.findByText("Grace Hopper")).toBeTruthy();
+      expect(screen.getByText("Grace Hopper")).toBeTruthy();
       expect(screen.getByText("Conversations")).toBeTruthy();
       expect(screen.getByText("Contacts")).toBeTruthy();
     });
@@ -328,9 +349,10 @@ describe("TrashScreen", () => {
       listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       renderAt("/trash");
+      await settle();
 
-      expect(await screen.findByText("Grace Hopper")).toBeTruthy();
-      expect(screen.getByText("No conversations in Trash.")).toBeTruthy();
+      expect(screen.getByText("Grace Hopper")).toBeTruthy();
+      expect(screen.getByText("No conversations in Trash")).toBeTruthy();
     });
 
     it("shows an error when restoring a contact fails", async () => {
@@ -338,22 +360,44 @@ describe("TrashScreen", () => {
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       const user = setupUser();
       renderAt("/trash");
+      await settle();
 
-      await user.click(await screen.findByRole("button", { name: "Restore Grace Hopper" }));
+      await user.click(screen.getByRole("button", { name: "Restore Grace Hopper" }));
+      await settle();
 
-      expect(await screen.findByText("Could not restore this contact.")).toBeTruthy();
+      expect(screen.getByText("Could not restore this contact.")).toBeTruthy();
       expect(screen.getByText("Grace Hopper")).toBeTruthy();
     });
 
     it("narrows both kinds with the header search term", async () => {
       listContactsMock.mockResolvedValue(contactPage([]));
       renderAt("/trash?tq=ada");
+      await settle();
 
-      expect(await screen.findByText("No contacts match this search.")).toBeTruthy();
+      expect(screen.getByText("No contacts match this search")).toBeTruthy();
       expect(listContactsMock).toHaveBeenCalledWith(
         expect.objectContaining({ q: "trashed:yes (ada)" }),
         expect.anything(),
       );
+    });
+
+    it("says no conversation matches a search that finds only contacts", async () => {
+      listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
+      listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
+      renderAt("/trash?tq=grace");
+      await settle();
+
+      expect(screen.getByText("Grace Hopper")).toBeTruthy();
+      expect(screen.getByText("No conversations match this search")).toBeTruthy();
+    });
+
+    it("says nothing in Trash matches a search that finds neither kind", async () => {
+      listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
+      listContactsMock.mockResolvedValue(contactPage([]));
+      renderAt("/trash?tq=nobody");
+      await settle();
+
+      expect(screen.getByText("Nothing in Trash matches this search")).toBeTruthy();
     });
   });
 
@@ -361,11 +405,13 @@ describe("TrashScreen", () => {
     it("deletes the selected conversation after the dialog is confirmed, and clears the selection", async () => {
       const user = setupUser();
       renderAt("/trash?tsel=42");
+      await settle();
 
-      expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+      expect(screen.getByText("Ada Lovelace")).toBeTruthy();
       await user.click(screen.getByRole("button", { name: "Delete" }));
+      await settle();
 
-      const dialog = await screen.findByRole("dialog", { name: "Delete this conversation?" });
+      const dialog = screen.getByRole("dialog", { name: "Delete this conversation?" });
       expect(
         within(dialog).getByText(/Deletes Ada Lovelace and its 5 messages from your Message Crate/),
       ).toBeTruthy();
@@ -373,27 +419,66 @@ describe("TrashScreen", () => {
       expect(deleteConversationMock).not.toHaveBeenCalled();
 
       await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+      await settle();
 
-      await waitFor(() => {
-        expect(deleteConversationMock).toHaveBeenCalledWith(42, expect.anything());
-      });
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).toBeNull();
-        expect(screen.queryByText("Ada Lovelace")).toBeNull();
-      });
+      expect(deleteConversationMock).toHaveBeenCalledWith(42, expect.anything());
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByText("Ada Lovelace")).toBeNull();
+    });
+
+    it("names an untitled group in the dialog after everyone in it, as the conversation list does", async () => {
+      getConversationMock.mockResolvedValue(
+        conversation({
+          is_group: true,
+          participants: [
+            participant({ name: "Ann", identity: "+15550101" }),
+            participant({ name: "Bob", identity: "+15550102" }),
+            participant({ name: "Cy", identity: "+15550103" }),
+          ],
+        }),
+      );
+      const user = setupUser();
+      renderAt("/trash?tsel=42");
+      await settle();
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await settle();
+
+      const dialog = screen.getByRole("dialog", { name: "Delete this conversation?" });
+      expect(
+        within(dialog).getByText(/Deletes Ann, Bob, Cy and its 5 messages from your Message Crate/),
+      ).toBeTruthy();
+    });
+
+    it("names a conversation with nobody to name as the conversation list does", async () => {
+      getConversationMock.mockResolvedValue(conversation({ participants: [] }));
+      const user = setupUser();
+      renderAt("/trash?tsel=42");
+      await settle();
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await settle();
+
+      const dialog = screen.getByRole("dialog", { name: "Delete this conversation?" });
+      expect(
+        within(dialog).getByText(/Deletes \(unknown\) and its 5 messages from your Message Crate/),
+      ).toBeTruthy();
     });
 
     it("keeps the dialog open and shows why when deleting a conversation fails", async () => {
       deleteConversationMock.mockRejectedValue(new Error("Could not delete this conversation."));
       const user = setupUser();
       renderAt("/trash?tsel=42");
+      await settle();
 
-      await screen.findByText("Ada Lovelace");
+      expect(screen.getByText("Ada Lovelace")).toBeTruthy();
       await user.click(screen.getByRole("button", { name: "Delete" }));
-      const dialog = await screen.findByRole("dialog");
+      await settle();
+      const dialog = screen.getByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+      await settle();
 
-      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(
         "Could not delete this conversation.",
       );
       expect(screen.getByText("Ada Lovelace")).toBeTruthy();
@@ -407,34 +492,35 @@ describe("TrashScreen", () => {
         trashed = [];
       });
       renderAt("/trash");
+      await settle();
 
-      await user.click(await screen.findByRole("button", { name: "Delete Grace Hopper" }));
+      await user.click(screen.getByRole("button", { name: "Delete Grace Hopper" }));
+      await settle();
 
-      const dialog = await screen.findByRole("dialog", { name: "Delete Grace Hopper?" });
+      const dialog = screen.getByRole("dialog", { name: "Delete Grace Hopper?" });
       expect(
         within(dialog).getByText(
           "The name and details go, and the contact becomes Unknown. The messages stay, showing the phone number or address instead.",
         ),
       ).toBeTruthy();
       await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+      await settle();
 
-      await waitFor(() => {
-        expect(deleteContactMock).toHaveBeenCalledWith(7, expect.anything());
-      });
-      await waitFor(() => {
-        expect(screen.queryByText("Grace Hopper")).toBeNull();
-      });
-      expect(screen.getByText("No contacts in Trash.")).toBeTruthy();
+      expect(deleteContactMock).toHaveBeenCalledWith(7, expect.anything());
+      expect(screen.queryByText("Grace Hopper")).toBeNull();
+      expect(screen.getByText("No contacts in Trash")).toBeTruthy();
     });
 
     it("empties the trash after the dialog is confirmed", async () => {
       const user = setupUser();
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       renderAt("/trash");
+      await settle();
 
-      await user.click(await screen.findByRole("button", { name: "Empty Trash" }));
+      await user.click(screen.getByRole("button", { name: "Empty Trash" }));
+      await settle();
 
-      const dialog = await screen.findByRole("dialog", { name: "Empty Trash?" });
+      const dialog = screen.getByRole("dialog", { name: "Empty Trash?" });
       expect(
         within(dialog).getByText(
           /Every contact in Trash loses its name and details and becomes Unknown; their messages stay\./,
@@ -443,22 +529,21 @@ describe("TrashScreen", () => {
       expect(emptyTrashMock).not.toHaveBeenCalled();
 
       await user.click(within(dialog).getByRole("button", { name: "Empty Trash" }));
+      await settle();
 
-      await waitFor(() => {
-        expect(emptyTrashMock).toHaveBeenCalledTimes(1);
-      });
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).toBeNull();
-      });
+      expect(emptyTrashMock).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
 
     it("says Empty Trash empties all of Trash while a search narrows the view", async () => {
       const user = setupUser();
       renderAt("/trash?tq=ada");
+      await settle();
 
-      await user.click(await screen.findByRole("button", { name: "Empty Trash" }));
+      await user.click(screen.getByRole("button", { name: "Empty Trash" }));
+      await settle();
 
-      const dialog = await screen.findByRole("dialog", { name: "Empty Trash?" });
+      const dialog = screen.getByRole("dialog", { name: "Empty Trash?" });
       expect(
         within(dialog).getByText(/This empties all of Trash, not only what matches the search\./),
       ).toBeTruthy();
@@ -467,8 +552,9 @@ describe("TrashScreen", () => {
     it("does not offer Empty Trash when the trash is empty", async () => {
       listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
       renderAt("/trash");
+      await settle();
 
-      expect(await screen.findByText("Trash is empty.")).toBeTruthy();
+      expect(screen.getByText("Trash is empty")).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Empty Trash" })).toBeNull();
     });
 
@@ -476,11 +562,10 @@ describe("TrashScreen", () => {
       getAccountProfileMock.mockResolvedValue(profile(false));
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       renderAt("/trash?tsel=42");
+      await settle();
 
-      expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Empty Trash" })).toBeDisabled();
-      });
+      expect(screen.getByText("Ada Lovelace")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Empty Trash" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "Delete Grace Hopper" })).toBeDisabled();
       // Restore stays available: only deleting needs the grant.
@@ -498,30 +583,45 @@ describe("TrashScreen", () => {
       }),
     );
     // The left column selects a row by setting `tsel`, as AppLayout does.
-    function SelectBob() {
+    function Select() {
       const navigate = useNavigate();
       return (
-        <button type="button" onClick={() => navigate("/trash?tsel=7")}>
-          select Bob
-        </button>
+        <>
+          <button type="button" onClick={() => navigate("/trash?tsel=42")}>
+            select Ada
+          </button>
+          <button type="button" onClick={() => navigate("/trash?tsel=7")}>
+            select Bob
+          </button>
+        </>
       );
     }
+    // `keepUnread` holds Bob's detail while Ada is selected, as the app's
+    // client does, so selecting him again draws his pane from the cache.
     render(
-      <Providers>
-        <MemoryRouter initialEntries={["/trash?tsel=42"]}>
-          <SelectBob />
+      <Providers keepUnread>
+        <MemoryRouter initialEntries={["/trash?tsel=7"]}>
+          <Select />
           <TrashScreen />
         </MemoryRouter>
       </Providers>,
     );
+    await settle();
+    expect(screen.getByText("Bob Kahn")).toBeTruthy();
 
-    await screen.findByText("Ada Lovelace");
     const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "select Ada" }));
+    await settle();
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Restore" }));
-    await screen.findByText("Restore refused.");
+    await settle();
+    expect(screen.getByText("Restore refused.")).toBeTruthy();
 
+    // No "Loading…" comes between Ada's pane and Bob's to unmount hers, so
+    // only the key keeps her error off his pane.
     await user.click(screen.getByRole("button", { name: "select Bob" }));
-    await screen.findByText("Bob Kahn");
+    await settle();
+    expect(screen.getByText("Bob Kahn")).toBeTruthy();
     expect(screen.queryByText("Restore refused.")).toBeNull();
   });
 
@@ -532,7 +632,8 @@ describe("TrashScreen", () => {
       const items = everyone.slice(0, 100);
       listContactsMock.mockResolvedValue({ items, total: 150, limit: 100, offset: 0 });
       renderAt("/trash");
-      await screen.findByText("Person 100");
+      await settle();
+      expect(screen.getByText("Person 100")).toBeTruthy();
       expect(screen.queryByText(/150/)).not.toBeNull();
     });
 
@@ -544,12 +645,14 @@ describe("TrashScreen", () => {
         offset,
       }));
       renderAt("/trash");
-      await screen.findByText("Person 1");
+      await settle();
+      expect(screen.getByText("Person 1")).toBeTruthy();
       expect(screen.queryByText("Person 150")).toBeNull();
       // Scrolled to the end of the contacts loaded: jsdom has no layout, so
       // every height reads 0 and the list is at its end.
       fireEvent.scroll(screen.getByRole("list", { name: "Contacts in Trash" }));
-      await screen.findByText("Person 150");
+      await settle();
+      expect(screen.getByText("Person 150")).toBeTruthy();
       expect(screen.getByRole("button", { name: "Restore Person 150" })).not.toBeDisabled();
     });
   });

@@ -17,7 +17,8 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result, bail};
 
 use crate::Kind;
-use crate::tools::{ffprobe_available, probe_video, require_ffmpeg, run_ffmpeg_until};
+use crate::signature::{media_type_from_bytes, read_head};
+use crate::tools::{MediaTools, Reads};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -27,7 +28,9 @@ pub const THUMBNAIL_LONG_EDGE: u32 = 560;
 const PREVIEW_VIDEO_LONG_EDGE: u32 = 1920;
 
 /// The media types every browser shows as they are (rule 2): JPEG, PNG, GIF
-/// and WebP images, and MP3 audio. MP4 is one too, but only with H.264 video,
+/// and WebP images, and MP3 audio. A file declared one of them is shown as
+/// it is only when its first bytes are that type's signature
+/// ([`media_type_from_bytes`]). MP4 is one too, but only with H.264 video,
 /// which only the file can tell ([`browser_shows`]).
 const SHOWN_AS_IS: &[&str] = &[
     "image/jpeg",
@@ -65,9 +68,7 @@ pub fn media_type_of(
             .trim()
             .to_ascii_lowercase();
         // The usual spelling of an alias, through the one table.
-        let usual = crate::ext_for_mime(&base)
-            .and_then(crate::mime_for_ext)
-            .map_or(base, str::to_string);
+        let usual = crate::usual_media_type(&base).map_or(base, str::to_string);
         return Some(usual);
     }
     name_hints
@@ -81,25 +82,42 @@ pub fn media_type_of(
 /// Anything else, a HEIC photo, a HEVC video, an AMR voice note, needs a
 /// Preview.
 ///
-/// Only an MP4 is opened, by ffprobe, to read its video codec. One ffprobe
+/// A declared type is only a claim, so a JPEG, PNG, GIF, WebP or MP3 is
+/// shown as it is only when its first bytes are that type's
+/// ([`media_type_from_bytes`]). One that starts as something else gets a
+/// Preview.
+/// `None` for one that cannot be read: nothing is known about its bytes, so
+/// a caller keeps what it knew before.
+///
+/// An MP4 is opened by ffprobe, to read its video codec. One ffprobe
 /// cannot read counts as not shown, so it is given a Preview. `None` for an
-/// MP4 while ffprobe is missing: nothing can be known about its codec, so a
-/// caller keeps what it knew before.
+/// MP4 while ffprobe is missing, for the same reason.
 #[must_use]
-pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
+pub fn browser_shows(tools: &dyn MediaTools, src: &Path, media_type: Option<&str>) -> Option<bool> {
     let Some(media_type) = media_type else {
         return Some(false);
     };
     if SHOWN_AS_IS.contains(&media_type) {
-        return Some(true);
+        return read_head(src)
+            .ok()
+            .map(|head| media_type_from_bytes(&head, Some(media_type)) == Some(media_type));
     }
     if media_type != "video/mp4" {
         return Some(false);
     }
-    if !ffprobe_available() {
+    if !tools.can_probe() {
         return None;
     }
-    Some(probe_video(src).is_ok_and(|probe| probe.codec == "h264"))
+    Some(tools.probe(src).is_ok_and(|probe| probe.codec == "h264"))
+}
+
+/// Whether every browser shows a file of `media_type` as it is, judged by
+/// the type alone: a JPEG, PNG, GIF, WebP or MP3. What a caller assumes
+/// when [`browser_shows`] answers `None` and it knows nothing better, so an
+/// original that cannot be read is not given a Preview its type never needs.
+#[must_use]
+pub fn shown_as_is_by_type(media_type: Option<&str>) -> bool {
+    media_type.is_some_and(|media_type| SHOWN_AS_IS.contains(&media_type))
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the
@@ -112,8 +130,13 @@ pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
 ///
 /// Returns an error when ffmpeg is missing or cannot read `src`, or `stop`
 /// is set.
-pub fn make_thumbnail(src: &Path, dest: &Path, stop: &AtomicBool) -> Result<()> {
-    require_ffmpeg()?;
+pub fn make_thumbnail(
+    tools: &dyn MediaTools,
+    src: &Path,
+    dest: &Path,
+    stop: &AtomicBool,
+) -> Result<()> {
+    tools.require()?;
     let edge = THUMBNAIL_LONG_EDGE;
     let args = vec![
         "-y".into(),
@@ -133,9 +156,10 @@ pub fn make_thumbnail(src: &Path, dest: &Path, stop: &AtomicBool) -> Result<()> 
         "image2".into(),
         "-c:v".into(),
         "mjpeg".into(),
-        path_str(dest),
     ];
-    run_ffmpeg_until(&args, stop).with_context(|| format!("thumbnail of {}", src.display()))
+    tools
+        .transcode(&args, dest, Reads::OneFrame, Some(stop))
+        .with_context(|| format!("thumbnail of {}", src.display()))
 }
 
 /// The extension of the Preview of a `kind` file: what every browser shows.
@@ -158,8 +182,14 @@ pub fn preview_extension(kind: Kind) -> &'static str {
 ///
 /// Returns an error when ffmpeg is missing or cannot convert `src`, or
 /// `stop` is set.
-pub fn make_preview(src: &Path, kind: Kind, dest: &Path, stop: &AtomicBool) -> Result<()> {
-    require_ffmpeg()?;
+pub fn make_preview(
+    tools: &dyn MediaTools,
+    src: &Path,
+    kind: Kind,
+    dest: &Path,
+    stop: &AtomicBool,
+) -> Result<()> {
+    tools.require()?;
     let wanted = preview_extension(kind);
     if dest.extension().and_then(|e| e.to_str()) != Some(&wanted[1..]) {
         bail!(
@@ -216,8 +246,14 @@ pub fn make_preview(src: &Path, kind: Kind, dest: &Path, stop: &AtomicBool) -> R
             ]);
         }
     }
-    args.push(path_str(dest));
-    run_ffmpeg_until(&args, stop).with_context(|| format!("preview of {}", src.display()))
+    let reads = match kind {
+        Kind::Image => Reads::OneFrame,
+        Kind::Audio => Reads::Audio(src),
+        Kind::Video => Reads::Video(src),
+    };
+    tools
+        .transcode(&args, dest, reads, Some(stop))
+        .with_context(|| format!("preview of {}", src.display()))
 }
 
 fn path_str(path: &Path) -> String {

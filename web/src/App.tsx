@@ -1,33 +1,45 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ApiTokenRevealProvider } from "./components/ApiTokenRevealDialog";
 import AppLayout from "./components/AppLayout";
 import { AuthGuard } from "./components/AuthGuard";
+import AuthShell from "./components/AuthShell";
+import {
+  ContactsRoute,
+  ConversationsRoute,
+  NoListRoute,
+  OpenConversationRoute,
+  TrashRoute,
+} from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
-import MessageRoute from "./components/MessageRoute";
-import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
-import { AuthProvider, useAuth } from "./lib/auth";
+import { useAuth } from "./hooks/useAuth";
+import { useIsOwner } from "./hooks/useIsOwner";
+import { useNeedsProfileSetup } from "./hooks/useNeedsProfileSetup";
+import { lazyChunk } from "./lib/chunkLoad";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";
-import { useIsOwner } from "./lib/useIsOwner";
-import { useNeedsProfileSetup } from "./lib/useNeedsProfileSetup";
 import LoginScreen from "./screens/LoginScreen";
+import { SettingsScreen } from "./screens/lazySettingsScreen";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import OwnerHome from "./screens/OwnerHome";
+import { useMouseHistoryNavigation } from "./useMouseHistoryNavigation";
 
 /**
  * Import and export only ever run in the desktop app, so their code — the
  * importer forms, the job runner and the Tauri bridge behind them — is split out
  * and never downloaded by a browser visiting the website build.
  */
-const ImportScreen = lazy(() => import("./screens/ImportScreen"));
-const ExportScreen = lazy(() => import("./screens/ExportScreen"));
+const ImportScreen = lazyChunk("ImportScreen", () => import("./screens/ImportScreen"));
+const ExportScreen = lazyChunk("ExportScreen", () => import("./screens/ExportScreen"));
 
-/** Settings and trash are their own routes and are not on the first paint path. */
-const SettingsScreen = lazy(() => import("./screens/SettingsScreen"));
-const TrashScreen = lazy(() => import("./screens/TrashScreen"));
+/**
+ * Trash is its own route and is not on the first paint path. Neither is
+ * Settings, which Owner Home opens too (`lazySettingsScreen`).
+ */
+const TrashScreen = lazyChunk("TrashScreen", () => import("./screens/TrashScreen"));
 
-function AppRoutes() {
+/** Every route of the app; exported so tests drive the real route table. */
+export function AppRoutes() {
   const { isAuthenticated } = useAuth();
   const { isOwner } = useIsOwner();
   const { needsSetup: needsOnboarding } = useNeedsProfileSetup();
@@ -71,46 +83,57 @@ function AppRoutes() {
             </TimeZoneProvider>
           }
         >
-          <Route index element={null} />
-          <Route path="contacts" element={null} />
-          <Route path="group/:slug" element={null} />
-          <Route path="no-group" element={null} />
-          <Route path="unknown" element={null} />
-          <Route path="tag/:slug" element={null} />
-          <Route path="no-tag" element={null} />
+          {/* Each route's element renders the columns beside the navigation
+              panel and tells the layout what the header searches and
+              which navigation item to highlight. */}
+          <Route index element={<ConversationsRoute />} />
+          <Route path="tag/:slug" element={<ConversationsRoute />} />
+          <Route path="no-tag" element={<ConversationsRoute tag="none" />} />
+          <Route path="contacts" element={<ContactsRoute />} />
+          <Route path="group/:slug" element={<ContactsRoute />} />
+          <Route path="no-group" element={<ContactsRoute group="none" />} />
+          <Route path="unknown" element={<ContactsRoute group="unknown" />} />
           <Route
             path="trash"
             element={
-              <Suspense fallback={null}>
-                <TrashScreen />
-              </Suspense>
+              <TrashRoute>
+                <Suspense fallback={null}>
+                  <TrashScreen />
+                </Suspense>
+              </TrashRoute>
             }
           />
           <Route
             path="import"
             element={
-              <ImportExportRoute feature="import">
-                <ImportScreen />
-              </ImportExportRoute>
+              <NoListRoute navItem="import">
+                <ImportExportRoute feature="import">
+                  <ImportScreen />
+                </ImportExportRoute>
+              </NoListRoute>
             }
           />
           <Route
             path="export"
             element={
-              <ImportExportRoute feature="export">
-                <ExportScreen />
-              </ImportExportRoute>
+              <NoListRoute navItem="export">
+                <ImportExportRoute feature="export">
+                  <ExportScreen />
+                </ImportExportRoute>
+              </NoListRoute>
             }
           />
           <Route
             path="settings"
             element={
-              <Suspense fallback={null}>
-                <SettingsScreen />
-              </Suspense>
+              <NoListRoute>
+                <Suspense fallback={null}>
+                  <SettingsScreen />
+                </Suspense>
+              </NoListRoute>
             }
           />
-          <Route path="messages/:conversationId" element={<MessageRoute />} />
+          <Route path="messages/:conversationId" element={<OpenConversationRoute />} />
         </Route>
       </Route>
 
@@ -123,9 +146,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
+      <AuthShell>
         <AppRoutes />
-      </AuthProvider>
+      </AuthShell>
     </ThemeProvider>
   );
 }

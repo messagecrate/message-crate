@@ -7,8 +7,8 @@
  * literals typed at each call site, that knowledge lived in comments, and
  * screens kept their own override maps rather than trusting a prefix they
  * could not name. Marking entries stale needs no prefix from here: every
- * write marks the whole account's cache stale (`invalidateAccount` in
- * `routeQuery.ts`).
+ * write marks the whole account's cache stale (`useMarkAccountStale` in
+ * `hooks/useRouteQuery.ts`).
  *
  * One rule, for every resource: a namespace whose `all` is the prefix, with
  * the builders nested under it. The account is not here — `routeQueryKey` puts
@@ -26,7 +26,30 @@
 export type AuditTrailKey = "all" | "own" | `account:${number}` | `deleted:${number}`;
 
 /** What makes one page of the conversation list its own cache entry. */
-export type ConversationListKey = { q: string; sort: string; order: string };
+type ConversationListKey = { q: string; sort: string; order: string };
+
+/** The Import form's Apple Messages method and paths, as one path check reads them. */
+export type ImessagePathsKey = {
+  source: string;
+  backupPath: string;
+  attachmentRoot: string;
+  appleContacts: string;
+};
+
+/** The Import form's WhatsApp method and paths, as one path check reads them. */
+export type WhatsappPathsKey = {
+  source: string;
+  backupPath: string;
+  contactsDb: string;
+  media: string;
+  db: string;
+};
+
+/** The Import form's Android SMS source and backup path, as one path check reads them. */
+export type AndroidSmsPathsKey = {
+  source: string;
+  backupPath: string;
+};
 
 export const keys = {
   contacts: {
@@ -61,6 +84,13 @@ export const keys = {
      */
     unmatchedCount: (identifiers: readonly string[]) =>
       ["contacts", "unmatched-count", identifiers] as const,
+    /**
+     * The contacts the search box offers for a person word, one entry per
+     * typed prefix. One page, not the paged `InfiniteData` of `lists`, so it
+     * sits outside that prefix, and under `all`, so a write that changes
+     * contacts changes what is offered.
+     */
+    suggest: (prefix: string) => ["contacts", "suggest", prefix] as const,
   },
   conversations: {
     all: ["conversations"] as const,
@@ -174,4 +204,54 @@ export const keys = {
    * so it is used as it is, without `routeQueryKey` in front (ADR 0002).
    */
   desktopToolsStatus: { all: ["desktop", "tools-status"] as const },
+  /** The Export Directory, from the desktop process; used as it is, like `desktopToolsStatus`. */
+  desktopExportDirectory: { all: ["desktop", "export-directory"] as const },
+  /** The Staging Directory and its default, from the desktop process; used as it is, like `desktopToolsStatus`. */
+  desktopStagingDirectory: { all: ["desktop", "staging-directory"] as const },
+  /**
+   * The disk space the Staging Directory takes on this computer, from the
+   * desktop process. It belongs to this computer, so it is used as it is,
+   * like `desktopToolsStatus` (ADR 0002). `of` is one account's Import Runs
+   * on one Message Crate, named with the account and the Message Crate
+   * themselves, since the desktop process answers for whichever the window
+   * names. `unknown` holds nothing: it is the key while the window does not
+   * yet know which account on which Message Crate it is, so no entry looks
+   * like one an account asked for. `all` is the whole directory.
+   */
+  desktopStagingBytes: {
+    of: (accountId: number, messageCrateId: string) =>
+      ["desktop", "staging-bytes", accountId, messageCrateId] as const,
+    unknown: ["desktop", "staging-bytes", "unknown"] as const,
+    all: ["desktop", "staging-bytes", "all"] as const,
+  },
+  /**
+   * What the desktop process says about the free space of the Staging and
+   * Scratch Directories' disks; used as it is, like `desktopToolsStatus`.
+   * The answer does not depend on the source: `of(source)` puts it in the
+   * key only so that picking a source reads the disks again (#2010).
+   */
+  desktopLowDiskSpace: {
+    all: ["desktop", "low-disk-space"] as const,
+    of: (source: string) => ["desktop", "low-disk-space", source] as const,
+  },
+  /** The log of the Import Run whose directory is `runDir`, as the desktop process names it. */
+  desktopImportRunLog: {
+    all: ["desktop", "import-run-log"] as const,
+    of: (runDir: string) => ["desktop", "import-run-log", runDir] as const,
+  },
+  /** What the Apple Messages fields of the Import form point at, one entry per method and paths. */
+  desktopImessagePaths: {
+    all: ["desktop", "imessage-paths"] as const,
+    of: (paths: ImessagePathsKey) => ["desktop", "imessage-paths", paths] as const,
+  },
+  /** What the WhatsApp fields of the Import form point at, one entry per method and paths. */
+  desktopWhatsappPaths: {
+    all: ["desktop", "whatsapp-paths"] as const,
+    of: (paths: WhatsappPathsKey) => ["desktop", "whatsapp-paths", paths] as const,
+  },
+  /** What the Android SMS backup path of the Import form points at, one entry per source and path. */
+  desktopAndroidSmsPaths: {
+    all: ["desktop", "android-sms-paths"] as const,
+    of: (paths: AndroidSmsPathsKey) => ["desktop", "android-sms-paths", paths] as const,
+  },
 };

@@ -9,7 +9,11 @@ use crate::extract::{Json, Path as AxumPath, Query};
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::Deserialize;
+use sqlx::SqlitePool;
 
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, FullDeleteAccess};
+use crate::config::Config;
 use crate::db::conversation_messages::{
     DEFAULT_MESSAGE_SORT, MESSAGE_SORT_KEYS, Message, MessageWindow, get_conversation_messages,
 };
@@ -21,7 +25,6 @@ use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, 
 use crate::paging::{
     DEFAULT_LIST_LIMIT, ListRequest, Page, PageQuery, page_of, page_params, parse_sort,
 };
-use crate::server::{ApiError, AppState, FullAccess, FullDeleteAccess};
 
 /// Page through conversations with participants, message counts, and tags.
 /// Newest activity first unless `sort` says otherwise.
@@ -42,11 +45,11 @@ use crate::server::{ApiError, AppState, FullAccess, FullDeleteAccess};
     )
 )]
 pub(crate) async fn list_conversations(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<ConversationSummary>>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let list = ListRequest::read(
         &mut conn,
         auth.account_id,
@@ -60,15 +63,14 @@ pub(crate) async fn list_conversations(
         auth.account_id,
         &list.q,
         &list.order,
-        list.page.limit,
-        list.page.offset,
+        list.page,
         list.clock,
     )
     .await?;
     Ok(Json(result))
 }
 
-/// One conversation, in the same shape a list row already has — so a caller
+/// One conversation, in the same shape a list row already has, so a caller
 /// that opens a conversation from a list does not have to convert between two
 /// shapes, and paging through the whole list to find one id is never
 /// necessary. Trash is a property the list applies, not a bar to reading:
@@ -84,16 +86,16 @@ pub(crate) async fn list_conversations(
     )
 )]
 pub(crate) async fn get_conversation(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(conversation_id): AxumPath<i64>,
 ) -> Result<Json<ConversationSummary>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let conversation =
         get_conversation_summary(&mut conn, auth.account_id, conversation_id).await?;
     conversation
         .map(Json)
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))
+        .ok_or_else(|| ApiError::not_found("conversation"))
 }
 
 /// Per-backup message counts for one conversation (the Sources panel).
@@ -112,16 +114,16 @@ pub(crate) async fn get_conversation(
     )
 )]
 pub(crate) async fn list_conversation_sources(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(conversation_id): AxumPath<i64>,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<ConversationSource>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let rows = list_conversation_source_stats(&mut conn, auth.account_id, conversation_id).await?;
     rows.map(|rows| Json(page_of(rows, params)))
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))
+        .ok_or_else(|| ApiError::not_found("conversation"))
 }
 
 /// Query string for a conversation's messages.
@@ -165,7 +167,7 @@ impl ListConversationMessagesQuery {
             (Some(id), _, _) => MessageWindow::Around(id),
             (_, Some(id), _) => MessageWindow::Before(id),
             (_, _, Some(id)) => MessageWindow::After(id),
-            _ => MessageWindow::Offset(self.offset.unwrap_or(0)),
+            _ => MessageWindow::Offset,
         })
     }
 }
@@ -196,11 +198,11 @@ impl ListConversationMessagesQuery {
         ("after" = Option<i64>, Query, description = "Message id: the page just after this message in the page's order, without it. Not with `offset`, `around` or `before`.")
     ),
     responses(
-        (status = 200, body = crate::paging::Page<message_crate_api_types::Message>),
+        (status = 200, body = crate::paging::Page<api_types::Message>),
     )
 )]
 pub(crate) async fn list_conversation_messages(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(conversation_id): AxumPath<i64>,
     Query(query): Query<ListConversationMessagesQuery>,
@@ -212,19 +214,19 @@ pub(crate) async fn list_conversation_messages(
         &DEFAULT_MESSAGE_SORT,
     )?;
     let window = query.window()?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let result = get_conversation_messages(
         &mut conn,
         auth.account_id,
         conversation_id,
         &order,
-        page.limit,
+        page,
         window,
     )
     .await?;
     result
         .map(Json)
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))
+        .ok_or_else(|| ApiError::not_found("conversation"))
 }
 
 /// Put a conversation in the trash. Idempotent: trashing an
@@ -240,11 +242,11 @@ pub(crate) async fn list_conversation_messages(
     )
 )]
 pub(crate) async fn trash_conversation(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(conversation_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     if move_to_trash(
         &mut conn,
         auth.account_id,
@@ -254,7 +256,7 @@ pub(crate) async fn trash_conversation(
     {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::NotFound("conversation not found".into()))
+        Err(ApiError::not_found("conversation"))
     }
 }
 
@@ -271,11 +273,11 @@ pub(crate) async fn trash_conversation(
     )
 )]
 pub(crate) async fn restore_conversation(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(conversation_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     if restore(
         &mut conn,
         auth.account_id,
@@ -285,7 +287,7 @@ pub(crate) async fn restore_conversation(
     {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::NotFound("conversation not found".into()))
+        Err(ApiError::not_found("conversation"))
     }
 }
 
@@ -305,32 +307,34 @@ pub(crate) async fn restore_conversation(
     )
 )]
 pub(crate) async fn delete_conversation(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
     FullDeleteAccess(auth): FullDeleteAccess,
     AxumPath(conversation_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
     let outcome = {
-        let mut conn = state.db.acquire().await?;
+        let mut conn = db.acquire().await?;
         delete_trashed(
             &mut conn,
             auth.account_id,
             Trashable::Conversation(conversation_id),
             crate::db::audit_trail::AuditActor::Holder,
+            chrono::Utc::now(),
         )
         .await?
     };
     match outcome {
         DeleteOutcome::Deleted(unreferenced) => {
             crate::asset_store::remove_unreferenced(
-                &state.db,
-                Arc::clone(&state.cfg),
+                &db,
+                Arc::clone(&cfg),
                 auth.account_id,
                 unreferenced,
             )
             .await;
             Ok(StatusCode::NO_CONTENT)
         }
-        DeleteOutcome::NotOwned => Err(ApiError::NotFound("conversation not found".into())),
+        DeleteOutcome::NotOwned => Err(ApiError::not_found("conversation")),
         DeleteOutcome::NotTrashed => Err(ApiError::StateConflict(
             "the conversation is not in the trash; move it to the trash first".into(),
         )),

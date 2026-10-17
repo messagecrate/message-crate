@@ -5,7 +5,7 @@ description: "EML and MBOX layout and X-ME headers used when Message Crate write
 
 Design for a human-viewable export: **one directory per conversation**, **one `.eml` per message**, with structured `X-ME-*` headers for machine fidelity. Intended as an archive / interchange path. Mail clients can open individual messages; translators can recover SMS, group MMS, and (later) iMessage semantics without relying on CSV.
 
-**Status:** Writer in [`mail`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/mail/). Every exporter's output can be rewritten as EML or MBOX through [Convert](/docs/developer/formats/convert/). All exporters (including iMessage via [`imessage-ir-exporter`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/imessage-ir-exporter/)) go backup → [shared conversation structure](/docs/developer/reference/export-structure/) ([`message-ir`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/)) → output format (see [message-ir architecture](/docs/developer/architecture/common-message/)). JSON is the default format. iMessage writes extension headers; handwriting attaches SVG. See also [CSV columns](/docs/developer/reference/csv-columns/).
+**Status:** Writer in [`mail`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/mail/). Every exporter's output can be rewritten as EML or MBOX through [Convert](/docs/developer/formats/convert/). All exporters (including iMessage via [`imessage-ir-exporter`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/imessage-ir-exporter/)) go backup → [shared conversation structure](/docs/developer/reference/export-structure/) ([`ir`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/)) → output format (see [common message architecture](/docs/developer/architecture/common-message/)). JSON is the default format. iMessage writes extension headers; handwriting attaches SVG. See also [CSV columns](/docs/developer/reference/csv-columns/).
 
 ## Goals
 
@@ -33,7 +33,7 @@ output/
     ...
 ```
 
-- **Conversation stem:** same rules as CSV filenames from [`message_ir::conversation_stem`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/src/lib.rs), without the `.csv` suffix (e.g. `+15555550101`, `Family_Chat`, `group_+A_+B`).
+- **Conversation stem:** same rules as CSV filenames from [`ir_format::filename_stem`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/naming.rs), without the `.csv` suffix (e.g. `+15555550101`, `Family_Chat`, `group_+A_+B`).
 - **Sequence prefix:** zero-padded decimal in chronological emit order so file browsers sort stably.
 - **Timestamp in name:** local wall-clock of the message for skimming (authoritative time is still `Date` / `X-ME-Timestamp-Unix-Ms`).
 - **`guid8`:** first 8 hex chars of `X-ME-Guid` (or Message-ID local-part hash) to avoid collisions when two messages share a second.
@@ -90,7 +90,7 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
 - Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
-- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group chat's `…@chat.local` address writes its chat identifier the same way.
+- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group conversation's `…@chat.local` address writes its chat identifier the same way.
 
 ### Message-ID
 
@@ -103,9 +103,9 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 
 Browse-oriented so mail-client **Correspondents** / Subject columns stay readable. Machine identity remains in `X-ME-*`.
 
-**1:1 incoming:** `From` = peer (display name when known); `To` = owner as `Me <…>`.
+**One-to-one incoming:** `From` = peer (display name when known); `To` = owner as `Me <…>`.
 
-**1:1 outgoing:** `From` = `Me <owner>`; `To` = peer.
+**One-to-one outgoing:** `From` = `Me <owner>`; `To` = peer.
 
 **Group incoming:** `From` = actual sender; `To` = one conversation address (`Group Title <chat-id@chat.local>`); full roster in `X-ME-Participants` only.
 
@@ -113,7 +113,7 @@ Browse-oriented so mail-client **Correspondents** / Subject columns stay readabl
 
 Empty owner identity falls back to `me@sms.local` with display name `Me`. Outgoing rows set `X-ME-Sender-*` from owner identity (same as common message / CSV). Owner is always mirrored in `X-ME-Owner-*` when known.
 
-Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-format`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/) (`read_conversation_eml_dir` / `read_conversation_mbox`).
+Reverse import (EML/MBOX → common-message JSON) is available via [`ir-format`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/) (`read_conversation_eml_dir` / `read_conversation_mbox`).
 
 ## Core `X-ME-*` headers (SMS / MMS / shared)
 
@@ -132,8 +132,8 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 | Header | Values | Notes |
 |--------|----------------|-------|
 | `X-ME-Chat-Identifier` | string | Same role as CSV `chat_identifier` |
-| `X-ME-Conversation-Type` | `individual` \| `group` | |
-| `X-ME-Group-Title` | string | Empty/absent for 1:1 |
+| `X-ME-Conversation-Type` | `one-to-one` \| `group` | |
+| `X-ME-Group-Title` | string | Empty/absent for one-to-one |
 | `X-ME-Participants` | JSON `[{ "identity", "display_name" }]` | **Required for groups**; E.164 preferred for phones |
 | `X-ME-Direction` | `incoming` \| `outgoing` | |
 | `X-ME-Sender-Identity` | string | Peer or owner (outgoing); omit when unknown |
@@ -215,7 +215,7 @@ Media is transformed then embedded; FormatSink removes the staged `attachments/`
 ## Body text
 
 - Primary human body: `text/plain; charset=utf-8` (UTF-8), always `Content-Transfer-Encoding: quoted-printable`.
-- The body is the message text byte for byte. Every CR and LF of the text is encoded as `=0D` and `=0A` (RFC 2045 section 6.7, rule 1) rather than written as a line break, so the text's own line endings, trailing newlines and trailing whitespace survive a read; a text body left as bare lines would be canonicalised to CRLF and lose them (RFC 2049 section 4). The encoded body ends in a soft line break (`=` closing the last line, rule 5), which encodes nothing, so the line ending a `.eml` file or an mbox record adds after it is never read as text. A reader decodes the part and takes the result whole; it trims nothing.
+- The body is the message text byte for byte. Every CR and LF of the text is encoded as `=0D` and `=0A` (RFC 2045 section 6.7, rule 1) rather than written as a line break, so the text's own line endings, trailing newlines and trailing whitespace survive a read; a text body left as bare lines would be canonicalized to CRLF and lose them (RFC 2049 section 4). The encoded body ends in a soft line break (`=` closing the last line, rule 5), which encodes nothing, so the line ending a `.eml` file or an mbox record adds after it is never read as text. A reader decodes the part and takes the result whole; it trims nothing.
 - For multipart messages: first body part is flattened readable text; media follows as attachments.
 - Placeholders such as `[attachment]` / `[app]` are acceptable when flattening iMessage parts.
 - Optional `text/html` is deferred.
@@ -224,7 +224,7 @@ Media is transformed then embedded; FormatSink removes the staged `attachments/`
 
 ## iMessage extension
 
-Align with the unified CSV inventory in [`message_ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Apple-only cells are empty for SMS rows.
+Align with the unified CSV inventory in [`ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Apple-only cells are empty for SMS rows.
 
 ### Threading (replies)
 
@@ -279,7 +279,7 @@ MIME: `multipart/mixed` (or `related`) with flattened `text/plain` first, then a
 ### Edits / unsends
 
 - Body = **current** visible text (empty if unsent).
-- `X-ME-Earlier-Versions`: JSON array of the earlier versions, as CSV `earlier_versions_json`: `{ part_index, text, edited_at_unix_ms? }`, oldest first within each part.
+- `X-ME-Earlier-Versions`: JSON array of the earlier versions, as CSV `earlier_versions_json`: `{ part_index, text?, edited_at_unix_ms? }`, oldest first within each part. `text` is left out when the source recorded the edit and not the text it replaced, as iMazing does.
 - `X-ME-Deletion: deleted_in_source_app` for a message deleted in Messages, `X-ME-Deletion: unsent` for one unsent whole.
 - Do not invent separate “edit event” EMLs.
 
@@ -354,6 +354,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `export_*` | `X-ME-Export-*` |
 | `owner_identity` / `owner_display_name` | `X-ME-Owner-*` |
 | `backup_taken_at_unix_ms` | `X-ME-Backup-Taken-At-Unix-Ms` |
+| `exported_at_unix_ms` | `X-ME-Exported-At-Unix-Ms` |
 | `message_owner_identity` | `X-ME-Message-Owner-Identity` |
 | `participants_json` (iMessage) | `X-ME-Participants` |
 | `reactions_json` | `X-ME-Reactions` |

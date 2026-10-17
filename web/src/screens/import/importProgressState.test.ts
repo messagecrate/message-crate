@@ -3,7 +3,12 @@ import type { ImportProgressEvent } from "../../lib/types";
 import {
   attachmentDoneDetail,
   EMPTY_TIMING,
+  IMPORT_PHASE_EVENTS,
+  IMPORT_PHASES,
+  type ImportPhase,
+  type ImportPhaseEvent,
   isProgressStepComplete,
+  nextPhase,
   recordStageTime,
   type StageTiming,
   setupDetail,
@@ -66,8 +71,8 @@ describe("stepsFor", () => {
     expect(stepsFor("compress").map((s) => s.label)).toEqual(["Staging", "Media", "Upload"]);
   });
 
-  it("has no Media stage under copy or skip", () => {
-    // There is no Media stage in these modes, so a greyed-out row would be
+  it("has no Media Stage under copy or skip", () => {
+    // There is no Media Stage in these modes, so a grayed-out row would be
     // promising work that will never run.
     expect(stepsFor("copy").map((s) => s.label)).toEqual(["Staging", "Upload"]);
     expect(stepsFor("skip").map((s) => s.label)).toEqual(["Staging", "Upload"]);
@@ -99,7 +104,7 @@ describe("stepIndexFor", () => {
     expect(stepIndexFor("upload", "convert")).toBe(2);
   });
 
-  it("shifts Upload up when there is no Media stage", () => {
+  it("shifts Upload up when there is no Media Stage", () => {
     expect(stepIndexFor("upload", "copy")).toBe(1);
   });
 
@@ -109,7 +114,7 @@ describe("stepIndexFor", () => {
     expect(stepIndexFor("media", "copy")).toBe(-1);
   });
 
-  it("returns -1, not undefined, for a step string this build doesn't recognise", () => {
+  it("returns -1, not undefined, for a step string this build doesn't recognize", () => {
     // The event comes off the wire unvalidated. A lookup miss must resolve
     // to "no row"; `undefined` would make every `index < stepIndex` and
     // `index > stepIndex` comparison false at once, marking every row
@@ -171,5 +176,54 @@ describe("stageForStep", () => {
     ["upload", "upload"],
   ] as const)("puts the %s step in the %s Stage", (step, stage) => {
     expect(stageForStep(step)).toBe(stage);
+  });
+});
+
+describe("nextPhase", () => {
+  // Every move the Import screen makes, written out. A move missing here
+  // throws, so a phase write that tries one fails the test that runs it.
+  const MOVES: [ImportPhase, ImportPhaseEvent, ImportPhase][] = [
+    ["form", "identity_stop", "identity_stop"],
+    ["form", "staging_start", "running"],
+    ["identity_stop", "staging_start", "running"],
+    ["form", "resume", "running"],
+    ["running", "stop_at_staging_review", "staging_review"],
+    ["running", "stop_at_media_review", "media_review"],
+    ["staging_review", "media_start", "running"],
+    // A resume of a run the server has mid Media starts the stage from the form.
+    ["form", "media_start", "running"],
+    ["staging_review", "upload_start", "running"],
+    ["media_review", "upload_start", "running"],
+    // A resumed Upload: Staging's start already moved the screen to running.
+    ["running", "upload_start", "running"],
+    ["running", "finish", "done"],
+    ["form", "back_to_form", "form"],
+    ["identity_stop", "back_to_form", "form"],
+    ["running", "back_to_form", "form"],
+    ["staging_review", "back_to_form", "form"],
+    ["media_review", "back_to_form", "form"],
+    ["done", "back_to_form", "form"],
+  ];
+
+  it.each(MOVES)("moves from %s on %s to %s", (phase, event, to) => {
+    expect(nextPhase(phase, event)).toBe(to);
+  });
+
+  const allowed = new Set(MOVES.map(([phase, event]) => `${phase} ${event}`));
+  const refused = IMPORT_PHASES.flatMap((phase) =>
+    IMPORT_PHASE_EVENTS.filter((event) => !allowed.has(`${phase} ${event}`)).map(
+      (event): [ImportPhase, ImportPhaseEvent] => [phase, event],
+    ),
+  );
+
+  it.each(refused)("refuses %s on %s", (phase, event) => {
+    expect(() => nextPhase(phase, event)).toThrow(`no move from ${phase} on ${event}`);
+  });
+
+  it("is not forward-only: a run resumed mid Media can wait at the Staging Review", () => {
+    // `media` on the server with ffmpeg missing: the resume reads the
+    // directory again and waits at the Staging Review, before the Media Stage.
+    const resumed = nextPhase("form", "resume");
+    expect(nextPhase(resumed, "stop_at_staging_review")).toBe("staging_review");
   });
 });

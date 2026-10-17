@@ -1,5 +1,4 @@
 import type { components } from "./serverApi.types";
-import type { ToolName } from "./tauri";
 
 type Schema = components["schemas"];
 
@@ -15,9 +14,6 @@ export type Participant = Schema["Participant"];
 
 /** One conversation in the browse list. */
 export type Conversation = Schema["ConversationSummary"];
-
-/** One participant on a message. */
-export type MessageParticipant = Schema["Participant"];
 
 /** The conversation a message belongs to, as a message carries it. */
 export type MessageConversation = Schema["MessageConversation"];
@@ -42,6 +38,20 @@ export type MessageSearch = Schema["MessageSearch"];
 export type FreeTextTerm = Schema["FreeTextTerm"];
 
 export type AttachmentMediaMode = "copy" | "convert" | "compress" | "skip";
+
+/**
+ * The four attachment choices an import is started with: what happens to
+ * attachments, and the three limits Convert & Compress media works to.
+ * `mediaExtractFields` (`sbrExtractFields.ts`) turns them into the
+ * `attachment_media`, `media_max_resolution`, `media_max_fps`, and
+ * `media_min_size` fields of `ExtractConfig`.
+ */
+export type AttachmentChoices = {
+  attachmentMedia: AttachmentMediaMode;
+  maxResolution: string;
+  maxFps: string;
+  minSizeMb: string;
+};
 
 export interface ExtractConfig {
   source: string;
@@ -76,8 +86,8 @@ export interface ExtractConfig {
   whatsapp_media?: string;
   /** Explicit WhatsApp message database (`msgstore.db`). */
   whatsapp_db?: string;
-  /** iPhone WhatsApp Business default files (`--business`). */
-  whatsapp_business?: boolean;
+  /** Whether an iPhone WhatsApp backup is from WhatsApp Business (`--business`). */
+  is_business_app?: boolean;
   /** Continue an interrupted export in the same directory: previous output is
    * kept and conversations already written are skipped. */
   resume?: boolean;
@@ -86,13 +96,23 @@ export interface ExtractConfig {
   asset_max_bytes: number;
 }
 
-export interface ExtractErrorEvent {
+export interface DesktopJobErrorEvent {
+  /** The full error chain, for the log. */
   detail: string;
+  /** The sentence the person reads, when one is known; `detail` otherwise. */
   user_message?: string;
+  /** Whether a Cancel stopped the job, rather than a failure. */
+  canceled: boolean;
 }
 
+/** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
+export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
+/** The programs Convert media and Convert & Compress media run. */
+export type MediaToolName = "ffmpeg" | "ffprobe";
+
 /**
- * One typed progress event from the desktop backend (`extract:progress`).
+ * One typed progress event from the desktop backend (`desktop-job:progress`).
  * `setup` is a numbered step before any message is read (decrypting an
  * iPhone backup, caching chat tables); its label arrives as `status` and
  * `done`/`total` are the step's position, not message counts.
@@ -112,7 +132,16 @@ export interface ImportProgressEvent {
 }
 
 /**
- * One row for the Import Errors list, or the notes list (`extract:issue`),
+ * What one row a run reports is: `skip` when the run left the item out,
+ * `error` when the item failed, `note` when it did something with the item
+ * worth knowing that is not a failure, and `resolved` when an earlier row
+ * about the same item no longer holds. Rust's `RunIssueKind`; the server
+ * stores only the first two, as an Import Error's kind (`ImportErrorKind`).
+ */
+export type RunIssueKind = "skip" | "error" | "note" | "resolved";
+
+/**
+ * One row for the Import Errors list, or the notes list (`desktop-job:issue`),
  * sent the moment the stage records it.
  */
 export interface ImportIssueEvent {
@@ -124,8 +153,12 @@ export interface ImportIssueEvent {
    * with the same stage and item no longer holds, as when Media converts a
    * file on a later try.
    */
-  kind: components["schemas"]["RunIssueKind"];
-  step: "parse" | "attachments" | "prepare" | "media" | "upload";
+  kind: RunIssueKind;
+  /**
+   * The step that raised the row: `RunIssueStep` in
+   * `crates/core/message-crate-core/src/pipeline.rs`.
+   */
+  step: "parse" | "attachments" | "media" | "upload";
   item: string;
   reason: string;
   /**
@@ -140,7 +173,7 @@ export interface ImportIssueEvent {
 }
 
 /**
- * The Upload finished with one conversation file (`extract:file-done`):
+ * The Upload finished with one conversation file (`desktop-job:file-done`):
  * `ok` sent it now, `skipped` found an earlier part of the run had sent it,
  * `failed` could not send it.
  */
@@ -151,13 +184,13 @@ export interface ImportFileDoneEvent {
 
 /**
  * What an Upload said of one conversation: an `ImportFileDoneEvent` status,
- * or `cancelled` from its report, for one a stop left unsent.
+ * or `canceled` from its report, for one a stop left unsent.
  */
-export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";
+export type ConversationStatus = ImportFileDoneEvent["status"] | "canceled";
 
 /**
  * Staging's write queue finished with one conversation file
- * (`extract:file-written`): `written` wrote it now, `skipped` found an
+ * (`desktop-job:file-written`): `written` wrote it now, `skipped` found an
  * earlier part of the run had written it to the end and did not read it
  * again.
  */

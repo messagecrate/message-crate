@@ -89,3 +89,50 @@ The `trashed:` operator works on contacts, conversations, and messages:
 **Settings → Account** has a **Danger zone** with **Delete all messages**.
 It deletes every message and attachment the account holds without trashing each conversation first, and leaves the contacts and settings in place.
 The button is disabled on the `demo` account.
+
+## What deleting erases from the disk
+
+Deleting a conversation or a contact from Trash, **Empty Trash**, **Delete all messages**, deleting an account, and an **Edit** load of an [address book](/docs/user/features/settings/account-and-profile/#address-book) each erase the deleted text from the database's files, not only from the screens.
+The server writes zeros over the deleted rows and the space they freed and clears the write-ahead log, the `messagecrate.db-wal` file beside the database.
+Each of them except deleting a contact from Trash and an **Edit** load also writes the search index again without the deleted words.
+A copy of the database's files made afterwards holds none of the deleted text.
+
+Does deleting take longer on a large Message Crate?
+
+Yes, by up to about a second on a Message Crate of 636,000 messages, because the search index is written again whole each time.
+Deleting a contact from Trash and an **Edit** load leave the search index as it is, so they take no longer.
+
+When another request is reading the database at that moment, the write-ahead log can't be cleared at once.
+The server tries again every 30 seconds until it is cleared, and stopping the server clears it as well.
+
+The database's files are not the only place the messages are kept.
+The attachment files, the copies made before the delete, and the sources the messages came from keep what they held.
+
+A deleted attachment's file is removed, but the disk keeps its bytes in free space until something else is written there.
+Full-disk encryption is what keeps them unreadable on a lost or stolen disk, as [Encrypt the disk that holds the volume](/docs/user/features/owner/run-on-another-machine/#encrypt-the-disk-that-holds-the-volume) describes.
+
+A backup of the data directory or an export made before the delete holds the messages it was made with until it is deleted.
+So does the copy the server keeps before a schema rebuild, named like `messagecrate.db.before-rebuild-1176793189`, as [Update Message Crate](/docs/user/features/owner/update/) describes.
+
+The phone or app backup the messages were imported from still holds them, and so do the conversation files the desktop app wrote while importing it.
+Deleting from Message Crate leaves both as they are.
+
+What about text deleted for good before Message Crate 0.11.0?
+
+Releases before 0.11.0 left its words in the search index and its rows in the database file's free space.
+The first delete for good after the update writes the search index again without those words.
+The free space keeps the rows until that space is used again.
+With the server stopped, the `sqlite3` command-line tool erases both at once.
+It must be version 3.43 or newer, because older versions can't merge this kind of search index.
+On the desktop app or a server run without Docker, the command runs in the data directory:
+
+```bash title="With the server stopped: write the search index and the database file again"
+sqlite3 messagecrate.db "INSERT INTO messages_fts(messages_fts) VALUES('optimize'); INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize'); VACUUM;"
+```
+
+A Docker install keeps the data directory in its volume, so a temporary container with `sqlite3` runs the same command there, with the `message-crate` container stopped:
+
+```bash title="With the message-crate container stopped: the same command in the volume"
+docker run --rm -v message-crate-data:/data alpine sh -c \
+  "apk add --no-cache sqlite >/dev/null && sqlite3 /data/messagecrate.db \"INSERT INTO messages_fts(messages_fts) VALUES('optimize'); INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize'); VACUUM;\""
+```

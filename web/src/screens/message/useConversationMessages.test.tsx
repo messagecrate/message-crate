@@ -1,14 +1,18 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listConversationMessages, listMessages } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
+import { act } from "../../test/act";
 import { message as baseMessage } from "../../test/apiShapes";
-import { mockedAuth, Providers } from "../../test/providers";
+import { deferred } from "../../test/deferred";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../hooks/useAuth", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -31,26 +35,21 @@ function message(id: number): Message {
     conversation: {
       id: 1,
       chat_identifier: "c",
-      conversation_type: "direct",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [],
     },
   });
 }
 
-/** A promise plus the handles that settle it, so a test can control landing order. */
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
+/** A request's answer that the test settles, so a test can control landing order. */
+function supersedableAnswer<T>() {
+  const answer = deferred<T>();
   // Nothing else awaits this promise once the request is superseded.
-  promise.catch(() => {});
-  return { promise, resolve, reject };
+  answer.promise.catch(() => {});
+  return answer;
 }
 
 /** What `GET /v1/messages` says of a Find search: newest first, as Find asks. */
@@ -71,12 +70,17 @@ function routeGets(slow: Promise<MessagePage>) {
 
 describe("useConversationMessages", () => {
   beforeEach(() => {
+    startFakeClock();
     getMessages.mockReset();
     searchMessages.mockReset();
   });
 
+  afterEach(() => {
+    stopFakeClock();
+  });
+
   it("ignores a slow response from the conversation the user navigated away from", async () => {
-    const slow = deferred<MessagePage>();
+    const slow = supersedableAnswer<MessagePage>();
     routeGets(slow.promise);
 
     const { result, rerender } = renderHook(
@@ -85,10 +89,11 @@ describe("useConversationMessages", () => {
     );
 
     rerender({ id: 2 });
-    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual([2]));
+    await settle();
+    expect(result.current.messages.map((m) => m.id)).toEqual([2]);
 
     slow.resolve(page([message(1)]));
-    await slow.promise;
+    await settle();
 
     // Conversation 1's own cache entry now holds its answer, but the hook is
     // reading conversation 2's entry, so its messages are untouched.
@@ -97,7 +102,7 @@ describe("useConversationMessages", () => {
   });
 
   it("keeps the current page when a request rejects", async () => {
-    const slow = deferred<MessagePage>();
+    const slow = supersedableAnswer<MessagePage>();
     routeGets(slow.promise);
 
     const { result, rerender } = renderHook(
@@ -106,11 +111,12 @@ describe("useConversationMessages", () => {
     );
 
     rerender({ id: 2 });
-    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual([2]));
+    await settle();
+    expect(result.current.messages.map((m) => m.id)).toEqual([2]);
 
     // Conversation 1's own entry fails; it must not touch conversation 2's.
     slow.reject(new Error("boom"));
-    await slow.promise.catch(() => {});
+    await settle();
 
     expect(result.current.messages.map((m) => m.id)).toEqual([2]);
     expect(result.current.loading).toBe(false);
@@ -134,7 +140,8 @@ describe("useConversationMessages", () => {
           }) as unknown as typeof listConversationMessages);
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     expect(getMessages).toHaveBeenCalledWith(
       7,
@@ -148,9 +155,8 @@ describe("useConversationMessages", () => {
     expect(result.current.landing.to).toBe("bottom");
 
     act(() => result.current.loadOlder());
-    await waitFor(() =>
-      expect(result.current.messages.map((m) => m.id)).toEqual([115, 116, 117, 118, 119, 120]),
-    );
+    await settle();
+    expect(result.current.messages.map((m) => m.id)).toEqual([115, 116, 117, 118, 119, 120]);
     expect(getMessages).toHaveBeenLastCalledWith(
       7,
       { before: 118, limit: 50 },
@@ -166,7 +172,8 @@ describe("useConversationMessages", () => {
       offset: 40,
     });
     const { result } = renderHook(() => useConversationMessages(7, 42), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     expect(getMessages).toHaveBeenCalledWith(
       7,
@@ -196,7 +203,8 @@ describe("useConversationMessages", () => {
     const { result } = renderHook(() => useConversationMessages(7, 42, [1]), {
       wrapper: Providers,
     });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     const [before, opened, after] = result.current.messages;
     expect(opened?.matched_earlier_version).toBe(true);
@@ -223,7 +231,7 @@ describe("useConversationMessages", () => {
         {
           ...message(60),
           matched_earlier_version: true,
-          earlier_versions: [{ ...versions[0], matched: true }],
+          earlier_versions: [{ ...nth(versions, 0), matched: true }],
         },
         { ...message(20), earlier_versions: versions },
       ],
@@ -233,20 +241,21 @@ describe("useConversationMessages", () => {
     });
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     act(() => result.current.find.openFind());
     act(() => result.current.find.setTerm("dentist"));
-    await waitFor(() => expect(result.current.highlightId).toBe(60));
-    await waitFor(() =>
-      expect(result.current.messages.find((m) => m.id === 60)?.matched_earlier_version).toBe(true),
-    );
+    await settle();
+    expect(result.current.highlightId).toBe(60);
+    expect(result.current.messages.find((m) => m.id === 60)?.matched_earlier_version).toBe(true);
     expect(result.current.messages.find((m) => m.id === 60)?.earlier_versions[0]?.matched).toBe(
       true,
     );
 
     act(() => result.current.find.prevMatch());
-    await waitFor(() => expect(result.current.highlightId).toBe(20));
+    await settle();
+    expect(result.current.highlightId).toBe(20);
     for (const m of result.current.messages) expect(m.matched_earlier_version).toBe(false);
   });
 
@@ -280,16 +289,19 @@ describe("useConversationMessages", () => {
     })) as unknown as typeof listMessages);
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
     const matchedOf60 = () =>
       result.current.messages.find((m) => m.id === 60)?.earlier_versions.map((v) => v.matched);
 
     act(() => result.current.find.openFind());
     act(() => result.current.find.setTerm("pizz"));
-    await waitFor(() => expect(matchedOf60()).toEqual([true, false]));
+    await settle();
+    expect(matchedOf60()).toEqual([true, false]);
 
     act(() => result.current.find.setTerm("pizza tonight"));
-    await waitFor(() => expect(matchedOf60()).toEqual([false, true]));
+    await settle();
+    expect(matchedOf60()).toEqual([false, true]);
   });
 
   it("does not mark a Find match again after Newest left it, when its answer changes", async () => {
@@ -306,7 +318,7 @@ describe("useConversationMessages", () => {
         {
           ...message(60),
           matched_earlier_version: true,
-          earlier_versions: [{ ...versions[0], matched: true }],
+          earlier_versions: [{ ...nth(versions, 0), matched: true }],
         },
       ],
       total: 1,
@@ -315,22 +327,26 @@ describe("useConversationMessages", () => {
     });
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
     act(() => result.current.find.openFind());
     act(() => result.current.find.setTerm("pizz"));
-    await waitFor(() => expect(result.current.highlightId).toBe(60));
+    await settle();
+    expect(result.current.highlightId).toBe(60);
 
     act(() => result.current.jumpToNewest());
     expect(result.current.highlightId).toBeNull();
     // A refined term whose newest match is still message 60.
     act(() => result.current.find.setTerm("pizza"));
-    await waitFor(() =>
-      expect(searchMessages).toHaveBeenLastCalledWith(
-        expect.objectContaining({ q: "in:#7 trashed:any pizza" }),
-        expect.anything(),
-      ),
+    // The refined term's answer has landed once Find has its count and asks
+    // nothing more; the effect that would mark the match has run by then.
+    await settle();
+    expect(searchMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: "in:#7 trashed:any pizza" }),
+      expect.anything(),
     );
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(result.current.find.searching).toBe(false);
+    expect(result.current.find.total).toBe(1);
     expect(result.current.highlightId).toBeNull();
   });
 
@@ -344,7 +360,8 @@ describe("useConversationMessages", () => {
       ({ matched }: { matched: number[] }) => useConversationMessages(7, 42, matched),
       { initialProps: { matched: [0] }, wrapper: Providers },
     );
-    await waitFor(() => expect(result.current.messages[0]?.matched_earlier_version).toBe(true));
+    await settle();
+    expect(result.current.messages[0]?.matched_earlier_version).toBe(true);
 
     // A new search dropped `matched`: the message is no longer found by a version.
     rerender({ matched: [] });
@@ -368,7 +385,8 @@ describe("useConversationMessages", () => {
     });
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     await act(() => result.current.jumpToYear(2021));
     // The first message from 2021 on: a year with no messages lands on the next one.
@@ -376,7 +394,8 @@ describe("useConversationMessages", () => {
       { q: "in:#7 trashed:any date:>=2021", sort: "date", limit: 1 },
       expect.objectContaining({ signal: expect.anything() }),
     );
-    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual([3]));
+    await settle();
+    expect(result.current.messages.map((m) => m.id)).toEqual([3]);
     expect(getMessages).toHaveBeenLastCalledWith(
       7,
       { around: 3, limit: 50 },
@@ -385,7 +404,7 @@ describe("useConversationMessages", () => {
     expect(result.current.landing.to).toEqual({ id: 3, align: "start" });
   });
 
-  it("steps Find through the matches in place, newest first, without hiding the thread", async () => {
+  it("steps Find through the matches in place, newest first, without hiding the conversation", async () => {
     getMessages.mockImplementation((async (_id: number, params: { around?: number }) => ({
       items: params.around === undefined ? [message(99)] : [message(params.around)],
       total: 99,
@@ -401,27 +420,30 @@ describe("useConversationMessages", () => {
     });
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     act(() => result.current.find.openFind());
     act(() => result.current.find.setTerm("dentist"));
     // Typing jumps to the newest match, with the messages around it.
-    await waitFor(() => expect(result.current.highlightId).toBe(60));
+    await settle();
+    expect(result.current.highlightId).toBe(60);
     expect(searchMessages).toHaveBeenLastCalledWith(
       { q: "in:#7 trashed:any dentist", sort: "-date", offset: 0, limit: 50 },
       expect.objectContaining({ signal: expect.anything() }),
     );
-    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual([60]));
+    expect(result.current.messages.map((m) => m.id)).toEqual([60]);
     expect(result.current.find.total).toBe(2);
     expect(result.current.find.position).toBe(0);
 
     // ▲ is the older match.
     act(() => result.current.find.prevMatch());
-    await waitFor(() => expect(result.current.highlightId).toBe(20));
+    await settle();
+    expect(result.current.highlightId).toBe(20);
     expect(result.current.find.position).toBe(1);
-    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual([20]));
+    expect(result.current.messages.map((m) => m.id)).toEqual([20]);
 
-    // ✕ leaves the thread where it is.
+    // ✕ leaves the conversation where it is.
     act(() => result.current.find.close());
     expect(result.current.highlightId).toBeNull();
     expect(result.current.messages.map((m) => m.id)).toEqual([20]);
@@ -429,11 +451,10 @@ describe("useConversationMessages", () => {
     // A phrase with a space is quoted for the language.
     act(() => result.current.find.openFind());
     act(() => result.current.find.setTerm("book club"));
-    await waitFor(() =>
-      expect(searchMessages).toHaveBeenLastCalledWith(
-        { q: 'in:#7 trashed:any "book club"', sort: "-date", offset: 0, limit: 50 },
-        expect.objectContaining({ signal: expect.anything() }),
-      ),
+    await settle();
+    expect(searchMessages).toHaveBeenLastCalledWith(
+      { q: 'in:#7 trashed:any "book club"', sort: "-date", offset: 0, limit: 50 },
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
@@ -453,14 +474,17 @@ describe("useConversationMessages", () => {
     }));
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
     act(() => result.current.find.openFind());
     act(() => result.current.find.setTerm("hello"));
-    await waitFor(() => expect(result.current.highlightId).toBe(120));
+    await settle();
+    expect(result.current.highlightId).toBe(120);
 
     // ▲ 50 times: from the last match of the first page onto the second page.
     for (let i = 0; i < 50; i++) act(() => result.current.find.prevMatch());
-    await waitFor(() => expect(result.current.highlightId).toBe(70));
+    await settle();
+    expect(result.current.highlightId).toBe(70);
     expect(result.current.find.position).toBe(50);
     expect(result.current.find.total).toBe(matches);
     expect(searchMessages).toHaveBeenLastCalledWith(
@@ -470,9 +494,11 @@ describe("useConversationMessages", () => {
 
     // ▼ from the newest goes round to the oldest, on the last page.
     for (let i = 0; i < 50; i++) act(() => result.current.find.nextMatch());
-    await waitFor(() => expect(result.current.highlightId).toBe(120));
+    await settle();
+    expect(result.current.highlightId).toBe(120);
     act(() => result.current.find.nextMatch());
-    await waitFor(() => expect(result.current.highlightId).toBe(1));
+    await settle();
+    expect(result.current.highlightId).toBe(1);
     expect(result.current.find.position).toBe(matches - 1);
   });
 });

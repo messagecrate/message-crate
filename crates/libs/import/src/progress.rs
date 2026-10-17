@@ -5,7 +5,7 @@
 //! log file, the optional progress callback, and the [`ProgressBatcher`], so
 //! callers never juggle three separate borrows to say one thing.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use message_crate_core::{RunIssueKind, RunLogLevel, count_of, format_run_log};
 
 use crate::report::{
-    FileResult, ImportReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
+    FileResult, ImportReport, UploadProfile, format_ms_seconds, format_profile_line, ms_between,
 };
 
 /// How the Upload ended with one conversation file.
@@ -30,7 +30,7 @@ pub enum FileStatus {
 }
 
 impl FileStatus {
-    /// The word the desktop app's `extract:file-done` event carries.
+    /// The word the desktop app's `desktop-job:file-done` event carries.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -62,20 +62,19 @@ pub enum ProgressEvent {
         file: String,
     },
     /// Work on one conversation file ended. A conversation a stop left
-    /// unsent gets no `FileDone`; its `cancelled` row is in the report.
+    /// unsent gets no `FileDone`; its `canceled` row is in the report.
     FileDone {
         /// File name relative to the input directory.
         file: String,
         /// How it ended.
         status: FileStatus,
     },
-    /// Structured skip/error for Import Errors (e.g. oversized attachment).
+    /// Structured skip/error for Import Errors (e.g. oversized attachment),
+    /// raised by the Upload.
     Issue {
         /// [`RunIssueKind::Skip`] when the item was left out,
         /// [`RunIssueKind::Error`] when it failed.
         kind: RunIssueKind,
-        /// The Stage that raised it, e.g. `upload`.
-        step: String,
         /// What was affected: an attachment path or a conversation file.
         item: String,
         /// Why, in one sentence.
@@ -116,7 +115,9 @@ impl LogWriter {
     /// Create or open the log file, making parent directories if needed.
     fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            // The Logs Directory, owner-only as the desktop app makes it
+            // (#2097).
+            file_io::create_dir_all_owner_only(parent)?;
         }
         let file = OpenOptions::new()
             .create(true)
@@ -126,16 +127,20 @@ impl LogWriter {
         Ok(Self { file })
     }
 
-    /// Write `msg` at `level`, stamped with the time, and flush so a crash
+    /// Write `message` at `level`, stamped with the time, and flush so a crash
     /// still leaves the last message on disk.
-    fn line(&mut self, level: RunLogLevel, msg: &str) {
-        let _ = self.file.write_all(format_run_log(level, msg).as_bytes());
+    fn line(&mut self, level: RunLogLevel, message: &str) {
+        let _ = self
+            .file
+            .write_all(format_run_log(level, message).as_bytes());
         let _ = self.file.flush();
     }
 }
 
 /// Collects finished conversations and writes one progress line every
-/// [`PROGRESS_BATCH_SIZE`] of them.
+/// [`PROGRESS_BATCH_SIZE`] of them. It reads no clock: each call that can
+/// start or end a window is given the time, so a test sets the time a
+/// window took rather than waiting for it.
 struct ProgressBatcher {
     total: usize,
     done: usize,
@@ -154,8 +159,9 @@ struct ProgressBatcher {
 }
 
 impl ProgressBatcher {
-    /// Start a batcher that writes a line when a window of conversations is full.
-    fn new(total: usize) -> Self {
+    /// Start a batcher, at `now`, that writes a line when a window of
+    /// conversations is full.
+    fn new(total: usize, now: Instant) -> Self {
         Self {
             total,
             done: 0,
@@ -164,14 +170,14 @@ impl ProgressBatcher {
             window_messages: 0,
             window_bytes: 0,
             window_import_ms: 0,
-            window_started: Instant::now(),
+            window_started: now,
             window_count: 0,
         }
     }
 
-    /// Record one conversation the Upload sent. Returns a log line when the
-    /// window is full.
-    fn note_ok(&mut self, messages: u64, profile: &UploadProfile) -> Option<String> {
+    /// Record one conversation the Upload sent, at `now`. Returns a log line
+    /// when the window is full.
+    fn note_ok(&mut self, messages: u64, profile: &UploadProfile, now: Instant) -> Option<String> {
         self.done = self.done.saturating_add(1);
         self.window_count = self.window_count.saturating_add(1);
         self.window_sent = self.window_sent.saturating_add(1);
@@ -180,15 +186,16 @@ impl ProgressBatcher {
         self.window_import_ms = self
             .window_import_ms
             .saturating_add(profile.message_import_ms);
-        self.line_if_full()
+        self.line_if_full(now)
     }
 
-    /// Record a conversation skipped because the journal says it was sent before.
-    fn note_skipped(&mut self) -> Option<String> {
+    /// Record, at `now`, a conversation skipped because the journal says it
+    /// was sent before.
+    fn note_skipped(&mut self, now: Instant) -> Option<String> {
         self.done = self.done.saturating_add(1);
         self.window_count = self.window_count.saturating_add(1);
         self.window_sent_before = self.window_sent_before.saturating_add(1);
-        self.line_if_full()
+        self.line_if_full(now)
     }
 
     /// Count a failure toward "done" without adding it to the window's totals.
@@ -197,18 +204,19 @@ impl ProgressBatcher {
     }
 
     /// The window's line when this window is full or the run is complete.
-    fn line_if_full(&mut self) -> Option<String> {
+    fn line_if_full(&mut self, now: Instant) -> Option<String> {
         (self.window_count >= PROGRESS_BATCH_SIZE || self.done >= self.total)
-            .then(|| self.take_window_line())
+            .then(|| self.take_window_line(now))
     }
 
-    /// Write any leftover partial window at the end of the run.
-    fn flush_remainder(&mut self) -> Option<String> {
-        (self.window_count > 0).then(|| self.take_window_line())
+    /// Write any leftover partial window at `now`, the end of the run.
+    fn flush_remainder(&mut self, now: Instant) -> Option<String> {
+        (self.window_count > 0).then(|| self.take_window_line(now))
     }
 
-    /// Format the current window's line, then start the next window.
-    fn take_window_line(&mut self) -> String {
+    /// Format the current window's line, ending at `now`, then start the
+    /// next window there.
+    fn take_window_line(&mut self, now: Instant) -> String {
         let mut line = format!(
             "Finished {} of {}.",
             self.done,
@@ -221,7 +229,7 @@ impl ProgressBatcher {
             line.push_str(&format!(
                 " In the last {} the Upload sent {} with {} and {} of Assets. \
                  Importing their messages took {}, added up across the conversations.",
-                format_ms_seconds(elapsed_ms(self.window_started)),
+                format_ms_seconds(ms_between(self.window_started, now)),
                 count_of(self.window_sent, "conversation", "conversations"),
                 count_of(self.window_messages, "message", "messages"),
                 media::format_bytes(self.window_bytes),
@@ -237,7 +245,7 @@ impl ProgressBatcher {
         *self = Self {
             total: self.total,
             done: self.done,
-            ..Self::new(self.total)
+            ..Self::new(self.total, now)
         };
         line
     }
@@ -265,13 +273,13 @@ impl<'p, 'f> Reporter<'p, 'f> {
         Ok(Self {
             log: LogWriter::open(log_path)?,
             progress,
-            batcher: ProgressBatcher::new(0),
+            batcher: ProgressBatcher::new(0, Instant::now()),
         })
     }
 
     /// Tell the progress line how many conversations this run covers.
     pub(crate) fn expect_files(&mut self, total: usize) {
-        self.batcher = ProgressBatcher::new(total);
+        self.batcher = ProgressBatcher::new(total, Instant::now());
     }
 
     /// Write to the log file only.
@@ -322,14 +330,14 @@ impl<'p, 'f> Reporter<'p, 'f> {
 
     /// Record a successful conversation in the progress line.
     pub(crate) fn note_ok(&mut self, messages: u64, profile: &UploadProfile) {
-        if let Some(line) = self.batcher.note_ok(messages, profile) {
+        if let Some(line) = self.batcher.note_ok(messages, profile, Instant::now()) {
             self.show(line);
         }
     }
 
     /// Record a skipped conversation in the progress line.
     pub(crate) fn note_skipped(&mut self) {
-        if let Some(line) = self.batcher.note_skipped() {
+        if let Some(line) = self.batcher.note_skipped(Instant::now()) {
             self.show(line);
         }
     }
@@ -348,7 +356,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
 
     /// Write any partial progress line (end of run, or before an error line).
     pub(crate) fn flush_file_counter(&mut self) {
-        if let Some(line) = self.batcher.flush_remainder() {
+        if let Some(line) = self.batcher.flush_remainder(Instant::now()) {
             self.show(line);
         }
     }
@@ -362,7 +370,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
             );
             self.event(ProgressEvent::Issue {
                 kind: RunIssueKind::Skip,
-                step: "upload".into(),
                 item: skip.item.clone(),
                 reason: skip.reason.clone(),
                 conversation: skip.conversation.clone(),
@@ -382,7 +389,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
         for result in results {
             let (kind, fallback) = match result.status.as_str() {
                 "failed" => (RunIssueKind::Error, "upload failed"),
-                "cancelled" => (
+                "canceled" => (
                     RunIssueKind::Skip,
                     "the Upload ended before this conversation was sent",
                 ),
@@ -390,7 +397,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
             };
             self.event(ProgressEvent::Issue {
                 kind,
-                step: "upload".into(),
                 item: result.file.clone(),
                 reason: result.error.clone().unwrap_or_else(|| fallback.to_string()),
                 conversation: result.file.clone(),
@@ -402,10 +408,18 @@ impl<'p, 'f> Reporter<'p, 'f> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    /// The time every test's batcher starts at, so a window's time is only
+    /// what a test adds to it.
+    fn start() -> Instant {
+        static START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+        *START
+    }
 
     #[test]
     fn progress_batcher_emits_every_ten_and_on_completion() {
-        let mut batcher = ProgressBatcher::new(25);
+        let mut batcher = ProgressBatcher::new(25, start());
         let profile = UploadProfile {
             message_import_ms: 3_300,
             total_ms: 5_500,
@@ -414,9 +428,9 @@ mod tests {
         };
         let mut lines = Vec::new();
         for _ in 0..9 {
-            assert!(batcher.note_ok(2, &profile).is_none());
+            assert!(batcher.note_ok(2, &profile, start()).is_none());
         }
-        let tenth = batcher.note_ok(2, &profile).unwrap();
+        let tenth = batcher.note_ok(2, &profile, start()).unwrap();
         assert!(
             tenth.starts_with("Finished 10 of 25 conversations. In the last "),
             "{tenth}"
@@ -433,7 +447,7 @@ mod tests {
         assert!(!tenth.contains('='));
         lines.push(tenth);
         for _ in 0..15 {
-            if let Some(line) = batcher.note_ok(1, &profile) {
+            if let Some(line) = batcher.note_ok(1, &profile, start()) {
                 lines.push(line);
             }
         }
@@ -448,13 +462,13 @@ mod tests {
     /// singular (#1825).
     #[test]
     fn progress_line_counts_one_conversation_and_one_message() {
-        let mut batcher = ProgressBatcher::new(1);
+        let mut batcher = ProgressBatcher::new(1, start());
         let profile = UploadProfile {
             message_import_ms: 200,
             asset_bytes: 500,
             ..UploadProfile::default()
         };
-        let line = batcher.note_ok(1, &profile).unwrap();
+        let line = batcher.note_ok(1, &profile, start()).unwrap();
         assert!(
             line.starts_with("Finished 1 of 1 conversation. In the last "),
             "{line}"
@@ -473,15 +487,18 @@ mod tests {
     /// than reading 0.0s.
     #[test]
     fn the_window_time_covers_its_first_conversation() {
-        let mut batcher = ProgressBatcher::new(1);
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let line = batcher.note_ok(1, &UploadProfile::default()).unwrap();
-        let seconds: f64 = line
-            .strip_prefix("Finished 1 of 1 conversation. In the last ")
-            .and_then(|rest| rest.split_once('s'))
-            .and_then(|(seconds, _)| seconds.parse().ok())
-            .unwrap_or_else(|| panic!("{line}"));
-        assert!(seconds >= 0.1, "{line}");
+        let mut batcher = ProgressBatcher::new(1, start());
+        let line = batcher
+            .note_ok(
+                1,
+                &UploadProfile::default(),
+                start() + std::time::Duration::from_millis(200),
+            )
+            .unwrap();
+        assert!(
+            line.starts_with("Finished 1 of 1 conversation. In the last 0.2s "),
+            "{line}"
+        );
     }
 
     /// Conversations the journal says were sent before are named apart, so
@@ -489,18 +506,22 @@ mod tests {
     /// counts toward "Finished" only.
     #[test]
     fn conversations_sent_before_are_named_apart_from_those_sent() {
-        let mut batcher = ProgressBatcher::new(3);
-        assert!(batcher.note_skipped().is_none());
+        let mut batcher = ProgressBatcher::new(3, start());
+        assert!(batcher.note_skipped(start()).is_none());
         batcher.note_failed();
-        let line = batcher.note_skipped().unwrap();
+        let line = batcher.note_skipped(start()).unwrap();
         assert_eq!(
             line,
             "Finished 3 of 3 conversations. 2 conversations had been sent before."
         );
 
-        let mut batcher = ProgressBatcher::new(2);
-        assert!(batcher.note_ok(4, &UploadProfile::default()).is_none());
-        let line = batcher.note_skipped().unwrap();
+        let mut batcher = ProgressBatcher::new(2, start());
+        assert!(
+            batcher
+                .note_ok(4, &UploadProfile::default(), start())
+                .is_none()
+        );
+        let line = batcher.note_skipped(start()).unwrap();
         assert!(
             line.contains(" the Upload sent 1 conversation with 4 messages "),
             "{line}"
@@ -523,16 +544,8 @@ mod tests {
             reporter.show("loud".into());
             reporter.show_at(RunLogLevel::Warn, "careful".into());
         }
-        let text = fs::read_to_string(&log_path).unwrap();
-        let lines: Vec<(RunLogLevel, String)> = text
-            .lines()
-            .map(|raw| {
-                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
-                (line.level, line.text)
-            })
-            .collect();
         assert_eq!(
-            lines,
+            message_crate_core::testutil::run_log_lines(&log_path),
             [
                 (RunLogLevel::Info, "quiet".to_string()),
                 (RunLogLevel::Info, "loud".to_string()),
@@ -550,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn conversation_issues_cover_failed_and_cancelled_files_only() {
+    fn conversation_issues_cover_failed_and_canceled_files_only() {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("import.log");
         let mut seen = Vec::new();
@@ -568,7 +581,7 @@ mod tests {
                 },
                 FileResult::failed("bad.jsonl", "attachment exceeds limit"),
                 FileResult::skipped("done.jsonl"),
-                FileResult::cancelled("unsent.jsonl"),
+                FileResult::canceled("unsent.jsonl"),
                 FileResult {
                     file: "silent.jsonl".into(),
                     status: "failed".into(),

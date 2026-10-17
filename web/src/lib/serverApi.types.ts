@@ -11,7 +11,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Report process liveness. */
+        /**
+         * Report whether the server can answer.
+         * @description Answers `ok` when the server can take a database connection and run a
+         *     statement on it within 1.5 seconds. A server whose connections are all
+         *     taken, or whose database cannot be opened, fails the way a `/v1` call it
+         *     cannot answer fails, with `500 Internal Server Error`, so a health check
+         *     agrees with those calls.
+         */
         get: operations["get_health"];
         put?: never;
         post?: never;
@@ -204,7 +211,7 @@ export interface paths {
         };
         /**
          * An account's Import Runs as a page, newest first unless `sort` says otherwise.
-         * @description The owner reads any account's, each an `OwnerImportRun`; an account reads its own in full.
+         * @description The owner reads any account's, each an `OwnerImportRunSummary`; an account reads its own in full.
          */
         get: operations["list_account_imports"];
         put?: never;
@@ -224,7 +231,7 @@ export interface paths {
         };
         /**
          * One of an account's Import Runs: status, timings and counts, and for the account itself its summary and issues.
-         * @description A run that is another account's is a 404.
+         * @description The owner reads it as an `OwnerImportRun`, with the attachments whose Thumbnail or Preview could not be made and why. A run that is another account's is a 404.
          */
         get: operations["get_account_import"];
         put?: never;
@@ -607,7 +614,20 @@ export interface paths {
         put?: never;
         /**
          * Load an address book into this account.
-         * @description The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `groups`, `service`, `identity_type` and `identity`, as `POST /v1/contacts/address-book` writes it.
+         * @description The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `service`, `identity` and `groups`, as `POST /v1/contacts/address-book` writes it.
+         *
+         *     `service` is `Text Message`, `Email` or `WhatsApp`, the words the screen
+         *     where an identity is added offers, ignoring case. The file states no
+         *     type: the service decides which types are valid and the address's shape
+         *     picks among them, as adding an identity does. `Text Message` carries a
+         *     phone number, an email address or any other name; `Email` is an email
+         *     address on Text Message; `WhatsApp` carries a phone number or one of
+         *     WhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),
+         *     which are `other`. An identity written exactly as the account keys it on
+         *     that service is that identity, whatever its type, so an exported file
+         *     loads back as it was. A row whose address the service cannot carry, such
+         *     as an email address on `WhatsApp` (an `@` address at any other domain),
+         *     is refused, where adding an identity stores it as `other`.
          *
          *     Rows that share a `contact_id` are one contact. An id the account holds
          *     names that contact, a blank id makes a new contact for that row, and any
@@ -657,11 +677,12 @@ export interface paths {
         /**
          * Write the address book for the contacts a search matches, the checked ones among them, or every contact when the body names neither.
          * @description The answer is `text/csv`, not JSON: one row per identity, with the
-         *     columns `contact_id`, `display_name`, `groups`, `service`, `identity_type`
-         *     and `identity`. A contact's name and its Contact Group names, separated
-         *     by `;`, repeat on each of its rows. A contact with no name has a blank
-         *     `display_name`, and a contact with no identity is one row with the last
-         *     three columns blank. Contacts in the trash are left out.
+         *     columns `contact_id`, `display_name`, `service`, `identity` and `groups`.
+         *     `service` is `Text Message`, `Email` for an email address on Text
+         *     Message, or `WhatsApp`. A contact's name and its Contact Group names,
+         *     separated by `;`, repeat on each of its rows. A contact with no name has
+         *     a blank `display_name`, and a contact with no identity is one row with
+         *     `service` and `identity` blank. Contacts in the trash are left out.
          *
          *     A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return
          *     is written with a `'` in front, in every column, because a spreadsheet
@@ -703,6 +724,49 @@ export interface paths {
         put?: never;
         /** Report which identifiers this account has no contact for. */
         post: operations["list_unmatched_identities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/contacts/vcard-address-book": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write an address book from a vCard file, for the person to edit and then load with `POST /v1/contacts`.
+         * @description The body is the file itself, one or more cards. Nothing is read from or stored in the account.
+         *
+         *     The answer is `text/csv` in the address book's columns: one row for each
+         *     `TEL` and each `EMAIL` on each card. `contact_id` is `card1`, `card2`, …
+         *     by the card's position in the file, so a card's rows load as one new
+         *     contact. `display_name` is the card's `FN`, or its `N` assembled when it
+         *     has no `FN`, and blank when it has neither. `service` is `Text Message`
+         *     for a number and `Email` for an email address, never `WhatsApp`, because
+         *     a card cannot say a number is on WhatsApp. `groups` is blank:
+         *     `CATEGORIES` is not carried over. A card with no number and no email
+         *     address gives no rows.
+         *
+         *     A number written without `+` is written in its `+` form in `country` when
+         *     it is a valid number there. A number written with `+`, one that is not
+         *     valid in `country`, and every number when no `country` is given are
+         *     written exactly as the card has them. Nothing else is checked: the load
+         *     refuses what it cannot store and names the rows. Cells are written with
+         *     the `'` the export puts before a cell a spreadsheet would run.
+         *
+         *     A vCard 2.1 quoted-printable value is read in the charset its `CHARSET`
+         *     names, such as `SHIFT_JIS` or `ISO-8859-1`, and as UTF-8 when it names
+         *     none. A body that holds no `BEGIN:VCARD` line, and a card that writes its
+         *     name, a number or an email address in a charset Message Crate cannot
+         *     read, answer `422 Unprocessable Entity`.
+         */
+        post: operations["get_vcard_address_book"];
         delete?: never;
         options?: never;
         head?: never;
@@ -805,7 +869,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One conversation, in the same shape a list row already has — so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
+         * One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
          * @description Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.
          */
         get: operations["get_conversation"];
@@ -918,7 +982,7 @@ export interface paths {
         put?: never;
         /**
          * Start an Export Run: compile the scope, list and count the messages it matches now, and record the run as `running`.
-         * @description Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`.
+         * @description Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `canceled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.
          */
         post: operations["create_export"];
         delete?: never;
@@ -970,7 +1034,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record that the client finished reading the run. */
+        /**
+         * Record how the client's reading of the run ended: `completed`, or `failed` when an error stopped it.
+         * @description Any other `status` is `validation-failed`.
+         */
         post: operations["complete_export"];
         delete?: never;
         options?: never;
@@ -1038,7 +1105,12 @@ export interface paths {
         head?: never;
         /**
          * Move a running Import Run to another stage.
-         * @description The stage is a field of the run, so moving it is a `PATCH` of the run
+         * @description A run moves to the next stage, from the Staging Review straight to
+         *     Upload (the move made when the import has no Media Stage), or to the stage
+         *     it is already at. Any other move is a state conflict naming both stages,
+         *     and the run is left as it was.
+         *
+         *     The stage is a field of the run, so moving it is a `PATCH` of the run
          *     rather than a `POST` to a `stage` sub-resource: a path segment names a
          *     resource, and `stage` is not one (`docs/architecture/http-api.md`,
          *     "Naming a route"). The answer is the run itself, the same shape
@@ -1058,11 +1130,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Import one message-ir JSONL body.
+         * Import one JSONL conversation file body.
          * @description Every message needs a non-empty `guid`. A batch with a message without
          *     one is refused with `422`, naming its lines, and nothing in it is stored.
          *     A message whose `guid` the source already holds is skipped, so a batch
-         *     sent again after its answer was lost stores nothing twice.
+         *     sent again after its answer was lost stores nothing twice. A batch hides
+         *     no duplicates: the run's completion or discard hides them, once for the
+         *     whole run.
          */
         post: operations["create_import_batch"];
         delete?: never;
@@ -1083,6 +1157,14 @@ export interface paths {
         /**
          * Record the outcome of an Import Run started with POST /v1/imports.
          * @description The answer is the run as it now stands.
+         *
+         *     Before it records the outcome, the server hides the duplicates of the
+         *     whole account, within one source and across sources. A batch hides
+         *     none, so the duplicates a run brings stay shown until the run ends. The
+         *     time this takes grows with every message the account holds, not with
+         *     the run's. A dedupe that fails leaves the run running. A server told to
+         *     stop refuses the request with `503 Service Unavailable`
+         *     (`server-stopping`), and the run stays running.
          */
         post: operations["complete_import"];
         delete?: never;
@@ -1126,7 +1208,14 @@ export interface paths {
         put?: never;
         /**
          * Discard a running Import Run, freeing the account's single slot.
-         * @description The answer is the run, now `cancelled`, with the issues the request carried.
+         * @description The answer is the run, now `canceled`, with the issues the request carried.
+         *
+         *     The messages the run's batches brought stay in the account, and once it
+         *     has discarded the run the server hides the duplicates of the whole
+         *     account, as a completion does. A dedupe that fails does not undo the
+         *     discard: the next run's end hides them. A server told to stop refuses
+         *     the request with `503 Service Unavailable` (`server-stopping`), and the
+         *     run stays running.
          */
         post: operations["discard_import"];
         delete?: never;
@@ -1253,7 +1342,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The countries a phone number written without its `+` code can be read in, by ISO code. */
+        /**
+         * The countries a phone number written without its `+` code can be read in, by ISO code.
+         * @description Any logged-in person reads it, the owner included: the owner picks the country of a number on an account it opens from User Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).
+         */
         get: operations["list_phone_countries"];
         put?: never;
         post?: never;
@@ -1366,8 +1458,8 @@ export interface paths {
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
          * @description Also reports this Message Crate's id, the server's Build, its Schema
-         *     Fingerprint, whether the Demo Account exists, and the attachment size
-         *     limit.
+         *     Fingerprint, whether the Demo Account exists, the attachment size limit,
+         *     and the body time limits.
          */
         get: operations["get_server"];
         put?: never;
@@ -1514,7 +1606,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the server settings. */
+        /** Read the server settings, and how the database is stored: its journal mode, and the error SQLite gave when the server asked for write-ahead logging. */
         get: operations["get_server_settings"];
         put?: never;
         post?: never;
@@ -1563,7 +1655,13 @@ export interface paths {
          */
         get: operations["get_session"];
         put?: never;
-        /** Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself. */
+        /**
+         * Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
+         * @description A refused login waits about a second, then answers
+         *     `invalid-credentials`, whatever was wrong: a username nobody holds, a
+         *     wrong or empty password, a disabled account. A login with the right
+         *     password does not wait.
+         */
         post: operations["create_session"];
         /**
          * Log out: revoke the presented session token, ending the Session.
@@ -1689,10 +1787,10 @@ export interface components {
         AccountImportRun: components["schemas"]["ImportRun"] | components["schemas"]["OwnerImportRun"];
         /**
          * @description An account's Import Runs as its reader may see them: each an
-         *     `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
-         *     owner. Neither carries the run's issues.
+         *     `ImportRunSummary` for the account itself, an `OwnerImportRunSummary`
+         *     for the owner. Neither carries the run's issues.
          */
-        AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRun"];
+        AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRunSummary"];
         /** @description One account's share of the messages held: an id, a username and numbers. */
         AccountMessages: {
             /**
@@ -1764,12 +1862,16 @@ export interface components {
         };
         /** @description An address to link, and the service to link it on. */
         AddContactIdentityRequest: {
-            /** @description The address to link. */
+            /**
+             * @description The address to link. Over 320 characters after trimming is refused
+             *     with `422 Unprocessable Entity`.
+             */
             address: string;
             /**
-             * @description The service to link it on; the phone service when omitted. It never
-             *     decides the identity's type, which comes from the address. A new email
-             *     address on WhatsApp is refused.
+             * @description The service to link it on; the phone service when omitted. The
+             *     address's shape picks the identity's type among those the service
+             *     carries: an address with an `@` is an email address on the phone
+             *     service, and `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -1866,6 +1968,15 @@ export interface components {
              *     preview's bytes are at `/v1/assets/{sha256}/preview`.
              */
             preview_mime_type: string | null;
+            /**
+             * @description Why the server could not make the attachment's preview the last
+             *     time it tried: what ffmpeg said about the file, or a phrase of the
+             *     server's when ffmpeg did not read it, such as when the original
+             *     file is missing. `null` while the attachment has a preview, once
+             *     the server decides the original is shown as it is, and until a try
+             *     has failed.
+             */
+            preview_not_made_reason: string | null;
             /** @description Content fingerprint of the stored bytes. */
             sha256: string | null;
             /**
@@ -1882,6 +1993,11 @@ export interface components {
              *     `/v1/assets/{sha256}/thumbnail`.
              */
             thumbnail_mime_type: string | null;
+            /**
+             * @description Why the server could not make the attachment's thumbnail the last
+             *     time it tried, as `preview_not_made_reason` says for the preview.
+             */
+            thumbnail_not_made_reason: string | null;
             /** @description OCR/ASR transcription, when processed. */
             transcription: string | null;
         };
@@ -1889,12 +2005,12 @@ export interface components {
          * @description What an entry records.
          * @enum {string}
          */
-        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
+        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "export_run_closed" | "import_run" | "export_run";
         /**
          * @description Who acted.
          * @enum {string}
          */
-        AuditActor: "owner" | "holder" | "command_line" | "server" | "anonymous";
+        AuditActor: "owner" | "holder" | "command_line" | "start_up" | "server" | "anonymous";
         /**
          * @description One entry of the Audit Trail as the interface hands it out: an entry of
          *     `audit_entries`, an Import Run, or an Export Run. `id` is the row's id in
@@ -1903,9 +2019,15 @@ export interface components {
          */
         AuditEntry: {
             /**
+             * @description Whether the account the entry is about has since been deleted. `false`
+             *     for an entry about no account, and for a refused login as a username
+             *     no account holds.
+             */
+            account_deleted: boolean;
+            /**
              * Format: int64
              * @description The account the entry is about, or `null` when it is about none, or
-             *     the account has been deleted.
+             *     the account has been deleted: `account_deleted` tells the two apart.
              */
             account_id: number | null;
             /** @description What happened. */
@@ -1924,6 +2046,11 @@ export interface components {
             app: components["schemas"]["AppKind"] | null;
             /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
             app_build: string | null;
+            /**
+             * Format: int64
+             * @description `asset_limit_changed`: the new attachment size limit, in bytes.
+             */
+            asset_max_bytes: number | null;
             /**
              * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
              *     session that expired.
@@ -1968,6 +2095,17 @@ export interface components {
             /** @description A run: what started it. `null` for a run the server started itself. */
             credential: components["schemas"]["RunCredential"] | null;
             /**
+             * @description `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+             *     build was asked for.
+             */
+            demo_data_size: components["schemas"]["DemoDataSize"] | null;
+            /**
+             * Format: int64
+             * @description `export_run_closed`: the id of the Export Run the server closed, the
+             *     `id` of that run's own `export_run` entry.
+             */
+            export_run_id: number | null;
+            /**
              * Format: int64
              * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
              *     session that expired, the id of its `logged_in` entry.
@@ -1992,6 +2130,14 @@ export interface components {
             /** @description `session_ended`: how the Session ended. `login_refused`: why. */
             reason: components["schemas"]["AuditReason"] | null;
             /**
+             * @description The id of the request that wrote the entry, as its response's
+             *     `x-request-id` and the request's lines in the server's log carry it.
+             *     `null` for an entry written outside a request, by a server command or
+             *     the Demo Account build of the server's first start, and for a run and
+             *     a session that expired, which no one request wrote.
+             */
+            request_id: string | null;
+            /**
              * @description An Export Run: `everything`, `query` or `selection`. Never the query
              *     or the picked ids.
              */
@@ -2007,22 +2153,52 @@ export interface components {
             status: components["schemas"]["RunStatus"] | null;
             /**
              * @description The username of the account the entry is about, as it was; for a
-             *     refused login, the username as typed. Kept after the account is deleted.
+             *     refused login as a username no account holds, the username as typed,
+             *     or `null` when the text typed could not be a username. Kept after the
+             *     account is deleted.
              */
             username: string | null;
         };
         /**
-         * @description How a Session ended, or why a login was refused.
+         * @description How a Session ended, why a login was refused, or why the server closed an
+         *     Export Run.
          * @enum {string}
          */
-        AuditReason: "logged_out" | "replaced" | "revoked" | "expired" | "unknown_username" | "wrong_password" | "account_disabled";
+        AuditReason: "logged_out" | "replaced" | "revoked" | "expired" | "unknown_username" | "wrong_password" | "account_disabled" | "idle";
         /** @description Body for claiming a Message Crate. */
         ClaimServerRequest: {
-            /** @description Password for the owner. Must satisfy the server's password policy. */
+            /**
+             * @description Password for the owner: one character or more, at most 128
+             *     characters, counted as characters rather than bytes and not trimmed.
+             *     Empty or over 128 is refused with `422 Unprocessable Entity`.
+             */
             password: string;
-            /** @description Login username for the owner. */
+            /**
+             * @description Login username for the owner, which the server trims: 1 to 128
+             *     characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
+             *     is refused with `422 Unprocessable Entity`.
+             */
             username: string;
         };
+        /**
+         * @description Body of `POST /v1/exports/{id}/complete`: how the run ended. The outcome
+         *     is stated once, as `status`.
+         */
+        CompleteExportRequest: {
+            /**
+             * @description `completed` when the client wrote what it read, or `failed` when an
+             *     error stopped it. A run the person gave up is closed with `cancel`.
+             */
+            status: components["schemas"]["CompleteExportStatus"];
+        };
+        /**
+         * @description How a client says its reading of an Export Run ended, in the body of
+         *     `POST /v1/exports/{id}/complete`: the two statuses that route records. A
+         *     run the person gave up is closed with `cancel`, and only the server sets
+         *     `running`, so neither is a value here.
+         * @enum {string}
+         */
+        CompleteExportStatus: "completed" | "failed";
         /**
          * @description Final stats and issues for a running Import Run. The outcome is stated
          *     once, as `status`. The run's message and attachment counts are not part
@@ -2089,11 +2265,6 @@ export interface components {
         Contact: {
             /**
              * Format: int64
-             * @description 1:1 conversations the contact appears in.
-             */
-            direct_conversations: number;
-            /**
-             * Format: int64
              * @description Group conversations the contact appears in.
              */
             group_conversations: number;
@@ -2112,13 +2283,18 @@ export interface components {
             name: string;
             /**
              * Format: int64
+             * @description One-to-one conversations the contact appears in.
+             */
+            one_to_one_conversations: number;
+            /**
+             * Format: int64
              * @description Conversations of orphaned messages the contact appears in: the three
              *     conversation counts add up to every conversation the contact is in.
              */
             orphaned_conversations: number;
             /**
              * Format: int64
-             * @description Messages the contact sent, in any of its conversations, direct,
+             * @description Messages the contact sent, in any of its conversations, one-to-one,
              *     group, or orphaned: the account holder's own messages and other people's messages
              *     in a shared group are not counted, and neither are conversations in
              *     the trash or duplicate messages. `messages:` on Contacts counts the
@@ -2167,18 +2343,18 @@ export interface components {
              * @description Contact id.
              */
             id: number;
-            /**
-             * Format: int64
-             * @description 1:1 conversations with the contact.
-             */
-            individual_conversations: number;
-            /**
-             * Format: int64
-             * @description Messages the contact sent in 1:1 conversations.
-             */
-            individual_message_count: number;
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
+            /**
+             * Format: int64
+             * @description One-to-one conversations with the contact.
+             */
+            one_to_one_conversations: number;
+            /**
+             * Format: int64
+             * @description Messages the contact sent in one-to-one conversations.
+             */
+            one_to_one_message_count: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact is in: the three
@@ -2218,7 +2394,7 @@ export interface components {
              *     the contact's identities sent (RFC 3339, UTC), conversations in the
              *     trash and duplicate messages left out. Null when none of them ever
              *     sent a message. Not the contact's last activity: a message the
-             *     account owner sent, or another member of a group chat, does not
+             *     account owner sent, or another member of a group conversation, does not
              *     count. The same question `last-message:` asks on Contacts.
              */
             last_heard_at: string | null;
@@ -2267,15 +2443,6 @@ export interface components {
             /** @description True for group conversations. */
             is_group: boolean;
             /**
-             * @description The title the conversation is shown by: for a conversation the account
-             *     holder has with themselves, the account's display name or, without
-             *     one, the conversation's own address; for one of orphaned messages, its
-             *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
-             *     one that names nobody; for any other, the export's title. `null` when
-             *     there is none, and the conversation goes by its participants.
-             */
-            label: string | null;
-            /**
              * @description Timestamp of the conversation's last message. `null` when every
              *     message in the conversation is a duplicate, so none is left to date it.
              */
@@ -2289,21 +2456,42 @@ export interface components {
             participants: components["schemas"]["Participant"][];
             /** @description Platform service of the conversation, e.g. `imessage`. */
             service: string;
+            /**
+             * @description The title the conversation is shown by: for a conversation the account
+             *     holder has with themselves, the account's display name or, without
+             *     one, the conversation's own address; for one of orphaned messages, its
+             *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
+             *     one that names nobody; for any other, the export's title. `null` when
+             *     there is none, and the conversation goes by its participants.
+             */
+            shown_title: string | null;
             /** @description Message tags on this conversation. */
             tags: string[];
         };
         /** @description Body for creating an account, by the owner or by a stranger. */
         CreateAccountRequest: {
             /**
-             * @description Local password, of any length. Absent or empty opens an account with
-             *     no password.
+             * @description Local password: no minimum length, at most 128 characters, counted
+             *     as characters rather than bytes and not trimmed. Over 128 is refused
+             *     with `422 Unprocessable Entity`. Absent or empty opens an account
+             *     with no password.
              */
             password?: string | null;
-            /** @description Phone number linked to the account. */
+            /**
+             * @description Phone number linked to the account, trimmed. Over 320 characters is
+             *     refused with `422 Unprocessable Entity`.
+             */
             phone?: string | null;
-            /** @description Display name shown in Message Crate. */
+            /**
+             * @description Display name shown in Message Crate, trimmed. Over 200 characters is
+             *     refused with `422 Unprocessable Entity`.
+             */
             preferred_name?: string | null;
-            /** @description Login username. */
+            /**
+             * @description Login username, which the server trims: 1 to 128 characters, each a
+             *     letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+             *     `422 Unprocessable Entity`.
+             */
             username: string;
         };
         /**
@@ -2332,7 +2520,11 @@ export interface components {
              * @description Days until expiry. Omit for the default (365 days). Pass `0` for no expiry.
              */
             expires_in_days?: number | null;
-            /** @description User-chosen label shown in Settings. */
+            /**
+             * @description User-chosen label shown in Settings, which the server trims. A label
+             *     that is blank or over 120 characters is refused with
+             *     `422 Unprocessable Entity`.
+             */
             label: string;
         };
         /** @description The created token, including its plaintext secret (returned once). */
@@ -2352,7 +2544,7 @@ export interface components {
             id: number;
             /** @description User-chosen label. */
             label: string;
-            /** @description Plaintext secret — returned once at creation. */
+            /** @description Plaintext secret, returned once at creation. */
             token: string;
             /** @description Masked form for the Settings list (also persisted). */
             token_hint: string;
@@ -2367,8 +2559,11 @@ export interface components {
             bytes: number;
             /**
              * @description Media type of the file, such as `image/jpeg`. The server stores it
-             *     beside the Asset and serves the Asset with it. Null, blank or left
-             *     out stores none.
+             *     beside the Asset and serves the Asset with it, unless the file's
+             *     first bytes show another type, which is stored instead. A value that
+             *     is not a `type/subtype` pair of tokens of at most 255 bytes, null,
+             *     blank or left out stores none, and the Asset is served as
+             *     `application/octet-stream`.
              */
             mime?: string | null;
         };
@@ -2458,18 +2653,16 @@ export interface components {
             /** @description Client/tool name recorded on the run, e.g. `message-crate-export`. */
             tool?: string | null;
         };
-        /** @description Import result: the import counts and the dedupe counts. */
+        /**
+         * @description Import result: the batch's import counts. The batch hides no
+         *     duplicates; the run's end does, once for the whole run.
+         */
         CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
             /**
              * Format: int64
              * @description Id of the account the batch imported into.
              */
             account: number;
-            /**
-             * @description What the dedupe after this batch did, counted over the whole account
-             *     rather than the batch alone. Every batch runs it.
-             */
-            dedupe: components["schemas"]["DedupeCounts"];
             /** @description Source id of the Import Run the batch belongs to, such as `imessage`. */
             source: string;
         };
@@ -2478,13 +2671,18 @@ export interface components {
          *     names the account.
          */
         CreateImportRequest: {
-            /** @description Which install is creating the Import Run. */
+            /**
+             * @description Which copy of the app is creating the Import Run, stored trimmed. Null when
+             *     the request leaves it out, or blank. Over 64 characters is refused
+             *     with `422 Unprocessable Entity`.
+             */
             device_id?: string | null;
             /**
              * @description Import form snapshot, stored so the screen can be restored.
              *
              *     Credentials are stripped before storage: a `backupPassword` or
-             *     `whatsappKey` posted here is dropped rather than persisted.
+             *     `whatsappKey` posted here is dropped rather than persisted. Over
+             *     65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
              */
             form?: unknown;
             /**
@@ -2504,7 +2702,11 @@ export interface components {
              *     `422 Unprocessable Entity`.
              */
             phone_country?: string | null;
-            /** @description Absolute path to the run directory on the client that owns this Import Run. */
+            /**
+             * @description Absolute path to the run directory on the client that owns this
+             *     Import Run, stored as given, spaces at its ends included. Over 4,096
+             *     characters is refused with `422 Unprocessable Entity`.
+             */
             run_dir?: string | null;
             /**
              * @description Source id the run imports, such as `imessage` or `whatsapp`, which
@@ -2514,16 +2716,21 @@ export interface components {
              *     refused with `422 Unprocessable Entity`.
              */
             source: string;
-            /** @description Source path, size, mtime, and message count. */
+            /**
+             * @description Source path, size, mtime, and message count. Over 65,536 bytes of
+             *     JSON is refused with `422 Unprocessable Entity`.
+             */
             source_fingerprint?: unknown;
-            /** @description Addresses the backup's device sent from, when the client read them. */
+            /**
+             * @description Addresses the backup's device sent from, when the client read them.
+             *     Over 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
+             */
             source_identities?: unknown;
-            /** @description Stage the run opens at. Defaults to `parse`. */
-            stage?: components["schemas"]["ImportStage"] | null;
             /**
              * @description Name of the program that runs the import, such as
-             *     `message-crate-import`, stored on the run as given. Null when the
-             *     request leaves it out.
+             *     `message-crate-import`, stored on the run trimmed. Null when the
+             *     request leaves it out, or blank. Over 64 characters is refused with
+             *     `422 Unprocessable Entity`.
              */
             tool?: string | null;
         };
@@ -2558,16 +2765,26 @@ export interface components {
              */
             name: string;
             /**
-             * @description The query in the search language, trimmed and stored as written. The
-             *     server does not check it when storing it, so a query a list cannot
-             *     run is refused when it runs. A blank query is refused with `422
-             *     Unprocessable Entity`.
+             * @description The query in the search language, trimmed and stored as written. A
+             *     blank query is refused with `422 Unprocessable Entity`
+             *     (`validation-failed`). A query that every list refuses, one over
+             *     2,048 bytes, with a syntax error such as a parenthesis or quote that
+             *     never closes, with more than 32 words, more than 64 parts, or nesting
+             *     deeper than 32, is refused with `422 Unprocessable Entity`
+             *     (`search-query-invalid`) and the search language's own sentence. A
+             *     `word:` is not checked against any list, because a Saved Search runs
+             *     on more than one: a word or value the list cannot use is refused when
+             *     it runs there.
              */
             query: string;
         };
         /** @description Username and password, the body of `POST /v1/session`. */
         CreateSessionRequest: {
-            /** @description Login password. */
+            /**
+             * @description Login password, empty for an account with none. A password is at most
+             *     128 characters, so a longer one is refused with
+             *     `422 Unprocessable Entity` before the username is looked up.
+             */
             password?: string;
             /** @description Login username. */
             username: string;
@@ -2584,36 +2801,27 @@ export interface components {
             /** @description The username the account logs in with. */
             username: string;
         };
-        /** @description What one dedupe did. */
-        DedupeCounts: {
+        /**
+         * @description The journal SQLite keeps the database with, and why it is not
+         *     write-ahead logging when it is not.
+         */
+        DatabaseJournal: {
             /**
-             * Format: int64
-             * @description Messages hidden as exact duplicates. In each group, the source with
-             *     the most copies sets how many stay shown, and the rest are hidden.
+             * @description The journal mode SQLite runs the database in now, read when the
+             *     request is answered. The server asks for `wal` on every start. Any
+             *     other mode means it could not have it, as when another program held
+             *     the database file, and then every page waits while an import writes.
+             *     Owner Home says so. `null` when the mode could not be read; the
+             *     server's log says why.
              */
-            exact_flagged: number;
+            mode: components["schemas"]["JournalMode"] | null;
             /**
-             * Format: int64
-             * @description Groups of messages that share one content key and come from two or
-             *     more sources. Copies one source alone holds are not a group.
+             * @description The error SQLite gave when the server asked for write-ahead logging
+             *     as it started, in SQLite's words, such as `database is locked`.
+             *     `null` when SQLite gave none: it turned write-ahead logging on, or
+             *     kept another mode without an error.
              */
-            exact_groups: number;
-            /**
-             * Format: int64
-             * @description Content keys the pass wrote: one for each message whose key was
-             *     missing or whose inputs changed. A content key is a fingerprint of a
-             *     message's conversation, direction, sender, time, text and attachments.
-             *     This is not a count of duplicates.
-             */
-            keys_filled: number;
-            /**
-             * Format: int64
-             * @description Messages hidden as near duplicates: a message that matches one from
-             *     another source in the same conversation, from the same sender in the
-             *     same direction, within 2 seconds, with the same text or the same
-             *     attachments.
-             */
-            near_flagged: number;
+            wal_error: string | null;
         };
         /**
          * @description Confirmation flag and the current password when one is set: the body an
@@ -2622,7 +2830,11 @@ export interface components {
         DeleteAccountRequest: {
             /** @description Must be `true`; anything else is rejected. */
             confirm: boolean;
-            /** @description Required when the account's `has_password` is true. */
+            /**
+             * @description Required when the account's `has_password` is true. A password is at
+             *     most 128 characters, so a longer one is refused with
+             *     `422 Unprocessable Entity` before it is checked.
+             */
             current_password?: string | null;
         };
         /**
@@ -2723,8 +2935,12 @@ export interface components {
              *     or only part.
              */
             part_index: number;
-            /** @description The part's text in this version. */
-            text: string;
+            /**
+             * @description The part's text in this version; `null` when the source recorded
+             *     the edit and not the text it replaced, as iMazing does. Search
+             *     never finds a message by such a version.
+             */
+            text: string | null;
         };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
@@ -2833,7 +3049,7 @@ export interface components {
          *     `GET /v1/exports?status=` accepts, and the word every Export Run carries.
          * @enum {string}
          */
-        ExportStatus: "running" | "completed" | "failed" | "cancelled";
+        ExportStatus: "running" | "completed" | "failed" | "canceled";
         /** @description One word as the web and the docs see it. */
         FieldDoc: {
             /** @description One example, ready to type. */
@@ -2888,7 +3104,7 @@ export interface components {
             address: string;
             /**
              * Format: int64
-             * @description Direct, group, and orphaned conversations: for a contact, those the identity
+             * @description One-to-one, group, and orphaned conversations: for a contact, those the identity
              *     takes part in, whoever wrote in them; for an account, those holding
              *     at least one of the identity's messages. Trashed conversations are
              *     excluded.
@@ -2901,12 +3117,6 @@ export interface components {
              *     short code, under 7 digits, has no `+` form and is never flagged.
              */
             country_unknown: boolean;
-            /**
-             * Format: int64
-             * @description The identity's messages in one-to-one conversations, trashed
-             *     conversations and duplicates excluded.
-             */
-            direct_messages: number;
             /** @description When the newest such message was sent, or null when there is none. */
             end_date: string | null;
             /**
@@ -2914,6 +3124,12 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
+            /**
+             * Format: int64
+             * @description The identity's messages in one-to-one conversations, trashed
+             *     conversations and duplicates excluded.
+             */
+            one_to_one_messages: number;
             /**
              * Format: int64
              * @description The identity's messages in conversations of orphaned messages, on the
@@ -2962,8 +3178,8 @@ export interface components {
          * @description The service an identity is on, as a request names it and the profile
          *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
          *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
-         *     The service never decides the identity's type, which comes from the
-         *     address.
+         *     The address's shape picks the identity's type among those the service
+         *     carries, so an address with an `@` is `other` on WhatsApp.
          * @enum {string}
          */
         IdentityService: "phone" | "whatsapp";
@@ -3064,6 +3280,12 @@ export interface components {
              */
             tapbacks: number;
         };
+        /**
+         * @description What an Import Error is: `skip` when the run left the item out, `error`
+         *     when the item failed.
+         * @enum {string}
+         */
+        ImportErrorKind: "skip" | "error";
         /** @description One stored import issue. */
         ImportIssue: {
             /**
@@ -3075,7 +3297,7 @@ export interface components {
              * @description `error` when the item failed, or `skip` when the run left it out
              *     without importing it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /** @description Why the item failed or was skipped. */
             reason: string;
             /** @description Stage the issue came from. */
@@ -3085,7 +3307,8 @@ export interface components {
         ImportIssueRequest: {
             /**
              * @description What the issue is about, such as a conversation file or an
-             *     attachment's path.
+             *     attachment's path. Stored trimmed; over 2,000 characters is refused
+             *     with `422 Unprocessable Entity`.
              */
             item: string;
             /**
@@ -3095,8 +3318,11 @@ export interface components {
              *     `notes`, and the desktop app applies a `resolved` row to the record
              *     before it sends it.
              */
-            kind: components["schemas"]["RunIssueKind"];
-            /** @description Why the item failed or was skipped, in one sentence. */
+            kind: components["schemas"]["ImportErrorKind"];
+            /**
+             * @description Why the item failed or was skipped, in one sentence. Stored trimmed;
+             *     over 2,000 characters is refused with `422 Unprocessable Entity`.
+             */
             reason: string;
             /** @description Stage the issue came from. */
             stage: components["schemas"]["ImportIssueStage"];
@@ -3131,11 +3357,17 @@ export interface components {
          *     with a caveat.
          */
         ImportNoteRequest: {
-            /** @description The file, message or address the note is about. */
+            /**
+             * @description The file, message or address the note is about. Stored trimmed; over
+             *     2,000 characters is refused with `422 Unprocessable Entity`.
+             */
             item: string;
             /** @description Stage the note came from. */
             stage: components["schemas"]["ImportIssueStage"];
-            /** @description What the run did with it, in one sentence. */
+            /**
+             * @description What the run did with it, in one sentence. Stored trimmed; over 2,000
+             *     characters is refused with `422 Unprocessable Entity`.
+             */
             text: string;
         };
         /**
@@ -3168,9 +3400,10 @@ export interface components {
              */
             attachments_ms: number | null;
             /**
-             * @description When the backup the run read was made, UTC: the newest date its
-             *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-             *     a file that names one is imported, and for a run whose files name none.
+             * @description When the backup the run read was made, UTC: the newest Backup Date
+             *     the messages of its conversation files carry (each message's
+             *     `backup_taken_at_unix_ms`). Null until a file that names one is
+             *     imported, and for a run whose files name none.
              */
             backup_taken_at: string | null;
             /**
@@ -3252,7 +3485,7 @@ export interface components {
             status: components["schemas"]["ImportStatus"];
             /**
              * @description What the person approved at the last Review they passed, which
-             *     `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+             *     `PATCH /v1/imports/{id}` writes with its `summary`. A canceled run
              *     keeps it. A run that completed or failed holds instead the final
              *     counts its `POST /v1/imports/{id}/complete` sent, and null when that
              *     request sent none, because completing replaces the plan. Null too
@@ -3282,15 +3515,30 @@ export interface components {
          *     `GET /v1/imports?status=` accepts, and the words every response carries.
          * @enum {string}
          */
-        ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
+        ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "canceled";
+        /**
+         * @description The journal mode SQLite runs a database in, as `PRAGMA journal_mode`
+         *     names it.
+         *
+         *     The server asks for `wal` on every open. In any other mode a reader waits
+         *     for a writer, so every page load waits while an import batch holds its
+         *     write transaction.
+         * @enum {string}
+         */
+        JournalMode: "delete" | "truncate" | "persist" | "memory" | "wal" | "off";
         /** @description One identity to link onto the account, with its platform service. */
         LinkAccountIdentityRequest: {
-            /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
+            /**
+             * @description The address as typed, e.g. `+15555550100` or `alex@example.com`. Over
+             *     320 characters after trimming is refused with
+             *     `422 Unprocessable Entity`.
+             */
             address: string;
             /**
-             * @description The service the address is on. It never decides the identity's type,
-             *     which comes from the address: an email address is on the phone
-             *     service, and one on WhatsApp is refused.
+             * @description The service the address is on. The address's shape picks the
+             *     identity's type among those the service carries: an address with an
+             *     `@` is an email address on the phone service, and `other` on
+             *     WhatsApp, such as an internal id `123456789012345@lid`.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -3353,7 +3601,7 @@ export interface components {
         };
         /** @description Body for `POST /v1/contacts/unmatched-identities`. */
         ListUnmatchedIdentitiesRequest: {
-            /** @description Raw identifiers — phone numbers, emails — as they appear in an export. */
+            /** @description Raw identifiers (phone numbers, emails) as they appear in an export. */
             identifiers: string[];
         };
         /**
@@ -3540,7 +3788,7 @@ export interface components {
             /** @description The conversation's identifier as the export wrote it. */
             chat_identifier: string;
             /**
-             * @description `individual`, `group`, or `orphaned` for a conversation of
+             * @description `one-to-one`, `group`, or `orphaned` for a conversation of
              *     orphaned messages: ones the backup holds without recording which
              *     conversation they were said in.
              */
@@ -3560,18 +3808,18 @@ export interface components {
              *     conversation.
              */
             is_group: boolean;
+            /** @description Participants of the conversation. */
+            participants: components["schemas"]["Participant"][];
             /**
              * @description The title the conversation is shown by, as the conversation list's
-             *     `label` gives it: for a conversation the account holder has with
+             *     `shown_title` gives it: for a conversation the account holder has with
              *     themselves, the account's display name or, without one, the
              *     conversation's own address; for one of orphaned messages, its
              *     person's name and "Orphaned", or "Orphaned · Unknown person" for
              *     the one that names nobody; for any other, the export's title. `null`
              *     when there is none, and the conversation goes by its participants.
              */
-            label: string | null;
-            /** @description Participants of the conversation. */
-            participants: components["schemas"]["Participant"][];
+            shown_title: string | null;
         };
         /** @description A Messages search as the server read it. */
         MessageSearch: {
@@ -3602,6 +3850,78 @@ export interface components {
              *     the account's sets of this kind whatever its letter case.
              */
             name: string;
+        };
+        /**
+         * @description One attachment an Import Run wrote that has no Thumbnail or no Preview,
+         *     because the media pass could not make it: the file's name, type and size,
+         *     which the owner may read (`docs/adr/0008-the-owner-holds-no-messages.md`),
+         *     and why each version was not made. Never its message, its conversation,
+         *     or its bytes.
+         */
+        NotMadeAttachment: {
+            /**
+             * Format: int64
+             * @description Attachment id.
+             */
+            id: number;
+            /** @description MIME type of the original, when known. */
+            mime_type: string | null;
+            /** @description File name from the export. */
+            original_name: string | null;
+            /**
+             * @description Why the Preview was not made. Null when it was made, when the
+             *     attachment needs none, or until the media pass has tried.
+             */
+            preview: components["schemas"]["NotMadeVersion"] | null;
+            /**
+             * Format: int64
+             * @description The original's size in bytes, when known.
+             */
+            size_bytes: number | null;
+            /**
+             * @description Why the Thumbnail was not made. Null when it was made, when the
+             *     attachment gets none, or until the media pass has tried.
+             */
+            thumbnail: components["schemas"]["NotMadeVersion"] | null;
+        };
+        /**
+         * @description How many of an Import Run's attachments have no Thumbnail, and how many
+         *     no Preview, for one kind of failure.
+         */
+        NotMadeCount: {
+            /** @description The kind of failure. */
+            kind: components["schemas"]["NotMadeKind"];
+            /**
+             * Format: int64
+             * @description Attachments whose Preview was not made for this kind.
+             */
+            previews: number;
+            /**
+             * Format: int64
+             * @description Attachments whose Thumbnail was not made for this kind.
+             */
+            thumbnails: number;
+        };
+        /**
+         * @description The kind of failure that kept the server's media pass from making a
+         *     Thumbnail or Preview. The reason beside it says the rest in words. The
+         *     owner's view of an Import Run counts its attachments' failures by kind.
+         * @enum {string}
+         */
+        NotMadeKind: "conversion_failed" | "stalled" | "ran_past_length" | "took_too_long" | "original_missing" | "server_problem";
+        /**
+         * @description Why one version of an attachment was not made: its kind, and the reason
+         *     in words, as the `/v1` Attachment answers it.
+         */
+        NotMadeVersion: {
+            /** @description The kind of failure. */
+            kind: components["schemas"]["NotMadeKind"];
+            /**
+             * @description What ffmpeg said about the file, why it was stopped, or a phrase of
+             *     the server's, as the `/v1` Attachment's `preview_not_made_reason` and
+             *     `thumbnail_not_made_reason` answer it.
+             */
+            reason: string;
         };
         /**
          * @description An Export Run as the owner reads it under another account: the form of
@@ -3654,14 +3974,46 @@ export interface components {
             total_bytes: number;
         };
         /**
-         * @description An Import Run as the owner reads it under another account: its source,
-         *     mode, times, outcome and counts, and nothing of what the backup held
+         * @description One Import Run as the owner reads it under another account: everything
+         *     the list answers for it, and the attachments the run wrote whose
+         *     Thumbnail or Preview the server's media pass could not make, with why. A
+         *     run may write any number of them, so the list leaves them out
+         *     (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
+         *     name, type and size, which the owner may read
+         *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
+         *     see"); never by its message, its conversation, or its bytes.
+         */
+        OwnerImportRun: components["schemas"]["OwnerImportRunSummary"] & {
+            /**
+             * @description The attachments the run wrote whose Thumbnail or Preview could not be
+             *     made, by id, each with why for each version not made.
+             */
+            not_made_attachments: components["schemas"]["NotMadeAttachment"][];
+            /**
+             * @description How many of `not_made_attachments` have no Thumbnail and how many no
+             *     Preview, for each kind of failure, leaving out a kind none has. Empty
+             *     until the media pass has tried the run's attachments, which it does
+             *     after the run ends.
+             */
+            not_made_counts: components["schemas"]["NotMadeCount"][];
+            /**
+             * Format: int64
+             * @description How many attachments the run last wrote: those of the messages it
+             *     added, and the stored ones it gave their missing file, less any a
+             *     later run wrote since. `not_made_attachments` are out of these.
+             */
+            written_attachment_count: number;
+        };
+        /**
+         * @description An Import Run as the owner's list of another account's runs answers it:
+         *     its source, mode, times, outcome and counts, and nothing of what the
+         *     backup held
          *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"). The run's summary, its issues, its notes and its form say whom the
          *     account talks to, so they stay out, and a field reaches the owner only by
          *     being added here.
          */
-        OwnerImportRun: {
+        OwnerImportRunSummary: {
             /**
              * Format: int64
              * @description Attachments counted for the run.
@@ -3881,9 +4233,15 @@ export interface components {
             /** @description The rows on this page. */
             items: {
                 /**
+                 * @description Whether the account the entry is about has since been deleted. `false`
+                 *     for an entry about no account, and for a refused login as a username
+                 *     no account holds.
+                 */
+                account_deleted: boolean;
+                /**
                  * Format: int64
                  * @description The account the entry is about, or `null` when it is about none, or
-                 *     the account has been deleted.
+                 *     the account has been deleted: `account_deleted` tells the two apart.
                  */
                 account_id: number | null;
                 /** @description What happened. */
@@ -3902,6 +4260,11 @@ export interface components {
                 app: components["schemas"]["AppKind"] | null;
                 /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
                 app_build: string | null;
+                /**
+                 * Format: int64
+                 * @description `asset_limit_changed`: the new attachment size limit, in bytes.
+                 */
+                asset_max_bytes: number | null;
                 /**
                  * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
                  *     session that expired.
@@ -3946,6 +4309,17 @@ export interface components {
                 /** @description A run: what started it. `null` for a run the server started itself. */
                 credential: components["schemas"]["RunCredential"] | null;
                 /**
+                 * @description `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+                 *     build was asked for.
+                 */
+                demo_data_size: components["schemas"]["DemoDataSize"] | null;
+                /**
+                 * Format: int64
+                 * @description `export_run_closed`: the id of the Export Run the server closed, the
+                 *     `id` of that run's own `export_run` entry.
+                 */
+                export_run_id: number | null;
+                /**
                  * Format: int64
                  * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
                  *     session that expired, the id of its `logged_in` entry.
@@ -3970,6 +4344,14 @@ export interface components {
                 /** @description `session_ended`: how the Session ended. `login_refused`: why. */
                 reason: components["schemas"]["AuditReason"] | null;
                 /**
+                 * @description The id of the request that wrote the entry, as its response's
+                 *     `x-request-id` and the request's lines in the server's log carry it.
+                 *     `null` for an entry written outside a request, by a server command or
+                 *     the Demo Account build of the server's first start, and for a run and
+                 *     a session that expired, which no one request wrote.
+                 */
+                request_id: string | null;
+                /**
                  * @description An Export Run: `everything`, `query` or `selection`. Never the query
                  *     or the picked ids.
                  */
@@ -3985,7 +4367,9 @@ export interface components {
                 status: components["schemas"]["RunStatus"] | null;
                 /**
                  * @description The username of the account the entry is about, as it was; for a
-                 *     refused login, the username as typed. Kept after the account is deleted.
+                 *     refused login as a username no account holds, the username as typed,
+                 *     or `null` when the text typed could not be a username. Kept after the
+                 *     account is deleted.
                  */
                 username: string | null;
             }[];
@@ -4020,18 +4404,18 @@ export interface components {
                  * @description Contact id.
                  */
                 id: number;
-                /**
-                 * Format: int64
-                 * @description 1:1 conversations with the contact.
-                 */
-                individual_conversations: number;
-                /**
-                 * Format: int64
-                 * @description Messages the contact sent in 1:1 conversations.
-                 */
-                individual_message_count: number;
                 /** @description The contact's preferred name; empty when it has none. */
                 name: string;
+                /**
+                 * Format: int64
+                 * @description One-to-one conversations with the contact.
+                 */
+                one_to_one_conversations: number;
+                /**
+                 * Format: int64
+                 * @description Messages the contact sent in one-to-one conversations.
+                 */
+                one_to_one_message_count: number;
                 /**
                  * Format: int64
                  * @description Conversations of orphaned messages the contact is in: the three
@@ -4083,7 +4467,7 @@ export interface components {
                  *     the contact's identities sent (RFC 3339, UTC), conversations in the
                  *     trash and duplicate messages left out. Null when none of them ever
                  *     sent a message. Not the contact's last activity: a message the
-                 *     account owner sent, or another member of a group chat, does not
+                 *     account owner sent, or another member of a group conversation, does not
                  *     count. The same question `last-message:` asks on Contacts.
                  */
                 last_heard_at: string | null;
@@ -4156,15 +4540,6 @@ export interface components {
                 /** @description True for group conversations. */
                 is_group: boolean;
                 /**
-                 * @description The title the conversation is shown by: for a conversation the account
-                 *     holder has with themselves, the account's display name or, without
-                 *     one, the conversation's own address; for one of orphaned messages, its
-                 *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
-                 *     one that names nobody; for any other, the export's title. `null` when
-                 *     there is none, and the conversation goes by its participants.
-                 */
-                label: string | null;
-                /**
                  * @description Timestamp of the conversation's last message. `null` when every
                  *     message in the conversation is a duplicate, so none is left to date it.
                  */
@@ -4178,6 +4553,15 @@ export interface components {
                 participants: components["schemas"]["Participant"][];
                 /** @description Platform service of the conversation, e.g. `imessage`. */
                 service: string;
+                /**
+                 * @description The title the conversation is shown by: for a conversation the account
+                 *     holder has with themselves, the account's display name or, without
+                 *     one, the conversation's own address; for one of orphaned messages, its
+                 *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
+                 *     one that names nobody; for any other, the export's title. `null` when
+                 *     there is none, and the conversation goes by its participants.
+                 */
+                shown_title: string | null;
                 /** @description Message tags on this conversation. */
                 tags: string[];
             }[];
@@ -4311,7 +4695,7 @@ export interface components {
                 address: string;
                 /**
                  * Format: int64
-                 * @description Direct, group, and orphaned conversations: for a contact, those the identity
+                 * @description One-to-one, group, and orphaned conversations: for a contact, those the identity
                  *     takes part in, whoever wrote in them; for an account, those holding
                  *     at least one of the identity's messages. Trashed conversations are
                  *     excluded.
@@ -4324,12 +4708,6 @@ export interface components {
                  *     short code, under 7 digits, has no `+` form and is never flagged.
                  */
                 country_unknown: boolean;
-                /**
-                 * Format: int64
-                 * @description The identity's messages in one-to-one conversations, trashed
-                 *     conversations and duplicates excluded.
-                 */
-                direct_messages: number;
                 /** @description When the newest such message was sent, or null when there is none. */
                 end_date: string | null;
                 /**
@@ -4337,6 +4715,12 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
+                /**
+                 * Format: int64
+                 * @description The identity's messages in one-to-one conversations, trashed
+                 *     conversations and duplicates excluded.
+                 */
+                one_to_one_messages: number;
                 /**
                  * Format: int64
                  * @description The identity's messages in conversations of orphaned messages, on the
@@ -4407,9 +4791,10 @@ export interface components {
                  */
                 attachments_ms: number | null;
                 /**
-                 * @description When the backup the run read was made, UTC: the newest date its
-                 *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-                 *     a file that names one is imported, and for a run whose files name none.
+                 * @description When the backup the run read was made, UTC: the newest Backup Date
+                 *     the messages of its conversation files carry (each message's
+                 *     `backup_taken_at_unix_ms`). Null until a file that names one is
+                 *     imported, and for a run whose files name none.
                  */
                 backup_taken_at: string | null;
                 /**
@@ -4491,7 +4876,7 @@ export interface components {
                 status: components["schemas"]["ImportStatus"];
                 /**
                  * @description What the person approved at the last Review they passed, which
-                 *     `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+                 *     `PATCH /v1/imports/{id}` writes with its `summary`. A canceled run
                  *     keeps it. A run that completed or failed holds instead the final
                  *     counts its `POST /v1/imports/{id}/complete` sent, and null when that
                  *     request sent none, because completing replaces the plan. Null too
@@ -4748,7 +5133,7 @@ export interface components {
             total: number;
         };
         /** @description One page of a list. */
-        Page_OwnerImportRun: {
+        Page_OwnerImportRunSummary: {
             /** @description The rows on this page. */
             items: {
                 /**
@@ -4938,8 +5323,8 @@ export interface components {
         Participant: {
             /**
              * Format: int64
-             * @description Linked contact id: when the identity is on a Contact, or — for a
-             *     participant with no identity — the contact the server bound the name to
+             * @description Linked contact id: when the identity is on a Contact, or, for a
+             *     participant with no identity, the contact the server bound the name to
              *     directly, since that is the only place the link is recorded for
              *     them. Matches the `id` every other contact shape uses, so a caller
              *     can compare the two without converting either.
@@ -4952,7 +5337,7 @@ export interface components {
              */
             identity: string | null;
             /**
-             * @description What to show for this person. Never empty — the server falls back to
+             * @description What to show for this person. Never empty: the server falls back to
              *     the identity when nothing else names them, and to the name alone for
              *     someone a backup named without recording any address.
              */
@@ -4996,8 +5381,8 @@ export interface components {
          *     same request.
          *
          *     The extension members belong to the types named here: `word` and
-         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,
-         *     `line` to `malformed-body` and `validation-failed` from an import batch,
+         *     `did_you_mean` to `search-query-invalid`, `retry_after` to
+         *     `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
          *     `holder` to `identity-exists`.
          */
         Problem: {
@@ -5035,8 +5420,8 @@ export interface components {
             request_id?: string | null;
             /**
              * Format: int64
-             * @description `rate-limited`: seconds until an attempt may succeed, the same figure
-             *     as the `Retry-After` header.
+             * @description `database-busy`: seconds until the request may succeed, the same
+             *     figure as the `Retry-After` header.
              */
             retry_after?: number | null;
             /**
@@ -5068,12 +5453,16 @@ export interface components {
         ReplaceAccountPasswordRequest: {
             /**
              * @description The password being replaced. Required when the owner changes its
-             *     own; nobody else sends it.
+             *     own; nobody else sends it. A password is at most 128 characters, so a
+             *     longer one is refused with `422 Unprocessable Entity` before it is
+             *     checked.
              */
             current_password?: string | null;
             /**
-             * @description The new password. Empty clears a user account's password; the
-             *     owner's must be one character or more.
+             * @description The new password: no minimum length for a user account, where empty
+             *     clears it, and one character or more for the owner's. At most 128
+             *     characters, counted as characters rather than bytes and not trimmed;
+             *     over 128 is refused with `422 Unprocessable Entity`.
              */
             password: string;
             /**
@@ -5132,19 +5521,11 @@ export interface components {
          */
         RunCredential: "session" | "api_token";
         /**
-         * @description What one row a run reports for its Import Run's record is: `skip` when
-         *     the run left the item out, `error` when the item failed, `note` when the
-         *     run did something with it worth knowing that is not a failure, and
-         *     `resolved` when an earlier row about the same item no longer holds.
-         * @enum {string}
-         */
-        RunIssueKind: "skip" | "error" | "note" | "resolved";
-        /**
          * @description How a run stands, as the run's own list spells it: an Import Run's
          *     status, or an Export Run's, which never finishes with issues.
          * @enum {string}
          */
-        RunStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
+        RunStatus: "running" | "completed" | "completed_with_issues" | "failed" | "canceled";
         /** @description One row of `saved_searches`. */
         SavedSearch: {
             /**
@@ -5169,6 +5550,23 @@ export interface components {
              *     it prepares attachments for upload.
              */
             asset_max_bytes: number;
+            /**
+             * Format: int64
+             * @description Seconds a request body, such as an import batch, an attachment, or a
+             *     part of one, may go with no byte arriving before the server stops
+             *     reading it and answers `408 Request Timeout` (`body-stalled`): the config
+             *     file's `[server] body_stall_secs`, 60 unless it sets one.
+             */
+            body_stall_secs: number;
+            /**
+             * Format: int64
+             * @description Seconds a whole request body may take to arrive, from the start of
+             *     the read, before the server stops reading it and answers
+             *     `408 Request Timeout` (`body-stalled`): the config file's
+             *     `[server] body_total_secs`, 300 unless it sets one. The desktop
+             *     app's Upload sizes its wait for each upload from it.
+             */
+            body_total_secs: number;
             /**
              * @description Whether the Demo Account exists and is not being built. While it
              *     does, the screen offers a way into it beside whatever `state` shows:
@@ -5202,7 +5600,10 @@ export interface components {
              */
             version: string;
         };
-        /** @description The server settings the owner controls. */
+        /**
+         * @description The server settings the owner controls, with the database's journal
+         *     beside them, which the owner reads and cannot change.
+         */
         ServerSettings: {
             /**
              * Format: int64
@@ -5212,6 +5613,12 @@ export interface components {
             asset_max_bytes: number;
             /** @description Anyone reaching the server may create their own account. */
             public_registration: boolean;
+        } & {
+            /**
+             * @description The journal SQLite keeps the database with. Not a setting: the
+             *     server reports it here because only the owner may read it.
+             */
+            journal: components["schemas"]["DatabaseJournal"];
         };
         /**
          * @description What state a Message Crate is in, from outside.
@@ -5324,6 +5731,13 @@ export interface components {
             part_index: number;
             /** @description The identity that reacted, for incoming reactions. */
             sender: string | null;
+            /**
+             * @description The name the source gave the reactor of an incoming reaction
+             *     when it gave no address for them; no source gives one yet.
+             *     `null` when `sender` is set, and for the account holder's own
+             *     reactions. A name is shown, never matched to a contact.
+             */
+            sender_display_name: string | null;
         };
         /**
          * @description How finely the source recorded a message's time.
@@ -5341,8 +5755,8 @@ export interface components {
              *     conversation a file is in, and who it is with, is the holder's.
              */
             conversation_id: number | null;
-            /** @description Conversation label, when set. */
-            conversation_title: string | null;
+            /** @description The title the export gave the conversation, when it gave one. */
+            group_title: string | null;
             /**
              * Format: int64
              * @description Attachment id.
@@ -5363,9 +5777,9 @@ export interface components {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
             /**
-             * @description The service the address is on. It never decides the identity's type,
-             *     which comes from the address: an email address is on the phone
-             *     service.
+             * @description The service the address is on. The identity is found as the type
+             *     the address takes there: an address with an `@` is an email address
+             *     on the phone service, and `other` on WhatsApp.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -5381,14 +5795,19 @@ export interface components {
             can_export?: boolean | null;
             /** @description Allow or forbid import. */
             can_import?: boolean | null;
-            /** @description Disable or re-enable login. */
+            /**
+             * @description Disable or enable the account. A disabled account may not log in,
+             *     and its API tokens are refused while it stays disabled. Disabling it
+             *     also ends its Session, so enabling it again takes a new login.
+             */
             disabled?: boolean | null;
             /** @description Identities to link onto the account profile. */
             identities?: components["schemas"]["LinkAccountIdentityRequest"][];
             /**
              * @description Display name. Absent leaves the current name unchanged, `null` clears
              *     it, and a string sets it, trimmed. A string that is empty after
-             *     trimming clears it.
+             *     trimming clears it, and one over 200 characters is refused with
+             *     `422 Unprocessable Entity`.
              */
             preferred_name?: string | null;
             /** @description Identities to unlink from the account profile. */
@@ -5410,12 +5829,15 @@ export interface components {
         };
         /** @description Body for renaming a token. */
         UpdateApiTokenRequest: {
-            /** @description Replacement label. */
+            /** @description Replacement label, under the rules a new token's label follows. */
             label: string;
         };
         /** @description The previous and new addresses for a link change. */
         UpdateContactIdentityRequest: {
-            /** @description The replacement address. */
+            /**
+             * @description The replacement address. Over 320 characters after trimming is
+             *     refused with `422 Unprocessable Entity`.
+             */
             address: string;
             /** @description The address currently linked. */
             previous_address: string;
@@ -5424,8 +5846,8 @@ export interface components {
              *     its own service whatever this names: on the named service first when
              *     it is there under more than one, else the phone service, then
              *     WhatsApp. When omitted, the new address takes the service of the
-             *     previous one. It never decides the new identity's type, which comes
-             *     from the address, and a new email address on WhatsApp is refused.
+             *     previous one. The new address's shape picks its type among those the
+             *     service carries, so an address with an `@` is `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -5433,7 +5855,10 @@ export interface components {
         UpdateContactRequest: {
             /** @description Identity to link. */
             add_identity?: components["schemas"]["AddContactIdentityRequest"] | null;
-            /** @description New display name; `None` leaves it unchanged. */
+            /**
+             * @description New display name, trimmed; `None` leaves it unchanged. Blank or over
+             *     200 characters is refused with `422 Unprocessable Entity`.
+             */
             name?: string | null;
             /** @description Identity to unlink. */
             remove_identity?: components["schemas"]["RemoveContactIdentityRequest"] | null;
@@ -5457,7 +5882,7 @@ export interface components {
              *     Recorded here rather than at completion so an approval survives a
              *     reload: the summary shown at a Review is recomputed from the directory, but
              *     what was approved is a different question and only the run
-             *     remembers it. Absent leaves the stored `summary_json` untouched —
+             *     remembers it. Absent leaves the stored `summary_json` untouched, because
              *     most stage changes carry nothing, and treating absent as null would
              *     throw away the plan the outcome is later judged against.
              */
@@ -5551,7 +5976,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Process is up */
+            /** @description The server is up and can reach its database */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5599,7 +6024,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -5678,7 +6103,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -5690,6 +6115,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5726,15 +6160,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5779,7 +6204,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -5852,7 +6277,7 @@ export interface operations {
                 };
             };
             /**
-             * @description [`invalid-credentials`](https://messagecrate.app/docs/developer/reference/errors/invalid-credentials): The username or password did not match an account, or the current password given to confirm deleting an account or changing the owner's password was wrong.
+             * @description [`invalid-credentials`](https://messagecrate.app/docs/developer/reference/errors/invalid-credentials): The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong.
              *
              *     [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.
              */
@@ -5865,13 +6290,13 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -5899,7 +6324,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5928,15 +6362,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5990,13 +6415,13 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6017,6 +6442,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6102,7 +6536,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6187,9 +6621,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6210,6 +6646,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6283,7 +6728,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6357,7 +6802,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6444,7 +6889,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6465,6 +6910,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6541,7 +6995,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6624,7 +7078,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6703,7 +7157,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6786,7 +7240,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6862,7 +7316,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6946,13 +7400,13 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -6973,6 +7427,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7051,7 +7514,7 @@ export interface operations {
                 };
             };
             /**
-             * @description [`invalid-credentials`](https://messagecrate.app/docs/developer/reference/errors/invalid-credentials): The username or password did not match an account, or the current password given to confirm deleting an account or changing the owner's password was wrong.
+             * @description [`invalid-credentials`](https://messagecrate.app/docs/developer/reference/errors/invalid-credentials): The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong.
              *
              *     [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.
              */
@@ -7064,13 +7527,13 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7098,6 +7561,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
             413: {
                 headers: {
@@ -7118,15 +7590,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7171,7 +7634,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7227,11 +7690,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored */
+            /** @description The asset's bytes, in the media type its first bytes show or else the one it was stored with, or `application/octet-stream` when neither is known */
             200: {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description The fingerprint, quoted */
                     ETag?: string;
                     [name: string]: unknown;
@@ -7245,6 +7710,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     /** @description The fingerprint, quoted */
@@ -7271,7 +7738,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7366,11 +7833,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7391,6 +7858,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7462,7 +7938,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7536,7 +8012,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7597,6 +8073,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -7608,6 +8086,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     [name: string]: unknown;
@@ -7632,7 +8112,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7693,6 +8173,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -7704,6 +8186,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     [name: string]: unknown;
@@ -7728,7 +8212,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7822,11 +8306,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7847,6 +8331,24 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7919,11 +8421,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -7996,11 +8498,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8028,7 +8530,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8095,11 +8597,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8127,7 +8629,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8198,11 +8700,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8230,7 +8732,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8311,7 +8822,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8378,7 +8889,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8443,7 +8954,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8518,7 +9029,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8530,6 +9041,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8608,7 +9128,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8678,7 +9198,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8763,7 +9283,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8784,6 +9304,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8867,7 +9396,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8952,7 +9481,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -8973,6 +9502,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9048,7 +9586,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9127,11 +9665,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9143,6 +9681,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9224,9 +9771,18 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9310,7 +9866,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9322,6 +9878,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9401,7 +9966,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9413,6 +9978,112 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_vcard_address_book: {
+        parameters: {
+            query?: {
+                /** @description The country a number written without its `+` code is read in, as an ISO 3166-1 code that `GET /v1/phone-countries` lists, such as `US`. Absent, every number is written as the card has it. */
+                country?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The vCard file: one or more cards. */
+        requestBody: {
+            content: {
+                "text/vcard": string;
+            };
+        };
+        responses: {
+            /** @description The address book, as an attachment named `address-book.csv` */
+            200: {
+                headers: {
+                    /** @description `attachment; filename="address-book.csv"` */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9482,7 +10153,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9550,11 +10221,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9582,7 +10253,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9648,7 +10319,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9669,6 +10340,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9745,7 +10425,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9815,7 +10495,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9893,7 +10573,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -9960,7 +10640,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10028,11 +10708,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10060,7 +10740,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10126,7 +10806,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10196,7 +10876,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10273,7 +10953,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10343,7 +11023,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10421,7 +11101,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10496,7 +11176,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10508,6 +11188,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10581,7 +11270,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10653,7 +11342,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10681,7 +11370,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10711,7 +11400,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteExportRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10720,6 +11413,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportRun"];
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
@@ -10734,7 +11436,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10762,8 +11464,35 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10822,7 +11551,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10850,7 +11579,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10907,11 +11636,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -10984,11 +11713,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11007,7 +11736,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11076,11 +11814,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11163,11 +11901,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11195,7 +11933,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11243,7 +11990,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description message-ir JSONL as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets. */
+        /** @description A JSONL conversation file as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets. */
         requestBody?: {
             content: {
                 "application/jsonl": unknown;
@@ -11279,11 +12026,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11311,7 +12058,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11340,6 +12096,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11393,11 +12158,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11425,7 +12190,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11454,6 +12228,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11499,11 +12282,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11586,11 +12369,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11618,7 +12401,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11647,6 +12439,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11691,7 +12492,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11766,7 +12567,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11778,6 +12579,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11856,7 +12666,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -11926,7 +12736,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12011,7 +12821,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12032,6 +12842,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12115,7 +12934,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12200,7 +13019,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12221,6 +13040,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12296,7 +13124,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12363,7 +13191,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12437,7 +13265,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12502,7 +13330,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12577,7 +13405,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12589,6 +13417,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12623,7 +13460,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            /**
+             * @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.
+             *
+             *     [`search-query-invalid`](https://messagecrate.app/docs/developer/reference/errors/search-query-invalid): The search language refused the query.
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12667,7 +13508,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12737,7 +13578,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12822,7 +13663,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12843,6 +13684,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12877,7 +13727,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            /**
+             * @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.
+             *
+             *     [`search-query-invalid`](https://messagecrate.app/docs/developer/reference/errors/search-query-invalid): The search language refused the query.
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12923,7 +13777,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -12988,7 +13842,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13053,7 +13907,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13163,10 +14017,19 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /**
              * @description [`username-taken`](https://messagecrate.app/docs/developer/reference/errors/username-taken): The username already belongs to an account on this server.
              *
-             *     [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.
+             *     [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.
              */
             409: {
                 headers: {
@@ -13196,15 +14059,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13246,7 +14100,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13321,7 +14175,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13340,7 +14194,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13369,6 +14232,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13415,7 +14287,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13482,7 +14354,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13553,7 +14425,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13615,7 +14487,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13690,7 +14562,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13702,6 +14574,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13770,7 +14651,7 @@ export interface operations {
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13830,7 +14711,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -13893,17 +14774,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`invalid-credentials`](https://messagecrate.app/docs/developer/reference/errors/invalid-credentials): The username or password did not match an account, or the current password given to confirm deleting an account or changing the owner's password was wrong. */
+            /** @description [`invalid-credentials`](https://messagecrate.app/docs/developer/reference/errors/invalid-credentials): The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act. */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13913,6 +14785,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13940,15 +14821,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13986,7 +14858,7 @@ export interface operations {
             /**
              * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {
@@ -14042,11 +14914,11 @@ export interface operations {
                 };
             };
             /**
-             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
              *
              *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
-             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
              */
             403: {
                 headers: {

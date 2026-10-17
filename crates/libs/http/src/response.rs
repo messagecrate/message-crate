@@ -3,14 +3,14 @@
 //!
 //! Every route the server serves answers a failure with an RFC 7807 problem
 //! document (`docs/architecture/http-api.md`), and its `detail` is written for the person to read.
-//! Both client crates were reading it themselves — `message-crate-import` with an
-//! `ok_json` helper, `message-crate-export` with an `error_sentence` one — over two
+//! Both client crates were reading it themselves (`import` with an
+//! `ok_json` helper, `export` with an `error_sentence` one) over two
 //! private copies of the same struct. One copy of the reading lives here, over
 //! the shared [`Problem`] type, so a change to the server's failure shape is
 //! one edit rather than a hunt.
 
 use anyhow::Result;
-use message_crate_api_types::Problem;
+use api_types::Problem;
 use serde::de::DeserializeOwned;
 
 use crate::retry::HttpError;
@@ -23,7 +23,7 @@ const MAX_BODY_SNIPPET: usize = 300;
 /// The sentence to show for a failed response: the problem's `detail` (or its
 /// `errors`) when the body is one, followed by the request id so a person can
 /// quote it, otherwise the body itself, clipped. The status is the caller's
-/// to report — [`ok_json`] does, once — so a body that carries no sentence
+/// to report ([`ok_json`] does, once), so a body that carries no sentence
 /// does not end up naming the status twice.
 #[must_use]
 pub fn error_sentence(body: &str) -> String {
@@ -69,8 +69,8 @@ pub fn read_body(
 /// A 2xx status is a success and the body is `T`. Anything else is a
 /// [`HttpError`] carrying the status, so the retry rules can classify it,
 /// the problem document when the body is one, so a caller can read a member
-/// such as `line`, and a sentence naming `what` was being asked for — "Import
-/// Run 7 batch", "Export Run 7 page" — because a status alone does not tell the
+/// such as `line`, and a sentence naming `what` was being asked for ("Import
+/// Run 7 batch", "Export Run 7 page"), because a status alone does not tell the
 /// person which part of a long run stopped.
 ///
 /// # Errors

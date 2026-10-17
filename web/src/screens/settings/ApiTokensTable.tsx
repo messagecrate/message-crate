@@ -1,15 +1,17 @@
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import Button from "../../components/Button";
 import { PencilIcon, TrashIcon } from "../../components/icons";
-import type { ApiTokenItem } from "./apiTokensUtils";
+import type { components } from "../../lib/serverApi.types";
 import {
   displayTokenHint,
   formatTokenDate,
   permissionsLabel,
   tdClass,
-  tdMuted,
+  tdMutedClass,
   thClass,
 } from "./apiTokensUtils";
+
+type ApiToken = components["schemas"]["ApiToken"];
 
 /**
  * An account's API tokens. The account's holder sees each masked secret and
@@ -17,17 +19,17 @@ import {
  * another account's tokens, which shows no secret and only revokes.
  */
 export default function ApiTokensTable({
-  items,
+  tokens,
   busy,
   composing,
   onRename,
   onRevoke,
 }: {
-  items: ApiTokenItem[];
+  tokens: ApiToken[];
   busy: boolean;
   composing: boolean;
-  onRename?: (item: ApiTokenItem) => void;
-  onRevoke: (item: ApiTokenItem) => void;
+  onRename?: (token: ApiToken) => void;
+  onRevoke: (token: ApiToken) => void;
 }) {
   const holder = onRename !== undefined;
   return (
@@ -49,36 +51,36 @@ export default function ApiTokensTable({
           <Column className={`${thClass} w-[8%]`} />
         </TableHeader>
         <TableBody
-          items={items}
+          items={tokens}
           dependencies={[busy, holder]}
           renderEmptyState={() =>
             composing ? null : (
-              <div className="px-5 py-6 text-[0.75rem] text-muted">No API Tokens yet.</div>
+              <div className="px-5 py-6 text-[0.75rem] text-muted">No API Tokens yet</div>
             )
           }
           className="outline-none"
         >
-          {(item) => (
+          {(token) => (
             <Row
-              id={item.id}
+              id={token.id}
               className="border-b border-border last:border-b-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
             >
               <Cell className={`${tdClass} truncate font-medium`}>
-                <span className="block truncate" title={item.label}>
-                  {item.label}
+                <span className="block truncate" title={token.label}>
+                  {token.label}
                 </span>
               </Cell>
               {holder ? (
-                <Cell className={`${tdMuted} truncate font-mono text-[0.688rem]`}>
+                <Cell className={`${tdMutedClass} truncate font-mono text-[0.688rem]`}>
                   <span className="block truncate" title="Masked API Token">
-                    {displayTokenHint(item.token_hint)}
+                    {displayTokenHint(token.token_hint)}
                   </span>
                 </Cell>
               ) : null}
-              <Cell className={tdClass}>{permissionsLabel(item)}</Cell>
-              <Cell className={tdMuted}>{formatTokenDate(item.created_at)}</Cell>
-              <Cell className={tdMuted}>{formatTokenDate(item.last_accessed_at)}</Cell>
-              <Cell className={tdMuted}>{formatTokenDate(item.expires_at)}</Cell>
+              <Cell className={tdClass}>{permissionsLabel(token)}</Cell>
+              <Cell className={tdMutedClass}>{formatTokenDate(token.created_at)}</Cell>
+              <Cell className={tdMutedClass}>{formatTokenDate(token.last_accessed_at)}</Cell>
+              <Cell className={tdMutedClass}>{formatTokenDate(token.expires_at)}</Cell>
               <Cell className={`${tdClass}`}>
                 <div className="flex items-center justify-end gap-1">
                   {onRename ? (
@@ -88,9 +90,9 @@ export default function ApiTokensTable({
                       disabled={busy}
                       title="Edit API Token"
                       aria-label="Edit API Token"
-                      onClick={() => onRename(item)}
+                      onClick={() => onRename(token)}
                     >
-                      <PencilIcon />
+                      <PencilIcon className="shrink-0" />
                     </Button>
                   ) : null}
                   <Button
@@ -99,9 +101,9 @@ export default function ApiTokensTable({
                     disabled={busy}
                     title="Revoke API Token"
                     aria-label="Revoke API Token"
-                    onClick={() => onRevoke(item)}
+                    onClick={() => onRevoke(token)}
                   >
-                    <TrashIcon />
+                    <TrashIcon className="shrink-0" />
                   </Button>
                 </div>
               </Cell>

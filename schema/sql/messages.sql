@@ -4,11 +4,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY,
     -- Owning account (`accounts.id`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- Thread identity handle (`handles.id`); peer for 1:1, group chat id for groups.
+    -- Conversation identity handle (`handles.id`): the other person in a one-to-one conversation, the group's chat id in a group conversation.
     chat_handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
-    -- Thread shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'one-to-one' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
-    -- Group display title; NULL for 1:1 chats.
+    -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,
     -- The latest message time of the copy that gave group_title, in the form
     -- messages.timestamp holds; NULL with no title, or when that copy had no
@@ -202,28 +202,70 @@ CREATE TABLE IF NOT EXISTS attachments (
     size_bytes INTEGER,
     -- Why bytes are absent (for example not_exported, decrypt_failed); NULL if present.
     missing_reason TEXT,
-    -- SHA-256 hex of a converted/compressed derivative used by the browser.
-    derived_sha256 TEXT,
-    -- Path under the assets store for the derivative file.
-    derived_assets_path TEXT,
-    -- MIME type of the derivative file.
-    derived_mime_type TEXT,
+    -- SHA-256 hex of the Preview: a copy of the original every browser
+    -- shows. NULL until the server has made it.
+    preview_sha256 TEXT,
+    -- Path of the Preview under the account's converted-media directory.
+    preview_assets_path TEXT,
+    -- MIME type of the Preview file.
+    preview_mime_type TEXT,
+    -- Why the server's media pass could not make the Preview the last time
+    -- it tried: what ffmpeg said about the file, with the paths it named
+    -- made relative to the account's originals directory and the pass's
+    -- work directory, or a phrase of the server's when ffmpeg did not read
+    -- the file (`docs/architecture/media.md` rule 4). Never written beside
+    -- a Preview that works. NULL while the row names a Preview that works,
+    -- once the original is decided to be shown as it is, and until a try has
+    -- failed.
+    preview_not_made_reason TEXT,
+    -- The kind of failure `preview_not_made_reason` describes, so the owner's
+    -- view of an Import Run can count the failures by kind without reading
+    -- ffmpeg's words. `docs/architecture/media.md` says what each kind means.
+    -- Set and cleared with the reason.
+    preview_not_made_kind TEXT CHECK (preview_not_made_kind IN (
+        'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
+        'original_missing', 'server_problem'
+    )),
     -- 1 when every browser shows the stored original as it is, so a viewer
     -- opens it and it gets no Preview (`media::browser_shows`,
     -- `docs/architecture/media.md` rule 2). The server's media pass decides
     -- it, and only an MP4 is opened to read its codec. 0 when it is not
-    -- shown as it is, and until the pass has looked at the file.
-    shown_as_is INTEGER NOT NULL DEFAULT 0 CHECK (shown_as_is IN (0, 1)),
+    -- shown as it is. NULL until the pass has decided, which the `/v1`
+    -- Attachment answers as not shown as it is; the pass plans an original
+    -- it cannot read from the decision recorded here, and from its type
+    -- only while there is none.
+    shown_as_is INTEGER CHECK (shown_as_is IN (0, 1)),
     -- SHA-256 hex of the Thumbnail: a small JPEG of an image, or a video's
     -- first frame. NULL until the server has made it.
     thumbnail_sha256 TEXT,
     -- Path of the Thumbnail under the account's converted-media directory.
     thumbnail_assets_path TEXT,
     -- MIME type of the Thumbnail file.
-    thumbnail_mime_type TEXT
+    thumbnail_mime_type TEXT,
+    -- Why the media pass could not make the Thumbnail the last time it
+    -- tried, as `preview_not_made_reason` says for the Preview.
+    thumbnail_not_made_reason TEXT,
+    -- The kind of failure `thumbnail_not_made_reason` describes, as
+    -- `preview_not_made_kind` is for the Preview.
+    thumbnail_not_made_kind TEXT CHECK (thumbnail_not_made_kind IN (
+        'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
+        'original_missing', 'server_problem'
+    )),
+    -- Import Run that last wrote this row: the one that added it, or that
+    -- gave a row stored without its file the file (`imports.id`). When the
+    -- run ends, the server queues the Assets of the rows it wrote, whichever
+    -- run created their message (#1946).
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    -- A reason is never recorded without its kind, nor a kind without its
+    -- reason.
+    CHECK ((preview_not_made_reason IS NULL) = (preview_not_made_kind IS NULL)),
+    CHECK ((thumbnail_not_made_reason IS NULL) = (thumbnail_not_made_kind IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS ix_attachments_sha256 ON attachments (sha256);
+CREATE INDEX IF NOT EXISTS ix_attachments_import_id
+    ON attachments (import_id)
+    WHERE import_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_attachments_message_id ON attachments (message_id);
 
 -- Assets whose Thumbnail and Preview the server still has to make. An Import
@@ -255,15 +297,20 @@ CREATE TABLE IF NOT EXISTS tapbacks (
     -- 1 = reaction from the account holder; 0 = from someone else.
     is_from_me INTEGER NOT NULL,
     -- Reactor identity (`handles.id`); NULL when unknown.
-    sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL
+    sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL,
+    -- The name the source gave the reactor when it gave no address for them;
+    -- NULL otherwise, and no source gives one yet. Shown, never matched: it makes
+    -- no identity and no contact.
+    sender_display_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_tapbacks_message_id ON tapbacks (message_id);
 
 -- One earlier version of one part of an edited message: the text that part
--- held before an edit replaced it. messages.body is the final version; these
--- are the versions before it. Search finds a message by any of them
--- (message_versions_fts in fts_virtual.sql).
+-- held before an edit replaced it, or only that an edit replaced it.
+-- messages.body is the final version; these are the versions before it.
+-- Search finds a message by any of them that has text (message_versions_fts
+-- in fts_virtual.sql).
 CREATE TABLE IF NOT EXISTS message_versions (
     -- Surrogate primary key; also the version's rowid in message_versions_fts.
     -- Ascending within a message in the order the source listed its versions,
@@ -273,8 +320,10 @@ CREATE TABLE IF NOT EXISTS message_versions (
     message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     -- Which part of a multi-part message this version belongs to (0 = first/only).
     part_index INTEGER NOT NULL DEFAULT 0,
-    -- The part's text in this version.
-    text TEXT NOT NULL,
+    -- The part's text in this version. NULL when the source recorded the edit
+    -- and not the text it replaced, as iMazing does; such a version has no row
+    -- in message_versions_fts.
+    text TEXT,
     -- When this version was written, to the millisecond in the form
     -- messages.timestamp holds: the send time for the original, the edit's time for
     -- a later one. NULL when the source does not record it.
@@ -306,7 +355,7 @@ CREATE TABLE IF NOT EXISTS message_tag_members (
 -- One message a running Export Run matched when it was created. The run's
 -- pages read these rows rather than its scope, so an import, a trash, or a
 -- new day between pages cannot move what the run hands over. The rows are
--- deleted when the run completes or is cancelled.
+-- deleted when the run completes or is canceled.
 CREATE TABLE IF NOT EXISTS export_messages (
     -- Export Run (`exports.id`).
     export_id INTEGER NOT NULL REFERENCES exports(id) ON DELETE CASCADE,

@@ -1,10 +1,11 @@
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
+import { textInputClass } from "../../components/TextField";
+import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
+import { useRouteCache } from "../../hooks/useRouteQuery";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache } from "../../lib/routeQuery";
-import { useCreateAccountForm } from "../auth/useCreateAccountForm";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
 
 /**
  * The Account section of an account that does not exist yet, which the
@@ -37,9 +38,10 @@ export function NewAccountPanel() {
       // The server answers with the whole account row, so the account's
       // Settings draw from it at once instead of showing a loading state and
       // redrawing when the fetch lands. The session token is not the row's.
+      // The request already marked the account's cache stale, so User
+      // Accounts fetches the list again.
       const { token: _token, ...account } = created;
       cache.set(keys.ownerAccounts.member(account.account_id), account);
-      cache.invalidateAccount();
       // `replace`, so Back from the account's Settings is User Accounts, not this form.
       navigate(`/owner/accounts/${created.account_id}`, { replace: true });
     },
@@ -62,7 +64,7 @@ export function NewAccountPanel() {
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="off"
           disabled={busy}
-          className={inputClassName}
+          className={textInputClass}
         />
       </div>
 
@@ -76,7 +78,7 @@ export function NewAccountPanel() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
             disabled={busy}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <label className="mb-2 block">
@@ -87,7 +89,7 @@ export function NewAccountPanel() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
             disabled={busy}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <Button variant="primary" type="submit" disabled={busy} size="sm">

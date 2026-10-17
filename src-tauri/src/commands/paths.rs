@@ -1,29 +1,32 @@
 //! Path helpers the Settings and Import screens use.
+//!
+//! [`path_stat`], [`ios_backup_encrypted`] and [`imessage_backup_identities`]
+//! read any path the window names, because the Import screen checks a path the
+//! person typed, which can be anywhere. None of them opens that path for writing.
+//! [`imessage_backup_identities`] starts the Apple Messages Reader, which reads
+//! the backup. For an encrypted backup, the Reader decrypts `chat.db` into the
+//! Scratch Directory, never into the backup. A script in the window could
+//! use the three commands to look around the file system, but the window runs
+//! only the app's own scripts, under the Content Security Policy in
+//! `src-tauri/tauri.conf.json` (`app.security.csp`).
 
 use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
+use crate::app_directories::MessageCrateDirectory;
 use crate::export_directories::ExportDirectories;
 use crate::run_directories::RunDirectories;
 
 /// The Scratch Directory, which every run's scratch directories go under
 /// (`message_crate_core::ScratchDir`).
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
-pub(crate) fn scratch_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(crate::app_directories::scratch_dir_in(&app_data_dir(app)?))
+pub(crate) fn scratch_dir(app: &AppHandle) -> PathBuf {
+    app.state::<MessageCrateDirectory>().scratch()
 }
 
 /// The Logs Directory, which holds every Import Run's log.
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
-pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(crate::app_directories::logs_dir_in(&app_data_dir(app)?))
+pub(crate) fn logs_dir(app: &AppHandle) -> PathBuf {
+    app.state::<MessageCrateDirectory>().logs()
 }
 
 /// `path`, resolved, when it is in the Logs Directory `logs`, whether or not
@@ -31,13 +34,6 @@ pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// ([`missing_path_error`]) rather than calling it outside.
 fn openable_in_logs(path: &str, logs: &Path) -> Option<PathBuf> {
     resolve_openable_path(path, &logs.display().to_string()).ok()
-}
-
-/// The app-data directory.
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| format!("Could not find the app-data directory: {e}"))
 }
 
 /// The logged-in user's home directory, plus which OS this process is running on.
@@ -79,38 +75,92 @@ pub struct PathStat {
     /// `None` when the platform does not report one. For a directory this
     /// does not move when a file inside it changes (see the type's docs).
     pub modified_unix_ms: Option<i64>,
+    /// Why the operating system would not say what is at the path, when it
+    /// would not; `None` when it answered, whether or not the path is there.
+    /// `exists`, `is_file` and `is_directory` are `false` alongside it,
+    /// because nothing is known: the stat sets one or the other, never both.
+    pub unreadable: Option<PathUnreadable>,
+}
+
+/// The operating system's refusal to say what is at a path.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathUnreadable {
+    /// What kind of refusal it was.
+    pub kind: PathUnreadableKind,
+    /// The operating system's own words for the refusal.
+    pub reason: String,
+}
+
+/// What kind of refusal an unreadable path met.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathUnreadableKind {
+    /// The app is not allowed to read the path, such as a directory macOS
+    /// protects until the app has Full Disk Access.
+    PermissionDenied,
+    /// Any other error from the operating system.
+    Other,
 }
 
 /// Stat a path without canonicalizing it (the path may not exist yet). A
-/// path that cannot be read is reported as absent rather than as an error.
+/// path that is not there, or that runs through a file, is reported as
+/// absent; any other error, such as permission denied, as unreadable.
 pub(crate) fn path_stat_inner(path: &str) -> PathStat {
+    let absent = PathStat {
+        exists: false,
+        is_file: false,
+        is_directory: false,
+        size_bytes: 0,
+        modified_unix_ms: None,
+        unreadable: None,
+    };
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return PathStat {
-            exists: false,
-            is_file: false,
-            is_directory: false,
-            size_bytes: 0,
-            modified_unix_ms: None,
-        };
+        return absent;
     }
-    let path = Path::new(trimmed);
-    let meta = std::fs::metadata(path).ok();
+    let meta = match std::fs::metadata(trimmed) {
+        Ok(meta) => meta,
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return absent;
+        }
+        Err(err) => {
+            return PathStat {
+                unreadable: Some(PathUnreadable {
+                    kind: if err.kind() == std::io::ErrorKind::PermissionDenied {
+                        PathUnreadableKind::PermissionDenied
+                    } else {
+                        PathUnreadableKind::Other
+                    },
+                    reason: err.to_string(),
+                }),
+                ..absent
+            };
+        }
+    };
     let modified_unix_ms = meta
-        .as_ref()
-        .and_then(|m| m.modified().ok())
+        .modified()
+        .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .and_then(|d| i64::try_from(d.as_millis()).ok());
     PathStat {
-        exists: path.exists(),
-        is_file: path.is_file(),
-        is_directory: path.is_dir(),
-        size_bytes: meta.as_ref().map_or(0, std::fs::Metadata::len),
+        exists: true,
+        is_file: meta.is_file(),
+        is_directory: meta.is_dir(),
+        size_bytes: meta.len(),
         modified_unix_ms,
+        unreadable: None,
     }
 }
 
 /// Return whether a path exists and whether it is a file or directory.
+///
+/// Reads any path the window names. The [module docs](self) say why.
 #[tauri::command]
 pub fn path_stat(path: String) -> PathStat {
     path_stat_inner(&path)
@@ -118,6 +168,8 @@ pub fn path_stat(path: String) -> PathStat {
 
 /// Read `Manifest.plist` and return whether an iOS backup directory is
 /// encrypted. `None` when the path is blank or is not an iOS backup.
+///
+/// Reads any path the window names. The [module docs](self) say why.
 #[tauri::command]
 pub fn ios_backup_encrypted(path: String) -> Option<bool> {
     let trimmed = path.trim();
@@ -130,9 +182,14 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// Addresses an iMessage backup's device sent from, for the Import
 /// identity check.
 ///
+/// Reads any path the window names. The [module docs](self) say why.
+///
 /// Runs on a blocking-pool thread: for an encrypted backup, answering this
 /// decrypts `chat.db` into a directory under the Scratch Directory, which the
 /// next request cleans if this one is killed.
+///
+/// The check runs before any Import Run exists, so it has no run log: the
+/// Reader's warnings go to the desktop app's log ([`identity_check_log`]).
 #[tauri::command]
 pub async fn imessage_backup_identities(
     app: AppHandle,
@@ -140,14 +197,46 @@ pub async fn imessage_backup_identities(
     ios: bool,
     backup_password: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let scratch_root = scratch_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
+    let scratch_root = scratch_dir(&app).join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
-        let password = backup_password.as_deref().and_then(message_ir::trimmed);
-        ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root)
+        let password = backup_password.as_deref().and_then(ir::trimmed);
+        let log = identity_check_log(path.trim().to_string(), crate::app_log::warn);
+        ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root, log)
             .map_err(|e| format!("{e:#}"))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Where the Apple Messages Reader logs during the identity check of the
+/// backup at `backup`: each warning goes to `warn`, as [`reader_log_line`]
+/// writes it, and every other line is dropped. Why: the Reader's other lines
+/// say how far it got, and one of them, "Decrypted iOS backup", names the
+/// phone, which usually names the person whose phone it is. The desktop
+/// app's log is offered to the owner of every Message Crate the app signs in
+/// to (`docs/architecture/import-run-logs.md`, "The desktop app's log").
+fn identity_check_log(
+    backup: String,
+    warn: impl Fn(&str) + Send + Sync + 'static,
+) -> message_crate_core::LogSink {
+    message_crate_core::LogSink::none()
+        .with_warnings(move |line: &str| warn(&reader_log_line(line, &backup)))
+}
+
+/// The desktop app's log's line for one warning the Apple Messages Reader
+/// wrote while the Import screen's identity check ran, with the backup's
+/// path, `backup`, written as "the backup". Why: the desktop app's log names
+/// only paths inside Message Crate's own directories, and a backup's path
+/// can name the person whose phone it is. The path is hidden as the window
+/// gave it, which is the form the Reader names it in: the Reader is handed
+/// that path and resolves nothing.
+fn reader_log_line(line: &str, backup: &str) -> String {
+    let line = if backup.is_empty() {
+        line.to_string()
+    } else {
+        line.replace(backup, "the backup")
+    };
+    format!("The Apple Messages Reader logged during the identity check: {line}")
 }
 
 /// Ask this process for the current user's home directory.
@@ -186,7 +275,7 @@ pub fn open_path(
     exports: tauri::State<'_, ExportDirectories>,
     path: String,
 ) -> Result<(), String> {
-    let logs = logs_dir(&app)?;
+    let logs = logs_dir(&app);
     let resolved = match exports
         .openable(Path::new(path.trim()))
         .or_else(|| openable_in_logs(&path, &logs))
@@ -333,6 +422,12 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     out
 }
 
+/// [`resolve_absolute`] for a path no setting names, refused with the plain
+/// "Path is empty" and "Path must be absolute".
+pub(crate) fn require_absolute(raw: &str) -> Result<PathBuf, String> {
+    resolve_absolute(raw, "Path is empty", "Path must be absolute")
+}
+
 /// Trim `raw` and require it to be a non-empty absolute path.
 fn resolve_absolute(
     raw: &str,
@@ -413,7 +508,7 @@ pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String
 /// yet), it is resolved through [`resolve_on_disk`], the same way as the root,
 /// so the two compare in one form.
 pub(crate) fn resolve_openable_path(raw: &str, root: &str) -> Result<PathBuf, String> {
-    let candidate = resolve_absolute(raw, "Path is empty", "Path must be absolute")?;
+    let candidate = require_absolute(raw)?;
     let root = resolve_staging_root(root)?;
 
     if candidate.exists() {
@@ -450,6 +545,53 @@ fn reject_filesystem_root(root: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn a_reader_log_line_names_the_reader_and_the_check() {
+        assert_eq!(
+            reader_log_line("opening chat.db", "/Users/sam/Backup/00008030"),
+            "The Apple Messages Reader logged during the identity check: opening chat.db"
+        );
+    }
+
+    /// The Reader's lines from the identity check are dropped, and only its
+    /// warnings reach the desktop app's log, with the backup's path hidden:
+    /// the line "Decrypted iOS backup" names the phone (#2185).
+    #[test]
+    fn the_identity_check_logs_the_reader_s_warnings_alone() {
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = identity_check_log("/Users/sam/Backup/00008030".to_string(), {
+            let written = std::sync::Arc::clone(&written);
+            move |line: &str| written.lock().unwrap().push(line.to_string())
+        });
+
+        log.emit("Decrypted iOS backup: Sam's iPhone (version 17.5)");
+        log.warn("The temporary copy at /Users/sam/Backup/00008030/x could not be removed");
+
+        assert_eq!(
+            *written.lock().unwrap(),
+            [
+                "The Apple Messages Reader logged during the identity check: The temporary copy \
+              at the backup/x could not be removed"
+            ]
+        );
+    }
+
+    /// The desktop app's log names no path outside Message Crate's own
+    /// directories, so the backup's path, which can name the person whose
+    /// phone it is, is written as "the backup" (#2185).
+    #[test]
+    fn a_reader_log_line_writes_the_backup_s_path_as_the_backup() {
+        assert_eq!(
+            reader_log_line(
+                "Backup file 3d/3d0d7e could not be read: /Users/sam/Backup/00008030/3d/3d0d7e: \
+                 Permission denied",
+                "/Users/sam/Backup/00008030"
+            ),
+            "The Apple Messages Reader logged during the identity check: Backup file 3d/3d0d7e \
+             could not be read: the backup/3d/3d0d7e: Permission denied"
+        );
+    }
 
     #[cfg(unix)]
     #[test]
@@ -685,8 +827,9 @@ mod tests {
 
     #[test]
     fn a_log_not_written_yet_in_the_logs_directory_is_reported_missing_not_outside() {
-        let app_data = tempfile::tempdir().unwrap();
-        let logs = crate::app_directories::logs_dir_in(app_data.path());
+        let home = tempfile::tempdir().unwrap();
+        let directory = crate::app_directories::MessageCrateDirectory::in_home(home.path(), false);
+        let logs = directory.logs();
         let log = logs.join("import-whatsapp-261004-143000.log");
 
         let resolved = openable_in_logs(&log.display().to_string(), &logs).unwrap();
@@ -695,15 +838,13 @@ mod tests {
             missing_path_error(&resolved).unwrap_err(),
             "Nothing exists at import-whatsapp-261004-143000.log yet"
         );
-        let elsewhere = app_data.path().join("data").join("messagecrate.db");
+        let elsewhere = directory.data().join("messagecrate.db");
         assert!(openable_in_logs(&elsewhere.display().to_string(), &logs).is_none());
     }
 
     #[test]
     fn missing_log_is_reported_like_any_other_missing_path() {
-        let log = PathBuf::from(
-            "/home/sam/.local/share/message-crate/logs/import-whatsapp-261004-143000.log",
-        );
+        let log = PathBuf::from("/home/sam/message-crate/logs/import-whatsapp-261004-143000.log");
         let err = missing_path_error(&log).unwrap_err();
         assert_eq!(
             err,
@@ -750,6 +891,53 @@ mod tests {
     fn blank_path_is_missing() {
         let stat = path_stat_inner("  ");
         assert!(!stat.exists);
+    }
+
+    /// A path the operating system will not let the app look at, such as one
+    /// macOS protects until the app has Full Disk Access, is not a path that
+    /// is missing: the form must say the fix is a permission, not the path.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_the_app_may_not_read_is_unreadable_not_missing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        let backup = locked.join("backup");
+        fs::create_dir(&backup).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let refused = fs::metadata(&backup).is_err();
+        let stat = path_stat_inner(backup.to_str().unwrap());
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        // Root reads past the mode bits, so there is nothing to refuse.
+        if !refused {
+            eprintln!(
+                "skipped: the operating system let this user read past mode 000, as it does for root"
+            );
+            return;
+        }
+
+        let unreadable = stat.unreadable.expect("a refused path is unreadable");
+        assert_eq!(unreadable.kind, PathUnreadableKind::PermissionDenied);
+        assert!(!unreadable.reason.is_empty());
+        assert!(!stat.exists && !stat.is_file && !stat.is_directory);
+    }
+
+    #[test]
+    fn a_missing_path_and_a_path_under_a_file_are_missing_not_unreadable() {
+        assert!(
+            path_stat_inner("/no/such/message-crate-path-stat")
+                .unreadable
+                .is_none()
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("chat.db");
+        fs::write(&file, b"sqlite").unwrap();
+        let under_file = path_stat_inner(file.join("child").to_str().unwrap());
+        assert!(!under_file.exists);
+        assert!(under_file.unreadable.is_none());
     }
 
     /// The fingerprint a resumed import compares against is built from these

@@ -5,22 +5,27 @@ use super::*;
 use crate::asset_store::tests::make_abandoned;
 use crate::config::PathsConfig;
 use crate::db::engine;
+use crate::test_support::ConversationRow;
 use media::testutil::PNG_1X1_RGB;
 
 /// A stop that is never set, for a pass that runs to its end.
 static NOT_STOPPED: AtomicBool = AtomicBool::new(false);
 
+/// ffmpeg and ffprobe on `PATH`, where a test that runs the real programs
+/// finds them ([`with_real_ffmpeg`]). The other tests never run them.
+static ON_PATH: media::InstalledTools = media::InstalledTools::new(None);
+
 const SHA: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
-/// A row for a stored blob named `assets_path`, with nothing else known.
+/// A row for a stored Asset named `assets_path`, with nothing else known.
 fn row(assets_path: &str) -> StoredOriginal {
     StoredOriginal {
         sha256: SHA.to_string(),
         assets_path: assets_path.to_string(),
         mime_type: None,
-        derived_assets_path: None,
-        derived_sha256: None,
-        derived_mime_type: None,
+        preview_assets_path: None,
+        preview_sha256: None,
+        preview_mime_type: None,
         rows_without_preview: 1,
         thumbnail_assets_path: None,
         thumbnail_sha256: None,
@@ -28,6 +33,7 @@ fn row(assets_path: &str) -> StoredOriginal {
         rows_without_thumbnail: 1,
         original_name: None,
         source_path: None,
+        shown_as_is: None,
     }
 }
 
@@ -38,6 +44,7 @@ const FRESH: OnDisk = OnDisk {
     preview: PreviewFile::Missing,
     thumbnail: PreviewFile::Missing,
     browser_shows: false,
+    type_by_bytes: None,
 };
 
 /// [`FRESH`], of a type every browser shows as it is.
@@ -63,6 +70,7 @@ fn pass<'a>(
     converted_dir: &Path,
 ) -> AccountPass<'a> {
     AccountPass {
+        tools: &ON_PATH,
         opts,
         work_dir,
         stop: &NOT_STOPPED,
@@ -86,23 +94,7 @@ fn derived_rel_path_layout() {
 }
 
 #[test]
-fn a_part_path_is_removed_and_never_converted() {
-    let opts = ProcessAssetsOptions::default();
-    let mut part = row("aa/upload.part");
-    part.mime_type = Some("video/mp4".to_string());
-    part.original_name = Some("clip.mp4".to_string());
-    assert_eq!(plan(&part, &opts, FRESH), Plan::RemoveIncomplete);
-    // Even when the file is already gone the plan is the same; the executor
-    // deals with an absent file.
-    let gone = OnDisk {
-        original_exists: false,
-        ..FRESH
-    };
-    assert_eq!(plan(&part, &opts, gone), Plan::RemoveIncomplete);
-}
-
-#[test]
-fn a_blob_that_is_not_media_is_skipped() {
+fn an_asset_that_is_not_media_is_skipped() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
         plan(&row("aa/notes.txt"), &opts, FRESH),
@@ -122,6 +114,19 @@ fn a_gif_gets_a_thumbnail_and_no_preview_because_it_is_an_animation() {
     let mut declared = row(&format!("ab/{SHA}"));
     declared.mime_type = Some("image/gif".to_string());
     assert_eq!(plan(&declared, &opts, FRESH_SHOWN), want);
+}
+
+/// A file called a GIF whose bytes are not one, such as a PNG stored as
+/// `.gif`, is not shown as it is ([`media::browser_shows`]), so it gets a
+/// still Preview like any other image rather than opening in no version.
+#[test]
+fn a_gif_whose_bytes_are_not_a_gif_gets_a_preview() {
+    let opts = ProcessAssetsOptions::default();
+    let want = versions(Kind::Image, Need::Make, Need::Make);
+    assert_eq!(plan(&row("aa/photo.gif"), &opts, FRESH), want);
+    let mut declared = row(&format!("ab/{SHA}"));
+    declared.mime_type = Some("image/gif".to_string());
+    assert_eq!(plan(&declared, &opts, FRESH), want);
 }
 
 #[test]
@@ -159,7 +164,7 @@ fn an_original_every_browser_shows_gets_no_preview() {
 }
 
 #[test]
-fn an_extensionless_blob_is_planned_by_its_declared_mime_or_its_attachment_name() {
+fn an_extensionless_asset_is_planned_by_its_declared_mime_or_its_attachment_name() {
     let opts = ProcessAssetsOptions::default();
     let mut by_mime = row(&format!("ab/{SHA}"));
     by_mime.mime_type = Some("image/heic".to_string());
@@ -172,6 +177,36 @@ fn an_extensionless_blob_is_planned_by_its_declared_mime_or_its_attachment_name(
     assert_eq!(
         plan(&by_name, &opts, FRESH),
         versions(Kind::Audio, Need::Nothing, Need::Make)
+    );
+}
+
+/// The type an original's bytes show decides its kind over the type its
+/// rows declare (#2805): a video declared `application/octet-stream` gets a
+/// Thumbnail and a Preview, and a file declared a photo whose bytes are a
+/// PDF is not media.
+#[test]
+fn the_type_the_bytes_show_decides_the_kind_over_the_declared_one() {
+    let opts = ProcessAssetsOptions::default();
+    let mut clip = row(&format!("ab/{SHA}"));
+    clip.mime_type = Some("application/octet-stream".to_string());
+    assert_eq!(
+        plan(&clip, &opts, FRESH),
+        Plan::Skip(SkipReason::NotMedia),
+        "with nothing read from its bytes, the declared type decides"
+    );
+    let read_as = |by_bytes| OnDisk {
+        type_by_bytes: Some(by_bytes),
+        ..FRESH
+    };
+    assert_eq!(
+        plan(&clip, &opts, read_as("video/mp4")),
+        versions(Kind::Video, Need::Make, Need::Make)
+    );
+    let mut photo = row(&format!("ab/{SHA}"));
+    photo.mime_type = Some("image/heic".to_string());
+    assert_eq!(
+        plan(&photo, &opts, read_as("application/pdf")),
+        Plan::Skip(SkipReason::NotMedia)
     );
 }
 
@@ -305,6 +340,7 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
         preview: PreviewFile::Intact,
         thumbnail: PreviewFile::Intact,
         browser_shows: false,
+        type_by_bytes: None,
     };
     assert_eq!(
         plan(&row("aa/photo.heic"), &opts, missing_but_made),
@@ -328,6 +364,7 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
         preview: PreviewFile::Damaged,
         thumbnail: PreviewFile::Missing,
         browser_shows: false,
+        type_by_bytes: None,
     };
     assert_eq!(
         plan(&row("aa/photo.heic"), &opts, missing_and_damaged),
@@ -339,16 +376,19 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
 fn preview_file_hashes_the_preview_against_its_name() {
     let dir = tempfile::tempdir().unwrap();
     let bytes = b"jpeg-bytes";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
     let rel = format!("{}/{sha}.jpg", &sha[..2]);
     let dest = dir.path().join(&rel);
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
     fs::write(&dest, bytes).unwrap();
-    assert_eq!(preview_file(Some(&rel), dir.path()), PreviewFile::Intact);
+    assert_eq!(
+        preview_file(Some(&rel), dir.path(), 7, "Preview"),
+        PreviewFile::Intact
+    );
 
     fs::write(&dest, &bytes[..4]).unwrap();
     assert_eq!(
-        preview_file(Some(&rel), dir.path()),
+        preview_file(Some(&rel), dir.path(), 7, "Preview"),
         PreviewFile::Damaged,
         "a Preview cut short does not hash to its name"
     );
@@ -357,27 +397,63 @@ fn preview_file_hashes_the_preview_against_its_name() {
     fs::create_dir_all(dir.path().join("ab")).unwrap();
     fs::write(dir.path().join(unnamed), bytes).unwrap();
     assert_eq!(
-        preview_file(Some(unnamed), dir.path()),
+        preview_file(Some(unnamed), dir.path(), 7, "Preview"),
         PreviewFile::Damaged
     );
     assert_eq!(
-        preview_file(Some("missing.jpg"), dir.path()),
+        preview_file(Some("missing.jpg"), dir.path(), 7, "Preview"),
         PreviewFile::Missing
     );
     assert_eq!(
-        preview_file(Some("../escape.jpg"), dir.path()),
+        preview_file(Some("../escape.jpg"), dir.path(), 7, "Preview"),
         PreviewFile::Missing
     );
-    assert_eq!(preview_file(Some(""), dir.path()), PreviewFile::Missing);
-    assert_eq!(preview_file(None, dir.path()), PreviewFile::Missing);
+    assert_eq!(
+        preview_file(Some(""), dir.path(), 7, "Preview"),
+        PreviewFile::Missing
+    );
+    assert_eq!(
+        preview_file(None, dir.path(), 7, "Preview"),
+        PreviewFile::Missing
+    );
 }
 
+/// #2806: the media pass passes over a version whose stored path leaves the
+/// converted directory, and says so in the server's log with the account,
+/// the path and what it is, so the damaged row can be found. An empty path
+/// is no version at all and is not logged.
 #[test]
-fn part_paths_are_recognised_in_any_case() {
-    assert!(is_part_path("aa/aabbcc.part"));
-    assert!(is_part_path("upload.PART"));
-    assert!(!is_part_path("aa/aabbcc.mp4"));
-    assert!(!is_part_path("aa/aabbcc"));
+fn preview_file_logs_a_stored_path_it_refuses() {
+    use crate::logging::{LogFiles, LogLevel, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = tempfile::tempdir().unwrap();
+    let converted = dir.path().join("converted");
+    fs::create_dir_all(&converted).unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+
+    let states =
+        tracing::subscriber::with_default(crate::logging::subscriber_for(files, "warn"), || {
+            [
+                preview_file(Some("../escape.jpg"), &converted, 7, "Preview of abc"),
+                preview_file(Some(""), &converted, 7, "Thumbnail of abc"),
+            ]
+        });
+
+    assert_eq!(states, [PreviewFile::Missing, PreviewFile::Missing]);
+    let (lines, _) = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    for part in ["account_id=7", "../escape.jpg", "Preview of abc"] {
+        assert!(lines[0].text.contains(part), "{part}: {}", lines[0].text);
+    }
 }
 
 #[test]
@@ -386,52 +462,6 @@ fn a_label_names_the_account_and_the_stored_path() {
     let dir = tempfile::tempdir().unwrap();
     let pass = pass(&opts, dir.path(), dir.path(), dir.path());
     assert_eq!(pass.label(&row("aa/photo.jpg")), "7/aa/photo.jpg");
-}
-
-#[test]
-fn removing_an_incomplete_upload_deletes_the_part_file() {
-    let opts = ProcessAssetsOptions::default();
-    let dir = tempfile::tempdir().unwrap();
-    let assets = dir.path().join("assets");
-    fs::create_dir_all(assets.join("aa")).unwrap();
-    let part = assets.join("aa/upload.part");
-    fs::write(&part, b"half").unwrap();
-    let pass = pass(&opts, dir.path(), &assets, dir.path());
-
-    assert!(
-        pass.remove_incomplete(&row("aa/upload.part"), &part)
-            .unwrap()
-    );
-
-    assert!(!part.exists());
-    // A file that is already gone is not an error, and nothing is removed.
-    assert!(
-        !pass
-            .remove_incomplete(&row("aa/upload.part"), &part)
-            .unwrap()
-    );
-}
-
-#[test]
-fn a_dry_run_leaves_the_part_file_in_place() {
-    let opts = ProcessAssetsOptions {
-        dry_run: true,
-        ..Default::default()
-    };
-    let dir = tempfile::tempdir().unwrap();
-    let assets = dir.path().join("assets");
-    fs::create_dir_all(assets.join("aa")).unwrap();
-    let part = assets.join("aa/upload.part");
-    fs::write(&part, b"half").unwrap();
-    let pass = pass(&opts, dir.path(), &assets, dir.path());
-
-    // Counted as removed, as a dry run counts what it would make.
-    assert!(
-        pass.remove_incomplete(&row("aa/upload.part"), &part)
-            .unwrap()
-    );
-
-    assert!(part.is_file());
 }
 
 #[test]
@@ -449,7 +479,7 @@ fn a_work_file_is_stored_content_addressed_and_then_removed() {
         .unwrap();
 
     let expected = VersionFile {
-        sha256: crate::assets_api::sha256_hex(b"jpeg-bytes"),
+        sha256: file_io::sha256_hex(b"jpeg-bytes"),
         assets_path: derived_rel_path(&crate::assets_api::Sha256::of_bytes(b"jpeg-bytes"), ".jpg"),
         mime_type: "image/jpeg".to_string(),
     };
@@ -512,16 +542,18 @@ async fn open_db() -> (OpenDb, tempfile::TempDir) {
         },
         server: None,
     };
-    (OpenDb { cfg, db: pool }, dir)
+    (
+        OpenDb {
+            cfg,
+            db: pool,
+            wal_error: None,
+        },
+        dir,
+    )
 }
 
 async fn seed_account(conn: &mut SqliteConnection, id: i64) {
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $2)")
-        .bind(id)
-        .bind(format!("user{id}"))
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(conn, id, &format!("user{id}")).await;
 }
 
 /// One conversation with one message under `source` for [`ACCOUNT`],
@@ -536,15 +568,7 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 't') RETURNING id",
-    )
-    .bind(ACCOUNT)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation_id = ConversationRow::new(ACCOUNT, handle_id).insert(conn).await;
     crate::test_support::MessageRow {
         source,
         ..crate::test_support::MessageRow::new(ACCOUNT, conversation_id)
@@ -554,27 +578,29 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
 }
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
-/// an import leaves it: the blob at `<aa>/<sha><ext>` in the account's
-/// assets directory and a row pointing at it. Returns the attachment id.
-pub(crate) async fn attach_stored_blob(
+/// an import leaves it: the Asset at `<aa>/<sha>`, with no extension, in the
+/// account's assets directory, its MIME sidecar `<aa>/.<sha>.mime` holding
+/// `mime`, and a row pointing at it with `mime` as its MIME type. Returns the
+/// attachment id.
+pub(crate) async fn attach_stored_original(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
     message_id: i64,
     sha: &str,
-    ext: &str,
+    mime: &str,
     bytes: &[u8],
 ) -> i64 {
-    let rel = format!("{}/{sha}{ext}", &sha[..2]);
-    let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(&rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, bytes).unwrap();
+    let assets_dir = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
+    let (sha, rel, _) = crate::test_support::write_stored_original(&assets_dir, sha, mime, bytes);
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
-        "INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3) RETURNING id",
+        "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)
+         VALUES ($1, $2, $3, $4) RETURNING id",
     )
     .bind(message_id)
-    .bind(sha)
+    .bind(sha.as_str())
     .bind(rel)
+    .bind(mime)
     .fetch_one(&mut *tx)
     .await
     .unwrap();
@@ -583,19 +609,20 @@ pub(crate) async fn attach_stored_blob(
 }
 
 /// A database with one account and one attachment on a message of
-/// `source`, stored as `<sha><ext>` with `bytes`.
-async fn fixture_with(source: &str, ext: &str, bytes: &[u8]) -> (OpenDb, tempfile::TempDir, i64) {
+/// `source`, stored as `<sha>` with `bytes` and `mime`.
+async fn fixture_with(source: &str, mime: &str, bytes: &[u8]) -> (OpenDb, tempfile::TempDir, i64) {
     let (opened, dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, source).await;
-    let attachment_id = attach_stored_blob(&opened, &mut conn, message_id, SHA, ext, bytes).await;
+    let attachment_id =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, mime, bytes).await;
     (opened, dir, attachment_id)
 }
 
 /// [`fixture_with`] a BMP, which gets a Preview and a Thumbnail.
 async fn fixture_with_bmp(source: &str) -> (OpenDb, tempfile::TempDir, i64) {
-    fixture_with(source, ".bmp", BMP_1X1).await
+    fixture_with(source, "image/bmp", BMP_1X1).await
 }
 
 /// The Thumbnail columns of one attachment row, `None` until one is recorded.
@@ -614,13 +641,13 @@ async fn thumbnail_of(
     Some((sha?, path?, mime?))
 }
 
-/// The derived columns of one attachment row, `None` until a preview is recorded.
-async fn derived_of(
+/// The Preview columns of one attachment row, `None` until a preview is recorded.
+async fn preview_of(
     conn: &mut SqliteConnection,
     attachment_id: i64,
 ) -> Option<(String, String, String)> {
     let (sha, path, mime): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT derived_sha256, derived_assets_path, derived_mime_type FROM attachments WHERE id = $1",
+        "SELECT preview_sha256, preview_assets_path, preview_mime_type FROM attachments WHERE id = $1",
     )
     .bind(attachment_id)
     .fetch_one(&mut *conn)
@@ -629,14 +656,13 @@ async fn derived_of(
     Some((sha?, path?, mime?))
 }
 
-/// Run `test` on its own runtime with the real ffmpeg held available, or
-/// skip it the way every ffmpeg test in the workspace skips (and fail under
-/// CI). The guard is taken outside the async block: holding it across an
-/// await is what Clippy's `await_holding_lock` refuses.
+/// Run `test` on its own runtime when the real ffmpeg is on `PATH`
+/// ([`ON_PATH`]), or skip it the way every ffmpeg test in the workspace
+/// skips (and fail under CI).
 fn with_real_ffmpeg(test: impl Future<Output = ()>) {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    if media::testutil::real_ffmpeg().is_none() {
         return;
-    };
+    }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -646,14 +672,14 @@ fn with_real_ffmpeg(test: impl Future<Output = ()>) {
 
 fn stats(
     scanned: u64,
-    derived: u64,
+    previews: u64,
     thumbnails: u64,
     skipped: u64,
     not_made: u64,
 ) -> ProcessAssetsStats {
     ProcessAssetsStats {
         scanned,
-        derived,
+        previews,
         thumbnails,
         skipped,
         not_made,
@@ -662,30 +688,45 @@ fn stats(
 }
 
 #[tokio::test]
-async fn store_and_update_derived_db() {
+async fn store_and_update_preview_db() {
     let (opened, dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let attachment_id = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".jpg", b"x").await;
+    let attachment_id =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "image/jpeg", b"x").await;
 
     let converted = dir.path().join("converted");
     fs::create_dir_all(&converted).unwrap();
-    let blob = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
-    assert!(converted.join(&blob.assets_path).is_file());
+    let version_file = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
+    assert!(converted.join(&version_file.assets_path).is_file());
 
-    versions_db::record(&mut conn, Version::Preview, ACCOUNT, SHA, &blob)
-        .await
-        .unwrap();
+    versions_db::record(
+        &mut conn,
+        VersionWrite {
+            rows: OriginalRows {
+                account_id: ACCOUNT,
+                original_sha: SHA,
+            },
+            version: Version::Preview,
+            file: &version_file,
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
-        derived_of(&mut conn, attachment_id).await,
-        Some((blob.sha256, blob.assets_path, "image/jpeg".to_string()))
+        preview_of(&mut conn, attachment_id).await,
+        Some((
+            version_file.sha256,
+            version_file.assets_path,
+            "image/jpeg".to_string()
+        ))
     );
 }
 
 #[tokio::test]
-async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
+async fn listed_attachments_carry_name_hints_for_extensionless_assets() {
     let (opened, _dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
@@ -710,7 +751,7 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     assert_eq!(
         plan(&rows[0], &ProcessAssetsOptions::default(), FRESH),
         versions(Kind::Audio, Need::Nothing, Need::Make),
-        "an extensionless blob with no declared MIME must classify from its attachment name"
+        "an extensionless Asset with no declared MIME must classify from its attachment name"
     );
 }
 
@@ -720,11 +761,13 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
 
-        let first = run(&opened, &opts, &NOT_STOPPED).await.unwrap();
+        let first = run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+            .await
+            .unwrap();
 
         assert_eq!(first, stats(1, 1, 1, 0, 0));
         let mut conn = opened.conn().await.unwrap();
-        let (sha, rel, mime) = derived_of(&mut conn, attachment_id)
+        let (sha, rel, mime) = preview_of(&mut conn, attachment_id)
             .await
             .expect("the row points at its preview");
         let preview = opened
@@ -734,7 +777,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
             .join(&rel);
         let bytes = fs::read(&preview).expect("the preview is under assets_converted/");
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+        assert_eq!(sha, file_io::sha256_hex(&bytes));
         assert_eq!(
             rel,
             derived_rel_path(&crate::assets_api::Sha256::parse(&sha).unwrap(), ".jpg")
@@ -743,7 +786,9 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
 
         // A second run leaves the preview alone; `force` makes it again.
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 0, 0, 1, 0)
         );
         let force = ProcessAssetsOptions {
@@ -751,7 +796,9 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
             ..Default::default()
         };
         assert_eq!(
-            run(&opened, &force, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &force, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 1, 1, 0, 0)
         );
     });
@@ -767,14 +814,16 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
         };
 
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 1, 1, 0, 0)
         );
 
         let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
         assert_eq!(fs::read_dir(&converted).unwrap().count(), 0);
         let mut conn = opened.conn().await.unwrap();
-        assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+        assert_eq!(preview_of(&mut conn, attachment_id).await, None);
     });
 }
 
@@ -782,7 +831,7 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
 /// names it: its fingerprint and its path on disk.
 async fn preview_on_disk(opened: &OpenDb, attachment_id: i64) -> (String, PathBuf) {
     let mut conn = opened.conn().await.unwrap();
-    let (sha, rel, _) = derived_of(&mut conn, attachment_id)
+    let (sha, rel, _) = preview_of(&mut conn, attachment_id)
         .await
         .expect("the row points at its preview");
     let path = opened
@@ -802,7 +851,9 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 1, 1, 0, 0)
         );
         let (sha, preview) = preview_on_disk(&opened, attachment_id).await;
@@ -810,13 +861,15 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
         fs::write(&preview, &whole[..whole.len() / 2]).unwrap();
 
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 1, 0, 0, 0)
         );
 
         let (sha_after, preview_after) = preview_on_disk(&opened, attachment_id).await;
         let bytes = fs::read(&preview_after).unwrap();
-        assert_eq!(crate::assets_api::sha256_hex(&bytes), sha_after);
+        assert_eq!(file_io::sha256_hex(&bytes), sha_after);
         assert_eq!(
             (sha_after, preview_after),
             (sha, preview),
@@ -833,14 +886,18 @@ fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 1, 1, 0, 0)
         );
         let (_, preview) = preview_on_disk(&opened, attachment_id).await;
         let written = fs::metadata(&preview).unwrap().modified().unwrap();
 
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 0, 0, 1, 0)
         );
 
@@ -862,33 +919,39 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
         let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 1, 1, 0, 0)
         );
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "whatsapp").await;
         let whatsapp_attachment =
-            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
-        assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
+            attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
+        assert_eq!(preview_of(&mut conn, whatsapp_attachment).await, None);
 
         // The Thumbnail and the Preview are shared with the new rows, so the
         // original is not left as it was (#1849).
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             ProcessAssetsStats {
                 shared: 2,
                 ..stats(1, 0, 0, 0, 0)
             }
         );
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
+                .await
+                .unwrap(),
             stats(1, 0, 0, 1, 0),
             "once every row names them, nothing is shared again"
         );
 
-        let preview = derived_of(&mut conn, imessage_attachment).await;
+        let preview = preview_of(&mut conn, imessage_attachment).await;
         assert!(preview.is_some());
-        assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, preview);
+        assert_eq!(preview_of(&mut conn, whatsapp_attachment).await, preview);
         let thumbnail = thumbnail_of(&mut conn, imessage_attachment).await;
         assert!(thumbnail.is_some());
         assert_eq!(
@@ -904,17 +967,24 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
 #[test]
 fn a_png_gets_a_thumbnail_and_no_preview() {
     with_real_ffmpeg(async {
-        let (opened, _dir, attachment_id) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, attachment_id) =
+            fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
 
         assert_eq!(
-            run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-                .await
-                .unwrap(),
+            run(
+                &opened,
+                &ON_PATH,
+                &ProcessAssetsOptions::default(),
+                &NOT_STOPPED,
+                Progress::Print
+            )
+            .await
+            .unwrap(),
             stats(1, 0, 1, 0, 0)
         );
 
         let mut conn = opened.conn().await.unwrap();
-        assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+        assert_eq!(preview_of(&mut conn, attachment_id).await, None);
         let (sha, rel, mime) = thumbnail_of(&mut conn, attachment_id)
             .await
             .expect("the row names its Thumbnail");
@@ -928,7 +998,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
         )
         .unwrap();
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+        assert_eq!(sha, file_io::sha256_hex(&bytes));
     });
 }
 
@@ -937,16 +1007,16 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
 #[test]
 fn one_asset_is_processed_alone() {
     with_real_ffmpeg(async {
-        let (opened, _dir, queued) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, queued) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let other_sha = "b".repeat(64);
-        let other = attach_stored_blob(
+        let other = attach_stored_original(
             &opened,
             &mut conn,
             message_id,
             &other_sha,
-            ".png",
+            "image/png",
             PNG_1X1_RGB,
         )
         .await;
@@ -954,6 +1024,7 @@ fn one_asset_is_processed_alone() {
 
         let made = process_one_asset(
             &opened.cfg,
+            &ON_PATH,
             &opened.db,
             work.path(),
             ACCOUNT,
@@ -979,18 +1050,24 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let sms_attachment =
-            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+            attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
 
         assert_eq!(
-            run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-                .await
-                .unwrap(),
+            run(
+                &opened,
+                &ON_PATH,
+                &ProcessAssetsOptions::default(),
+                &NOT_STOPPED,
+                Progress::Print
+            )
+            .await
+            .unwrap(),
             stats(1, 1, 1, 0, 0)
         );
 
-        let preview = derived_of(&mut conn, imessage_attachment).await;
+        let preview = preview_of(&mut conn, imessage_attachment).await;
         assert!(preview.is_some());
-        assert_eq!(derived_of(&mut conn, sms_attachment).await, preview);
+        assert_eq!(preview_of(&mut conn, sms_attachment).await, preview);
     });
 }
 
@@ -1003,8 +1080,10 @@ async fn a_stopped_run_fails_and_converts_nothing_more() {
 
     let err = run(
         &opened,
+        &ON_PATH,
         &ProcessAssetsOptions::default(),
         &AtomicBool::new(true),
+        Progress::Print,
     )
     .await
     .unwrap_err();
@@ -1012,20 +1091,26 @@ async fn a_stopped_run_fails_and_converts_nothing_more() {
     assert!(err.to_string().starts_with("stopped"), "got: {err}");
     let mut conn = opened.conn().await.unwrap();
     assert_eq!(thumbnail_of(&mut conn, attachment).await, None);
-    assert_eq!(derived_of(&mut conn, attachment).await, None);
+    assert_eq!(preview_of(&mut conn, attachment).await, None);
 }
 
 #[tokio::test]
 async fn a_database_without_accounts_is_an_error() {
     let (opened, _dir) = open_db().await;
 
-    let err = run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-        .await
-        .unwrap_err();
+    let err = run(
+        &opened,
+        &ON_PATH,
+        &ProcessAssetsOptions::default(),
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .await
+    .unwrap_err();
 
-    assert!(
-        err.to_string().starts_with("no accounts found"),
-        "got: {err}"
+    assert_eq!(
+        err.to_string(),
+        "no accounts found: create an account or run reset-demo first"
     );
 }
 
@@ -1036,29 +1121,41 @@ async fn an_account_without_an_assets_directory_is_passed_over() {
     seed_account(&mut conn, ACCOUNT).await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
         stats(0, 0, 0, 0, 0)
     );
 }
 
 #[tokio::test]
-async fn a_blob_that_is_not_media_is_left_as_is_by_the_run() {
+async fn an_asset_that_is_not_media_is_left_as_is_by_the_run() {
     let (opened, _dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let attachment_id =
-        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".txt", b"notes").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "text/plain", b"notes").await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
         stats(1, 0, 0, 1, 0)
     );
-    assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+    assert_eq!(preview_of(&mut conn, attachment_id).await, None);
 }
 
 #[tokio::test]
@@ -1069,26 +1166,468 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         .cfg
         .paths
         .assets_dir_for_account(ACCOUNT)
-        .join(format!("ab/{SHA}.bmp"));
+        .join(format!("ab/{SHA}"));
     fs::remove_file(&original).unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
-    attach_stored_blob(
+    attach_stored_original(
         &opened,
         &mut conn,
         message_id,
         &"b".repeat(64),
-        ".txt",
+        "text/plain",
         b"notes",
     )
     .await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
         stats(2, 0, 0, 1, 1)
     );
-    assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+    assert_eq!(preview_of(&mut conn, attachment_id).await, None);
+}
+
+/// A missing original says nothing about its bytes, so its type decides
+/// whether it needs a Preview: a missing GIF or JPEG is not recorded as a
+/// Preview not made, which its type never needs (#2257).
+#[tokio::test]
+async fn a_missing_original_of_a_type_shown_as_is_wants_no_preview() {
+    for (mime, bytes) in [
+        ("image/gif", &b"GIF89a rest"[..]),
+        ("image/jpeg", &b"\xFF\xD8\xFF\xE0 rest"[..]),
+    ] {
+        let (opened, _dir) = open_db().await;
+        let mut conn = opened.conn().await.unwrap();
+        seed_account(&mut conn, ACCOUNT).await;
+        let message_id = seed_message(&mut conn, "imessage").await;
+        let attachment_id =
+            attach_stored_original(&opened, &mut conn, message_id, SHA, mime, bytes).await;
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        fs::remove_file(&original).unwrap();
+
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, Some("the original file is missing".to_string())),
+            "{mime}"
+        );
+    }
+}
+
+/// An original that cannot be read is planned from the decision a pass
+/// recorded while it could (#2804), not from its declared type: a file
+/// declared a JPEG whose bytes were not one was decided not shown as it is,
+/// so once it is missing its Preview is still one that could not be made.
+#[tokio::test]
+async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
+    let (opened, _dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    let message_id = seed_message(&mut conn, "imessage").await;
+    let attachment_id = attach_stored_original(
+        &opened,
+        &mut conn,
+        message_id,
+        SHA,
+        "image/jpeg",
+        b"not a jpeg at all",
+    )
+    .await;
+    decide_shown_as_is(&opened.cfg, &ON_PATH, &opened.db, ACCOUNT, None)
+        .await
+        .unwrap();
+    let shown: Option<i64> =
+        sqlx::query_scalar("SELECT shown_as_is FROM attachments WHERE id = $1")
+            .bind(attachment_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(
+        shown,
+        Some(0),
+        "a JPEG whose bytes are not one is not shown as it is"
+    );
+    fs::remove_file(
+        opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}")),
+    )
+    .unwrap();
+
+    run(
+        &opened,
+        &ON_PATH,
+        &ProcessAssetsOptions::default(),
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .await
+    .unwrap();
+
+    let missing = Some("the original file is missing".to_string());
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (missing.clone(), missing)
+    );
+}
+
+/// #2866: an original whose stored path leaves the account's assets
+/// directory, by climbing out with `..` or by being absolute, is passed
+/// over: the pass neither reads the file it names nor records anything for
+/// its row, counts it apart as not read, and says so once in the server's
+/// log with the account, the path and the Asset, so the damaged row can be
+/// found. Deciding whether it is shown as it is passes over it too, and logs
+/// it itself, because a server without ffmpeg runs only that step.
+#[tokio::test]
+async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_over() {
+    let (opened, dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    fs::create_dir_all(opened.cfg.paths.assets_dir_for_account(ACCOUNT)).unwrap();
+    let outside = dir.path().join("outside.png");
+    fs::write(&outside, PNG_1X1_RGB).unwrap();
+    let climbing = "../../../outside.png".to_string();
+    assert_eq!(
+        fs::canonicalize(
+            opened
+                .cfg
+                .paths
+                .assets_dir_for_account(ACCOUNT)
+                .join(&climbing)
+        )
+        .unwrap(),
+        fs::canonicalize(&outside).unwrap(),
+        "the climbing path names the file outside"
+    );
+    let absolute = outside.to_str().unwrap().to_string();
+    let mut attachments = Vec::new();
+    for (sha, assets_path) in [("c".repeat(64), climbing), ("d".repeat(64), absolute)] {
+        let message_id = seed_message(&mut conn, &sha[..1]).await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)
+             VALUES ($1, $2, $3, 'image/png') RETURNING id",
+        )
+        .bind(message_id)
+        .bind(&sha)
+        .bind(&assets_path)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        attachments.push((id, sha, assets_path));
+    }
+
+    let (decided, decide_lines) = crate::test_support::lines_written_by(
+        "warn",
+        decide_shown_as_is(&opened.cfg, &ON_PATH, &opened.db, ACCOUNT, None),
+    )
+    .await;
+    let (counted, pass_lines) = crate::test_support::lines_written_by(
+        "warn",
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Log,
+        ),
+    )
+    .await;
+
+    decided.unwrap();
+    assert_eq!(
+        counted.unwrap(),
+        ProcessAssetsStats {
+            scanned: 2,
+            not_read: 2,
+            ..ProcessAssetsStats::default()
+        }
+    );
+    for (id, sha, assets_path) in &attachments {
+        let shown: Option<i64> =
+            sqlx::query_scalar("SELECT shown_as_is FROM attachments WHERE id = $1")
+                .bind(id)
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(shown, None, "{assets_path}");
+        assert_eq!(not_made_reasons(&mut conn, *id).await, (None, None));
+        assert_eq!(thumbnail_of(&mut conn, *id).await, None);
+        let asset = format!("Asset {sha}");
+        let names_it = |lines: &[crate::logging::LogLine]| {
+            lines
+                .iter()
+                .filter(|line| {
+                    line.level == crate::logging::LogLevel::Warn
+                        && line.text.contains(assets_path.as_str())
+                        && line.text.contains(&asset)
+                })
+                .count()
+        };
+        assert_eq!(
+            decide_lines
+                .iter()
+                .filter(|line| line.text.contains(&format!("account_id={ACCOUNT}")))
+                .count(),
+            2,
+            "{decide_lines:?}"
+        );
+        assert_eq!(
+            names_it(&decide_lines),
+            1,
+            "{assets_path}: {decide_lines:?}"
+        );
+        assert_eq!(names_it(&pass_lines), 1, "{assets_path}: {pass_lines:?}");
+    }
+    assert_eq!(fs::read(&outside).unwrap(), PNG_1X1_RGB);
+}
+
+/// Why each version of one attachment row was not made: Preview, then
+/// Thumbnail.
+async fn not_made_reasons(
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+) -> (Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT preview_not_made_reason, thumbnail_not_made_reason
+         FROM attachments WHERE id = $1",
+    )
+    .bind(attachment_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// The kind of failure recorded for each version of one attachment row:
+/// Preview, then Thumbnail.
+async fn not_made_kinds(
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+) -> (Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT preview_not_made_kind, thumbnail_not_made_kind
+         FROM attachments WHERE id = $1",
+    )
+    .bind(attachment_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// A version that could not be made keeps why on its rows, for the `/v1`
+/// Attachment, until a later pass makes it. A dry run records nothing.
+#[test]
+fn why_a_version_was_not_made_is_kept_until_it_is_made() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+        let mut conn = opened.conn().await.unwrap();
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        let bytes = fs::read(&original).unwrap();
+        fs::remove_file(&original).unwrap();
+        let dry_run = ProcessAssetsOptions {
+            dry_run: true,
+            ..Default::default()
+        };
+
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
+            .await
+            .unwrap();
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print,
+        )
+        .await
+        .unwrap();
+        let missing = Some("the original file is missing".to_string());
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (missing.clone(), missing)
+        );
+        let missing = Some("original_missing".to_string());
+        assert_eq!(
+            not_made_kinds(&mut conn, attachment_id).await,
+            (missing.clone(), missing),
+            "the kind is recorded with the reason, for the owner's count"
+        );
+
+        fs::write(&original, bytes).unwrap();
+        assert_eq!(
+            run(
+                &opened,
+                &ON_PATH,
+                &ProcessAssetsOptions::default(),
+                &NOT_STOPPED,
+                Progress::Print
+            )
+            .await
+            .unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+        assert_eq!(not_made_kinds(&mut conn, attachment_id).await, (None, None));
+    });
+}
+
+/// A remake under `--force` that fails leaves the working versions the rows
+/// name, so the `/v1` Attachment must not answer a reason beside them.
+#[test]
+fn a_failed_remake_of_a_working_version_records_no_reason() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+        let mut conn = opened.conn().await.unwrap();
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print,
+        )
+        .await
+        .unwrap();
+        let made = preview_of(&mut conn, attachment_id).await;
+        assert!(made.is_some(), "the first run makes the Preview");
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        fs::write(&original, b"not a picture at all").unwrap();
+        let force = ProcessAssetsOptions {
+            force: true,
+            ..Default::default()
+        };
+
+        let stats = run(&opened, &ON_PATH, &force, &NOT_STOPPED, Progress::Print)
+            .await
+            .unwrap();
+
+        assert_eq!(stats.not_made, 1, "{stats:?}");
+        assert_eq!(preview_of(&mut conn, attachment_id).await, made);
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+    });
+}
+
+/// A Preview the rows name but whose file is gone works no better than none,
+/// so when its original is missing too, the rows that name it say why it
+/// could not be made.
+#[tokio::test]
+async fn a_named_preview_whose_file_is_gone_gets_the_reason_with_its_original_missing() {
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let preview = name_version(
+        &opened,
+        &mut conn,
+        attachment_id,
+        Version::Preview,
+        &"c".repeat(64),
+        b"x",
+    )
+    .await;
+    fs::remove_file(&preview).unwrap();
+    let original = opened
+        .cfg
+        .paths
+        .assets_dir_for_account(ACCOUNT)
+        .join(format!("ab/{SHA}"));
+    fs::remove_file(&original).unwrap();
+
+    run(
+        &opened,
+        &ON_PATH,
+        &ProcessAssetsOptions::default(),
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .await
+    .unwrap();
+
+    let missing = Some("the original file is missing".to_string());
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (missing.clone(), missing)
+    );
+}
+
+/// An original decided to be shown as it is needs no Preview, so why an
+/// earlier Preview could not be made goes with that decision.
+#[tokio::test]
+async fn deciding_an_original_is_shown_as_it_is_clears_why_its_preview_was_not_made() {
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let rows = OriginalRows {
+        account_id: ACCOUNT,
+        original_sha: SHA,
+    };
+    for version in Version::ALL {
+        let not_made = versions_db::NotMade {
+            rows,
+            version,
+            named: None,
+            kind: NotMadeKind::ConversionFailed,
+            reason: "bad file",
+        };
+        versions_db::record_not_made(&mut conn, not_made)
+            .await
+            .unwrap();
+    }
+
+    versions_db::record_shown_as_is(&mut conn, rows, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (Some("bad file".into()), Some("bad file".into()))
+    );
+
+    versions_db::record_shown_as_is(&mut conn, rows, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (None, Some("bad file".into())),
+        "only the Preview's reason goes: a Thumbnail is still made"
+    );
 }
 
 /// A damaged Preview whose original is missing cannot be converted again.
@@ -1103,7 +1642,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     let mut conn = opened.conn().await.unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
     let sms_attachment =
-        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
     let preview_sha = "c".repeat(64);
     let rel = format!("cc/{preview_sha}.jpg");
     let preview = opened
@@ -1116,7 +1655,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "UPDATE attachments
-         SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'",
+         SET preview_sha256 = $1, preview_assets_path = $2, preview_mime_type = 'image/jpeg'",
     )
     .bind(&preview_sha)
     .bind(&rel)
@@ -1129,7 +1668,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
             .cfg
             .paths
             .assets_dir_for_account(ACCOUNT)
-            .join(format!("ab/{SHA}.bmp")),
+            .join(format!("ab/{SHA}")),
     )
     .unwrap();
     let named = Some((preview_sha, rel, "image/jpeg".to_string()));
@@ -1143,30 +1682,38 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         ..stats(1, 0, 0, 0, 1)
     };
     assert_eq!(
-        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
-        dropped_and_not_made
-    );
-    assert!(preview.is_file(), "a dry run deletes nothing");
-    assert_eq!(derived_of(&mut conn, imessage_attachment).await, named);
-
-    assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap(),
         dropped_and_not_made
     );
+    assert!(preview.is_file(), "a dry run deletes nothing");
+    assert_eq!(preview_of(&mut conn, imessage_attachment).await, named);
+
+    assert_eq!(
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
+        dropped_and_not_made
+    );
     assert!(!preview.exists(), "the damaged Preview is deleted");
-    assert_eq!(derived_of(&mut conn, imessage_attachment).await, None);
-    assert_eq!(derived_of(&mut conn, sms_attachment).await, None);
+    assert_eq!(preview_of(&mut conn, imessage_attachment).await, None);
+    assert_eq!(preview_of(&mut conn, sms_attachment).await, None);
     let named_columns: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM attachments
-         WHERE derived_sha256 IS NOT NULL OR derived_assets_path IS NOT NULL
-            OR derived_mime_type IS NOT NULL",
+         WHERE preview_sha256 IS NOT NULL OR preview_assets_path IS NOT NULL
+            OR preview_mime_type IS NOT NULL",
     )
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(named_columns, 0, "every derived column is cleared");
+    assert_eq!(named_columns, 0, "every Preview column is cleared");
 }
 
 /// A `version` file named `<sha>.jpg` holding `bytes` under the converted
@@ -1190,11 +1737,11 @@ async fn name_version(
     fs::write(&path, bytes).unwrap();
     let [sha_column, path_column, mime_column] = version.columns();
     let mut tx = crate::db::begin_write(conn).await.unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = 'image/jpeg'
          WHERE id = $3"
-    ))
+    )))
     .bind(sha)
     .bind(&rel)
     .bind(attachment_id)
@@ -1247,106 +1794,6 @@ pub(crate) async fn with_read_only<T>(dir: &Path, f: impl Future<Output = T>) ->
     result
 }
 
-/// An incomplete original that is removed counts as removed, not as an
-/// original left as it was, at one and at many (#1849). One already gone
-/// is left as it was.
-#[tokio::test]
-async fn an_incomplete_original_removed_is_counted_as_removed() {
-    let (opened, _dir) = open_db().await;
-    let mut conn = opened.conn().await.unwrap();
-    seed_account(&mut conn, ACCOUNT).await;
-    let message_id = seed_message(&mut conn, "imessage").await;
-    attach_stored_blob(&opened, &mut conn, message_id, SHA, ".part", b"half").await;
-    let dry_run = ProcessAssetsOptions {
-        dry_run: true,
-        ..Default::default()
-    };
-    let removed = |scanned, removed| ProcessAssetsStats {
-        removed,
-        ..stats(scanned, 0, 0, 0, 0)
-    };
-
-    assert_eq!(
-        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
-        removed(1, 1)
-    );
-
-    attach_stored_blob(
-        &opened,
-        &mut conn,
-        message_id,
-        &"b".repeat(64),
-        ".part",
-        b"half",
-    )
-    .await;
-    assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
-        removed(2, 2)
-    );
-    assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
-        stats(2, 0, 0, 2, 0),
-        "an incomplete original already gone is left as it was"
-    );
-}
-
-/// An incomplete original that cannot be removed is counted apart from an
-/// original whose Preview or Thumbnail could not be made, because nothing
-/// was being made (#1849).
-#[cfg(unix)]
-#[tokio::test]
-async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
-    let (opened, _dir) = open_db().await;
-    let mut conn = opened.conn().await.unwrap();
-    seed_account(&mut conn, ACCOUNT).await;
-    let message_id = seed_message(&mut conn, "imessage").await;
-    // Two in the read-only shard `aa/`, and one in `bb/` that can go.
-    attach_stored_blob(
-        &opened,
-        &mut conn,
-        message_id,
-        &"a".repeat(64),
-        ".part",
-        b"half",
-    )
-    .await;
-    let second = format!("{}b", "a".repeat(63));
-    attach_stored_blob(&opened, &mut conn, message_id, &second, ".part", b"half").await;
-    attach_stored_blob(
-        &opened,
-        &mut conn,
-        message_id,
-        &"b".repeat(64),
-        ".part",
-        b"half",
-    )
-    .await;
-    let shard = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join("aa");
-
-    let Some(counted) = with_read_only(
-        &shard,
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED),
-    )
-    .await
-    else {
-        return;
-    };
-
-    assert_eq!(
-        counted.unwrap(),
-        ProcessAssetsStats {
-            removed: 1,
-            not_removed: 2,
-            ..stats(3, 0, 0, 0, 0)
-        }
-    );
-}
-
 /// A damaged Preview its original no longer gets, here an MP3 every browser
 /// plays, is dropped and counted as dropped, not as an original left as it
 /// was, at one and at many (#1849). Nothing failed, so nothing is counted
@@ -1357,7 +1804,8 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let first = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"ID3 x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let dropped = |scanned, dropped| ProcessAssetsStats {
         dropped,
@@ -1369,30 +1817,38 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     };
 
     assert_eq!(
-        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
+            .await
+            .unwrap(),
         dropped(1, 1)
     );
     assert!(first_preview.is_file(), "a dry run deletes nothing");
 
-    let second = attach_stored_blob(
+    let second = attach_stored_original(
         &opened,
         &mut conn,
         message_id,
         &"b".repeat(64),
-        ".mp3",
-        b"y",
+        "audio/mpeg",
+        b"ID3 y",
     )
     .await;
     let second_preview = name_damaged_preview(&opened, &mut conn, second, &"d".repeat(64)).await;
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
         dropped(2, 2)
     );
     assert!(!first_preview.exists() && !second_preview.exists());
-    assert_eq!(derived_of(&mut conn, first).await, None);
-    assert_eq!(derived_of(&mut conn, second).await, None);
+    assert_eq!(preview_of(&mut conn, first).await, None);
+    assert_eq!(preview_of(&mut conn, second).await, None);
 }
 
 /// A Thumbnail given to the rows of a second source is counted as shared,
@@ -1400,7 +1856,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
 /// the run makes nothing and needs no ffmpeg.
 #[tokio::test]
 async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() {
-    let (opened, _dir, first) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+    let (opened, _dir, first) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
     let mut conn = opened.conn().await.unwrap();
     let bytes = b"a whole Thumbnail";
     let thumbnail_sha = crate::assets_api::Sha256::of_bytes(bytes).to_string();
@@ -1414,12 +1870,26 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
     )
     .await;
     let message_id = seed_message(&mut conn, "sms").await;
-    let second = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+    let second = attach_stored_original(
+        &opened,
+        &mut conn,
+        message_id,
+        SHA,
+        "image/png",
+        PNG_1X1_RGB,
+    )
+    .await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
         ProcessAssetsStats {
             shared: 1,
             ..stats(1, 0, 0, 0, 0)
@@ -1430,9 +1900,15 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
         thumbnail_of(&mut conn, first).await
     );
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-            .await
-            .unwrap(),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print
+        )
+        .await
+        .unwrap(),
         stats(1, 0, 0, 1, 0),
         "once every row names it, nothing is shared again"
     );
@@ -1448,15 +1924,16 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let first = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"ID3 x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
-    let second = attach_stored_blob(
+    let second = attach_stored_original(
         &opened,
         &mut conn,
         message_id,
         &"b".repeat(64),
-        ".mp3",
-        b"y",
+        "audio/mpeg",
+        b"ID3 y",
     )
     .await;
     let second_preview =
@@ -1466,7 +1943,13 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
 
     let Some(counted) = with_read_only(
         &shard,
-        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED),
+        run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print,
+        ),
     )
     .await
     else {
@@ -1517,7 +2000,16 @@ async fn opening_an_account_without_an_assets_directory_gives_nothing_to_process
     let opts = ProcessAssetsOptions::default();
     let work = tempfile::tempdir().unwrap();
 
-    let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED).unwrap();
+    let pass = AccountPass::open(
+        &opened.cfg,
+        &ON_PATH,
+        &opts,
+        work.path(),
+        ACCOUNT,
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .unwrap();
 
     assert!(pass.is_none());
     assert!(
@@ -1530,8 +2022,11 @@ async fn opening_an_account_without_an_assets_directory_gives_nothing_to_process
     );
 }
 
+/// #2652: `process-assets` may run while `serve` does, and cannot see which
+/// uploads a request of `serve` is using, so it leaves `.incoming/` to
+/// `serve`, even an upload temp whose files look abandoned.
 #[tokio::test]
-async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incoming_temps() {
+async fn opening_an_account_makes_its_converted_directory_and_leaves_its_incoming_uploads() {
     let (opened, _dir) = open_db().await;
     let opts = ProcessAssetsOptions::default();
     let work = tempfile::tempdir().unwrap();
@@ -1540,23 +2035,25 @@ async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incomin
     fs::create_dir_all(part.parent().unwrap()).unwrap();
     fs::write(&part, b"half").unwrap();
     make_abandoned(&part);
-    let live_part = assets.join(".incoming").join(format!("{SHA}-2.part"));
-    fs::write(&live_part, b"an upload in progress").unwrap();
 
-    let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
-        .unwrap()
-        .expect("an account with an assets directory is processed");
+    let pass = AccountPass::open(
+        &opened.cfg,
+        &ON_PATH,
+        &opts,
+        work.path(),
+        ACCOUNT,
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .unwrap()
+    .expect("an account with an assets directory is processed");
 
     let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
     assert_eq!(pass.assets_dir, assets);
     assert_eq!(pass.converted_dir, converted);
     assert_eq!(pass.account_id, ACCOUNT);
     assert!(converted.is_dir());
-    assert!(
-        !part.exists(),
-        "an abandoned upload temp is removed on open"
-    );
-    assert!(live_part.exists(), "a live upload's temp is kept on open");
+    assert!(part.exists(), "an upload temp is left to serve");
 }
 
 /// A run killed between creating a temporary file in a shard directory and
@@ -1583,9 +2080,17 @@ async fn opening_an_account_removes_temporary_files_a_killed_run_left_in_the_sha
         make_abandoned(path);
     }
 
-    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
-        .unwrap()
-        .expect("an account with an assets directory is processed");
+    AccountPass::open(
+        &opened.cfg,
+        &ON_PATH,
+        &opts,
+        work.path(),
+        ACCOUNT,
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .unwrap()
+    .expect("an account with an assets directory is processed");
 
     assert!(
         !left_original.exists(),
@@ -1615,9 +2120,17 @@ async fn a_dry_run_leaves_temporary_files_in_the_shards() {
     fs::write(&left, b"half").unwrap();
     make_abandoned(&left);
 
-    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
-        .unwrap()
-        .expect("an account with an assets directory is processed");
+    AccountPass::open(
+        &opened.cfg,
+        &ON_PATH,
+        &opts,
+        work.path(),
+        ACCOUNT,
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .unwrap()
+    .expect("an account with an assets directory is processed");
 
     assert!(left.exists());
 }
@@ -1643,8 +2156,8 @@ fn a_truncated_derived_file_is_rewritten() {
 fn storing_a_derived_file_leaves_only_the_file() {
     let dir = tempfile::tempdir().unwrap();
     let buf = vec![9u8; 512];
-    let blob = store_derived_bytes(dir.path(), &buf, ".jpg").unwrap();
-    let dest = dir.path().join(&blob.assets_path);
+    let version_file = store_derived_bytes(dir.path(), &buf, ".jpg").unwrap();
+    let dest = dir.path().join(&version_file.assets_path);
     let names: Vec<_> = std::fs::read_dir(dest.parent().unwrap())
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
@@ -1661,7 +2174,7 @@ fn storing_a_derived_file_leaves_only_the_file() {
 #[test]
 fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
     with_real_ffmpeg(async {
-        let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, _) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
             .await
             .unwrap();
@@ -1677,6 +2190,7 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
         let work = tempfile::tempdir().unwrap();
         let pass = AccountPass::new(
             &opened.cfg,
+            &ON_PATH,
             &opts,
             work.path(),
             ACCOUNT,
@@ -1703,7 +2217,7 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
 #[test]
 fn nothing_is_stored_once_the_account_directory_is_gone() {
     with_real_ffmpeg(async {
-        let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, _) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
             .await
             .unwrap();
@@ -1711,6 +2225,7 @@ fn nothing_is_stored_once_the_account_directory_is_gone() {
         let work = tempfile::tempdir().unwrap();
         let pass = AccountPass::new(
             &opened.cfg,
+            &ON_PATH,
             &opts,
             work.path(),
             ACCOUNT,
@@ -1781,7 +2296,7 @@ fn a_work_directory_a_stopped_pass_left_is_removed_by_the_next() {
 /// directory before each original, so another pass leaves it alone.
 #[tokio::test]
 async fn a_live_pass_keeps_its_work_directory_young() {
-    let (opened, dir, _) = fixture_with("imessage", ".txt", b"notes").await;
+    let (opened, dir, _) = fixture_with("imessage", "text/plain", b"notes").await;
     let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
         .await
         .unwrap();
@@ -1794,6 +2309,7 @@ async fn a_live_pass_keeps_its_work_directory_young() {
     let opts = ProcessAssetsOptions::default();
     let pass = AccountPass::new(
         &opened.cfg,
+        &ON_PATH,
         &opts,
         work.path(),
         ACCOUNT,
@@ -1813,61 +2329,59 @@ async fn a_live_pass_keeps_its_work_directory_young() {
 }
 
 /// The line that ends `process-assets` words each count singular for one
-/// and plural for every other count (#1825), and names an incomplete
-/// original, a damaged version and a shared version by what happened to
-/// them, not as an original left as it was or one not made (#1849).
+/// and plural for every other count (#1825), and names a damaged version
+/// and a shared version by what happened to them, not as an original left
+/// as it was or one not made (#1849).
 #[test]
 fn the_done_line_counts_one_and_many() {
     let one = ProcessAssetsStats {
         scanned: 1,
-        derived: 1,
+        previews: 1,
         thumbnails: 1,
-        removed: 1,
         dropped: 1,
         shared: 1,
         skipped: 1,
         not_made: 1,
-        not_removed: 1,
+        not_read: 1,
         not_dropped: 1,
         not_decided: 1,
     };
     assert_eq!(
         done_line(&one, false),
-        "done: read 1 original, made 1 Preview and 1 Thumbnail, removed 1 incomplete original, \
+        "done: read 1 original, made 1 Preview and 1 Thumbnail, \
          dropped 1 damaged Preview or Thumbnail, \
          shared 1 existing Preview or Thumbnail with more attachments, left 1 original as it was, \
          1 original whose Preview or Thumbnail could not be made, \
-         1 incomplete original that could not be removed, \
+         1 original whose stored location leaves its directory, \
          1 damaged Preview or Thumbnail that could not be dropped, \
          1 original whose shown-as-is decision could not be recorded"
     );
     let many = ProcessAssetsStats {
         scanned: 9,
-        derived: 2,
+        previews: 2,
         thumbnails: 3,
-        removed: 2,
         dropped: 3,
         shared: 2,
         skipped: 0,
         not_made: 2,
-        not_removed: 3,
+        not_read: 3,
         not_dropped: 4,
         not_decided: 0,
     };
     assert_eq!(
         done_line(&many, true),
-        "done: read 9 originals, made 2 Previews and 3 Thumbnails, removed 2 incomplete originals, \
+        "done: read 9 originals, made 2 Previews and 3 Thumbnails, \
          dropped 3 damaged Previews or Thumbnails, \
          shared 2 existing Previews or Thumbnails with more attachments, \
          left 0 originals as they were, \
          2 originals whose Preview or Thumbnail could not be made, \
-         3 incomplete originals that could not be removed, \
+         3 originals whose stored locations leave their directory, \
          4 damaged Previews or Thumbnails that could not be dropped (dry run)"
     );
 }
 
-/// Most runs meet no incomplete original, damaged version or version to
-/// share, so the line leaves those counts out at zero, and still says that
+/// Most runs meet no damaged version or version to share, so the line
+/// leaves those counts out at zero, and still says that
 /// no Preview or Thumbnail failed.
 #[test]
 fn the_done_line_leaves_out_what_the_run_never_met() {
@@ -1895,18 +2409,6 @@ fn the_failures_name_each_count_and_nothing_at_zero() {
         not_made(2).failures().as_deref(),
         Some("2 originals whose Preview or Thumbnail could not be made")
     );
-    let not_removed = |not_removed| ProcessAssetsStats {
-        not_removed,
-        ..ProcessAssetsStats::default()
-    };
-    assert_eq!(
-        not_removed(1).failures().as_deref(),
-        Some("1 incomplete original that could not be removed")
-    );
-    assert_eq!(
-        not_removed(2).failures().as_deref(),
-        Some("2 incomplete originals that could not be removed")
-    );
     let not_dropped = |not_dropped| ProcessAssetsStats {
         not_dropped,
         ..ProcessAssetsStats::default()
@@ -1921,30 +2423,112 @@ fn the_failures_name_each_count_and_nothing_at_zero() {
     );
     assert_eq!(
         ProcessAssetsStats {
-            not_removed: 1,
             not_dropped: 2,
+            not_decided: 1,
             ..ProcessAssetsStats::default()
         }
         .failures()
         .as_deref(),
         Some(
-            "1 incomplete original that could not be removed and \
-             2 damaged Previews or Thumbnails that could not be dropped"
+            "2 damaged Previews or Thumbnails that could not be dropped and \
+             1 original whose shown-as-is decision could not be recorded"
         )
     );
     assert_eq!(
         ProcessAssetsStats {
             not_made: 1,
-            not_removed: 1,
             not_dropped: 1,
+            not_decided: 1,
             ..ProcessAssetsStats::default()
         }
         .failures()
         .as_deref(),
         Some(
             "1 original whose Preview or Thumbnail could not be made, \
-             1 incomplete original that could not be removed and \
-             1 damaged Preview or Thumbnail that could not be dropped"
+             1 damaged Preview or Thumbnail that could not be dropped and \
+             1 original whose shown-as-is decision could not be recorded"
+        )
+    );
+}
+
+/// An ffmpeg killed because it made no progress gives that as the reason,
+/// and nothing of the error's context, which names the original's full path
+/// (#2059, #2898).
+#[test]
+fn an_ffmpeg_that_stalled_is_the_reason_no_version_was_made() {
+    let err = media::testutil::ffmpeg_killed(media::KillReason::StalledPartway {
+        wait: std::time::Duration::from_secs(120),
+        at: std::time::Duration::from_secs(65),
+    })
+    .context("preview of /srv/data/accounts/1/assets/clip.mov");
+
+    assert_eq!(
+        not_made(&err, &[]),
+        (
+            NotMadeKind::Stalled,
+            "ffmpeg made no progress for 2 minutes after converting 1:05 of the file, so it \
+             was stopped"
+                .to_string()
+        )
+    );
+}
+
+/// Each way ffmpeg is stopped is its own kind of failure, so the owner's view
+/// of an Import Run counts a looping damaged file apart from a hung encoder
+/// (#2636). A stall before any output and one partway are one kind: both
+/// stopped making progress.
+#[test]
+fn each_way_ffmpeg_is_stopped_is_sorted_into_its_kind() {
+    let wait = std::time::Duration::from_secs(120);
+    for (why, kind) in [
+        (
+            media::KillReason::StalledBeforeOutput { wait },
+            NotMadeKind::Stalled,
+        ),
+        (
+            media::KillReason::StalledPartway {
+                wait,
+                at: std::time::Duration::from_secs(3),
+            },
+            NotMadeKind::Stalled,
+        ),
+        (
+            media::KillReason::RanPastLength {
+                length: std::time::Duration::from_secs(5),
+            },
+            NotMadeKind::RanPastLength,
+        ),
+        (
+            media::KillReason::TookTooLong {
+                limit: std::time::Duration::from_secs(15),
+            },
+            NotMadeKind::TookTooLong,
+        ),
+    ] {
+        let err = media::testutil::ffmpeg_killed(why);
+        assert_eq!(not_made(&err, &[]).0, kind, "{why:?}");
+    }
+}
+
+/// A missing original and a failure that is neither ffmpeg's nor a missing
+/// file each have a kind of their own, and the second's reason names nothing
+/// of the error (#2636).
+#[test]
+fn a_missing_original_and_a_server_problem_are_their_own_kinds() {
+    let missing = anyhow::Error::new(MissingOriginal).context("thumbnail of /srv/a/b");
+    assert_eq!(
+        not_made(&missing, &[]),
+        (
+            NotMadeKind::OriginalMissing,
+            "the original file is missing".to_string()
+        )
+    );
+    let other = anyhow::anyhow!("disk full at /srv/data/work");
+    assert_eq!(
+        not_made(&other, &[]),
+        (
+            NotMadeKind::ServerProblem,
+            "the server ran into a problem making it".to_string()
         )
     );
 }

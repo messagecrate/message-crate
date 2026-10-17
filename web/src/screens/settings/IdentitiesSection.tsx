@@ -1,41 +1,41 @@
 import { useMemo, useState } from "react";
-import AddIdentityDialog from "../../components/AddIdentityDialog";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import IdentityCountryDialog from "../../components/IdentityCountryDialog";
+import IdentityDialogs from "../../components/IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
-import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
+import { useIdentityCountryPick } from "../../hooks/useIdentityCountryPick";
+import { useRouteCache, useRouteQuery } from "../../hooks/useRouteQuery";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
-import { identityType } from "../../lib/backupIdentity";
-import {
-  listedServerService,
-  type OfferedService,
-  type ServerService,
-  serverService,
-} from "../../lib/offeredService";
-import { phonesMatch } from "../../lib/phoneTokens";
+import { errorLine } from "../../lib/apiErrorMessage";
+import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
 import { keys } from "../../lib/queryKeys";
-import { useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
-import { useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
+import { useUpdateSettingsProfile } from "./useSettingsAccount";
+
+/** Whether `list` has a row at `address` on `service`, both as the server lists them. */
+function listHolds(list: readonly Identity[], { address, service }: ListedIdentity): boolean {
+  return list.some((row) => row.address === address && row.service === service);
+}
 
 /**
- * Whether `profile` holds `address` on `service`, however the address was
- * typed. The profile names every service a number is an identity under, so a
- * number on Text Message and on WhatsApp is told apart by its services. An
- * email address is on the phone service, because WhatsApp carries none.
+ * Whether `stored`, an address as the server lists it, is `typed` as the
+ * person typed it. The server stores an address in lower case, and a number
+ * with its country code when the country is known, so a number matches when
+ * the stored digits end with the typed ones, less any leading trunk `0`
+ * (`07700 900123` is `+447700900123`, `(555) 555-0100` is `+15555550100`).
  */
-function profileHolds(profile: AccountProfile, address: string, service: ServerService): boolean {
-  if (identityType(address) === "email") {
-    const needle = address.trim().toLowerCase();
-    return profile.emails.some((email) => email.toLowerCase() === needle);
-  }
-  return profile.phones.some(
-    (phone) => phone.services.includes(service) && phonesMatch(address, phone.address),
-  );
+function matchesStored(typed: string, stored: string): boolean {
+  const trimmed = typed.trim();
+  if (stored === trimmed.toLowerCase()) return true;
+  if (trimmed.includes("@")) return false;
+  const digits = trimmed.replace(/\D/g, "").replace(/^0+/, "");
+  return digits.length > 0 && stored.replace(/\D/g, "").endsWith(digits);
 }
+
+/** An identity as the identities list names it: its stored address and listed service. */
+type ListedIdentity = Pick<Identity, "address" | "service">;
 
 /** The profile's own identities as placeholder rows, shown until the server lists them. */
 function placeholderRows(profile: AccountProfile): Identity[] {
@@ -50,7 +50,7 @@ function placeholderRows(profile: AccountProfile): Identity[] {
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: 0,
+    one_to_one_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
   }));
@@ -85,10 +85,14 @@ export function IdentitiesSection({
   // Until the server answers, the profile's own identities are shown with no
   // counts, so the table never waits on a fetch and never shows a number
   // that is not the server's.
-  const identities = useRouteQuery(
-    managed ? keys.ownerAccounts.identities(managedAccountId) : keys.accountProfile.identities,
-    (signal) => listAccountIdentities({ signal }, managedAccountId),
-  );
+  const identitiesKey = managed
+    ? keys.ownerAccounts.identities(managedAccountId)
+    : keys.accountProfile.identities;
+  const fetchIdentities = (signal: AbortSignal) =>
+    listAccountIdentities({ signal }, managedAccountId);
+  const identities = useRouteQuery(identitiesKey, fetchIdentities);
+  const cache = useRouteCache();
+  const refetchIdentities = () => cache.fetch(identitiesKey, fetchIdentities);
   const listed = identities.data;
   const rows: Identity[] = useMemo(() => listed ?? placeholderRows(profile), [listed, profile]);
   const tableRows: IdentityRow[] = useMemo(
@@ -102,33 +106,51 @@ export function IdentitiesSection({
   );
 
   /**
-   * Send `body`, then require that the account the server answers with holds
-   * `address` on `service` (`listed`) or no longer does. A server that
-   * answers without making the change leaves the dialog open with
-   * `notChanged`.
+   * Send `body`, then read the identities list the table shows again and
+   * require `changed` of it. A server that answers without making the change
+   * leaves the dialog open with `notChanged`.
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, service }: { address: string; service: ServerService },
-    { listed, notChanged }: { listed: boolean; notChanged: string },
+    changed: (list: Identity[]) => boolean,
+    notChanged: string,
   ) => {
-    const changed = await updateProfile.mutateAsync(body);
-    if (profileHolds(changed, address, service) !== listed) {
+    await updateProfile.mutateAsync(body);
+    let list: Identity[];
+    try {
+      list = await refetchIdentities();
+    } catch (e) {
+      throw new Error(
+        `The change was sent, but the identities list could not be read to confirm it. ${errorLine(e)}`,
+        { cause: e },
+      );
+    }
+    if (!changed(list)) {
       throw new Error(notChanged);
     }
   };
 
   const confirmAdd = async ({ address, service }: { address: string; service: OfferedService }) => {
     setAddError("");
-    const identity = { address, service: serverService(service) };
     try {
-      await changeAndCheck({ identities: [identity] }, identity, {
-        listed: true,
-        notChanged: "The server did not add that identity.",
-      });
+      // The list names each service as the dialog offers it. The address is
+      // the server's own form: a row on `service` matches when it is the
+      // typed address in that form, or is new, since a number typed without
+      // its country code is stored with the code the account's country gives.
+      const before = listed ?? (await refetchIdentities());
+      await changeAndCheck(
+        { identities: [{ address, service: serverService(service) }] },
+        (list) =>
+          list.some(
+            (row) =>
+              row.service === service &&
+              (matchesStored(address, row.address) || !listHolds(before, row)),
+          ),
+        "The server did not add that identity.",
+      );
       setAdding(false);
     } catch (e) {
-      setAddError(e instanceof Error ? e.message : String(e));
+      setAddError(errorLine(e));
     }
   };
 
@@ -145,15 +167,12 @@ export function IdentitiesSection({
       }
       await changeAndCheck(
         { remove_identities: [{ address, service }] },
-        { address, service },
-        {
-          listed: false,
-          notChanged: "The server did not remove that identity.",
-        },
+        (list) => !listHolds(list, removeTarget),
+        "The server did not remove that identity.",
       );
       setRemoveTarget(null);
     } catch (e) {
-      setRemoveError(e instanceof Error ? e.message : String(e));
+      setRemoveError(errorLine(e));
     }
   };
 
@@ -183,7 +202,7 @@ export function IdentitiesSection({
           rows={tableRows}
           loading={listed === undefined}
           busy={busy}
-          emptyText="No identities yet."
+          emptyText="No identities yet"
           onRemove={fixed ? undefined : requestRemove}
           onPickCountry={
             fixed
@@ -210,25 +229,14 @@ export function IdentitiesSection({
         )}
       </div>
 
-      <IdentityCountryDialog
-        open={countryPick.target !== null}
-        address={countryPick.target?.address ?? ""}
+      <IdentityDialogs
+        countryPick={countryPick}
         busy={busy}
-        error={countryPick.error}
-        onClose={() => {
-          if (!busy) countryPick.close();
-        }}
-        onPick={(args) => void countryPick.confirm(args)}
-      />
-      <AddIdentityDialog
-        open={adding}
-        busy={busy}
-        error={addError}
+        adding={adding}
+        addError={addError}
         existing={rows}
-        onClose={() => {
-          if (!busy) setAdding(false);
-        }}
-        onConfirm={(args) => void confirmAdd(args)}
+        onCloseAdd={() => setAdding(false)}
+        onConfirmAdd={confirmAdd}
       />
       <ConfirmDialog
         open={removeTarget !== null}

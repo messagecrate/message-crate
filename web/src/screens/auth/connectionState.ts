@@ -25,7 +25,7 @@ export interface Connection {
   hasConnectedOnce: boolean;
 }
 
-export type ConnectionEvent =
+type ConnectionEvent =
   | { type: "try"; address: string }
   | { type: "answered"; address: string }
   | { type: "noAnswer"; address: string; message?: string };

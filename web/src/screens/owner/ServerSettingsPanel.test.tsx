@@ -1,18 +1,28 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
-import { Providers } from "../../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { authModule, Providers } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ServerSettingsPanel } from "./ServerSettingsPanel";
 
 const getServerSettings = vi.hoisted(() => vi.fn());
 const updateServerSettings = vi.hoisted(() => vi.fn());
+const desktop = vi.hoisted(() => ({ isTauri: false }));
+/** What the desktop process measures for every Import Run on this computer. */
+const allStagingBytes = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/auth", () => ({
-  useAuth: () => ({ accountId: 1 }),
+vi.mock("../../lib/tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
+
+vi.mock("../../lib/desktop/staging", () => ({
+  invokeAllStagingBytes: () => allStagingBytes(),
+  invokeAccountStagingBytes: vi.fn(),
 }));
+
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 1 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -21,8 +31,6 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   getServerState: () => new Promise(() => {}),
   getDemoAccount: () => new Promise(() => {}),
 }));
-
-const MIB = 1024 * 1024;
 
 function renderPanel() {
   return render(
@@ -34,27 +42,44 @@ function renderPanel() {
 
 beforeEach(() => {
   getServerSettings.mockReset();
-  getServerSettings.mockResolvedValue({ public_registration: false, asset_max_bytes: 512 * MIB });
+  getServerSettings.mockResolvedValue({
+    public_registration: false,
+    asset_max_bytes: 512 * MIB,
+    journal: { mode: "wal", wal_error: null },
+  });
   updateServerSettings.mockReset();
+  desktop.isTauri = false;
+  allStagingBytes.mockReset();
+  allStagingBytes.mockResolvedValue(0);
+  startFakeClock();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 describe("ServerSettingsPanel attachment size limit", () => {
   it("shows the limit the server holds, in megabytes", async () => {
     renderPanel();
+    await settle();
 
-    expect(await screen.findByLabelText("Attachment size limit")).toHaveValue(512);
+    expect(screen.getByLabelText("Attachment size limit")).toHaveValue(512);
     // Nothing to save until the number differs from the one in force.
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
   it("offers no save for a limit that is not a whole number of hundredths of a megabyte", async () => {
     // 0.333 MB, which the field shows rounded to 0.33.
-    getServerSettings.mockResolvedValue({ public_registration: false, asset_max_bytes: 349_176 });
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 349_176,
+      journal: { mode: "wal", wal_error: null },
+    });
     renderPanel();
+    await settle();
 
-    expect(await screen.findByLabelText("Attachment size limit")).toHaveValue(0.33);
+    expect(screen.getByLabelText("Attachment size limit")).toHaveValue(0.33);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
@@ -62,9 +87,11 @@ describe("ServerSettingsPanel attachment size limit", () => {
     updateServerSettings.mockResolvedValue({
       public_registration: false,
       asset_max_bytes: 100 * MIB,
+      journal: { mode: "wal", wal_error: null },
     });
     renderPanel();
-    const field = await screen.findByLabelText("Attachment size limit");
+    await settle();
+    const field = screen.getByLabelText("Attachment size limit");
     // The read the write starts never answers, so only the write's own answer
     // can show the new limit.
     getServerSettings.mockReturnValue(new Promise(() => {}));
@@ -73,15 +100,17 @@ describe("ServerSettingsPanel attachment size limit", () => {
     await user.clear(field);
     await fill(user, field, "100");
     await user.click(screen.getByRole("button", { name: "Save" }));
+    await settle();
 
     expect(updateServerSettings).toHaveBeenCalledWith({ asset_max_bytes: 100 * MIB });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(field).toHaveValue(100);
   });
 
   it("offers no save for a limit that is blank or not above zero", async () => {
     renderPanel();
-    const field = await screen.findByLabelText("Attachment size limit");
+    await settle();
+    const field = screen.getByLabelText("Attachment size limit");
 
     const user = setupUser();
     await user.clear(field);
@@ -96,16 +125,43 @@ describe("ServerSettingsPanel attachment size limit", () => {
       new ApiError(422, "asset_max_bytes must be at most 9223372036854775807"),
     );
     renderPanel();
-    const field = await screen.findByLabelText("Attachment size limit");
+    await settle();
+    const field = screen.getByLabelText("Attachment size limit");
 
     const user = setupUser();
     await user.clear(field);
     await fill(user, field, "99999999999999");
     await user.click(screen.getByRole("button", { name: "Save" }));
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "asset_max_bytes must be at most 9223372036854775807",
     );
     expect(field).toHaveValue(99999999999999);
+  });
+});
+
+describe("ServerSettingsPanel Staging Directory", () => {
+  // #3087: the owner sees how much space the whole Staging Directory takes,
+  // every account's Import Runs included, on the computer running the
+  // desktop app.
+  it("says how much space the whole Staging Directory takes on this computer", async () => {
+    desktop.isTauri = true;
+    allStagingBytes.mockResolvedValue(3 * 1024 * MIB);
+    renderPanel();
+    await settle();
+
+    expect(screen.getByText("Staging Directory on this computer")).toBeTruthy();
+    expect(
+      screen.getByText("The Staging Directory takes up 3.0 GB on this computer."),
+    ).toBeTruthy();
+  });
+
+  it("shows no Staging Directory in a browser", async () => {
+    renderPanel();
+    await settle();
+
+    expect(allStagingBytes).not.toHaveBeenCalled();
+    expect(screen.queryByText("Staging Directory on this computer")).toBeNull();
   });
 });

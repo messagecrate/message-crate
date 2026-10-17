@@ -2,9 +2,11 @@ use axum::http::StatusCode;
 use std::sync::atomic::AtomicBool;
 
 use super::*;
+use crate::problem::ProblemType;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, patch_status, post_status,
-    post_status_logged_out, register_via_api, seed_conversation, test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, expect_problem, get_json, get_raw, get_status,
+    patch_json_raw, post_json_raw, post_logged_out, post_status, register_via_api,
+    seed_conversation, stored_time, test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.
@@ -125,6 +127,72 @@ async fn the_state_route_carries_the_build_and_the_schema_fingerprint() {
     );
 }
 
+/// The state route answers anyone, so it says nothing of how the database is
+/// stored: the journal mode is on the owner's settings route (#2703).
+#[tokio::test]
+async fn the_state_route_leaves_the_journal_mode_out() {
+    let fixture = test_fixture().await;
+    let body: serde_json::Value = get_json(&fixture.state, "/v1/server", "").await;
+    assert!(body.get("journal_mode").is_none(), "{body}");
+    assert!(body.get("journal").is_none(), "{body}");
+}
+
+/// The owner's settings carry the journal mode the database runs in when
+/// they are read, so a server that could not have write-ahead logging says
+/// so on Owner Home, and so does the answer to a change, which the screen
+/// shows in place of the one it read (#2703).
+#[tokio::test]
+async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
+    use crate::db::engine::JournalMode;
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+
+    let fixture = test_fixture().await;
+    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
+    let body: ApiServerSettings =
+        get_json(&fixture.state, "/v1/server/settings", &owner.token).await;
+    assert_eq!(body.journal.mode, Some(JournalMode::Wal));
+    assert_eq!(body.journal.wal_error, None);
+
+    // A database left in a rollback journal, as one is when the server could
+    // not turn write-ahead logging on, with the error SQLite gave then.
+    let dir = tempfile::tempdir().unwrap();
+    let pool = SqlitePoolOptions::new()
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(dir.path().join("messagecrate.db"))
+                .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Delete),
+        )
+        .await
+        .unwrap();
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    }
+    let mut state = crate::server::test_app_state(pool, dir.path());
+    state.wal_error = crate::server::WalError(Some("database is locked".into()));
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let body: ApiServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
+    assert_eq!(body.journal.mode, Some(JournalMode::Delete));
+    assert_eq!(
+        body.journal.wal_error.as_deref(),
+        Some("database is locked")
+    );
+
+    let changed: ApiServerSettings = crate::test_support::patch_json(
+        &state,
+        "/v1/server/settings",
+        &owner.token,
+        serde_json::json!({ "public_registration": true }),
+    )
+    .await;
+    assert_eq!(changed.journal.mode, Some(JournalMode::Delete));
+    assert_eq!(
+        changed.journal.wal_error.as_deref(),
+        Some("database is locked")
+    );
+}
+
 /// Two Message Crates have different ids, though both start their account
 /// and Import Run ids at the same numbers, and one Message Crate keeps its id
 /// across reads: the desktop app tells their Import Run logs apart by it.
@@ -148,8 +216,8 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     let state = fixture.state.clone();
 
     let server = crate::test_support::serve(&state).await;
-    let response = reqwest::Client::new()
-        .post(format!("{}/v1/server/claim", server.base()))
+    let response = server
+        .post("/v1/server/claim")
         .json(&serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }))
         .send()
         .await
@@ -171,9 +239,14 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     // The token it hands back is the owner's session, usable at once.
     let token = body["token"].as_str().unwrap();
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(auth.is_owner());
     drop(conn);
 
@@ -191,14 +264,13 @@ async fn a_server_can_only_be_claimed_once() {
     let state = fixture.state.clone();
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    let status = post_status(
+    let (status, text) = post_logged_out(
         &state,
         "/v1/server/claim",
-        "",
         serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT);
+    expect_problem(status, &text, ProblemType::StateConflict);
 
     // And nothing was created for the second caller.
     let mut conn = state.db.acquire().await.unwrap();
@@ -250,26 +322,22 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
 
     let mut other_conn = state.db.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    account_profile::insert_account_at(
+    crate::test_support::insert_account_with_id(
         &mut other,
         account_profile::OWNER_ACCOUNT_ID,
         "keeper",
-        None,
-        None,
     )
-    .await
-    .unwrap();
-    let status = crate::db::write_tx::commit_during(
+    .await;
+    let (status, text) = crate::db::write_tx::commit_during(
         other,
-        post_status(
+        post_logged_out(
             &state,
             "/v1/server/claim",
-            "",
             serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT);
+    expect_problem(status, &text, ProblemType::StateConflict);
 
     let mut conn = state.db.acquire().await.unwrap();
     let owner: String = sqlx::query_scalar("SELECT username FROM accounts WHERE id = $1")
@@ -285,18 +353,14 @@ async fn claiming_needs_a_password_of_one_character_or_more() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
 
-    let status = post_status(
+    // The owner must have a password.
+    let (status, text) = post_logged_out(
         &state,
         "/v1/server/claim",
-        "",
         serde_json::json!({ "username": "keeper", "password": "" }),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the owner must have a password"
-    );
+    expect_problem(status, &text, ProblemType::ValidationFailed);
     let after: Server = get_json(&state, "/v1/server", "").await;
     assert_eq!(after.state, ServerState::Unclaimed);
 
@@ -310,57 +374,19 @@ async fn claiming_needs_a_password_of_one_character_or_more() {
     assert_eq!(status, StatusCode::CREATED, "one character is enough");
 }
 
-/// Claiming takes no credential and makes the most powerful one the server
-/// has, so it is rate limited, and once for the whole server: a count per
-/// username would let a script trying a new name each time straight through.
-#[tokio::test]
-async fn claiming_is_rate_limited_across_the_server() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    // An empty password is refused after the limiter has counted the
-    // attempt, so every try counts and none claims this Message Crate.
-    for attempt in 0..crate::credentials::AUTH_RATE_MAX {
-        let status = post_status_logged_out(
-            &state,
-            "/v1/server/claim",
-            serde_json::json!({ "username": format!("keeper{attempt}"), "password": "" }),
-        )
-        .await;
-        assert_eq!(
-            status,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "attempt {attempt} inside the limit"
-        );
-    }
-    let (status, text) = crate::test_support::post_logged_out(
-        &state,
-        "/v1/server/claim",
-        serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }),
-    )
-    .await;
-    let problem = crate::test_support::expect_problem(
-        status,
-        &text,
-        crate::problem::ProblemType::RateLimited,
-    );
-    assert!(problem.retry_after.is_some(), "{text}");
-    let after: Server = get_json(&state, "/v1/server", "").await;
-    assert_eq!(after.state, ServerState::Unclaimed);
-}
-
 #[tokio::test]
 async fn registration_is_refused_while_the_server_is_closed() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     close_registration(&state).await;
 
-    let status = post_status_logged_out(
+    let (status, text) = post_logged_out(
         &state,
         "/v1/accounts",
         serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" }),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::RegistrationClosed);
 }
 
 /// The owner opens the door, and the same request that was refused succeeds.
@@ -371,27 +397,25 @@ async fn the_owner_can_open_and_close_registration() {
     close_registration(&state).await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    let settings: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
-    assert!(!settings.public_registration);
+    let settings: ApiServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
+    assert!(!settings.settings.public_registration);
 
-    assert_eq!(
-        post_status_logged_out(
-            &state,
-            "/v1/accounts",
-            serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" }),
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = post_logged_out(
+        &state,
+        "/v1/accounts",
+        serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::RegistrationClosed);
 
-    let opened: ServerSettings = crate::test_support::patch_json(
+    let opened: ApiServerSettings = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
         &owner.token,
         serde_json::json!({ "public_registration": true }),
     )
     .await;
-    assert!(opened.public_registration);
+    assert!(opened.settings.public_registration);
 
     let joined = register_via_api(&state, "stranger", "hunter2hunter2").await;
     assert_eq!(joined.username, "stranger");
@@ -407,20 +431,16 @@ async fn only_the_owner_reaches_the_server_settings() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    assert_eq!(
-        get_status(&state, "/v1/server/settings", &ordinary.token).await,
-        StatusCode::FORBIDDEN
-    );
-    assert_eq!(
-        patch_status(
-            &state,
-            "/v1/server/settings",
-            &ordinary.token,
-            serde_json::json!({ "public_registration": false }),
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = get_raw(&state, "/v1/server/settings", &ordinary.token).await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
+    let (status, text) = patch_json_raw(
+        &state,
+        "/v1/server/settings",
+        &ordinary.token,
+        serde_json::json!({ "public_registration": false }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
 }
 
 /// 512 MiB, the limit a Message Crate nobody has configured holds an attachment to.
@@ -439,6 +459,24 @@ async fn the_attachment_size_limit_reads_as_512_mib_until_the_owner_sets_it() {
 
     let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
     assert_eq!(server["asset_max_bytes"], DEFAULT_LIMIT);
+}
+
+/// `GET /v1/server` states the body time limits the server holds, to a
+/// client with no credential, so the Upload sizes its wait for each piece
+/// from the server's config rather than a copy of its own.
+#[tokio::test]
+async fn the_server_states_its_body_time_limits() {
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
+    state.body_time_limits = crate::request_body::BodyTimeLimits {
+        stall: std::time::Duration::from_secs(7),
+        total: std::time::Duration::from_secs(45),
+    };
+
+    let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
+
+    assert_eq!(server["body_stall_secs"], 7);
+    assert_eq!(server["body_total_secs"], 45);
 }
 
 /// The owner changes the limit, and `GET /v1/server` reports the new number
@@ -489,16 +527,14 @@ async fn an_ordinary_account_cannot_change_the_attachment_size_limit() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    assert_eq!(
-        patch_status(
-            &state,
-            "/v1/server/settings",
-            &ordinary.token,
-            serde_json::json!({ "asset_max_bytes": 100 * 1024 * 1024 }),
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = patch_json_raw(
+        &state,
+        "/v1/server/settings",
+        &ordinary.token,
+        serde_json::json!({ "asset_max_bytes": 100 * 1024 * 1024 }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
     let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
     assert_eq!(server["asset_max_bytes"], DEFAULT_LIMIT);
 }
@@ -512,7 +548,7 @@ async fn a_limit_of_zero_or_past_what_the_server_can_store_is_refused() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     for refused in [0, i64::MAX as u64 + 1] {
-        let (status, text) = crate::test_support::patch_raw(
+        let (status, text) = crate::test_support::patch_json_raw(
             &state,
             "/v1/server/settings",
             &owner.token,
@@ -543,7 +579,7 @@ async fn the_owner_sets_a_limit_below_the_configured_part_size() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let below = state.asset_part_size as u64 - 1;
+    let below = state.assets.part_size as u64 - 1;
 
     let accepted: serde_json::Value = crate::test_support::patch_json(
         &state,
@@ -555,6 +591,46 @@ async fn the_owner_sets_a_limit_below_the_configured_part_size() {
     assert_eq!(accepted["asset_max_bytes"], below);
     let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
     assert_eq!(server["asset_max_bytes"], below);
+}
+
+/// The owner's Audit Trail entries with `action`, newest first.
+async fn owner_entries(state: &AppState, token: &str, action: &str) -> Vec<serde_json::Value> {
+    let page: serde_json::Value = get_json(state, "/v1/audit-trail?limit=500", token).await;
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["action"] == action)
+        .cloned()
+        .collect()
+}
+
+/// Changing the attachment size limit leaves an Audit Trail entry naming the
+/// new limit, as opening registration does (#2187). Sending the limit the
+/// server already holds, the default included, changes nothing and records
+/// nothing.
+#[tokio::test]
+async fn changing_the_attachment_size_limit_is_recorded_once_per_change() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let limit: u64 = 100 * 1024 * 1024;
+
+    for bytes in [DEFAULT_LIMIT, limit, limit] {
+        let _: serde_json::Value = crate::test_support::patch_json(
+            &state,
+            "/v1/server/settings",
+            &owner.token,
+            serde_json::json!({ "asset_max_bytes": bytes }),
+        )
+        .await;
+    }
+
+    let entries = owner_entries(&state, &owner.token, "asset_limit_changed").await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["actor"], "owner");
+    assert_eq!(entries[0]["asset_max_bytes"], limit);
+    assert!(entries[0]["account_id"].is_null());
 }
 
 /// Claiming this Message Crate puts a row at the owner id and nowhere else.
@@ -578,6 +654,28 @@ async fn claiming_the_server_creates_exactly_one_owner() {
         .await
         .unwrap();
     assert_eq!(owners, 1);
+}
+
+/// The owner claimed through the route has 0 in its row's import, export
+/// and delete columns (`account_profile::insert_account_at` says why).
+#[tokio::test]
+async fn the_claimed_owner_row_holds_no_permission() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let server = crate::test_support::serve(&state).await;
+    let response = server
+        .post("/v1/server/claim")
+        .json(&serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let mut conn = state.db.acquire().await.unwrap();
+    assert_eq!(
+        crate::test_support::stored_permissions(&mut conn, account_profile::OWNER_ACCOUNT_ID).await,
+        (0, 0, 0)
+    );
 }
 
 /// The owner holds no messages, so profile setup would ask for a name
@@ -661,7 +759,7 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
             .iter()
             .map(|body| SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body,
             })
@@ -671,7 +769,7 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
             &SeedConversation {
                 account_id,
                 handle,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "seed.jsonl",
                 messages: &messages,
@@ -792,14 +890,10 @@ async fn only_the_owner_reaches_the_server_totals() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    assert_eq!(
-        get_status(&state, "/v1/server/storage", &ordinary.token).await,
-        StatusCode::FORBIDDEN
-    );
-    assert_eq!(
-        get_status(&state, "/v1/server/storage", "").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = get_raw(&state, "/v1/server/storage", &ordinary.token).await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
+    let (status, text) = get_raw(&state, "/v1/server/storage", "").await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 }
 
 /// Writes a few conversations in place of the built-in data set.
@@ -884,7 +978,7 @@ impl OpenGate {
     /// the build's error when the build ends without reaching the generator.
     async fn arrival(&self, state: &AppState) {
         let gate = self.0;
-        let arrived = tokio::task::spawn_blocking(move || {
+        let arrived = crate::request_id::spawn_blocking_in_current_span(move || {
             let mut gate_state = gate.lock();
             // An open gate ends the wait too, so a test that panics here
             // leaves no thread waiting.
@@ -897,9 +991,9 @@ impl OpenGate {
         });
         tokio::select! {
             arrived = arrived => arrived.unwrap(),
-            () = state.demo_build.ended() => panic!(
+            () = state.demo.build.ended() => panic!(
                 "the build ended before it generated: {:?}",
-                state.demo_build.get()
+                state.demo.build.get()
             ),
         }
     }
@@ -962,51 +1056,72 @@ fn no_bundle(
     anyhow::bail!("the generator has nothing to write")
 }
 
-/// The directory [`long_bundle`] was last given, so a test can look for it
-/// once the build has stopped.
-static LONG_BUNDLE: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+static LONG_BUILD_GATE: BundleGate = BundleGate::new();
 
-/// Writes one small file into the bundle every few milliseconds for half a
-/// minute, the way the Large set keeps the generator busy. Like the real
-/// generator, which checks the flag between conversations, it checks the
-/// flag once every 20 files, and stops with an error once it is set. Each
-/// file recreates the directory it goes in, so a generator still writing after
-/// its directory was removed leaves the directory behind.
+/// What [`long_bundle`] was last given and how it ended, so a test can look
+/// at them once the build has stopped.
+static LONG_BUNDLE: std::sync::Mutex<LongBundle> = std::sync::Mutex::new(LongBundle {
+    bundle: None,
+    stopped: None,
+});
+
+struct LongBundle {
+    /// The bundle directory the generator writes into.
+    bundle: Option<std::path::PathBuf>,
+    /// Whether the generator ended at the flag (`true`) or wrote every file
+    /// (`false`); `None` until it ends.
+    stopped: Option<bool>,
+}
+
+/// How many files [`long_bundle`] writes when nothing stops it: far more
+/// than the 20 it writes between two looks at the flag.
+const LONG_BUNDLE_FILES: u64 = 2_000;
+
+/// Writes one small file into the bundle, waits at [`LONG_BUILD_GATE`] until
+/// the test opens it, then writes [`LONG_BUNDLE_FILES`] more, the way the
+/// Large set keeps the generator busy. Like the real generator, which checks
+/// the flag between conversations, it checks the flag once every 20 files,
+/// and stops with an error once it is set. Each file recreates the directory
+/// it goes in, so a generator still writing after its directory was removed
+/// leaves the directory behind.
 fn long_bundle(
     _size: demo_seed::DemoSize,
     bundle: &std::path::Path,
     cancel: &AtomicBool,
 ) -> anyhow::Result<()> {
-    *LONG_BUNDLE.lock().unwrap() = Some(bundle.to_path_buf());
-    let started = std::time::Instant::now();
-    let mut written = 0u64;
-    while started.elapsed() < std::time::Duration::from_secs(30) {
-        if written.is_multiple_of(20) && cancel.load(std::sync::atomic::Ordering::Relaxed) {
-            anyhow::bail!("the generator was stopped");
-        }
+    let write = |written: u64| -> anyhow::Result<()> {
         std::fs::create_dir_all(bundle)?;
         std::fs::write(bundle.join(format!("{written}.jsonl")), b"{}\n")?;
-        written += 1;
-        std::thread::sleep(std::time::Duration::from_millis(5));
+        Ok(())
+    };
+    LONG_BUNDLE.lock().unwrap().bundle = Some(bundle.to_path_buf());
+    write(0)?;
+    LONG_BUILD_GATE.pass();
+    for written in 1..=LONG_BUNDLE_FILES {
+        if written.is_multiple_of(20) && cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            LONG_BUNDLE.lock().unwrap().stopped = Some(true);
+            anyhow::bail!("the generator was stopped");
+        }
+        write(written)?;
     }
+    LONG_BUNDLE.lock().unwrap().stopped = Some(false);
     Ok(())
 }
 
 /// Ask for a build of the medium set and return the answer.
 async fn start_demo_build(state: &AppState, token: &str) -> (StatusCode, String) {
-    crate::test_support::put_raw(
+    crate::test_support::put_json_raw(
         state,
         "/v1/server/demo-account",
         token,
-        "application/json",
-        r#"{"size":"medium"}"#,
+        serde_json::json!({ "size": "medium" }),
     )
     .await
 }
 
 /// Read the Demo Account once its build has ended.
 async fn demo_account_after_build(state: &AppState, token: &str) -> DemoAccount {
-    state.demo_build.ended().await;
+    state.demo.build.ended().await;
     get_json(state, "/v1/server/demo-account", token).await
 }
 
@@ -1017,7 +1132,7 @@ async fn demo_account_after_build(state: &AppState, token: &str) -> DemoAccount 
 async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let other = fixture.account("someone").await;
     crate::test_support::seed_one_message(&state, other).await;
@@ -1056,6 +1171,68 @@ async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
     );
 }
 
+/// Adding the Demo Account and resetting it are each recorded as the owner's
+/// act, with the size of Demo Data asked for, when the build starts (#2187).
+/// The add is about no account, since none exists yet. The reset is about
+/// the Demo Account it replaced, so it comes before that account's deletion
+/// and stays in its record.
+#[tokio::test(flavor = "multi_thread")]
+async fn adding_and_resetting_the_demo_account_are_recorded() {
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
+    state.demo.bundle_generator = tiny_bundle;
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+    for _ in 0..2 {
+        let (status, body) = start_demo_build(&state, &owner.token).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let demo = demo_account_after_build(&state, &owner.token).await;
+        assert_eq!(demo.status, DemoAccountStatus::Ready, "{:?}", demo.error);
+    }
+
+    let added = owner_entries(&state, &owner.token, "demo_account_added").await;
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["actor"], "owner");
+    assert_eq!(added[0]["demo_data_size"], "medium");
+    assert!(added[0]["account_id"].is_null());
+    assert!(
+        added[0]["username"].is_null(),
+        "a username with no account would read as a deleted account"
+    );
+
+    let reset = owner_entries(&state, &owner.token, "demo_account_reset").await;
+    assert_eq!(reset.len(), 1, "{reset:?}");
+    assert_eq!(reset[0]["actor"], "owner");
+    assert_eq!(reset[0]["username"], account_profile::DEMO_USERNAME);
+    assert_eq!(reset[0]["demo_data_size"], "medium");
+    let deleted = owner_entries(&state, &owner.token, "account_deleted").await;
+    let replaced = deleted
+        .iter()
+        .find(|entry| entry["username"] == account_profile::DEMO_USERNAME)
+        .expect("the reset deleted the Demo Account it replaced");
+    let reset_id = reset[0]["id"].as_i64().expect("an entry has an id");
+    let replaced_id = replaced["id"].as_i64().expect("an entry has an id");
+    assert!(
+        reset_id < replaced_id,
+        "the reset is recorded before the Demo Account it replaced is deleted"
+    );
+
+    let old_record: serde_json::Value = get_json(
+        &state,
+        &format!("/v1/audit-trail?deleted_account_id={replaced_id}"),
+        &owner.token,
+    )
+    .await;
+    assert!(
+        old_record["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["action"] == "demo_account_reset"),
+        "{old_record}"
+    );
+}
+
 /// `demo` belongs to the Demo Account even while it does not exist. Once the
 /// owner has deleted it, neither the owner nor a stranger may give the name
 /// to another account, so adding the Demo Account again still succeeds
@@ -1064,7 +1241,7 @@ async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
 async fn the_demo_username_stays_reserved_after_the_demo_account_is_deleted() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let demo = fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     assert_eq!(
@@ -1075,11 +1252,9 @@ async fn the_demo_username_stays_reserved_after_the_demo_account_is_deleted() {
 
     let body =
         |username: &str| serde_json::json!({ "username": username, "password": "hunter2hunter2" });
-    assert_eq!(
-        post_status(&state, "/v1/accounts", &owner.token, body("demo")).await,
-        StatusCode::CONFLICT,
-        "the owner may not create an account named demo"
-    );
+    // The owner may not create an account named demo.
+    let (status, text) = post_json_raw(&state, "/v1/accounts", &owner.token, body("demo")).await;
+    expect_problem(status, &text, ProblemType::UsernameTaken);
     let (status, text) =
         crate::test_support::post_logged_out(&state, "/v1/accounts", body("Demo")).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::UsernameTaken);
@@ -1097,7 +1272,7 @@ async fn a_running_demo_build_refuses_a_second_build_and_a_delete() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     let gate = SECOND_BUILD_GATE.close();
-    state.demo_bundle_generator = second_build_bundle;
+    state.demo.bundle_generator = second_build_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let (status, body) = start_demo_build(&state, &owner.token).await;
@@ -1127,7 +1302,7 @@ async fn a_running_demo_build_refuses_a_second_build_and_a_delete() {
 async fn a_failed_demo_build_reports_why_and_leaves_no_account() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = no_bundle;
+    state.demo.bundle_generator = no_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let (status, body) = start_demo_build(&state, &owner.token).await;
@@ -1144,7 +1319,7 @@ async fn a_failed_demo_build_reports_why_and_leaves_no_account() {
     let info: Server = get_json(&state, "/v1/server", "").await;
     assert!(!info.demo_account);
 
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let (status, body) = start_demo_build(&state, &owner.token).await;
     assert_eq!(status, StatusCode::ACCEPTED, "{body}");
     let demo = demo_account_after_build(&state, &owner.token).await;
@@ -1177,11 +1352,11 @@ async fn demo_account_exists(fixture: &crate::test_support::TestFixture) -> bool
 async fn a_demo_build_the_server_stopped_is_removed_and_failed_on_the_next_start() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     fixture.demo_account().await;
     {
         let mut conn = fixture.conn().await;
-        crate::db::demo_account_build::begin(&mut conn)
+        crate::db::demo_account_build::begin(&mut conn, crate::test_support::fixed_instant())
             .await
             .unwrap();
     }
@@ -1218,7 +1393,7 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     let gate = STOPPED_BUILD_GATE.close();
-    state.demo_bundle_generator = stopped_build_bundle;
+    state.demo.bundle_generator = stopped_build_bundle;
     fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
@@ -1230,7 +1405,7 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
         "the build had not written its record when its generator reached the gate"
     );
 
-    state.demo_build.stop().await;
+    state.demo.build.stop().await;
 
     assert!(!demo_account_exists(&fixture).await);
     assert!(demo_build_is_unfinished(&fixture).await);
@@ -1239,7 +1414,7 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
 
     // The next start: a new server over the same database.
     let mut next = state.clone();
-    next.demo_build = DemoBuild::default();
+    next.demo.build = DemoBuild::default();
     crate::server_api::recover_stopped_demo_build(&next)
         .await
         .expect("the next start removes the stopped build");
@@ -1249,56 +1424,85 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
 }
 
 /// Stopping the server while a build generates its bundle stops the
-/// generator within moments, and leaves no temporary bundle directory. The
-/// generator runs as a blocking task, which the server's shutdown waits for,
-/// so without a flag the server waits for the whole data set, and the
-/// generator writes on into a directory the build already removed (#1431).
+/// generator at its next look at the flag, and leaves no temporary bundle
+/// directory. The generator runs as a blocking task, which the server's
+/// shutdown waits for, so without a flag the server waits for the whole data
+/// set, and the generator writes on into a directory the build already
+/// removed (#1431).
 #[test]
 fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundle() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
-    let (stopping, bundle) = runtime.block_on(async {
+    let gate = LONG_BUILD_GATE.close();
+    *LONG_BUNDLE.lock().unwrap() = LongBundle {
+        bundle: None,
+        stopped: None,
+    };
+    runtime.block_on(async {
         let fixture = test_fixture().await;
         let mut state = fixture.state.clone();
-        state.demo_bundle_generator = long_bundle;
+        state.demo.bundle_generator = long_bundle;
         let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
         let (status, body) = start_demo_build(&state, &owner.token).await;
         assert_eq!(status, StatusCode::ACCEPTED, "{body}");
-        let mut waited = 0;
-        let bundle = loop {
-            let given = LONG_BUNDLE.lock().unwrap().clone();
-            if let Some(bundle) = given.filter(|bundle| bundle.join("0.jsonl").is_file()) {
-                break bundle;
-            }
-            waited += 1;
-            assert!(waited < 400, "the generator never started writing");
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        };
-
-        let stopping = std::time::Instant::now();
-        state.demo_build.stop().await;
-        (stopping, bundle)
+        // The generator has written its first file and waits.
+        gate.arrival(&state).await;
+        state.demo.build.stop().await;
+        // The build was dropped, which set the flag; the generator goes on
+        // writing until it looks at it.
+        gate.open();
     });
     // What `main` does once `serve` returns: dropping the runtime waits for
     // every blocking task, the generator among them.
     drop(runtime);
 
-    assert!(
-        stopping.elapsed() < std::time::Duration::from_secs(10),
-        "the server took {:?} to stop",
-        stopping.elapsed()
+    let generated = LONG_BUNDLE.lock().unwrap();
+    assert_eq!(
+        generated.stopped,
+        Some(true),
+        "the generator wrote the whole data set rather than stopping at the flag"
     );
-    let work = bundle
-        .parent()
+    let work = generated
+        .bundle
+        .as_deref()
+        .and_then(std::path::Path::parent)
         .expect("the bundle sits in the build's directory");
     assert!(
         !work.exists(),
         "the temporary bundle directory {} is left",
         work.display()
     );
+}
+
+/// A build asked for once the server has been told to stop is refused with
+/// `server-stopping` and never runs. The stop waits for the build it found
+/// as the signal came, and one started after it would be cut off when the
+/// process exits (#2122).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_demo_build_asked_for_after_the_stop_is_refused_and_never_runs() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+    state.demo.build.stop().await;
+    let (status, body) = start_demo_build(&state, &owner.token).await;
+    crate::test_support::expect_problem(status, &body, ProblemType::ServerStopping);
+    assert!(!state.demo.build.is_building());
+
+    let ran = std::sync::Arc::new(AtomicBool::new(false));
+    assert!(state.demo.build.start(DemoDataSize::Medium));
+    let started = state.demo.build.run(state.cfg.clone(), state.db.clone(), {
+        let ran = std::sync::Arc::clone(&ran);
+        async move {
+            ran.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(0)
+        }
+    });
+    assert!(!started, "a build after the stop must not start");
+    assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
 }
 
 /// A build task that panics ends the build as failed, and the next build
@@ -1309,15 +1513,18 @@ fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundl
 async fn a_demo_build_that_panics_fails_and_the_next_build_starts() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    assert!(state.demo_build.start(DemoDataSize::Medium));
-    state
-        .demo_build
-        .run(state.cfg.clone(), state.db.clone(), async {
-            panic!("the build broke")
-        });
+    assert!(state.demo.build.start(DemoDataSize::Medium));
+    assert!(
+        state
+            .demo
+            .build
+            .run(state.cfg.clone(), state.db.clone(), async {
+                panic!("the build broke")
+            })
+    );
 
     let demo = demo_account_after_build(&state, &owner.token).await;
     assert_eq!(demo.status, DemoAccountStatus::Failed);
@@ -1337,7 +1544,7 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     let gate = ENTERED_BUILD_GATE.close();
-    state.demo_bundle_generator = entered_build_bundle;
+    state.demo.bundle_generator = entered_build_bundle;
     fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let visitor = crate::test_support::log_in(&state, "demo", "").await;
@@ -1352,16 +1559,12 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
 
     let info: Server = get_json(&state, "/v1/server", "").await;
     assert!(!info.demo_account, "the login card offers no Demo Account");
-    assert_eq!(
-        crate::test_support::login_status(&state, "demo", "").await,
-        StatusCode::UNAUTHORIZED,
-        "a login as demo is refused while the build runs"
-    );
-    assert_eq!(
-        get_status(&state, "/v1/session", &visitor_token).await,
-        StatusCode::UNAUTHORIZED,
-        "the Session made before the build ended when the build started"
-    );
+    // A login as demo is refused while the build runs.
+    let (status, text) = crate::test_support::log_in_raw(&state, "demo", "").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
+    // The Session made before the build ended when the build started.
+    let (status, text) = get_raw(&state, "/v1/session", &visitor_token).await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 
     gate.open();
     let demo = demo_account_after_build(&state, &owner.token).await;
@@ -1381,11 +1584,9 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
 /// preview yet is left for its own pass (#1220).
 #[test]
 fn a_demo_build_converts_no_other_accounts_attachments() {
-    // Taken outside the runtime: holding the guard across an await is what
-    // Clippy's `await_holding_lock` refuses.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    if media::testutil::real_ffmpeg().is_none() {
         return;
-    };
+    }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -1393,16 +1594,16 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
         .block_on(async {
             let fixture = test_fixture().await;
             let mut state = fixture.state.clone();
-            state.demo_bundle_generator = tiny_bundle;
+            state.demo.bundle_generator = tiny_bundle;
             let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
             let other = fixture.account("someone").await;
             crate::test_support::seed_one_message(&state, other).await;
 
             let assets = state.cfg.paths.assets_dir_for_account(other);
             let sha = crate::test_support::fake_sha256('c');
-            let blob = assets.join(&sha[..2]).join(format!("{sha}.png"));
-            std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
-            std::fs::write(&blob, media::testutil::PNG_1X1_RGB).unwrap();
+            let asset_file = assets.join(&sha[..2]).join(format!("{sha}.png"));
+            std::fs::create_dir_all(asset_file.parent().unwrap()).unwrap();
+            std::fs::write(&asset_file, media::testutil::PNG_1X1_RGB).unwrap();
             let part = assets.join(".incoming").join(format!("{sha}-upload.part"));
             std::fs::create_dir_all(part.parent().unwrap()).unwrap();
             std::fs::write(&part, b"half an attachment").unwrap();
@@ -1431,14 +1632,14 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
 
             assert!(part.is_file(), "the other account's Upload keeps its .part");
             let mut conn = fixture.conn().await;
-            let derived: Option<String> =
-                sqlx::query_scalar("SELECT derived_assets_path FROM attachments WHERE id = $1")
+            let preview: Option<String> =
+                sqlx::query_scalar("SELECT preview_assets_path FROM attachments WHERE id = $1")
                     .bind(attachment)
                     .fetch_one(&mut *conn)
                     .await
                     .unwrap();
             assert_eq!(
-                derived, None,
+                preview, None,
                 "the other account's attachment is not converted"
             );
             assert!(

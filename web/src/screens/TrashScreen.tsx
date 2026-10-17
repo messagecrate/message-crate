@@ -3,24 +3,28 @@ import { Link, useSearchParams } from "react-router-dom";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useRoutePagedList, useRouteQuery } from "../hooks/useRouteQuery";
+import { useSearchFields } from "../hooks/useSearchFields";
+import { errorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
+import { conversationName } from "../lib/conversationName";
 import { isNearEnd } from "../lib/listPaging";
+import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList, useRouteQuery } from "../lib/routeQuery";
-import { unsupportedFieldWords, useSearchFields } from "../lib/searchFields";
+import type { PagedFetchPage } from "../lib/routeQuery";
+import { unsupportedFieldWords } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import { getConversation, listContacts, listConversations } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
+import type { Conversation } from "../lib/types";
 import {
   useDeleteContact,
   useDeleteConversation,
   useEmptyTrash,
   useRestoreContact,
   useRestoreConversation,
-} from "../lib/trash";
-import type { Conversation } from "../lib/types";
-import { useAccountProfile } from "../lib/useAccountProfile";
+} from "./trash/useEmptyTrash";
 
 /**
  * Trash holds two kinds of thing, and this pane is where both come back — or
@@ -69,13 +73,13 @@ type PendingDelete =
   | { kind: "contact"; id: number; name: string }
   | { kind: "empty" };
 
-const sectionHeading =
+const sectionHeadingClass =
   "m-0 mb-2 text-[0.75rem] font-semibold uppercase tracking-[0.04em] text-muted";
 
-const errorBox =
+const errorBoxClass =
   "mb-3 rounded border border-danger-soft-border bg-danger-soft-bg px-3 py-2 text-[0.813rem] text-danger";
 
-const noteBox =
+const noteBoxClass =
   "mb-3 rounded border border-border bg-elevated px-3 py-2 text-[0.813rem] text-muted";
 
 /** Hover text on a disabled Delete when the account may not delete. */
@@ -91,10 +95,6 @@ function notSearchWords(words: readonly string[]): string {
 function appliesOnlyTo(words: readonly string[], list: "contacts" | "conversations"): string {
   const verb = words.length === 1 ? "applies" : "apply";
   return `${words.map((w) => `${w}:`).join(", ")} ${verb} to ${list} only`;
-}
-
-function plural(count: number, noun: string, many = `${noun}s`): string {
-  return `${count} ${count === 1 ? noun : many}`;
 }
 
 export default function TrashScreen() {
@@ -159,7 +159,7 @@ export default function TrashScreen() {
   });
 
   // AppLayout's left column sets `tsel` when a trashed conversation is clicked;
-  // it stays on `/trash` rather than navigating to the thread, so this pane can
+  // it stays on `/trash` rather than navigating to the conversation, so this pane can
   // show Restore and Delete for the row the person just selected.
   const {
     data: selected,
@@ -222,12 +222,8 @@ export default function TrashScreen() {
   // rest of it.
   const offerEmptyTrash = !nothingInTrash || searching;
 
-  const selectedName =
-    selected?.label ||
-    (selected?.is_group
-      ? `${selected.participants.length} participants`
-      : selected?.participants[0]?.name) ||
-    "this conversation";
+  // The selected conversation's name, for its panel and the delete dialog alike.
+  const selectedName = selected ? conversationName(selected) : null;
 
   const confirmDelete = () => {
     if (pending === null) return;
@@ -257,11 +253,11 @@ export default function TrashScreen() {
     deleteConversation.isPending || deleteContact.isPending || emptyTrash.isPending;
   const dialogError =
     pending?.kind === "conversation" && deleteConversation.error
-      ? apiErrorMessage(deleteConversation.error, "Could not delete this conversation.")
+      ? errorLine(deleteConversation.error, "Could not delete this conversation.")
       : pending?.kind === "contact" && deleteContact.error
-        ? apiErrorMessage(deleteContact.error, "Could not delete this contact.")
+        ? errorLine(deleteContact.error, "Could not delete this contact.")
         : pending?.kind === "empty" && emptyTrash.error
-          ? apiErrorMessage(emptyTrash.error, "Could not empty Trash.")
+          ? errorLine(emptyTrash.error, "Could not empty Trash.")
           : "";
 
   return (
@@ -281,28 +277,28 @@ export default function TrashScreen() {
         )}
       </div>
       {fieldsError ? (
-        <div className={errorBox}>
-          Could not load the search words. {apiErrorMessage(fieldsError, "")}
+        <div className={errorBoxClass}>
+          Could not load the search words. {errorLine(fieldsError, "")}
         </div>
       ) : unknownWords.length > 0 ? (
-        <div className={noteBox} role="status">
+        <div className={noteBoxClass} role="status">
           {notSearchWords(unknownWords)}
         </div>
       ) : nothingInTrash ? (
         <div className="text-[0.875rem] text-muted">
-          {searching ? "Nothing in Trash matches this search." : "Trash is empty."}
+          {searching ? "Nothing in Trash matches this search" : "Trash is empty"}
         </div>
       ) : (
         <>
           <section className="mb-8">
-            <h3 className={sectionHeading}>Conversations</h3>
+            <h3 className={sectionHeadingClass}>Conversations</h3>
             {error && (
-              <div className={errorBox}>{apiErrorMessage(error, "Could not load Trash.")}</div>
+              <div className={errorBoxClass}>{errorLine(error, "Could not load Trash.")}</div>
             )}
             {selectedId !== null ? (
               selectedLoading ? (
                 <div className="text-[0.875rem] text-muted">Loading…</div>
-              ) : selected ? (
+              ) : selected && selectedName !== null ? (
                 // Keyed by the selection, so a Restore error or a Restore still
                 // answering for the last conversation selected stays with it.
                 <SelectedConversation
@@ -323,20 +319,20 @@ export default function TrashScreen() {
                 />
               ) : (
                 <div className="text-[0.875rem] text-danger">
-                  {apiErrorMessage(selectedError, "Could not load this conversation.")}
+                  {errorLine(selectedError, "Could not load this conversation.")}
                 </div>
               )
             ) : contactsOnlyWords.length > 0 ? (
-              <div className={noteBox} role="status">
+              <div className={noteBoxClass} role="status">
                 {appliesOnlyTo(contactsOnlyWords, "contacts")}
               </div>
             ) : error ? null : total === 0 ? (
               <div className="text-[0.875rem] text-muted">
-                {searching ? "No conversations match this search." : "No conversations in Trash."}
+                {searching ? "No conversations match this search" : "No conversations in Trash"}
               </div>
             ) : (
               <div className="text-[0.875rem] text-muted">
-                {plural(total, "conversation")}
+                {countOf(total, "conversation")}
                 {searching ? " matching this search" : ""} in Trash. Select one on the left to view
                 it.
               </div>
@@ -344,31 +340,31 @@ export default function TrashScreen() {
           </section>
 
           <section>
-            <h3 className={sectionHeading}>Contacts</h3>
+            <h3 className={sectionHeadingClass}>Contacts</h3>
             {contactsError && (
-              <div className={errorBox}>
-                {apiErrorMessage(contactsError, "Could not load trashed contacts.")}
+              <div className={errorBoxClass}>
+                {errorLine(contactsError, "Could not load trashed contacts.")}
               </div>
             )}
             {restoreContact.error && (
-              <div className={errorBox}>
-                {apiErrorMessage(restoreContact.error, "Could not restore this contact.")}
+              <div className={errorBoxClass}>
+                {errorLine(restoreContact.error, "Could not restore this contact.")}
               </div>
             )}
             {conversationsOnlyWords.length > 0 ? (
-              <div className={noteBox} role="status">
+              <div className={noteBoxClass} role="status">
                 {appliesOnlyTo(conversationsOnlyWords, "conversations")}
               </div>
             ) : contactsError ? null : contacts.length === 0 ? (
               <div className="text-[0.875rem] text-muted">
-                {searching ? "No contacts match this search." : "No contacts in Trash."}
+                {searching ? "No contacts match this search" : "No contacts in Trash"}
               </div>
             ) : (
               <>
                 <div className="mb-2 text-[0.875rem] text-muted">
-                  {plural(contactTotal, "contact")}
+                  {countOf(contactTotal, "contact")}
                   {searching ? " matching this search" : ""} in Trash
-                  {moreContacts ? `, ${contacts.length} shown` : ""}.
+                  {moreContacts ? `, ${contacts.length.toLocaleString()} shown` : ""}.
                 </div>
                 <ul
                   aria-label="Contacts in Trash"
@@ -393,7 +389,7 @@ export default function TrashScreen() {
                             <ContactLabel name={contact.name} addresses={contact.addresses} />
                           </div>
                           <div className="text-[0.75rem] text-muted">
-                            {plural(contact.identity_count, "identity", "identities")}
+                            {countOf(contact.identity_count, "identity", "identities")}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -445,7 +441,7 @@ export default function TrashScreen() {
         title="Delete this conversation?"
         body={
           pending?.kind === "conversation"
-            ? `Deletes ${pending.name} and its ${plural(pending.messageCount, "message")} from your Message Crate. Attachments only these messages use go with them.`
+            ? `Deletes ${pending.name} and its ${countOf(pending.messageCount, "message")} from your Message Crate. Attachments only these messages use go with them.`
             : ""
         }
         confirmLabel="Delete"
@@ -502,13 +498,16 @@ function SelectedConversation({
   const restoreConversation = useRestoreConversation();
   return (
     <div className="rounded border border-border bg-elevated p-4">
-      <div className="mb-1 text-[0.938rem] font-semibold text-text">{name}</div>
+      {/* Clamped as the conversation list clamps a group's names, since an untitled group is named after everyone in it. */}
+      <div className="mb-1 line-clamp-2 break-words text-[0.938rem] font-semibold text-text">
+        {name}
+      </div>
       <div className="mb-3 text-[0.75rem] text-muted">
-        {plural(conversation.message_count, "message")}
+        {countOf(conversation.message_count, "message")}
       </div>
       {restoreConversation.error && (
-        <div className={errorBox}>
-          {apiErrorMessage(restoreConversation.error, "Could not restore this conversation.")}
+        <div className={errorBoxClass}>
+          {errorLine(restoreConversation.error, "Could not restore this conversation.")}
         </div>
       )}
       <div className="flex items-center gap-4">

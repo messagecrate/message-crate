@@ -7,9 +7,14 @@ license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
 anyhow = { workspace = true }
-csv = { workspace = true }
-message-ir = { workspace = true }
+file-io = { workspace = true }
 serde = { workspace = true }
+
+# `access`, to ask whether this account may run a file (`is_executable`).
+# `rustix` makes the call in safe Rust; `libc::access` would need `unsafe`
+# and a `CString`. It is in the lockfile already, through `tempfile`.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

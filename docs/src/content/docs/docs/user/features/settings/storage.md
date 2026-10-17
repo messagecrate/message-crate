@@ -19,7 +19,7 @@ Two lines under it give four counts: messages, attachments, conversations, and c
 ## Import history
 
 **Import history** lists the account's Import Runs, newest first.
-A run is listed whether it completed, failed, or was cancelled, and a person can't delete one.
+A run is listed whether it completed, failed, or was canceled, and a person can't delete one.
 
 The list shows 50 runs to a page.
 **Back** and **Next** move between pages.
@@ -101,7 +101,7 @@ The list shows 50 runs to a page.
 |---|---|
 | **Date** | When the run finished, or when it started if it has not finished |
 | **Scope** | What was asked for |
-| **Status** | **Running**, **Completed**, **Failed**, or **Cancelled** |
+| **Status** | **Running**, **Completed**, **Failed**, or **Canceled** |
 | **Messages** | Messages that matched when the run started |
 | **Delivered** | Messages the run handed over |
 | **Attachments** | Distinct attachments among the matching messages |
@@ -121,7 +121,9 @@ How an export is started is covered in [Export](/docs/user/features/messages/exp
 ## Largest attachments
 
 **Largest attachments** lists the account's 100 largest attachments by file size, 20 to a page.
+The line above the list says how many it holds, such as **Top 100 attachments by file size · 20 per page**.
 **Back** and **Next** move between pages.
+An account with no attachments of known size sees **No attachments with sizes yet** instead.
 
 | Column | Shows |
 |---|---|
@@ -137,3 +139,26 @@ The Owner reads another account's **Storage** tab from [Owner Home](/docs/user/f
 Two parts are held back, because they say who the account talks to.
 The **Contacts** part of an Import Run's record gives the two counts without the list.
 **Largest attachments** has no **Conversation** column.
+
+The Owner's view of an Import Run's record has one part the account's own does not: **Thumbnails and Previews**, between **Contacts** and **Log**.
+It lists the run's attachments whose Thumbnail or Preview the server could not make, so the Owner can see which files a damaged backup or a slow computer left without them.
+The server makes them after the run's data arrives, so the part fills in once the server has tried.
+
+A line first says how many of the attachments the run wrote have no Thumbnail or Preview, such as **2 of 212 attachments have no Thumbnail or Preview**.
+A table then counts them by kind of failure, with one column for **No Thumbnail** and one for **No Preview**:
+
+| Kind of failure | Meaning |
+|---|---|
+| **Conversion failed** | ffmpeg could not read or convert the file |
+| **Stopped making progress** | ffmpeg stopped making progress for a while, so the server stopped it |
+| **Damaged, ran past its length** | ffmpeg ran past twice a video's length, as it does looping on a damaged file, so the server stopped it |
+| **Took too long** | Reading one frame of the file, or converting an audio file, did not finish in time |
+| **Original file missing** | The server holds no copy of the file |
+| **Server problem** | Anything else that went wrong on the server |
+
+Under the counts, each such attachment is listed with its **Name**, **Type** and **Size**, and under **Thumbnail** and **Preview** the kind of failure and the reason the server recorded, or a dash for a version that was made or that the attachment does not need.
+A run whose attachments all got what they need reads "No attachment of this import is missing a Thumbnail or Preview the server tried to make."
+
+The list names each attachment as a file, by the metadata the Owner may read.
+The Owner never sees the attachment, its Thumbnail or its Preview, nor the message or conversation it belongs to.
+Nothing on the part tries again: the server tries a file again only when someone runs `message-crate-server process-assets`.

@@ -6,14 +6,16 @@ import ContactSortMenu from "../components/ContactSortMenu";
 import ExportAddressBookButton from "../components/ExportAddressBookButton";
 import GroupsMenu from "../components/GroupsMenu";
 import InfiniteOffsetList from "../components/InfiniteOffsetList";
-import { useSetRightToolbar } from "../components/useRightToolbar";
+import { useContactGroupActions } from "../hooks/useContactGroupActions";
+import { useContactGroups } from "../hooks/useContactGroups";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useResetOnChange } from "../hooks/useResetOnChange";
+import { useSetRightToolbar } from "../hooks/useRightToolbar";
+import { useRoutePagedList } from "../hooks/useRouteQuery";
+import { useSelectAll } from "../hooks/useSelectAll";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import {
-  contactBelongsToGroup,
-  groupListQuery,
-  useContactGroupActions,
-  useSetContactGroupMembers,
-} from "../lib/contactGroups";
+import { contactBelongsToGroup, groupListQuery } from "../lib/contactGroups";
 import { contactLabelText } from "../lib/contactLabel";
 import {
   type ContactSortState,
@@ -26,20 +28,18 @@ import {
 import { formatDay } from "../lib/formatDate";
 import { highlightText } from "../lib/highlightText";
 import { PAGE_SIZE_CONTACTS_FIRST, PAGE_SIZE_FIRST } from "../lib/listPaging";
-import { checksFromMembers } from "../lib/membershipChecks";
+import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { keys } from "../lib/queryKeys";
 import { applyCheckedRange } from "../lib/rangeCheck";
-import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
+import type { PagedFetchPage } from "../lib/routeQuery";
 import { hasFieldToken, stripFieldTokens } from "../lib/searchFields";
 import { listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
-import { useTimeZone } from "../lib/timeZone";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
-import { useContactGroups } from "../lib/useContactGroups";
-import { useResetOnChange } from "../lib/useResetOnChange";
-import { useSelectAll } from "../lib/useSelectAll";
+import { useSetContactGroupMembers } from "./contacts/useSetContactGroupMembers";
 
-const FILTER_DEBOUNCE_MS = 300;
+/** How long the search waits after the last key before it asks the server. */
+export const FILTER_DEBOUNCE_MS = 300;
 /** Fixed row height keeps virtualization slots aligned with flex-centered content. */
 const CONTACT_ROW_HEIGHT = 49;
 
@@ -62,7 +62,7 @@ function filterNeedles(raw: string): FilterNeedles {
 
   let handle: string | null = null;
   const found = q.match(/(^|\s)identity:("([^"]+)"|(\S+))/i);
-  if (found) handle = found[3] ?? found[4].replace(/^"|"$/g, "");
+  if (found) handle = found[3] ?? found[4]?.replace(/^"|"$/g, "") ?? null;
 
   return { text: stripFieldTokens(q), handle };
 }
@@ -127,7 +127,6 @@ export default function ContactList({
   /** Increment to uncheck every row (Clear contacts on the selection card). */
   clearCheckedRev?: number;
 }) {
-  const [serverQ, setServerQ] = useState("");
   const [sortState, setSortState] = useState<ContactSortState>(() => loadContactSort());
   const zone = useTimeZone();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
@@ -142,6 +141,27 @@ export default function ContactList({
   const groupActions = useContactGroupActions();
   const setGroupMembers = useSetContactGroupMembers();
   const setRightToolbar = useSetRightToolbar();
+
+  const groupActive = Boolean(groupFilter);
+  const advancedActive = hasFieldToken(filter);
+  const combined = groupListQuery(groupFilter, filter);
+  const groupPageOnly = groupActive && !filter.trim();
+  // The query the list wants from the server, and whether it waits for typing to stop.
+  let wantedQ = combined;
+  let waitForTyping = false;
+  if (!combined.trim()) {
+    // Empty filter: load the full catalog.
+    wantedQ = "";
+  } else if (haveFullCatalog && !advancedActive) {
+    // The full catalog is already in memory, so filter it in the browser.
+    wantedQ = "";
+  } else {
+    // A search waits for the last key. A Contact Group page opens at once.
+    waitForTyping = !groupPageOnly;
+  }
+  // A search keeps the query in use until it settles. The query starts empty,
+  // so a list opened on a search loads the full catalog first.
+  const serverQ = useDebouncedValue(wantedQ, waitForTyping ? FILTER_DEBOUNCE_MS : 0, "");
 
   const onSortChange = (next: ContactSortState) => {
     setSortState(next);
@@ -191,9 +211,6 @@ export default function ContactList({
     !loading && !refreshing && contacts.length >= total && (total > 0 || contacts.length === 0);
   if (catalogComplete && !serverQ.trim() && !haveFullCatalog) setHaveFullCatalog(true);
 
-  const groupActive = Boolean(groupFilter);
-  const advancedActive = hasFieldToken(filter);
-
   // A new filter or group unticks every row, so a tick never applies to a row the list no longer shows.
   useResetOnChange([filter, groupFilter], () => {
     setRangeAnchor(null);
@@ -205,27 +222,6 @@ export default function ContactList({
     setRangeAnchor(null);
     setCheckedIds(new Set());
   }, [clearCheckedRev]);
-
-  useEffect(() => {
-    const combined = groupListQuery(groupFilter, filter);
-    // Empty filter: load the full catalog.
-    if (!combined.trim()) {
-      setServerQ("");
-      return;
-    }
-    // The full catalog is already in memory, so filter it in the browser.
-    if (haveFullCatalog && !advancedActive) {
-      setServerQ("");
-      return;
-    }
-    // Group-page click: do not wait for the search debounce.
-    if (groupActive && !filter.trim()) {
-      setServerQ(combined);
-      return;
-    }
-    const t = window.setTimeout(() => setServerQ(combined), FILTER_DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [filter, haveFullCatalog, advancedActive, groupFilter, groupActive]);
 
   const filterActive = filter.trim().length > 0;
   const needles = filterNeedles(filter);
@@ -352,20 +348,14 @@ export default function ContactList({
     [setGroupMembers.mutateAsync],
   );
 
-  /** Drop every group on the selected contacts: one write per name, each with its own rollback. */
-  const clearAllMembership = useCallback(async () => {
-    const targets = assignTargetsRef.current;
-    const ids = targets.map((c) => Number(c.id)).filter((id) => Number.isFinite(id) && id > 0);
-    if (ids.length === 0) return;
-    const names = new Set<string>();
-    for (const c of targets) {
-      for (const g of c.groups ?? []) names.add(g);
-    }
-    if (names.size === 0) return;
-    await Promise.allSettled(
-      [...names].map((name) => setGroupMembers.mutateAsync({ name, patch: { remove: ids } })),
-    );
-  }, [setGroupMembers.mutateAsync]);
+  const clearAllMembership = useCallback(
+    () =>
+      clearAllMembers(
+        assignTargetsRef.current.map((c) => c.groups ?? []),
+        (name) => applyMembership(name, false),
+      ),
+    [applyMembership],
+  );
 
   const menuDisabled = assignTargets.length === 0 && !groupsMenuOpen;
 
@@ -475,7 +465,7 @@ export default function ContactList({
         !loading ? (
           <div className="p-4 text-[0.813rem] text-muted">
             {filterActive
-              ? "No contacts match this filter"
+              ? "No contacts match this search"
               : groupFilter === "none"
                 ? "Every contact is in a Contact Group"
                 : groupFilter === UNKNOWN_GROUP

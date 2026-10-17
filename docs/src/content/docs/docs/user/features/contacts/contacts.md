@@ -52,12 +52,12 @@ The identity table has these columns:
 
 | Column | What it shows |
 |---|---|
-| **Service** | **Text message**, **Email**, or **WhatsApp** |
+| **Service** | **Text Message**, **Email**, or **WhatsApp** |
 | **Identity** | The phone number, email address, or username |
 | **First heard from** | The date of the first message the contact sent from this identity |
 | **Last heard from** | The date of the last message the contact sent from this identity |
 | **Conversations** | How many conversations the identity takes part in |
-| **Direct messages** | How many messages the contact sent from it in one-to-one conversations |
+| **One-to-one messages** | How many messages the contact sent from it in one-to-one conversations |
 | **Group messages** | How many messages the contact sent from it in group conversations |
 
 The message counts and the two dates cover only messages the contact sent.
@@ -81,12 +81,12 @@ An Address Book load replaces it only when the file gives the contact a differen
 ## Add or remove an identity
 
 **Add identity** opens a dialog with two fields.
-**Service** is **Text message**, **Email**, or **WhatsApp**.
+**Service** is **Text Message**, **Email**, or **WhatsApp**.
 **Identity** is the phone number or the email address.
 
-- A phone number must have 7 to 15 digits. Spaces, dots, dashes, and parentheses are accepted.
-- An email address must have the form `name@example.com`.
-- The same number on **Text message** and on **WhatsApp** is two identities, so both can be added.
+- Under **Email**, the identity must have the form `name@example.com`.
+- **Text Message** and **WhatsApp** take any value, not only a phone number, such as a WhatsApp internal id like `123456789012345@lid` or a sender name like `AMAZON`, as an import adds them. A mistyped phone number is added as typed.
+- The same number on **Text Message** and on **WhatsApp** is two identities, so both can be added.
 - An identity the contact already has is refused with **This identity is already in the list.**
 - An identity that belongs to another contact with a name is refused, because an identity belongs to at most one contact. It must be removed from the other contact first. An identity on a contact with no name moves to this one, and a contact with no name left with no identity goes.
 
@@ -131,7 +131,7 @@ The right pane shows a table headed with the count, such as **3 contacts selecte
 | **First heard from** | The date of the first message the contact sent |
 | **Last heard from** | The date of the last message the contact sent |
 | **Conversations** | How many conversations the contact takes part in |
-| **Direct Messages** | How many messages the contact sent in one-to-one conversations |
+| **One-to-one Messages** | How many messages the contact sent in one-to-one conversations |
 | **Group Messages** | How many messages the contact sent in group conversations |
 
 Changing the search or opening a Contact Group unchecks every row, because the checked contacts might no longer be on the screen.
@@ -187,6 +187,7 @@ Contacts themselves arrive with message imports.
 The file is how fifty Unknown contacts are named in one sitting, how a wrongly linked number is moved, and how Contact Groups are filled in bulk.
 
 The work has three steps: export the file, edit it, load it back.
+A phone's or Google Contacts' vCard file can start the same work: [Convert a vCard file](#convert-a-vcard-file) turns it into the address book to edit and load.
 
 ### Export the file
 
@@ -202,26 +203,32 @@ A browser saves it to its downloads, and the desktop app asks where to save it.
 
 ### What the file holds
 
-The file has one row for each identity, and six columns.
+The file has one row for each identity, and five columns.
 
 | Column | What it holds |
 |---|---|
 | `contact_id` | The number Message Crate knows the contact by. Rows with the same value are one contact. |
 | `display_name` | The contact's name. Blank for a contact with no name. |
+| `service` | `Text Message`, `Email` or `WhatsApp`, the services offered where an identity is added. `Email` is an email address on Text Message, where iMessage reaches it. |
+| `identity` | The phone number, email address, or other name. |
 | `groups` | The contact's Contact Groups, separated by `;`. A Contact Group's name can't hold `;`, so the cell never needs escaping. |
-| `service` | `phone` for a text message identity, `whatsapp` for a WhatsApp one. |
-| `identity_type` | `phone`, `email`, `username`, or `other`. |
-| `identity` | The phone number, email address, or username. |
+
+The file states no type for an identity.
+The service says which kinds of identity it can be, and the identity's shape picks among them, as adding an identity on the Contacts screen does:
+
+- **Text Message** takes a phone number, an email address, or any other name, such as a sender like `AMAZON`.
+- **Email** takes an email address only.
+- **WhatsApp** takes a phone number, or one of WhatsApp's own ids, such as `123456789012345@lid`. It never takes an email address.
 
 A contact with three identities is three rows, and its name and Contact Groups repeat on each.
-A contact with no identity is one row with the last three columns blank.
+A contact with no identity is one row with `service` and `identity` blank.
 
 ```csv title="address-book.csv"
-contact_id,display_name,groups,service,identity_type,identity
-12,Ada Lovelace,Family;Work,phone,phone,'+15555550100
-12,Ada Lovelace,Family;Work,whatsapp,phone,'+15555550100
-12,Ada Lovelace,Family;Work,phone,email,ada@example.com
-31,,,phone,phone,'+15555550142
+contact_id,display_name,service,identity,groups
+12,Ada Lovelace,Email,ada@example.com,Family;Work
+12,Ada Lovelace,Text Message,'+15555550100,Family;Work
+12,Ada Lovelace,WhatsApp,'+15555550100,Family;Work
+31,,Text Message,'+15555550142,
 ```
 
 Contact 31 above is Unknown: it has an identity and no name.
@@ -241,7 +248,7 @@ The `identity` column should be kept as text, because a spreadsheet that reads `
 - **Put a contact in a Contact Group.** Add the group's name to `groups`. A name that matches no Contact Group creates one.
 - **Give a contact another identity.** Add a row with the same `contact_id`.
 - **Move an identity to another contact.** Change the row's `contact_id` to the other contact's.
-  A row moves only the identity it lists. A phone number on **Text message** and the same number on **WhatsApp** are two identities, so a row that moves one of them leaves the other where it is.
+  A row moves only the identity it lists. A phone number on **Text Message** and the same number on **WhatsApp** are two identities, so a row that moves one of them leaves the other where it is.
   To move both, give each its own row under the same `contact_id`.
 - **Make a new contact.** Leave `contact_id` blank. To give a new contact several identities, put the same made-up word, such as `new-1`, in `contact_id` on each of its rows.
 - **Leave a contact alone.** Delete its rows from the file. A contact the file does not mention is never changed.
@@ -276,7 +283,8 @@ A load refuses:
 - A row with more cells than the header, most often a name with a comma that is not in double quotes. A row with fewer cells reads the missing ones at its end as blank.
 - A phone number that is not 4 to 15 digits, or holds anything but digits, spaces, and `+ - ( ) .`
 - An email address without exactly one `@` and text on both sides of it.
-- A `service` or `identity_type` that is not one of the values in the table above.
+- A `service` other than `Text Message`, `Email` or `WhatsApp`. Case doesn't matter.
+- An identity its service can't take: an email address on `WhatsApp`, or anything but an email address on `Email`.
 - Two rows of one contact that give different names or different Contact Groups.
 - One identity listed under two contacts.
 - A Contact Group name the product reserves, such as `Unknown`.
@@ -286,4 +294,32 @@ The last rule protects a named contact from losing an identity unseen.
 An identity moves freely from a contact with no name, which is what naming the Unknown contacts needs.
 To move an identity between two named contacts, both must be in the file.
 
-Message Crate does not read a phone's vCard (`.vcf`) file.
+### Convert a vCard file
+
+A phone and Google Contacts export contacts as a vCard file, ending in `.vcf`, and the file must be UTF-8 text, which they write.
+Versions 2.1, 3.0 and 4.0 of vCard are read.
+A vCard 2.1 file, such as an Android phone's, can write a name in another character set and say which, such as Shift_JIS from a Japanese phone.
+The name is read in that character set.
+A card that names a character set Message Crate can't read is refused with the card's position and the character set, rather than converted with the name garbled.
+Message Crate does not load a vCard file, because a card lists every number and address whether or not a message ever used it, and can't say which service a number is on.
+It converts one into the address book instead, to edit and then load.
+
+**Convert a vCard file** is in **Settings**, on the **Profile** tab, under **Address book**, below the load.
+It takes one `.vcf` file of at most 64 MB, and saves `address-book.csv` where Export saves it.
+Nothing goes into Message Crate until the file is loaded.
+
+**Country for numbers saved without +** is the country a number like `(555) 555-0100` is in, the same list the Import form offers.
+Such a number is written with its `+` in that country, `+15555550100` for the United States.
+A number saved with its `+`, and one that isn't a valid number in that country, is written exactly as the card has it.
+With **Not stated**, every number is written as the card has it.
+
+The file has one row for each phone number and each email address on each card:
+
+- `contact_id` is `card1`, `card2` and so on, by the card's place in the file, so each card loads as one new contact.
+- `display_name` is the card's name, blank for a card with none.
+- `service` is `Text Message` for a number and `Email` for an email address. A card can't say that a number is on WhatsApp, so no row says `WhatsApp`. A row changed to `WhatsApp` in the spreadsheet loads that number on WhatsApp.
+- `groups` is blank. A card's categories, such as Google's labels, are not carried over.
+
+A card with no number and no email address gives no rows.
+A number on two cards is written on both, and the load refuses the file and names the two rows, so the fix is to keep one.
+Each new contact is a new contact even when its number already belongs to one, so a card whose number an import already linked to a named contact is refused too: give the row that contact's `contact_id` from an export, or delete the row.

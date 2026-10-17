@@ -1,5 +1,5 @@
+import type { PathStat } from "../../lib/desktop/fs";
 import type { ActiveImportRun, SourceFingerprint } from "../../lib/importRun";
-import type { PathStat } from "../../lib/tauri";
 
 /** What entering Import should do about an Import Run that already exists. */
 export type ResumeDecision = {
@@ -16,7 +16,7 @@ export type ResumeDecision = {
     // fresh from the directory and shown again, nothing restored, because the
     // directory is the truth.
     | "resume_review"
-    // A run that died mid Media stage: the stage re-runs over whatever
+    // A run that died mid Media Stage: the stage re-runs over whatever
     // originals it had not reached yet, which is safe because an original
     // still on disk always means work remains, then
     // continues to the Media Review exactly as the normal flow does.
@@ -115,6 +115,9 @@ export function checkSourceFingerprint(
   stat: PathStat | null,
 ): FingerprintCheck {
   if (!stored) return "unknown";
+  // A source the operating system will not describe says nothing about
+  // whether it is there or unchanged, so it is never read as gone or changed.
+  if (stat?.unreadable) return "unknown";
   if (!stat?.exists) return "source_missing";
   return stored.size_bytes === stat.sizeBytes && stored.modified_unix_ms === stat.modifiedUnixMs
     ? "match"

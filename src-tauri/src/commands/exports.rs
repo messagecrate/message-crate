@@ -57,7 +57,7 @@ pub fn finish_export_dir(
 }
 
 /// Delete an Export's or Convert's directory after the run failed or was
-/// cancelled.
+/// canceled.
 ///
 /// # Errors
 ///

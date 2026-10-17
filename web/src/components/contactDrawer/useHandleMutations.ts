@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
+import { useIdentityCountryPick } from "../../hooks/useIdentityCountryPick";
+import { useUpdateContact } from "../../hooks/useUpdateContact";
+import { errorLine } from "../../lib/apiErrorMessage";
+import type { ContactHandle } from "../../lib/contactDetail";
 import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
-import { useIdentityCountryPick } from "../useIdentityCountryPick";
 import { formatOfferedServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 
@@ -18,7 +20,7 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
   );
   const busy = updateContact.isPending;
   // The dialogs stay open on a refusal and show this, so a person can retry.
-  const error = updateContact.error ? updateContact.error.message : "";
+  const error = updateContact.error ? errorLine(updateContact.error) : "";
 
   const requestRemoveHandle = (h: ContactHandle) => {
     if (busy) return;

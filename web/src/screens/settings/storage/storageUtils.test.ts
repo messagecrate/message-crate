@@ -3,7 +3,6 @@ import {
   type AccountImportRun,
   describeExportRun,
   describeExportScope,
-  formatBytes,
   formatImportDate,
   importBackup,
   importStatusLabel,
@@ -46,27 +45,13 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
   };
 }
 
-describe("formatBytes", () => {
-  it("handles zero and non-finite", () => {
-    expect(formatBytes(0)).toBe("0 B");
-    expect(formatBytes(-1)).toBe("0 B");
-    expect(formatBytes(Number.NaN)).toBe("0 B");
-  });
-
-  it("scales units", () => {
-    expect(formatBytes(512)).toBe("512 B");
-    expect(formatBytes(1536)).toBe("1.5 KB");
-    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
-  });
-});
-
 describe("importStatusLabel", () => {
   it("reads sentence-case for every status the server can return", () => {
     expect(importStatusLabel("running")).toBe("Running");
     expect(importStatusLabel("completed")).toBe("Completed");
     expect(importStatusLabel("completed_with_issues")).toBe("Completed with issues");
     expect(importStatusLabel("failed")).toBe("Failed");
-    expect(importStatusLabel("cancelled")).toBe("Cancelled");
+    expect(importStatusLabel("canceled")).toBe("Canceled");
   });
 
   it("shows the raw word when a server newer than this build sends one", () => {
@@ -115,8 +100,8 @@ describe("toImportSummaryView", () => {
     );
   });
 
-  it("reads a cancelled Import Run as cancelled, not failed", () => {
-    expect(toImportSummaryView(accountImportRun({ status: "cancelled" })).status).toBe("cancelled");
+  it("reads a canceled Import Run as canceled, not failed", () => {
+    expect(toImportSummaryView(accountImportRun({ status: "canceled" })).status).toBe("canceled");
   });
 
   it("passes completed_with_issues through", () => {
@@ -213,6 +198,9 @@ describe("toImportSummaryView for the owner", () => {
       note_count: 1,
       contacts_new: 0,
       contacts_changed: 0,
+      written_attachment_count: 0,
+      not_made_counts: [],
+      not_made_attachments: [],
     });
     expect(view.messagesParsed).toBe(12);
     expect(view.messagesInserted).toBe(10);
@@ -259,6 +247,9 @@ describe("importBackup", () => {
         note_count: 0,
         contacts_new: 0,
         contacts_changed: 0,
+        written_attachment_count: 0,
+        not_made_counts: [],
+        not_made_attachments: [],
       }),
     ).toBeNull();
   });

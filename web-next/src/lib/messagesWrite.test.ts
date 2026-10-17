@@ -59,7 +59,7 @@ describe("deleteAllMessagesForAccount", () => {
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
                group_title, source_file
-             ) VALUES (?, ?, 'individual', NULL, 'test.json')`,
+             ) VALUES (?, ?, 'one-to-one', NULL, 'test.json')`,
           )
           .run(accountId, handleId).lastInsertRowid,
       );
@@ -77,7 +77,7 @@ describe("deleteAllMessagesForAccount", () => {
       db.prepare(
         `INSERT INTO attachments (
            message_id, mime_type, original_name, assets_path,
-           derived_mime_type, derived_assets_path
+           preview_mime_type, preview_assets_path
          ) VALUES (?, 'image/jpeg', 'photo.jpg', 'photo.jpg',
                    'image/webp', 'photo.webp')`,
       ).run(messageId);

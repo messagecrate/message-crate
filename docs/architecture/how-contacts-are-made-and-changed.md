@@ -93,7 +93,7 @@ flowchart TD
 ### What gets no contact
 
 A group conversation's own id, such as `chat1000000005`, is stored on the
-conversation so the group is recognised next time. It is nobody's identity
+conversation so the group is recognized next time. It is nobody's identity
 and gets no contact. The same holds for the `orphaned:` key of a
 conversation of orphaned messages; the person in it is its participant, and
 gets a contact as one.
@@ -109,9 +109,14 @@ from the Trash. The membership is a snapshot and does not change later.
 The code is `plan` and `apply` in
 `crates/server/server/src/db/address_book.rs`.
 
-The file has one row per identity and six columns: `contact_id`,
-`display_name`, `groups`, `service`, `identity_type`, `identity`. A load runs
+The file has one row per identity and five columns: `contact_id`,
+`display_name`, `service`, `identity`, `groups`. `service` is `Text Message`,
+`Email` or `WhatsApp`, and no column states a type. A load runs
 in Append mode, the default, or in Edit mode.
+
+A vCard file becomes such a file through `from_vcard` in the same module,
+which writes one row per number and email address on each card under
+`card1`, `card2`, … and loads nothing.
 
 ### A cell a spreadsheet would run
 
@@ -123,7 +128,9 @@ A contact named `=HYPERLINK(…)` is written `'=HYPERLINK(…)`, and a phone
 number `+6555550100` is written `'+6555550100`.
 CSV quoting does not prevent this, because a spreadsheet removes the quotes
 and then reads the cell as typed.
-The code is `written_cell` and `read_cell` in the same file.
+The code is `written_cell` and `read_cell` in `message-crate-csv`
+(`crates/libs/csv/src/lib.rs`). Every CSV file Message Crate writes goes
+through them.
 
 The load takes off one `'` that comes before one of those characters, in any
 column.
@@ -213,11 +220,19 @@ The code is `create_contact` and `propose_name` in
 
 ### 4. Each identity: is the row valid?
 
-A row that leaves `service`, `identity_type` and `identity` all blank lists no
+A row that leaves `service` and `identity` both blank lists no
 identity. That is how a contact with no identity is written.
 
-An identity written exactly as Message Crate already keys it is accepted as
-it stands, so an exported file always loads back.
+`service` names the service: `Text Message` and `Email` are the `phone`
+service, and `WhatsApp` is `whatsapp`.
+An identity written exactly as Message Crate already keys it on that service
+is accepted as it stands, with the type it was stored with, so an exported
+file always loads back.
+Any other is typed by its shape among the types the service carries: a
+number is `phone`, an `@` address is `email`, and anything else is `other`.
+`Email` takes an email address only. On `WhatsApp`, one of WhatsApp's own
+ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`) is `other`, as an import stores it, and any other `@` address
+is refused, because WhatsApp carries no email address.
 
 A phone number written without `+` that matches no key as written may be one
 whose `+` a spreadsheet dropped.
@@ -242,16 +257,16 @@ Its `notes` name each row it read with the `+` back, and each value without
 
 ```mermaid
 flowchart TD
-  A{"service, identity_type and identity all blank?"} -- yes --> A1["Row lists no identity"]
-  A -- no --> B{"service is phone or whatsapp?"}
+  A{"service and identity both blank?"} -- yes --> A1["Row lists no identity"]
+  A -- no --> B{"service is Text Message, Email or WhatsApp?"}
   B -- no --> R1{{"Refused: unknown service"}}
-  B -- yes --> C{"identity_type is phone, email, username or other?"}
-  C -- no --> R2{{"Refused: unknown identity_type"}}
-  C -- yes --> D{"identity blank?"}
+  B -- yes --> D{"identity blank?"}
   D -- yes --> R3{{"Refused: identity is blank"}}
-  D -- no --> E{"Written exactly as an identity Message Crate already holds?"}
-  E -- yes --> K["Key is the text as written"]
-  E -- no --> F{"identity_type"}
+  D -- no --> E{"Written exactly as an identity Message Crate already holds on that service?"}
+  E -- yes --> K["Key is the text as written, with the stored type"]
+  E -- no --> C{"Does the service carry the shape's type? Email takes only an email address"}
+  C -- no --> R2{{"Refused: names the service and the address"}}
+  C -- yes --> F{"The shape's type"}
   F -- phone --> G{"4 to 15 digits, and only digits, spaces and + - ( ) . ?"}
   G -- no --> R4{{"Refused: not a phone number"}}
   G -- yes --> P{"Written with + ?"}
@@ -264,7 +279,7 @@ flowchart TD
   F -- email --> H{"One @ with text on both sides, no spaces?"}
   H -- no --> R5{{"Refused: not an email address"}}
   H -- yes --> H1["Key is the address in lower case"]
-  F -- "username or other" --> I1["Key is the text as written"]
+  F -- other --> I1["Key is the text as written"]
 ```
 
 ### 5. Each identity: who gets it?
@@ -377,7 +392,7 @@ identity (step 4). Each sentence starts with its row number.
 | | Import of a backup | Address book load |
 |---|---|---|
 | What starts it | Each person the backup's messages meet: a participant, the other side of a one-to-one conversation, or a sender | Each row of the CSV |
-| New contact | One for every address no contact holds, named if the backup gives a name, otherwise nameless | One for a blank or unrecognised `contact_id`. It needs a name or an identity |
+| New contact | One for every address no contact holds, named if the backup gives a name, otherwise nameless | One for a blank or unrecognized `contact_id`. It needs a name or an identity |
 | Naming an existing contact | Only when the contact has no name, whatever made it | Whenever the file's name differs, whatever set the old one |
 | Same number on the other service | Joins the contact that already holds the other one | Stays where it is. Only a row for it moves it, so a file can split a number |
 | Identity already on another contact | Never moved. The import uses that contact | Moved if the holder is nameless or in the file. Otherwise the load is refused |

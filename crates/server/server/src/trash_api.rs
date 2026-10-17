@@ -8,11 +8,14 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
+use sqlx::SqlitePool;
 
+use crate::api_error::ApiError;
 use crate::asset_store;
+use crate::auth::FullDeleteAccess;
+use crate::config::Config;
 use crate::db::audit_trail::AuditActor;
 use crate::db::trash;
-use crate::server::{ApiError, AppState, FullDeleteAccess};
 
 /// Empty the trash: every trashed conversation is deleted for good, with
 /// its messages and any attachment file no other message uses, and every
@@ -29,21 +32,22 @@ use crate::server::{ApiError, AppState, FullDeleteAccess};
     )
 )]
 pub(crate) async fn delete_trash(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
     FullDeleteAccess(auth): FullDeleteAccess,
 ) -> Result<StatusCode, ApiError> {
     let unreferenced = {
-        let mut conn = state.db.acquire().await?;
-        let emptied = trash::empty_trash(&mut conn, auth.account_id, AuditActor::Holder).await?;
+        let mut conn = db.acquire().await?;
+        let emptied = trash::empty_trash(
+            &mut conn,
+            auth.account_id,
+            AuditActor::Holder,
+            chrono::Utc::now(),
+        )
+        .await?;
         emptied.orphaned
     };
-    asset_store::remove_unreferenced(
-        &state.db,
-        Arc::clone(&state.cfg),
-        auth.account_id,
-        unreferenced,
-    )
-    .await;
+    asset_store::remove_unreferenced(&db, Arc::clone(&cfg), auth.account_id, unreferenced).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

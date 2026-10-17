@@ -2,7 +2,7 @@
 
 Rewrite an export so chats, timestamps, and attachment counts stay, while names, numbers, message bodies, and media bytes are replaced. Remaps are stable for a given seed and are not reversible from the output alone.
 
-`message-ir-format` applies this when obfuscation is on, for every export source.
+`ir-format` applies this when obfuscation is on, for every export source.
 
 ## Build and test
 

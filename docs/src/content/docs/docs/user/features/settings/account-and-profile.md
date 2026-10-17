@@ -11,6 +11,18 @@ An account sees **Account**, **Profile**, **Storage**, **Audit Trail**, **System
 The desktop app adds **Convert** between **System** and **Appearance**.
 This page covers the first two.
 
+## Staying logged in
+
+In a browser, the login card's forms carry a **Keep me logged in** box beside the button that logs in.
+Ticked, which is how each form opens, the browser keeps the Session, and the next visit opens logged in.
+Unticked, the browser forgets the Session when the tab closes, and a new tab asks to log in again, which suits a shared or borrowed computer.
+A browser that reopens a closed tab, or reopens its tabs after a restart, brings the Session back with it, and a duplicated tab shares it.
+**Log out** is what ends the Session itself.
+The desktop app shows no such box, because it logs out when its window closes.
+
+A Session also ends on its own after 7 days in which it isn't used, and 30 days after the login however much it is used.
+Each use within those 30 days starts the 7 days again, so an account in daily use is asked to log in once a month.
+
 ## What the Owner sees
 
 The Owner's Settings has four tabs, **Account**, **Profile**, **Audit Trail**, and **Appearance**, under the heading **Settings for Owner**.
@@ -40,10 +52,10 @@ The line under the checkboxes says so: "The owner sets your status and permissio
 
 The form takes **New password** and **Confirm new password**.
 **Change password** stays disabled until both fields hold text.
-The server compares the two and answers "New passwords do not match." when they differ.
+The server compares the two, and the form shows "New passwords do not match" when they differ.
 
 A password has no minimum length.
-The longest password the server accepts is 1,024 bytes.
+The longest password the server accepts is 128 characters.
 
 **Reset password** clears the password, so the account then logs in with an empty one.
 The screen confirms with "Password reset. This account now has no password, and its API Tokens were revoked."
@@ -102,6 +114,9 @@ The Owner can't add or rename a token.
 
 The Owner's own Settings have no **API Tokens** section, because a token reaches one account's messages and the Owner holds none.
 
+The Demo Account can't make an API Token, and the server refuses one.
+Every visitor shares the Demo Account, so a token would outlive the visit, and every later visitor could see it and revoke it.
+
 ### Danger zone
 
 **Danger zone** is collapsed until its heading is selected.
@@ -136,7 +151,7 @@ The Owner has no **Danger zone**, because the Owner holds no messages and can't 
 
 **Display Name** is the account holder's name.
 The account menu shows it under the username, and the Owner's list of accounts shows it beside the username.
-**Save** stores it.
+It saves when you leave the field, press Enter, or move to another tab. There is no **Save** button.
 An empty field removes the name.
 
 ### Time Zone
@@ -163,24 +178,26 @@ The table has one row per Identity:
 
 | Column | Shows |
 |---|---|
-| **Service** | **Text message**, **Email**, or **WhatsApp** |
+| **Service** | **Text Message**, **Email**, or **WhatsApp** |
 | **Identity** | The phone number or email address |
 | **First sent** | The date of the earliest message the account holder sent from this Identity |
 | **Last sent** | The date of the latest message the account holder sent from this Identity |
 | **Conversations** | How many conversations it takes part in |
-| **Direct messages** | Messages in one-to-one conversations |
+| **One-to-one messages** | Messages in one-to-one conversations |
 | **Group messages** | Messages in group conversations |
 
 A column heading sorts the table by that column.
 A dash stands for a zero or a missing date.
 
 **Add identity** opens a dialog with a **Service** and an **Identity** field.
-A phone number must hold 7 to 15 digits, and spaces, dots, dashes, and parentheses are accepted.
+Under **Email**, the Identity must be an email address.
+**Text Message** and **WhatsApp** take any value, not only a phone number, such as a WhatsApp internal id like `123456789012345@lid` or a sender name like `AMAZON`, as an import adds them.
+A mistyped phone number is added as typed.
 An Identity already in the list on the same service is refused.
-The same number on **Text message** and on **WhatsApp** counts as two Identities, so both can be listed.
+The same number on **Text Message** and on **WhatsApp** counts as two Identities, so both can be listed.
 
 The trash button on a row removes that Identity after a confirmation.
-The confirmation states how many direct and group messages will no longer be associated with the account.
+The confirmation states how many one-to-one and group messages will no longer be associated with the account.
 
 The Owner has no **My Identities** section, because the Owner holds no messages to match.
 
@@ -202,6 +219,10 @@ Its country can be picked afterwards on the Contacts screen.
 After the load, the section lists each number without `+` that it read with its `+` back, and each one that became a new identity.
 
 Contacts the file does not mention stay as they are.
+
+**Convert a vCard file**, below the load, turns the `.vcf` file a phone or Google Contacts exports into an address book to edit and then load.
+**Country for numbers saved without +** reads each number saved without its country code as a number in that country.
+[Convert a vCard file](/docs/user/features/contacts/contacts/#convert-a-vcard-file) on the Contacts page says what the file holds.
 
 The Demo Account has no **Address book** section, and the server refuses a load into it.
 An **Edit** load would delete its contacts for good.

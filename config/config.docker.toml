@@ -1,6 +1,7 @@
 # Container defaults for the Docker image (docker/compose.yml and
-# docker/compose.release.yml). The entrypoint copies this to
-# config/config.toml on every start, before `serve` or any other command.
+# docker/compose.release.yml). docker/Dockerfile copies this to
+# config/config.toml in the image, the path `serve` and every other server
+# command read by default.
 
 [paths]
 db = "data/messagecrate.db"
@@ -8,23 +9,25 @@ data_dir = "data"
 assets_dir = "assets"
 assets_converted_dir = "assets_converted"
 
-# Bind all interfaces so Docker port publishing works.
-# Compose publishes port 8080 on every interface of the host, so other
-# machines on the network can reach it. Restrict that with the host firewall
-# to a trusted subnet, and do not port-forward it on the router: the server
-# speaks plain HTTP.
+# Bind all interfaces inside the container so Docker port publishing works.
+# Which computers reach the server is set where the port is published: the
+# `docker run` command in Run Message Crate with Docker and both Compose
+# files publish it on the host's 127.0.0.1 alone. Publishing it on the
+# network is a separate step, described in Run on another machine; the
+# server speaks plain HTTP, so keep
+# it to a trusted network and do not port-forward it on the router.
+#
+# Port 8080 is also written into docker/Dockerfile (EXPOSE) and into the
+# port mappings of docker/compose.yml and docker/compose.release.yml. A
+# change to the port here must be made there too, or Docker publishes a port
+# nothing answers on. The health check follows the port the server binds.
 [server]
 bind = "0.0.0.0:8080"
 
-# UI origins that call this API on a different host/port. Without this list the
-# desktop app reports it cannot reach the server even when curl to :8080 works.
-# - Vite / `cargo tauri dev`: :5173
-# - Packaged desktop: tauri://localhost (Linux AppImage / macOS),
-#   http://tauri.localhost (Windows), https://tauri.localhost (Windows HTTPS scheme)
-cors_origins = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "https://tauri.localhost",
-  "http://tauri.localhost",
-  "tauri://localhost",
-]
+# No `cors_origins`: the server allows the packaged desktop app's origins
+# whatever this file says, and the website it serves is same-origin, so
+# neither needs an entry. The Vite development origins are left out on
+# purpose, because they would let any page on port 5173 of the viewer's
+# computer call this API. The developer Docker page, "Point cargo tauri dev
+# at the container", gives the command that adds one for development
+# (docs/src/content/docs/docs/developer/docker.md).

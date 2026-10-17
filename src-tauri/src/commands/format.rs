@@ -1,11 +1,8 @@
-//! `format` command — convert an existing extract directory to another format.
+//! `format` command: convert an existing extract directory to another format.
 
+use message_crate_core::{FormatConfig, LogSink, OutputConfig, OutputFormat, RunContext};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
-use message_crate_core::{
-    ExporterConfig, FormatConfig, LogSink, MediaConfig, OutputFormat, SourceConfig,
-};
 
 use super::events;
 use super::jobs::{spawn_job, start_job};
@@ -16,15 +13,16 @@ use crate::state::{AppState, JobName};
 /// Ask this process to rewrite an extract directory in a different file format.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
-/// summary use the same `extract:log` / `extract:finished` / `extract:error`
-/// events as Extract, so the UI can reuse one progress view.
+/// summary use the same `desktop-job:log` / `desktop-job:finished` /
+/// `desktop-job:error` events as the `extract` command, so the UI can reuse
+/// one progress view.
 ///
 /// # Errors
 ///
 /// Returns an error if `output_format` is not one of json, jsonl, csv, eml,
 /// mbox, xml, or sms-backup-plus, if another job is running, or if another
 /// thread panicked while holding the shared state lock. Failures during
-/// conversion are sent as `extract:error`.
+/// conversion are sent as `desktop-job:error`.
 #[tauri::command(async)]
 pub fn format(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -52,33 +50,29 @@ pub fn format(
         })
         .transpose()?;
 
-    let scratch_dir = scratch_dir(&app)?;
+    let scratch_dir = scratch_dir(&app);
     let job = start_job(&state, started_from.job_name())?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, None, move || {
         let log_app = app_handle.clone();
-        let config = ExporterConfig {
-            inputs: vec![PathBuf::from(&input_dir)],
-            output: PathBuf::from(&output_dir),
-            scratch_dir,
-            timezone: None,
-            obfuscate: Default::default(),
-            media: MediaConfig::default(),
-            cancel: Some(cancel),
-            log: Some(LogSink::new(move |line: &str| {
+        // Settings → Convert shows a log, not a progress bar.
+        let context = RunContext {
+            cancel,
+            log: LogSink::new(move |line: &str| {
                 events::emit(&log_app, events::LOG, line.to_string());
-            })),
-            // Settings → Convert shows a log, not a progress bar.
-            progress: None,
-            issues: None,
-            output_format: fmt,
-            resume: false,
-            source: SourceConfig::Format(FormatConfig { run_started }),
+            }),
+            ..RunContext::new(scratch_dir)
         };
+        let output = OutputConfig::new(&output_dir, fmt);
 
-        let run_result = message_reexport::run(&config)?;
+        let run_result = reexport::run(
+            &context,
+            &output,
+            &[PathBuf::from(&input_dir)],
+            &FormatConfig { run_started },
+        )?;
         let summary = last_log_line_or(&run_result.messages, "Format conversion complete.");
         for line in run_result.messages {
             events::emit(&app_handle, events::LOG, line);

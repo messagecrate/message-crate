@@ -51,14 +51,14 @@ cargo install tauri-cli --version "^2"
 
 ### Install Node
 
-Ubuntu's `nodejs` package is usually too old. Node 22 or newer is required; nvm is the easy way to get it.
+Ubuntu's `nodejs` package is usually too old. Node.js 24, the major in `.nvmrc` at the top of the repository, is what CI and the Docker image build on. nvm is the easy way to get it.
 
-```bash title="Install Node.js 22"
+```bash title="Install Node.js 24"
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 source ~/.bashrc   # or open a new terminal
-nvm install 22
-nvm use 22
-node -v            # should print v22.x
+nvm install 24
+nvm use 24
+node -v            # should print v24.x
 npm -v
 ```
 
@@ -82,7 +82,8 @@ mkdir -p ~/message-crate/tools
 ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
 ```
 
-The desktop app replaces that link with its own download of the same release the next time it starts with a connection, because a link isn't the pinned file. The link serves until then, and wherever the app has no download, such as Linux on ARM.
+The link is used only where the app has no download, such as Linux on ARM.
+Everywhere else only the pinned release's file counts as `wtsexporter` in the Tools Directory, so the app shows the link as not found and replaces it with its own download the next time it starts with a connection.
 
 ### Fork and clone
 
@@ -252,7 +253,7 @@ From the repository root:
 ./scripts/check-pr.sh
 ```
 
-That script is quick: it checks formatting on the workspace and `src-tauri/`, runs Clippy on both at `-D warnings`, and lints and type-checks `web/`. It stops on the first failure and never rewrites files — if formatting fails, run `./scripts/format-all.sh` and commit the result.
+That script is quick: it checks the formatting of `CHANGELOG.md`, checks formatting on the workspace and `src-tauri/`, runs Clippy on both at `-D warnings`, and lints and type-checks `web/`. It stops on the first failure and never rewrites files — if Rust or `web/` formatting fails, run `./scripts/format-all.sh` and commit the result. A `CHANGELOG.md` failure names the line and the rule it breaks; fix that line by hand.
 
 CI runs the complete gate on every pull request: build, tests, the web bundle and its tests, and the docs build. To run all of that locally in one command, use `./scripts/check-all.sh`; expect it to take a while, since it does serially what CI does in parallel.
 

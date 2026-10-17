@@ -10,9 +10,12 @@ use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageQuery, page_o
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::Deserialize;
+use sqlx::SqlitePool;
 
+use crate::api_error::ApiError;
+use crate::auth::FullAccess;
 use crate::db::saved_searches::{self, SavedSearch, SavedSearchKind};
-use crate::server::{ApiError, AppState, Created, FullAccess};
+use crate::server::Created;
 
 /// The name and query of a new saved search.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -22,10 +25,16 @@ pub(crate) struct CreateSavedSearchRequest {
     /// Entity`. A name another of the account's Saved Searches has, in any
     /// letter case, is refused with `409 Conflict`.
     name: String,
-    /// The query in the search language, trimmed and stored as written. The
-    /// server does not check it when storing it, so a query a list cannot
-    /// run is refused when it runs. A blank query is refused with `422
-    /// Unprocessable Entity`.
+    /// The query in the search language, trimmed and stored as written. A
+    /// blank query is refused with `422 Unprocessable Entity`
+    /// (`validation-failed`). A query that every list refuses, one over
+    /// 2,048 bytes, with a syntax error such as a parenthesis or quote that
+    /// never closes, with more than 32 words, more than 64 parts, or nesting
+    /// deeper than 32, is refused with `422 Unprocessable Entity`
+    /// (`search-query-invalid`) and the search language's own sentence. A
+    /// `word:` is not checked against any list, because a Saved Search runs
+    /// on more than one: a word or value the list cannot use is refused when
+    /// it runs there.
     query: String,
 }
 
@@ -55,7 +64,7 @@ pub(crate) struct UpdateSavedSearchRequest {
     )
 )]
 pub(crate) async fn list_saved_searches(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<SavedSearch>>, ApiError> {
@@ -65,7 +74,7 @@ pub(crate) async fn list_saved_searches(
         DEFAULT_LIST_LIMIT,
         Some(MAX_LIST_OFFSET),
     )?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let rows = saved_searches::list(&mut conn, auth.account_id).await?;
     Ok(Json(page_of(rows, params)))
 }
@@ -84,15 +93,16 @@ pub(crate) async fn list_saved_searches(
             body = SavedSearch,
             headers(("Location" = String, description = "Path of the new saved search"))
         ),
-        crate::problem::openapi::NameTaken
+        crate::problem::openapi::NameTaken,
+        crate::problem::openapi::SearchQueryInvalid
     )
 )]
 pub(crate) async fn create_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Json(body): Json<CreateSavedSearchRequest>,
 ) -> Result<Created<SavedSearch>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let row = saved_searches::create(
         &mut conn,
         auth.account_id,
@@ -119,14 +129,14 @@ pub(crate) async fn create_saved_search(
     )
 )]
 pub(crate) async fn get_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(id): Path<i64>,
 ) -> Result<Json<SavedSearch>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let row = saved_searches::get(&mut conn, auth.account_id, id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("saved search not found".into()))?;
+        .ok_or_else(|| ApiError::not_found("saved search"))?;
     Ok(Json(row))
 }
 
@@ -140,16 +150,17 @@ pub(crate) async fn get_saved_search(
     request_body = UpdateSavedSearchRequest,
     responses(
         (status = 200, body = SavedSearch),
-        crate::problem::openapi::NameTaken
+        crate::problem::openapi::NameTaken,
+        crate::problem::openapi::SearchQueryInvalid
     )
 )]
 pub(crate) async fn update_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(id): Path<i64>,
     Json(body): Json<UpdateSavedSearchRequest>,
 ) -> Result<Json<SavedSearch>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let row =
         saved_searches::update(&mut conn, auth.account_id, id, &body.name, &body.query).await?;
     Ok(Json(row))
@@ -171,11 +182,11 @@ pub(crate) async fn update_saved_search(
     )
 )]
 pub(crate) async fn delete_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     saved_searches::delete(&mut conn, auth.account_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -187,7 +198,7 @@ mod tests {
     use crate::problem::ProblemType;
     use crate::test_support::{
         delete_status, expect_problem, fixture_with_account, get_json, get_raw, get_status,
-        patch_json, post_created_json, register_via_api,
+        patch_failure, patch_json, post_created_json, post_json_raw, register_via_api,
     };
 
     #[tokio::test]
@@ -301,5 +312,96 @@ mod tests {
             get_status(&state, &location, &bob.token).await,
             StatusCode::OK
         );
+    }
+
+    #[tokio::test]
+    async fn a_query_over_the_search_languages_length_limit_is_refused_when_saved() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let too_long = "a".repeat(2_049);
+
+        let (status, text) = post_json_raw(
+            &state,
+            "/v1/saved-searches",
+            &user.token,
+            serde_json::json!({ "name": "Long", "query": too_long }),
+        )
+        .await;
+
+        let problem = expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            problem.sentence().contains("2048"),
+            "the parser's own sentence: {text}"
+        );
+        let list: serde_json::Value = get_json(&state, "/v1/saved-searches", &user.token).await;
+        assert_eq!(list["items"].as_array().unwrap().len(), 0, "nothing stored");
+    }
+
+    #[tokio::test]
+    async fn an_edit_to_a_query_no_list_can_parse_is_refused_and_the_row_kept() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let (location, _): (String, serde_json::Value) = post_created_json(
+            &state,
+            "/v1/saved-searches",
+            &user.token,
+            serde_json::json!({ "name": "Family", "query": "group:Family" }),
+        )
+        .await;
+
+        let sentence = patch_failure(
+            &state,
+            &location,
+            &user.token,
+            serde_json::json!({ "name": "Family", "query": "(group:Family" }),
+            ProblemType::SearchQueryInvalid,
+        )
+        .await;
+
+        assert_eq!(sentence, "a parenthesis never closes");
+        let read: serde_json::Value = get_json(&state, &location, &user.token).await;
+        assert_eq!(read["query"], "group:Family");
+    }
+
+    #[tokio::test]
+    async fn a_word_some_list_lacks_is_saved_and_refused_only_where_it_runs() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let mut stored = Vec::new();
+        for (name, query) in [("From me", "from:me"), ("Typo", "grup:Family")] {
+            let (location, _): (String, serde_json::Value) = post_created_json(
+                &state,
+                "/v1/saved-searches",
+                &user.token,
+                serde_json::json!({ "name": name, "query": query }),
+            )
+            .await;
+            let read: serde_json::Value = get_json(&state, &location, &user.token).await;
+            assert_eq!(read["query"], query);
+            stored.push(read["query"].as_str().unwrap().to_string());
+        }
+        let [from_me, typo] = &stored[..] else {
+            unreachable!("two Saved Searches were stored")
+        };
+
+        // `from:` is a Messages word: the conversation list refuses it.
+        let (status, text) = get_raw(
+            &state,
+            &format!("/v1/conversations?q={from_me}"),
+            &user.token,
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+        assert_eq!(
+            get_status(&state, &format!("/v1/messages?q={from_me}"), &user.token).await,
+            StatusCode::OK
+        );
+        // `grup:` is no list's word: every list refuses it.
+        for list in ["conversations", "messages"] {
+            let (status, text) =
+                get_raw(&state, &format!("/v1/{list}?q={typo}"), &user.token).await;
+            expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+        }
     }
 }

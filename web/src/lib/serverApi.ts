@@ -21,14 +21,7 @@
  * in the browser calls them.
  */
 
-import {
-  type ApiRequestOptions,
-  apiClient,
-  getAccountId,
-  getBaseUrl,
-  getToken,
-  problemFromBody,
-} from "./api";
+import { type ApiRequestOptions, apiClient, getAccountId, getBaseUrl } from "./api";
 import { type AssetVersion, buildAssetPath } from "./assetUrl";
 import { PAGE_SIZE_MAX } from "./listPaging";
 import type { components, paths } from "./serverApi.types";
@@ -38,7 +31,19 @@ type Schema = components["schemas"];
 type Server = paths["/v1/server"]["get"]["responses"][200]["content"]["application/json"];
 
 /** Options every read accepts, so a caller can cancel an in-flight request. */
-export type RequestOptions = ApiRequestOptions;
+type RequestOptions = ApiRequestOptions;
+
+/**
+ * The time limit of a call whose work on the server grows with what an
+ * account holds: an Import Run's stage changes, which wait behind the batches
+ * the desktop app is writing, deleting messages for good, and reading or
+ * writing a whole file such as an address book or a server log. It still
+ * ends, so a stalled server cannot hold the call forever. Every other call
+ * keeps the client's default, `REQUEST_TIMEOUT_MS`.
+ */
+export const LONG_REQUEST_TIMEOUT_MS = 10 * 60_000;
+
+const LONG_CALL: ApiRequestOptions = { timeoutMs: LONG_REQUEST_TIMEOUT_MS };
 
 /**
  * Build a query string from values that may be absent.
@@ -193,12 +198,12 @@ export function setAccountPassword(
 
 /** Delete an account as the owner: its login, profile, contacts, and every message it owns. */
 export function deleteAccountById(accountId: number): Promise<void> {
-  return apiClient.delete<void>(accountPath(accountId));
+  return apiClient.delete<void>(accountPath(accountId), undefined, LONG_CALL);
 }
 
 /** Destroy one account's messages as the owner. The account, its contacts and login survive. */
 export function deleteAccountMessages(accountId: number): Promise<unknown> {
-  return apiClient.delete<unknown>(`${accountPath(accountId)}/messages`);
+  return apiClient.delete<unknown>(`${accountPath(accountId)}/messages`, undefined, LONG_CALL);
 }
 
 /** Settings that belong to the whole Message Crate. */
@@ -229,7 +234,7 @@ export type LogLevel = Schema["LogLevel"];
 /** A page of a log's lines, newest first. */
 export type LogLinesPage = Schema["ListLogLinesResponse"];
 /** One file of the server's log. */
-export type LogFile = Schema["LogFile"];
+type LogFile = Schema["LogFile"];
 
 /**
  * A page of the server's log, newest first: the lines at `level` and more
@@ -254,7 +259,10 @@ export async function listServerLogFiles(opts?: RequestOptions): Promise<LogFile
 
 /** One file of the server's log, whole, as text. */
 export function getServerLogFile(id: number, opts?: RequestOptions): Promise<string> {
-  return apiClient.getText(`/v1/server/log-files/${id}`, opts);
+  return apiClient.getText(`/v1/server/log-files/${id}`, {
+    ...opts,
+    timeoutMs: opts?.timeoutMs ?? LONG_REQUEST_TIMEOUT_MS,
+  });
 }
 
 /** Where the Demo Account stands: absent, building, ready, or failed. */
@@ -298,7 +306,7 @@ export function changePassword(
 
 /** Delete the logged-in account, confirming with its current password. */
 export function deleteAccount(body: Schema["DeleteAccountRequest"]): Promise<void> {
-  return apiClient.delete<void>(ownAccountPath(), body);
+  return apiClient.delete<void>(ownAccountPath(), body, LONG_CALL);
 }
 
 /** How much an account holds: the logged-in one, or as the owner the one named. */
@@ -421,7 +429,11 @@ export function listAccountAuditTrail(
 export function deleteAllMessages(
   body: Schema["DeleteMessagesRequest"],
 ): Promise<Schema["DeleteMessagesResponse"]> {
-  return apiClient.delete<Schema["DeleteMessagesResponse"]>(`${ownAccountPath()}/messages`, body);
+  return apiClient.delete<Schema["DeleteMessagesResponse"]>(
+    `${ownAccountPath()}/messages`,
+    body,
+    LONG_CALL,
+  );
 }
 
 // ── API tokens ──────────────────────────────────────────────────────────────
@@ -463,25 +475,16 @@ export function deleteApiToken(id: number, accountId?: number): Promise<void> {
  * Download one version of an attachment by its content hash: the original
  * bytes, or the Preview or Thumbnail the server holds of them.
  *
- * Attachment bytes are a blob, not JSON, so this is the one route that goes
- * around `apiClient` and calls `fetch` itself, with the Session's header.
+ * Attachment bytes are a blob, not JSON, so this reads them with
+ * `apiClient.getBlob`, whose time limit covers only the wait for the answer
+ * to start: a server that never answers ends the call, and a large video
+ * that is arriving takes as long as it needs.
  */
-export async function fetchAsset(
+export function fetchAsset(
   sha256: string,
   { version = "original", signal }: { version?: AssetVersion; signal?: AbortSignal } = {},
 ): Promise<Blob> {
-  const path = buildAssetPath(sha256, version);
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  const res = await fetch(`${getBaseUrl()}${path}`, { method: "GET", headers, signal });
-  if (!res.ok) {
-    const text = await res.text();
-    throw problemFromBody(res.status, text);
-  }
-  return res.blob();
+  return apiClient.getBlob(buildAssetPath(sha256, version), { signal });
 }
 
 /**
@@ -587,7 +590,7 @@ export type MessagesListParams = {
 /**
  * One row per message matching `q`, across every conversation the account
  * has. A read route, not Export: the Messages list on the Messages screen
- * reads it, and the thread's find box uses it with `in:#id`.
+ * reads it, and the conversation's find box uses it with `in:#id`.
  */
 export function listMessages(
   params: MessagesListParams,
@@ -624,7 +627,7 @@ export function restoreConversation(conversationId: number): Promise<void> {
  * for a conversation that is not in the trash — trash is the only door.
  */
 export function deleteConversation(conversationId: number): Promise<void> {
-  return apiClient.delete<void>(`/v1/conversations/${conversationId}`);
+  return apiClient.delete<void>(`/v1/conversations/${conversationId}`, undefined, LONG_CALL);
 }
 
 // ── Trash ───────────────────────────────────────────────────────────────────
@@ -635,7 +638,7 @@ export function deleteConversation(conversationId: number): Promise<void> {
  * conversations untouched.
  */
 export function emptyTrash(): Promise<void> {
-  return apiClient.delete<void>("/v1/trash");
+  return apiClient.delete<void>("/v1/trash", undefined, LONG_CALL);
 }
 
 // ── Contacts ────────────────────────────────────────────────────────────────
@@ -711,6 +714,7 @@ export function loadAddressBook(
     withQuery("/v1/contacts", query({ mode })),
     content,
     "text/csv",
+    LONG_CALL,
   );
 }
 
@@ -719,7 +723,25 @@ export function loadAddressBook(
  * checked ones, or every contact when the body names neither.
  */
 export function exportAddressBook(body: Schema["GetAddressBookRequest"]): Promise<string> {
-  return apiClient.postText("/v1/contacts/address-book", body);
+  return apiClient.postText("/v1/contacts/address-book", body, LONG_CALL);
+}
+
+/**
+ * An address book written from a vCard file, as CSV text, for the person to
+ * edit and load with `loadAddressBook`. `country` is the ISO code a number
+ * written without its `+` code is read in, or null to keep every number as
+ * the card has it. Nothing is stored.
+ */
+export function convertVcardToAddressBook(
+  content: string,
+  country: string | null,
+): Promise<string> {
+  return apiClient.postRawText(
+    withQuery("/v1/contacts/vcard-address-book", query({ country })),
+    content,
+    "text/vcard",
+    LONG_CALL,
+  );
 }
 
 /** Put a contact in the trash. Idempotent: trashing an already-trashed one still answers. */
@@ -745,7 +767,7 @@ export function deleteContact(contactId: string | number): Promise<void> {
 // ── Contact Groups ──────────────────────────────────────────────────────────
 //
 // A Contact Group is addressed by its id. Screens hold names; the lookup from
-// a name to an id lives in `nameCollection.ts`, not here.
+// a name to an id lives in `hooks/useNameCollectionActions.ts`, not here.
 
 /** Every Contact Group of the logged-in account. */
 export function listContactGroups(opts?: RequestOptions): Promise<Schema["NamedSet"][]> {
@@ -918,7 +940,7 @@ export function getImport(id: number, opts?: RequestOptions): Promise<Schema["Im
 export function createImport(
   body: Schema["CreateImportRequest"],
 ): Promise<Schema["CreateImportResponse"]> {
-  return apiClient.post<Schema["CreateImportResponse"]>("/v1/imports", body);
+  return apiClient.post<Schema["CreateImportResponse"]>("/v1/imports", body, LONG_CALL);
 }
 
 /** Move a live Import Run to another stage; the run comes back. */
@@ -926,21 +948,21 @@ export function setImportStage(
   id: number,
   body: Schema["UpdateImportRequest"],
 ): Promise<Schema["ImportRun"]> {
-  return apiClient.patch<Schema["ImportRun"]>(`/v1/imports/${id}`, body);
+  return apiClient.patch<Schema["ImportRun"]>(`/v1/imports/${id}`, body, LONG_CALL);
 }
 
 export function completeImport(
   id: number,
   body: Schema["CompleteImportRequest"],
 ): Promise<Schema["ImportRun"]> {
-  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/complete`, body);
+  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/complete`, body, LONG_CALL);
 }
 
 export function discardImport(
   id: number,
   body: Schema["DiscardImportRequest"],
 ): Promise<Schema["ImportRun"]> {
-  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/discard`, body);
+  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/discard`, body, LONG_CALL);
 }
 
 /** Which page of an Import Run's contacts to read. Absent values are left off the URL. */
@@ -960,7 +982,7 @@ export function getImportContacts(
 
 // ── Export Runs ─────────────────────────────────────────────────────────────
 //
-// The desktop app pages a run's messages from its Rust side (`message-crate-export`),
+// The desktop app pages a run's messages from its Rust side (`export`),
 // so `GET /v1/exports/{id}/messages` has no function here.
 
 export function getExport(id: number, opts?: RequestOptions): Promise<Schema["ExportRun"]> {
@@ -972,8 +994,12 @@ export function createExport(body: Schema["CreateExportRequest"]): Promise<Schem
   return apiClient.post<Schema["ExportRun"]>("/v1/exports", body);
 }
 
-export function completeExport(id: number): Promise<Schema["ExportRun"]> {
-  return apiClient.post<Schema["ExportRun"]>(`/v1/exports/${id}/complete`, {});
+/** Close an Export Run as `completed`, or as `failed` when an error stopped it. */
+export function completeExport(
+  id: number,
+  body: Schema["CompleteExportRequest"],
+): Promise<Schema["ExportRun"]> {
+  return apiClient.post<Schema["ExportRun"]>(`/v1/exports/${id}/complete`, body);
 }
 
 export function cancelExport(id: number): Promise<Schema["ExportRun"]> {

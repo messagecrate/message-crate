@@ -1,10 +1,6 @@
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
-import type {
-  AttachmentForecast,
-  SizeVerdict,
-  StagingSummary,
-  UploadFinishedReport,
-} from "../../lib/tauri";
+import type { AttachmentForecast, SizeVerdict, StagingSummary } from "../../lib/desktop/staging";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 
 /**
  * How an Upload ended. `paused` is an Upload that did not send every
@@ -12,7 +8,7 @@ import type {
  * and the next visit to Import offers Resume or Discard (CONTEXT.md,
  * "Pause").
  */
-export type ImportOutcome = "completed" | "completed_with_issues" | "paused";
+type ImportOutcome = "completed" | "completed_with_issues" | "paused";
 
 /**
  * The stable identity of a staged attachment across Media.
@@ -51,7 +47,7 @@ const OMITTABLE_VERDICTS: ReadonlySet<SizeVerdict> = new Set([
  * path, so exact equality against `row.path`/`row.name` only catches the
  * simple case. `item.endsWith(...)` catches the compound form without the
  * conversation-name prefix tripping it up. `stableStem`
- * catches a file the Media stage renamed with a `-mv` suffix between the
+ * catches a file the Media Stage renamed with a `-mv` suffix between the
  * Review and the Upload — `stem.pop()` on the path already strips any
  * `{name}:` prefix, since it only looks at the last `/`-separated segment.
  */
@@ -95,7 +91,7 @@ function isApprovedOmission(
  * A finished Upload with item-level problems is `completed_with_issues` —
  * unless `approved` already told the user about them: the plan the user
  * approved at their last Review (the Media Review's plan when the run had a
- * Media stage, the Staging Review's otherwise) is diffed against the issues
+ * Media Stage, the Staging Review's otherwise) is diffed against the issues
  * the run reported, and a skip the plan already forecast is not news. Without
  * `approved` every issue counts.
  */
@@ -108,9 +104,9 @@ export function importOutcome(args: {
   const { report, threw, issues, approved } = args;
   if (threw || !report) return "paused";
   const everyConversationSent =
-    !report.cancelled &&
+    !report.canceled &&
     report.conversations_failed === 0 &&
-    report.conversations_cancelled === 0 &&
+    report.conversations_canceled === 0 &&
     report.conversations_ok + report.conversations_skipped === report.conversations_total;
   if (!everyConversationSent) return "paused";
   const unexplained = issues.filter((issue) => !isApprovedOmission(issue, approved));

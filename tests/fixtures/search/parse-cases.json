@@ -621,7 +621,7 @@
       "after": null,
       "before": null,
       "source": null,
-      "conversationType": "individual",
+      "conversationType": "one-to-one",
       "groupBy": "conversation",
       "context": 0,
       "sort": "date-desc",

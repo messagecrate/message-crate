@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Thumbnail } from "../hooks/useThumbnail";
 
 /**
  * A photo or video in the conversation: a frame of one height, so a
@@ -11,7 +12,7 @@ import type { ReactNode } from "react";
  * percentage as well, which also makes it shrink below its own width, so in
  * a message narrower than 280 px, as in the right pane's 320 px minimum
  * (#1722), the frame takes the message's width and object-cover crops the
- * picture instead of the thread scrolling sideways.
+ * picture instead of the conversation scrolling sideways.
  */
 export function ThumbnailTile({
   tileRef,
@@ -27,8 +28,14 @@ export function ThumbnailTile({
   );
 }
 
-/** The Thumbnail, or the file's name in its place while there is none. */
-export function ThumbnailPicture({ name, url }: { name: string; url: string | null }) {
+/**
+ * The Thumbnail, or the file's name in its place while there is none, with
+ * the Thumbnail's `note` under it when the server says why it could not make
+ * one. The name gives up its room to the note, so a long name is cut short
+ * rather than drawn over the note.
+ */
+export function ThumbnailPicture({ name, thumbnail }: { name: string; thumbnail: Thumbnail }) {
+  const { url, note } = thumbnail;
   if (url) {
     return (
       <img
@@ -39,8 +46,15 @@ export function ThumbnailPicture({ name, url }: { name: string; url: string | nu
     );
   }
   return (
-    <span className="flex h-full w-[200px] items-center justify-center break-all bg-elevated px-3 text-center text-[0.75rem] text-muted">
-      {name}
+    <span className="flex h-full w-[200px] flex-col bg-elevated px-3 text-center text-[0.75rem] text-muted">
+      <span className="flex min-h-0 flex-1 items-center-safe justify-center overflow-hidden break-all">
+        {name}
+      </span>
+      {note ? (
+        <span title={note} className="mb-2 line-clamp-2 shrink-0 break-words text-[0.688rem]">
+          {note}
+        </span>
+      ) : null}
     </span>
   );
 }

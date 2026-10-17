@@ -12,13 +12,15 @@ Anyone who needs caching, request deduplication, or loading state on a new
 screen uses TanStack Query. Writing a new one for a single screen is the thing
 this decision exists to prevent.
 
-The rule is that a screen fetches the account data it shows one way. Two
+The rule is that a screen fetches the account data it shows one way. Four
 fetches are named exceptions, below, and they are the only ones. Any other fetch
 outside TanStack Query is a violation of this decision.
 
-## Two fetches that stay outside TanStack Query
+## Four fetches that stay outside TanStack Query
 
-Both were decided with the maintainer on 2 October 2026 (issue #1111).
+The first two were decided with the maintainer on 2 October 2026 (issue
+#1111). The last two were already in the code for the reasons given, and were
+named here on 11 October 2026 (issue #2271).
 
 **An attachment's bytes.** `web/src/hooks/useAssetObjectUrl.ts` downloads an
 attachment, its Preview or its Thumbnail, through `fetchAssetObjectUrl` in
@@ -36,12 +38,38 @@ URL would either leak the bytes or revoke a URL still on screen. The cost is
 that two components showing the same attachment each download it.
 
 **The `/health` check.** `checkServerHealth` in `web/src/lib/serverHealth.ts`
-calls `fetch` itself, and `web/src/lib/useServerHealth.ts` runs its own backoff
+calls `fetch` itself, and `web/src/screens/auth/useServerHealth.ts` runs its own backoff
 and polling. The check answers whether a server is listening at an address, and
 on the login screen that address is the one the person is still typing, which
 is not yet the server `apiClient` talks to. It carries no session and returns no
 account data, so it has no place in `serverApi.ts`, whose functions all go
 through `apiClient`, and no account to name a cache entry after.
+
+**The Import Run's own server calls.** `getServerState`, `getActiveImportRun`,
+`createImport`, `setImportStage`, `completeImport` and `discardImportRun` are
+called from `web/src/screens/import/run/` through `endSessionIfRefused` in
+`serverCalls.ts`, straight over `serverApi.ts` and its wrappers in
+`web/src/lib/importRun.ts`. A run is not a screen's data:
+it runs on after the Import screen is left, and it stops where the server
+holds it when its session is refused. A `401 Unauthorized` that ended the
+session through the query client would end it with no word to the run, so the
+run handles the refusal itself, ends the session the same way the query
+client would (`endsSession` in `web/src/lib/routeQuery.ts`), and stops
+where the server last recorded it, for its account's next login to resume.
+The Import screen's own read of the running run, outside the run, goes
+through TanStack Query like any screen's.
+
+**The check of a saved login at start.** `checkSavedLogin` in
+`web/src/lib/savedLogin.ts` calls `getSession` once, from an effect in
+`web/src/lib/AuthProvider.tsx`, when the app starts with a saved login. The
+saved session is applied before anything renders, so the screens' first queries
+run beside the check rather than after it. The check decides only what
+becomes of the saved login, by a rule of its own: a `401 Unauthorized`
+forgets it, and any other failure, which says nothing about the token, leaves
+it saved for a later retry. In both cases this session shows the login screen. The query
+client knows only the first half of that rule (`endsSession` in
+`web/src/lib/routeQuery.ts`), and the check returns no data any screen
+shows, so it has nothing to cache.
 
 ## Why
 
@@ -142,7 +170,7 @@ route functions instead, and the URLs those functions build are asserted in
 
 Two tests keep naming URLs on purpose. `api.test.ts` and `assetUrl.test.ts`
 have the URL as their subject. `AdminUsersPanel.test.tsx` stubs `fetch` and
-throws on an address it does not recognise, so it exercises the real route
+throws on an address it does not recognize, so it exercises the real route
 functions end to end and fails loudly on a rename rather than quietly matching
 nothing — the opposite of the pattern this decision removes.
 
@@ -185,28 +213,44 @@ nothing — the opposite of the pattern this decision removes.
   which needed restructuring rather than a swap: one was read during render and
   written in place for optimistic group chips, and the other was loaded from
   outside React during login.
-- `auth.tsx` clears nothing by hand. Its two lists are one `queryClient.clear()`
-  in each path, which releases memory and nothing more.
+- `AuthProvider.tsx` clears nothing by hand. Its two lists are one
+  `queryClient.clear()` in each path, which releases memory and nothing more.
 - Every write marks the whole account's cache stale once it settles, through
-  one call: `invalidateAccount` on `useRouteCache` in
-  `web/src/lib/routeQuery.ts`. No write names the entries it changes. Each
-  write once named its own list of entries, and the review of 2 October 2026
-  found six that left out entries they changed, so the screens showing those
-  kept the old state (issue #1239). A list per write is a list someone forgets
-  to extend; the account prefix is the one key no write can leave out. The
-  cost is small, because TanStack Query refetches only the entries on screen.
-  A write that answers with the whole value still writes it into its entry,
-  and the optimistic chips of Contact Groups and Message Tags still draw
-  before the server answers, so neither waits for the refetch.
+  one call: `useMarkAccountStale` in `web/src/hooks/useRouteQuery.ts`. A write
+  made with TanStack Query goes through `useRouteMutation` in the same file.
+  It makes that call before the write's own `onSettled`. Biome refuses
+  `useMutation`, `MutationObserver` and a namespace import of
+  `@tanstack/react-query` anywhere else (`web/biome.json`). Before that, each
+  write added the call itself. A new write that left it out compiled and
+  passed its own tests (issue #2162). A plain request and answer is a
+  `useRouteMutation` even where the screen awaits it in a handler of its own
+  (issue #2622). Only two writes call `useMarkAccountStale` by hand, because
+  neither is one request and its answer: the Import screen's discard of an
+  Import Run closes the run through the Import Run's own server calls above
+  and then deletes its directory on this computer, and a Demo Account build
+  is finished by the server on its own, after the request that started it
+  has been answered.
+  The mutations that change no account data, such as an attachment download
+  or a Media Link, are named in the Biome override that lets them use
+  `useMutation`. No write names the entries it changes. Each write once named
+  its own list of entries, and the review of 2 October 2026 found six that
+  left out entries they changed, so the screens showing those kept the old
+  state (issue #1239). A list per write is a list someone forgets to extend;
+  the account prefix is the one key no write can leave out. The cost is
+  small, because TanStack Query refetches only the entries on screen. A write
+  that answers with the whole value still writes it into its entry, and the
+  optimistic chips of Contact Groups and Message Tags still draw before the
+  server answers, so neither waits for the refetch.
 - `contact_id` on a conversation participant became an `i64`. It was the only
   contact id on the whole API sent as a string; every other shape — the contact
   list, one contact, a selection summary, an import's contacts, and the
   `/v1/contacts/{id}` path — already used the integer the database stores. The
   web app carries contact ids as strings for routes and DOM ids and converts at
   that edge.
-- The generator runs through `npx`, pinned, rather than as a `web/` dependency:
-  `openapi-typescript` declares a peer dependency on TypeScript 5 and this
-  project is on TypeScript 7, so installing it into `web/` does not resolve.
+- The generator runs from a tree of its own, `scripts/openapi-typescript/`, with
+  a committed lockfile, rather than as a `web/` dependency: `openapi-typescript`
+  declares a peer dependency on TypeScript 5 and this project is on TypeScript
+  7, so installing it into `web/` does not resolve.
   Only its text output reaches the repository. Biome is configured to skip the
   generated file, because formatting it would make it differ from what the
   generator produces and the drift check compares the two byte for byte.

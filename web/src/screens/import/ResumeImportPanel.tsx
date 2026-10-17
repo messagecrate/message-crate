@@ -1,10 +1,11 @@
 import { useState } from "react";
 import Button from "../../components/Button";
 import PasswordField from "../../components/PasswordField";
-import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
+import { useDesktopJob } from "../../hooks/useDesktopJob";
+import { desktopJobRunningText } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
-import type { SnapshotSecret } from "./formSnapshot";
-import { hintStyle, StackedField } from "./ImportFormUi";
+import type { SnapshotSecret } from "../../lib/importSources/types";
+import { hintClass, StackedField } from "./ImportFormUi";
 import type { ResumeDecision } from "./resumeDecision";
 
 type ResumableKind = Exclude<ResumeDecision["kind"], "none">;
@@ -25,14 +26,14 @@ const COPY: Record<ResumableKind, PanelCopy> = {
     secondary: { label: "Discard this import", action: "discard" },
   },
   restart: {
-    heading: () => "Pick up your last import",
+    heading: () => "Your last import did not finish",
     body: () =>
       "The extract did not finish. Starting again reuses your settings and reads the backup from the beginning.",
     primary: { label: "Start over", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
   resume_review: {
-    heading: () => "Pick up where you left off",
+    heading: () => "Resume where you left off",
     body: () =>
       "Your messages are staged. Opening the import again shows you the same summary, read fresh from the directory.",
     primary: { label: "Show me the summary", action: "resume" },
@@ -41,15 +42,15 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   resume_media: {
     heading: () => "Finish preparing your media",
     body: () =>
-      "The Media stage did not finish. Carrying on picks up the files it had not reached yet.",
-    primary: { label: "Carry on", action: "resume" },
+      "The Media Stage did not finish. Resuming it processes the files it had not reached yet.",
+    primary: { label: "Resume", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
   resume_write: {
     heading: () => "Finish copying your backup",
     body: () =>
-      "The copy did not finish. Picking up where you left off reads the backup again and skips the conversations already copied.",
-    primary: { label: "Pick up", action: "resume" },
+      "The copy did not finish. Resuming it reads the backup again and skips the conversations already copied.",
+    primary: { label: "Resume", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
   source_changed: {
@@ -67,11 +68,11 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   // the path only when there is one.
   directory_missing: {
     heading: (run) =>
-      run.run_dir ? "The staged files are gone" : "There is nothing staged to pick up",
+      run.run_dir ? "The staged files are gone" : "There is nothing staged to resume",
     body: (run) =>
       run.run_dir
         ? `This import's directory is no longer at ${run.run_dir}. Discarding it lets you start a new one.`
-        : "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
+        : "This import did not record a staged directory, so there is nothing here to resume. Discarding it lets you start a new one.",
     primary: { label: "Discard this import", action: "discard" },
   },
   // The stat of the run directory failed, which says nothing about whether
@@ -127,7 +128,7 @@ export default function ResumeImportPanel({
   secret?: SnapshotSecret | null;
   /**
    * Set when the last attempt to act on this decision failed partway
-   * through — today, only a resume at a Review or in the Media stage whose
+   * through — today, only a resume at a Review or in the Media Stage whose
    * recompute of the staged directory failed (a transient read, not a run that
    * actually failed: only an explicit discard ends a run, so it is still
    * here to try again). Null the rest of the time.
@@ -170,7 +171,7 @@ export default function ResumeImportPanel({
               showPassword={showSecret}
               onToggle={() => setShowSecret((shown) => !shown)}
             />
-            <p className={hintStyle}>{secretCopy.hint}</p>
+            <p className={hintClass}>{secretCopy.hint}</p>
           </StackedField>
         </div>
       ) : null}

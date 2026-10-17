@@ -1,6 +1,6 @@
 import { createContext, type ReactNode } from "react";
 
-export type RightToolbarContextValue = {
+type RightToolbarContextValue = {
   toolbar: ReactNode;
   setToolbar: (node: ReactNode | null) => void;
 };

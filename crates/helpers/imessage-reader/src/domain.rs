@@ -16,12 +16,12 @@ use std::{
 
 use crabapple::Backup;
 use imessage_reader_protocol::{BackupDomainRequest, Event, Platform, Progress, Source};
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 use crate::{
     backup::{decrypt_backup, restrict_permissions},
     error::{RuntimeError, UNENCRYPTED_BACKUP_CLEAR_PASSWORD},
-    log::{emit, emit_log},
+    log::{emit, emit_log, emit_warning},
     options::ReaderOptions,
 };
 
@@ -83,7 +83,7 @@ pub(crate) fn list_domain(
     backup: &Backup,
     request: &BackupDomainRequest,
 ) -> Result<Vec<DomainFile>, RuntimeError> {
-    let manifest = Connection::open(backup.manifest_db_path())?;
+    let manifest = open_manifest(backup.manifest_db_path())?;
     Ok(domain_files(&manifest, &request.domain)?
         .into_iter()
         .map(|(file_id, relative_path)| {
@@ -140,7 +140,7 @@ pub(crate) fn decrypt_domain(
             Ok(()) => written.files += 1,
             Err(why) => {
                 written.failures += 1;
-                emit_log(format!(
+                emit_warning(format!(
                     "Backup file {relative_path} could not be decrypted: {why}"
                 ));
             }
@@ -155,6 +155,21 @@ pub(crate) fn decrypt_domain(
         }
     }
     Ok(written)
+}
+
+/// Open the `Manifest.db` at `path` read-only: the reader only queries it, so
+/// a write through this handle fails rather than change the file.
+///
+/// For the encrypted backups [`list_domain`] reads, `path` is
+/// `crabapple-Manifest.db`, the copy `crabapple` decrypts into the temporary
+/// directory, which `main` points at `request.out_dir`. `crabapple` holds its
+/// own read-write connection on that copy. It only reads the backup's own
+/// `Manifest.db`, to decrypt it.
+fn open_manifest(path: &Path) -> Result<Connection, RuntimeError> {
+    Ok(Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?)
 }
 
 /// The regular files `Manifest.db` lists under `domain`, as file id and
@@ -212,7 +227,9 @@ fn decrypt_to(backup: &Backup, file_id: &str, target: &Path) -> Result<(), Runti
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt_domain, domain_files, list_domain, open, target_path, total_bytes};
+    use super::{
+        decrypt_domain, domain_files, list_domain, open, open_manifest, target_path, total_bytes,
+    };
     use crate::error::IOS_BACKUP_PASSWORD_INCORRECT;
     use chat_db_fixture::ios_backup::{BackupFile, Encryption, system_temp_turn, write_backup};
     use imessage_reader_protocol::BackupDomainRequest;
@@ -224,6 +241,10 @@ mod tests {
 
     const DOMAIN: &str = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared";
 
+    /// The `Files` table of `Manifest.db`, with the columns the reader reads.
+    const FILES_TABLE: &str =
+        "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);";
+
     /// Only the asked domain's regular files are listed: another domain's
     /// file, and a directory row of the same domain, are left out.
     #[test]
@@ -231,7 +252,7 @@ mod tests {
         let manifest = Connection::open_in_memory().unwrap();
         manifest
             .execute_batch(&format!(
-                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);
+                "{FILES_TABLE}
                  INSERT INTO Files VALUES
                      ('aa', '{DOMAIN}', 'Message/Media/photo.jpg', 1),
                      ('bb', '{DOMAIN}', 'ChatStorage.sqlite', 1),
@@ -246,6 +267,41 @@ mod tests {
                 ("aa".to_string(), "Message/Media/photo.jpg".to_string()),
             ]
         );
+    }
+
+    /// The manifest is opened read-only: a write through the handle is
+    /// refused, and the database file is left as it was.
+    #[test]
+    fn the_manifest_is_opened_read_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Manifest.db");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(&format!(
+                "{FILES_TABLE}
+                 INSERT INTO Files VALUES ('aa', '{DOMAIN}', 'ChatStorage.sqlite', 1);"
+            ))
+            .unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let manifest = open_manifest(&path).unwrap();
+        assert_eq!(domain_files(&manifest, DOMAIN).unwrap().len(), 1);
+        let write = manifest.execute("DELETE FROM Files", ());
+        assert!(
+            matches!(
+                write,
+                Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error {
+                        code: rusqlite::ErrorCode::ReadOnly,
+                        ..
+                    },
+                    _
+                ))
+            ),
+            "a write through the manifest handle was not refused: {write:?}"
+        );
+        drop(manifest);
+        assert_eq!(fs::read(&path).unwrap(), before);
     }
 
     /// A file lands under the domain's own directory, and a manifest path that

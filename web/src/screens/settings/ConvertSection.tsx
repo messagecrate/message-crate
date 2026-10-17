@@ -1,17 +1,14 @@
 import { useCallback, useState } from "react";
-import { ListBoxItem } from "react-aria-components";
+import DesktopJobFormShell from "../../components/DesktopJobFormShell";
+import ExportFormatSelect from "../../components/ExportFormatSelect";
 import FormRow from "../../components/FormRow";
 import PathPicker from "../../components/PathPicker";
-import Select, { selectItemClassName } from "../../components/Select";
-import TauriJobFormShell from "../../components/TauriJobFormShell";
-import { useTauriJob } from "../../hooks/useTauriJob";
+import { useRunDesktopJob } from "../../hooks/useRunDesktopJob";
+import { errorLine, errorText } from "../../lib/apiErrorMessage";
+import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/desktop/export";
 import { writeInExportDir } from "../../lib/exportDir";
-import { parseSelectKey } from "../../lib/selectKey";
-import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import { sameDirectory } from "./convertUtils";
-
-const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
 
 /** Label for the chosen format, for the success panel. */
 function formatLabel(id: ExportFormat): string {
@@ -20,7 +17,7 @@ function formatLabel(id: ExportFormat): string {
 
 /**
  * Settings → Convert: rewrite a directory of already-exported files into another
- * format. `message-reexport` detects the input format from the directory, so the
+ * format. `reexport` detects the input format from the directory, so the
  * screen picks the output format only, and it refuses to write into its own
  * input, so the two directories must differ. With no output directory chosen,
  * the conversion gets a directory of its own in the Export Directory
@@ -38,7 +35,7 @@ export function ConvertSection() {
   const [log, setLog] = useState<string[]>([]);
   // The directory and format each conversion was started with, so the success
   // message names what was written even after the form changes.
-  const { running, finished, run, cancel } = useTauriJob<{
+  const { running, finished, run, cancel } = useRunDesktopJob<{
     outputDir: string;
     format: ExportFormat;
   }>({ job: "Convert" });
@@ -90,15 +87,15 @@ export function ConvertSection() {
             appendLog,
           );
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorText(err);
         appendLog(`Error: ${message}`);
-        setError(message);
+        setError(errorLine(err));
       }
     })();
   };
 
   return (
-    <TauriJobFormShell
+    <DesktopJobFormShell
       className="max-w-[700px]"
       job="Convert"
       startLabel="Convert"
@@ -149,23 +146,7 @@ export function ConvertSection() {
           so the two directories must differ.
         </p>
       ) : null}
-      <FormRow label="Output format">
-        <Select
-          selectedKey={format}
-          onSelectionChange={(key) => {
-            const next = parseSelectKey(key, FORMAT_IDS);
-            if (next) setFormat(next);
-          }}
-          aria-label="Output format"
-          isDisabled={running}
-        >
-          {EXPORT_FORMATS.map((option) => (
-            <ListBoxItem key={option.id} id={option.id} className={selectItemClassName}>
-              {option.label}
-            </ListBoxItem>
-          ))}
-        </Select>
-      </FormRow>
-    </TauriJobFormShell>
+      <ExportFormatSelect value={format} onChange={setFormat} isDisabled={running} />
+    </DesktopJobFormShell>
   );
 }

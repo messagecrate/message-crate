@@ -4,7 +4,7 @@
 # Mutation testing changes the code one small way at a time (a `<` becomes
 # `<=`, a function returns `Default::default()`, a `&&` becomes `||`) and
 # runs the tests. A mutant the tests still pass is a "missed" mutant: a
-# change in behaviour no test notices. It is a report, never a gate:
+# change in behavior no test notices. It is a report, never a gate:
 # docs/adr/0007-ci-is-the-only-gate.md.
 #
 # Every workspace crate is mutated except the ones below, where a missed
@@ -27,7 +27,7 @@ exclude_globs = [
 ]
 
 # Text meant for people to read (Display and Debug output) changes without
-# changing behaviour, so a missed mutant there is noise.
+# changing behavior, so a missed mutant there is noise.
 exclude_re = [
     "impl .*Display for",
     "impl .*Debug for",

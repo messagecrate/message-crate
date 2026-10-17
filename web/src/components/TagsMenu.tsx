@@ -1,4 +1,4 @@
-import type { MembershipCheckState } from "../lib/membershipChecks";
+import type { MembershipCheckState } from "../lib/membership";
 import { MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
 import GroupsMenu from "./GroupsMenu";
 import { TagIcon } from "./icons";
@@ -28,7 +28,7 @@ export default function TagsMenu({
       onClearAll={onClearAll}
       disabled={disabled}
       copy={MESSAGE_TAG_MENU_COPY}
-      icon={<TagIcon size={16} />}
+      icon={<TagIcon size={16} className="shrink-0" />}
       labeled={false}
     />
   );

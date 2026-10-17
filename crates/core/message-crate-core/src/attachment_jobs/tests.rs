@@ -1,61 +1,51 @@
 use super::*;
-use media::testutil::PNG_1X1_RGB;
-use media::{CompressOptions, MediaMode};
-
-fn media_cfg(mode: MediaMode) -> MediaConfig {
-    MediaConfig {
-        mode,
-        compress: CompressOptions::default(),
-    }
-}
-use message_ir::IrAttachment;
+use crate::CancelFlag;
+use ir::Attachment;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn empty_att(name: &str) -> IrAttachment {
-    IrAttachment {
-        path: None,
+fn empty_attachment(name: &str) -> Attachment {
+    Attachment {
         original_name: Some(name.into()),
-        mime_type: Some("image/jpeg".into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..ir::testutil::sample_attachment()
     }
 }
 
 #[test]
 fn clone_writes_file_and_fills_hash() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut att = empty_att("photo.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut attachment = empty_attachment("photo.jpg");
     let bytes = b"hello-photo";
     let progress = Mutex::new(Vec::new());
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: Some(bytes.len() as u64),
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |_| Ok(Some(bytes.to_vec())),
             |p| progress.lock().unwrap().push(p),
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
-    assert!(att.path.as_deref().unwrap().starts_with("attachments/"));
-    assert_eq!(att.size_bytes, Some(bytes.len() as u64));
-    assert_eq!(att.digest_sha256.as_ref().unwrap().len(), 64);
-    let dest = dir.path().join(att.path.as_ref().unwrap());
+    assert!(
+        attachment
+            .path
+            .as_deref()
+            .unwrap()
+            .starts_with("attachments/")
+    );
+    assert_eq!(attachment.size_bytes, Some(bytes.len() as u64));
+    assert_eq!(attachment.digest_sha256.as_ref().unwrap().len(), 64);
+    let dest = dir.path().join(attachment.path.as_ref().unwrap());
     assert_eq!(std::fs::read(dest).unwrap(), bytes);
     let last = progress.lock().unwrap().last().cloned().unwrap();
     assert_eq!(last.done, 1);
@@ -67,9 +57,9 @@ fn clone_writes_file_and_fills_hash() {
 #[test]
 fn the_byte_total_ends_at_the_bytes_actually_copied() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut smaller = empty_att("smaller.jpg");
-    let mut missing = empty_att("missing.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    let mut smaller = empty_attachment("smaller.jpg");
+    let mut missing = empty_attachment("missing.jpg");
     let progress = Mutex::new(Vec::new());
     {
         // The source said 100 bytes for a 10-byte file, and 50 for a file
@@ -88,12 +78,12 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| Ok((i == 0).then(|| b"ten bytes!".to_vec())),
             |p| progress.lock().unwrap().push(p),
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
@@ -105,42 +95,48 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
 #[test]
 fn disabled_skips_without_loading() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut att = empty_att("photo.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    let mut attachment = empty_attachment("photo.jpg");
     let loaded = AtomicBool::new(false);
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 0,
             size_hint: Some(99),
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Disabled),
+            &attachments_dir,
+            AttachmentFiles::Skip,
             |_| {
                 loaded.store(true, Ordering::Relaxed);
                 Ok(Some(b"x".to_vec()))
             },
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
     assert!(!loaded.load(Ordering::Relaxed));
-    assert_eq!(att.missing_reason.as_deref(), Some("not_copied"));
-    assert!(att.path.is_none());
-    assert!(!att_dir.exists() || std::fs::read_dir(&att_dir).unwrap().next().is_none());
+    assert_eq!(attachment.missing_reason.as_deref(), Some("not_copied"));
+    assert!(attachment.path.is_none());
+    assert!(
+        !attachments_dir.exists()
+            || std::fs::read_dir(&attachments_dir)
+                .unwrap()
+                .next()
+                .is_none()
+    );
 }
 
 #[test]
 fn missing_source_is_file_missing_and_continues() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let mut b = empty_att("b.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut a = empty_attachment("a.jpg");
+    let mut b = empty_attachment("b.jpg");
     let mut done = Vec::new();
     {
         let mut jobs = [
@@ -157,8 +153,8 @@ fn missing_source_is_file_missing_and_continues() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
                     Ok(None)
@@ -167,8 +163,8 @@ fn missing_source_is_file_missing_and_continues() {
                 }
             },
             |p| done.push(p.done),
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
@@ -180,10 +176,10 @@ fn missing_source_is_file_missing_and_continues() {
 #[test]
 fn read_error_marks_file_missing_and_continues() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let mut b = empty_att("b.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut a = empty_attachment("a.jpg");
+    let mut b = empty_attachment("b.jpg");
     {
         let mut jobs = [
             AttachmentJob {
@@ -199,8 +195,8 @@ fn read_error_marks_file_missing_and_continues() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
                     Err(LoadError::Unreadable("permission denied".into()))
@@ -209,8 +205,8 @@ fn read_error_marks_file_missing_and_continues() {
                 }
             },
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
@@ -225,14 +221,14 @@ fn read_error_marks_file_missing_and_continues() {
 #[test]
 fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut atts: Vec<IrAttachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
+    let attachments_dir = dir.path().join("attachments");
+    let mut attachments: Vec<Attachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
         .into_iter()
-        .map(empty_att)
+        .map(empty_attachment)
         .collect();
     let mut asked = Vec::new();
     let err = {
-        let mut jobs: Vec<AttachmentJob<'_>> = atts
+        let mut jobs: Vec<AttachmentJob<'_>> = attachments
             .iter_mut()
             .map(|attachment| AttachmentJob {
                 attachment,
@@ -242,8 +238,8 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
             .collect();
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| {
                 asked.push(i);
                 if i == 1 {
@@ -255,27 +251,34 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
                 }
             },
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap_err()
     };
-    assert_eq!(err, "imessage-reader stopped before finishing");
+    assert_eq!(err.to_string(), "imessage-reader stopped before finishing");
     assert_eq!(asked, [0, 1], "nothing is loaded after the fatal error");
-    assert!(atts[0].path.is_some(), "the job before it was staged");
-    for att in &atts[1..] {
-        assert_eq!(att.missing_reason, None, "{:?}", att.original_name);
-        assert_eq!(att.path, None, "{:?}", att.original_name);
+    assert!(
+        attachments[0].path.is_some(),
+        "the job before it was staged"
+    );
+    for attachment in &attachments[1..] {
+        assert_eq!(
+            attachment.missing_reason, None,
+            "{:?}",
+            attachment.original_name
+        );
+        assert_eq!(attachment.path, None, "{:?}", attachment.original_name);
     }
 }
 
 #[test]
 fn cancel_stops_before_next_job() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let mut b = empty_att("b.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut a = empty_attachment("a.jpg");
+    let mut b = empty_attachment("b.jpg");
     let cancel = AtomicBool::new(false);
     let err = {
         let mut jobs = [
@@ -292,8 +295,8 @@ fn cancel_stops_before_next_job() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| {
                 if i == 0 {
                     cancel.store(true, Ordering::Relaxed);
@@ -301,12 +304,14 @@ fn cancel_stops_before_next_job() {
                 Ok(Some(b"x".to_vec()))
             },
             |_| {},
-            None,
-            Some(&cancel),
+            &LogSink::none(),
+            &cancel,
         )
         .unwrap_err()
     };
-    assert_eq!(err, "cancelled");
+    // The Cancel stays a `Canceled` value, so the desktop app tells it from
+    // a failure by its type rather than its text (#2077).
+    assert!(err.is::<Canceled>(), "{err:#}");
     assert!(a.path.is_some());
     assert!(b.path.is_none());
 }
@@ -314,16 +319,16 @@ fn cancel_stops_before_next_job() {
 #[test]
 fn empty_jobs_emits_zero_of_zero() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
+    let attachments_dir = dir.path().join("attachments");
     let progress = Mutex::new(Vec::new());
     run_attachment_jobs(
         &mut [],
-        &att_dir,
-        &media_cfg(MediaMode::Clone),
+        &attachments_dir,
+        AttachmentFiles::Originals,
         |_| Ok(None),
         |p| progress.lock().unwrap().push(p),
-        None,
-        None,
+        &LogSink::none(),
+        &CancelFlag::default(),
     )
     .unwrap();
     let last = progress.lock().unwrap().last().cloned().unwrap();
@@ -334,53 +339,14 @@ fn empty_jobs_emits_zero_of_zero() {
 }
 
 #[test]
-fn remap_updates_mime_and_continues_when_one_file_is_unreadable() {
-    let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    std::fs::write(att_dir.join("ok.jpg"), b"jpeg-bytes").unwrap();
-    let mut ok = empty_att("ok.heic");
-    ok.path = Some("attachments/ok.heic".into());
-    ok.mime_type = Some("image/heic".into());
-    let mut missing = empty_att("gone.heic");
-    missing.path = Some("attachments/gone.heic".into());
-    missing.mime_type = Some("image/heic".into());
-    {
-        let mut jobs = [
-            AttachmentJob {
-                attachment: &mut ok,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut missing,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-        ];
-        let mut remap = std::collections::HashMap::new();
-        remap.insert("attachments/ok.heic".into(), "attachments/ok.jpg".into());
-        remap.insert(
-            "attachments/gone.heic".into(),
-            "attachments/gone.jpg".into(),
-        );
-        apply_remap_to_jobs(&mut jobs, &remap, dir.path());
-    }
-    assert_eq!(ok.path.as_deref(), Some("attachments/ok.jpg"));
-    assert_eq!(ok.mime_type.as_deref(), Some("image/jpeg"));
-    assert_eq!(ok.digest_sha256.as_ref().unwrap().len(), 64);
-    assert_eq!(missing.missing_reason.as_deref(), Some("file_missing"));
-    assert!(ok.missing_reason.is_none());
-}
-#[test]
 fn clone_mode_reports_nothing_to_the_log_sink() {
     // Clone converts nothing, so nothing should reach the sink. This
     // pins that the new `log` parameter is wired end to end without
     // requiring ffmpeg in this crate's tests.
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut att = empty_att("photo.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut attachment = empty_attachment("photo.jpg");
     let bytes = b"hello-photo";
     let lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = std::sync::Arc::clone(&lines);
@@ -389,18 +355,18 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
     });
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: Some(bytes.len() as u64),
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |_| Ok(Some(bytes.to_vec())),
             |_| {},
-            Some(&sink),
-            None,
+            &sink,
+            &CancelFlag::default(),
         )
         .unwrap();
     }
@@ -425,16 +391,16 @@ fn clone_temp_paths_are_unique_per_call() {
 ///
 /// Every test above drives `run_attachment_jobs` directly with a hand-built
 /// job list. `stage_attachment_jobs` over `attachment_jobs` is what the
-/// exporters actually reach, through `message-staging` — it builds the jobs,
+/// exporters actually reach, through `staging` — it builds the jobs,
 /// runs them, counts what was saved, and drops the in-memory bytes. Mutation
 /// testing found that `stage_conversation_attachments`, the step it replaced,
 /// could be replaced with `Ok(())` in its entirety with nothing failing.
 /// An export would then write no attachment files at all and report success.
 #[test]
 fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
-    use message_ir::{
-        ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrConversationType,
-        IrDirection, IrMessage, IrMessageKind, IrService,
+    use ir::{
+        ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
+        ExportMeta, Message, MessageKind, Transport,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -456,36 +422,39 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         }
     };
 
-    let first = empty_att("photo.jpg");
-    let mut second = empty_att("clip.mp4");
+    let first = empty_attachment("photo.jpg");
+    let mut second = empty_attachment("clip.mp4");
     second.mime_type = Some("video/mp4".into());
 
     let mut documents = vec![ConversationDocument {
-        schema_version: message_ir::SCHEMA_VERSION,
+        schema_version: ir::SCHEMA_VERSION,
         export: ExportMeta {
             source: "test".into(),
             tool: "test".into(),
             tool_version: "0.1.0".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Mms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: None,
+            time_precision: ir::TimePrecision::Milliseconds,
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Mms,
+            sender: ir::Sender {
+                identity: Some("+15555550101".into()),
+                display_name: None,
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: "two files".into(),
@@ -496,6 +465,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];
@@ -503,11 +473,13 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     let saved = stage_attachment_jobs(
         attachment_jobs(document_messages(&mut documents)),
         &attachments_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         load,
-        None,
-        None,
-        None,
+        Sinks {
+            log: &LogSink::none(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
+        },
     )
     .expect("staging succeeds");
 
@@ -525,9 +497,9 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     // Each attachment record names its file and carries its digest, so a
     // reader can find the bytes again — and the file holds what the loader
     // gave for that index, which is how the flat index maps to the document.
-    let atts = &documents[0].messages[0].attachments;
-    for (att, expected) in atts.iter().zip([FIRST, SECOND]) {
-        let path = att.path.as_deref().expect("a path was recorded");
+    let attachments = &documents[0].messages[0].attachments;
+    for (attachment, expected) in attachments.iter().zip([FIRST, SECOND]) {
+        let path = attachment.path.as_deref().expect("a path was recorded");
         assert!(path.starts_with("attachments/"), "got {path}");
         assert_eq!(
             std::fs::read(dir.path().join(path)).expect("read the staged file"),
@@ -535,19 +507,20 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             "the file must hold the bytes the loader gave for its index"
         );
         assert_eq!(
-            att.digest_sha256
+            attachment
+                .digest_sha256
                 .as_ref()
                 .expect("a digest was recorded")
                 .len(),
             64
         );
-        assert_eq!(att.size_bytes, Some(expected.len() as u64));
+        assert_eq!(attachment.size_bytes, Some(expected.len() as u64));
         // And nothing is left in memory, or a large export holds every
         // attachment at once.
-        assert!(att.bytes.is_none(), "in-memory bytes must be freed");
+        assert!(attachment.bytes.is_none(), "in-memory bytes must be freed");
     }
     assert_ne!(
-        atts[0].digest_sha256, atts[1].digest_sha256,
+        attachments[0].digest_sha256, attachments[1].digest_sha256,
         "different bytes, different digests"
     );
 }
@@ -560,8 +533,8 @@ fn staging_the_same_bytes_twice_writes_one_file() {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).expect("attachments dir");
 
-    let mut first = empty_att("a.jpg");
-    let mut second = empty_att("b.jpg");
+    let mut first = empty_attachment("a.jpg");
+    let mut second = empty_attachment("b.jpg");
 
     let mut jobs = vec![
         AttachmentJob {
@@ -578,11 +551,11 @@ fn staging_the_same_bytes_twice_writes_one_file() {
     run_attachment_jobs(
         &mut jobs,
         &attachments_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         |_| Ok(Some(b"identical bytes".to_vec())),
         |_| {},
-        None,
-        None,
+        &LogSink::none(),
+        &CancelFlag::default(),
     )
     .expect("run");
     drop(jobs);
@@ -608,19 +581,19 @@ fn staging_the_same_bytes_twice_writes_one_file() {
 /// A wrong total makes a long export's progress bar meaningless.
 #[test]
 fn the_size_hint_prefers_the_recorded_size_then_the_bytes_in_hand() {
-    let mut att = empty_att("photo.jpg");
-    assert_eq!(attachment_size_hint(&att), None, "nothing to go on");
+    let mut attachment = empty_attachment("photo.jpg");
+    assert_eq!(attachment_size_hint(&attachment), None, "nothing to go on");
 
-    att.bytes = Some(vec![0u8; 12]);
+    attachment.bytes = Some(vec![0u8; 12]);
     assert_eq!(
-        attachment_size_hint(&att),
+        attachment_size_hint(&attachment),
         Some(12),
         "the bytes in memory are the fallback"
     );
 
-    att.size_bytes = Some(9_999);
+    attachment.size_bytes = Some(9_999);
     assert_eq!(
-        attachment_size_hint(&att),
+        attachment_size_hint(&attachment),
         Some(9_999),
         "the record's own size wins, because it is what the source said"
     );
@@ -651,33 +624,33 @@ fn the_extension_comes_from_the_original_name() {
 #[test]
 fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut att = empty_att("empty.jpg");
+    let attachments_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments_dir).unwrap();
+    let mut attachment = empty_attachment("empty.jpg");
 
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: None,
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |_| Ok(Some(Vec::new())),
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
 
-    assert_eq!(att.missing_reason.as_deref(), Some("file_missing"));
-    assert!(att.path.is_none(), "nothing was staged");
-    assert!(att.digest_sha256.is_none());
+    assert_eq!(attachment.missing_reason.as_deref(), Some("file_missing"));
+    assert!(attachment.path.is_none(), "nothing was staged");
+    assert!(attachment.digest_sha256.is_none());
     assert_eq!(
-        std::fs::read_dir(&att_dir).unwrap().count(),
+        std::fs::read_dir(&attachments_dir).unwrap().count(),
         0,
         "no file written for an empty source"
     );
@@ -692,44 +665,43 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
 /// being killed by the kernel.
 #[test]
 fn staging_frees_the_bytes_the_documents_were_carrying() {
-    use message_ir::{
-        ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrConversationType,
-        IrDirection, IrMessage, IrMessageKind, IrService,
+    use ir::{
+        ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
+        ExportMeta, Message, MessageKind, Transport,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).expect("attachments dir");
 
-    let mut carried = empty_att("photo.jpg");
+    let mut carried = empty_attachment("photo.jpg");
     carried.bytes = Some(b"bytes held on the document".to_vec());
 
     let mut documents = vec![ConversationDocument {
-        schema_version: message_ir::SCHEMA_VERSION,
+        schema_version: ir::SCHEMA_VERSION,
         export: ExportMeta {
             source: "test".into(),
             tool: "test".into(),
             tool_version: "0.1.0".into(),
             owner_identity: None,
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Mms,
-            sender_identity: None,
-            sender_display_name: None,
+            time_precision: ir::TimePrecision::Milliseconds,
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Mms,
+            sender: ir::Sender::default(),
             owner_identity: None,
             subject: None,
             text: "one file".into(),
@@ -740,6 +712,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];
@@ -752,11 +725,13 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     stage_attachment_jobs(
         attachment_jobs(document_messages(&mut documents)),
         &attachments_dir,
-        &media_cfg(MediaMode::Clone),
+        AttachmentFiles::Originals,
         |_| Ok(Some(b"bytes held on the document".to_vec())),
-        None,
-        None,
-        None,
+        Sinks {
+            log: &LogSink::none(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
+        },
     )
     .expect("staging succeeds");
 
@@ -770,107 +745,6 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     );
 }
 
-/// Convert must leave each attachment pointing at the file it produced, with
-/// that file's type, and mark the one it could not convert.
-#[test]
-fn convert_points_each_attachment_at_its_converted_file() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
-    let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut photo = empty_att("photo.png");
-    photo.mime_type = Some("image/png".into());
-    let mut broken = empty_att("broken.png");
-    broken.mime_type = Some("image/png".into());
-    {
-        let mut jobs = [
-            AttachmentJob {
-                attachment: &mut photo,
-                timestamp_unix_ms: 1_609_459_200_000,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut broken,
-                timestamp_unix_ms: 1_609_459_200_000,
-                size_hint: None,
-            },
-        ];
-        run_attachment_jobs(
-            &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Convert),
-            |i| {
-                Ok(Some(if i == 0 {
-                    PNG_1X1_RGB.to_vec()
-                } else {
-                    b"not an image".to_vec()
-                }))
-            },
-            |_| {},
-            None,
-            None,
-        )
-        .unwrap();
-    }
-
-    let path = photo.path.as_deref().unwrap();
-    assert!(
-        path.starts_with("attachments/") && path.ends_with(".jpg"),
-        "{path}"
-    );
-    assert_eq!(photo.mime_type.as_deref(), Some("image/jpeg"));
-    assert_eq!(photo.missing_reason, None);
-    let converted = std::fs::read(dir.path().join(path)).unwrap();
-    assert!(converted.starts_with(&[0xff, 0xd8]), "the file is a JPEG");
-    assert_eq!(photo.digest_sha256, Some(hex_sha256(&converted)));
-    assert_eq!(photo.size_bytes, Some(converted.len() as u64));
-
-    let reason = broken.missing_reason.as_deref().unwrap_or("");
-    assert!(reason.starts_with("convert_failed: "), "{reason:?}");
-    assert_eq!(broken.mime_type.as_deref(), Some("image/png"));
-}
-
-#[test]
-fn a_convert_error_marks_only_the_attachment_it_names() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut named = empty_att("a.heic");
-    named.path = Some("attachments/a.heic".into());
-    let mut other = empty_att("b.heic");
-    other.path = Some("attachments/b.heic".into());
-    let mut pathless = empty_att("c.heic");
-    {
-        let mut jobs = [
-            AttachmentJob {
-                attachment: &mut named,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut other,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-            AttachmentJob {
-                attachment: &mut pathless,
-                timestamp_unix_ms: 0,
-                size_hint: None,
-            },
-        ];
-        let failed = dir.path().join("attachments").join("a.heic");
-        mark_convert_error(&mut jobs, &format!("{}: ffmpeg failed", failed.display()));
-        // A line with no path in front of it names nothing.
-        mark_convert_error(&mut jobs, "ffmpeg failed");
-    }
-    assert_eq!(
-        named.missing_reason.as_deref(),
-        Some("convert_failed: ffmpeg failed")
-    );
-    assert_eq!(other.missing_reason, None);
-    assert_eq!(pathless.missing_reason, None);
-}
-
 /// A sender-chosen name whose text after the last dot is long must not stop
 /// the run (issue #1126).
 ///
@@ -881,10 +755,10 @@ fn a_convert_error_marks_only_the_attachment_it_names() {
 #[test]
 fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
+    let attachments_dir = dir.path().join("attachments");
     let long_name = format!("Notes v1.{}", "x".repeat(240));
-    let mut long = empty_att(&long_name);
-    let mut ok = empty_att("photo.jpg");
+    let mut long = empty_attachment(&long_name);
+    let mut ok = empty_attachment("photo.jpg");
     let result = {
         let mut jobs = [
             AttachmentJob {
@@ -900,12 +774,12 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| Ok(Some(format!("bytes-{i}").into_bytes())),
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
     };
     assert!(result.is_ok(), "{result:?}");
@@ -921,31 +795,34 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
 #[test]
 fn a_name_with_no_plain_extension_is_staged_without_one() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    let mut att = empty_att("Notes v1.2 (draft?)");
+    let attachments_dir = dir.path().join("attachments");
+    let mut attachment = empty_attachment("Notes v1.2 (draft?)");
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: None,
         }];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |_| Ok(Some(b"draft".to_vec())),
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
     }
-    let staged = att.path.as_deref().unwrap();
+    let staged = attachment.path.as_deref().unwrap();
     let name = staged.strip_prefix("attachments/").unwrap();
     assert!(!name.contains('.'), "{name}");
     assert!(dir.path().join(staged).is_file());
-    assert_eq!(att.original_name.as_deref(), Some("Notes v1.2 (draft?)"));
-    assert_eq!(att.missing_reason, None);
+    assert_eq!(
+        attachment.original_name.as_deref(),
+        Some("Notes v1.2 (draft?)")
+    );
+    assert_eq!(attachment.missing_reason, None);
 }
 
 /// An extension is kept only when it is at most ten ASCII letters and
@@ -975,13 +852,13 @@ fn only_a_short_plain_extension_is_kept() {
 #[test]
 fn a_failed_write_marks_only_that_attachment_missing() {
     let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
+    let attachments_dir = dir.path().join("attachments");
     let blocked_bytes = b"blocked".to_vec();
-    let blocked_name = attachment_dest_name(1_609_459_200, &hex_sha256(&blocked_bytes), ".jpg");
-    std::fs::create_dir_all(att_dir.join(&blocked_name).join("occupied")).unwrap();
+    let blocked_name = attachment_dest_name(1_609_459_200, &sha256_hex(&blocked_bytes), ".jpg");
+    std::fs::create_dir_all(attachments_dir.join(&blocked_name).join("occupied")).unwrap();
 
-    let mut blocked = empty_att("blocked.jpg");
-    let mut ok = empty_att("photo.jpg");
+    let mut blocked = empty_attachment("blocked.jpg");
+    let mut ok = empty_attachment("photo.jpg");
     let progress = Mutex::new(Vec::new());
     let lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = std::sync::Arc::clone(&lines);
@@ -1003,8 +880,8 @@ fn a_failed_write_marks_only_that_attachment_missing() {
         ];
         run_attachment_jobs(
             &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
+            &attachments_dir,
+            AttachmentFiles::Originals,
             |i| {
                 Ok(Some(if i == 0 {
                     blocked_bytes.clone()
@@ -1013,8 +890,8 @@ fn a_failed_write_marks_only_that_attachment_missing() {
                 }))
             },
             |p| progress.lock().unwrap().push(p),
-            Some(&sink),
-            None,
+            &sink,
+            &CancelFlag::default(),
         )
     };
     assert!(result.is_ok(), "{result:?}");
@@ -1034,7 +911,7 @@ fn a_failed_write_marks_only_that_attachment_missing() {
         "{lines:?}"
     );
     // The failed write leaves no temp file behind.
-    let leftovers: Vec<_> = std::fs::read_dir(&att_dir)
+    let leftovers: Vec<_> = std::fs::read_dir(&attachments_dir)
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .filter(|n| n.ends_with(".tmp"))

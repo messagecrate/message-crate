@@ -3,24 +3,29 @@
 //! JSON Lines means one JSON object per line. Message Crate is the HTTP server
 //! that stores imported messages.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use message_crate_core::{CancelFlag, check_cancel, count_of, parallel_for_each};
-use message_crate_http::{auth_check as authenticate, with_retries};
-use message_ir_format::mark_export_directory;
+use ir_format::mark_export_directory;
+use message_crate_core::{
+    CancelFlag, Canceled, check_cancel, count_of, is_canceled, parallel_for_each,
+};
+use message_crate_http::{
+    RetryKind, auth_check as authenticate, classify_retry, is_session_refused, with_retries,
+    with_retries_until,
+};
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
-use crate::project::{
-    ExportPath, build_document, common_backup_taken_at, conversation_key, export_path,
-    to_ir_message,
-};
-use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
+use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
+use api_types::{CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, Message};
 
 /// Page size for `GET /v1/exports/{id}/messages`; the server's maximum.
 pub const DEFAULT_PAGE_LIMIT: usize = 500;
@@ -30,8 +35,34 @@ pub const MAX_PAGE_LIMIT: usize = 500;
 pub const TOOL_NAME: &str = "message-crate-export";
 /// Default number of workers that fetch Assets in parallel.
 pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
-/// Extra tries for transient HTTP failures, matching the message-crate-import default.
+/// How often, while its Assets are fetched, a run reads a page past the end
+/// of its list ([`KeepAlive`]). The server closes a run with no page read for
+/// an hour, and the Asset fetches read no page, so a long fetch would lose
+/// the run without these reads. One try of a fetch is cut off after five
+/// minutes, so ten minutes leaves the hour room.
+const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(10 * 60);
+
+/// Extra tries for transient HTTP failures, matching the `import` default.
 const MAX_RETRIES: u32 = 3;
+
+/// Run `op`, retrying a transient failure, until the person cancels the
+/// run: a cancel ends the wait before the next try at once, and no further
+/// try is made (#2111).
+///
+/// # Errors
+///
+/// Returns [`Canceled`] for a transient failure once the run is
+/// canceled: a later try might have passed, so the run is closed as
+/// canceled rather than failed. Any other failure is returned as it is.
+fn retried_until_canceled<T>(cancel: &CancelFlag, op: impl FnMut() -> Result<T>) -> Result<T> {
+    with_retries_until(MAX_RETRIES, || is_canceled(cancel), op).map_err(|error| {
+        if is_canceled(cancel) && classify_retry(&error) == RetryKind::Transient {
+            Canceled.into()
+        } else {
+            error
+        }
+    })
+}
 
 /// Settings for one Export Run (output directory, URL, search, flags).
 #[derive(Debug, Clone)]
@@ -55,10 +86,15 @@ pub struct ExportConfig {
     /// Messages per `GET /v1/exports/{id}/messages` page, clamped to
     /// `1..=MAX_PAGE_LIMIT`.
     pub page_limit: usize,
-    /// Checked between pages and Asset fetches; set it to stop the run early.
-    pub cancel: Option<CancelFlag>,
+    /// Checked between pages and Asset fetches, and through every wait
+    /// before a retry; set it to stop the run early.
+    pub cancel: CancelFlag,
     /// Number of workers that fetch Assets in parallel (default 8).
     pub asset_fetch_workers: usize,
+    /// The Export Date every conversation file carries, in Unix
+    /// milliseconds: the instant the caller gives. The run never reads the
+    /// clock for it.
+    pub exported_at_unix_ms: i64,
 }
 
 /// Final summary of an Export Run: conversations, messages, and the Assets
@@ -79,12 +115,26 @@ pub struct ExportReport {
     pub assets_fetched: u64,
     /// Assets already on disk, kept without fetching them.
     pub assets_kept: u64,
+    /// Assets this run could not fetch, by fingerprint. The conversation
+    /// files still name each one, and the directory does not hold its file.
+    pub assets_failed: Vec<AssetFailure>,
     /// Attachment paths the server sent that would leave the output directory,
     /// as the server sent them. Each such attachment is written at
     /// `attachments/{sha256}` instead.
     pub refused_attachment_paths: Vec<String>,
     /// The output directory, as given.
     pub out_dir: String,
+}
+
+/// One Asset an Export Run could not fetch, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AssetFailure {
+    /// The Asset's SHA-256 fingerprint.
+    pub sha256: String,
+    /// The path under the output directory its file was to be written at.
+    pub path: String,
+    /// The fetch's error, as the progress log shows it.
+    pub reason: String,
 }
 
 /// Live progress sent to the desktop app during an Export Run.
@@ -169,10 +219,14 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
 /// (`.message-crate-export-state.jsonl`) records which Assets were already fetched so a
 /// later run can skip them.
 ///
+/// An Asset that cannot be fetched does not end the run: the report and the
+/// progress log name it, and every conversation file is still written.
+///
 /// # Errors
 ///
-/// Returns an error when the session token or output directory is missing, login fails, a
-/// page or Asset fetch fails, or a conversation file cannot be written.
+/// Returns an error when the session token or output directory is missing,
+/// login fails, a page fetch fails, a conversation file cannot be written, or
+/// the run is canceled.
 pub fn run(
     cfg: &ExportConfig,
     mut on_progress: Option<&mut ProgressFn<'_>>,
@@ -195,23 +249,24 @@ pub fn run(
     }
 
     // Nothing is recorded for a run the caller already gave up on.
-    check_cancel(cfg.cancel.as_ref())?;
+    check_cancel(&cfg.cancel)?;
     let export = exporter.start_export(&mut on_progress)?;
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
-    // it ended. A close that fails after the files are written is a warning,
-    // not a failed export: the directory is complete, only the record is not.
-    let action = if outcome.is_ok() {
-        CloseAction::Complete
-    } else {
-        CloseAction::Cancel
-    };
-    if let Err(error) = exporter.close_export(export.id, action) {
-        // A refused completion follows a run whose files are all written; a
-        // refused cancellation follows the failure the run returns below.
-        let line = match action {
-            CloseAction::Complete => format!("{error:#}. The Export wrote every file all the same"),
-            CloseAction::Cancel => format!("{error:#}"),
+    // it ended: canceled only when the person asked, failed for any other
+    // error. A run the server already closed is left as it is. A close that
+    // fails after the files are written is a warning, not a failed export:
+    // the directory is complete, only the record is not.
+    let action = close_action(&outcome);
+    if let Some(action) = action
+        && let Err(error) = exporter.close_export(export.id, action)
+    {
+        // A refused completion follows a run whose files are all written;
+        // any other refused close follows the error the run returns below.
+        let line = if action == CloseAction::Complete(CompleteExportStatus::Completed) {
+            format!("{error:#}. The Export wrote its files all the same")
+        } else {
+            format!("{error:#}")
         };
         emit(&mut on_progress, ProgressEvent::Log(line));
     }
@@ -230,6 +285,7 @@ pub fn run(
         messages,
         assets_fetched: assets.fetched,
         assets_kept: assets.kept,
+        assets_failed: assets.failed,
         refused_attachment_paths: refused_paths.into_iter().collect(),
         out_dir: cfg.out_dir.display().to_string(),
     };
@@ -242,15 +298,48 @@ pub fn run(
             report.out_dir
         )),
     );
+    if !report.assets_failed.is_empty() {
+        emit(
+            &mut on_progress,
+            ProgressEvent::Log(missing_assets_line(report.assets_failed.len())),
+        );
+    }
     emit(&mut on_progress, ProgressEvent::Done(report.clone()));
     Ok(report)
+}
+
+/// How a run that returned `outcome` is closed on the server: completed when
+/// it wrote its conversation files, canceled when the person stopped it,
+/// and failed for every other error. `None` when the server already closed
+/// it ([`crate::http::RunCanceledOnServer`]): a close would only be refused.
+fn close_action<T>(outcome: &Result<T>) -> Option<CloseAction> {
+    match outcome {
+        Ok(_) => Some(CloseAction::Complete(CompleteExportStatus::Completed)),
+        Err(error) if crate::http::is_run_canceled_on_server(error) => None,
+        Err(error) if error.is::<Canceled>() => Some(CloseAction::Cancel),
+        Err(_) => Some(CloseAction::Complete(CompleteExportStatus::Failed)),
+    }
+}
+
+/// The progress line that ends a run with `count` Assets it could not fetch.
+fn missing_assets_line(count: usize) -> String {
+    let files = if count == 1 {
+        "its file is"
+    } else {
+        "their files are"
+    };
+    format!(
+        "{} could not be fetched, so {files} missing from the Export. \
+         The lines above name each one",
+        count_of(count as u64, "Asset", "Assets")
+    )
 }
 
 /// Everything the server handed back while paging: messages grouped by
 /// conversation, the attachments they reference, and the running count.
 struct Fetched {
     /// Conversation key → (first message as the metadata seed, converted messages).
-    by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    by_conv: BTreeMap<String, (Message, Vec<ir::Message>)>,
     /// sha256 → relative path under the output directory.
     assets: HashMap<String, String>,
     /// sha256 → every other path a message names for the same bytes. The
@@ -262,11 +351,14 @@ struct Fetched {
     total_messages: u64,
 }
 
-/// How many Assets this run fetched and kept, for the report.
-#[derive(Debug, Default, Clone, Copy)]
+/// How many Assets this run fetched and kept, and the ones it could not
+/// fetch, for the report.
+#[derive(Debug, Default, Clone)]
 struct AssetCounts {
     fetched: u64,
     kept: u64,
+    /// Sorted by fingerprint.
+    failed: Vec<AssetFailure>,
 }
 
 /// What one run left on disk.
@@ -367,7 +459,7 @@ impl<'a> Export<'a> {
     /// Returns an error when the server refuses the scope or the request fails.
     fn start_export(&self, out: &mut Option<&mut ProgressFn<'_>>) -> Result<ExportRun> {
         let cfg = self.cfg;
-        let export = with_retries(MAX_RETRIES, || {
+        let export = retried_until_canceled(&cfg.cancel, || {
             crate::http::create_export(
                 &self.session,
                 &cfg.base_url,
@@ -396,12 +488,24 @@ impl<'a> Export<'a> {
         Ok(export)
     }
 
-    /// Close the run by `action`, retrying a transient failure.
+    /// Close the run by `action`, retrying a transient failure. The close of
+    /// a canceled run is tried once, so Cancel is not kept waiting on a
+    /// server that is away: a run whose close fails is closed by the server
+    /// once no page of it is read for an hour. A completed or failed run
+    /// keeps every retry even when Cancel is pressed during its close, so
+    /// the server records how it ended rather than `canceled`. A failed
+    /// close is returned as it is, never as [`Canceled`]: the caller logs
+    /// it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
-        with_retries(MAX_RETRIES, || {
+        let close = || {
             crate::http::close_export(&self.session, &cfg.base_url, &cfg.token, export_id, action)
-        })
+        };
+        if action == CloseAction::Cancel {
+            close()
+        } else {
+            with_retries(MAX_RETRIES, close)
+        }
     }
 
     /// Page the run's messages, fetch their Assets, and write the
@@ -409,22 +513,24 @@ impl<'a> Export<'a> {
     ///
     /// # Errors
     ///
-    /// Returns an error when a page or Asset fetch fails after retries, a
-    /// message cannot be converted, a file cannot be written, or the run is
-    /// cancelled.
+    /// Returns an error when a page fetch fails after retries, a message
+    /// cannot be converted, a file cannot be written, or the run is
+    /// canceled. An Asset that cannot be fetched is counted in the result
+    /// instead.
     fn export_into_directory(
         &self,
         export: &ExportRun,
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<Written> {
-        let fetched = self.fetch_all_messages(export, out)?;
+        let mut fetched = self.fetch_all_messages(export, out)?;
         let assets = if self.cfg.skip_attachments {
             AssetCounts::default()
         } else {
-            let counts = self.fetch_assets(&fetched.assets, out)?;
+            let counts = self.fetch_assets(export, &mut fetched.assets, out)?;
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
+        mark_unfetched(&mut fetched.by_conv, &assets.failed);
         let conversations = self.write_conversations(fetched.by_conv)?;
         self.finish_journal(
             out,
@@ -448,7 +554,7 @@ impl<'a> Export<'a> {
     /// # Errors
     ///
     /// Returns an error when a page fails after retries, a message cannot be
-    /// converted, or the run is cancelled.
+    /// converted, or the run is canceled.
     fn fetch_all_messages(
         &self,
         export: &ExportRun,
@@ -465,8 +571,8 @@ impl<'a> Export<'a> {
         let limit = cfg.page_limit.clamp(1, MAX_PAGE_LIMIT);
         let mut offset = 0usize;
         loop {
-            check_cancel(cfg.cancel.as_ref())?;
-            let page = with_retries(MAX_RETRIES, || {
+            check_cancel(&cfg.cancel)?;
+            let page = retried_until_canceled(&cfg.cancel, || {
                 crate::http::export_messages(
                     &self.session,
                     ExportMessagesArgs {
@@ -487,10 +593,10 @@ impl<'a> Export<'a> {
                     total_so_far: fetched.total_messages,
                 },
             );
-            for msg in page.items {
+            for message in page.items {
                 if !cfg.skip_attachments {
                     for (path, rel) in
-                        note_asset_refs(&msg, &mut fetched.assets, &mut fetched.other_paths)
+                        note_asset_refs(&message, &mut fetched.assets, &mut fetched.other_paths)
                     {
                         let line = refused_path_line(&path, rel.as_deref());
                         if fetched.refused_paths.insert(path) {
@@ -498,13 +604,12 @@ impl<'a> Export<'a> {
                         }
                     }
                 }
-                let ir = to_ir_message(&msg, cfg.skip_attachments)?;
-                let (seed, messages) = fetched
+                let ir = to_ir_message(&message, cfg.skip_attachments)?;
+                let (_, messages) = fetched
                     .by_conv
-                    .entry(conversation_key(&msg))
+                    .entry(conversation_key(&message))
                     // Keep first message as seed for conversation metadata.
-                    .or_insert_with(|| (msg.clone(), Vec::new()));
-                common_backup_taken_at(seed, &msg);
+                    .or_insert_with(|| (message.clone(), Vec::new()));
                 messages.push(ir);
             }
             match next_offset(offset, limit, page.total) {
@@ -520,21 +625,26 @@ impl<'a> Export<'a> {
     ///
     /// A file at its path is kept whether or not the journal lists it, so the
     /// "Fetching" line counts as already on disk the same Assets the
-    /// "Fetched" line counts as kept.
+    /// "Fetched" line counts as kept. An Asset whose fetch fails after
+    /// retries gets one line in the progress log, is counted as failed, and
+    /// is removed from `assets`, so nothing after this places, journals or
+    /// records it as on disk.
     ///
     /// # Errors
     ///
-    /// Returns an error when a fetch fails after retries or the run is cancelled.
+    /// Returns an error when the run is canceled or the server refuses the
+    /// session.
     fn fetch_assets(
         &self,
-        assets: &HashMap<String, String>,
+        export: &ExportRun,
+        assets: &mut HashMap<String, String>,
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<AssetCounts> {
         let cfg = self.cfg;
         let to_fetch = assets_to_fetch(assets, &cfg.out_dir);
         let kept = assets.len() as u64 - to_fetch.len() as u64;
-        let fetched = if to_fetch.is_empty() {
-            0
+        let (fetched, failed) = if to_fetch.is_empty() {
+            (0, Vec::new())
         } else {
             emit(
                 out,
@@ -552,8 +662,18 @@ impl<'a> Export<'a> {
                 assets: &to_fetch,
                 out_dir: &cfg.out_dir,
                 workers: cfg.asset_fetch_workers,
-                cancel: cfg.cancel.as_ref(),
+                cancel: &cfg.cancel,
+                keep_alive: &KeepAlive::new(export, KEEP_ALIVE_EVERY, Instant::now()),
             })?;
+            for failure in &stats.failed {
+                emit(
+                    out,
+                    ProgressEvent::Log(format!(
+                        "{}, so {} is not written",
+                        failure.reason, failure.path
+                    )),
+                );
+            }
             emit(
                 out,
                 ProgressEvent::Log(format!(
@@ -563,8 +683,13 @@ impl<'a> Export<'a> {
                     kept
                 )),
             );
-            stats.fetched
+            (stats.fetched, stats.failed)
         };
+        // An Asset that could not be fetched has no file: it has none to
+        // place at its other paths, and the journal must not list it.
+        for failure in &failed {
+            assets.remove(&failure.sha256);
+        }
         for sha in assets.keys() {
             if !self.journal.assets.contains(sha) {
                 let event = ExportJournalEvent::AssetOk {
@@ -583,12 +708,16 @@ impl<'a> Export<'a> {
                 }
             }
         }
-        Ok(AssetCounts { fetched, kept })
+        Ok(AssetCounts {
+            fetched,
+            kept,
+            failed,
+        })
     }
 
     /// Write one JSON Lines file per conversation and return how many.
     ///
-    /// The stem comes from [`message_ir::ConversationDocument::filename_stem`],
+    /// The stem comes from [`ir_format::filename_stem`],
     /// which appends `packaging_stem_suffix` (the sanitized source, set here
     /// so the same chat from two sources lands in two files). The write is
     /// atomic: ir-format writes a `.tmp` sibling and renames it, so a crash
@@ -599,32 +728,37 @@ impl<'a> Export<'a> {
     /// Returns an error when a file cannot be created, serialized, or renamed.
     fn write_conversations(
         &self,
-        by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+        by_conv: BTreeMap<String, (Message, Vec<ir::Message>)>,
     ) -> Result<u64> {
-        let mut docs: Vec<message_ir::ConversationDocument> = by_conv
+        let mut documents: Vec<ir::ConversationDocument> = by_conv
             .into_values()
             .map(|(seed, messages)| {
-                let mut doc = build_document(&seed.source, &seed, messages);
+                let mut document =
+                    build_document(&seed.source, &seed, messages, self.cfg.exported_at_unix_ms);
                 // Disambiguate same chat across sources.
-                if !doc.export.source.trim().is_empty() {
-                    doc.packaging_stem_suffix =
-                        Some(format!("__{}", sanitize_source_suffix(&doc.export.source)));
+                if !document.export.source.trim().is_empty() {
+                    document.packaging_stem_suffix = Some(format!(
+                        "__{}",
+                        sanitize_source_suffix(&document.export.source)
+                    ));
                 }
-                doc
+                document
             })
             .collect();
         // Two groups from one source can still share a title or their people.
-        let mut names: Vec<&mut message_ir::ConversationDocument> = docs.iter_mut().collect();
-        message_ir::give_each_document_its_own_file(&mut names).map_err(anyhow::Error::msg)?;
-        for doc in &docs {
-            message_ir_format::write_conversation_jsonl(&self.cfg.out_dir, doc)?;
+        let mut names: Vec<&mut ir::ConversationDocument> = documents.iter_mut().collect();
+        ir_format::give_each_document_its_own_file(&mut names).map_err(anyhow::Error::msg)?;
+        for document in &documents {
+            ir_format::write_conversation_jsonl(&self.cfg.out_dir, document)?;
         }
-        Ok(docs.len() as u64)
+        Ok(documents.len() as u64)
     }
 
     /// Record that this Export Run finished, then rewrite the journal in its
-    /// shortest form. Every Asset this run saw is on disk: it was fetched
-    /// above, or an earlier run had already fetched it. A journal write
+    /// shortest form. Every Asset in `seen_assets` is on disk: it was fetched
+    /// above, or an earlier run had already fetched it. An Asset this run
+    /// could not fetch is left out of the journal, even when an earlier
+    /// run's line listed it, because its file is not there. A journal write
     /// failure does not fail a run whose files are already written, so it
     /// goes to the progress log. A next run into the same directory still
     /// skips each Asset whose file is there, journal or not.
@@ -654,6 +788,11 @@ impl<'a> Export<'a> {
         }
         let mut recorded_assets = self.journal.assets.clone();
         recorded_assets.extend(seen_assets.into_keys());
+        // `seen_assets` already leaves out what this run could not fetch;
+        // a line an earlier run wrote for one of them goes too.
+        for failure in &assets.failed {
+            recorded_assets.remove(&failure.sha256);
+        }
         let final_state = ExportJournalState {
             assets: recorded_assets,
             export_complete: true,
@@ -670,37 +809,69 @@ impl<'a> Export<'a> {
     }
 }
 
+/// Mark each attachment whose Asset this run could not fetch `not_fetched`,
+/// so the conversation file itself says the file is not there, and a later
+/// Import or Convert of the directory does not meet an unexplained missing
+/// file once the run's log is gone. The path and fingerprint stay, so a next
+/// Export into the same directory still knows what to fetch.
+fn mark_unfetched(
+    by_conv: &mut BTreeMap<String, (Message, Vec<ir::Message>)>,
+    failed: &[AssetFailure],
+) {
+    if failed.is_empty() {
+        return;
+    }
+    let failed: HashSet<&str> = failed.iter().map(|f| f.sha256.as_str()).collect();
+    for attachment in by_conv
+        .values_mut()
+        .flat_map(|(_, messages)| messages.iter_mut())
+        .flat_map(|message| message.attachments.iter_mut())
+    {
+        let unfetched = attachment
+            .digest_sha256
+            .as_deref()
+            .and_then(asset_key)
+            .is_some_and(|sha| failed.contains(sha.as_str()));
+        if unfetched {
+            attachment.missing_reason = Some(ir::missing_reason::NOT_FETCHED.to_string());
+        }
+    }
+}
+
+/// The key an Asset is fetched, journaled and reported under: its trimmed
+/// SHA-256 in lowercase, so one fingerprint in two cases is one fetch, never
+/// two fetches writing one temporary file on a case-insensitive file system.
+/// `None` for a blank fingerprint.
+fn asset_key(sha256: &str) -> Option<String> {
+    ir::trimmed(sha256).map(str::to_ascii_lowercase)
+}
+
 /// Remember where each attachment a message references should land on disk,
 /// and return each attachment path [`export_path`] refused, with the path
 /// used in its place.
 ///
 /// The first message to mention a sha256 decides the path it is fetched to;
-/// the server stores one blob per fingerprint for the account, whatever the
+/// the server stores one Asset per fingerprint for the account, whatever the
 /// source, so later mentions are the same file. A later mention under
 /// another path goes into `other_paths`, because staging names a file by
 /// date and fingerprint and one file sent on two days has two paths.
 fn note_asset_refs(
-    msg: &Message,
+    message: &Message,
     assets: &mut HashMap<String, String>,
     other_paths: &mut BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<(String, Option<String>)> {
     let mut refused = Vec::new();
-    for att in &msg.attachments {
+    for attachment in &message.attachments {
         let ExportPath {
             rel,
             refused: refused_path,
-        } = export_path(att);
+        } = export_path(attachment);
         if let Some(path) = refused_path {
             refused.push((path, rel.clone()));
         }
-        let (Some(sha), Some(rel)) = (att.sha256.as_deref().and_then(message_ir::trimmed), rel)
-        else {
+        let (Some(sha), Some(rel)) = (attachment.sha256.as_deref().and_then(asset_key), rel) else {
             continue;
         };
-        // Lowercase, so one fingerprint in two cases is one fetch, never two
-        // fetches writing one temporary file on a case-insensitive file
-        // system.
-        let sha = sha.to_ascii_lowercase();
         let first = assets.entry(sha.clone()).or_insert_with(|| rel.clone());
         if *first != rel {
             other_paths.entry(sha).or_default().insert(rel);
@@ -782,6 +953,8 @@ fn refused_path_line(path: &str, rel: Option<&str>) -> String {
 
 struct AssetFetchJob {
     sha256: String,
+    /// The path under the output directory, as [`AssetFailure::path`].
+    path: String,
     dest: PathBuf,
 }
 
@@ -790,6 +963,8 @@ struct AssetFetchStats {
     /// The bytes this run fetched.
     bytes: u64,
     fetched: u64,
+    /// Each Asset whose fetch failed after retries, sorted by SHA-256.
+    failed: Vec<AssetFailure>,
 }
 
 /// The Assets in `assets` (SHA-256 to path under `out_dir`) whose file is not
@@ -804,9 +979,54 @@ fn assets_to_fetch(assets: &HashMap<String, String>, out_dir: &Path) -> HashMap<
         .collect()
 }
 
+/// Keeps a run open on the server while its Assets are fetched: before a
+/// fetch starts, once [`KeepAlive::every`] has passed since the last read,
+/// it reads the run's page past the end of its list, which hands over
+/// nothing and counts as a page read. A run the server closed meanwhile
+/// answers `409 Conflict`, so the Export stops there and says it was
+/// canceled rather than finishing on a run that is gone.
+struct KeepAlive {
+    /// The run to keep open.
+    export_id: i64,
+    /// Places in its list: the offset of the page past the end.
+    total: usize,
+    /// How long may pass between reads.
+    every: Duration,
+    /// When the run's last page was read.
+    last: Mutex<Instant>,
+}
+
+impl KeepAlive {
+    /// A keep-alive for `export`, whose last page was read at `now`.
+    fn new(export: &ExportRun, every: Duration, now: Instant) -> Self {
+        Self {
+            export_id: export.id,
+            total: usize::try_from(export.message_count).unwrap_or(0),
+            every,
+            last: Mutex::new(now),
+        }
+    }
+
+    /// Whether a read is due at `now`. A due read is counted as made, so
+    /// workers that ask together make one.
+    fn take_due(&self, now: Instant) -> bool {
+        let mut last = self
+            .last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if now.saturating_duration_since(*last) >= self.every {
+            *last = now;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// What [`fetch_assets_parallel`] fetches, from where, and how: the
 /// server and session, each Asset's SHA-256 with the path under `out_dir` it
-/// is written at, the number of workers, and the run's cancel flag.
+/// is written at, the number of workers, the run's cancel flag, and what
+/// keeps the run open meanwhile.
 struct FetchAssetsParallelArgs<'a> {
     session: &'a crate::http::HttpSession,
     base_url: &'a str,
@@ -814,20 +1034,29 @@ struct FetchAssetsParallelArgs<'a> {
     assets: &'a HashMap<String, String>, // sha256 -> rel_path
     out_dir: &'a Path,
     workers: usize,
-    cancel: Option<&'a CancelFlag>,
+    cancel: &'a CancelFlag,
+    keep_alive: &'a KeepAlive,
 }
 
-/// Fetch each Asset in `assets` on `workers` threads and return the counts and
-/// the bytes fetched.
+/// Fetch each Asset in `assets` on `workers` threads and return the counts,
+/// the bytes fetched, and the Assets that could not be fetched.
 ///
 /// The same pattern as the Upload's `upload_assets`: the jobs are collected,
 /// then [`parallel_for_each`] runs them. `assets` holds only Assets whose file
 /// is not at its path ([`assets_to_fetch`]). Each fetch retries a transient
-/// HTTP failure, as the Upload does.
+/// HTTP failure until the run is canceled, as the Upload does, and a fetch
+/// that still fails is one entry in `failed`, as an Upload's failed Asset is
+/// one row of its summary.
 ///
 /// # Errors
 ///
-/// Returns an error when a fetch fails after retries or the run is cancelled.
+/// Returns [`Canceled`] when the run is canceled,
+/// [`RunCanceledOnServer`](crate::http::RunCanceledOnServer) when a
+/// keep-alive read finds the run closed on the server, and the server's
+/// refusal when it refuses the session (`401 Unauthorized`): every other
+/// fetch with that token is refused too, so the run stops and says to log in
+/// again rather than listing each Asset as missing. A keep-alive read that
+/// fails any other way is left for the next one.
 fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetchStats> {
     let FetchAssetsParallelArgs {
         session,
@@ -837,34 +1066,91 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         out_dir,
         workers,
         cancel,
+        keep_alive,
     } = args;
     let jobs: Vec<AssetFetchJob> = assets
         .iter()
         .map(|(sha256, rel)| AssetFetchJob {
             sha256: sha256.clone(),
+            path: rel.clone(),
             dest: out_dir.join(rel),
         })
         .collect();
     let mut stats = AssetFetchStats::default();
 
+    // Set by the first refused session, so the jobs not yet started skip
+    // their request: the server would refuse each one the same way.
+    let session_refused = AtomicBool::new(false);
+    // Set by a keep-alive read that finds the run closed, so no job starts
+    // after it: the Export is over.
+    let run_closed = AtomicBool::new(false);
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
-        with_retries(MAX_RETRIES, || {
+        if session_refused.load(Ordering::Relaxed) {
+            bail!("Asset {} skipped after the session was refused", job.sha256);
+        }
+        if run_closed.load(Ordering::Relaxed) {
+            bail!("Asset {} skipped after the run was closed", job.sha256);
+        }
+        if keep_alive.take_due(Instant::now())
+            && let Err(error) = crate::http::export_messages(
+                session,
+                ExportMessagesArgs {
+                    base_url,
+                    token,
+                    export_id: keep_alive.export_id,
+                    limit: 1,
+                    offset: keep_alive.total,
+                },
+            )
+            && crate::http::is_run_canceled_on_server(&error)
+        {
+            run_closed.store(true, Ordering::Relaxed);
+            return Err(error);
+        }
+        let result = retried_until_canceled(cancel, || {
             crate::http::fetch_asset(session, base_url, token, &job.sha256, &job.dest)
-        })
-        .map_err(|e| format!("{e:#}"))
+        });
+        if let Err(error) = &result
+            && is_session_refused(error)
+        {
+            session_refused.store(true, Ordering::Relaxed);
+        }
+        result
     });
 
-    for result in results {
+    let mut canceled = None;
+    let mut closed = None;
+    let mut refused = None;
+    for (job, result) in jobs.iter().zip(results) {
         match result {
             Ok(bytes) => {
                 stats.bytes = stats.bytes.saturating_add(bytes);
                 stats.fetched += 1;
             }
-            Err(error) => {
-                bail!("{error}");
+            Err(error) if error.is::<Canceled>() => {
+                canceled.get_or_insert(error);
             }
+            Err(error) if crate::http::is_run_canceled_on_server(&error) => {
+                closed.get_or_insert(error);
+            }
+            Err(_) if run_closed.load(Ordering::Relaxed) => {}
+            Err(error) if is_session_refused(&error) => {
+                refused.get_or_insert(error);
+            }
+            Err(error) => stats.failed.push(AssetFailure {
+                sha256: job.sha256.clone(),
+                path: job.path.clone(),
+                reason: format!("{error:#}"),
+            }),
         }
     }
+    // A cancel wins over a run closed on the server and a refused session,
+    // so a run the person stopped is closed as `canceled` whichever job saw
+    // which first.
+    if let Some(error) = canceled.or(closed).or(refused) {
+        return Err(error);
+    }
+    stats.failed.sort_by(|a, b| a.sha256.cmp(&b.sha256));
     Ok(stats)
 }
 
@@ -897,7 +1183,7 @@ mod paging_tests {
 #[cfg(test)]
 mod out_dir_tests {
     use super::*;
-    use message_ir_format::EXPORT_SENTINEL;
+    use ir_format::EXPORT_SENTINEL;
 
     #[test]
     fn marks_the_directory_as_an_export() {
@@ -988,7 +1274,7 @@ mod asset_ref_tests {
             "conversation": {
                 "id": 9,
                 "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "participants": []
             },
@@ -1088,11 +1374,10 @@ mod asset_ref_tests {
 #[cfg(test)]
 mod asset_fetch_tests {
     use super::*;
-    use sha2::{Digest, Sha256};
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     /// The names of the files in `dir`, sorted.
     fn names_in(dir: &Path) -> Vec<String> {
@@ -1159,8 +1444,8 @@ mod asset_fetch_tests {
         // the mixed bytes into place.
         let pdf = vec![b'p'; 4096];
         let jpg = vec![b'j'; 4096];
-        let pdf_sha = hex::encode(Sha256::digest(&pdf));
-        let jpg_sha = hex::encode(Sha256::digest(&jpg));
+        let pdf_sha = file_io::sha256_hex(&pdf);
+        let jpg_sha = file_io::sha256_hex(&jpg);
         let base_url = serve_two_fetches_at_once(HashMap::from([
             (pdf_sha.clone(), pdf.clone()),
             (jpg_sha.clone(), jpg.clone()),
@@ -1178,7 +1463,13 @@ mod asset_fetch_tests {
             assets: &assets,
             out_dir: dir.path(),
             workers: 2,
-            cancel: None,
+            cancel: &CancelFlag::default(),
+            keep_alive: &KeepAlive {
+                export_id: 7,
+                total: 0,
+                every: Duration::MAX,
+                last: Mutex::new(Instant::now()),
+            },
         })
         .unwrap();
 
@@ -1191,6 +1482,93 @@ mod asset_fetch_tests {
             ["menu.jpg", "menu.pdf"],
             "no temporary file is left behind"
         );
+    }
+
+    /// A keep-alive read is due once its interval has passed since the
+    /// last, and a due read counts as made. The instants are passed in.
+    #[test]
+    fn a_keep_alive_read_is_due_once_its_interval_has_passed() {
+        let start = Instant::now();
+        let keep_alive = KeepAlive {
+            export_id: 7,
+            total: 3,
+            every: Duration::from_secs(600),
+            last: Mutex::new(start),
+        };
+        assert!(!keep_alive.take_due(start + Duration::from_secs(599)));
+        assert!(keep_alive.take_due(start + Duration::from_secs(600)));
+        assert!(!keep_alive.take_due(start + Duration::from_secs(600)));
+        assert!(keep_alive.take_due(start + Duration::from_secs(1200)));
+    }
+
+    /// Fetch the menu with a keep-alive due before every fetch, against a
+    /// server whose page past the end answers `page_status`. Returns the
+    /// result, the page reads and the Asset fetches.
+    fn fetch_with_keep_alive(page_status: u16) -> (Result<AssetFetchStats>, usize, usize) {
+        let server = httpmock::MockServer::start();
+        let menu = b"%PDF-1.4 menu".to_vec();
+        let sha = file_io::sha256_hex(&menu);
+        let page = server.mock(|when, then| {
+            when.method("GET")
+                .path("/v1/exports/7/messages")
+                .query_param("offset", "3")
+                .query_param("limit", "1");
+            if page_status == 200 {
+                then.status(200).json_body(serde_json::json!({
+                    "items": [], "total": 3, "limit": 1, "offset": 3
+                }));
+            } else {
+                then.status(page_status).json_body(serde_json::json!({
+                    "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
+                    "title": "State conflict",
+                    "status": page_status,
+                    "detail": "export 7 is not running (status=canceled)"
+                }));
+            }
+        });
+        let asset = server.mock(|when, then| {
+            when.method("GET").path(format!("/v1/assets/{sha}"));
+            then.status(200).body(menu.clone());
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let assets = HashMap::from([(sha, "attachments/menu.pdf".to_string())]);
+        let result = fetch_assets_parallel(FetchAssetsParallelArgs {
+            session: &HttpSession::new().unwrap(),
+            base_url: &server.base_url(),
+            token: "token",
+            assets: &assets,
+            out_dir: dir.path(),
+            workers: 1,
+            cancel: &CancelFlag::default(),
+            keep_alive: &KeepAlive {
+                export_id: 7,
+                total: 3,
+                every: Duration::ZERO,
+                last: Mutex::new(Instant::now()),
+            },
+        });
+        (result, page.calls(), asset.calls())
+    }
+
+    /// While Assets are fetched, the run's page past the end is read, so the
+    /// server does not close the run as idle (#2080).
+    #[test]
+    fn a_due_keep_alive_reads_the_page_past_the_end_and_the_fetch_goes_on() {
+        let (result, pages, fetches) = fetch_with_keep_alive(200);
+        assert_eq!(result.unwrap().fetched, 1);
+        assert_eq!((pages, fetches), (1, 1));
+    }
+
+    /// A keep-alive read that finds the run closed on the server ends the
+    /// fetches with the error that says the Export was canceled (#2080).
+    #[test]
+    fn a_keep_alive_read_of_a_closed_run_ends_the_fetches() {
+        let (result, pages, fetches) = fetch_with_keep_alive(409);
+        let Err(error) = result else {
+            panic!("a closed run ends the fetches");
+        };
+        assert!(crate::http::is_run_canceled_on_server(&error), "{error:#}");
+        assert_eq!((pages, fetches), (1, 0));
     }
 
     #[test]

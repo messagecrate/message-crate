@@ -18,6 +18,19 @@
 //! scalar function. The vendored sqlx-sqlite source stays unedited
 //! (VENDORING.md).
 //!
+//! The same hook turns on SQLite's defensive mode
+//! (`SQLITE_DBCONFIG_DEFENSIVE`) for each connection, which only
+//! `sqlite3_db_config` on the raw handle can do. A file read from a backup
+//! someone else handled may have been tampered with, and defensive mode
+//! stops a statement from corrupting it on purpose: it ignores
+//! `PRAGMA writable_schema`, refuses a write to a full-text search table's
+//! shadow tables, and refuses `PRAGMA journal_mode = OFF` (#2249).
+//!
+//! The server reads its database with `trusted_schema` OFF
+//! ([`crate::db::engine`]), so a function used in a view, trigger, `CHECK`
+//! constraint or index expression must be registered `SQLITE_INNOCUOUS`, or
+//! the statement that reaches it fails. Every function here is.
+//!
 //! No index depends on the function: the schema has no index on a `lower()`
 //! expression, so replacing it changes what a query compares, never what a
 //! stored index holds.
@@ -29,8 +42,9 @@ use std::sync::Once;
 
 use libsqlite3_sys as ffi;
 
-/// Register the Unicode `lower()` for every SQLite connection opened after
-/// this call. Safe to call any number of times; only the first does work.
+/// Register the Unicode `lower()`, and turn on defensive mode, for every
+/// SQLite connection opened after this call. Safe to call any number of
+/// times. Only the first call does work.
 pub fn register() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
@@ -47,11 +61,26 @@ pub fn register() {
 }
 
 /// The auto-extension entry point: SQLite calls it with each new connection.
+/// A code other than `SQLITE_OK` fails the connection's open.
 unsafe extern "C" fn install_on_connection(
     db: *mut ffi::sqlite3,
     _err_msg: *mut *mut c_char,
     _api: *const ffi::sqlite3_api_routines,
 ) -> c_int {
+    // SAFETY: `db` is the connection SQLite is opening.
+    // `SQLITE_DBCONFIG_DEFENSIVE` takes an `int` (1 turns it on) and an
+    // `int*` for the setting after the call, which may be null.
+    let status = unsafe {
+        ffi::sqlite3_db_config(
+            db,
+            ffi::SQLITE_DBCONFIG_DEFENSIVE,
+            1 as c_int,
+            ptr::null_mut::<c_int>(),
+        )
+    };
+    if status != ffi::SQLITE_OK {
+        return status;
+    }
     // SAFETY: `db` is the connection SQLite is opening, the name is a valid
     // NUL-terminated string, and `unicode_lower` has the scalar-function
     // signature SQLite expects for a one-argument function.
@@ -105,12 +134,12 @@ unsafe extern "C" fn unicode_lower(
     }
 }
 
-/// `text` with each letter lowered on its own, never by its neighbours.
+/// `text` with each letter lowered on its own, never by its neighbors.
 ///
-/// `str::to_lowercase` reads a letter's neighbours: it lowers a word-final
+/// `str::to_lowercase` reads a letter's neighbors: it lowers a word-final
 /// `Σ` to `ς` and every other `Σ` to `σ`. A search lowers the typed text and
 /// the column apart, so `ΚΩΣ` would lower to `κως` and miss `κωστας`.
-/// `char::to_lowercase` reads no neighbours, but lowers `İ` (U+0130) to two
+/// `char::to_lowercase` reads no neighbors, but lowers `İ` (U+0130) to two
 /// characters, `i` and a combining dot, so `istanbul` would miss
 /// "İstanbul"; `İ` lowers to `i` alone here.
 fn lower_each_letter(text: &str) -> String {
@@ -155,6 +184,39 @@ mod tests {
             lower_of(&other_pool, "ÉQUIPE").await.as_deref(),
             Some("équipe")
         );
+    }
+
+    /// Defensive mode ignores a request to make the schema writable, so no
+    /// statement can rewrite `sqlite_schema` by hand (#2249).
+    #[tokio::test]
+    async fn every_connection_runs_in_defensive_mode() {
+        let (pool, _dir) = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("PRAGMA writable_schema = ON")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        let writable_schema: i64 = sqlx::query_scalar("PRAGMA writable_schema")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(writable_schema, 0, "defensive mode must be on");
+    }
+
+    /// The pool reads the schema with `trusted_schema` OFF, so a view can
+    /// call `lower()` only because it is registered innocuous.
+    #[tokio::test]
+    async fn lower_works_inside_a_view_with_trusted_schema_off() {
+        let (pool, _dir) = test_pool().await;
+        sqlx::query("CREATE VIEW lowered AS SELECT lower('ÉQUIPE') AS name")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let name: String = sqlx::query_scalar("SELECT name FROM lowered")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(name, "équipe");
     }
 
     /// `NULL` stays `NULL` and a number is read as text, as the built-in does.

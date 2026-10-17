@@ -1,8 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../../../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
+import { nth } from "../../../test/nth";
+import { authModule, renderWithProviders } from "../../../test/providers";
 import { setupUser } from "../../../test/user";
 import { StorageSection } from "../StorageSection";
 
@@ -12,9 +14,7 @@ const listAccountImports = vi.hoisted(() => vi.fn());
 const listAccountExports = vi.hoisted(() => vi.fn());
 const getAccountImport = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../lib/auth", () => ({
-  useAuth: () => ({ accountId: 7 }),
-}));
+vi.mock("../../../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 vi.mock("../../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/serverApi")>()),
@@ -42,6 +42,7 @@ function anImport(id: number) {
 
 describe("Import history", () => {
   beforeEach(() => {
+    startFakeClock();
     vi.clearAllMocks();
     getAccountProfile.mockResolvedValue({ account_id: 7, message_count: 0 });
     getAccountStorage.mockResolvedValue({
@@ -60,18 +61,20 @@ describe("Import history", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("asks the server for each page of 50 and stops at the last", async () => {
     const user = setupUser();
     renderWithProviders(<StorageSection />);
+    await settle();
 
-    const heading = await screen.findByRole("heading", { name: "Import history" });
+    const heading = screen.getByRole("heading", { name: "Import history" });
     const section = within(heading.parentElement as HTMLElement);
     const back = () => section.getByRole("button", { name: "Back" });
     const next = () => section.getByRole("button", { name: "Next" });
 
-    expect(await section.findByText("Page 1 of 3")).toBeInTheDocument();
+    expect(section.getByText("Page 1 of 3")).toBeInTheDocument();
     expect(listAccountImports).toHaveBeenCalledWith(
       { limit: 50, offset: 0 },
       expect.anything(),
@@ -81,18 +84,21 @@ describe("Import history", () => {
     expect(next()).toBeEnabled();
 
     await user.click(next());
-    expect(await section.findByText("Page 2 of 3")).toBeInTheDocument();
+    await settle();
+    expect(section.getByText("Page 2 of 3")).toBeInTheDocument();
     expect(listAccountImports).toHaveBeenCalledWith(
       { limit: 50, offset: 50 },
       expect.anything(),
       undefined,
     );
-    expect(await section.findByText("source-51")).toBeInTheDocument();
+    expect(section.getByText("source-51")).toBeInTheDocument();
     expect(back()).toBeEnabled();
 
     await user.click(next());
-    expect(await section.findByText("Page 3 of 3")).toBeInTheDocument();
-    await waitFor(() => expect(next()).toBeDisabled());
+    await settle();
+    expect(section.getByText("Page 3 of 3")).toBeInTheDocument();
+    expect(section.getByText("source-101")).toBeInTheDocument();
+    expect(next()).toBeDisabled();
   });
 
   it("says a run that has not finished has not finished, in place of a finish time", async () => {
@@ -109,10 +115,12 @@ describe("Import history", () => {
     getAccountImport.mockResolvedValue(running);
     const user = setupUser();
     renderWithProviders(<StorageSection />);
-    const heading = await screen.findByRole("heading", { name: "Import history" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
     const section = within(heading.parentElement as HTMLElement);
-    await user.click(await section.findByRole("button", { expanded: false }));
-    const finished = await screen.findByText("Finished");
+    await user.click(section.getByRole("button", { expanded: false }));
+    await settle();
+    const finished = screen.getByText("Finished");
     const started = screen.getByText("Started");
     expect(finished.nextElementSibling?.textContent).not.toBe(
       started.nextElementSibling?.textContent,
@@ -128,14 +136,15 @@ describe("Import history", () => {
       offset: 0,
     });
     renderWithProviders(<StorageSection />);
-    const heading = await screen.findByRole("heading", { name: "Import history" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
     const section = within(heading.parentElement as HTMLElement);
 
-    const table = await section.findByRole("table");
+    const table = section.getByRole("table");
     const headers = within(table)
       .getAllByRole("columnheader")
       .map((cell) => cell.textContent);
-    const row = within(table).getAllByRole("row")[1];
+    const row = nth(within(table).getAllByRole("row"), 1);
     const cells = within(row)
       .getAllByRole("cell")
       .map((cell) => cell.textContent);
@@ -155,13 +164,18 @@ describe("Import history", () => {
     });
     const user = setupUser();
     renderWithProviders(<StorageSection />);
-    const heading = await screen.findByRole("heading", { name: "Import history" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
     const section = within(heading.parentElement as HTMLElement);
 
-    await user.click(await section.findByRole("button", { expanded: false }));
+    await user.click(section.getByRole("button", { expanded: false }));
+    await settle();
 
-    expect(await screen.findByRole("heading", { name: "Import Errors" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Import Errors" })).toBeInTheDocument();
     expect(getAccountImport).toHaveBeenCalledWith(1, expect.anything(), undefined);
+    // The account's own run carries no list of missing versions: the account
+    // reads why on each attachment it opens.
+    expect(screen.queryByRole("heading", { name: "Thumbnails and Previews" })).toBeNull();
   });
 
   it("shows the backup a run read beside when that backup was made", async () => {
@@ -178,11 +192,13 @@ describe("Import history", () => {
     });
     const user = setupUser();
     renderWithProviders(<StorageSection />);
-    const heading = await screen.findByRole("heading", { name: "Import history" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
     const section = within(heading.parentElement as HTMLElement);
-    await user.click(await section.findByRole("button", { expanded: false }));
+    await user.click(section.getByRole("button", { expanded: false }));
+    await settle();
 
-    const backup = await screen.findByText("Backup");
+    const backup = screen.getByText("Backup");
     const [file, made] = Array.from(backup.parentElement?.querySelectorAll("dd") ?? []);
     expect(file?.textContent).toBe("/backups/iPhone/00008110");
     expect(made?.textContent).toMatch(/^Made .*2026/);
@@ -202,13 +218,125 @@ describe("Import history", () => {
     });
     const user = setupUser();
     renderWithProviders(<StorageSection />);
-    const heading = await screen.findByRole("heading", { name: "Import history" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
     const section = within(heading.parentElement as HTMLElement);
-    await user.click(await section.findByRole("button", { expanded: false }));
+    await user.click(section.getByRole("button", { expanded: false }));
+    await settle();
 
-    const backup = await screen.findByText("Backup");
+    const backup = screen.getByText("Backup");
     const [file, made] = Array.from(backup.parentElement?.querySelectorAll("dd") ?? []);
     expect(file?.textContent).toBe("Not recorded");
     expect(made?.textContent).toBe("The backup does not say when it was made");
+  });
+
+  it("shows the owner which attachments of a run have no Thumbnail or Preview, and why", async () => {
+    const listed = {
+      ...anImport(1),
+      counts: {},
+      contacts_new: 0,
+      contacts_changed: 0,
+    };
+    listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
+    getAccountImport.mockResolvedValue({
+      ...listed,
+      written_attachment_count: 5,
+      not_made_counts: [
+        { kind: "conversion_failed", thumbnails: 1, previews: 1 },
+        { kind: "stalled", thumbnails: 0, previews: 2 },
+      ],
+      not_made_attachments: [
+        {
+          id: 11,
+          original_name: "IMG_0001.HEIC",
+          mime_type: "image/heic",
+          size_bytes: 2048,
+          thumbnail: { kind: "conversion_failed", reason: "Invalid data found" },
+          preview: { kind: "conversion_failed", reason: "Invalid data found" },
+        },
+        {
+          id: 12,
+          original_name: "clip.mov",
+          mime_type: "video/quicktime",
+          size_bytes: null,
+          thumbnail: null,
+          preview: { kind: "stalled", reason: "ffmpeg made no progress for 2 minutes" },
+        },
+      ],
+    });
+    const user = setupUser();
+    renderWithProviders(<StorageSection managedAccountId={3} />);
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    await user.click(section.getByRole("button", { expanded: false }));
+    await settle();
+
+    const panel = within(
+      screen.getByRole("heading", { name: "Thumbnails and Previews" }).parentElement as HTMLElement,
+    );
+    // The failures are out of the run's attachments, 5 here.
+    expect(panel.getByText("2 of 5 attachments have no Thumbnail or Preview")).toBeInTheDocument();
+    const [counts, list] = panel.getAllByRole("table");
+    const countRows = within(counts as HTMLElement)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) =>
+        within(row)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      );
+    expect(countRows).toEqual([
+      ["Conversion failed", "1", "1"],
+      ["Stopped making progress", "0", "2"],
+    ]);
+    const clip = within(list as HTMLElement)
+      .getByText("clip.mov")
+      .closest("tr") as HTMLElement;
+    const cells = within(clip)
+      .getAllByRole("cell")
+      .map((cell) => cell.textContent);
+    expect(cells).toEqual([
+      "clip.mov",
+      "video/quicktime",
+      "—",
+      "—",
+      "Stopped making progressffmpeg made no progress for 2 minutes",
+    ]);
+    expect(getAccountImport).toHaveBeenCalledWith(1, expect.anything(), 3);
+  });
+
+  it("tells the owner when no attachment of a run is missing a version", async () => {
+    const listed = { ...anImport(1), counts: {}, contacts_new: 0, contacts_changed: 0 };
+    listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
+    getAccountImport.mockResolvedValue({
+      ...listed,
+      written_attachment_count: 1,
+      not_made_counts: [],
+      not_made_attachments: [],
+    });
+    const user = setupUser();
+    renderWithProviders(<StorageSection managedAccountId={3} />);
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    await user.click(section.getByRole("button", { expanded: false }));
+    await settle();
+
+    expect(
+      screen.getByText(
+        "No attachment of this import is missing a Thumbnail or Preview the server tried to make.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says when no Import Run has been recorded", async () => {
+    listAccountImports.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderWithProviders(<StorageSection />);
+    await settle();
+
+    const heading = screen.getByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    expect(section.getByText("No imports recorded yet")).toBeInTheDocument();
   });
 });

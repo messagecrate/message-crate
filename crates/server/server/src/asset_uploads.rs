@@ -2,20 +2,39 @@
 //!
 //! Staging layout: `{assets}/.incoming/{sha256}/{upload_id}/part-NNNN` + `manifest.json`.
 
-use std::collections::BTreeSet;
-use std::fs::{self, File, OpenOptions};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
+use crate::asset_store::Abandonment;
 use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 
-/// Default part size advertised to clients (under Cloudflare ~100 MiB).
-pub const DEFAULT_PART_SIZE: usize = 64 * 1024 * 1024;
+/// Default part size advertised to clients: the largest import batch, so an
+/// attachment arrives at the speed a batch does
+/// (`docs/architecture/http-api.md`, "Credentials and reach").
+pub const DEFAULT_PART_SIZE: usize = api_types::MAX_IMPORT_BATCH_BYTES;
+
+/// How many multipart uploads one account may have open at once. An open
+/// upload keeps its parts on disk until it is completed, aborted, or
+/// abandoned: nothing written to it for `[server] body_stall_secs`
+/// ([`crate::asset_store::sweep_incoming`]). Without a cap one account could
+/// start uploads without end and fill the disk every account shares. The
+/// desktop app runs at most 64 at once (16 attachment workers in each of 4
+/// conversations prepared together); twice that leaves room for the uploads
+/// a stopped run left open, and a start that finds no room removes the
+/// abandoned ones first.
+pub const MAX_OPEN_UPLOADS: usize = 128;
+
+/// Held while an upload start counts the open uploads and makes its own, so
+/// two starts at once cannot both see room for one more.
+static STARTING: Mutex<()> = Mutex::new(());
 
 /// Limits for one upload: the attachment size limit from the Server Settings
 /// as it is when the upload starts, and the part size worked out from it and
@@ -56,6 +75,16 @@ impl UploadLimits {
     }
 }
 
+/// The attachment size limit as the Server Settings hold it at this moment,
+/// in bytes. Read on every request that needs it, so a change the owner makes
+/// holds for the next upload with no restart.
+pub(crate) async fn asset_max_bytes(db: &SqlitePool) -> Result<u64> {
+    let mut conn = db.acquire().await?;
+    Ok(crate::db::server_settings::load(&mut conn)
+        .await?
+        .asset_max_bytes)
+}
+
 /// `manifest.json` of an in-progress multipart upload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadManifest {
@@ -82,12 +111,15 @@ pub struct StartUpload {
     pub part_size: usize,
 }
 
-/// A fresh upload id: the current time in nanoseconds, hex-encoded.
-fn new_upload_id() -> String {
+/// A fresh upload id: the current time in nanoseconds and 16 random bytes,
+/// hex-encoded. The clock alone repeats for two uploads started in one tick,
+/// and a tick on Windows and macOS is far longer than a nanosecond (#2260).
+/// The raw upload route names its temp with one as well.
+pub(crate) fn new_upload_id() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    format!("{nanos:x}")
+    format!("{nanos:x}{:032x}", rand::random::<u128>())
 }
 
 /// Reject path separators and non-hex ids before joining into `.incoming/…`.
@@ -167,62 +199,223 @@ fn write_manifest(session: &Path, manifest: &UploadManifest) -> Result<()> {
     Ok(())
 }
 
-/// Exclusive lock for manifest read-modify-write (concurrent part uploads).
-#[derive(Debug)]
-struct ManifestLock {
-    _file: File,
+/// The upload temps under `.incoming/` requests are using now, each with how
+/// many: a multipart upload's directory while a part or the completion runs,
+/// and a single-request `.part` temp while its body arrives and is stored.
+/// The sweep of abandoned uploads leaves each one alone
+/// ([`crate::asset_store::sweep_incoming`]), because the sweep goes by the
+/// manifest's time, and a part arriving writes only its own temp file
+/// ([`begin_part`]) until all of it is in, while a completion rewrites no
+/// manifest. So the manifest of an upload in use can say nothing was
+/// written to it for longer than `[server] body_stall_secs`. It is in the
+/// server's memory for the reason [`LOCKED_SESSIONS`] is.
+static IN_USE: LazyLock<Mutex<HashMap<PathBuf, usize>>> = LazyLock::new(Mutex::default);
+
+/// [`IN_USE`], which no panic can leave half-changed: each change is one
+/// count up or down.
+fn uses() -> MutexGuard<'static, HashMap<PathBuf, usize>> {
+    IN_USE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Take the session's file lock so two part uploads cannot rewrite the manifest at once.
+/// A request's use of an upload temp, counted in [`IN_USE`] until dropped.
+#[derive(Debug)]
+#[must_use = "the upload is in use only while this is held"]
+pub(crate) struct InUse {
+    path: PathBuf,
+}
+
+impl Drop for InUse {
+    fn drop(&mut self) {
+        let mut uses = uses();
+        if let Some(count) = uses.get_mut(&self.path) {
+            *count -= 1;
+            if *count == 0 {
+                uses.remove(&self.path);
+            }
+        }
+    }
+}
+
+/// Count `path`, an upload's directory or a `.part` temp, as in use by the
+/// calling request until the answer is dropped.
+pub(crate) fn hold(path: &Path) -> InUse {
+    *uses().entry(path.to_path_buf()).or_insert(0) += 1;
+    InUse {
+        path: path.to_path_buf(),
+    }
+}
+
+/// Whether a request is using `path` now ([`hold`]).
+#[cfg(test)]
+pub(crate) fn in_use(path: &Path) -> bool {
+    uses().contains_key(path)
+}
+
+/// Run `remove` on `path` unless a request is using it, and return what it
+/// returned, or `None` when a request is. [`IN_USE`] stays locked while
+/// `remove` runs, so no request starts using `path` in between: one that
+/// tries waits, then finds what `remove` left. Every request waits on it, so
+/// `remove` does one quick step, such as an unlink or a rename, and nothing
+/// that takes long.
+pub(crate) fn unless_in_use<T>(path: &Path, remove: impl FnOnce() -> T) -> Option<T> {
+    let uses = uses();
+    if uses.contains_key(path) {
+        return None;
+    }
+    let removed = remove();
+    drop(uses);
+    Some(removed)
+}
+
+/// Count the upload `upload_id` of `sha` as in use until the answer is
+/// dropped, as [`hold`] does, whether or not it exists. An id that is not
+/// one is refused the same way the upload's routes refuse it.
+///
+/// # Errors
+///
+/// Returns [`AssetError::Invalid`] when the upload id is invalid.
+pub(crate) fn hold_upload(
+    assets_root: &Path,
+    sha: &Sha256,
+    upload_id: &str,
+) -> Result<InUse, AssetError> {
+    let upload_id = require_upload_id(upload_id)?;
+    Ok(hold(&session_dir(assets_root, sha, &upload_id)))
+}
+
+/// The upload directories a request is working in now. The lock is held in
+/// the server's memory, not on a file: a lock on a file stays held while a copy
+/// of its descriptor is open, and every process the server starts (ffmpeg, the
+/// Apple Messages Reader) gets a copy of each descriptor open at that moment,
+/// which it keeps until it begins running its program. A part sent straight
+/// after the previous one was then refused as locked while nothing held it.
+/// One server works in a data directory at a time, so the server's memory is
+/// the only place a lock has to be seen from.
+static LOCKED_SESSIONS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Mutex::default);
+
+/// Exclusive lock for manifest read-modify-write (concurrent part uploads),
+/// held until dropped.
+#[derive(Debug)]
+struct ManifestLock {
+    session: PathBuf,
+}
+
+impl Drop for ManifestLock {
+    fn drop(&mut self) {
+        locked_sessions().remove(&self.session);
+    }
+}
+
+/// [`LOCKED_SESSIONS`], which no panic can leave half-changed: each change is
+/// one insert or one remove.
+fn locked_sessions() -> MutexGuard<'static, HashSet<PathBuf>> {
+    LOCKED_SESSIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Take the session's lock so two part uploads cannot rewrite the manifest at once.
 ///
 /// The lock is not waited for. A request refused because another request
 /// holds it is told so, because its bytes may well be right, and sending
 /// them again once the other request finishes succeeds.
 fn lock_session(session: &Path) -> Result<ManifestLock, AssetError> {
-    let path = session.join("manifest.lock");
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&path)
-        .with_context(|| format!("open {}", path.display()))?;
-    file.try_lock_exclusive().map_err(|_| AssetError::Locked)?;
-    Ok(ManifestLock { _file: file })
+    if !locked_sessions().insert(session.to_path_buf()) {
+        return Err(AssetError::Locked);
+    }
+    Ok(ManifestLock {
+        session: session.to_path_buf(),
+    })
 }
 
-/// Canonical extension for an uploaded blob's MIME type, from the shared
+/// Canonical extension for the MIME type of an upload's bytes, from the shared
 /// table in [`media`]; empty for missing or unrecognized MIME types.
 fn ext_for_mime(mime: Option<&str>) -> String {
     mime.and_then(media::ext_for_mime).unwrap_or("").to_string()
 }
 
-/// Start a chunked upload session. Returns `already_present` asset when the blob exists.
+/// How many multipart uploads are open under `assets_root`: the
+/// `manifest.json` files under `.incoming/*/*/`. Every live upload has one,
+/// and a removal takes it before the directory, so an upload being removed
+/// is not counted. A directory that cannot be read counts nothing.
+fn count_open_uploads(assets_root: &Path) -> usize {
+    let Ok(sha_dirs) = fs::read_dir(assets_root.join(".incoming")) else {
+        return 0;
+    };
+    sha_dirs
+        .filter_map(Result::ok)
+        .filter_map(|sha_dir| fs::read_dir(sha_dir.path()).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|session| manifest_path(&session.path()).is_file())
+        .count()
+}
+
+/// Start a chunked upload session. Returns `already_present` when the Asset is already stored.
+///
+/// # Errors
+///
+/// Returns [`AssetError::Invalid`] when `bytes` is over the attachment size
+/// limit, [`AssetError::TooManyUploads`] when the account already has
+/// [`MAX_OPEN_UPLOADS`] uploads open that are not abandoned (nothing written
+/// to them for `stall`, `[server] body_stall_secs`), and
+/// [`AssetError::Internal`] when the upload's directory cannot be made.
 pub fn start_upload(
     assets_root: &Path,
     sha: &Sha256,
     bytes: u64,
     mime: Option<&str>,
     limits: UploadLimits,
+    stall: Duration,
+) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
+    start_upload_with(
+        assets_root,
+        sha,
+        bytes,
+        mime,
+        limits,
+        Abandonment::from_now(stall),
+        new_upload_id,
+    )
+}
+
+/// [`start_upload`], at the time `abandoned` gives, taking each upload id it
+/// tries from `next_id`. Both are parameters only so a test can set the clock
+/// and hand two starts the same id.
+fn start_upload_with(
+    assets_root: &Path,
+    sha: &Sha256,
+    bytes: u64,
+    mime: Option<&str>,
+    limits: UploadLimits,
+    abandoned: Abandonment,
+    mut next_id: impl FnMut() -> String,
 ) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
     if bytes > limits.max_bytes {
         return Err(AssetError::Invalid(format!(
             "object exceeds {} byte server limit ({} MiB)",
             limits.max_bytes,
-            limits.max_bytes / message_ir::MIB
+            limits.max_bytes / ir::MIB
         )));
     }
-    // Abandoned upload temps go here, so `.incoming/` does not grow forever.
-    crate::asset_store::sweep_incoming(assets_root, false);
-
     if let Some(existing) = assets_api::lookup_by_sha256(assets_root, sha) {
         return Ok((Some(existing), None));
     }
 
+    let _starting = STARTING.lock().unwrap_or_else(PoisonError::into_inner);
+    // Abandoned uploads are swept when an Import Run ends and when the
+    // server starts, not on every start, because the sweep walks the whole
+    // of `.incoming/` (#2261). An account at the limit may be there only
+    // because of abandoned ones, such as those of an Upload that was
+    // stopped, so they are removed before it is refused (#2652).
+    if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
+        crate::asset_store::sweep_incoming(assets_root, abandoned);
+        if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
+            return Err(AssetError::TooManyUploads);
+        }
+    }
     let part_size = limits.part_size;
-    let upload_id = new_upload_id();
-    let session = session_dir(assets_root, sha, &upload_id);
-    fs::create_dir_all(&session).with_context(|| format!("mkdir {}", session.display()))?;
+    let (upload_id, session) = make_session_dir(assets_root, sha, &mut next_id)?;
     let manifest = UploadManifest {
         sha256: sha.to_string(),
         bytes,
@@ -240,28 +433,193 @@ pub fn start_upload(
     ))
 }
 
-/// The part size an upload started with, from its manifest. The part route
-/// caps a body at this size, not at the part size the Server Settings give
-/// now, so an upload in progress keeps the limits it started with when the
-/// owner lowers the attachment size limit.
+/// Make a new upload temp in `dir` with `create`, which is given an id from
+/// `next_id` and must fail with `AlreadyExists` on a temp that exists, and
+/// return the id and what `create` made. An id already taken is passed over
+/// for the next, so no two uploads share a temp (#2260).
+///
+/// `dir` is made on each try, because a sweep that emptied it removes it,
+/// and may do so between the two steps; `create` then fails with
+/// `NotFound`, and the next try makes `dir` again.
+pub(crate) fn create_with_new_id<T>(
+    dir: &Path,
+    next_id: &mut impl FnMut() -> String,
+    mut create: impl FnMut(&str) -> std::io::Result<T>,
+) -> Result<(String, T)> {
+    loop {
+        fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
+        let id = next_id();
+        match create(&id) {
+            Ok(made) => return Ok((id, made)),
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound
+                ) => {}
+            Err(err) => {
+                return Err(anyhow::Error::from(err)
+                    .context(format!("create the upload temp {id} in {}", dir.display())));
+            }
+        }
+    }
+}
+
+/// Make a new upload's directory under `.incoming/{sha256}/`, named with an
+/// id from `next_id`, and return the id and the directory. It is made with
+/// `create_dir`, which fails on one that exists.
+fn make_session_dir(
+    assets_root: &Path,
+    sha: &Sha256,
+    next_id: &mut impl FnMut() -> String,
+) -> Result<(String, PathBuf)> {
+    let sha_dir = assets_root.join(".incoming").join(sha.as_str());
+    create_with_new_id(&sha_dir, next_id, |upload_id| {
+        let session = session_dir(assets_root, sha, upload_id);
+        fs::create_dir(&session).map(|()| session)
+    })
+}
+
+/// A part on its way in ([`begin_part`]): a new file in its upload's
+/// directory, which the part's body is streamed into
+/// ([`PartTemp::receive`]), so the server holds one buffer of a part's body
+/// at a time and never the whole of it (#2114). The file is removed when
+/// this is dropped, as when the part is refused or its client goes away
+/// part-way, unless [`put_part`] has given it the part's name.
+#[derive(Debug)]
+pub struct PartTemp {
+    /// The fingerprint the upload was started for.
+    sha: Sha256,
+    /// The upload's directory, which holds the file.
+    session: PathBuf,
+    /// The part number the file is for.
+    part: u32,
+    /// The part size the upload started with. A body is capped at this
+    /// size, not at the part size the Server Settings give now, so an upload
+    /// in progress keeps the limits it started with when the owner lowers
+    /// the attachment size limit.
+    part_size: usize,
+    /// Where the file is.
+    path: PathBuf,
+    /// The file open for writing, until [`PartTemp::receive`] writes the
+    /// body into it.
+    file: Option<File>,
+    /// Whether [`put_part`] gave the file the part's name, so it is no
+    /// longer this temp's to remove.
+    kept: bool,
+}
+
+impl PartTemp {
+    /// The part size the upload started with.
+    pub fn part_size(&self) -> usize {
+        self.part_size
+    }
+
+    /// Stream `body` into the file, one read at a time, refusing a body
+    /// over [`PartTemp::part_size`], and return the bytes written.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of a body that is too large, stalls, or cannot be
+    /// read, or of a file that cannot be written; and an internal error
+    /// when the body was already received.
+    pub(crate) async fn receive(
+        &mut self,
+        body: axum::body::Body,
+    ) -> Result<u64, crate::api_error::ApiError> {
+        let Some(file) = self.file.take() else {
+            return Err(crate::api_error::ApiError::Internal(anyhow::anyhow!(
+                "the body of {} was already received",
+                self.path.display()
+            )));
+        };
+        crate::request_body::stream_body_into(
+            body,
+            tokio::fs::File::from_std(file),
+            &self.path,
+            self.part_size,
+        )
+        .await
+    }
+}
+
+impl Drop for PartTemp {
+    fn drop(&mut self) {
+        // Closed first, so Windows can delete it, when the body never
+        // arrived; `receive` closes it once the body is in.
+        drop(self.file.take());
+        if !self.kept {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Make a new, empty file in the directory of upload `upload_id` for the
+/// body of part `part`, which [`put_part`] then checks and records. The
+/// file is named `part-NNNN.{id}.tmp` with a new id, so two requests sending
+/// the same part never write into one file, and it is readable by the
+/// server's user alone ([`file_io::owner_only`]).
 ///
 /// # Errors
 ///
-/// Returns [`AssetError::Invalid`] when the upload id is invalid,
-/// [`AssetError::UploadNotFound`] when no such upload is in progress, and
-/// [`AssetError::Internal`] when its manifest is unreadable.
-pub fn session_part_size(
+/// Returns [`AssetError::Invalid`] when the upload id is invalid or the
+/// part number is out of range, [`AssetError::UploadNotFound`] when no such
+/// upload is in progress or it is removed meanwhile, and
+/// [`AssetError::Internal`] when its manifest is unreadable or the file
+/// cannot be made.
+pub fn begin_part(
     assets_root: &Path,
     sha: &Sha256,
     upload_id: &str,
-) -> Result<usize, AssetError> {
+    part: u32,
+) -> Result<PartTemp, AssetError> {
     let session = existing_session(assets_root, sha, upload_id)?;
-    let manifest = read_manifest(&session).map_err(|e| gone_if_removed(&session, e.into()))?;
-    Ok(manifest.part_size)
+    let manifest = read_manifest_for(&session, sha).map_err(|e| gone_if_removed(&session, e))?;
+    check_part_number(&manifest, part)?;
+    loop {
+        let path = session.join(format!("part-{part:04}.{}.tmp", new_upload_id()));
+        let mut options = fs::OpenOptions::new();
+        match file_io::owner_only(options.write(true).create_new(true)).open(&path) {
+            Ok(file) => {
+                return Ok(PartTemp {
+                    sha: sha.clone(),
+                    session,
+                    part,
+                    part_size: manifest.part_size,
+                    path,
+                    file: Some(file),
+                    kept: false,
+                });
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            // The directory went: the upload was completed, aborted or swept.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err(AssetError::UploadNotFound);
+            }
+            Err(err) => {
+                return Err(anyhow::Error::from(err)
+                    .context(format!("create {}", path.display()))
+                    .into());
+            }
+        }
+    }
+}
+
+/// Refuse a part number the upload has no part for.
+fn check_part_number(manifest: &UploadManifest, part: u32) -> Result<(), AssetError> {
+    if part == 0 {
+        return Err(AssetError::Invalid("part number must be >= 1".into()));
+    }
+    let count = expected_part_count(manifest.bytes, manifest.part_size);
+    if part > count {
+        return Err(AssetError::Invalid(format!(
+            "part {part} out of range (expected 1..={count})"
+        )));
+    }
+    Ok(())
 }
 
 /// An upload's directory can be removed while a request to it runs: by the
-/// upload's completion, by an abort, or by the sweep of stale uploads. A
+/// upload's completion, by an abort, or by the sweep of abandoned uploads. A
 /// failure to read or write its files after that is an upload that is gone,
 /// not a server that cannot store the file.
 ///
@@ -286,16 +644,9 @@ fn upload_is_gone(session: &Path) -> bool {
 /// removal has not reached the manifest yet.
 fn gone_if_session_file_removed(session: &Path, err: AssetError) -> AssetError {
     match err {
-        AssetError::Internal(e) if is_not_found(&e) => AssetError::UploadNotFound,
+        AssetError::Internal(e) if assets_api::is_not_found(&e) => AssetError::UploadNotFound,
         err => gone_if_removed(session, err),
     }
-}
-
-/// Whether an I/O error somewhere in `err` is a file or directory not found.
-fn is_not_found(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
-        .any(|io| io.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// The directory of an upload in progress.
@@ -329,53 +680,53 @@ pub fn read_upload(
     read_manifest_for(&session, sha).map_err(|e| gone_if_removed(&session, e))
 }
 
-/// Write (or overwrite) one part. `body` is the full part payload.
-pub fn put_part(
-    assets_root: &Path,
-    sha: &Sha256,
-    upload_id: &str,
-    part: u32,
-    body: &[u8],
-) -> Result<u64, AssetError> {
-    if part == 0 {
-        return Err(AssetError::Invalid("part number must be >= 1".into()));
-    }
-    let session = existing_session(assets_root, sha, upload_id)?;
-    // The directory existed when the request arrived, and may be removed while
-    // it runs.
-    write_part(&session, sha, part, body).map_err(|e| gone_if_session_file_removed(&session, e))
+/// Record the part whose whole body is now in `temp`'s file
+/// ([`PartTemp::receive`]) in its upload, and return its size. A body of
+/// exactly the part's size takes the part's name, replacing any copy of the
+/// part sent before, and the manifest records it. A body of any other size
+/// is refused, and dropping `temp` removes its file.
+///
+/// # Errors
+///
+/// Returns [`AssetError::Invalid`] for a part of the wrong size,
+/// [`AssetError::Locked`] while another request to the upload holds its
+/// lock, [`AssetError::UploadNotFound`] when the upload was removed while
+/// the part arrived, and [`AssetError::Internal`] when the part cannot be
+/// stored.
+pub fn put_part(temp: PartTemp) -> Result<u64, AssetError> {
+    // `begin_part` made the file in the upload's directory, which may have
+    // been removed since.
+    let session = temp.session.clone();
+    write_part(temp).map_err(|e| gone_if_session_file_removed(&session, e))
 }
 
-/// [`put_part`] on the directory of its upload.
-fn write_part(session: &Path, sha: &Sha256, part: u32, body: &[u8]) -> Result<u64, AssetError> {
+/// [`put_part`]. The part number is not checked again: [`begin_part`]
+/// checked it against the same manifest, whose size and part size never
+/// change.
+fn write_part(mut temp: PartTemp) -> Result<u64, AssetError> {
+    let session = temp.session.as_path();
     let _lock = lock_session(session)?;
-    let mut manifest = read_manifest_for(session, sha)?;
-    if body.len() > manifest.part_size {
-        return Err(AssetError::Invalid(format!(
-            "part body {} bytes exceeds session part_size {}",
-            body.len(),
-            manifest.part_size
-        )));
-    }
-    let count = expected_part_count(manifest.bytes, manifest.part_size);
-    if part > count {
-        return Err(AssetError::Invalid(format!(
-            "part {part} out of range (expected 1..={count})"
-        )));
-    }
+    let mut manifest = read_manifest_for(session, &temp.sha)?;
+    let part = temp.part;
+    // Closed before it is measured and renamed.
+    drop(temp.file.take());
+    let len = fs::metadata(&temp.path)
+        .with_context(|| format!("read {}", temp.path.display()))?
+        .len();
     let expect = expected_part_len(manifest.bytes, manifest.part_size, part);
-    if body.len() as u64 != expect {
+    if len != expect {
         return Err(AssetError::Invalid(format!(
-            "part {part} length {} does not match expected {expect}",
-            body.len()
+            "part {part} length {len} does not match expected {expect}"
         )));
     }
 
     let path = part_path(session, part);
-    fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
+    fs::rename(&temp.path, &path)
+        .with_context(|| format!("rename {} → {}", temp.path.display(), path.display()))?;
+    temp.kept = true;
     manifest.received.insert(part);
     write_manifest(session, &manifest)?;
-    Ok(body.len() as u64)
+    Ok(len)
 }
 
 /// Concatenate parts, check the claimed SHA-256 fingerprint, and install into
@@ -490,14 +841,8 @@ pub fn abort_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result
         return Ok(());
     }
     // A part or completion still running holds the lock, and emptying the
-    // directory under it would fail it and leave files behind. The lock is
-    // dropped before the removal, because Windows does not delete a file
-    // that is open.
-    match lock_session(&session) {
-        Ok(lock) => drop(lock),
-        Err(AssetError::Internal(_)) if !session.exists() => return Ok(()),
-        Err(err) => return Err(err),
-    }
+    // directory under it would fail it and leave files behind.
+    drop(lock_session(&session)?);
     match fs::remove_dir_all(&session) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -517,329 +862,4 @@ pub fn abort_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    fn hash_bytes(data: &[u8]) -> Sha256 {
-        Sha256::of_bytes(data)
-    }
-
-    #[test]
-    fn multipart_roundtrip() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let data = b"hello-multipart-asset-bytes!!";
-        let sha = hash_bytes(data);
-
-        let upload_id = "aabb0011";
-        let session = session_dir(root, &sha, upload_id);
-        fs::create_dir_all(&session).unwrap();
-        let part_size = 10usize;
-        let mut manifest = UploadManifest {
-            sha256: sha.to_string(),
-            bytes: data.len() as u64,
-            part_size,
-            mime: Some("text/plain".into()),
-            received: BTreeSet::new(),
-        };
-        write_manifest(&session, &manifest).unwrap();
-
-        let count = expected_part_count(manifest.bytes, part_size);
-        for n in 1..=count {
-            let start = (n as usize - 1) * part_size;
-            let end = (start + part_size).min(data.len());
-            let chunk = &data[start..end];
-            let path = part_path(&session, n);
-            fs::write(&path, chunk).unwrap();
-            manifest.received.insert(n);
-        }
-        write_manifest(&session, &manifest).unwrap();
-
-        let (stored, already) = complete_upload(root, &sha, upload_id).unwrap();
-        assert!(!already);
-        assert_eq!(stored.sha256, sha.as_str());
-        assert!(root.join(&stored.assets_path).is_file());
-        assert!(!session.exists());
-        assert_eq!(fs::read(root.join(&stored.assets_path)).unwrap(), data);
-    }
-
-    #[test]
-    fn complete_rejects_hash_mismatch() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let data = b"abc123";
-        let wrong_sha = hash_bytes(b"other");
-        let upload_id = "badc0de1";
-        let session = session_dir(root, &wrong_sha, upload_id);
-        fs::create_dir_all(&session).unwrap();
-        let mut manifest = UploadManifest {
-            sha256: wrong_sha.to_string(),
-            bytes: data.len() as u64,
-            part_size: 64,
-            mime: None,
-            received: BTreeSet::new(),
-        };
-        fs::write(part_path(&session, 1), data).unwrap();
-        manifest.received.insert(1);
-        write_manifest(&session, &manifest).unwrap();
-
-        let err = complete_upload(root, &wrong_sha, upload_id).unwrap_err();
-        assert!(err.to_string().contains("sha256 mismatch"));
-        assert!(!session.exists());
-    }
-
-    #[test]
-    fn complete_rejects_a_made_up_fingerprint() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let data = b"large-enough-to-skip";
-        // Claimed fingerprint deliberately wrong: completion must still hash and reject.
-        let claimed_sha = Sha256::parse(&"a".repeat(64)).unwrap();
-        let upload_id = "aabbccdd";
-        let session = session_dir(root, &claimed_sha, upload_id);
-        fs::create_dir_all(&session).unwrap();
-        let mut manifest = UploadManifest {
-            sha256: claimed_sha.to_string(),
-            bytes: data.len() as u64,
-            part_size: 64,
-            mime: None,
-            received: BTreeSet::new(),
-        };
-        fs::write(part_path(&session, 1), data).unwrap();
-        manifest.received.insert(1);
-        write_manifest(&session, &manifest).unwrap();
-
-        let err = complete_upload(root, &claimed_sha, upload_id).unwrap_err();
-        assert!(
-            err.to_string().contains("sha256 mismatch"),
-            "expected mismatch, got: {err}"
-        );
-        assert!(!session.exists());
-    }
-
-    #[test]
-    fn require_upload_id_rejects_path_components() {
-        assert!(require_upload_id("..").is_err());
-        assert!(require_upload_id("../x").is_err());
-        assert!(require_upload_id("a/b").is_err());
-        assert!(require_upload_id("").is_err());
-        assert!(require_upload_id("deadbeef").is_ok());
-        assert!(require_upload_id(&"a".repeat(64)).is_ok());
-        assert!(require_upload_id(&"a".repeat(65)).is_err());
-    }
-
-    #[test]
-    fn abort_rejects_parent_upload_id() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let sha = Sha256::parse(&"b".repeat(64)).unwrap();
-        let parent = root.join(".incoming").join(sha.as_str());
-        fs::create_dir_all(parent.join("keep")).unwrap();
-        fs::write(parent.join("keep").join("marker"), b"x").unwrap();
-
-        let err = abort_upload(root, &sha, "..").unwrap_err();
-        assert!(err.to_string().contains("upload_id"));
-        assert!(parent.join("keep").join("marker").is_file());
-    }
-
-    #[test]
-    fn complete_rejects_missing_part() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let data = b"0123456789abcdef";
-        let sha = hash_bytes(data);
-        let upload_id = "11112222";
-        let session = session_dir(root, &sha, upload_id);
-        fs::create_dir_all(&session).unwrap();
-        let part_size = 8usize;
-        let mut manifest = UploadManifest {
-            sha256: sha.to_string(),
-            bytes: data.len() as u64,
-            part_size,
-            mime: None,
-            received: BTreeSet::new(),
-        };
-        // Only write part 1 of 2.
-        fs::write(part_path(&session, 1), &data[..8]).unwrap();
-        manifest.received.insert(1);
-        write_manifest(&session, &manifest).unwrap();
-
-        let err = complete_upload(root, &sha, upload_id).unwrap_err();
-        assert!(err.to_string().contains("missing part"));
-        // Incomplete sessions are kept so the client can resume missing parts.
-        assert!(session.exists());
-    }
-
-    #[test]
-    fn put_part_and_complete_via_api() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let data = b"abcdefghijklmnopqrstuvwxyz";
-        let sha = hash_bytes(data);
-        // Tiny parts, set on this test's own limits so no other test sees them.
-        let limits = UploadLimits::within(10, 1024);
-        let (existing, start) =
-            start_upload(root, &sha, data.len() as u64, Some("text/plain"), limits).unwrap();
-        assert!(existing.is_none());
-        let start = start.expect("upload started");
-        assert_eq!(start.part_size, 10);
-
-        let mut offset = 0usize;
-        let mut part = 1u32;
-        while offset < data.len() {
-            let end = (offset + start.part_size).min(data.len());
-            put_part(root, &sha, &start.upload_id, part, &data[offset..end]).unwrap();
-            offset = end;
-            part += 1;
-        }
-        let (stored, already) = complete_upload(root, &sha, &start.upload_id).unwrap();
-        assert!(!already);
-        assert_eq!(stored.sha256, sha.as_str());
-    }
-
-    #[test]
-    fn start_returns_existing() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let data = b"already-here";
-        let sha = hash_bytes(data);
-        let path = root.join(&sha.as_str()[..2]).join(sha.as_str());
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, data).unwrap();
-
-        let (existing, start) =
-            start_upload(root, &sha, data.len() as u64, None, UploadLimits::default()).unwrap();
-        assert!(existing.is_some());
-        assert!(start.is_none());
-    }
-
-    #[test]
-    fn start_rejects_over_max_bytes() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        let sha = Sha256::parse(&"a".repeat(64)).unwrap();
-        let limits = UploadLimits {
-            part_size: 1024,
-            max_bytes: 2048,
-        };
-        let err = start_upload(root, &sha, 4096, None, limits).unwrap_err();
-        assert!(err.to_string().contains("server limit"));
-    }
-
-    /// The limit is the owner's and is never moved. A configured part size
-    /// above it is brought down to it; one below it is used as configured.
-    #[test]
-    fn a_part_is_never_larger_than_the_limit() {
-        let small_limit = UploadLimits::within(4096, 1024);
-        assert_eq!((small_limit.part_size, small_limit.max_bytes), (1024, 1024));
-
-        let small_part = UploadLimits::within(10, 1024);
-        assert_eq!((small_part.part_size, small_part.max_bytes), (10, 1024));
-    }
-
-    /// An upload of the five bytes `hello` in one part, started in a new
-    /// directory: the directory, the fingerprint, the upload id and its session.
-    fn started_upload() -> (tempfile::TempDir, Sha256, String, PathBuf) {
-        let dir = tempdir().unwrap();
-        let sha = Sha256::of_bytes(b"hello");
-        let limits = UploadLimits {
-            part_size: 1024,
-            max_bytes: 2048,
-        };
-        let (_, start) = start_upload(dir.path(), &sha, 5, None, limits).unwrap();
-        let upload_id = start.unwrap().upload_id;
-        let session = session_dir(dir.path(), &sha, &upload_id);
-        (dir, sha, upload_id, session)
-    }
-
-    /// A completion that passed the check for its upload, whose directory an
-    /// abort or the stale sweep then removed, finds the upload gone: the
-    /// client's own state, not a server that cannot store the file.
-    #[test]
-    fn a_completion_for_an_upload_removed_under_it_finds_no_upload() {
-        let (dir, sha, _, session) = started_upload();
-        fs::remove_dir_all(&session).unwrap();
-
-        // `complete_upload` checks the directory before it gets here, so the
-        // removal between that check and the work is staged by calling the
-        // work after the check directly.
-        let err = complete_session(dir.path(), &session, &sha).unwrap_err();
-        assert!(matches!(err, AssetError::UploadNotFound), "{err}");
-    }
-
-    /// A removal deletes an upload's files before its directory. A request that
-    /// arrives while the manifest is gone and the directory is not finds the
-    /// upload gone too.
-    #[test]
-    fn a_request_to_an_upload_part_way_through_its_removal_finds_no_upload() {
-        let (dir, sha, upload_id, session) = started_upload();
-        fs::remove_file(manifest_path(&session)).unwrap();
-
-        let err = put_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap_err();
-        assert!(matches!(err, AssetError::UploadNotFound), "{err}");
-        let err = complete_upload(dir.path(), &sha, &upload_id).unwrap_err();
-        assert!(matches!(err, AssetError::UploadNotFound), "{err}");
-        let err = read_upload(dir.path(), &sha, &upload_id).unwrap_err();
-        assert!(matches!(err, AssetError::UploadNotFound), "{err}");
-    }
-
-    /// A part whose file is gone while its upload's manifest stays, as a
-    /// removal that failed part-way leaves it, is a part to send again: the
-    /// upload is still live.
-    #[test]
-    fn a_completion_whose_received_part_is_gone_asks_for_the_part_again() {
-        let (dir, sha, upload_id, session) = started_upload();
-        put_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
-        fs::remove_file(part_path(&session, 1)).unwrap();
-
-        let err = complete_upload(dir.path(), &sha, &upload_id).unwrap_err();
-        assert!(matches!(err, AssetError::Invalid(_)), "{err}");
-        put_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
-        complete_upload(dir.path(), &sha, &upload_id).unwrap();
-    }
-
-    /// An abort while a part is still being written waits its turn, and
-    /// leaves the upload in place.
-    #[test]
-    fn an_abort_while_a_part_is_written_is_refused_as_locked() {
-        let (dir, sha, upload_id, session) = started_upload();
-
-        let held = lock_session(&session).unwrap();
-        let err = abort_upload(dir.path(), &sha, &upload_id).unwrap_err();
-        assert!(matches!(err, AssetError::Locked), "{err}");
-        assert!(manifest_path(&session).is_file());
-
-        drop(held);
-        abort_upload(dir.path(), &sha, &upload_id).unwrap();
-        assert!(!session.exists());
-        abort_upload(dir.path(), &sha, &upload_id).unwrap();
-    }
-
-    /// S2-8: a second request to an upload while the first holds the lock is
-    /// refused without waiting. Its bytes may be right, so the refusal names
-    /// the lock and says to send again, and does not name a server path.
-    #[test]
-    fn a_request_refused_for_the_lock_says_so() {
-        let dir = tempdir().unwrap();
-        let sha = Sha256::parse(&"c".repeat(64)).unwrap();
-        let session = session_dir(dir.path(), &sha, "locktest01");
-        fs::create_dir_all(&session).unwrap();
-
-        let _held = lock_session(&session).unwrap();
-        let err = lock_session(&session).unwrap_err();
-        assert!(
-            matches!(err, AssetError::Locked),
-            "expected lock failure, got: {err}"
-        );
-        let message = err.to_string();
-        assert!(
-            message.contains("another request to this upload holds its lock"),
-            "expected the lock to be named, got: {message}"
-        );
-        assert!(
-            !message.contains(&dir.path().display().to_string()),
-            "the refusal names a server path: {message}"
-        );
-    }
-}
+mod tests;

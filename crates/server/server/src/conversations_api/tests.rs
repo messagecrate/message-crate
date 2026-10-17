@@ -1,13 +1,14 @@
 use super::*;
 use crate::db::conversations::{ConversationSort, display_service_label};
 use crate::db::participant_names::Participant;
-use message_ir::IdentityType;
+use ir::IdentityType;
 use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
+use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, register_via_api,
-    seed_one_message, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
+    fixture_with_account, register_via_api, seed_one_message, stored_time, test_fixture,
 };
 
 /// A newest-first page — the default ordering, which is what most of these
@@ -18,14 +19,13 @@ async fn list_conversations(
     q: &str,
     limit: usize,
     offset: usize,
-) -> Result<Page<ConversationSummary>, ApiError> {
+) -> Result<Page<ConversationSummary>, crate::db::SearchListError> {
     list_conversations_sorted(
         conn,
         account_id,
         q,
         &DEFAULT_CONVERSATION_SORT,
-        limit,
-        offset,
+        crate::paging::PageParams { limit, offset },
         crate::search::tests::clock(),
     )
     .await
@@ -48,13 +48,13 @@ async fn conversation_list_takes_the_search_language() {
     )
     .await;
     assert!(page["total"].as_u64().unwrap() >= 1);
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         "/v1/conversations?q=wibble:direct",
         &account.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    expect_problem(status, &text, ProblemType::SearchQueryInvalid);
     let status = crate::test_support::get_status(
         &fixture.state,
         "/v1/conversations?q=trashed:yes",
@@ -83,16 +83,12 @@ async fn conversations_setup() -> (sqlx::SqlitePool, TestFixture, i64) {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'c.jsonl')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, peer)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -102,7 +98,7 @@ async fn conversations_setup() -> (sqlx::SqlitePool, TestFixture, i64) {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-06-01T12:00:00.000Z",
+        timestamp: stored_time("2024-06-01T12:00:00.000Z"),
         body: Some("hello"),
         ..MessageRow::new(account, 1)
     }
@@ -173,16 +169,12 @@ async fn list_conversations_finds_a_handle_across_platforms() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (10, $1, $2, 'individual', 'wa.jsonl')",
-    )
-    .bind(account)
-    .bind(wa)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(10),
+        ..ConversationRow::new(account, wa)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (10, $1, 'Sam WA')",
@@ -193,7 +185,7 @@ async fn list_conversations_finds_a_handle_across_platforms() {
     .unwrap();
     MessageRow {
         source: "whatsapp",
-        timestamp: "2024-08-01T12:00:00.000Z",
+        timestamp: stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("wa hello"),
         ..MessageRow::new(account, 10)
     }
@@ -231,7 +223,7 @@ async fn list_conversations_sorts_by_date_or_message_count() {
         ("2024-05-02T12:00:00Z", 2, "older still"),
     ] {
         MessageRow {
-            timestamp,
+            timestamp: stored_time(timestamp),
             sort_order,
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -248,18 +240,14 @@ async fn list_conversations_sorts_by_date_or_message_count() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (2, $1, $2, 'individual', 'c2.jsonl')",
-    )
-    .bind(account)
-    .bind(peer2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::new(account, peer2)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         body: Some("newest"),
         ..MessageRow::new(account, 2)
     }
@@ -278,8 +266,7 @@ async fn list_conversations_sorts_by_date_or_message_count() {
             account,
             "",
             &[crate::paging::SortKey { key, direction }],
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::FIRST_PAGE,
             crate::search::tests::clock(),
         )
         .await
@@ -350,18 +337,14 @@ async fn list_conversations_paginates() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (2, $1, $2, 'individual', 'c2.jsonl')",
-    )
-    .bind(account)
-    .bind(peer2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::new(account, peer2)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         body: Some("later"),
         ..MessageRow::new(account, 2)
     }
@@ -409,14 +392,13 @@ async fn list_queries_enforce_search_limits() {
             account,
             query,
             &crate::db::contacts::read::DEFAULT_CONTACT_SORT,
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::FIRST_PAGE,
             crate::search::tests::clock(),
         )
         .await
         .unwrap_err();
         assert!(
-            matches!(contact_error, ApiError::SearchQueryInvalid { .. }),
+            matches!(contact_error, crate::db::SearchListError::Query(_)),
             "contact query should be rejected: {query}"
         );
 
@@ -425,7 +407,7 @@ async fn list_queries_enforce_search_limits() {
                 .await
                 .unwrap_err();
         assert!(
-            matches!(conversation_error, ApiError::SearchQueryInvalid { .. }),
+            matches!(conversation_error, crate::db::SearchListError::Query(_)),
             "conversation query should be rejected: {query}"
         );
     }
@@ -437,8 +419,8 @@ async fn malformed_boolean_queries_are_invalid_search_queries_for_export() {
     let mut conn = pool.acquire().await.unwrap();
 
     for query in ["foo OR", "(foo OR bar", "foo OR bar)"] {
-        let scope = message_crate_api_types::ExportScope::Query {
-            list: message_crate_api_types::ExportQueryList::Messages,
+        let scope = api_types::ExportScope::Query {
+            list: api_types::ExportQueryList::Messages,
             q: query.into(),
         };
         let export_error = crate::exports_api::scope_filter(
@@ -495,18 +477,14 @@ async fn list_conversations_filters_by_contact_and_type() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (9, $1, $2, 'group', 'Other', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(other)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(9),
+        ..ConversationRow::group(account, other, "Other")
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
-        timestamp: "2024-08-01T12:00:00.000Z",
+        timestamp: stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("group"),
         ..MessageRow::new(account, 9)
     }
@@ -514,20 +492,16 @@ async fn list_conversations_filters_by_contact_and_type() {
     .await;
 
     // Group that includes Sam (distinct chat handle; Sam is a participant).
-    let group_chat =
+    let group_handle =
         account_profile::link_account_handle(&mut conn, account, "chat123456", IdentityType::Other)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (3, $1, $2, 'group', 'Sam Group', 'sg.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(3),
+        ..ConversationRow::group(account, group_handle, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (3, $1, 'Sam')",
@@ -537,7 +511,7 @@ async fn list_conversations_filters_by_contact_and_type() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-09-01T12:00:00.000Z",
+        timestamp: stored_time("2024-09-01T12:00:00.000Z"),
         body: Some("hi group"),
         ..MessageRow::new(account, 3)
     }
@@ -689,20 +663,16 @@ async fn list_conversations_filters_by_participant_count() {
     )
     .await
     .unwrap();
-    let group_chat =
+    let group_handle =
         account_profile::link_account_handle(&mut conn, account, "chat-big", IdentityType::Other)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (10, $1, $2, 'group', 'Trio', 't.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(10),
+        ..ConversationRow::group(account, group_handle, "Trio")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias) VALUES
          (10, $1, 'A'), (10, $2, 'B')",
@@ -713,7 +683,7 @@ async fn list_conversations_filters_by_participant_count() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-10-01T12:00:00.000Z",
+        timestamp: stored_time("2024-10-01T12:00:00.000Z"),
         body: Some("hi"),
         ..MessageRow::new(account, 10)
     }
@@ -775,20 +745,16 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
     )
     .await
     .unwrap();
-    let group_chat =
+    let group_handle =
         account_profile::link_account_handle(&mut conn, account, "chat-trio", IdentityType::Other)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (20, $1, $2, 'group', 'Trio', 't2.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(20),
+        ..ConversationRow::group(account, group_handle, "Trio")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias) VALUES
          (20, $1, 'A'), (20, $2, 'B'), (20, $3, 'C')",
@@ -800,7 +766,7 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-11-01T12:00:00.000Z",
+        timestamp: stored_time("2024-11-01T12:00:00.000Z"),
         body: Some("hi trio"),
         ..MessageRow::new(account, 20)
     }
@@ -823,17 +789,13 @@ async fn list_conversations_filters_by_import_id() {
     // Fresh db (conversations_setup() already owns conversation 1, which this test inserts itself).
     let fixture = test_fixture().await;
     let pool = fixture.state.db.clone();
-    let account = 101_i64;
+    let account = fixture.account_with_id(101, "alice").await;
     let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
 
     let import_a = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -844,12 +806,14 @@ async fn list_conversations_filters_by_import_id() {
         account,
         import_a,
         &imports::CompleteImportArgs::succeeded(1, 0),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
     let import_b = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -871,16 +835,12 @@ async fn list_conversations_filters_by_import_id() {
     .await
     .unwrap();
 
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'c1.jsonl')",
-    )
-    .bind(account)
-    .bind(peer1)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, peer1)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -889,16 +849,12 @@ async fn list_conversations_filters_by_import_id() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (2, $1, $2, 'individual', 'c2.jsonl')",
-    )
-    .bind(account)
-    .bind(peer2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::new(account, peer2)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (2, $1, 'Alex')",
@@ -909,7 +865,7 @@ async fn list_conversations_filters_by_import_id() {
     .unwrap();
 
     MessageRow {
-        timestamp: "2024-06-01T12:00:00.000Z",
+        timestamp: stored_time("2024-06-01T12:00:00.000Z"),
         body: Some("hello"),
         import_id: Some(import_a),
         ..MessageRow::new(account, 1)
@@ -917,7 +873,7 @@ async fn list_conversations_filters_by_import_id() {
     .insert(&mut conn)
     .await;
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         body: Some("later"),
         import_id: Some(import_b),
         ..MessageRow::new(account, 2)
@@ -964,7 +920,7 @@ async fn list_conversations_filters_by_import_id() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(junk, ApiError::SearchQueryInvalid { .. }));
+    assert!(matches!(junk, crate::db::SearchListError::Query(_)));
 }
 
 /// `sort` reads through the shared parser: an unknown key is refused,
@@ -974,7 +930,7 @@ async fn sort_is_parsed_against_the_lists_keys() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let (status, text) =
-        crate::test_support::get_raw(&state, "/v1/conversations?sort=colour", &user.token).await;
+        crate::test_support::get_raw(&state, "/v1/conversations?sort=color", &user.token).await;
     let problem = crate::test_support::expect_problem(
         status,
         &text,
@@ -982,7 +938,7 @@ async fn sort_is_parsed_against_the_lists_keys() {
     );
     assert_eq!(
         problem.errors.as_deref(),
-        Some(&["sort: unknown key 'colour'; accepted keys are date, messages".to_string()][..])
+        Some(&["sort: unknown key 'color'; accepted keys are date, messages".to_string()][..])
     );
     assert_eq!(
         crate::test_support::get_status(
@@ -1004,17 +960,13 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     // NULLs go.
     let fixture = test_fixture().await;
     let pool = fixture.state.db.clone();
-    let account = 101_i64;
+    let account = fixture.account_with_id(101, "alice").await;
     let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
 
     let import_a = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -1024,22 +976,17 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
             account_profile::link_account_handle(&mut conn, account, raw, IdentityType::Phone)
                 .await
                 .unwrap();
-        sqlx::query(
-            "INSERT INTO conversations (
-                id, account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES ($1, $2, $3, 'individual', 'c.jsonl')",
-        )
-        .bind(id)
-        .bind(account)
-        .bind(peer)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        ConversationRow {
+            id: Some(id),
+            ..ConversationRow::new(account, peer)
+        }
+        .insert(&mut conn)
+        .await;
     }
 
     // Conversation 4 keeps a real message, and it belongs to the import.
     let winner_id = MessageRow {
-        timestamp: "2024-05-01T12:00:00.000Z",
+        timestamp: stored_time("2024-05-01T12:00:00.000Z"),
         body: Some("canonical"),
         import_id: Some(import_a),
         ..MessageRow::new(account, 4)
@@ -1050,7 +997,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     // Conversation 3's only message is a duplicate, so its last_message_at
     // is NULL even though its timestamp is the later of the two.
     MessageRow {
-        timestamp: "2024-06-01T12:00:00.000Z",
+        timestamp: stored_time("2024-06-01T12:00:00.000Z"),
         body: Some("dup"),
         import_id: Some(import_a),
         duplicate_of: Some(winner_id),
@@ -1074,8 +1021,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
                 key: ConversationSort::Date,
                 direction,
             }],
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::FIRST_PAGE,
             crate::search::tests::clock(),
         )
         .await
@@ -1107,8 +1053,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
         account,
         &q,
         &[],
-        DEFAULT_LIST_LIMIT,
-        0,
+        crate::paging::FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -1147,7 +1092,7 @@ async fn a_conversation_carries_its_first_and_last_message_times_once() {
     let (fixture, user) = fixture_with_account().await;
     let message = |timestamp| SeedMessage {
         source: "imessage",
-        timestamp,
+        timestamp: stored_time(timestamp),
         is_from_me: false,
         body: "hi",
     };
@@ -1163,7 +1108,7 @@ async fn a_conversation_carries_its_first_and_last_message_times_once() {
         &SeedConversation {
             account_id: user.account_id,
             handle: "+15555550161",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.jsonl",
             messages: &messages,
@@ -1186,8 +1131,14 @@ async fn a_conversation_carries_its_first_and_last_message_times_once() {
     )
     .await;
     for json in [listed, read] {
-        assert_eq!(json["first_message_at"], "2023-01-15T08:30:00Z", "{json}");
-        assert_eq!(json["last_message_at"], "2025-07-04T20:15:00Z", "{json}");
+        assert_eq!(
+            json["first_message_at"], "2023-01-15T08:30:00.000Z",
+            "{json}"
+        );
+        assert_eq!(
+            json["last_message_at"], "2025-07-04T20:15:00.000Z",
+            "{json}"
+        );
         assert!(json.get("date_range_start").is_none(), "{json}");
         assert!(json.get("date_range_end").is_none(), "{json}");
     }
@@ -1199,17 +1150,13 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     // which breaks the "all" total assertion below.
     let fixture = test_fixture().await;
     let pool = fixture.state.db.clone();
-    let account = 101_i64;
+    let account = fixture.account_with_id(101, "alice").await;
     let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
 
     let import_a = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -1222,16 +1169,12 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (3, $1, $2, 'individual', 'dup-only.jsonl')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(3),
+        ..ConversationRow::new(account, peer)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (3, $1, 'Pat')",
@@ -1250,18 +1193,14 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (4, $1, $2, 'individual', 'winner.jsonl')",
-    )
-    .bind(account)
-    .bind(peer_other)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(4),
+        ..ConversationRow::new(account, peer_other)
+    }
+    .insert(&mut conn)
+    .await;
     let winner_id = MessageRow {
-        timestamp: "2024-05-01T12:00:00.000Z",
+        timestamp: stored_time("2024-05-01T12:00:00.000Z"),
         body: Some("canonical"),
         ..MessageRow::new(account, 4)
     }
@@ -1270,7 +1209,7 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
 
     // Only message in conversation 3 from import A is a duplicate.
     MessageRow {
-        timestamp: "2024-06-01T12:00:00.000Z",
+        timestamp: stored_time("2024-06-01T12:00:00.000Z"),
         body: Some("dup"),
         import_id: Some(import_a),
         duplicate_of: Some(winner_id),
@@ -1332,7 +1271,7 @@ async fn the_conversation_list_labels_each_thread_by_its_sources() {
     let (fixture, user) = fixture_with_account().await;
     let message = |source| SeedMessage {
         source,
-        timestamp: "2024-01-01T00:00:00.000Z",
+        timestamp: stored_time("2024-01-01T00:00:00.000Z"),
         is_from_me: true,
         body: "hi",
     };
@@ -1350,7 +1289,7 @@ async fn the_conversation_list_labels_each_thread_by_its_sources() {
             &SeedConversation {
                 account_id: user.account_id,
                 handle,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "t.jsonl",
                 messages: &messages,
@@ -1386,6 +1325,7 @@ async fn list_conversations_filters_by_tag_and_people() {
         &[1],
         "Holiday",
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -1431,6 +1371,7 @@ async fn list_conversations_filters_by_tag_and_people() {
         &[contact_id],
         "Family",
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -1503,7 +1444,7 @@ async fn conversation_detail_shows_no_chat_id_as_a_group_participant() {
             source_file: "_import.jsonl",
             messages: &[crate::test_support::SeedMessage {
                 source: "imessage",
-                timestamp: "2024-02-01T10:00:00.000Z",
+                timestamp: stored_time("2024-02-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "hello all",
             }],
@@ -1522,9 +1463,9 @@ async fn conversation_detail_404s_for_an_id_this_account_does_not_own() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let status =
-        crate::test_support::get_status(&state, "/v1/conversations/999999", &user.token).await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    let (status, text) =
+        crate::test_support::get_raw(&state, "/v1/conversations/999999", &user.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1542,13 +1483,13 @@ async fn conversation_detail_404s_for_another_accounts_conversation() {
     // Bob asking for Alice's conversation id must 404, not 403 — a 403
     // would confirm the id exists in someone else's account, and it must
     // not come back as Bob's own conversation either.
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}"),
         &bob.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1721,14 +1662,14 @@ async fn conversation_trash_404s_for_an_unknown_id() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         "/v1/conversations/999999/trash",
         &user.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1736,14 +1677,14 @@ async fn conversation_restore_404s_for_an_unknown_id() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         "/v1/conversations/999999/restore",
         &user.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1760,14 +1701,14 @@ async fn conversation_trash_404s_for_another_accounts_conversation() {
 
     // Bob trashing Alice's conversation id must 404, not 403 — a 403
     // would confirm the id exists in someone else's account.
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}/trash"),
         &bob.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = state.db.acquire().await.unwrap();
     assert_eq!(
@@ -1797,14 +1738,14 @@ async fn conversation_restore_404s_for_another_accounts_conversation() {
     let bob = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&state, bob.account_id).await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}/restore"),
         &bob.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = state.db.acquire().await.unwrap();
     assert_eq!(
@@ -1853,13 +1794,13 @@ async fn conversation_delete_removes_a_trashed_conversation_for_good() {
     .await;
     assert_eq!(status, axum::http::StatusCode::NO_CONTENT);
 
-    let detail = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         &format!("/v1/conversations/{id}"),
         &user.token,
     )
     .await;
-    assert_eq!(detail, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
     let trashed: serde_json::Value = crate::test_support::get_json(
         &fixture.state,
         "/v1/conversations?q=trashed:any",
@@ -1889,12 +1830,12 @@ async fn conversation_delete_removes_files_only_the_deleted_conversation_used() 
         &crate::test_support::SeedConversation {
             account_id: user.account_id,
             handle: "+15550112",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-02T00:00:00.000Z",
+                timestamp: stored_time("2020-01-02T00:00:00.000Z"),
                 is_from_me: false,
                 body: "hi",
             }],
@@ -1943,11 +1884,8 @@ async fn conversation_delete_refuses_a_conversation_that_is_not_in_the_trash() {
         &user.token,
     )
     .await;
-    assert_eq!(
-        status,
-        axum::http::StatusCode::CONFLICT,
-        "trash is the only door to deletion: {body}"
-    );
+    // Trash is the only door to deletion.
+    expect_problem(status, &body, ProblemType::StateConflict);
     assert!(body.contains("not in the trash"), "{body}");
     let mut conn = fixture.conn().await;
     assert_eq!(conversation_row_count(&mut conn, id).await, 1);
@@ -1958,23 +1896,20 @@ async fn conversation_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_conversation_fixture().await;
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let status = crate::test_support::delete_status(
-        &fixture.state,
-        "/v1/conversations/999999",
-        &alice.token,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    let (status, text) =
+        crate::test_support::delete_raw(&fixture.state, "/v1/conversations/999999", &alice.token)
+            .await;
+    expect_problem(status, &text, ProblemType::NotFound);
 
     // Bob deleting Alice's trashed conversation must 404, not 403 — a 403
     // would confirm the id exists — and must not delete it.
-    let status = crate::test_support::delete_status(
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/conversations/{alices}"),
         &bob.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
     let mut conn = fixture.conn().await;
     assert_eq!(conversation_row_count(&mut conn, alices).await, 1);
 }
@@ -1984,13 +1919,13 @@ async fn conversation_delete_needs_the_delete_permission() {
     let (fixture, user, id) = trashed_conversation_fixture().await;
     fixture.turn_off_delete(user.account_id).await;
 
-    let status = crate::test_support::delete_status(
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/conversations/{id}"),
         &user.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::InsufficientScope);
     let mut conn = fixture.conn().await;
     assert_eq!(
         conversation_row_count(&mut conn, id).await,
@@ -2015,15 +1950,9 @@ async fn conversation_messages_fixture() -> (TestFixture, RegisteredAccount, i64
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'seed.jsonl') RETURNING id",
-    )
-    .bind(user.account_id)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation_id = ConversationRow::new(user.account_id, handle_id)
+        .insert(&mut conn)
+        .await;
     (fixture, user, conversation_id)
 }
 
@@ -2038,7 +1967,7 @@ async fn insert_message(
     body: &str,
 ) -> i64 {
     MessageRow {
-        timestamp,
+        timestamp: stored_time(timestamp),
         is_from_me: true,
         sort_order,
         body: Some(body),
@@ -2115,7 +2044,7 @@ async fn conversation_messages_say_which_were_sent_and_which_received() {
     )
     .await;
     MessageRow {
-        timestamp: "2024-01-02T00:00:00.000Z",
+        timestamp: stored_time("2024-01-02T00:00:00.000Z"),
         body: Some("received"),
         ..MessageRow::new(user.account_id, conversation_id)
     }
@@ -2234,7 +2163,7 @@ async fn insert_many_messages(
     for i in 0..count {
         let body = format!("msg{i}");
         MessageRow {
-            timestamp: "2024-01-01T00:00:00.000Z",
+            timestamp: stored_time("2024-01-01T00:00:00.000Z"),
             is_from_me: true,
             sort_order: i,
             body: Some(&body),
@@ -2404,7 +2333,7 @@ async fn around_a_message_near_an_end_fills_the_page_from_the_other_side() {
 /// page just before a message and `after` the page just after it, in the
 /// page's own order, neither holding the message itself.
 #[tokio::test]
-async fn before_and_after_a_message_answer_the_neighbouring_pages() {
+async fn before_and_after_a_message_answer_the_neighboring_pages() {
     let (fixture, user, conversation_id) = conversation_messages_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     insert_many_messages(&mut conn, conversation_id, user.account_id, 20).await;
@@ -2459,12 +2388,12 @@ async fn a_page_starts_at_one_place_beside_a_message_of_this_conversation() {
         &SeedConversation {
             account_id: user.account_id,
             handle: "+15555550142",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "elsewhere",
             }],
@@ -2624,13 +2553,13 @@ async fn conversation_messages_name_the_person_a_thread_has_no_participants_row_
 #[tokio::test]
 async fn conversation_messages_404s_for_an_unknown_id() {
     let (fixture, user, _conversation_id) = conversation_messages_fixture().await;
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         "/v1/conversations/999999/messages",
         &user.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -2639,13 +2568,13 @@ async fn conversation_messages_404s_for_another_accounts_conversation() {
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&fixture.state, bob.account_id).await;
 
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         &format!("/v1/conversations/{alice_conversation_id}/messages"),
         &bob.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -2688,7 +2617,7 @@ async fn sources_fixture() -> (TestFixture, RegisteredAccount, i64) {
     let (fixture, alice) = fixture_with_account().await;
     let message = |source, timestamp, body| SeedMessage {
         source,
-        timestamp,
+        timestamp: stored_time(timestamp),
         is_from_me: true,
         body,
     };
@@ -2697,7 +2626,7 @@ async fn sources_fixture() -> (TestFixture, RegisteredAccount, i64) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[
@@ -2785,12 +2714,12 @@ async fn conversation_sources_404s_for_another_accounts_conversation_and_an_unkn
 /// The list shows a group under its title, trimmed. A title of only spaces is
 /// no title, so the web app falls back to the participants' names.
 #[tokio::test]
-async fn the_list_labels_a_group_with_its_trimmed_title_and_a_blank_title_with_null() {
+async fn the_list_shows_a_group_by_its_trimmed_title_and_a_blank_title_as_null() {
     use crate::test_support::{SeedConversation, SeedMessage, seed_conversation};
     let (fixture, alice) = fixture_with_account().await;
     let message = SeedMessage {
         source: "imessage",
-        timestamp: "2024-01-01T10:00:00.000Z",
+        timestamp: stored_time("2024-01-01T10:00:00.000Z"),
         is_from_me: false,
         body: "hello",
     };
@@ -2814,16 +2743,16 @@ async fn the_list_labels_a_group_with_its_trimmed_title_and_a_blank_title_with_n
 
     let page: serde_json::Value =
         crate::test_support::get_json(&fixture.state, "/v1/conversations", &alice.token).await;
-    let label_of = |id: i64| {
+    let shown_title_of = |id: i64| {
         page["items"]
             .as_array()
             .unwrap()
             .iter()
             .find(|item| item["id"] == serde_json::json!(id))
-            .unwrap_or_else(|| panic!("conversation {id} is listed: {page}"))["label"]
+            .unwrap_or_else(|| panic!("conversation {id} is listed: {page}"))["shown_title"]
             .clone()
     };
 
-    assert_eq!(label_of(ids[0]), serde_json::json!("Family"));
-    assert_eq!(label_of(ids[1]), serde_json::Value::Null);
+    assert_eq!(shown_title_of(ids[0]), serde_json::json!("Family"));
+    assert_eq!(shown_title_of(ids[1]), serde_json::Value::Null);
 }

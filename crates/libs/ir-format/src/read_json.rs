@@ -4,9 +4,7 @@
 //! Each following line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{
-    ConversationDocument, ConversationHeader, IrMessage, check_schema_version_in_json,
-};
+use ir::{ConversationDocument, ConversationHeader, Message, check_schema_version_in_json};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -21,16 +19,16 @@ use std::path::Path;
 pub fn read_conversation_json(path: &Path) -> Result<ConversationDocument> {
     let raw = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     check_schema_version_in_json(&raw).with_context(|| format!("read {}", path.display()))?;
-    let mut doc: ConversationDocument = serde_json::from_str(&raw)
+    let mut document: ConversationDocument = serde_json::from_str(&raw)
         .with_context(|| format!("parse ConversationDocument {}", path.display()))?;
-    crate::util::recover_stem_suffix(&mut doc, path.file_stem());
-    doc.finalize_stats();
-    Ok(doc)
+    crate::util::recover_stem_suffix(&mut document, path.file_stem());
+    document.finalize_stats();
+    Ok(document)
 }
 
 /// Read a conversation JSON Lines file written by `write_conversation_jsonl`.
 ///
-/// Line 1 is a [`ConversationHeader`]. Each following line is one [`IrMessage`].
+/// Line 1 is a [`ConversationHeader`]. Each following line is one [`Message`].
 ///
 /// # Errors
 ///
@@ -38,7 +36,7 @@ pub fn read_conversation_json(path: &Path) -> Result<ConversationDocument> {
 /// current schema (checked before the header is parsed, so an old file is
 /// refused by its version), or a line cannot be parsed.
 pub fn read_conversation_jsonl(path: &Path) -> Result<ConversationDocument> {
-    read_conversation_jsonl_with_lines(path).map(|(doc, _)| doc)
+    read_conversation_jsonl_with_lines(path).map(|(document, _)| document)
 }
 
 /// Read a conversation JSON Lines file as [`read_conversation_jsonl`] does,
@@ -74,16 +72,16 @@ pub fn read_conversation_jsonl_with_lines(
         if line.trim().is_empty() {
             continue;
         }
-        let msg: IrMessage = serde_json::from_str(&line)
+        let message: Message = serde_json::from_str(&line)
             .with_context(|| format!("parse JSONL message line {line_no} in {}", path.display()))?;
-        messages.push(msg);
+        messages.push(message);
         message_lines.push(line_no);
     }
     if messages.is_empty() {
         bail!("JSONL has no message lines: {}", path.display());
     }
 
-    let mut doc = header.into_document(messages);
-    crate::util::recover_stem_suffix(&mut doc, path.file_stem());
-    Ok((doc, message_lines))
+    let mut document = header.into_document(messages);
+    crate::util::recover_stem_suffix(&mut document, path.file_stem());
+    Ok((document, message_lines))
 }

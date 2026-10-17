@@ -1,0 +1,24 @@
+// No mock of Tauri's packages outside web/src/lib/desktop/ (#3188). The
+// modules in lib/desktop/ are the only ones that import Tauri's API, so a test
+// of any other code mocks the lib/desktop/ module that code imports. A test
+// that mocks Tauri's package instead depends on how that module calls Tauri.
+// noRestrictedImports refuses an import of Tauri's packages, but vi.mock names
+// its module in a string, which no import rule reads. web/biome.json runs this
+// on every module in web/src less lib/desktop/, whose own tests mock Tauri
+// because Tauri is what their code imports.
+// It matches the call on any receiver, so `vi` under another name
+// (`import { vi as v }`, `vitest.vi`) is caught too.
+// src/test/noTauriMocksOutsideDesktop.canary.ts holds every form, so a form
+// this stops matching fails the lint. `vi.mock(import("@tauri-apps/…"))` is
+// left to noRestrictedImports, which refuses the dynamic import. A module name
+// held in a variable (`vi.mock(name)`) is not a string here, so it passes.
+language js
+
+or {
+  `$receiver.$fn($module)`,
+  `$receiver.$fn($module, $rest)`
+} where {
+  $fn <: r"^(?:mock|doMock|unmock|doUnmock|importActual|importMock)$",
+  $module <: r"^[\"'`]@tauri-apps/.*",
+  register_diagnostic(span=$module, message="Outside src/lib/desktop/, a test mocks the module in src/lib/desktop/ that the code under test imports, never one of Tauri's packages, so the test does not depend on how that module calls Tauri (CLAUDE.md, #3188).", severity="error")
+}

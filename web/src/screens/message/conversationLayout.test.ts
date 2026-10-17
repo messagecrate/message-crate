@@ -1,0 +1,98 @@
+import { describe, expect, it } from "vitest";
+import type { Message } from "../../lib/types";
+import { message as baseMessage } from "../../test/apiShapes";
+import { conversationRows, dayLabel } from "./conversationLayout";
+
+function message(
+  id: number,
+  timestamp: string,
+  from: { me: true } | { sender: string },
+  isGroup = true,
+): Message {
+  return baseMessage({
+    id,
+    service: "iMessage",
+    timestamp,
+    is_from_me: "me" in from,
+    sender: "sender" in from ? from.sender : null,
+    text: `m${id}`,
+    conversation: {
+      id: 1,
+      chat_identifier: "c",
+      conversation_type: isGroup ? "group" : "one-to-one",
+      is_group: isGroup,
+      group_title: null,
+      shown_title: null,
+      participants: [],
+    },
+  });
+}
+
+const NOW = new Date("2026-08-01T12:00:00Z");
+
+describe("dayLabel", () => {
+  it("leaves the year out in the current year and names it in any other", () => {
+    expect(dayLabel("2026-07-02T10:00:00Z", "UTC", NOW)).toBe("Thu, Jul 2");
+    expect(dayLabel("2021-11-29T22:34:00Z", "UTC", NOW)).toBe("Mon, Nov 29, 2021");
+  });
+
+  it("reads the day in the account's time zone", () => {
+    // 02:00 UTC on Jul 3 is still Jul 2 in New York.
+    expect(dayLabel("2026-07-03T02:00:00Z", "America/New_York", NOW)).toBe("Thu, Jul 2");
+  });
+});
+
+describe("conversationRows", () => {
+  const ada = { sender: "+15555550101" };
+  const bo = { sender: "+15555550102" };
+
+  it("puts a day separator before the first message of each day", () => {
+    const rows = conversationRows(
+      [
+        message(1, "2026-07-02T08:00:00Z", ada),
+        message(2, "2026-07-02T09:00:00Z", ada),
+        message(3, "2026-07-03T08:00:00Z", ada),
+      ],
+      "UTC",
+      NOW,
+    );
+    expect(rows.map((r) => r.day)).toEqual(["Thu, Jul 2", null, "Fri, Jul 3"]);
+  });
+
+  it("starts a run at a new day, a new sender, or a gap of an hour or more", () => {
+    const rows = conversationRows(
+      [
+        message(1, "2026-07-02T08:00:00Z", ada),
+        message(2, "2026-07-02T08:10:00Z", ada),
+        message(3, "2026-07-02T08:20:00Z", bo),
+        message(4, "2026-07-02T08:30:00Z", { me: true }),
+        message(5, "2026-07-02T08:31:00Z", bo),
+        message(6, "2026-07-02T09:30:59Z", bo),
+        message(7, "2026-07-02T10:31:00Z", bo),
+        message(8, "2026-07-03T00:01:00Z", bo),
+      ],
+      "UTC",
+      NOW,
+    );
+    expect(rows.map((r) => r.startsRun)).toEqual([
+      true, // first loaded
+      false, // same sender, ten minutes on
+      true, // new sender
+      true, // the account's own message
+      true, // back to bo
+      false, // 59 minutes 59 seconds on
+      true, // an hour on
+      true, // a new day
+    ]);
+  });
+
+  it("starts a run after an announcement, so the next message names its sender", () => {
+    const renamed = { ...message(2, "2026-07-02T08:05:00Z", ada), is_announcement: true };
+    const rows = conversationRows(
+      [message(1, "2026-07-02T08:00:00Z", ada), renamed, message(3, "2026-07-02T08:10:00Z", ada)],
+      "UTC",
+      NOW,
+    );
+    expect(rows.map((r) => r.startsRun)).toEqual([true, false, true]);
+  });
+});

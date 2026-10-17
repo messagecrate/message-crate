@@ -3,25 +3,31 @@
 //! Compiled for this crate's own tests and, through the `testutil` feature,
 //! for the tests of every crate that lists `media` with that feature as a
 //! dev-dependency. Every test in the workspace that needs the real tools
-//! gates on [`real_ffmpeg_test_guard`], so the rule for a missing ffmpeg
-//! lives in one place.
+//! gets them from [`real_ffmpeg`], so the rule for a missing ffmpeg lives in
+//! one place.
 //!
-//! The tool location is process-wide ([`crate::set_tools_dir`] and the
-//! `PATH` tests put in place of the process's), so a test
-//! that points it somewhere else and a test that runs the real ffmpeg must
-//! not overlap. One lock serializes them: tests that only read the location
-//! share it, and a test that changes the location holds it alone.
+//! Where to look for the tools is part of the [`InstalledTools`] a test
+//! builds and passes in, never process-wide, so a test that points the
+//! lookup at a mock or empty directory and a test that runs the real ffmpeg
+//! never see each other's choice, and need no lock between them.
+//!
+//! A test of what the Media Stage, the size forecast, or a Thumbnail or
+//! Preview decides, rather than of what ffmpeg makes of it, passes
+//! [`FakeTools`] instead and needs no ffmpeg installed.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::path::Path;
 
-use std::ffi::OsString;
+use crate::tools::{InstalledTools, MediaTools};
 
-use crate::tools::{ffmpeg_available, search_path, set_search_path, set_tools_dir, tools_dir};
+pub use crate::fake_tools::{FakeTools, video_probe};
 
-/// A 1x1 PNG, which the convert pass turns into a JPEG in both Convert and
-/// Compress.
+/// How many times [`crate::file_has_sha256`] read the file at a path, for a
+/// test that a file is not read again while it is unchanged.
+pub use crate::tools::times_read;
+
+/// A 1x1 PNG, which the convert pass turns into a JPEG in both the `convert`
+/// and `compress` modes.
 ///
 /// Plain RGB (PNG color type 2), not RGBA, because ffmpeg's PNG decoder
 /// fails on a 1x1 RGBA image and reads this one cleanly.
@@ -40,21 +46,10 @@ pub const PNG_1X1_RGB: &[u8] = &[
 pub const PNG_1X1_RGB_BASE64: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
-/// The lock over the process-wide tool location.
-fn tools_lock() -> &'static RwLock<()> {
-    static LOCK: OnceLock<RwLock<()>> = OnceLock::new();
-    LOCK.get_or_init(|| RwLock::new(()))
-}
-
-/// Hold the tool location still, for a test that changes it.
-///
-/// A test that changes where the tools are looked for must hold this for as long as
-/// the location differs from the one it found, and put that one back before
-/// releasing it. Otherwise a test that runs the real ffmpeg can resolve the
-/// tools in the instant another test has them pointed at an empty or mock
-/// directory.
-pub fn tools_test_lock() -> RwLockWriteGuard<'static, ()> {
-    tools_lock().write().unwrap_or_else(PoisonError::into_inner)
+/// The error an ffmpeg run fails with when it is killed for `why`
+/// ([`crate::Killed`]), for a test of what a caller makes of it.
+pub fn ffmpeg_killed(why: crate::KillReason) -> anyhow::Error {
+    crate::Killed::ffmpeg(why).into()
 }
 
 /// Whether CI is running this process. GitHub Actions sets `CI=true`.
@@ -62,30 +57,24 @@ fn running_in_ci() -> bool {
     std::env::var("CI").is_ok_and(|value| !value.is_empty() && value != "false" && value != "0")
 }
 
-/// Hold the tool location still for a test that needs the real ffmpeg, and
-/// say whether ffmpeg and ffprobe are there. `None` means they are not, and
-/// the test should return.
+/// ffmpeg and ffprobe as this machine has them on `PATH`, for a test that
+/// needs the real programs. `None` means they are not there, and the test
+/// should return.
 ///
 /// Under CI a missing ffmpeg panics instead. CI installs ffmpeg for every job
 /// that runs these tests, so a missing one there is a broken job, and a test
 /// that returned early would report a pass it never earned. On a developer
 /// machine the test skips, and says so on stderr.
 ///
-/// Taking the lock and asking whether ffmpeg is available are one call
-/// because doing either without the other lets a test be answered by an
-/// empty or mock directory another test has the location pointed at for
-/// that instant (#308).
-///
 /// # Panics
 ///
 /// When `CI` is set and ffmpeg or ffprobe cannot be found.
 #[must_use]
-pub fn real_ffmpeg_test_guard() -> Option<RwLockReadGuard<'static, ()>> {
-    let guard = tools_lock().read().unwrap_or_else(PoisonError::into_inner);
-    if ffmpeg_available() {
-        return Some(guard);
+pub fn real_ffmpeg() -> Option<InstalledTools> {
+    let tools = path_ffmpeg();
+    if tools.require().is_ok() {
+        return Some(tools);
     }
-    drop(guard);
     let current = std::thread::current();
     let test = current.name().unwrap_or("an unnamed test");
     assert!(
@@ -102,53 +91,37 @@ pub fn real_ffmpeg_test_guard() -> Option<RwLockReadGuard<'static, ()>> {
     None
 }
 
-/// The tool location made empty for as long as this lives.
-///
-/// Holds [`tools_test_lock`], searches an empty `PATH` and a Tools
-/// Directory that does not exist, and puts both back when dropped. Those are
-/// the only places the tools are looked for, so they are missing whether or
-/// not the machine has ffmpeg installed.
-pub struct ToolsHidden {
-    previous_tools_dir: Option<PathBuf>,
-    previous_search_path: Option<OsString>,
-    _lock: RwLockWriteGuard<'static, ()>,
+/// ffmpeg and ffprobe as this machine has them on `PATH`, with no Tools
+/// Directory: the tools [`real_ffmpeg`] checks for, for a test that builds
+/// state once and checks for the programs elsewhere.
+#[must_use]
+pub fn path_ffmpeg() -> InstalledTools {
+    InstalledTools::default()
 }
 
-/// Make ffmpeg and ffprobe unavailable to this process until the returned
-/// guard is dropped.
+/// ffmpeg and ffprobe looked for on an empty `PATH` and in a Tools
+/// Directory that does not exist. Those are the only places they are looked
+/// for, so they are missing whether or not the machine has ffmpeg installed.
 #[must_use]
-pub fn hide_ffmpeg() -> ToolsHidden {
-    let lock = tools_test_lock();
-    let previous_tools_dir = tools_dir();
-    let previous_search_path = search_path();
+pub fn no_ffmpeg() -> InstalledTools {
     let nowhere = std::env::temp_dir()
         .join(format!("message-crate-no-tools-{}", std::process::id()))
         .join("does-not-exist");
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(nowhere));
-    ToolsHidden {
-        previous_tools_dir,
-        previous_search_path,
-        _lock: lock,
-    }
+    InstalledTools::new(Some(nowhere)).searching("")
 }
 
-/// Search `search_path` instead of the process's `PATH`, and `tools_dir`
-/// as the Tools Directory, until the returned guard is dropped. Holds
-/// [`tools_test_lock`], as [`hide_ffmpeg`] does.
-#[must_use]
-pub fn locate_tools(search_path: OsString, tools_dir: PathBuf) -> ToolsHidden {
-    let hidden = hide_ffmpeg();
-    set_search_path(Some(search_path));
-    set_tools_dir(Some(tools_dir));
-    hidden
-}
-
-impl Drop for ToolsHidden {
-    fn drop(&mut self) {
-        set_search_path(self.previous_search_path.take());
-        set_tools_dir(self.previous_tools_dir.take());
-    }
+/// Whether this account may read a file whose mode allows no one to, tried
+/// on a file written in `dir`. Root, or an account with the capability to
+/// skip permission checks, may, and may also run any file with an
+/// executable bit, so a test of a file this account may not run skips when
+/// this is true.
+#[cfg(unix)]
+pub fn may_read_any_file(dir: &Path) -> bool {
+    let probe = dir.join("may-read-any-file");
+    write_with_mode(&probe, 0o000);
+    let read = std::fs::read(&probe).is_ok();
+    let _ = std::fs::remove_file(&probe);
+    read
 }
 
 /// Write an empty file at `path` with the Unix permission bits `mode`, as a
@@ -164,4 +137,34 @@ pub fn write_with_mode(path: &Path, mode: u32) {
     }
     #[cfg(not(unix))]
     let _ = mode;
+}
+
+/// A clock for a watched run that reads zero until `started` exists, and
+/// then an hour more on every read, so every limit and wait passes once the
+/// mock has started, and none before. It waits on no real clock.
+#[cfg(test)]
+pub(crate) fn clock_from(started: &Path) -> impl Fn() -> std::time::Duration + '_ {
+    let hours = std::cell::Cell::new(0u64);
+    move || {
+        if started.is_file() {
+            hours.set(hours.get() + 1);
+        }
+        std::time::Duration::from_secs(hours.get() * 3600)
+    }
+}
+
+/// A mock ffmpeg body that writes its pid, then `progress` on its progress
+/// stream, then marks itself `started` and never exits. Between the two it
+/// writes 256 KiB of progress lines that carry no position: a pipe holds 64
+/// KiB, so the mock gets past them only once the reader has read, and so
+/// recorded, the position before them. The test's clock starts only then,
+/// with no race between the reader and the watch.
+#[cfg(test)]
+pub(crate) fn progress_then_hang(progress: &str) -> String {
+    format!(
+        "echo $$ > \"$(dirname \"$0\")/pid\"\n\
+         printf '{progress}'\n\
+         yes frame=1 | head -c 262144\n\
+         touch \"$(dirname \"$0\")/started\"\nexec sleep 600"
+    )
 }

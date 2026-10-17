@@ -7,14 +7,16 @@
 //! directory: the lookup is this process's, and nothing it is told changes
 //! where a program is run from.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use message_crate_core::{CancelFlag, Cancelled};
+use media::{InstalledTools, MediaTools};
+use message_crate_core::{CancelFlag, Canceled};
 use tauri::AppHandle;
 
-use super::events::{self, ExtractProgressEvent};
-use crate::tool_downloads::{self, DownloadState, Program, ToolDownloads, WaitError};
+use super::events::{self, ImportProgressEvent, Step};
+use crate::app_directories::MessageCrateDirectory;
+use crate::tool_downloads::{self, DownloadState, Pinned, Program, ToolDownloads, WaitError};
 
 /// Where one program is, as Settings shows it.
 ///
@@ -98,8 +100,8 @@ impl ToolStatus {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolsStatus {
-    /// The Tools Directory, `None` when the app has none (no home directory).
-    pub tools_dir: Option<String>,
+    /// The Tools Directory.
+    pub tools_dir: String,
     /// Whether a check of the Tools Directory runs in this process now, the
     /// start-up check or Try again. A program it has not looked at yet shows
     /// as missing, so the window keeps asking while this is true. Another
@@ -114,19 +116,29 @@ pub struct ToolsStatus {
     pub wtsexporter: ToolStatus,
 }
 
+/// The ffmpeg and ffprobe the app runs: on `PATH`, else in `tools_dir`, the
+/// Tools Directory. The app's `setup` in `lib.rs` builds its managed
+/// `InstalledTools` with this function, and [`tools_status`] and
+/// [`retry_tool_downloads`] build their own with it from the same Tools
+/// Directory, so each is built the same way. `InstalledTools` holds no
+/// state, so a second value built alike finds what the managed one finds.
+pub(crate) fn installed_tools(tools_dir: &Path) -> InstalledTools {
+    InstalledTools::new(Some(tools_dir.to_path_buf()))
+}
+
 /// Look for ffmpeg, ffprobe and wtsexporter where this process runs them from,
 /// and say how each one's download stands.
 #[tauri::command]
-pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
-    tools_status_with(&downloads, &pinned_programs())
+pub fn tools_status(
+    downloads: tauri::State<'_, ToolDownloads>,
+    directory: tauri::State<'_, MessageCrateDirectory>,
+) -> ToolsStatus {
+    tools_status_with(&downloads, &directory.tools(), &pinned_here())
 }
 
-/// The programs the app has a download of for this computer.
-fn pinned_programs() -> Vec<Program> {
+/// The downloads the app has for this computer.
+fn pinned_here() -> Vec<Pinned> {
     tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH)
-        .into_iter()
-        .map(|pin| pin.program)
-        .collect()
 }
 
 /// What Try again did, as [`retry_tool_downloads`] tells the window.
@@ -140,9 +152,6 @@ pub enum RetryResult {
     /// `checking` is true only when that check runs in this process, so the
     /// window can't tell from the status when another app's check ends.
     AlreadyRunning,
-    /// The app has no Tools Directory (no home directory), which the status
-    /// shows as `toolsDir: null`.
-    NoToolsDirectory,
     /// The check's thread could not be started, and each program it would
     /// have downloaded shows as a failed download with that reason.
     CouldNotStart,
@@ -153,11 +162,13 @@ pub enum RetryResult {
 /// on a thread of its own, and the window follows it through
 /// [`tools_status`].
 #[tauri::command]
-pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> RetryResult {
-    let Some(dir) = media::tools_dir() else {
-        return RetryResult::NoToolsDirectory;
-    };
-    let status = tools_status_with(&downloads, &pinned_programs());
+pub fn retry_tool_downloads(
+    downloads: tauri::State<'_, ToolDownloads>,
+    directory: tauri::State<'_, MessageCrateDirectory>,
+) -> RetryResult {
+    let dir = directory.tools();
+    let pinned = pinned_here();
+    let status = tools_status_with(&downloads, &dir, &pinned);
     let not_found: Vec<Program> = [
         (Program::Ffmpeg, &status.ffmpeg),
         (Program::Ffprobe, &status.ffprobe),
@@ -167,9 +178,9 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> Retry
     .filter(|(_, status)| !matches!(status, ToolStatus::Found { .. }))
     .map(|(program, _)| program)
     .collect();
-    let pinned = tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH);
     match tool_downloads::retry(
-        dir,
+        dir.clone(),
+        installed_tools(&dir),
         tool_downloads::GITHUB.to_string(),
         pinned,
         &downloads,
@@ -188,22 +199,22 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> Retry
 const WAITING_STEP_BYTES: u64 = 256 * 1024;
 
 /// Wait while any of `programs` is downloading, before an import runs it
-/// (#1053). The wait goes to the window as `extract:progress` events on
-/// `step` ([`waiting_event`]): one when it starts, and one each time the
-/// program waited for changes or its download moves by
+/// (#1053). The wait goes to the window as `desktop-job:progress` events on
+/// `step` ([`ImportProgressEvent::waiting`]): one when it starts, and one
+/// each time the program waited for changes or its download moves by
 /// [`WAITING_STEP_BYTES`]. The window writes the progress line from them,
 /// in the byte format the Import form uses.
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is cancelled while it waits, and the
+/// Returns [`Canceled`] when the run is canceled while it waits, and the
 /// failed download's reason when a download waited for fails.
 pub(crate) fn wait_for_downloads(
     app: &AppHandle,
     downloads: &ToolDownloads,
     programs: &[Program],
     cancel: &CancelFlag,
-    step: &str,
+    step: Step,
 ) -> anyhow::Result<()> {
     let mut last: Option<(Program, u64, Option<u64>)> = None;
     downloads
@@ -218,13 +229,13 @@ pub(crate) fn wait_for_downloads(
                 events::emit(
                     app,
                     events::PROGRESS,
-                    waiting_event(step, program, received, total),
+                    ImportProgressEvent::waiting(step, program, received, total),
                 );
                 last = Some(now);
             },
         )
         .map_err(|err| match err {
-            WaitError::Cancelled => anyhow::Error::new(Cancelled),
+            WaitError::Canceled => anyhow::Error::new(Canceled),
             failed @ WaitError::Failed { .. } => anyhow::Error::new(failed),
         })
 }
@@ -240,35 +251,22 @@ fn worth_sending(
     program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
 }
 
-/// The `extract:progress` event of a run on `step` waiting for `program`'s
-/// download, `received` bytes in of `total`: marked by `waiting`, with no
-/// counts and the bytes in `bytes_done` and `bytes_total`.
-fn waiting_event(
-    step: &str,
-    program: Program,
-    received: u64,
-    total: Option<u64>,
-) -> ExtractProgressEvent {
-    ExtractProgressEvent {
-        step: step.to_string(),
-        done: 0,
-        total: 0,
-        bytes_done: Some(received),
-        bytes_total: total,
-        status: None,
-        waiting: Some(program),
-    }
-}
-
-/// [`tools_status`], with the downloads in `downloads` and a download for
-/// this computer of each of `pinned`.
-fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStatus {
+/// [`tools_status`], with the downloads in `downloads`, `tools_dir` as the
+/// Tools Directory, and `pinned` as the downloads for this computer. A
+/// wtsexporter counts only when it is the pinned one, where there is one
+/// (#2692).
+fn tools_status_with(
+    downloads: &ToolDownloads,
+    tools_dir: &Path,
+    pinned: &[Pinned],
+) -> ToolsStatus {
+    let pin = |program: Program| pinned.iter().find(|pin| pin.program == program);
     let status = |program: Program, found: ToolStatus| {
         found
-            .with_pin(pinned.contains(&program))
+            .with_pin(pin(program).is_some())
             .with_download(downloads.get(program))
     };
-    let (ffmpeg, ffprobe) = match media::ffmpeg_tools() {
+    let (ffmpeg, ffprobe) = match installed_tools(tools_dir).find() {
         Ok(tools) => (ToolStatus::of(tools.ffmpeg), ToolStatus::of(tools.ffprobe)),
         // Found in two places: neither is used, and both say why.
         Err(err) => {
@@ -278,14 +276,17 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStat
             (unusable.clone(), unusable)
         }
     };
-    let wtsexporter = match whatsapp_exporter::wtsexporter_path() {
+    let wtsexporter = match whatsapp_exporter::wtsexporter_in_dir(
+        Some(tools_dir),
+        pin(Program::Wtsexporter).map(|pin| pin.program_sha256),
+    ) {
         Ok(path) => ToolStatus::of(path),
         Err(err) => ToolStatus::Unusable {
             reason: err.to_string(),
         },
     };
     ToolsStatus {
-        tools_dir: media::tools_dir().map(|dir| dir.display().to_string()),
+        tools_dir: tools_dir.display().to_string(),
         checking: downloads.checking(),
         ffmpeg: status(Program::Ffmpeg, ffmpeg),
         ffprobe: status(Program::Ffprobe, ffprobe),
@@ -296,41 +297,6 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStat
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A run waiting for a download is sent marked by the program, with its
-    /// bytes and no counts: the shape `progressDetail` in
-    /// `web/src/screens/import/useImportJob.ts` reads, whose tests feed the
-    /// same JSON.
-    #[test]
-    fn a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes() {
-        assert_eq!(
-            serde_json::to_value(waiting_event(
-                "setup",
-                Program::Wtsexporter,
-                12 * 1024 * 1024,
-                Some(30 * 1024 * 1024)
-            ))
-            .unwrap(),
-            serde_json::json!({
-                "step": "setup",
-                "done": 0,
-                "total": 0,
-                "bytes_done": 12_582_912,
-                "bytes_total": 31_457_280,
-                "waiting": "wtsexporter",
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(waiting_event("media", Program::Ffmpeg, 0, None)).unwrap(),
-            serde_json::json!({
-                "step": "media",
-                "done": 0,
-                "total": 0,
-                "bytes_done": 0,
-                "waiting": "ffmpeg",
-            })
-        );
-    }
 
     /// The window hears of a wait when it starts, when the program or the
     /// size changes, and when the download moves by a step, not at every
@@ -358,7 +324,7 @@ mod tests {
     #[test]
     fn a_status_is_sent_as_its_state_and_path() {
         let status = ToolsStatus {
-            tools_dir: Some("/home/sam/message-crate/tools".into()),
+            tools_dir: "/home/sam/message-crate/tools".into(),
             checking: true,
             ffmpeg: ToolStatus::of(Some(PathBuf::from("/usr/bin/ffmpeg"))),
             ffprobe: ToolStatus::of(Some(PathBuf::from("/usr/bin/ffprobe"))),
@@ -391,44 +357,59 @@ mod tests {
         );
     }
 
-    /// wtsexporter in the Tools Directory is reported where it is, and a
-    /// Tools Directory without it reports it missing.
+    /// wtsexporter pinned to `bytes`, as the download for this computer.
+    fn wtsexporter_pinned_to(bytes: &[u8]) -> Pinned {
+        Pinned {
+            program: Program::Wtsexporter,
+            repo: "owner/project",
+            release: "r1",
+            asset: "wtsexporter-test",
+            sha256: Box::leak(file_io::sha256_hex(bytes).into_boxed_str()),
+            program_sha256: Box::leak(file_io::sha256_hex(bytes).into_boxed_str()),
+            gzipped: false,
+        }
+    }
+
+    /// A Tools Directory without wtsexporter reports it missing. A file
+    /// there that is not the pinned file, such as a copy still being
+    /// written, is reported missing too, and the pinned file is found
+    /// (#2692). Where the app has no download, a file there that may run is
+    /// found.
     #[test]
     fn wtsexporter_is_reported_from_the_tools_directory() {
-        let _lock = media::testutil::tools_test_lock();
-        let previous = media::tools_dir();
         let tools = tempfile::tempdir().unwrap();
         let name = whatsapp_exporter::wtsexporter_file_name();
-        media::set_tools_dir(Some(tools.path().to_path_buf()));
+        let program = tools.path().join(name);
         let downloads = ToolDownloads::default();
-        let pinned = [Program::Wtsexporter];
-        let missing = tools_status_with(&downloads, &pinned).wtsexporter;
-        let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
-        media::testutil::write_with_mode(&tools.path().join(name), 0o755);
-        let found = tools_status_with(&downloads, &pinned).wtsexporter;
-        let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
-        media::set_tools_dir(previous);
+        let pinned = [wtsexporter_pinned_to(b"the pinned file")];
+        let missing = tools_status_with(&downloads, tools.path(), &pinned).wtsexporter;
+        let unavailable = tools_status_with(&downloads, tools.path(), &[]).wtsexporter;
+        media::testutil::write_with_mode(&program, 0o755);
+        std::fs::write(&program, b"the pinned").unwrap();
+        let truncated = tools_status_with(&downloads, tools.path(), &pinned).wtsexporter;
+        let found_by_hand = tools_status_with(&downloads, tools.path(), &[]).wtsexporter;
+        std::fs::write(&program, b"the pinned file").unwrap();
+        let found = tools_status_with(&downloads, tools.path(), &pinned).wtsexporter;
 
         assert_eq!(missing, ToolStatus::Missing);
         // No download for this computer: told apart, so the form offers no
-        // Try again; a copy put there by hand is found all the same.
+        // Try again.
         assert_eq!(unavailable, ToolStatus::Unavailable);
         assert_eq!(
             serde_json::to_value(&unavailable).unwrap(),
             serde_json::json!({ "state": "unavailable" })
         );
-        assert_eq!(found_by_hand, found);
-        assert_eq!(
-            found,
-            ToolStatus::Found {
-                path: tools.path().join(name).display().to_string()
-            }
-        );
+        assert_eq!(truncated, ToolStatus::Missing);
+        let at = ToolStatus::Found {
+            path: program.display().to_string(),
+        };
+        assert_eq!(found_by_hand, at);
+        assert_eq!(found, at);
     }
 
     /// A download in progress is sent with its bytes so far and its total,
     /// and a failed one with its reason, in the shape the window reads
-    /// (`ToolStatus` in `web/src/lib/tauri.ts`).
+    /// (`ToolStatus` in `web/src/lib/desktop/tools.ts`).
     #[test]
     fn a_download_is_sent_as_its_progress_or_its_failure() {
         let downloading = ToolStatus::Missing.with_download(Some(DownloadState::Downloading {

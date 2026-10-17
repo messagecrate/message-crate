@@ -1,13 +1,12 @@
 import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
-import AuthSubmitButton from "../../components/AuthSubmitButton";
-import { LockIcon, PersonIcon } from "../../components/icons";
-import PasswordField from "../../components/PasswordField";
-import TextField from "../../components/TextField";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useAuth } from "../../hooks/useAuth";
 import { setBaseUrl } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
 import { login as serverLogin } from "../../lib/serverApi";
-import { useAsyncAction } from "../../lib/useAsyncAction";
+import CredentialFields from "./CredentialFields";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /** Username and password login. */
 export default function LoginForm({
@@ -20,7 +19,7 @@ export default function LoginForm({
   const { login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const keep = useKeepLoggedIn();
   const { busy, error, run } = useAsyncAction();
 
   // A real submit, so the browser treats this as a login: Enter in either
@@ -42,38 +41,22 @@ export default function LoginForm({
       const res = await serverLogin({ username, password });
       // Awaited so the profile lookup inside `login` has decided where to send
       // the user before this form drops its busy state.
-      await login(url, res.token, res.account_id);
+      await login(url, res.token, res.account_id, keep.lifetime);
     });
   };
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-      <TextField
-        label="Username"
-        leadingIcon={<PersonIcon size={16} />}
-        value={username}
-        onChange={setUsername}
-        name="username"
-        autoComplete="username"
-        isDisabled={disabled}
-      />
-
-      <PasswordField
-        label="Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={password}
-        onChange={setPassword}
-        name="password"
+      <CredentialFields
+        username={{ value: username, onChange: setUsername }}
+        password={{ value: password, onChange: setPassword }}
         autoComplete="current-password"
-        showPassword={showPassword}
-        onToggle={() => setShowPassword((v) => !v)}
-        isDisabled={disabled}
+        disabled={disabled}
       />
 
-      <AuthSubmitButton disabled={busy || disabled}>
+      <KeepLoggedInSubmit choice={keep} disabled={busy || disabled}>
         {busy ? "Logging in…" : "Log in"}
-      </AuthSubmitButton>
+      </KeepLoggedInSubmit>
 
       {/* Pushed to the foot of the panel so the message lands just above the
           rule that closes the card, clear of the action that produced it. The

@@ -3,17 +3,19 @@ use serde_json::Value;
 
 use super::*;
 use crate::assets_api::tests::{
-    ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, seed_attachment_with_preview,
+    ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, give_thumbnail_the_preview_file,
+    seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
+use crate::server::AppState;
 use crate::test_support::{RegisteredAccount, expect_problem};
 
 /// `POST /v1/assets/{sha256}/media-links` as `token`: the status, the
 /// `Location`, and the body.
 async fn mint(state: &AppState, sha256: &str, token: &str) -> (StatusCode, Option<String>, String) {
     let server = crate::test_support::serve(state).await;
-    let response = reqwest::Client::new()
-        .post(format!("{}/v1/assets/{sha256}/media-links", server.base()))
+    let response = server
+        .post(&format!("/v1/assets/{sha256}/media-links"))
         .bearer_auth(token)
         .send()
         .await
@@ -86,6 +88,133 @@ async fn a_media_link_opens_its_asset_and_preview_with_no_header() {
     let part = fetch(state, url, None, &[("range", "bytes=-3")]).await;
     assert_eq!(part.status, StatusCode::PARTIAL_CONTENT, "{}", part.text());
     assert_eq!(part.body, &ORIGINAL_BYTES[ORIGINAL_BYTES.len() - 3..]);
+}
+
+/// A request made with a media link sends no `Authorization` header, so a
+/// shared cache in front of the server may store the answer under its URL
+/// and serve it again after the link has expired or its Session has ended.
+/// Every asset answer is `private`, and one read with a media link is
+/// `no-store` as well: whole or in part, and a `404 Not Found` or
+/// `416 Range Not Satisfiable` too, since a shared cache may keep a `404`
+/// and hide a Preview made later.
+///
+/// The routes are every `GET` the OpenAPI document opens to a Media Link,
+/// not a list written here, so a read route added later is held to the
+/// rule without anyone remembering to add it (#2585).
+#[tokio::test]
+async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    give_thumbnail_the_preview_file(state, sha).await;
+    let minted_link = minted(state, sha, &user).await;
+    let link = link_of(minted_link["url"].as_str().unwrap());
+
+    let paths: Vec<String> = media_link_routes()
+        .iter()
+        .map(|route| route.replace("{sha256}", sha))
+        .collect();
+    for key in ["url", "preview_url", "thumbnail_url"] {
+        let minted_path = minted_link[key]
+            .as_str()
+            .unwrap()
+            .split('?')
+            .next()
+            .unwrap();
+        assert!(
+            paths.iter().any(|path| path == minted_path),
+            "{minted_path}, which a Media Link opens, is a route the document opens to one: {paths:?}"
+        );
+    }
+
+    for path in &paths {
+        let url = format!("{path}?media_link={link}");
+        let url = url.as_str();
+        let whole = fetch(state, url, None, &[]).await;
+        assert_eq!(whole.status, StatusCode::OK, "{url}: {}", whole.text());
+        let part = fetch(state, url, None, &[("range", "bytes=0-2")]).await;
+        assert_eq!(
+            part.status,
+            StatusCode::PARTIAL_CONTENT,
+            "{url}: {}",
+            part.text()
+        );
+        let past_end = fetch(state, url, None, &[("range", "bytes=999999-")]).await;
+        expect_problem(
+            past_end.status,
+            &past_end.text(),
+            ProblemType::RangeNotSatisfiable,
+        );
+        for answer in [&whole, &part, &past_end] {
+            assert_eq!(
+                answer.header("cache-control"),
+                Some("private, no-store"),
+                "{url} {}",
+                answer.status
+            );
+        }
+    }
+    let no_preview = minted(state, &seeded.without_preview, &user).await;
+    let answer = fetch(
+        state,
+        no_preview["preview_url"].as_str().unwrap(),
+        None,
+        &[],
+    )
+    .await;
+    expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
+    assert_eq!(answer.header("cache-control"), Some("private, no-store"));
+
+    for path in &paths {
+        let answer = fetch(state, path, Some(&user.token), &[]).await;
+        assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.text());
+        assert_eq!(answer.header("cache-control"), Some("private"), "{path}");
+    }
+    let path = format!("/v1/assets/{}/preview", seeded.without_preview);
+    let answer = fetch(state, &path, Some(&user.token), &[]).await;
+    expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
+    assert_eq!(answer.header("cache-control"), Some("private"));
+}
+
+/// Every `GET` path the OpenAPI document opens to a Media Link: the asset
+/// read routes.
+fn media_link_routes() -> Vec<String> {
+    let doc: Value = serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    doc["paths"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, item)| {
+            item["get"]["security"]
+                .as_array()
+                .is_some_and(|schemes| schemes.iter().any(|s| s.get("media-link").is_some()))
+        })
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+/// Every `GET` that reads an Asset's bytes or one of its versions, which is
+/// every `GET` under `/v1/assets/{sha256}` but the multipart upload routes,
+/// opens to a Media Link, so it takes `AssetReadAccess`, answers through
+/// `AssetReadAccess::answer`, and is walked by
+/// [`an_asset_read_with_a_media_link_is_never_stored_by_a_cache`]. A read
+/// route added with another credential fails here (#2585).
+#[test]
+fn every_asset_read_route_opens_to_a_media_link() {
+    let doc: Value = serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let opened = media_link_routes();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        let reads_an_asset = path.starts_with("/v1/assets/{sha256}")
+            && !path.starts_with("/v1/assets/{sha256}/uploads")
+            && item.get("get").is_some();
+        if reads_an_asset {
+            assert!(
+                opened.contains(path),
+                "GET {path} reads an Asset but does not open to a Media Link, so nothing makes it send the read's Cache-Control"
+            );
+        }
+    }
 }
 
 /// A media link names one asset. Put on another asset's address, even one

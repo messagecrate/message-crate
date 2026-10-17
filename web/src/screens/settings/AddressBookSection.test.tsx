@@ -1,22 +1,27 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
+import { keys } from "../../lib/queryKeys";
 import { loadAddressBook } from "../../lib/serverApi";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { authModule, renderWithProviders, testQueryClient } from "../../test/providers";
+import { freshEntries, seedEntries } from "../../test/staleEntries";
+import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import { AddressBookSection } from "./AddressBookSection";
 
 vi.mock("../../lib/serverApi", () => ({ loadAddressBook: vi.fn() }));
+// The vCard conversion beside Load has tests of its own.
+vi.mock("./ConvertVcardFile", () => ({ ConvertVcardFile: () => null }));
 
-const invalidateAccount = vi.fn();
-vi.mock("../../lib/routeQuery", () => ({
-  useRouteCache: () => ({ invalidateAccount }),
-}));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 const post = vi.mocked(loadAddressBook);
 
-const FILE = "contact_id,display_name,groups,service,identity_type,identity\n";
+const FILE = "contact_id,display_name,service,identity,groups\n";
 
 const NOTHING = {
   contacts_created: 0,
@@ -38,21 +43,23 @@ function chooseFile(name: string, body: string) {
 
 describe("AddressBookSection", () => {
   beforeEach(() => {
+    startFakeClock();
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("offers Append and Edit, with Append chosen", () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     expect((screen.getByLabelText(/^Append/) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText(/^Edit/) as HTMLInputElement).checked).toBe(false);
   });
 
   it("is one radio group, named and moved through with the arrow keys", async () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     const group = screen.getByRole("radiogroup", { name: "How to load it" });
 
     const user = setupUser();
@@ -66,23 +73,26 @@ describe("AddressBookSection", () => {
 
   it("sends the file's text as an Append unless Edit is chosen", async () => {
     post.mockResolvedValue(NOTHING);
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenLastCalledWith(FILE, "append");
 
     fireEvent.click(screen.getByLabelText(/^Edit/));
     chooseFile("address-book.csv", FILE);
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(post).toHaveBeenCalledTimes(2);
     expect(post).toHaveBeenLastCalledWith(FILE, "edit");
   });
 
   it("takes a .csv file only, and refuses a vCard without asking the server", async () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     expect(screen.getByLabelText("Address book file").getAttribute("accept")).toBe(".csv,text/csv");
     chooseFile("Contacts.vcf", "BEGIN:VCARD\nEND:VCARD\n");
 
-    expect(await screen.findByText(/Choose a \.csv file/)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText(/Choose a \.csv file/)).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -97,10 +107,11 @@ describe("AddressBookSection", () => {
       groups_created: 7,
       notes: [],
     });
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    const counts = await screen.findByLabelText("What the load changed");
+    await settle();
+    const counts = screen.getByLabelText("What the load changed");
     const rows = within(counts)
       .getAllByRole("term")
       .map((term) => `${term.textContent}: ${term.nextElementSibling?.textContent}`);
@@ -123,10 +134,11 @@ describe("AddressBookSection", () => {
       "row 5: 447700900123 has no +, so it became the new identity 447700900123",
     ];
     post.mockResolvedValue({ ...NOTHING, notes });
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    const list = await screen.findByLabelText("Numbers written without +");
+    await settle();
+    const list = screen.getByLabelText("Numbers written without +");
     expect(
       within(list)
         .getAllByRole("listitem")
@@ -136,19 +148,30 @@ describe("AddressBookSection", () => {
 
   it("shows no list of numbers when every number kept its +", async () => {
     post.mockResolvedValue(NOTHING);
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    await screen.findByLabelText("What the load changed");
+    await settle();
+    expect(screen.getByLabelText("What the load changed")).toBeInTheDocument();
     expect(screen.queryByLabelText("Numbers written without +")).toBeNull();
   });
 
-  it("marks the account's cache stale after a load", async () => {
+  it("marks the contacts and Contact Groups stale after a load", async () => {
+    // A load renames contacts, moves identities and adds Contact Groups.
+    const shown = [keys.contacts.all, keys.contactGroups.all];
+    const client = testQueryClient();
+    seedEntries(client, 7, shown);
     post.mockResolvedValue(NOTHING);
-    render(<AddressBookSection />);
+    render(
+      <QueryClientProvider client={client}>
+        <AddressBookSection />
+      </QueryClientProvider>,
+    );
     chooseFile("address-book.csv", FILE);
 
-    await waitFor(() => expect(invalidateAccount).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(screen.getByLabelText("What the load changed")).toBeInTheDocument();
+    expect(freshEntries(client, 7, shown)).toEqual([]);
   });
 
   it("lists every row a refused load names, each on its own line", async () => {
@@ -163,38 +186,48 @@ describe("AddressBookSection", () => {
         ],
       }),
     );
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
+    await settle();
 
-    const alert = await screen.findByRole("alert");
+    const alert = screen.getByRole("alert");
     expect(
       within(alert)
         .getAllByRole("listitem")
         .map((li) => li.textContent),
     ).toEqual([
-      'row 3: service "imessage" is not one Message Crate stores; use phone or whatsapp',
-      "row 7: identity is blank",
+      'Row 3: service "imessage" is not one Message Crate stores; use phone or whatsapp',
+      "Row 7: identity is blank",
     ]);
     expect(alert.textContent).toContain("Nothing was loaded.");
-    expect(invalidateAccount).not.toHaveBeenCalled();
   });
 
-  it("shows the reason when the load fails some other way", async () => {
+  it("shows the reason when the load fails some other way, and marks the account stale as every write does", async () => {
+    const shown = [keys.contacts.all, keys.contactGroups.all];
+    const client = testQueryClient();
+    seedEntries(client, 7, shown);
     post.mockRejectedValue(new Error("address book is empty"));
-    render(<AddressBookSection />);
+    render(
+      <QueryClientProvider client={client}>
+        <AddressBookSection />
+      </QueryClientProvider>,
+    );
     chooseFile("address-book.csv", "  ");
+    await settle();
 
-    expect(await screen.findByText("address book is empty")).toBeInTheDocument();
+    expect(screen.getByText("Address book is empty")).toBeInTheDocument();
+    expect(freshEntries(client, 7, shown)).toEqual([]);
   });
 
   it("refuses a file past the size the server accepts, without asking the server", async () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     const input = screen.getByLabelText("Address book file") as HTMLInputElement;
     const file = new File(["x"], "huge.csv");
-    Object.defineProperty(file, "size", { value: 9 * 1024 * 1024 });
+    Object.defineProperty(file, "size", { value: 9 * MIB });
     fireEvent.change(input, { target: { files: [file] } });
 
-    expect(await screen.findByText("That file is larger than 8 MB.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("That file is larger than 8 MB.")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 });

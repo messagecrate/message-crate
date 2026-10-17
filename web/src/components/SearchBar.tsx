@@ -1,5 +1,4 @@
 import {
-  lazy,
   type ReactNode,
   Suspense,
   useCallback,
@@ -21,88 +20,33 @@ import {
   Popover,
   Text,
 } from "react-aria-components";
+import { useDismissable } from "../hooks/useDismissable";
+import { useMarkedWords } from "../hooks/useMarkedWords";
+import { lazyChunk } from "../lib/chunkLoad";
 import {
   clearRecentSearches,
   loadRecentSearches,
   pushRecentSearch,
   type SearchScope,
 } from "../lib/recentSearches";
-import {
-  type MarkedWord,
-  SEARCH_LIST_NAMES,
-  type SearchList,
-  useMarkedWords,
-} from "../lib/searchFields";
+import { type MarkedWord, SEARCH_LIST_NAMES, type SearchList } from "../lib/searchFields";
 import { removeToken } from "../lib/searchQuery";
-import { focusRing, popupShadow } from "../lib/uiStyles";
-import { useDismissable } from "../lib/useDismissable";
+import { focusRingClass, popupShadowClass } from "../lib/uiStyles";
+import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";
+import type { AdvancedSearchMode } from "./AdvancedSearchForm";
+import Button from "./Button";
+import ErrorBoundary from "./ErrorBoundary";
+import { ClockIcon, SearchFieldIcon, SlidersIcon } from "./icons";
+import PlainButton from "./PlainButton";
 import {
   applySuggestionToQuery,
   type Suggestion,
   useSearchSuggestions,
-} from "../lib/useSearchSuggestions";
-import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";
-import type { AdvancedSearchMode } from "./AdvancedSearchForm";
-import Button from "./Button";
-import PlainButton from "./PlainButton";
+} from "./useSearchSuggestions";
 
 // The advanced form pulls in the date picker and calendar, about 150 kB of
 // the entry chunk that most visits never open. It loads when the panel does.
-const AdvancedSearchForm = lazy(() => import("./AdvancedSearchForm"));
-
-function MagnifyingGlassIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="ml-3 size-4 shrink-0 text-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="size-3.5 shrink-0 text-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-function SlidersIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="size-3.5 shrink-0 text-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
-      <path d="M1 14h6M9 8h6M17 16h6" />
-    </svg>
-  );
-}
+const AdvancedSearchForm = lazyChunk("AdvancedSearchForm", () => import("./AdvancedSearchForm"));
 
 /** While the advanced panel is open, focusing the box does not open the popdown over it. */
 function KeepPopdownClosed({ when }: { when: boolean }) {
@@ -127,7 +71,7 @@ type Option = {
  * The box's padding and type. The layer that marks words behind the text
  * takes the same, so each mark sits under its word.
  */
-const boxText = "px-2 py-2.5 text-[0.875rem]";
+const boxTextClass = "px-2 py-2.5 text-[0.875rem]";
 
 /**
  * What a marked word's note and the box's description say about it: the
@@ -366,13 +310,13 @@ export default function SearchBar({
           }}
           className="flex items-center rounded-xl border border-border bg-bg focus-within:border-accent"
         >
-          <MagnifyingGlassIcon />
+          <SearchFieldIcon className="ml-3 size-4 shrink-0 text-muted" />
           <div className="relative flex min-w-0 flex-1 overflow-hidden">
             <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
               <div
                 ref={layerRef}
                 data-testid="search-marks"
-                className={`${boxText} w-max whitespace-pre text-transparent`}
+                className={`${boxTextClass} w-max whitespace-pre text-transparent`}
               >
                 {markedText(text, marked, (start, span) => {
                   if (span) markRefs.current.set(start, span);
@@ -399,7 +343,7 @@ export default function SearchBar({
               }}
               // The bar has a Clear search button of its own, so the one the browser
               // draws inside a search input is hidden; otherwise there are two.
-              className={`relative w-full min-w-0 border-none bg-transparent ${boxText} text-text outline-none [&::-webkit-search-cancel-button]:appearance-none`}
+              className={`relative w-full min-w-0 border-none bg-transparent ${boxTextClass} text-text outline-none [&::-webkit-search-cancel-button]:appearance-none`}
             />
           </div>
           {text ? (
@@ -412,7 +356,7 @@ export default function SearchBar({
                 onSubmit("");
                 inputRef.current?.focus();
               }}
-              className={`mr-2 cursor-pointer border-none bg-transparent px-1 text-[1rem] leading-none text-muted hover:text-text ${focusRing}`}
+              className={`mr-2 cursor-pointer border-none bg-transparent px-1 text-[1rem] leading-none text-muted hover:text-text ${focusRingClass}`}
             >
               ×
             </PlainButton>
@@ -431,7 +375,7 @@ export default function SearchBar({
           placement="bottom start"
           offset={4}
           data-mc-overlay=""
-          className={`w-[var(--trigger-width)] overflow-hidden rounded-md border border-border bg-popover outline-none ${Z_POPOVER} ${popupShadow}`}
+          className={`w-[var(--trigger-width)] overflow-hidden rounded-md border border-border bg-popover outline-none ${Z_POPOVER} ${popupShadowClass}`}
         >
           {!completing && recents.length > 0 ? (
             <div className="flex items-center justify-between px-3 pb-1 pt-2">
@@ -444,7 +388,7 @@ export default function SearchBar({
                   setRecents([]);
                   inputRef.current?.focus();
                 }}
-                className={`cursor-pointer border-none bg-transparent text-[0.688rem] text-muted hover:text-text ${focusRing}`}
+                className={`cursor-pointer border-none bg-transparent text-[0.688rem] text-muted hover:text-text ${focusRingClass}`}
               >
                 Clear all
               </PlainButton>
@@ -470,8 +414,12 @@ export default function SearchBar({
                       : ""
                 }`}
               >
-                {option.kind === "recent" ? <ClockIcon /> : null}
-                {option.kind === "advanced" ? <SlidersIcon /> : null}
+                {option.kind === "recent" ? (
+                  <ClockIcon className="size-3.5 shrink-0 text-muted" />
+                ) : null}
+                {option.kind === "advanced" ? (
+                  <SlidersIcon className="size-3.5 shrink-0 text-muted" />
+                ) : null}
                 <span className="min-w-0 truncate">{option.label}</span>
               </ListBoxItem>
             )}
@@ -488,7 +436,7 @@ export default function SearchBar({
         placement="bottom start"
         offset={6}
         data-mc-overlay=""
-        className={`max-w-xs rounded-md border border-border bg-popover p-3 outline-none ${Z_POPOVER} ${popupShadow}`}
+        className={`max-w-xs rounded-md border border-border bg-popover p-3 outline-none ${Z_POPOVER} ${popupShadowClass}`}
       >
         <Dialog aria-label="Marked search word" className="outline-none">
           {note ? (
@@ -507,14 +455,18 @@ export default function SearchBar({
 
       {showAdvanced && advancedMode ? (
         <div className={`absolute top-full left-0 mt-2 w-full min-w-[300px] ${Z_INLINE_PANEL}`}>
-          <Suspense fallback={null}>
-            <AdvancedSearchForm
-              mode={advancedMode}
-              withTail
-              onApply={(q) => applyQuery(q, { save: true })}
-              onClose={() => setShowAdvanced(false)}
-            />
-          </Suspense>
+          {/* The header sits outside the screen's boundary in AppLayout, so
+              a form that fails here says so in its own place. */}
+          <ErrorBoundary scope="panel">
+            <Suspense fallback={null}>
+              <AdvancedSearchForm
+                mode={advancedMode}
+                withTail
+                onApply={(q) => applyQuery(q, { save: true })}
+                onClose={() => setShowAdvanced(false)}
+              />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       ) : null}
     </div>

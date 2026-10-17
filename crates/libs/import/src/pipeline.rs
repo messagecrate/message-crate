@@ -4,17 +4,17 @@
 //! [`ImportPipeline`] owns every piece of state the import loop mutates: the
 //! batch being filled, the request in flight, the per-conversation trackers,
 //! the result rows, and the message accounting. The main loop in
-//! [`crate::run`] only decides *when* to queue and flush; the pipeline decides
+//! [`crate::run`](mod@crate::run) only decides *when* to queue and flush; the pipeline decides
 //! *what that means* for the journal, the report, and the log.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::Result;
-use message_crate_core::{RunLogLevel, check_cancel, count_of};
+use message_crate_core::{RunLogLevel, count_of};
 use message_crate_http::HttpError;
 
 use crate::directory::file_label;
@@ -25,7 +25,8 @@ use crate::progress::{FileStatus, Reporter};
 use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
-use crate::run::{ImportConfig, MAX_IMPORT_BODY_BYTES, Session};
+use crate::run::{ImportConfig, Session};
+use api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// If the pending message batch is at least this many messages, start its HTTP
 /// import now instead of waiting until the next chat is prepared.
@@ -44,7 +45,8 @@ pub(crate) enum ChunkStep {
     Continue,
     /// A flush failed for this conversation; drop its remaining chunks but keep the run going.
     FileFailed,
-    /// The run was cancelled and must stop.
+    /// The run must stop: the caller canceled it, the server refused the
+    /// session, or the server was not there to take a request.
     Abort,
 }
 
@@ -191,19 +193,34 @@ struct ImportHttpOutcome {
 }
 
 /// Why a batch failed: the sentence to show, the line of the batch the
-/// server could not read, when it named one, and whether the server refused
-/// the session rather than the batch.
+/// server could not read, when it named one, and whether the failure halts
+/// the run rather than failing the batch.
 struct BatchError {
     message: String,
     refused_line: Option<u64>,
-    session_refused: bool,
+    /// The server refused the session, or was not there to take the batch
+    /// (it is stopping, busy, or could not be reached), or the run was told
+    /// to stop while the batch was still being retried. Nothing is known to
+    /// be wrong with the batch, so its conversations are left for the next
+    /// Upload.
+    halts_run: bool,
 }
 
 impl BatchError {
-    fn new(error: &anyhow::Error) -> Self {
+    /// The failure `error`, from a run that `stopped` (canceled, refused,
+    /// or with the server away) by the time the request gave up.
+    fn new(error: &anyhow::Error, stopped: bool) -> Self {
+        // A stop ends the retries of a failure that might have passed on a
+        // later try, so that batch is not counted as failed. A permanent
+        // failure was not cut short, and fails its batch as it would anyway.
+        let cut_short = stopped
+            && message_crate_http::classify_retry(error)
+                == message_crate_http::RetryKind::Transient;
         Self {
             message: format!("{error:#}"),
-            session_refused: message_crate_http::is_session_refused(error),
+            halts_run: message_crate_http::is_session_refused(error)
+                || message_crate_http::server_away(error).is_some()
+                || cut_short,
             refused_line: error
                 .downcast_ref::<HttpError>()
                 .and_then(HttpError::problem)
@@ -229,7 +246,7 @@ pub(crate) struct ImportPipeline<'a> {
     /// One slot per conversation file, filled once its chunks are queued.
     trackers: Vec<Option<FileTracker>>,
     /// One slot per conversation file, filled as each one finishes, is
-    /// skipped, or is left unsent by a stop ([`Self::record_cancelled`]).
+    /// skipped, or is left unsent by a stop ([`Self::record_canceled`]).
     results: Vec<Option<FileResult>>,
     accounting: MessageAccounting,
 }
@@ -258,14 +275,14 @@ impl<'a> ImportPipeline<'a> {
         }
     }
 
-    /// Give every file still without a result a `cancelled` one.
+    /// Give every file still without a result a `canceled` one.
     ///
     /// Only a stopped run leaves such files: the ones it never took up, and
     /// the one whose messages were partly queued when the stop came. A
-    /// cancelled file is not journalled as done, so a later run sends it
+    /// canceled file is not journalled as done, so a later run sends it
     /// again; any of its messages that did reach the server are already in
     /// the journal and are not sent twice.
-    pub(crate) fn record_cancelled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
+    pub(crate) fn record_canceled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
         for (idx, path) in files.iter().enumerate() {
             if self.results[idx].is_some() {
                 continue;
@@ -275,17 +292,17 @@ impl<'a> ImportPipeline<'a> {
                     tracker.profile.total_ms = elapsed_ms(tracker.total_started);
                     FileResult {
                         file: tracker.name.clone(),
-                        status: "cancelled".into(),
+                        status: "canceled".into(),
                         error: None,
                         messages: tracker.successful_messages,
                         attachments: tracker.attachments,
                         profile: Some(tracker.profile.clone()),
                     }
                 }
-                None => FileResult::cancelled(&file_label(path)),
+                None => FileResult::canceled(&file_label(path)),
             };
             out.log(&format!(
-                "Cancelled {} with {} uploaded",
+                "Canceled {} with {} uploaded",
                 result.file,
                 count_of(result.messages, "message", "messages")
             ));
@@ -357,7 +374,7 @@ impl<'a> ImportPipeline<'a> {
         chunk: ImportChunk,
         out: &mut Reporter<'_, '_>,
     ) -> Result<ChunkStep> {
-        let limits = (self.batch_size, MAX_IMPORT_BODY_BYTES);
+        let limits = (self.batch_size, MAX_IMPORT_BATCH_BYTES);
         let must_flush_first = self
             .pending
             .as_ref()
@@ -413,8 +430,9 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the run was cancelled, which
-    /// includes a session the server refused. Otherwise the failure is
+    /// A failed request stops the run only when the caller canceled it, the
+    /// server refused the session, or the server was not there to take a
+    /// request. Otherwise the failure is
     /// recorded against the conversations in that batch and the run moves on.
     ///
     /// # Errors
@@ -427,7 +445,7 @@ impl<'a> ImportPipeline<'a> {
         out: &mut Reporter<'_, '_>,
     ) -> Result<bool> {
         let request_ok = self.flush(wait, out)?;
-        Ok(request_ok || !self.is_cancelled())
+        Ok(request_ok || !self.must_stop())
     }
 
     /// Finish the current in-flight import (if any), then start the pending batch (if any).
@@ -451,10 +469,14 @@ impl<'a> ImportPipeline<'a> {
         let Some(batch) = self.pending.take() else {
             return Ok(ok);
         };
-        // Do not start a new import after cancel; leave pending unsent.
-        if self.is_cancelled() {
+        // Do not start a new import after a cancel, a refused session, or a
+        // server that was not there; leave pending unsent.
+        if self.must_stop() {
             return Ok(false);
         }
+        // A replace's first batch wipes the source on the server, so the
+        // journal's earlier rows stop being true once that batch goes out.
+        self.lock_journal().journal.forget_before_first_batch()?;
         self.inflight = Some(self.spawn_import(batch));
         if wait {
             ok = self.join_inflight(out)?;
@@ -479,14 +501,14 @@ impl<'a> ImportPipeline<'a> {
                 .request(max_retries, |session| {
                     session.post_import(import_id, batch.body.clone())
                 })
-                .map_err(|error| BatchError::new(&error));
+                .map_err(|error| BatchError::new(&error, session.check_stop().is_err()));
             let request_ms = elapsed_ms(request_started);
             let seconds = request_started.elapsed().as_secs_f64().max(0.001);
             ImportHttpOutcome {
                 batch,
                 request_ms,
                 messages_per_second: message_count as f64 / seconds,
-                mebibytes_per_second: body_bytes as f64 / message_ir::MIB as f64 / seconds,
+                mebibytes_per_second: body_bytes as f64 / ir::MIB as f64 / seconds,
                 body_bytes,
                 message_count,
                 response,
@@ -516,8 +538,9 @@ impl<'a> ImportPipeline<'a> {
     ///
     /// On success: record each message id so a later Upload can skip them.
     /// On failure: mark every conversation that contributed to this batch as
-    /// failed, unless the server refused the session: that stops the run,
-    /// and the batch's conversations are left for the next Upload.
+    /// failed, unless the server refused the session or was not there to
+    /// take the batch: that stops the run, and the batch's conversations are
+    /// left for the next Upload.
     ///
     /// # Errors
     ///
@@ -529,7 +552,7 @@ impl<'a> ImportPipeline<'a> {
         out: &mut Reporter<'_, '_>,
     ) -> Result<bool> {
         if let Err(error) = &outcome.response
-            && error.session_refused
+            && error.halts_run
         {
             out.log_at(
                 RunLogLevel::Warn,
@@ -727,14 +750,16 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the caller asked the run to stop.
-    fn is_cancelled(&self) -> bool {
-        check_cancel(self.cfg.cancel.as_ref()).is_err()
+    /// True once the run must stop: the caller canceled it, the server
+    /// refused the session, or the server was not there to take a request.
+    fn must_stop(&self) -> bool {
+        self.session.check_stop().is_err()
     }
 
-    /// Lock the shared journal (panics only if another thread panicked while holding it).
+    /// Lock the shared journal, read as it is when a prepare that panicked
+    /// left it poisoned (see `PrepareContext::lock_journal`).
     fn lock_journal(&self) -> std::sync::MutexGuard<'a, SharedJournal> {
-        self.journal.lock().expect("journal mutex poisoned")
+        self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -763,9 +788,21 @@ mod tests {
     fn a_batch_error_keeps_the_cause_beneath_its_label() {
         let error = anyhow::anyhow!("connection refused").context("Import Run 7 batch failed");
         assert_eq!(
-            BatchError::new(&error).message,
+            BatchError::new(&error, false).message,
             "Import Run 7 batch failed: connection refused"
         );
+    }
+
+    /// A Pause that ends a batch's retries leaves the batch for the next
+    /// Upload, because a later try might have passed. A batch the server
+    /// refused for good fails as it would have anyway.
+    #[test]
+    fn a_batch_whose_retries_a_stop_cut_short_halts_the_run() {
+        let transient = anyhow::anyhow!("connection reset").context("Import Run 7 batch failed");
+        assert!(BatchError::new(&transient, true).halts_run);
+        assert!(!BatchError::new(&transient, false).halts_run);
+        let refused = anyhow::Error::from(HttpError::new(400, "Import Run 7 batch failed"));
+        assert!(!BatchError::new(&refused, true).halts_run);
     }
 
     /// The lines of a batch run on across its chunks, and each maps back to

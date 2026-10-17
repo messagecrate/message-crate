@@ -14,21 +14,24 @@
 //! another: `docs/architecture/http-api.md`, "Credentials and reach".
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{FromRef, State};
 use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use hmac::{KeyInit, Mac};
 use rand::TryRng;
 use serde::Serialize;
+use sqlx::SqlitePool;
 
-use crate::assets_api::{Sha256, hex_encode, lookup_for_read};
+use crate::api_error::ApiError;
+use crate::assets_api::{Sha256, lookup_for_read};
+use crate::auth::{ExpiryMoves, FullAccess, bearer_token, require_asset_read_access, resolve_auth};
+use crate::config::Config;
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
-use crate::server::{
-    ApiError, AppState, Created, FullAccess, bearer_token, require_asset_read_access, resolve_auth,
-};
+use crate::server::Created;
 
 /// How long a media link opens its asset after it is made.
 pub(crate) const MEDIA_LINK_TTL: Duration = Duration::from_secs(60 * 60);
@@ -83,7 +86,7 @@ impl MediaLinkKey {
             "{}.{}.{}",
             terms.account_id,
             terms.expires,
-            hex_encode(&signature)
+            hex::encode(signature)
         )
     }
 
@@ -139,11 +142,6 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// The current Unix second.
-fn now_unix() -> i64 {
-    chrono::Utc::now().timestamp()
-}
-
 /// The account whose store an asset read reaches: the one the
 /// `Authorization` header names, or, when the request sends none, the one
 /// its `media_link` names. Taken by `GET /v1/assets/{sha256}` and
@@ -153,23 +151,75 @@ fn now_unix() -> i64 {
 /// A request that sends the header is judged by the header alone, as on
 /// every other route: a session, or an API token with the export scope
 /// (`require_asset_read_access`).
+///
+/// The account is private to this type: a handler reaches it only through
+/// [`Self::answer`], which puts the read's `Cache-Control` on whatever the
+/// handler answers. So an asset read route added later cannot answer
+/// without it (#2585).
 pub(crate) struct AssetReadAccess {
     /// The account whose asset store the read looks in.
-    pub(crate) account_id: i64,
+    account_id: i64,
+    /// Whether a media link, not the `Authorization` header, admitted the
+    /// read.
+    by_media_link: bool,
 }
 
-impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
+impl AssetReadAccess {
+    /// Run `read` for the account the read reaches, and answer what it
+    /// answers with the read's `Cache-Control`
+    /// ([`Self::with_cache_control`]).
+    pub(crate) async fn answer(
+        self,
+        read: impl AsyncFnOnce(i64) -> Result<Response, ApiError>,
+    ) -> Response {
+        let answer = read(self.account_id).await;
+        self.with_cache_control(answer)
+    }
+
+    /// `answer` with its `Cache-Control`, whether it carries the bytes or a
+    /// problem: `private` always, because the bytes are one account's
+    /// attachment, and `no-store` as well when a media link admitted the
+    /// read. That request sends no `Authorization` header, so a shared cache
+    /// would otherwise store the answer under the link's URL and serve it
+    /// again after the link expired or its Session ended, and the browser
+    /// would keep the bytes on disk past the hour. A problem gets it too,
+    /// because a cache may keep a `404 Not Found` and hide a Preview made
+    /// later.
+    fn with_cache_control(&self, answer: Result<Response, ApiError>) -> Response {
+        let mut response = answer.into_response();
+        let value = if self.by_media_link {
+            "private, no-store"
+        } else {
+            "private"
+        };
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static(value),
+        );
+        response
+    }
+}
+
+impl<S> axum::extract::FromRequestParts<S> for AssetReadAccess
+where
+    S: Send + Sync,
+    SqlitePool: FromRef<S>,
+    MediaLinkKey: FromRef<S>,
+    ExpiryMoves: FromRef<S>,
+{
     type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
-        state: &AppState,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
+        let db = SqlitePool::from_ref(state);
         if parts.headers.contains_key(header::AUTHORIZATION) {
-            let auth = resolve_auth(&parts.headers, state).await?;
+            let auth = resolve_auth(&parts.headers, &db, &ExpiryMoves::from_ref(state)).await?;
             require_asset_read_access(&auth)?;
             return Ok(Self {
                 account_id: auth.account_id,
+                by_media_link: false,
             });
         }
         let Some(link) = media_link_in(parts.uri.query()) else {
@@ -178,12 +228,16 @@ impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
             ));
         };
         let AxumPath(sha256) =
-            <AxumPath<Sha256> as axum::extract::FromRequestParts<AppState>>::from_request_parts(
+            <AxumPath<Sha256> as axum::extract::FromRequestParts<S>>::from_request_parts(
                 parts, state,
             )
             .await?;
-        let account_id = open_media_link(state, &link, &sha256).await?;
-        Ok(Self { account_id })
+        let account_id =
+            open_media_link(&db, &MediaLinkKey::from_ref(state), &link, &sha256).await?;
+        Ok(Self {
+            account_id,
+            by_media_link: true,
+        })
     }
 }
 
@@ -213,18 +267,24 @@ fn media_link_in(query: Option<&str>) -> Option<String> {
 /// `media-link-invalid` when the link cannot be read, has expired, was signed
 /// for other terms, or its Session has ended; `account-disabled` when its
 /// account is disabled.
-async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Result<i64, ApiError> {
+async fn open_media_link(
+    db: &SqlitePool,
+    key: &MediaLinkKey,
+    link: &str,
+    sha256: &Sha256,
+) -> Result<i64, ApiError> {
     let invalid = |why: &str| ApiError::MediaLinkInvalid(format!("{why}; make a new media link"));
     let Some(link) = ParsedLink::parse(link) else {
         return Err(invalid("the media_link is not a media link"));
     };
-    if link.expires <= now_unix() {
+    let now = chrono::Utc::now();
+    if link.expires <= now.timestamp() {
         return Err(invalid("the media link expired"));
     }
-    let mut conn = state.db.acquire().await?;
-    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id).await?;
+    let mut conn = db.acquire().await?;
+    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id, now).await?;
     let signed = session_hash.is_some_and(|session_hash| {
-        state.media_link_key.verifies(
+        key.verifies(
             &MediaLinkTerms {
                 account_id: link.account_id,
                 sha256,
@@ -294,22 +354,23 @@ pub(crate) struct MediaLink {
     )
 )]
 pub(crate) async fn create_media_link(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
+    State(key): State<MediaLinkKey>,
     FullAccess(auth): FullAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    let held = lookup_for_read(&state, auth.account_id, &sha256)
+    let held = lookup_for_read(&cfg, auth.account_id, &sha256)
         .await?
         .is_some();
     if !held {
-        return Err(ApiError::NotFound("asset not found".into()));
+        return Err(ApiError::not_found("asset"));
     }
 
     let session_hash = session_tokens::hash_api_token(&bearer_token(&headers)?);
     let ttl = i64::try_from(MEDIA_LINK_TTL.as_secs()).unwrap_or(i64::MAX);
-    let expires = now_unix().saturating_add(ttl);
-    let link = state.media_link_key.sign(&MediaLinkTerms {
+    let expires = chrono::Utc::now().timestamp().saturating_add(ttl);
+    let link = key.sign(&MediaLinkTerms {
         account_id: auth.account_id,
         sha256: &sha256,
         expires,

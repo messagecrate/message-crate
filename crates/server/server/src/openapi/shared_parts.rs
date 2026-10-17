@@ -201,11 +201,11 @@ fn failures(path: &str, op: &mut Operation) {
         );
     }
 
-    if path.starts_with("/v1/") {
+    if crate::middleware::is_api_path(path) {
         // A query parameter the route does not declare.
         kinds.push(ProblemType::ValidationFailed);
         // An `Accept` that names nothing JSON, refused on every route that
-        // answers JSON (`server::require_json_acceptable`).
+        // answers JSON (`middleware::require_json_acceptable`).
         if !bytes {
             kinds.push(ProblemType::NotAcceptable);
         }
@@ -221,15 +221,17 @@ fn failures(path: &str, op: &mut Operation) {
             ProblemType::InsufficientScope,
             ProblemType::AccountDisabled,
         ]);
-        if requirements.iter().any(|r| {
-            r["session"]
-                .as_array()
-                .is_some_and(|s| s.iter().any(|s| s == "owner"))
-        }) {
+        let session_scopes = || requirements.iter().filter_map(|r| r["session"].as_array());
+        let names_owner = session_scopes().any(|s| s.iter().any(|s| s == "owner"));
+        // A Session requirement with no scope is met by a Session that is not
+        // the owner's, so the guard never answers `not-the-owner`
+        // (`GET /v1/phone-countries`, which names the owner as well).
+        let admits_every_session = session_scopes().any(Vec::is_empty);
+        if names_owner && !admits_every_session {
             kinds.push(ProblemType::NotTheOwner);
         }
         // The import and delete guards refuse the Demo Account by its id
-        // (`server::require_import_access`, `server::require_delete_access`),
+        // (`auth::require_import_access`, `auth::require_delete_access`),
         // so a route every credential of which needs one of them can answer it.
         let every_needs = |scope: &str| {
             requirements
@@ -249,6 +251,7 @@ fn failures(path: &str, op: &mut Operation) {
             ProblemType::MalformedBody,
             ProblemType::PayloadTooLarge,
             ProblemType::UnsupportedMediaType,
+            ProblemType::BodyStalled,
             ProblemType::ValidationFailed,
         ]);
     }

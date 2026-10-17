@@ -3,8 +3,9 @@ use std::path::Path;
 
 use message_crate_core::{RunLogAccount, RunLogLevel};
 
-use super::{LinesQuery, Reader, list, read_lines, read_whole};
+use super::{LinesQuery, LogKind, Reader, list, read_lines, read_whole};
 use crate::app_directories::{RunLog, import_run_log};
+use crate::app_log::{AppLog, DESKTOP_APP_LOG};
 
 const SERVER: &str = "http://127.0.0.1:8080";
 
@@ -120,6 +121,37 @@ fn an_account_cannot_read_another_account_s_run_log() {
     );
 }
 
+/// The desktop app's own log names no account, so the owner alone lists and
+/// reads it, as "Desktop app" beside the Import Run logs (#2185).
+#[test]
+fn the_desktop_app_s_log_is_the_owner_s_alone() {
+    let logs = tempfile::tempdir().unwrap();
+    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, HERE);
+    AppLog::in_logs_dir(logs.path()).write(
+        RunLogLevel::Warn,
+        "The server's processes will not end with it",
+    );
+    let query = LinesQuery {
+        limit: 10,
+        ..LinesQuery::default()
+    };
+
+    assert_eq!(names(&account(2), logs.path()), [alice]);
+    let entry = list(logs.path(), &owner())
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.name == DESKTOP_APP_LOG)
+        .expect("the owner lists the desktop app's log");
+    assert_eq!(entry.kind, LogKind::DesktopApp);
+    assert!(entry.account.is_none() && entry.has_lines);
+    let page = read_lines(logs.path(), &owner(), DESKTOP_APP_LOG, &query).unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].level, RunLogLevel::Warn);
+    let refused = read_lines(logs.path(), &account(2), DESKTOP_APP_LOG, &query).unwrap_err();
+    assert!(refused.contains("owner's alone"), "{refused}");
+    assert!(read_whole(logs.path(), &account(2), DESKTOP_APP_LOG).is_err());
+}
+
 #[test]
 fn a_name_outside_the_logs_directory_is_refused() {
     let logs = tempfile::tempdir().unwrap();
@@ -138,7 +170,7 @@ fn lines_come_newest_first_filtered_by_level_and_text_a_page_at_a_time() {
     }
     log.issue(&message_crate_core::RunIssue {
         kind: message_crate_core::RunIssueKind::Skip,
-        step: "attachments".into(),
+        step: message_crate_core::RunIssueStep::Attachments,
         item: "a.jpg".into(),
         reason: "the file is missing".into(),
         conversation: None,
@@ -210,7 +242,7 @@ fn a_run_log_is_still_listed_and_read_after_the_run_s_directory_is_deleted() {
         .directories
         .create("whatsapp", "261004-143000")
         .unwrap();
-    let logs = crate::app_directories::logs_dir_in(scratch.app_data.path());
+    let logs = scratch.logs();
     let log = RunLog::open(&logs, &run_dir);
     log.account(&RunLogAccount {
         import_run_id: 42,

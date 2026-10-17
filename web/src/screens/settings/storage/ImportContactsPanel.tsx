@@ -1,8 +1,9 @@
 import { type UIEvent, useCallback } from "react";
-import { apiErrorMessage } from "../../../lib/apiErrorMessage";
+import { useRoutePagedList } from "../../../hooks/useRouteQuery";
+import { errorLine } from "../../../lib/apiErrorMessage";
 import { isNearEnd } from "../../../lib/listPaging";
 import { keys } from "../../../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList } from "../../../lib/routeQuery";
+import type { PagedFetchPage } from "../../../lib/routeQuery";
 import { getImportContacts } from "../../../lib/serverApi";
 import type { components } from "../../../lib/serverApi.types";
 
@@ -60,7 +61,7 @@ export default function ImportContactsPanel({
   if (error && items.length === 0) {
     return (
       <div className="text-[0.813rem] text-danger">
-        {apiErrorMessage(error, "Could not load contacts for this import.")}
+        {errorLine(error, "Could not load contacts for this import.")}
       </div>
     );
   }
@@ -86,7 +87,7 @@ export default function ImportContactsPanel({
       {filling ? <p className="mt-1 text-[0.813rem] text-muted">Loading more contacts…</p> : null}
       {error ? (
         <p className="mt-1 text-[0.813rem] text-danger">
-          {apiErrorMessage(error, "Could not load more contacts for this import.")}
+          {errorLine(error, "Could not load more contacts for this import.")}
         </p>
       ) : null}
       {items.length < total && !filling && !error ? (

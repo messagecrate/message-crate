@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render as rtlRender, screen, within } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
-import { mockedAuth, Providers } from "../../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { ApiTokensSection } from "./ApiTokensSection";
 
@@ -29,13 +31,15 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   deleteApiToken: vi.fn(),
 }));
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../hooks/useAuth", () => authModule());
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   apiGet.mockReset();
   apiPost.mockReset();
   apiGet.mockResolvedValue([]);
@@ -44,9 +48,8 @@ beforeEach(() => {
 async function openComposeForm() {
   const user = setupUser();
   render(<ApiTokensSection accountCanImport={true} accountCanExport={true} />);
-  await waitFor(() => {
-    expect(apiGet).toHaveBeenCalled();
-  });
+  await settle();
+  expect(apiGet).toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Add" }));
   return user;
 }
@@ -67,9 +70,8 @@ describe("ApiTokensSection create form", () => {
     await fill(user, screen.getByLabelText("API Token name"), "My token");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      expect(apiPost).toHaveBeenCalledTimes(1);
-    });
+    await settle();
+    expect(apiPost).toHaveBeenCalledTimes(1);
     const [body] = apiPost.mock.calls[0] as [unknown];
     expect(body).toEqual({
       label: "My token",
@@ -86,9 +88,8 @@ describe("ApiTokensSection create form", () => {
   it("disables a permission checkbox the account itself does not hold", async () => {
     const user = setupUser();
     render(<ApiTokensSection accountCanImport={false} accountCanExport={true} />);
-    await waitFor(() => {
-      expect(apiGet).toHaveBeenCalled();
-    });
+    await settle();
+    expect(apiGet).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Add" }));
 
     expect(screen.getByRole("checkbox", { name: "Import" })).toBeDisabled();
@@ -99,9 +100,8 @@ describe("ApiTokensSection create form", () => {
   it("forces a permission checkbox unchecked when the account lacks it, even though the form defaults it on", async () => {
     const user = setupUser();
     render(<ApiTokensSection accountCanImport={false} accountCanExport={true} />);
-    await waitFor(() => {
-      expect(apiGet).toHaveBeenCalled();
-    });
+    await settle();
+    expect(apiGet).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Add" }));
 
     // The form defaults `canImport` to true, but the account cannot import —
@@ -122,10 +122,9 @@ describe("ApiTokensSection create form", () => {
     await fill(user, screen.getByLabelText("API Token name"), "No import");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      expect(apiPost).toHaveBeenCalledTimes(1);
-    });
-    expect(apiPost.mock.calls[0][0]).toEqual({
+    await settle();
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(nth(apiPost.mock.calls, 0)[0]).toEqual({
       label: "No import",
       can_import: false,
       can_export: true,
@@ -161,7 +160,8 @@ describe("ApiTokensSection table", () => {
     render(<ApiTokensSection accountCanImport={true} accountCanExport={true} />);
 
     const rowOf = (label: string) => screen.getByText(label).closest("tr") as HTMLElement;
-    await screen.findByText("Laptop");
+    await settle();
+    expect(screen.getByText("Laptop")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Expires" })).toBeTruthy();
     const expiry = new Date(1731536000 * 1000).toLocaleDateString();
     const expiringRow = rowOf("Laptop");
@@ -184,7 +184,8 @@ describe("ApiTokensSection table", () => {
     });
     const user = setupUser();
     render(<ApiTokensSection accountCanImport={true} accountCanExport={true} />);
-    await screen.findByText("Laptop");
+    await settle();
+    expect(screen.getByText("Laptop")).toBeInTheDocument();
 
     // Markup, not only visible text: labels and tooltips are read out too.
     const wording = () => document.body.innerHTML;
@@ -192,19 +193,20 @@ describe("ApiTokensSection table", () => {
     expect(wording()).not.toMatch(/API keys?|(this|delete) key|delete message data/i);
 
     await user.click(screen.getByRole("button", { name: "Revoke API Token" }));
-    expect(await screen.findByText(/Programs using it will stop working/)).toBeTruthy();
+    expect(screen.getByText(/Programs using it will stop working/)).toBeTruthy();
     expect(wording()).not.toMatch(/API keys?|(this|delete) key|CLI tools/i);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Edit API Token" }));
-    expect(await screen.findByRole("dialog", { name: "Rename API Token" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Rename API Token" })).toBeTruthy();
     expect(wording()).not.toMatch(/API keys?|(this|delete) key/i);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Add" }));
     await fill(user, screen.getByLabelText("API Token name"), "Phone");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByRole("dialog", { name: "API Token created" })).toBeTruthy();
+    await settle();
+    expect(screen.getByRole("dialog", { name: "API Token created" })).toBeTruthy();
     expect(wording()).not.toMatch(/API keys?|(this|delete) key/i);
   });
 });
@@ -222,11 +224,13 @@ describe("ApiTokensSection reveal", () => {
     const screenWith = (section: boolean) =>
       section ? <ApiTokensSection accountCanImport={true} accountCanExport={true} /> : null;
     const { rerender } = render(screenWith(true));
-    await waitFor(() => expect(apiGet).toHaveBeenCalled());
+    await settle();
+    expect(apiGet).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Add" }));
     await fill(user, screen.getByLabelText("API Token name"), "Phone");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
 
     rerender(screenWith(false));
     answer({
@@ -239,7 +243,8 @@ describe("ApiTokensSection reveal", () => {
       token: "mc-api-phone-secret",
     });
 
-    const dialog = await screen.findByRole("dialog", { name: "API Token created" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "API Token created" });
     expect(within(dialog).getByText("mc-api-phone-secret")).toBeTruthy();
   });
 });

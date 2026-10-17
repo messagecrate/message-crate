@@ -1,22 +1,23 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders as render } from "../test/providers";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, renderWithProviders as render } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 
 const logout = vi.fn();
 const apiPost = vi.fn(async () => ({}));
 
-vi.mock("../lib/auth", () => ({
-  useAuth: () => ({
+vi.mock("../hooks/useAuth", () =>
+  authModule(() => ({
     login: vi.fn(),
     logout,
     token: "t",
     serverUrl: "",
     accountId: 7,
-  }),
-}));
+  })),
+);
 
 // The account's identities as the server lists them, each with its service; a
 // test sets them to what the owner added.
@@ -32,7 +33,7 @@ vi.mock("../lib/serverApi", () => ({
       start_date: null,
       end_date: null,
       conversations: 0,
-      direct_messages: 0,
+      one_to_one_messages: 0,
       group_messages: 0,
     })),
 }));
@@ -41,13 +42,25 @@ vi.mock("../lib/serverApi", () => ({
 const blankProfile = { preferred_name: null, time_zone: "UTC" };
 let profile: { preferred_name: string | null; time_zone: string } = blankProfile;
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile, loading: false, error: "" }),
 }));
 
 import OnboardingScreen, { REPEATED_ERROR_BLINK_MS, SAME_GESTURE_MS } from "./OnboardingScreen";
 
 const rowValue = (n: number) => screen.getByRole("textbox", { name: `Account ${n} value` });
+
+/** The words under a row whose value, offered as Email, is not an address. */
+const NOT_AN_ADDRESS = "Enter an email address like you@example.com.";
+
+/**
+ * Offer row `n` as Email, the one service that checks its value: Text Message
+ * and WhatsApp take any value, as the server does (#3090).
+ */
+async function offerAsEmail(user: ReturnType<typeof setupUser>, n: number) {
+  await user.click(screen.getByRole("button", { name: `Text Message Account ${n} type` }));
+  await user.click(screen.getByRole("option", { name: "Email" }));
+}
 
 describe("OnboardingScreen", () => {
   beforeEach(() => {
@@ -57,7 +70,7 @@ describe("OnboardingScreen", () => {
     // machine it can move more, the second check reads as a second look, and
     // the message blanks for REPEATED_ERROR_BLINK_MS. The clock stands still
     // here, so one click is always one gesture.
-    vi.useFakeTimers({ toFake: ["Date"] });
+    startFakeClock();
     logout.mockReset();
     apiPost.mockReset();
     profile = blankProfile;
@@ -66,8 +79,7 @@ describe("OnboardingScreen", () => {
 
   afterEach(() => {
     cleanup();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
+    stopFakeClock();
   });
 
   it("names the section Your Accounts and explains nothing further", () => {
@@ -122,7 +134,8 @@ describe("OnboardingScreen", () => {
     ];
     render(<OnboardingScreen />);
 
-    expect(await screen.findByRole("button", { name: "Email Account 2 type" })).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "Email Account 2 type" })).toBeInTheDocument();
     expect(rowValue(1)).toHaveValue("+15555550100");
     expect(rowValue(2)).toHaveValue("bob@example.com");
     expect(screen.queryByText(/Already on this account/)).not.toBeInTheDocument();
@@ -137,9 +150,8 @@ describe("OnboardingScreen", () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    expect(
-      await screen.findByRole("button", { name: "WhatsApp Account 2 type" }),
-    ).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "WhatsApp Account 2 type" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Text Message Account 1 type" })).toBeInTheDocument();
     expect(rowValue(1)).toHaveValue("+15555550123");
     expect(rowValue(2)).toHaveValue("+15555550123");
@@ -148,7 +160,8 @@ describe("OnboardingScreen", () => {
     expect(go).toBeEnabled();
     await user.click(go);
     expect(screen.queryByText("This account is already in the list.")).not.toBeInTheDocument();
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({ identities: [], remove_identities: [] }),
     );
@@ -158,16 +171,16 @@ describe("OnboardingScreen", () => {
     identities = [{ address: "+15555550123", service: "whatsapp" }];
     render(<OnboardingScreen />);
 
-    expect(
-      await screen.findByRole("button", { name: "WhatsApp Account 1 type" }),
-    ).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "WhatsApp Account 1 type" })).toBeInTheDocument();
     expect(rowValue(1)).toHaveValue("+15555550123");
   });
 
   it("counts an identity the owner added, so another is not required", async () => {
     identities = [{ address: "+15555550100", service: "phone" }];
     render(<OnboardingScreen />);
-    await waitFor(() => expect(rowValue(1)).toHaveValue("+15555550100"));
+    await settle();
+    expect(rowValue(1)).toHaveValue("+15555550100");
 
     const go = screen.getByRole("button", { name: "Continue to Message Crate" });
     expect(go).toBeDisabled();
@@ -183,13 +196,15 @@ describe("OnboardingScreen", () => {
     ];
     const user = setupUser();
     render(<OnboardingScreen />);
-    await waitFor(() => expect(rowValue(2)).toHaveValue("+15555550101"));
+    await settle();
+    expect(rowValue(2)).toHaveValue("+15555550101");
 
     await user.clear(rowValue(1));
     await user.paste("+1 555-555-0199");
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({
         identities: [{ address: "+1 555-555-0199", service: "phone" }],
@@ -206,11 +221,13 @@ describe("OnboardingScreen", () => {
     ];
     const user = setupUser();
     render(<OnboardingScreen />);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Remove account 2" }));
+    await user.click(screen.getByRole("button", { name: "Remove account 2" }));
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({
         identities: [],
@@ -232,12 +249,14 @@ describe("OnboardingScreen", () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    expect(await screen.findByText("2 more are in Settings.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("2 more are in Settings.")).toBeInTheDocument();
     expect(rowValue(4)).toHaveValue("+15555550103");
     expect(screen.queryByRole("textbox", { name: "Account 5 value" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({ identities: [], remove_identities: [] }),
     );
@@ -288,30 +307,43 @@ describe("OnboardingScreen", () => {
     expect(screen.getByText("Add the rest in Settings after setup.")).toBeInTheDocument();
   });
 
+  it("adds a row on top of a sender name on Text Message, which the server stores as other", async () => {
+    const user = setupUser();
+    render(<OnboardingScreen />);
+
+    await fill(user, rowValue(1), "AMAZON");
+    await user.click(screen.getByRole("button", { name: "+ Add account" }));
+
+    expect(screen.getByRole("textbox", { name: "Account 2 value" })).toBeInTheDocument();
+    expect(rowValue(1)).not.toHaveAttribute("aria-invalid", "true");
+  });
+
   it("will not add a row on top of a value that is not an account", async () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    await fill(user, rowValue(1), "notaphone");
+    await offerAsEmail(user, 1);
+    await fill(user, rowValue(1), "notanaddress");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
 
     // The row is refused, marked, and said out loud — all three, or the person
     // is left guessing why nothing happened.
     expect(screen.queryByRole("textbox", { name: "Account 2 value" })).not.toBeInTheDocument();
     expect(rowValue(1)).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByText("Enter a phone number like +1 555-555-0119.")).toBeInTheDocument();
+    expect(screen.getByText(NOT_AN_ADDRESS)).toBeInTheDocument();
   });
 
   it("adds the row once the value is corrected", async () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    await fill(user, rowValue(1), "notaphone");
+    await offerAsEmail(user, 1);
+    await fill(user, rowValue(1), "notanaddress");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     expect(screen.queryByRole("textbox", { name: "Account 2 value" })).not.toBeInTheDocument();
 
     await user.clear(rowValue(1));
-    await fill(user, rowValue(1), "+1 555-555-0119");
+    await fill(user, rowValue(1), "you@example.com");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
 
     expect(screen.getByRole("textbox", { name: "Account 2 value" })).toBeInTheDocument();
@@ -322,11 +354,12 @@ describe("OnboardingScreen", () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    await fill(user, rowValue(1), "notaphone");
+    await offerAsEmail(user, 1);
+    await fill(user, rowValue(1), "notanaddress");
     await user.click(screen.getByRole("textbox", { name: "Display Name" }));
 
     expect(rowValue(1)).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByText("Enter a phone number like +1 555-555-0119.")).toBeInTheDocument();
+    expect(screen.getByText(NOT_AN_ADDRESS)).toBeInTheDocument();
   });
 
   it("keeps the mark on the row that earned it when another is removed", async () => {
@@ -335,7 +368,8 @@ describe("OnboardingScreen", () => {
 
     await fill(user, rowValue(1), "+1 555-555-0119");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
-    await fill(user, rowValue(2), "notaphone");
+    await offerAsEmail(user, 2);
+    await fill(user, rowValue(2), "notanaddress");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     expect(rowValue(2)).toHaveAttribute("aria-invalid", "true");
 
@@ -343,7 +377,7 @@ describe("OnboardingScreen", () => {
     // value, not stay on the position it was first found at.
     await user.click(screen.getByRole("button", { name: "Remove account 1" }));
 
-    expect(rowValue(1)).toHaveValue("notaphone");
+    expect(rowValue(1)).toHaveValue("notanaddress");
     expect(rowValue(1)).toHaveAttribute("aria-invalid", "true");
   });
 
@@ -352,7 +386,8 @@ describe("OnboardingScreen", () => {
     render(<OnboardingScreen />);
 
     await fill(user, screen.getByRole("textbox", { name: "Display Name" }), "Matt");
-    await fill(user, rowValue(1), "notaphone");
+    await offerAsEmail(user, 1);
+    await fill(user, rowValue(1), "notanaddress");
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
 
     expect(apiPost).not.toHaveBeenCalled();
@@ -425,17 +460,13 @@ describe("OnboardingScreen", () => {
     // the message back on a REPEATED_ERROR_BLINK_MS timer. Both run on Vitest's
     // fake clock, so the blank line is read before the timer can fire however
     // long the click takes, and the message comes back when the test moves the
-    // clock, not when the machine gets to it. `delay: null` keeps user-event
-    // off the faked setTimeout. Testing Library ends each event with a
-    // setTimeout(0), which it moves past itself only through a `jest` global,
-    // so the test lends it one that moves Vitest's clock.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-    vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+    // clock, not when the machine gets to it.
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    const message = "Enter a phone number like +1 555-555-0119.";
-    await fill(user, rowValue(1), "notaphone");
+    const message = NOT_AN_ADDRESS;
+    await offerAsEmail(user, 1);
+    await fill(user, rowValue(1), "notanaddress");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     expect(screen.getByText(message)).toBeInTheDocument();
 
@@ -447,9 +478,9 @@ describe("OnboardingScreen", () => {
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     expect(screen.queryByText(message)).not.toBeInTheDocument();
 
-    act(() => {
-      vi.advanceTimersByTime(REPEATED_ERROR_BLINK_MS);
-    });
+    await advanceTimersAndSettle(REPEATED_ERROR_BLINK_MS - 1);
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+    await advanceTimersAndSettle(1);
     expect(screen.getByText(message)).toBeInTheDocument();
   });
 
@@ -457,18 +488,19 @@ describe("OnboardingScreen", () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    await fill(user, rowValue(1), "notaphone");
+    await fill(user, rowValue(1), "+1 555-555-0119");
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
-    expect(screen.getByText("Enter a phone number like +1 555-555-0119.")).toBeInTheDocument();
+    await fill(user, rowValue(2), "+15555550119");
+    await user.click(screen.getByRole("button", { name: "+ Add account" }));
+    expect(screen.getByText("This account is already in the list.")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Text Message Account 1 type" }));
-    await user.click(screen.getByRole("option", { name: "Email" }));
+    await offerAsEmail(user, 2);
     // A second look, outside the first click's gesture: only a new message
     // keeps the line from blanking.
     vi.setSystemTime(Date.now() + SAME_GESTURE_MS + 50);
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
 
-    expect(screen.getByText("Enter an email address like you@example.com.")).toBeInTheDocument();
+    expect(screen.getByText(NOT_AN_ADDRESS)).toBeInTheDocument();
   });
 
   it("goes back one screen, to login", async () => {

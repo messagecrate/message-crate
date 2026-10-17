@@ -2,15 +2,15 @@
 //! server that writes them and the client crates that read them.
 //!
 //! Two crates sit on either side of these shapes: `message-crate-server`
-//! serializes them, and `message-crate-export` deserializes them on its way to
-//! `message-ir`. While each kept its own struct, the two could disagree
-//! silently and did, three times: `message-crate-export` declared a
+//! serializes them, and `export` deserializes them on its way to
+//! `ir`. While each kept its own struct, the two could disagree
+//! silently and did, three times: `export` declared a
 //! participant's address a `String` after the server started sending `null`
 //! for a participant a backup named without an address, kept
 //! `#[serde(default)]` on a field the server had removed, and read a
 //! `service` off the conversation the server has never sent there. Each of
 //! those was an Export that failed at runtime, or quietly produced worse data,
-//! with nothing in either crate's tests to catch it — `message-crate-export`'s
+//! with nothing in either crate's tests to catch it. `export`'s
 //! "real export page" was a JSON literal it wrote itself, so it agreed with
 //! whatever the mirror said.
 //!
@@ -37,6 +37,67 @@ pub const APP_HEADER: &str = "x-message-crate-app";
 
 /// Request header carrying that app's Build, such as `0.9.0+343fe0d8`.
 pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
+
+/// The largest import batch body: what the Upload packs into one request,
+/// and what the server reads from one before it answers
+/// `413 Payload Too Large`. One figure for both, so the server never accepts
+/// more than its own client sends.
+///
+/// Kept under Cloudflare's ~100 MiB upload cap so a large group conversation
+/// is split into several requests instead of one giant one that gets
+/// rejected. Kept to 16 MiB so the server's save of one batch, a single
+/// write transaction, holds the write lock for far less than the 15 seconds
+/// every other writer waits for it: a full batch saved in under 5 seconds in
+/// a timed release build (#2062). A whole batch then arrives inside the
+/// server's default 5-minute limit for one at about 0.45 Mbit/s.
+pub const MAX_IMPORT_BATCH_BYTES: usize = 16 * 1024 * 1024;
+
+/// The slugs of the problem types a client branches on, the last segment
+/// of a problem's `type` URL ([`Problem::slug`]). The server's own list of
+/// types is checked against these, so a renamed type fails a test rather
+/// than a client.
+pub mod problem_slug {
+    /// The server was told to stop, so it refused the request.
+    pub const SERVER_STOPPING: &str = "server-stopping";
+    /// Every database connection, or the write lock, stayed taken for
+    /// longer than the request could wait.
+    pub const DATABASE_BUSY: &str = "database-busy";
+}
+
+/// The id each exporter writes into a conversation file's `export.source`,
+/// one constant per backup type. `message-crate-core`'s
+/// `Exporter::source_id` returns these, and each exporter writes what it
+/// returns.
+pub mod source_id {
+    /// GO SMS Pro.
+    pub const GO_SMS_PRO: &str = "go-sms-pro";
+    /// iMazing.
+    pub const IMAZING: &str = "imazing";
+    /// Apple Messages, from an iPhone backup or a Mac.
+    pub const IMESSAGE: &str = "imessage";
+    /// OpenExtract.
+    pub const OPENEXTRACT: &str = "openextract";
+    /// SMS Backup & Restore.
+    pub const SMS_BACKUP_RESTORE: &str = "sms-backup-restore";
+    /// SMS Backup+.
+    pub const SMS_BACKUP_PLUS: &str = "sms-backup-plus";
+    /// WhatsApp.
+    pub const WHATSAPP: &str = "whatsapp";
+}
+
+/// Every id in [`source_id`]. The import stamps a file's id on every message
+/// it writes, and search's `source:` field accepts these values and no
+/// others. A test in `message-crate-core` fails when this list and the
+/// backup types' ids differ.
+pub const SOURCE_IDS: &[&str] = &[
+    source_id::IMESSAGE,
+    source_id::WHATSAPP,
+    source_id::SMS_BACKUP_RESTORE,
+    source_id::IMAZING,
+    source_id::OPENEXTRACT,
+    source_id::GO_SMS_PRO,
+    source_id::SMS_BACKUP_PLUS,
+];
 
 /// Which app a session's requests come from. The server records it beside the
 /// app's Build and shows both to the owner; it never refuses a request
@@ -72,7 +133,7 @@ impl AppKind {
 
 /// What happens to a source's messages that were imported before: `replace`
 /// wipes them first, `append` keeps them and adds only new ones.
-// Every path that carries a mode, the `POST /v1/imports` body, the `import` CLI flag, `message-crate-import`'s settings and the
+// Every path that carries a mode, the `POST /v1/imports` body, the `import` CLI flag, `import`'s settings and the
 // desktop upload command, uses this type, so a misspelling cannot compile as
 // "append".
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,7 +199,7 @@ impl std::str::FromStr for ImportMode {
 /// run did something with it worth knowing that is not a failure, and
 /// `resolved` when an earlier row about the same item no longer holds.
 // Every crate that sends or reads a row (the exporters, Media, the Upload,
-// the desktop app and the server) takes this type, so a misspelt kind does
+// the desktop app and the server) takes this type, so a misspelled kind does
 // not compile. `message-crate-core` re-exports it beside its `RunIssue`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -186,6 +247,74 @@ impl std::fmt::Display for RunIssueKind {
     }
 }
 
+/// What an Import Error is: `skip` when the run left the item out, `error`
+/// when the item failed.
+// `RunIssueKind` says what a run can report; this type says what the server
+// stores, so a note or a `resolved` row cannot be stored as an Import Error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum ImportErrorKind {
+    /// The run left the item out and went on without it.
+    Skip,
+    /// The item failed.
+    Error,
+}
+
+impl ImportErrorKind {
+    /// The wire form: `skip` or `error`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skip => "skip",
+            Self::Error => "error",
+        }
+    }
+
+    /// Read a stored word; anything else names no kind.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "skip" => Some(Self::Skip),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ImportErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The [`RunIssueKind`] that is not an Import Error, refused by
+/// `TryFrom<RunIssueKind> for ImportErrorKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotAnImportError(pub RunIssueKind);
+
+impl std::fmt::Display for NotAnImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "a '{}' row is not an Import Error; expected 'error' or 'skip'",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NotAnImportError {}
+
+impl TryFrom<RunIssueKind> for ImportErrorKind {
+    type Error = NotAnImportError;
+
+    fn try_from(kind: RunIssueKind) -> Result<Self, NotAnImportError> {
+        match kind {
+            RunIssueKind::Skip => Ok(Self::Skip),
+            RunIssueKind::Error => Ok(Self::Error),
+            other @ (RunIssueKind::Note | RunIssueKind::Resolved) => Err(NotAnImportError(other)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod import_mode_tests {
     use super::*;
@@ -229,6 +358,34 @@ mod import_mode_tests {
         }
         assert!(serde_json::from_str::<RunIssueKind>("\"warning\"").is_err());
         assert_eq!(RunIssueKind::parse("warning"), None);
+    }
+
+    /// The same three forms for an Import Error's kind, which takes only
+    /// `skip` and `error` and refuses the two a run reports but never
+    /// stores as an Import Error.
+    #[test]
+    fn an_import_error_kind_is_skip_or_error_and_nothing_else() {
+        for kind in [ImportErrorKind::Skip, ImportErrorKind::Error] {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{}\"", kind.as_str()));
+            assert_eq!(
+                serde_json::from_str::<ImportErrorKind>(&json).unwrap(),
+                kind
+            );
+            assert_eq!(ImportErrorKind::parse(kind.as_str()), Some(kind));
+            let reported = RunIssueKind::parse(kind.as_str()).unwrap();
+            assert_eq!(ImportErrorKind::try_from(reported), Ok(kind));
+        }
+        for word in ["note", "resolved", "warning"] {
+            assert!(
+                serde_json::from_str::<ImportErrorKind>(&format!("\"{word}\"")).is_err(),
+                "{word}"
+            );
+            assert_eq!(ImportErrorKind::parse(word), None, "{word}");
+        }
+        for kind in [RunIssueKind::Note, RunIssueKind::Resolved] {
+            assert_eq!(ImportErrorKind::try_from(kind), Err(NotAnImportError(kind)));
+        }
     }
 }
 
@@ -325,6 +482,20 @@ pub struct Page<T> {
     pub offset: usize,
 }
 
+impl<T> Page<T> {
+    /// The same page with each row turned into another type: the total,
+    /// limit and offset are unchanged.
+    #[must_use]
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> Page<U> {
+        Page {
+            items: self.items.into_iter().map(f).collect(),
+            total: self.total,
+            limit: self.limit,
+            offset: self.offset,
+        }
+    }
+}
+
 /// How an Export Run stands: the values `exports.status` holds, the values
 /// `GET /v1/exports?status=` accepts, and the word every Export Run carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,17 +509,12 @@ pub enum ExportStatus {
     /// Ended without finishing.
     Failed,
     /// Closed by the person before it finished.
-    Cancelled,
+    Canceled,
 }
 
 impl ExportStatus {
     /// Every status, in the order the documentation lists them.
-    pub const ALL: [Self; 4] = [
-        Self::Running,
-        Self::Completed,
-        Self::Failed,
-        Self::Cancelled,
-    ];
+    pub const ALL: [Self; 4] = [Self::Running, Self::Completed, Self::Failed, Self::Canceled];
 
     /// The value as the wire and the database spell it.
     #[must_use]
@@ -357,7 +523,7 @@ impl ExportStatus {
             Self::Running => "running",
             Self::Completed => "completed",
             Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
+            Self::Canceled => "canceled",
         }
     }
 
@@ -371,6 +537,29 @@ impl ExportStatus {
 impl std::fmt::Display for ExportStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// How a client says its reading of an Export Run ended, in the body of
+/// `POST /v1/exports/{id}/complete`: the two statuses that route records. A
+/// run the person gave up is closed with `cancel`, and only the server sets
+/// `running`, so neither is a value here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CompleteExportStatus {
+    /// The client wrote everything it read.
+    Completed,
+    /// An error stopped the client.
+    Failed,
+}
+
+impl From<CompleteExportStatus> for ExportStatus {
+    fn from(status: CompleteExportStatus) -> Self {
+        match status {
+            CompleteExportStatus::Completed => Self::Completed,
+            CompleteExportStatus::Failed => Self::Failed,
+        }
     }
 }
 
@@ -412,7 +601,7 @@ api_shape! {
     /// the Contact's name, else what that backup called them in that
     /// conversation, else the identity.
     pub struct Participant {
-        /// What to show for this person. Never empty — the server falls back to
+        /// What to show for this person. Never empty: the server falls back to
         /// the identity when nothing else names them, and to the name alone for
         /// someone a backup named without recording any address.
         pub name: String,
@@ -423,8 +612,8 @@ api_shape! {
         /// Platform service, e.g. `imessage`. `None` for the same reason as
         /// `identity`: with no address there is nothing to carry a service on.
         pub service: Option<String>,
-        /// Linked contact id: when the identity is on a Contact, or — for a
-        /// participant with no identity — the contact the server bound the name to
+        /// Linked contact id: when the identity is on a Contact, or, for a
+        /// participant with no identity, the contact the server bound the name to
         /// directly, since that is the only place the link is recorded for
         /// them. Matches the `id` every other contact shape uses, so a caller
         /// can compare the two without converting either.
@@ -535,8 +724,10 @@ api_shape! {
         /// The part of the message this version belongs to; 0 for the first
         /// or only part.
         pub part_index: i64,
-        /// The part's text in this version.
-        pub text: String,
+        /// The part's text in this version; `null` when the source recorded
+        /// the edit and not the text it replaced, as iMazing does. Search
+        /// never finds a message by such a version.
+        pub text: Option<String>,
         /// When this version was written, to the millisecond in the form
         /// `Message.timestamp` takes. The original's is when it was sent, a
         /// later version's is when the edit that wrote it was made. `None`
@@ -617,7 +808,7 @@ api_shape! {
         pub id: i64,
         /// The conversation's identifier as the export wrote it.
         pub chat_identifier: String,
-        /// `individual`, `group`, or `orphaned` for a conversation of
+        /// `one-to-one`, `group`, or `orphaned` for a conversation of
         /// orphaned messages: ones the backup holds without recording which
         /// conversation they were said in.
         pub conversation_type: String,
@@ -630,13 +821,13 @@ api_shape! {
         /// The title the export gave the conversation, when it gave one.
         pub group_title: Option<String>,
         /// The title the conversation is shown by, as the conversation list's
-        /// `label` gives it: for a conversation the account holder has with
+        /// `shown_title` gives it: for a conversation the account holder has with
         /// themselves, the account's display name or, without one, the
         /// conversation's own address; for one of orphaned messages, its
         /// person's name and "Orphaned", or "Orphaned · Unknown person" for
         /// the one that names nobody; for any other, the export's title. `null`
         /// when there is none, and the conversation goes by its participants.
-        pub label: Option<String>,
+        pub shown_title: Option<String>,
         /// Participants of the conversation.
         pub participants: Vec<Participant>,
     }
@@ -668,10 +859,20 @@ api_shape! {
         /// MIME type of the attachment's preview, when it has one. The
         /// preview's bytes are at `/v1/assets/{sha256}/preview`.
         pub preview_mime_type: Option<String>,
+        /// Why the server could not make the attachment's preview the last
+        /// time it tried: what ffmpeg said about the file, or a phrase of the
+        /// server's when ffmpeg did not read it, such as when the original
+        /// file is missing. `null` while the attachment has a preview, once
+        /// the server decides the original is shown as it is, and until a try
+        /// has failed.
+        pub preview_not_made_reason: Option<String>,
         /// MIME type of the attachment's thumbnail, once the server has made
         /// it; `null` until then. The thumbnail's bytes are at
         /// `/v1/assets/{sha256}/thumbnail`.
         pub thumbnail_mime_type: Option<String>,
+        /// Why the server could not make the attachment's thumbnail the last
+        /// time it tried, as `preview_not_made_reason` says for the preview.
+        pub thumbnail_not_made_reason: Option<String>,
     }
 }
 
@@ -688,6 +889,11 @@ api_shape! {
         pub is_from_me: bool,
         /// The identity that reacted, for incoming reactions.
         pub sender: Option<String>,
+        /// The name the source gave the reactor of an incoming reaction
+        /// when it gave no address for them; no source gives one yet.
+        /// `null` when `sender` is set, and for the account holder's own
+        /// reactions. A name is shown, never matched to a contact.
+        pub sender_display_name: Option<String>,
     }
 }
 
@@ -706,8 +912,8 @@ mod tests {
             );
             assert_eq!(ExportStatus::parse(status.as_str()), Some(status));
         }
-        assert_eq!(ExportStatus::Cancelled.as_str(), "cancelled");
-        assert_eq!(ExportStatus::parse("canceled"), None);
+        assert_eq!(ExportStatus::Canceled.as_str(), "canceled");
+        assert_eq!(ExportStatus::parse("cancelled"), None);
     }
 
     /// The rule this module states, checked rather than trusted: a value
@@ -734,10 +940,10 @@ mod tests {
             conversation: MessageConversation {
                 id: 9,
                 chat_identifier: "+15555550100".into(),
-                conversation_type: "individual".into(),
+                conversation_type: "one-to-one".into(),
                 is_group: false,
                 group_title: None,
-                label: None,
+                shown_title: None,
                 participants: vec![Participant {
                     name: "Sarah Vale".into(),
                     identity: None,
@@ -755,7 +961,9 @@ mod tests {
                 missing_reason: None,
                 shown_as_is: false,
                 preview_mime_type: None,
+                preview_not_made_reason: None,
                 thumbnail_mime_type: None,
+                thumbnail_not_made_reason: None,
             }],
             tapbacks: vec![Tapback {
                 part_index: 0,
@@ -763,11 +971,12 @@ mod tests {
                 emoji: None,
                 is_from_me: true,
                 sender: None,
+                sender_display_name: None,
             }],
             deletion: Some(Deletion::DeletedInSourceApp),
             earlier_versions: vec![EarlierVersion {
                 part_index: 0,
-                text: "helo".into(),
+                text: Some("helo".into()),
                 edited_at: Some("2023-12-31T23:59:00Z".into()),
                 matched: false,
             }],
@@ -787,10 +996,10 @@ mod tests {
             serde_json::json!({
                 "id": 9,
                 "chat_identifier": "+15555550100",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "group_title": null,
-                "label": null,
+                "shown_title": null,
                 "participants": [{
                     "name": "Sarah Vale",
                     "identity": null,
@@ -812,7 +1021,9 @@ mod tests {
                 "missing_reason": null,
                 "shown_as_is": false,
                 "preview_mime_type": null,
+                "preview_not_made_reason": null,
                 "thumbnail_mime_type": null,
+                "thumbnail_not_made_reason": null,
             }),
             "an attachment with nothing known about it writes every key: {json}"
         );
@@ -824,6 +1035,7 @@ mod tests {
                 "emoji": null,
                 "is_from_me": true,
                 "sender": null,
+                "sender_display_name": null,
             }),
             "{json}"
         );
@@ -838,7 +1050,7 @@ mod tests {
         assert_eq!(written["time_precision"], "seconds");
         assert_eq!(read.time_precision, TimePrecision::Seconds);
         assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
-        assert_eq!(read.earlier_versions[0].text, "helo");
+        assert_eq!(read.earlier_versions[0].text.as_deref(), Some("helo"));
         assert_eq!(
             read.earlier_versions[0].edited_at.as_deref(),
             Some("2023-12-31T23:59:00Z")
@@ -890,8 +1102,8 @@ mod export_scope_tests {
 /// same request.
 ///
 /// The extension members belong to the types named here: `word` and
-/// `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,
-/// `line` to `malformed-body` and `validation-failed` from an import batch,
+/// `did_you_mean` to `search-query-invalid`, `retry_after` to
+/// `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
 /// `holder` to `identity-exists`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -922,8 +1134,8 @@ pub struct Problem {
     /// edit distance of the one used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub did_you_mean: Option<String>,
-    /// `rate-limited`: seconds until an attempt may succeed, the same figure
-    /// as the `Retry-After` header.
+    /// `database-busy`: seconds until the request may succeed, the same
+    /// figure as the `Retry-After` header.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after: Option<u64>,
     /// `malformed-body` from an import batch: the line of the request body

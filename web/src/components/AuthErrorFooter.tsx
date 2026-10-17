@@ -1,8 +1,3 @@
-/** The server's messages start lowercase; a line of UI text should not. */
-function sentenceCase(text: string): string {
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
-}
-
 /**
  * Error line for an auth form. The band is a reserved, fixed height and is
  * transparent when empty, so the surrounding form does not shift when a
@@ -32,7 +27,7 @@ export default function AuthErrorFooter({
           bottom edge just the same, but a message too long for the band still
           scrolls, where `justify-end` would push the overflow out through a top
           edge no scrollbar can reach. */}
-      <div className="mt-auto">{sentenceCase(error) || " "}</div>
+      <div className="mt-auto">{error || " "}</div>
     </div>
   );
 }

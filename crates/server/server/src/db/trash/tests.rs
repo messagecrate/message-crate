@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::audit_trail::AuditActor;
+use crate::test_support::{ConversationRow, stored_time};
 const ACCOUNT_A: i64 = 7;
 const ACCOUNT_B: i64 = 8;
 
@@ -22,21 +23,9 @@ async fn insert_conversation(conn: &mut SqliteConnection, account_id: i64) -> i6
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, 'individual', 'c.jsonl')",
-    )
-    .bind(account_id)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-    sqlx::query_scalar("SELECT id FROM conversations WHERE chat_handle_id = $1")
-        .bind(handle_id)
-        .fetch_one(&mut *conn)
+    ConversationRow::new(account_id, handle_id)
+        .insert(conn)
         .await
-        .unwrap()
 }
 
 /// Insert a contact owned by `account_id`, returning its id.
@@ -325,16 +314,9 @@ async fn insert_conversation_on(conn: &mut SqliteConnection, account_id: i64, ra
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query_scalar(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, 'individual', 'c.jsonl') RETURNING id",
-    )
-    .bind(account_id)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
+    ConversationRow::new(account_id, handle_id)
+        .insert(conn)
+        .await
 }
 
 /// Insert one `imessage` message into `conversation_id`, returning its id.
@@ -355,31 +337,31 @@ async fn insert_message(
 }
 
 /// Attach a stored file to `message_id`: the original under `sha`, and a
-/// derivative under `derived` when given.
+/// Preview under `preview` when given.
 async fn insert_attachment(
     conn: &mut SqliteConnection,
     message_id: i64,
     sha: &str,
-    derived: Option<&str>,
+    preview: Option<&str>,
 ) {
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (
-            message_id, sha256, assets_path, derived_sha256, derived_assets_path
+            message_id, sha256, assets_path, preview_sha256, preview_assets_path
          ) VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(message_id)
     .bind(sha)
     .bind(format!("{}/{sha}.jpg", &sha[..2]))
-    .bind(derived)
-    .bind(derived.map(|d| format!("{}/{d}.jpg", &d[..2])))
+    .bind(preview)
+    .bind(preview.map(|d| format!("{}/{d}.jpg", &d[..2])))
     .execute(&mut *tx)
     .await
     .unwrap();
     tx.commit().await.unwrap();
 }
 
-async fn count(conn: &mut SqliteConnection, sql: &str, id: i64) -> i64 {
+async fn count(conn: &mut SqliteConnection, sql: &'static str, id: i64) -> i64 {
     sqlx::query_scalar(sql)
         .bind(id)
         .fetch_one(&mut *conn)
@@ -409,6 +391,7 @@ async fn delete_trashed_conversation_removes_it_and_its_messages() {
         ACCOUNT_A,
         Trashable::Conversation(id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -448,6 +431,7 @@ async fn delete_conversation_not_in_the_trash_is_refused_and_changes_nothing() {
         ACCOUNT_A,
         Trashable::Conversation(id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -490,6 +474,7 @@ async fn a_restore_that_commits_while_delete_for_good_reads_keeps_the_conversati
             ACCOUNT_A,
             Trashable::Conversation(id),
             AuditActor::Holder,
+            crate::test_support::fixed_instant(),
         ),
     )
     .await
@@ -551,6 +536,7 @@ async fn delete_refuses_another_accounts_conversation_even_when_trashed() {
         ACCOUNT_B,
         Trashable::Conversation(id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -574,19 +560,19 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     let mut conn = fixture.conn().await;
     let shared = sha('a');
     let only_here = sha('b');
-    let derived = sha('c');
+    let preview = sha('c');
     let staged = sha('d');
 
     // The conversation to delete: one message with the shared file, one with
-    // a file only it holds (plus a derivative), one with a file an import in
+    // a file only it holds (plus a Preview), one with a file an import in
     // progress has also staged.
     let doomed = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550101").await;
     let m1 = insert_message(&mut conn, ACCOUNT_A, doomed, 0).await;
     insert_attachment(&mut conn, m1, &shared, None).await;
     let m2 = insert_message(&mut conn, ACCOUNT_A, doomed, 1).await;
-    insert_attachment(&mut conn, m2, &only_here, Some(&derived)).await;
+    insert_attachment(&mut conn, m2, &only_here, Some(&preview)).await;
     // The same file twice in one conversation is reported once.
-    insert_attachment(&mut conn, m2, &only_here, Some(&derived)).await;
+    insert_attachment(&mut conn, m2, &only_here, Some(&preview)).await;
     let m3 = insert_message(&mut conn, ACCOUNT_A, doomed, 2).await;
     insert_attachment(&mut conn, m3, &staged, None).await;
 
@@ -599,7 +585,7 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     let staging_conversation: i64 = sqlx::query_scalar(
         "INSERT INTO staging_conversations (
             account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, 1, 'individual', 's.jsonl') RETURNING id",
+         ) VALUES ($1, 1, 'one-to-one', 's.jsonl') RETURNING id",
     )
     .bind(ACCOUNT_A)
     .fetch_one(&mut *conn)
@@ -610,11 +596,12 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
             conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sort_order
          ) VALUES (
-            $1, $2, 'imessage', 'g-staged', '2020-01-01T00:00:00.000Z', 'milliseconds', 1, 0
+            $1, $2, 'imessage', 'g-staged', $3, 'milliseconds', 1, 0
          ) RETURNING id",
     )
     .bind(staging_conversation)
     .bind(ACCOUNT_A)
+    .bind(stored_time("2020-01-01T00:00:00.000Z"))
     .fetch_one(&mut *conn)
     .await
     .unwrap();
@@ -635,6 +622,7 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
         ACCOUNT_A,
         Trashable::Conversation(doomed),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -647,7 +635,7 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
                 assets_path: format!("bb/{only_here}.jpg"),
             },
             OrphanedFile::Derived {
-                assets_path: format!("cc/{derived}.jpg"),
+                assets_path: format!("cc/{preview}.jpg"),
             },
         ]),
         "the shared file and the staged file must not be reported"
@@ -712,6 +700,7 @@ async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
         ACCOUNT_A,
         Trashable::Conversation(doomed),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -743,15 +732,15 @@ async fn delete_keeps_a_file_a_message_of_another_source_still_names() {
     fixture.account_with_id(ACCOUNT_A, "a").await;
     let mut conn = fixture.conn().await;
     let shared = sha('a');
-    let derived = sha('c');
+    let preview = sha('c');
 
     let doomed = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550101").await;
     let m1 = insert_message(&mut conn, ACCOUNT_A, doomed, 0).await;
-    insert_attachment(&mut conn, m1, &shared, Some(&derived)).await;
+    insert_attachment(&mut conn, m1, &shared, Some(&preview)).await;
 
     let kept = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550102").await;
     let k1 = insert_message(&mut conn, ACCOUNT_A, kept, 0).await;
-    insert_attachment(&mut conn, k1, &shared, Some(&derived)).await;
+    insert_attachment(&mut conn, k1, &shared, Some(&preview)).await;
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET source = 'sms' WHERE id = $1")
         .bind(k1)
@@ -768,6 +757,7 @@ async fn delete_keeps_a_file_a_message_of_another_source_still_names() {
         ACCOUNT_A,
         Trashable::Conversation(doomed),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -849,6 +839,7 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         ACCOUNT_A,
         Trashable::Contact(contact_id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -858,6 +849,16 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         contact_row(&mut conn, contact_id).await,
         Some((String::new(), "user".into())),
         "the row stays, nameless, with the origin it was made with"
+    );
+    let last_modified: String =
+        sqlx::query_scalar("SELECT last_modified FROM contacts WHERE id = $1")
+            .bind(contact_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(
+        last_modified, "2026-03-14 12:00:00",
+        "last_modified is the instant the delete was given"
     );
     assert_eq!(
         count(
@@ -909,6 +910,7 @@ async fn a_contact_deleted_for_good_takes_the_next_imported_name() {
         ACCOUNT_A,
         Trashable::Contact(contact_id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -919,7 +921,8 @@ async fn a_contact_deleted_for_good_takes_the_next_imported_name() {
             ACCOUNT_A,
             contact_id,
             "Pat Lee",
-            crate::db::contacts::Origin::Import
+            crate::db::contacts::Origin::Import,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap()
@@ -945,6 +948,7 @@ async fn delete_contact_not_in_the_trash_is_refused_and_keeps_the_name() {
         ACCOUNT_A,
         Trashable::Contact(contact_id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -988,10 +992,15 @@ async fn empty_trash_takes_everything_trashed_and_only_that() {
     .await
     .unwrap();
 
-    let orphaned = empty_trash(&mut conn, ACCOUNT_A, AuditActor::Holder)
-        .await
-        .unwrap()
-        .orphaned;
+    let orphaned = empty_trash(
+        &mut conn,
+        ACCOUNT_A,
+        AuditActor::Holder,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap()
+    .orphaned;
 
     assert_eq!(
         orphaned,
@@ -1041,10 +1050,15 @@ async fn empty_trash_on_an_empty_trash_is_a_noop() {
     let id = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550101").await;
 
     assert_eq!(
-        empty_trash(&mut conn, ACCOUNT_A, AuditActor::Holder)
-            .await
-            .unwrap()
-            .orphaned,
+        empty_trash(
+            &mut conn,
+            ACCOUNT_A,
+            AuditActor::Holder,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap()
+        .orphaned,
         Vec::new()
     );
     assert_eq!(
@@ -1136,6 +1150,7 @@ async fn deleting_the_second_contact_leaves_the_first_as_it_was() {
         ACCOUNT_A,
         Trashable::Contact(second),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

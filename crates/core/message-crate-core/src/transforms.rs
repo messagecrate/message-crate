@@ -1,105 +1,90 @@
-//! What a run does to its documents on the way out: media mode, obfuscation,
-//! and the sinks the write tail reports through.
+//! What a run does to its documents on the way out: whether it copies the
+//! attachment files, obfuscation, and the sinks the write tail reports
+//! through.
 
-use crate::config::ExporterConfig;
+use crate::config::{AttachmentFiles, OutputConfig, RunContext};
 use crate::process::LogSink;
 use crate::progress::ProgressSink;
-use media::{CompressOptions, MediaMode};
 
 /// The transforms a run applies at write time, handed to the format sink.
 #[derive(Debug, Clone)]
 pub struct ExportTransforms {
-    /// Media mode applied at finish (clone/convert/compress/disabled).
-    pub media: MediaMode,
-    /// Video/audio compression options used with Compress mode.
-    pub compress: CompressOptions,
+    /// Whether the run copies the original attachment files.
+    pub files: AttachmentFiles,
     /// Whether to replace PII and media with obfuscated placeholders.
     pub obfuscate: bool,
     /// Seed for deterministic obfuscation; `None` generates one.
     pub obfuscate_seed: Option<String>,
-    /// Mid-run notes (e.g. generated obfuscate seed). `None` → stderr.
-    pub log: Option<LogSink>,
-    /// Typed progress events for the write tail. `None` reports nothing.
-    pub progress: Option<ProgressSink>,
+    /// Mid-run notes (e.g. generated obfuscate seed).
+    pub log: LogSink,
+    /// Typed progress events for the write tail.
+    pub progress: ProgressSink,
 }
 
 impl Default for ExportTransforms {
     fn default() -> Self {
         Self {
-            media: MediaMode::Clone,
-            compress: CompressOptions::default(),
+            files: AttachmentFiles::Originals,
             obfuscate: false,
             obfuscate_seed: None,
-            log: None,
-            progress: None,
+            log: LogSink::none(),
+            progress: ProgressSink::none(),
         }
     }
 }
 
 impl ExportTransforms {
-    /// The transforms an exporter run wants: media and obfuscation from the
-    /// config (obfuscation is on when either its flag or a seed is set), plus
-    /// the run's log and progress sinks so the write tail reports through
-    /// the same hooks the exporter does.
-    pub fn from_config(config: &ExporterConfig) -> Self {
+    /// The transforms an exporter run wants: media and obfuscation from
+    /// `output` (obfuscation is on when either its flag or a seed is set),
+    /// plus the run's log and progress sinks from `context` so the write tail
+    /// reports through the same hooks the exporter does.
+    pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
         Self {
-            media: config.media.mode,
-            compress: config.media.compress.clone(),
-            obfuscate: config.obfuscate_active(),
-            obfuscate_seed: config.obfuscate.seed.clone(),
-            log: config.log.clone(),
-            progress: config.progress.clone(),
+            files: output.media.files,
+            obfuscate: output.obfuscate_active(),
+            obfuscate_seed: output.obfuscate.seed.clone(),
+            log: context.log.clone(),
+            progress: context.progress.clone(),
         }
     }
 
-    /// All-defaults transform set (clone, no obfuscation, no log).
+    /// All-defaults transform set (copy the originals, no obfuscation, sinks
+    /// that drop what they get).
     pub fn none() -> Self {
         Self::default()
-    }
-
-    /// True when ffmpeg/ffprobe will be required (false when obfuscating,
-    /// which replaces media with placeholders).
-    pub fn needs_media_tools(&self) -> bool {
-        // Obfuscate replaces all media with placeholders — no ffmpeg work.
-        !self.obfuscate && self.media.needs_tools()
     }
 
     /// True when attachment bytes should be staged under `attachments/`
     /// (false when obfuscating).
     pub fn copies_attachments(&self) -> bool {
         // Obfuscate discards real bytes; skip staging them in the first place.
-        !self.obfuscate && self.media.copies_attachments()
+        !self.obfuscate && self.files.copies()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FormatConfig, MediaConfig, ObfuscateConfig, OutputFormat, SourceConfig};
-    use media::MaxResolution;
-    use std::path::PathBuf;
+    use crate::config::{MediaConfig, ObfuscateConfig, OutputFormat};
+    use crate::progress::ProgressEvent;
+    use std::sync::{Arc, Mutex};
 
-    fn config(obfuscate: ObfuscateConfig, media: MediaConfig) -> ExporterConfig {
-        ExporterConfig {
-            inputs: Vec::new(),
-            output: PathBuf::from("out"),
-            scratch_dir: PathBuf::from("/cache"),
-            timezone: None,
+    fn output(obfuscate: ObfuscateConfig, media: MediaConfig) -> OutputConfig {
+        OutputConfig {
             obfuscate,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: OutputFormat::Json,
-            resume: false,
-            source: SourceConfig::Format(FormatConfig::default()),
+            ..OutputConfig::new("out", OutputFormat::Json)
         }
     }
 
+    /// The transforms of a run that writes `output`, reporting nowhere.
+    fn transforms(output: &OutputConfig) -> ExportTransforms {
+        ExportTransforms::new(&RunContext::new("/cache"), output)
+    }
+
     #[test]
-    fn from_config_obfuscates_when_the_flag_is_set_without_a_seed() {
-        let t = ExportTransforms::from_config(&config(
+    fn new_obfuscates_when_the_flag_is_set_without_a_seed() {
+        let t = transforms(&output(
             ObfuscateConfig {
                 enabled: true,
                 seed: None,
@@ -111,8 +96,8 @@ mod tests {
     }
 
     #[test]
-    fn from_config_obfuscates_when_only_a_seed_is_given() {
-        let t = ExportTransforms::from_config(&config(
+    fn new_obfuscates_when_only_a_seed_is_given() {
+        let t = transforms(&output(
             ObfuscateConfig {
                 enabled: false,
                 seed: Some("abc123".to_string()),
@@ -124,57 +109,52 @@ mod tests {
     }
 
     #[test]
-    fn from_config_leaves_obfuscation_off_without_flag_or_seed() {
-        let t = ExportTransforms::from_config(&config(
-            ObfuscateConfig::default(),
-            MediaConfig::default(),
-        ));
+    fn new_leaves_obfuscation_off_without_flag_or_seed() {
+        let t = transforms(&output(ObfuscateConfig::default(), MediaConfig::default()));
         assert!(!t.obfuscate);
     }
 
     #[test]
-    fn from_config_carries_the_media_mode_compress_options_and_sinks() {
-        let compress = CompressOptions {
-            max_resolution: MaxResolution::P720,
-            max_fps: 24.0,
-            min_size_bytes: 1234,
-            skip_efficient: false,
-        };
-        let mut cfg = config(
+    fn new_carries_the_attachment_choice_and_sinks() {
+        let out = output(
             ObfuscateConfig::default(),
             MediaConfig {
-                mode: MediaMode::Compress,
-                compress: compress.clone(),
+                files: AttachmentFiles::Skip,
+                ..MediaConfig::default()
             },
         );
-        cfg.log = Some(LogSink::new(|_| {}));
-        cfg.progress = Some(ProgressSink::new(|_| {}));
+        let mut context = RunContext::new("/cache");
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let lines_seen = Arc::clone(&lines);
+        context.log = LogSink::new(move |line| lines_seen.lock().unwrap().push(line.to_string()));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_seen = Arc::clone(&events);
+        context.progress =
+            ProgressSink::unpaced(move |event| events_seen.lock().unwrap().push(event));
 
-        let t = ExportTransforms::from_config(&cfg);
+        let t = ExportTransforms::new(&context, &out);
+        t.log.emit("a line");
+        t.progress.emit(ProgressEvent::Parse { done: 1, total: 2 });
 
-        assert_eq!(t.media, MediaMode::Compress);
-        assert_eq!(t.compress, compress);
-        assert!(t.log.is_some());
-        assert!(t.progress.is_some());
-        assert!(t.needs_media_tools());
+        assert_eq!(t.files, AttachmentFiles::Skip);
+        assert_eq!(lines.lock().unwrap().as_slice(), ["a line"]);
+        assert_eq!(events.lock().unwrap().len(), 1);
     }
 
     #[test]
-    fn obfuscate_disables_copy_and_media_tools() {
+    fn obfuscate_disables_copy() {
         let t = ExportTransforms {
-            media: MediaMode::Convert,
+            files: AttachmentFiles::Originals,
             obfuscate: true,
             ..ExportTransforms::none()
         };
         assert!(!t.copies_attachments());
-        assert!(!t.needs_media_tools());
 
         let t = ExportTransforms {
-            media: MediaMode::Clone,
+            files: AttachmentFiles::Originals,
             obfuscate: false,
             ..ExportTransforms::none()
         };
         assert!(t.copies_attachments());
-        assert!(!t.needs_media_tools());
     }
 }

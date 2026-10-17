@@ -20,7 +20,7 @@ use utoipa::openapi::path::{Operation, ParameterIn, PathItem};
 use utoipa::openapi::security::{ApiKey, SecurityScheme};
 use utoipa::openapi::{OpenApi, RefOr};
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// The query parameters each `/v1` operation declares, by method and path
 /// template (`/v1/conversations/{id}/messages`).
@@ -148,7 +148,7 @@ pub(crate) async fn refuse_undeclared_query(
     let (Some(matched), Some(query)) = (matched, request.uri().query()) else {
         return next.run(request).await;
     };
-    if !matched.as_str().starts_with("/v1/") {
+    if !crate::middleware::is_api_path(matched.as_str()) {
         return next.run(request).await;
     }
     let Some(names) = declared.declared(request.method(), matched.as_str()) else {

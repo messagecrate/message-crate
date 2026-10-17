@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXPORT_SOURCES } from "./exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "./imessageImport";
-import { importRunCreateBody, showsAttachmentOptions, sourceForMethod } from "./importSource";
+import { importRunCreateBody, sourceForMethod } from "./importSource";
 import { WHATSAPP_METHODS, WHATSAPP_SOURCE_ID } from "./whatsappImport";
 
 describe("sourceForMethod", () => {
@@ -39,6 +41,13 @@ describe("sourceForMethod", () => {
 });
 
 describe("importRunCreateBody", () => {
+  it("names a tool within the cap the server's reference states (#2668)", () => {
+    const path = fileURLToPath(new URL("../../../docs/src/assets/openapi.json", import.meta.url));
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    const cap: number = doc.components.schemas.CreateImportRequest.properties.tool.maxLength;
+    expect(Array.from(importRunCreateBody("imessage-ios").tool).length).toBeLessThanOrEqual(cap);
+  });
+
   it("sends imessage when the form method is imessage-ios", () => {
     expect(importRunCreateBody("imessage-ios")).toEqual({
       source: "imessage",
@@ -57,25 +66,5 @@ describe("importRunCreateBody", () => {
 
   it("sends sms-backup-restore unchanged", () => {
     expect(importRunCreateBody("sms-backup-restore").source).toBe("sms-backup-restore");
-  });
-});
-
-describe("showsAttachmentOptions", () => {
-  it("is true for every source whose form has the Attachments field", () => {
-    const sources = [
-      ...IMESSAGE_METHODS.map((m) => m.id),
-      ...WHATSAPP_METHODS.map((m) => m.id),
-      "sms-backup-restore",
-      "go-sms-pro",
-      "sms-backup-plus",
-    ];
-    for (const source of sources) {
-      expect(showsAttachmentOptions(source), source).toBe(true);
-    }
-  });
-
-  it("is false for iMazing and OpenExtract, whose forms have none", () => {
-    expect(showsAttachmentOptions("imazing")).toBe(false);
-    expect(showsAttachmentOptions("openextract")).toBe(false);
   });
 });

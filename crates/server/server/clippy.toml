@@ -6,4 +6,15 @@ disallowed-methods = [
     { path = "sqlx::Connection::begin", reason = "a deferred transaction fails when another write lands between its read and its write; use crate::db::begin_write" },
     { path = "sqlx::Acquire::begin", reason = "a deferred transaction fails when another write lands between its read and its write; use crate::db::begin_write" },
     { path = "sqlx::Pool::begin", reason = "a deferred transaction fails when another write lands between its read and its write; use crate::db::begin_write" },
+    # A test's client builds without root certificates, because reading the
+    # system's certificate store costs about 23 ms a client. Each of these
+    # builds a client that reads it.
+    { path = "reqwest::Client::new", reason = "reads the system's certificate store, about 23 ms a client; use test_support::http_client, or common::client::http_client under tests/" },
+    { path = "reqwest::get", reason = "reads the system's certificate store, about 23 ms a client; use test_support::http_client, or common::client::http_client under tests/" },
+    # A tracing span does not cross a spawn on its own, so a line written in
+    # spawned work would lose the request's id (#2186). The wrappers carry
+    # the current span and subscriber. Outside a request they do what
+    # tokio's own calls do.
+    { path = "tokio::task::spawn", reason = "the spawned work loses the request's tracing span; use crate::request_id::spawn_in_current_span" },
+    { path = "tokio::task::spawn_blocking", reason = "the work loses the request's tracing span; use crate::request_id::spawn_blocking_in_current_span" },
 ]

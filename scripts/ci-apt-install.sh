@@ -7,7 +7,7 @@
 # Every workflow job that needs system packages calls this, so the limits are
 # set in one place. A plain `apt-get update && apt-get install` has no time
 # limit: on 2026-10-01 it ran for 20 minutes or more in three pull requests,
-# and the job's own limit cancelled the Rust tests (issue #1034).
+# and the job's own limit canceled the Rust tests (issue #1034).
 #
 # Two limits apply, because a stall has two shapes:
 #

@@ -1,7 +1,7 @@
 /**
  * HTTP client for the vault's `/v1` API. Every read in web-next goes through
  * here. The session token comes from the `mv_session` cookie that
- * `POST /api/auth/login` sets after calling `POST /v1/auth/login`.
+ * `POST /api/auth/login` sets after calling `POST /v1/session`.
  *
  * The vault host comes from `VAULT_API_URL` (default `http://127.0.0.1:8080`).
  */
@@ -88,10 +88,12 @@ export async function vaultFetch(
   });
 }
 
-async function failureMessage(res: Response): Promise<string> {
+/** The problem's `detail`, else its `title` (`application/problem+json`). */
+export async function failureMessage(res: Response): Promise<string> {
   try {
-    const json = (await res.json()) as { error?: unknown };
-    if (json && typeof json.error === "string") return json.error;
+    const json = (await res.json()) as { detail?: unknown; title?: unknown };
+    if (json && typeof json.detail === "string" && json.detail) return json.detail;
+    if (json && typeof json.title === "string" && json.title) return json.title;
   } catch {
     /* not JSON */
   }
@@ -221,7 +223,31 @@ export function dayOf(timestamp: string | null | undefined): string {
   return (timestamp ?? "").slice(0, 10);
 }
 
-export function yearOf(timestamp: string | null | undefined): number | null {
-  const y = Number((timestamp ?? "").slice(0, 4));
+/**
+ * The day of an RFC 3339 instant in an IANA time zone, as `YYYY-MM-DD`;
+ * empty when there is no instant.
+ */
+export function dayIn(
+  timestamp: string | null | undefined,
+  timeZone: string,
+): string {
+  if (!timestamp) return "";
+  const instant = new Date(timestamp);
+  if (Number.isNaN(instant.getTime())) return "";
+  // `en-CA` writes a date as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/** The calendar year of an RFC 3339 instant in an IANA time zone. */
+export function yearIn(
+  timestamp: string | null | undefined,
+  timeZone: string,
+): number | null {
+  const y = Number(dayIn(timestamp, timeZone).slice(0, 4));
   return Number.isFinite(y) && y > 0 ? y : null;
 }

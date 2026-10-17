@@ -2,23 +2,21 @@ import type { ReactNode } from "react";
 import { Disclosure, DisclosurePanel } from "react-aria-components";
 import FormField from "../../components/FormField";
 import PlainButton from "../../components/PlainButton";
-import { textInputClassName } from "../../components/TextField";
 import type { AttachmentMediaMode } from "../../lib/types";
-import { focusRing } from "../../lib/uiStyles";
+import { focusRingClass } from "../../lib/uiStyles";
 
 export const ATTACHMENT_OPTIONS: { id: AttachmentMediaMode; label: string }[] = [
   { id: "copy", label: "Copy" },
-  { id: "convert", label: "Convert" },
-  { id: "compress", label: "Compress & Convert" },
+  { id: "convert", label: "Convert media" },
+  { id: "compress", label: "Convert & Compress media" },
   { id: "skip", label: "Skip" },
 ];
 
 export const RESOLUTION_OPTIONS = ["720p", "1080p", "4k"];
 
-export const fieldStyle = textInputClassName;
-export const hintStyle = "mt-1 text-[0.75rem] text-muted";
+export const hintClass = "mt-1 text-[0.75rem] text-muted";
 
-export const sectionGap = "mb-[1.1rem]";
+export const sectionGapClass = "mb-[1.1rem]";
 
 /** Stacked label + control; thin wrap around FormField. */
 export function StackedField({
@@ -68,7 +66,7 @@ export function CollapsibleSection({
         <>
           <PlainButton
             slot="trigger"
-            className={`flex w-full cursor-pointer items-center gap-2 rounded-none border-0 border-b border-border bg-transparent p-0 pb-2 pt-1 text-left text-[0.9375rem] font-semibold text-text hover:text-accent ${focusRing}`}
+            className={`flex w-full cursor-pointer items-center gap-2 rounded-none border-0 border-b border-border bg-transparent p-0 pb-2 pt-1 text-left text-[0.9375rem] font-semibold text-text hover:text-accent ${focusRingClass}`}
           >
             <span
               aria-hidden

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { AccountPermissionsSection } from "./AccountPermissionsSection";
 
-vi.mock("../owner/useOwnerAccounts", () => ({
+vi.mock("../../hooks/useOwnerAccounts", () => ({
   useUpdateAccount: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 

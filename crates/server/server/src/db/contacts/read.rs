@@ -4,16 +4,18 @@
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Result as AnyResult;
+use anyhow::{Context, Result as AnyResult};
 use serde::Serialize;
 use sqlx::SqliteConnection;
 
+use crate::db::SearchListError;
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::sql::{SqlParam, bind_args, in_placeholders};
-use crate::paging::{Direction, MAX_CONTACT_SUMMARY_IDS, Page, SortKey};
+use crate::db::trash::{not_trashed_contact, not_trashed_conversation};
+use crate::paging::{
+    Direction, MAX_CONTACT_SUMMARY_IDS, Page, PageParams, SortKey, page_from_rows,
+};
 use crate::search::bridge::{TrashScope, contact_sent_messages};
-use crate::search::emit::{NOT_TRASHED_CONTACT, NOT_TRASHED_CONVERSATION};
-use crate::server::ApiError;
 
 /// Contact row for the list: name, addresses, groups.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -37,7 +39,7 @@ pub struct ContactSummary {
     /// the contact's identities sent (RFC 3339, UTC), conversations in the
     /// trash and duplicate messages left out. Null when none of them ever
     /// sent a message. Not the contact's last activity: a message the
-    /// account owner sent, or another member of a group chat, does not
+    /// account owner sent, or another member of a group conversation, does not
     /// count. The same question `last-message:` asks on Contacts.
     pub last_heard_at: Option<String>,
     /// Group names on this contact (A–Z).
@@ -61,15 +63,15 @@ pub struct ContactSelectionSummary {
     pub start_date: Option<String>,
     /// When the contact sent its last message; `null` when it sent none.
     pub end_date: Option<String>,
-    /// 1:1 conversations with the contact.
-    pub individual_conversations: u64,
+    /// One-to-one conversations with the contact.
+    pub one_to_one_conversations: u64,
     /// Group conversations with the contact.
     pub group_conversations: u64,
     /// Conversations of orphaned messages the contact is in: the three
     /// conversation counts add up to every conversation with the contact.
     pub orphaned_conversations: u64,
-    /// Messages the contact sent in 1:1 conversations.
-    pub individual_message_count: u64,
+    /// Messages the contact sent in one-to-one conversations.
+    pub one_to_one_message_count: u64,
     /// Messages the contact sent in group conversations.
     pub group_message_count: u64,
     /// Messages the contact sent in conversations of orphaned messages: the
@@ -160,24 +162,25 @@ fn contact_order_by(keys: &[SortKey<ContactSort>]) -> String {
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when a
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when a statement fails.
 pub async fn list_contacts_sorted(
     conn: &mut SqliteConnection,
     account_id: i64,
     q: &str,
     order: &[SortKey<ContactSort>],
-    limit: usize,
-    offset: usize,
+    page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<Page<ContactSummary>, ApiError> {
+) -> Result<Page<ContactSummary>, SearchListError> {
     let filter = compile_contacts_query(account_id, q, clock)?;
     let where_sql = filter.where_sql();
 
     let count_sql = format!("SELECT COUNT(*) FROM contacts ct WHERE {where_sql}");
-    let total: i64 = sqlx::query_scalar_with(&count_sql, bind_args(filter.params()))
-        .fetch_one(&mut *conn)
-        .await?;
+    let total: i64 =
+        sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql), bind_args(filter.params()))
+            .fetch_one(&mut *conn)
+            .await
+            .context("count the contacts a list query matches")?;
     let total = total.max(0) as u64;
 
     let order_by = contact_order_by(order);
@@ -220,38 +223,40 @@ pub async fn list_contacts_sorted(
         sent = contact_sent_messages(TrashScope::LeftOut),
     );
     let mut params = filter.params().to_vec();
-    params.push(SqlParam::Int(limit as i64));
+    params.push(SqlParam::Int(page.limit as i64));
     params.push(SqlParam::Int(
-        i64::try_from(offset).map_err(anyhow::Error::from)?,
+        i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     ));
-    let rows: Vec<ContactRow> = sqlx::query_as_with(&sql, bind_args(&params))
-        .fetch_all(&mut *conn)
-        .await?;
+    let rows =
+        sqlx::query_as_with::<_, ContactRow, _>(sqlx::AssertSqlSafe(sql), bind_args(&params))
+            .fetch_all(&mut *conn)
+            .await
+            .context("read a page of contacts")?;
 
     let contacts = rows
         .into_iter()
         .map(
-            |(
-                id,
-                name,
-                is_unknown,
-                identity_count,
-                addresses_blob,
-                last_modified,
-                last_heard_at,
-                groups_blob,
-            )| {
+            |ContactRow {
+                 id,
+                 name,
+                 is_unknown,
+                 identity_count,
+                 addresses: addresses_blob,
+                 last_modified,
+                 last_heard_at,
+                 groups: groups_blob,
+             }| {
                 let addresses = addresses_blob
                     .map(|s| {
                         s.split('\u{1f}')
-                            .filter_map(message_ir::nonempty)
+                            .filter_map(ir::nonempty)
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
                 let mut groups = groups_blob
                     .map(|s| {
                         s.split('\u{1f}')
-                            .filter_map(message_ir::nonempty)
+                            .filter_map(ir::nonempty)
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
@@ -270,12 +275,7 @@ pub async fn list_contacts_sorted(
         )
         .collect();
 
-    Ok(Page {
-        items: contacts,
-        total,
-        limit,
-        offset,
-    })
+    Ok(page_from_rows(contacts, total, page))
 }
 
 /// The ids of every contact `q` matches, a query in the search language,
@@ -284,19 +284,21 @@ pub async fn list_contacts_sorted(
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when the
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when the statement fails.
 pub async fn contact_ids_matching(
     conn: &mut SqliteConnection,
     account_id: i64,
     q: &str,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<HashSet<i64>, ApiError> {
+) -> Result<HashSet<i64>, SearchListError> {
     let filter = compile_contacts_query(account_id, q, clock)?;
     let sql = format!("SELECT ct.id FROM contacts ct WHERE {}", filter.where_sql());
-    let ids: Vec<i64> = sqlx::query_scalar_with(&sql, bind_args(filter.params()))
-        .fetch_all(&mut *conn)
-        .await?;
+    let ids: Vec<i64> =
+        sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), bind_args(filter.params()))
+            .fetch_all(&mut *conn)
+            .await
+            .context("read the contacts a query matches")?;
     Ok(ids.into_iter().collect())
 }
 
@@ -306,26 +308,29 @@ fn compile_contacts_query(
     account_id: i64,
     q: &str,
     (zone, today): (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<crate::search::Filter, ApiError> {
-    Ok(crate::search::compile(crate::search::CompileRequest {
+) -> Result<crate::search::Filter, crate::search::QueryError> {
+    crate::search::compile(crate::search::CompileRequest {
         list: crate::search::ListKind::Contacts,
         query: q,
         account_id,
         today,
         zone,
-    })?)
+    })
 }
 
-type ContactRow = (
-    i64,
-    String,
-    i64,
-    i64,
-    Option<String>,
-    String,
-    Option<String>,
-    Option<String>,
-);
+/// One row of [`list_contacts_sorted`]'s page query. `addresses` and
+/// `groups` are joined with the unit separator, `char(31)`.
+#[derive(sqlx::FromRow)]
+struct ContactRow {
+    id: i64,
+    name: String,
+    is_unknown: i64,
+    identity_count: i64,
+    addresses: Option<String>,
+    last_modified: String,
+    last_heard_at: Option<String>,
+    groups: Option<String>,
+}
 
 /// The contact's preferred name (empty when it has none), whether it is
 /// Unknown, and its last-modified stamp; `None` when it is missing, another
@@ -338,27 +343,35 @@ pub async fn contact_name_and_modified(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
-) -> Result<Option<(String, bool, String)>, sqlx::Error> {
-    let row: Option<(String, i64, String)> = sqlx::query_as(&format!(
-        "SELECT ct.preferred_name,
-                CASE WHEN {unknown} THEN 1 ELSE 0 END,
+) -> AnyResult<Option<(String, bool, String)>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        name: String,
+        is_unknown: i64,
+        last_modified: String,
+    }
+    let row = sqlx::query_as::<_, Row>(sqlx::AssertSqlSafe(format!(
+        "SELECT ct.preferred_name AS name,
+                CASE WHEN {unknown} THEN 1 ELSE 0 END AS is_unknown,
                 ct.last_modified
          FROM contacts ct
          WHERE ct.id = $1 AND ct.account_id = $2
-           AND {NOT_TRASHED_CONTACT}",
+           AND {not_trashed}",
         unknown = UNKNOWN_CONTACT_SQL,
-    ))
+        not_trashed = not_trashed_contact("ct"),
+    )))
     .bind(contact_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    Ok(row.map(|(name, unknown, last_modified)| (name, unknown != 0, last_modified)))
+    .await
+    .context("read a contact's name")?;
+    Ok(row.map(|row| (row.name, row.is_unknown != 0, row.last_modified)))
 }
 
 /// Conversation and message counts across every handle of one contact.
 pub struct ContactTotals {
-    /// 1:1 conversations the contact appears in.
-    pub direct: u64,
+    /// One-to-one conversations the contact appears in.
+    pub one_to_one: u64,
     /// Group conversations the contact appears in.
     pub groups: u64,
     /// Conversations of orphaned messages the contact appears in.
@@ -379,8 +392,20 @@ pub async fn contact_totals(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
-) -> Result<ContactTotals, sqlx::Error> {
-    let (direct, groups, orphaned, messages): (i64, i64, i64, i64) = sqlx::query_as(&format!(
+) -> AnyResult<ContactTotals> {
+    #[derive(sqlx::FromRow)]
+    struct Totals {
+        one_to_one: i64,
+        groups: i64,
+        orphaned: i64,
+        messages: i64,
+    }
+    let Totals {
+        one_to_one,
+        groups,
+        orphaned,
+        messages,
+    } = sqlx::query_as::<_, Totals>(sqlx::AssertSqlSafe(format!(
         "WITH involved AS (
                SELECT c.id, c.conversation_type
                FROM conversations c
@@ -389,21 +414,24 @@ pub async fn contact_totals(
                  AND {not_trashed_conversation}
              )
              SELECT
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'individual'),
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'group'),
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'orphaned'),
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'one-to-one')
+                 AS one_to_one,
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'group') AS groups,
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'orphaned') AS orphaned,
                COALESCE((SELECT (SELECT COUNT(*) {sent})
-                         FROM contacts ct WHERE ct.account_id = $1 AND ct.id = $2), 0)",
+                         FROM contacts ct WHERE ct.account_id = $1 AND ct.id = $2), 0)
+                 AS messages",
         involves_contact_sql = involves_contact_sql(),
-        not_trashed_conversation = NOT_TRASHED_CONVERSATION,
+        not_trashed_conversation = not_trashed_conversation("c"),
         sent = contact_sent_messages(TrashScope::LeftOut),
-    ))
+    )))
     .bind(account_id)
     .bind(contact_id)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("count a contact's conversations and messages")?;
     Ok(ContactTotals {
-        direct: direct.max(0) as u64,
+        one_to_one: one_to_one.max(0) as u64,
         groups: groups.max(0) as u64,
         orphaned: orphaned.max(0) as u64,
         messages: messages.max(0) as u64,
@@ -426,7 +454,7 @@ pub async fn get_contact_summaries(
     conn: &mut SqliteConnection,
     account_id: i64,
     ids: &[i64],
-) -> Result<Vec<ContactSelectionSummary>, ApiError> {
+) -> anyhow::Result<Vec<ContactSelectionSummary>> {
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
     for id in ids.iter().copied() {
@@ -452,14 +480,14 @@ pub async fn get_contact_summaries(
             FROM contacts ct
             WHERE ct.account_id = $1
               AND ct.id IN ({placeholders})
-              AND {NOT_TRASHED_CONTACT}
+              AND {not_trashed_contact}
          ),
          involved AS (
             SELECT selected.id AS contact_id, c.id AS conversation_id, c.conversation_type
             FROM selected
             JOIN conversations c ON c.account_id = selected.account_id
               AND {involves}
-              AND {NOT_TRASHED_CONVERSATION}
+              AND {not_trashed_conversation}
          )
          SELECT
             ct.id,
@@ -467,38 +495,48 @@ pub async fn get_contact_summaries(
             (SELECT MIN(m.timestamp) {sent}) AS start_date,
             (SELECT MAX(m.timestamp) {sent}) AS end_date,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'individual'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'one-to-one')
+              AS one_to_one_conversations,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'group'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'group')
+              AS group_conversations,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'orphaned'),
-            (SELECT COUNT(*) {sent} AND c.conversation_type = 'individual'),
-            (SELECT COUNT(*) {sent} AND c.conversation_type = 'group'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'orphaned')
+              AS orphaned_conversations,
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'one-to-one')
+              AS one_to_one_message_count,
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'group') AS group_message_count,
             (SELECT COUNT(*) {sent} AND c.conversation_type = 'orphaned')
+              AS orphaned_message_count
          FROM selected ct",
         sent = contact_sent_messages(TrashScope::LeftOut),
+        not_trashed_contact = not_trashed_contact("ct"),
+        not_trashed_conversation = not_trashed_conversation("c"),
     );
 
-    let mut q = sqlx::query_as::<_, ContactSelectionRow>(&sql);
+    let mut q = sqlx::query_as::<_, ContactSelectionRow>(sqlx::AssertSqlSafe(sql));
     q = q.bind(account_id);
     for id in &unique {
         q = q.bind(*id);
     }
-    let rows: Vec<ContactSelectionRow> = q.fetch_all(&mut *conn).await?;
+    let rows: Vec<ContactSelectionRow> = q
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the summaries of the selected contacts")?;
 
     let mut by_id = HashMap::new();
-    for (
+    for ContactSelectionRow {
         id,
         name,
         start_date,
         end_date,
-        individual_conversations,
+        one_to_one_conversations,
         group_conversations,
         orphaned_conversations,
-        individual_message_count,
+        one_to_one_message_count,
         group_message_count,
         orphaned_message_count,
-    ) in rows
+    } in rows
     {
         by_id.insert(
             id,
@@ -507,10 +545,10 @@ pub async fn get_contact_summaries(
                 name,
                 start_date,
                 end_date,
-                individual_conversations: individual_conversations.max(0) as u64,
+                one_to_one_conversations: one_to_one_conversations.max(0) as u64,
                 group_conversations: group_conversations.max(0) as u64,
                 orphaned_conversations: orphaned_conversations.max(0) as u64,
-                individual_message_count: individual_message_count.max(0) as u64,
+                one_to_one_message_count: one_to_one_message_count.max(0) as u64,
                 group_message_count: group_message_count.max(0) as u64,
                 orphaned_message_count: orphaned_message_count.max(0) as u64,
             },
@@ -522,18 +560,20 @@ pub async fn get_contact_summaries(
         .collect())
 }
 
-type ContactSelectionRow = (
-    i64,
-    String,
-    Option<String>,
-    Option<String>,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-);
+/// One row of [`get_contact_summaries`]'s query.
+#[derive(sqlx::FromRow)]
+struct ContactSelectionRow {
+    id: i64,
+    name: String,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    one_to_one_conversations: i64,
+    group_conversations: i64,
+    orphaned_conversations: i64,
+    one_to_one_message_count: i64,
+    group_message_count: i64,
+    orphaned_message_count: i64,
+}
 
 /// Which of `identifiers` this account has no contact for.
 ///
@@ -591,13 +631,19 @@ pub async fn unknown_contact_identifiers(
          JOIN contacts ct ON ct.account_id = ch.account_id AND ct.id = ch.contact_id
          WHERE h.account_id = $1
            AND h.normalized IN ({placeholders})
-           AND {NOT_TRASHED_CONTACT}",
+           AND {not_trashed}",
+        not_trashed = not_trashed_contact("ct"),
     );
-    let mut q = sqlx::query_scalar::<_, String>(&sql).bind(account_id);
+    let mut q = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql)).bind(account_id);
     for (_, normalized) in &unique {
         q = q.bind(normalized);
     }
-    let known: HashSet<String> = q.fetch_all(&mut *conn).await?.into_iter().collect();
+    let known: HashSet<String> = q
+        .fetch_all(&mut *conn)
+        .await
+        .context("read which identifiers a contact holds")?
+        .into_iter()
+        .collect();
 
     Ok(unique
         .into_iter()

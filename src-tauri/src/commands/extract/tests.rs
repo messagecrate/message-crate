@@ -1,6 +1,6 @@
 use super::*;
-use media::MediaMode;
-use message_crate_core::IssueSink;
+use media::InstalledTools;
+use message_crate_core::{ApplePlatform, IssueSink, SourceConfig, WhatsappPlatform};
 use std::fs;
 
 /// An attachment size limit for tests that do not look at it.
@@ -9,7 +9,7 @@ const ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;
 fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
     ExtractOptions {
         backup_password: String::new(),
-        attachment_media: AttachmentMedia::default(),
+        attachment_media: MediaMode::default(),
         media_max_resolution: MaxResolution::default(),
         media_max_fps: "30".into(),
         media_min_size: "20".into(),
@@ -24,22 +24,21 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
         whatsapp_wa: String::new(),
         whatsapp_media: String::new(),
         whatsapp_db: String::new(),
-        whatsapp_business: false,
+        is_business_app: false,
     }
 }
 
 #[test]
 fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
-    // The desktop runs conversion as its own Media stage so a Review can sit in
-    // front of it. Asking the exporter to convert would spend the time
-    // before the user has approved anything. Checked against the
-    // iMessage source; every source routes attachment_media through
-    // `exporter_attachment_media` before `Form` sees it.
-    for chosen in [AttachmentMedia::Convert, AttachmentMedia::Compress] {
+    // The desktop runs conversion as its own Media Stage so a Review can sit in
+    // front of it. Staging copies the originals, and the exporter has no way
+    // to be asked to convert. Checked against the iMessage source.
+    for chosen in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = test_options(vec!["+15550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
             Path::new("/scratch"),
+            &InstalledTools::default(),
             "imessage-ios",
             "/backup",
             "/out",
@@ -47,45 +46,45 @@ fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
         )
         .unwrap();
         assert_eq!(
-            config.media.mode,
-            MediaMode::Clone,
+            config.output.media.files,
+            AttachmentFiles::Originals,
             "{chosen:?} must stage originals"
         );
     }
 }
 
 #[test]
-fn copy_and_skip_reach_the_exporter_unchanged() {
-    for chosen in [AttachmentMedia::Clone, AttachmentMedia::Disabled] {
+fn copy_stages_originals_and_skip_stages_none() {
+    for (chosen, files) in [
+        (MediaMode::Clone, AttachmentFiles::Originals),
+        (MediaMode::Disabled, AttachmentFiles::Skip),
+    ] {
         let mut options = test_options(vec!["+15550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
             Path::new("/scratch"),
+            &InstalledTools::default(),
             "imessage-ios",
             "/backup",
             "/out",
             &options,
         )
         .unwrap();
-        assert_eq!(
-            config.media.mode,
-            chosen.media_mode(),
-            "{chosen:?} must reach the exporter unchanged"
-        );
+        assert_eq!(config.output.media.files, files, "{chosen:?}");
     }
 }
 
 #[test]
 fn non_imessage_sources_defer_the_media_stage_too() {
-    // `exporter_attachment_media` decides `Form.attachment_media` for every
-    // source, so a non-iMessage source (whatsapp-android here) must also
-    // reach the exporter with Clone when Convert or Compress was chosen.
+    // A non-iMessage source (whatsapp-android here) also stages the
+    // originals when Convert media or Convert & Compress media was chosen.
     let dump = tempfile::tempdir().unwrap();
-    for chosen in [AttachmentMedia::Convert, AttachmentMedia::Compress] {
+    for chosen in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = test_options(vec!["+15555550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
             Path::new("/scratch"),
+            &InstalledTools::default(),
             "whatsapp-android",
             dump.path().to_str().unwrap(),
             "/out",
@@ -93,8 +92,8 @@ fn non_imessage_sources_defer_the_media_stage_too() {
         )
         .unwrap();
         assert_eq!(
-            config.media.mode,
-            MediaMode::Clone,
+            config.output.media.files,
+            AttachmentFiles::Originals,
             "{chosen:?} must stage originals"
         );
     }
@@ -102,13 +101,12 @@ fn non_imessage_sources_defer_the_media_stage_too() {
 
 #[test]
 fn compress_validates_the_minimum_size_before_staging() {
-    // `Form.attachment_media` reads Clone for a real Compress choice (so
-    // the exporter stages originals instead of converting), which means
-    // `Form`'s own compress validation never runs for it. Without
-    // `media_settings_for`, a malformed `media_min_size` would sail through
-    // and only surface hours later, at the review.
+    // The exporter's form carries no compress fields, since Staging only
+    // copies the originals. Without `media_settings_for`, a malformed
+    // `media_min_size` would sail through and only surface hours later, at
+    // the review.
     let mut options = test_options(Vec::new());
-    options.attachment_media = AttachmentMedia::Compress;
+    options.attachment_media = MediaMode::Compress;
     options.media_min_size = "banana".into();
     let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
     assert!(
@@ -119,10 +117,10 @@ fn compress_validates_the_minimum_size_before_staging() {
 
 #[test]
 fn compress_reads_the_minimum_size_as_megabytes() {
-    // #1469: the field is labelled in megabytes, and the web app sends the
+    // #1469: the field is labeled in megabytes, and the web app sends the
     // number as typed.
     let mut options = test_options(Vec::new());
-    options.attachment_media = AttachmentMedia::Compress;
+    options.attachment_media = MediaMode::Compress;
     options.media_min_size = "20".into();
     let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
     assert_eq!(settings.compress.min_size_bytes, 20 * 1024 * 1024);
@@ -134,7 +132,7 @@ fn compress_refuses_a_minimum_size_with_a_unit_saying_what_to_type() {
     // not a size", naming a value the person never typed.
     for typed in ["20MB", "20M", "1.5"] {
         let mut options = test_options(Vec::new());
-        options.attachment_media = AttachmentMedia::Compress;
+        options.attachment_media = MediaMode::Compress;
         options.media_min_size = typed.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
         assert_eq!(
@@ -150,7 +148,7 @@ fn compress_refuses_a_minimum_size_with_a_unit_saying_what_to_type() {
 fn compress_refuses_an_empty_minimum_size_in_its_own_words() {
     for typed in ["", "  "] {
         let mut options = test_options(Vec::new());
-        options.attachment_media = AttachmentMedia::Compress;
+        options.attachment_media = MediaMode::Compress;
         options.media_min_size = typed.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
         assert_eq!(
@@ -166,7 +164,7 @@ fn compress_with_an_empty_max_fps_is_refused_naming_the_field() {
     // fail only after hours of Staging, at the summary.
     for fps in ["", "  ", "fast", "0", "-5", "NaN", "inf"] {
         let mut options = test_options(Vec::new());
-        options.attachment_media = AttachmentMedia::Compress;
+        options.attachment_media = MediaMode::Compress;
         options.media_max_fps = fps.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
         assert!(err.contains("Max FPS"), "{fps:?}: {err}");
@@ -175,16 +173,12 @@ fn compress_with_an_empty_max_fps_is_refused_naming_the_field() {
 
 #[test]
 fn an_empty_max_fps_is_no_problem_when_nothing_is_compressed() {
-    for chosen in [
-        AttachmentMedia::Clone,
-        AttachmentMedia::Convert,
-        AttachmentMedia::Disabled,
-    ] {
+    for chosen in [MediaMode::Clone, MediaMode::Convert, MediaMode::Disabled] {
         let mut options = test_options(Vec::new());
         options.attachment_media = chosen;
         options.media_max_fps = String::new();
         let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
-        assert_eq!(settings.mode, chosen.media_mode());
+        assert_eq!(settings.mode, chosen);
         assert_eq!(settings.compress, media::CompressOptions::default());
     }
 }
@@ -192,7 +186,7 @@ fn an_empty_max_fps_is_no_problem_when_nothing_is_compressed() {
 #[test]
 fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
     let mut options = test_options(Vec::new());
-    options.attachment_media = AttachmentMedia::Compress;
+    options.attachment_media = MediaMode::Compress;
     options.media_max_resolution = MaxResolution::P720;
     options.media_max_fps = "24".into();
     options.media_min_size = "5".into();
@@ -209,7 +203,7 @@ fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
 
 #[test]
 fn staging_records_the_media_settings_in_the_directory() {
-    // The Staging Review's summary and the Media stage read them from here,
+    // The Staging Review's summary and the Media Stage read them from here,
     // so the whole run works to the values Staging was started with.
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("sms.xml");
@@ -224,9 +218,10 @@ fn staging_records_the_media_settings_in_the_directory() {
     .unwrap();
     let output = tmp.path().join("out");
     let mut options = test_options(vec!["+15555550100".into()]);
-    options.attachment_media = AttachmentMedia::Convert;
+    options.attachment_media = MediaMode::Convert;
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         input.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -237,14 +232,11 @@ fn staging_records_the_media_settings_in_the_directory() {
 
     run_staging(&config, &output, &settings).unwrap();
 
-    assert_eq!(
-        message_staging::read_media_settings(&output).unwrap(),
-        settings
-    );
+    assert_eq!(staging::read_media_settings(&output).unwrap(), settings);
 }
 
 /// Each issue reaches the issue sink, which the command forwards to the
-/// window as `extract:issue`, while Staging is still running: the window
+/// window as `desktop-job:issue`, while Staging is still running: the window
 /// writes it into the run record at once, so an app that closes before
 /// Staging ends keeps it. Before, the issues went out only after the
 /// exporter returned (#1639).
@@ -272,6 +264,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     options.owner_emails = vec!["me@example.com".into()];
     let mut config = build_exporter_config(
         &tmp.path().join("scratch"),
+        &InstalledTools::default(),
         "sms-backup-plus",
         backup.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -284,13 +277,13 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     let arrived = Arc::new(Mutex::new(Vec::new()));
     let sink_arrived = Arc::clone(&arrived);
     let sink_output = output.clone();
-    config.issues = Some(IssueSink::new(move |issue| {
-        let staging_ended = message_staging::read_media_settings(&sink_output).is_ok();
+    config.context.issues = IssueSink::new(move |issue| {
+        let staging_ended = staging::read_media_settings(&sink_output).is_ok();
         sink_arrived
             .lock()
             .unwrap()
             .push((issue.item, staging_ended));
-    }));
+    });
     let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
 
     run_staging(&config, &output, &settings).unwrap();
@@ -309,6 +302,7 @@ fn jailbreak_uses_macos_platform_and_attachment_root() {
     options.obfuscate = true;
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imessage-jailbreak",
         "/mnt/iphone/sms.db",
         "/tmp/out",
@@ -330,7 +324,7 @@ fn jailbreak_uses_macos_platform_and_attachment_root() {
         }
         other => panic!("expected Apple, got {other:?}"),
     }
-    assert!(!config.obfuscate.enabled);
+    assert!(!config.output.obfuscate.enabled);
 }
 
 #[test]
@@ -341,6 +335,7 @@ fn ios_backup_does_not_forward_attachment_root() {
     options.backup_password = "pw".into();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imessage-ios",
         "/backups/iphone",
         "/tmp/out",
@@ -365,6 +360,7 @@ fn macos_forwards_optional_attachment_root() {
     options.attachment_root = "/Users/sam/Library/Messages".into();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imessage-macos",
         "/Users/sam/Library/Messages/chat.db",
         "/tmp/out",
@@ -387,6 +383,7 @@ fn macos_forwards_optional_attachment_root() {
 fn sms_backup_restore_requires_owner_phones() {
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         "/tmp/backup",
         "/tmp/out",
@@ -406,6 +403,7 @@ fn sms_backup_restore_passes_owner_phones() {
     fs::write(&backup, "<smses count=\"0\"></smses>").unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         backup.to_str().unwrap(),
         "/tmp/out",
@@ -427,6 +425,7 @@ fn sms_backup_restore_refuses_a_directory() {
     let backup = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -440,6 +439,7 @@ fn sms_backup_restore_refuses_a_directory() {
 fn every_source_requires_an_existing_input_path() {
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         "/does/not/exist-sms-backup",
         "/tmp/out",
@@ -460,6 +460,7 @@ fn sms_backup_plus_requires_owner_emails() {
     let backup = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -479,6 +480,7 @@ fn sms_backup_plus_passes_owner_phones_and_emails() {
     options.owner_emails = vec!["me@example.com".into(), "Me@Work.example".into()];
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -501,10 +503,11 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
     options.whatsapp_wa = "/tmp/wa.db".into();
     options.whatsapp_media = "/tmp/WhatsApp".into();
     options.whatsapp_db = "/tmp/msgstore.db".into();
-    options.whatsapp_business = true;
+    options.is_business_app = true;
     let dump = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-android",
         dump.path().to_str().unwrap(),
         "/tmp/out",
@@ -526,7 +529,7 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
                 Some(std::path::Path::new("/tmp/msgstore.db"))
             );
             assert!(wa.backup.is_none());
-            assert!(!wa.business);
+            assert!(!wa.is_business_app);
             assert_eq!(wa.owner_phone.as_deref(), Some("+15555550100"));
         }
         other => panic!("{other:?}"),
@@ -540,6 +543,7 @@ fn whatsapp_android_refuses_an_empty_owner_phone() {
     let dump = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-android",
         dump.path().to_str().unwrap(),
         "/tmp/out",
@@ -561,9 +565,15 @@ fn whatsapp_ios_forwards_the_backup_password() {
     let mut options = test_options(vec!["+15555550100".into()]);
     options.backup_password = "pw".into();
     for (source, expected) in [("whatsapp-ios", Some("pw")), ("whatsapp-android", None)] {
-        let config =
-            build_exporter_config(Path::new("/scratch"), source, path, "/tmp/out", &options)
-                .unwrap();
+        let config = build_exporter_config(
+            Path::new("/scratch"),
+            &InstalledTools::default(),
+            source,
+            path,
+            "/tmp/out",
+            &options,
+        )
+        .unwrap();
         let SourceConfig::Whatsapp(wa) = config.source else {
             panic!("{:?}", config.source);
         };
@@ -579,6 +589,7 @@ fn whatsapp_ios_forwards_the_owner_phone_as_a_fallback() {
     let path = backup.path().to_str().unwrap();
     let empty = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         path,
         "/tmp/out",
@@ -592,6 +603,7 @@ fn whatsapp_ios_forwards_the_owner_phone_as_a_fallback() {
 
     let filled = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         path,
         "/tmp/out",
@@ -613,6 +625,7 @@ fn whatsapp_ios_omits_leftover_android_media_and_db() {
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -635,10 +648,11 @@ fn whatsapp_ios_omits_leftover_android_media_and_db() {
 #[test]
 fn whatsapp_ios_sets_backup_from_directory_and_business() {
     let mut options = test_options(Vec::new());
-    options.whatsapp_business = true;
+    options.is_business_app = true;
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -649,7 +663,7 @@ fn whatsapp_ios_sets_backup_from_directory_and_business() {
         SourceConfig::Whatsapp(wa) => {
             assert_eq!(wa.platform, Some(WhatsappPlatform::Ios));
             assert_eq!(wa.backup.as_deref(), Some(backup.path()));
-            assert!(wa.business);
+            assert!(wa.is_business_app);
             assert!(wa.key.is_none());
         }
         other => panic!("{other:?}"),
@@ -659,7 +673,7 @@ fn whatsapp_ios_sets_backup_from_directory_and_business() {
 #[test]
 fn imazing_reads_dates_in_the_zone_the_screen_sent() {
     // iMazing dates carry no zone. Dropping this field leaves
-    // `ExporterConfig.timezone` as None and the exporter reads every date in
+    // `ImazingConfig.timezone` as None and the exporter reads every date in
     // the machine's zone, so the same directory exports differently on
     // different machines (#689).
     let mut options = test_options(Vec::new());
@@ -667,14 +681,17 @@ fn imazing_reads_dates_in_the_zone_the_screen_sent() {
     let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imazing",
         directory.path().to_str().unwrap(),
         "/tmp/out",
         &options,
     )
     .unwrap();
-    assert!(matches!(config.source, SourceConfig::Imazing(_)));
-    assert_eq!(config.timezone.as_deref(), Some("America/New_York"));
+    let SourceConfig::Imazing(imazing) = config.source else {
+        panic!("{:?}", config.source);
+    };
+    assert_eq!(imazing.timezone.as_deref(), Some("America/New_York"));
 }
 
 #[test]
@@ -683,18 +700,22 @@ fn imazing_with_no_zone_leaves_the_exporter_its_fallback() {
     let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imazing",
         directory.path().to_str().unwrap(),
         "/tmp/out",
         &options,
     )
     .unwrap();
-    assert_eq!(config.timezone, None);
+    let SourceConfig::Imazing(imazing) = config.source else {
+        panic!("{:?}", config.source);
+    };
+    assert_eq!(imazing.timezone, None);
 }
 
 /// Run the SMS Backup & Restore exporter on one MMS that carries an
 /// attachment named `log.jsonl` whose bytes are the base64 `data`, and return
-/// the conversation and message counts of the `extract:finished` payload.
+/// the conversation and message counts of the `desktop-job:finished` payload.
 fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     let tmp = tempfile::tempdir().unwrap();
     let xml = format!(
@@ -719,6 +740,7 @@ fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     let cache = tmp.path().join("scratch");
     let config = build_exporter_config(
         &cache,
+        &InstalledTools::default(),
         "sms-backup-restore",
         input.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -726,7 +748,7 @@ fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     )
     .unwrap();
 
-    let result = run_exporter(&config).unwrap();
+    let result = exporters::run(&config).unwrap();
     let staged: Vec<_> = fs::read_dir(output.join("attachments"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -765,9 +787,10 @@ fn a_staged_jsonl_attachment_that_is_not_utf8_does_not_fail_the_count() {
 /// waits for a program: Staging runs ffmpeg for none of them (#1053).
 #[test]
 fn only_a_whatsapp_import_waits_for_a_download() {
+    use crate::tool_downloads::Program;
     use message_crate_core::{
-        AppleConfig, FormatConfig, GoSmsProConfig, ImazingConfig, OpenExtractConfig,
-        SmsBackupPlusConfig, SmsBackupRestoreConfig, WhatsappConfig,
+        AppleConfig, GoSmsProConfig, ImazingConfig, OpenExtractConfig, SmsBackupPlusConfig,
+        SmsBackupRestoreConfig, WhatsappConfig,
     };
     let none: &[Program] = &[];
     let sources = [
@@ -782,21 +805,37 @@ fn only_a_whatsapp_import_waits_for_a_download() {
             owner_emails: Vec::new(),
             phone_country: None,
             verbose: false,
-            include_summary: false,
         }),
         SourceConfig::OpenExtract(OpenExtractConfig::default()),
         SourceConfig::Imazing(ImazingConfig::default()),
         SourceConfig::Apple(AppleConfig::default()),
-        SourceConfig::Format(FormatConfig::default()),
     ];
     for source in &sources {
-        assert_eq!(programs_run_by(source), none, "{source:?}");
+        assert_eq!(exporters::exporter(source).programs, none, "{source:?}");
     }
     for platform in [WhatsappPlatform::Android, WhatsappPlatform::Ios] {
         let source = SourceConfig::Whatsapp(WhatsappConfig {
             platform: Some(platform),
             ..WhatsappConfig::default()
         });
-        assert_eq!(programs_run_by(&source), [Program::Wtsexporter]);
+        assert_eq!(
+            exporters::exporter(&source).programs,
+            [Program::Wtsexporter]
+        );
+    }
+}
+
+/// Every backup type has a key the Import screen can send. A backup type
+/// added to `Exporter` and left out of `IMPORT_SOURCES` compiles, but it
+/// could never be chosen (#2102).
+#[test]
+fn every_backup_type_has_an_import_screen_key() {
+    for exporter in message_crate_core::Exporter::ALL {
+        assert!(
+            exporters::IMPORT_SOURCES
+                .iter()
+                .any(|source| source.exporter == exporter),
+            "{exporter:?} has no Import screen key"
+        );
     }
 }

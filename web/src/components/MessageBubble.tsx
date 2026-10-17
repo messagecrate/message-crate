@@ -1,12 +1,13 @@
 import { memo } from "react";
 import type { Message, MessageAttachment } from "../lib/types";
+import AnnouncementLine from "./messages/AnnouncementLine";
 import DiscordBubble from "./messages/DiscordBubble";
 import ImessageBubble from "./messages/ImessageBubble";
 import InstagramBubble from "./messages/InstagramBubble";
 import SmsBubble from "./messages/SmsBubble";
 import WhatsAppBubble from "./messages/WhatsAppBubble";
 
-export type AttachmentClickHandler = (attachment: MessageAttachment) => void;
+type AttachmentClickHandler = (attachment: MessageAttachment) => void;
 
 function normalizeToken(value: string | null | undefined): string {
   return (value || "").trim().toLowerCase();
@@ -50,6 +51,16 @@ function MessageBubble({
   showSender?: boolean;
   onAttachmentClick?: AttachmentClickHandler;
 }) {
+  if (message.is_announcement) {
+    return (
+      <AnnouncementLine
+        message={message}
+        highlight={highlight}
+        isActive={isActive}
+        onAttachmentClick={onAttachmentClick}
+      />
+    );
+  }
   const props = { message, highlight, isActive, showSender, onAttachmentClick };
 
   switch (resolveBubbleKind(message)) {
@@ -67,7 +78,7 @@ function MessageBubble({
 }
 
 /**
- * A thread renders every message it has loaded, so stepping through find matches
+ * A conversation renders every message it has loaded, so stepping through find matches
  * would otherwise re-render the whole list to move one highlight. `onAttachmentClick`
  * is a stable callback in the one screen that passes it, so this holds.
  */

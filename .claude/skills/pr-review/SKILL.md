@@ -25,18 +25,29 @@ Every finding closes one of three ways, with a reply in its thread saying which:
 Then resolve the thread if it is an agent thread. A user thread gets the same
 reply and the fix, and stays open for the user.
 
-A `judgement` finding is closed the same way as any other. A small finding is
+A `judgment` finding is closed the same way as any other. A small finding is
 fixed, never declined for being small.
 
 ## Pushing and posting
 
 The PR is a draft until step 5. Before CI, it is pushed at most twice: in
-step 1, to bring it up to date, and in step 5, with every fix. Step 5 marks it
-ready after its push, and CI is watched on that head alone (AGENTS.md
-step 6).
+step 1, to bring it up to date, and in step 5, with every fix. Each conflict
+that appears before the PR is marked ready adds a push, with the base merged
+in.
+Step 5 marks it ready after its push, and CI is watched on that head alone
+(AGENTS.md step 6).
 
-**Every call that posts** (a review, a comment, a reply) goes one at a time,
-and a refusal is retried (AGENTS.md, "Posting pace").
+**Every push brings the base in** when it moved since the last one. After
+step 1, a push made only to bring the base in is made only on `CONFLICTING`
+(AGENTS.md step 5).
+
+**Every call that posts** (a review, a comment, a reply, a resolved thread, a
+deferred finding's issue) runs through `main`'s copy of
+`scripts/gh-as-reviewer.sh` in place of `gh`, so it posts as the
+`message-crate-reviewer` app. AGENTS.md, "Review on the pull request", gives
+the command and why it is `main`'s copy. The calls go one at a time, and a refusal for the posting limit is retried (AGENTS.md,
+"Posting pace"). If the script cannot run, or fails for any other reason, stop
+and report it. Never post as the logged-in account instead.
 
 **Before every push**, run the local checks (AGENTS.md step 3).
 
@@ -102,16 +113,16 @@ brief ends with the same output rule:
 
 > Return a list of findings. Each finding: `path`, `line` (a line number in
 > the file on the new side of the diff, or `none`), `kind` (`rule`, `spec`,
-> `bug`, or `judgement`), and the text: what is wrong, why it matters, and
+> `bug`, or `judgment`), and the text: what is wrong, why it matters, and
 > the fix. Return an empty list if you find nothing. Under 400 words.
 
 - **Standards**: the standards files from step 1, and
   `.claude/skills/pr-review/smells.md`. "Report every place the diff breaks a
   documented repo rule, citing the file and the rule (`rule`), and every smell
-  from the baseline you see, quoting the hunk (`judgement`). A repo rule
+  from the baseline you see, quoting the hunk (`judgment`). A repo rule
   overrides the baseline. Skip what tooling enforces."
 - **Spec**: the issue text. "Report requirements the spec asked for that are
-  missing or partial, behaviour the spec did not ask for, and requirements that
+  missing or partial, behavior the spec did not ask for, and requirements that
   look implemented but wrong (`spec`). Quote the spec line for each."
 - **Correctness**: "Find inputs or states that make this change produce a wrong
   result, crash, or lose data. Each finding names the concrete failing scenario:
@@ -165,8 +176,13 @@ resolved, and every user thread has a reply.
 ### 6. Green CI
 
 Watch the CI run that marking the PR ready started, stopping at its first
-failed job (AGENTS.md step 6). A job that fails because of the PR is a
-finding: fix it, run the local checks, push, and watch the new run.
+failed job or at a conflict (AGENTS.md step 6). A job that fails because of
+the PR is a finding: fix it, run the local checks, push, and watch the new
+run.
+
+**A conflict ends the watch.** AGENTS.md step 6 says what the push that
+replaces the run carries. A merge that resolves a conflict gets the merge
+review.
 
 A check that fails for a reason outside the PR (a runner fault, a network
 fetch) gets one rerun of its failed jobs. If it fails again, or `main` fails
@@ -174,10 +190,10 @@ the same job, stop and report it without changing the code for it. AGENTS.md
 step 6 says how a failed check is sorted, how a red `main` is found, and when
 the run is rerun.
 
-Done when the CI run on the commit you pushed ended in `success`, and it is
-still the PR head (_Another session's commits_).
+Done when the CI run on the commit you pushed ended in `success`, the PR is
+not `CONFLICTING`, and it is still the PR head (_Another session's commits_).
 
-### 7. Summarise and merge
+### 7. Summarize and merge
 
 Check the PR against its base once more (AGENTS.md step 5). On `CONFLICTING`,
 merge the base (with the merge review), push, and return to step 6. A PR that

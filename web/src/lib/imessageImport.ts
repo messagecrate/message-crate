@@ -1,3 +1,13 @@
+import { encryptedBackupPasswordError } from "./encryptedBackup";
+import {
+  checkOptionalPath,
+  checkRequiredPath,
+  type DesktopOs,
+  type ImportPathStat,
+  type ImportPathUnknown,
+  type PathRequirement,
+} from "./pathChecks";
+
 export const IMESSAGE_SOURCE_ID = "imessage";
 
 export const IMESSAGE_DEFAULT_METHOD = "imessage-ios";
@@ -46,16 +56,10 @@ export function imessageVisiblePlatforms(
   return IMESSAGE_METHODS.filter((m) => m.id !== "imessage-jailbreak");
 }
 
-export type PathStat = {
-  exists: boolean;
-  isFile: boolean;
-  isDirectory: boolean;
-};
-
 export type ImessagePathStats = {
-  backup: PathStat | null;
-  attachmentRoot: PathStat | null;
-  appleContacts: PathStat | null;
+  backup: ImportPathStat | null;
+  attachmentRoot: ImportPathStat | null;
+  appleContacts: ImportPathStat | null;
   backupEncrypted: boolean | null;
 };
 
@@ -68,25 +72,20 @@ export function emptyImessagePathStats(): ImessagePathStats {
   };
 }
 
-export function imessageStatsForMethod(
-  method: ImessageMethodId,
-  stats: ImessagePathStats,
-): ImessagePathStats {
-  return {
-    ...stats,
-    backupEncrypted: method === "imessage-ios" ? stats.backupEncrypted : null,
-  };
-}
-
-export const IMESSAGE_ERR_PATH_MISSING = "This path does not exist.";
-export const IMESSAGE_ERR_IPHONE_PATH_IS_FILE = "Pick the backup directory.";
-export const IMESSAGE_ERR_MAC_PATH_IS_DIR = "Pick chat.db.";
-export const IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR = "Pick sms.db.";
-export const IMESSAGE_ERR_ATTACHMENT_IS_FILE =
+export const IMESSAGE_ERR_IPHONE_NOT_DIRECTORY = "Pick the backup directory.";
+export const IMESSAGE_ERR_MAC_NOT_FILE = "Pick chat.db.";
+export const IMESSAGE_ERR_JAILBREAK_NOT_FILE = "Pick sms.db.";
+export const IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY =
   "Pick the directory that contains Attachments and StickerCache.";
-export const IMESSAGE_ERR_CONTACTS_IS_DIR = "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
-export const IMESSAGE_ERR_ENCRYPTED_PASSWORD =
-  "The backup is encrypted — fill Encryption password.";
+export const IMESSAGE_ERR_CONTACTS_NOT_FILE =
+  "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
+
+/** The kind of path each method's backup path field takes, and its message for any other. */
+const IMESSAGE_BACKUP_PATH: Record<ImessageMethodId, PathRequirement> = {
+  "imessage-ios": { expected: "directory", kindError: IMESSAGE_ERR_IPHONE_NOT_DIRECTORY },
+  "imessage-macos": { expected: "file", kindError: IMESSAGE_ERR_MAC_NOT_FILE },
+  "imessage-jailbreak": { expected: "file", kindError: IMESSAGE_ERR_JAILBREAK_NOT_FILE },
+};
 
 type ImessageCanImportArgs = {
   method: ImessageMethodId;
@@ -98,34 +97,6 @@ type ImessageCanImportArgs = {
 };
 
 type ImessageImportErrorKey = "backupPath" | "attachmentRoot" | "appleContacts" | "backupPassword";
-
-function checkOptionalPath(
-  path: string,
-  stat: PathStat | null,
-  errors: Partial<Record<ImessageImportErrorKey, string>>,
-  key: "attachmentRoot" | "appleContacts",
-  fileError: string,
-  expectDirectory: boolean,
-): void {
-  const trimmed = path.trim();
-  if (trimmed === "") {
-    return;
-  }
-  if (stat === null) {
-    return;
-  }
-  if (!stat.exists) {
-    errors[key] = IMESSAGE_ERR_PATH_MISSING;
-    return;
-  }
-  if (expectDirectory) {
-    if (stat.isFile) {
-      errors[key] = fileError;
-    }
-  } else if (stat.isDirectory) {
-    errors[key] = fileError;
-  }
-}
 
 export function imessageCanImport(args: ImessageCanImportArgs): {
   enabled: boolean;
@@ -142,59 +113,30 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
     return { enabled: false, errors: {} };
   }
 
-  const backupStat = args.stats.backup;
-  if (!backupStat.exists) {
-    errors.backupPath = IMESSAGE_ERR_PATH_MISSING;
-  } else {
-    switch (args.method) {
-      case "imessage-ios":
-        if (backupStat.isFile) {
-          errors.backupPath = IMESSAGE_ERR_IPHONE_PATH_IS_FILE;
-        }
-        break;
-      case "imessage-macos":
-        if (backupStat.isDirectory) {
-          errors.backupPath = IMESSAGE_ERR_MAC_PATH_IS_DIR;
-        }
-        break;
-      case "imessage-jailbreak":
-        if (backupStat.isDirectory) {
-          errors.backupPath = IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR;
-        }
-        break;
-    }
-  }
+  checkRequiredPath(args.stats.backup, errors, "backupPath", IMESSAGE_BACKUP_PATH[args.method]);
 
   const attachmentRoot = args.attachmentRoot.trim();
 
-  if (imessageShowsAttachmentRoot(args.method) && attachmentRoot !== "") {
-    checkOptionalPath(
-      attachmentRoot,
-      args.stats.attachmentRoot,
-      errors,
-      "attachmentRoot",
-      IMESSAGE_ERR_ATTACHMENT_IS_FILE,
-      true,
-    );
+  if (imessageShowsAttachmentRoot(args.method)) {
+    checkOptionalPath(attachmentRoot, args.stats.attachmentRoot, errors, "attachmentRoot", {
+      expected: "directory",
+      kindError: IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
+    });
   }
 
   if (imessageShowsAppleContacts(args.method)) {
-    checkOptionalPath(
-      args.appleContacts,
-      args.stats.appleContacts,
-      errors,
-      "appleContacts",
-      IMESSAGE_ERR_CONTACTS_IS_DIR,
-      false,
-    );
+    checkOptionalPath(args.appleContacts, args.stats.appleContacts, errors, "appleContacts", {
+      expected: "file",
+      kindError: IMESSAGE_ERR_CONTACTS_NOT_FILE,
+    });
   }
 
-  if (
-    args.method === "imessage-ios" &&
-    args.stats.backupEncrypted === true &&
-    args.backupPassword.trim() === ""
-  ) {
-    errors.backupPassword = IMESSAGE_ERR_ENCRYPTED_PASSWORD;
+  const passwordError = encryptedBackupPasswordError(
+    args.stats.backupEncrypted,
+    args.backupPassword,
+  );
+  if (args.method === "imessage-ios" && passwordError !== null) {
+    errors.backupPassword = passwordError;
   }
 
   const attachmentCheckPending =
@@ -224,17 +166,28 @@ export function macMessagesDbPath(homeDir: string): string {
   return `${trimmed}/Library/Messages/chat.db`;
 }
 
+/**
+ * The path to fill in for Apple Messages on this Mac: the remembered one, or
+ * else `chat.db` when it is there. A `chat.db` macOS will not let the app
+ * read is filled in too, because the form's check then says that Full Disk
+ * Access lets Message Crate read it.
+ */
 export function shouldPrefillMacMessagesDb(args: {
-  os: string;
+  os: DesktopOs | null;
   homeDir: string;
-  chatDbExists: boolean;
+  chatDb: Pick<ImportPathStat, "exists" | "isFile"> & {
+    unreadable: { kind: ImportPathUnknown["kind"] } | null;
+  };
   rememberedPath: string;
 }): string {
   const remembered = args.rememberedPath.trim();
   if (remembered !== "") {
     return remembered;
   }
-  if (args.os !== "macos" || !args.chatDbExists) {
+  const found =
+    (args.chatDb.exists && args.chatDb.isFile) ||
+    args.chatDb.unreadable?.kind === "permission_denied";
+  if (args.os !== "macos" || !found) {
     return "";
   }
   return macMessagesDbPath(args.homeDir);

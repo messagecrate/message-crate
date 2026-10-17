@@ -1,6 +1,6 @@
 import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
-import type { UploadFinishedReport } from "../../lib/tauri";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import type { ConversationStatus, StagedStatus } from "../../lib/types";
 
 /**
@@ -72,12 +72,10 @@ const COUNT_FIELDS = [
   "attachmentsUploaded",
 ] as const;
 
-/** Every kind a row can have, so a stored issue's `kind` is checked against it. */
+/** Every kind an Import Error can have, so a stored issue's `kind` is checked against it. */
 const ISSUE_KINDS: Record<ImportIssue["kind"], true> = {
   skip: true,
   error: true,
-  note: true,
-  resolved: true,
 };
 
 function isIssueKind(value: unknown): value is ImportIssue["kind"] {
@@ -148,12 +146,12 @@ export type RunPart = {
   messagesParsed?: number;
   /**
    * What this part's Upload said of each conversation file it finished so
-   * far (`extract:file-done`), by file: `ok`, `skipped` or `failed`.
+   * far (`desktop-job:file-done`), by file: `ok`, `skipped` or `failed`.
    */
   conversations: ReadonlyMap<string, ConversationStatus>;
   /**
    * What this part's Staging said of each conversation file it finished so
-   * far (`extract:file-written`), by file: `written` or `skipped`.
+   * far (`desktop-job:file-written`), by file: `written` or `skipped`.
    */
   staged: ReadonlyMap<string, StagedStatus>;
   /** This part's Upload report, when it ran an Upload that reported. */
@@ -205,7 +203,7 @@ function mergeOnce<T>(earlier: readonly T[], later: readonly T[], keyOf: (row: T
  * that resumes reads again what it had not finished, and reports the same
  * rows again: each is kept once.
  */
-export function mergeIssues(
+function mergeIssues(
   earlier: readonly ImportIssue[],
   later: readonly ImportIssue[],
 ): ImportIssue[] {
@@ -231,7 +229,7 @@ function isRunError(issue: ImportIssue): boolean {
 /**
  * What this part's Upload said of each conversation: the files it finished
  * as they finished, and every file its report lists, which adds the ones a
- * pause left unsent (`cancelled`).
+ * pause left unsent (`canceled`).
  */
 function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   const statuses = new Map(part.conversations);
@@ -241,7 +239,7 @@ function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   return statuses;
 }
 
-const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "cancelled"];
+const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "canceled"];
 
 /** A report's status for a conversation, as one the record knows. */
 function isConversationStatus(status: string): status is ConversationStatus {
@@ -457,24 +455,68 @@ export function resolveInRecord(
 }
 
 /**
- * The Import Errors a Discard sends with the cancelled run: the whole
+ * The Import Errors a Discard sends with the canceled run: the whole
  * record's, with the latest stop's that a resume would have reported again.
  */
 export function issuesToDiscard(record: RunRecord): ImportIssue[] {
   return mergeIssues(record.issues, record.lastStopIssues ?? []);
 }
 
-/** The notes a Discard sends with the cancelled run: every part's. */
+/** The notes a Discard sends with the canceled run: every part's. */
 export function notesToDiscard(record: RunRecord): ImportNote[] {
   return record.notes ?? [];
 }
 
 /**
+ * Most characters the server takes in an Import Error's `item` or `reason`:
+ * the `maxLength` its reference states, which a test holds this to.
+ */
+export const IMPORT_ERROR_TEXT_MAX_CHARS = 2000;
+
+/**
+ * Most characters the server takes in a note's `item` or `text`: the
+ * `maxLength` its reference states, which a test holds this to.
+ */
+export const IMPORT_NOTE_TEXT_MAX_CHARS = 2000;
+
+/**
+ * `text` trimmed, and cut to `max` characters with `…` at its end when it is
+ * longer. Counted in code points, as the server counts characters, so a cut
+ * never splits a surrogate pair.
+ */
+function cutToCap(text: string, max: number): string {
+  const chars = Array.from(text.trim());
+  if (chars.length <= max) return chars.join("");
+  return `${chars.slice(0, max - 1).join("")}…`;
+}
+
+/**
  * The issues as the server takes them, without the conversation an Upload
- * or Staging row names for the record's own use.
+ * or Staging row names for the record's own use. An `item` or `reason` over
+ * the server's cap is cut to it: a reason can carry a tool's whole error
+ * output, such as ffmpeg's, and a refused completion or Discard would leave
+ * the run open for good (#2183).
  */
 export function issueRequests(issues: readonly ImportIssue[]): ImportIssue[] {
-  return issues.map(({ kind, stage, item, reason }) => ({ kind, stage, item, reason }));
+  return issues.map(({ kind, stage, item, reason }) => ({
+    kind,
+    stage,
+    item: cutToCap(item, IMPORT_ERROR_TEXT_MAX_CHARS),
+    reason: cutToCap(reason, IMPORT_ERROR_TEXT_MAX_CHARS),
+  }));
+}
+
+/**
+ * The notes as the server takes them. An `item` or `text` over the server's
+ * cap is cut to it, as `issueRequests` cuts an Import Error's text: a
+ * refused completion or Discard would leave the run open for good (#2668).
+ */
+export function noteRequests(notes: readonly ImportNote[]): ImportNote[] {
+  return notes.map(({ stage, item, text }) => ({
+    stage,
+    item: cutToCap(item, IMPORT_NOTE_TEXT_MAX_CHARS),
+    text: cutToCap(text, IMPORT_NOTE_TEXT_MAX_CHARS),
+  }));
 }
 
 /**

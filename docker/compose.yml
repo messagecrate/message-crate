@@ -15,12 +15,30 @@ services:
   server:
     image: bitrealm/message-crate:latest
     user: "${UID:-1000}:${GID:-1000}"
+    # The server needs no Linux capability and writes only under /app/data.
+    # Dropping every capability, refusing a privilege gain through setuid
+    # files, and a read-only root filesystem limit what a process that gets
+    # into the container can do. /tmp stays writable for temporary files.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
     ports:
-      - "8080:8080"
+      # This computer only. To reach the server from other computers, see
+      # https://messagecrate.app/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network
+      - "127.0.0.1:8080:8080"
     volumes:
       - message-crate-data:/app/data
       - ./staging:/app/staging
     restart: unless-stopped
+    # A stopping server waits for the requests in flight, such as an import
+    # batch, up to STOP_DRAIN_LIMIT in crates/server/server/src/startup.rs.
+    # Docker's own 10 seconds would kill it part-way, so it gets 10 seconds
+    # more than that limit.
+    stop_grace_period: 40s
 
 volumes:
   message-crate-data:

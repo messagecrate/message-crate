@@ -1,16 +1,15 @@
 import { type ReactNode, useMemo } from "react";
+import type { ContactBrowseScope } from "../../lib/contactBrowseQuery";
 import type { ContactDetail, ContactHandle } from "../../lib/contactDetail";
-import AddIdentityDialog from "../AddIdentityDialog";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import DataCard from "../DataCard";
-import IdentityCountryDialog from "../IdentityCountryDialog";
+import IdentityDialogs from "../IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../IdentityTable";
-import type { ContactBrowseKind } from "./contactDrawerTypes";
 import { removeIdentityConfirmBody } from "./handleTableLogic";
 import { useHandleMutations } from "./useHandleMutations";
 
-type BrowseFn = (args: { kind: ContactBrowseKind; handle?: string }) => void;
+type BrowseFn = (scope: ContactBrowseScope) => void;
 
 /** A contact's identity as the shared table shows it. */
 function toIdentityRow(h: ContactHandle): IdentityRow {
@@ -21,7 +20,7 @@ function toIdentityRow(h: ContactHandle): IdentityRow {
     start_date: h.start_date ?? null,
     end_date: h.end_date ?? null,
     conversations: h.conversations,
-    direct_messages: h.direct_messages,
+    one_to_one_messages: h.one_to_one_messages,
     group_messages: h.group_messages,
     orphaned_messages: h.orphaned_messages,
   };
@@ -45,7 +44,7 @@ export function ContactDrawerHandles({
 }: {
   contactId: string;
   handleRows: ContactDetail["identities"];
-  /** The contact's direct, group, and orphaned conversations, each counted once. */
+  /** The contact's one-to-one, group, and orphaned conversations, each counted once. */
   conversations: number;
   loading: boolean;
   onBrowse?: BrowseFn;
@@ -107,25 +106,14 @@ export function ContactDrawerHandles({
         }}
         onBrowse={onBrowse ? (row) => onBrowse({ kind: "all", handle: row.address }) : undefined}
       />
-      <IdentityCountryDialog
-        open={countryPick.target !== null}
-        address={countryPick.target?.address ?? ""}
+      <IdentityDialogs
+        countryPick={countryPick}
         busy={busy}
-        error={countryPick.error}
-        onClose={() => {
-          if (!busy) countryPick.close();
-        }}
-        onPick={(args) => void countryPick.confirm(args)}
-      />
-      <AddIdentityDialog
-        open={adding}
-        busy={busy}
-        error={mutationError}
+        adding={adding}
+        addError={mutationError}
         existing={handleRows}
-        onClose={() => {
-          if (!busy) setAdding(false);
-        }}
-        onConfirm={(args) => void confirmAdd(args)}
+        onCloseAdd={() => setAdding(false)}
+        onConfirmAdd={confirmAdd}
       />
       <ConfirmDialog
         open={removeTarget !== null}

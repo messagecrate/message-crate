@@ -1,18 +1,4 @@
-import { conversationName } from "./conversationName";
-import type { Message, MessageConversation } from "./types";
-
-/**
- * A conversation's name as the conversation list shows it ({@link conversationName}).
- * `label` is the title the server computes, as it does on the list: the
- * account's name for a conversation with yourself, else the export's title.
- */
-export function messageConversationName(conversation: MessageConversation): string {
-  return conversationName({
-    title: conversation.label,
-    isGroup: conversation.is_group,
-    participants: conversation.participants,
-  });
-}
+import type { Message } from "./types";
 
 /**
  * Who sent a message: "You" for one the account sent, else the participant
@@ -37,9 +23,4 @@ export function messageRowText(message: Message): string {
     .map((a) => a.original_name?.trim())
     .filter((name): name is string => Boolean(name))
     .join(", ");
-}
-
-/** The Messages list's total: "1 message", "12,408 messages". */
-export function messageCount(total: number): string {
-  return total === 1 ? "1 message" : `${total.toLocaleString()} messages`;
 }

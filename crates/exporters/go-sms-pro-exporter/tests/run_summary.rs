@@ -3,9 +3,61 @@
 //! wrote nothing, or a report that dropped a skip count or a file's parse
 //! error, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{GoSmsProConfig, SourceConfig};
+use message_crate_core::testutil::TestRun;
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
+use message_crate_core::{GoSmsProConfig, RunIssueKind, RunIssueStep};
 use std::fs;
+use std::path::{Path, PathBuf};
+
+/// A backup directory holding `gosms_sys_1.xml`, an output directory beside
+/// it, and the config for a JSONL run from one to the other. `_tmp` holds both
+/// directories until the test ends, so a test binds it by name: `..` in a
+/// destructuring drops it there and then.
+struct Backup {
+    _tmp: tempfile::TempDir,
+    input: PathBuf,
+    output: PathBuf,
+    config: TestRun<GoSmsProConfig>,
+}
+
+/// A backup whose `gosms_sys_1.xml` is `xml`, owned by +15555550100.
+fn backup(xml: &str) -> Backup {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    fs::write(input.join("gosms_sys_1.xml"), xml).unwrap();
+    let output = tmp.path().join("out");
+    let config = jsonl_test_run(
+        &[&input],
+        &output,
+        GoSmsProConfig {
+            owner_phones: vec!["+15555550100".into()],
+        },
+    );
+    Backup {
+        _tmp: tmp,
+        input,
+        output,
+        config,
+    }
+}
+
+/// Write `gosms_sys_2_broken.xml`, a backup file cut off mid-row, into
+/// `input`, and return its path.
+fn write_broken_xml(input: &Path) -> PathBuf {
+    let path = input.join("gosms_sys_2_broken.xml");
+    fs::write(&path, "<GoSms><SMS><address>").unwrap();
+    path
+}
+
+/// One good SMS row, from +14075550107.
+const HELLO_SMS: &str = "<SMS><address>+14075550107</address><date>1609459200000</date>\
+                         <type>1</type><body>hello</body></SMS>\n";
+
+/// A GO SMS Pro XML backup holding `rows`.
+fn go_sms_xml(rows: &str) -> String {
+    format!("<?xml version=\"1.0\"?>\n<GoSms>\n{rows}</GoSms>\n")
+}
 
 /// One row for every reason an SMS is skipped, around two good messages. The
 /// address an SMS is skipped for is a blank one: a sender name such as
@@ -56,25 +108,15 @@ const SKIPS_XML: &str = r#"<?xml version="1.0"?>
 
 #[test]
 fn run_writes_the_conversation_and_reports_every_skip_and_error() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("backup");
-    fs::create_dir_all(&input).unwrap();
-    fs::write(input.join("gosms_sys_1.xml"), SKIPS_XML).unwrap();
-    fs::write(
-        input.join("gosms_sys_2_broken.xml"),
-        "<GoSms><SMS><address>",
-    )
-    .unwrap();
-    let output = tmp.path().join("out");
-    let config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::GoSmsPro(GoSmsProConfig {
-            owner_phones: vec!["+15555550100".into()],
-        }),
-    );
+    let Backup {
+        _tmp,
+        input,
+        output,
+        config,
+    } = backup(SKIPS_XML);
+    let broken = write_broken_xml(&input);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("\"hello\""), "{written}");
@@ -99,7 +141,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         .iter()
         .position(|l| l == "  Import Errors")
         .unwrap_or_else(|| panic!("no Import Errors heading in {:?}", result.messages));
-    let broken = input.join("gosms_sys_2_broken.xml").display().to_string();
+    let broken = broken.display().to_string();
     let errors = &result.messages[heading + 1..];
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
     assert!(
@@ -123,9 +165,6 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
 
 #[test]
 fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("backup");
-    fs::create_dir_all(&input).unwrap();
     let bad_rows: String = (0..22)
         .map(|i| {
             format!(
@@ -134,25 +173,14 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
             )
         })
         .collect();
-    fs::write(
-        input.join("gosms_sys_1.xml"),
-        format!(
-            "<?xml version=\"1.0\"?>\n<GoSms>\n<SMS><address>+14075550107</address>\
-             <date>1609459200000</date><type>1</type><body>hello</body></SMS>\n\
-             {bad_rows}</GoSms>\n"
-        ),
-    )
-    .unwrap();
-    let output = tmp.path().join("out");
-    let config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::GoSmsPro(GoSmsProConfig {
-            owner_phones: vec!["+15555550100".into()],
-        }),
-    );
+    let Backup {
+        _tmp,
+        input: _,
+        output,
+        config,
+    } = backup(&go_sms_xml(&format!("{HELLO_SMS}{bad_rows}")));
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     assert!(
         result
@@ -170,19 +198,71 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
     assert_eq!(rows[21], ",,,,,...and 2 more entries not shown");
 }
 
+/// The skipped-row file lists text from the backup, and a spreadsheet runs a
+/// cell that starts with `=`, `+`, `-` or `@` as a formula. Such a cell gets a
+/// `'` in front, so the spreadsheet shows it as text.
+#[test]
+fn a_skipped_row_that_starts_like_a_formula_is_listed_as_text() {
+    let Backup {
+        _tmp,
+        input: _,
+        output,
+        config,
+    } = backup(&go_sms_xml(&format!(
+        "{HELLO_SMS}<SMS><address></address><contactName>@Ada</contactName>\
+         <date>1609459300000</date><type>1</type><body>=1+1</body></SMS>\n"
+    )));
+
+    config.run(crate::run).expect("run");
+
+    let skipped = fs::read_to_string(output.join("skipped_invalid_address.csv")).unwrap();
+    let rows: Vec<&str> = skipped.lines().collect();
+    assert_eq!(
+        rows,
+        [
+            "xml_file,address,contact_name,android_type,date_ms,body",
+            "gosms_sys_1.xml,,'@Ada,1,1609459300000,'=1+1"
+        ]
+    );
+}
+
+/// A resumed run with no row to list in a skipped-row file removes the one the
+/// earlier run left, so the file never lists rows the new run did not skip. A
+/// fresh run clears every CSV file in the output directory before it starts;
+/// a resumed run keeps them, so only the exporter's own removal catches this.
+#[test]
+fn a_resumed_run_with_no_bad_address_removes_the_earlier_skipped_file() {
+    let Backup {
+        _tmp,
+        input,
+        output,
+        mut config,
+    } = backup(SKIPS_XML);
+    config.run(crate::run).expect("first run");
+    let skipped = output.join("skipped_invalid_address.csv");
+    assert!(skipped.exists(), "the first run wrote no skipped-row file");
+
+    fs::write(input.join("gosms_sys_1.xml"), go_sms_xml(HELLO_SMS)).unwrap();
+    config.output.resume = true;
+    config.run(crate::run).expect("resumed run");
+
+    assert!(
+        !skipped.exists(),
+        "the resumed run kept the first run's skipped-row file"
+    );
+}
+
 /// A backup file the run cannot read is an Import Error naming the file, one
 /// per file however many there are, so the Import Run lists every one (#1626).
 #[test]
 fn run_sends_an_import_error_for_each_file_it_cannot_read() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("backup");
-    fs::create_dir_all(&input).unwrap();
-    fs::write(input.join("gosms_sys_1.xml"), SKIPS_XML).unwrap();
-    fs::write(
-        input.join("gosms_sys_2_broken.xml"),
-        "<GoSms><SMS><address>",
-    )
-    .unwrap();
+    let Backup {
+        _tmp,
+        input,
+        output: _,
+        mut config,
+    } = backup(SKIPS_XML);
+    let broken = write_broken_xml(&input);
     // A message type with an unknown header code right after it.
     for i in 0..21 {
         fs::write(
@@ -191,29 +271,21 @@ fn run_sends_an_import_error_for_each_file_it_cannot_read() {
         )
         .unwrap();
     }
-    let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::GoSmsPro(GoSmsProConfig {
-            owner_phones: vec!["+15555550100".into()],
-        }),
-    );
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    crate::run(&config).expect("run");
+    config.run(crate::run).expect("run");
 
     let issues = issues.lock().unwrap();
     assert_eq!(issues.len(), 22, "{issues:?}");
     assert!(
         issues
             .iter()
-            .all(|i| i.kind == message_crate_core::RunIssueKind::Error && i.step == "parse")
+            .all(|i| i.kind == RunIssueKind::Error && i.step == RunIssueStep::Parse)
     );
     assert!(
         issues
             .iter()
-            .any(|i| i.item == input.join("gosms_sys_2_broken.xml").display().to_string()),
+            .any(|i| i.item == broken.display().to_string()),
         "{issues:?}"
     );
     let pdu = input.join("I_1609459220_1_0.pdu").display().to_string();

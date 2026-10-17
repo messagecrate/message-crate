@@ -11,7 +11,7 @@ A phone backup is a copy of chats sitting on a computer. The server is a separat
 
 1. A converter reads the backup. In the desktop app this runs as the first step of **Import**.
 2. The converter writes a directory of chat files, plus photos and other attachments in an `attachments/` directory.
-3. Import loads that directory into a server that is already running. In the desktop app this is the **Import** screen, which uses the `message-crate-import` library.
+3. Import loads that directory into a server that is already running. In the desktop app this is the **Import** screen, which uses the `import` library.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
 
 ## How chats come back out
 
-Export copies chats from a running server into a new directory of the same chat files. In the desktop app this is the **Export** screen, which uses the `message-crate-export` library.
+Export copies chats from a running server into a new directory of the same chat files. In the desktop app this is the **Export** screen, which uses the `export` library.
 
 ```mermaid
 flowchart LR
@@ -35,17 +35,17 @@ flowchart LR
 
 Each conversation is one text file whose name ends in `.jsonl`. JSON Lines means one JSON object per line.
 
-1. The first line describes the conversation: who is in it, which backup it came from, and the current file layout (`schema_version` 6).
-2. Each later line is one message: when it was sent, who sent it, the text, and any attachments.
+1. The first line describes the conversation: who is in it, when the file was written, and the current file layout (`schema_version` 18).
+2. Each later line is one message: when it was sent, who sent it, the text, any attachments, and when the backup it came from was made.
 
 Pictures and other media sit next to those files in `attachments/`.
 
 ```jsonl title="One conversation file"
-{"schema_version":13,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","backup_taken_at_unix_ms":1400800000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
+{"schema_version":18,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","exported_at_unix_ms":1400900000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"one-to-one","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
 {"guid":"msg-1","timestamp_unix_ms":1400773261000,"time_precision":"milliseconds","direction":"outgoing","service":"sms","text":"Hello"}
 ```
 
-The server only reads this current layout (schema version 12). A version-11 file is refused by name, never upgraded. The full field list is on [Export structure](/docs/developer/reference/export-structure/).
+The server only reads this current layout (schema version 18). A version-17 file is refused by name, never upgraded. The full field list is on [Export structure](/docs/developer/reference/export-structure/).
 
 ## Converters for full backups
 
@@ -68,12 +68,22 @@ Some files come from tools that were not built for this project, or that drop me
 | OpenExtract | `openextract-exporter` | [Converter capabilities](/docs/developer/formats/) |
 | SMS Backup+ | `sms-backup-plus-exporter` | [File layout](/docs/developer/formats/sms-backup-plus/format/) · [Field mapping](/docs/developer/formats/sms-backup-plus/mapping/) |
 
+## Inside a converter crate
+
+Every converter crate names the same steps the same way, so a step found in one is found by the same name in the next:
+
+- `src/read.rs` reads the vendor's files.
+- `src/emit.rs` turns what was read into conversations and writes the chat files. Its entry point is `convert_export`, which takes a `ConvertExportArgs`.
+- `src/run.rs` holds the crate's `run`, the one function the desktop app calls.
+
+`convert_export` hands its read step and its projection step to `staging::convert_backup`, which opens the writer, reads, projects each conversation, and writes the files. `imessage-ir-exporter` is the exception: the Apple Messages Reader, a separate program, reads the backup, so the crate has no `read.rs`, and its `convert_export` keeps a write step of its own instead of calling `convert_backup`, because the loader that reads an encrypted backup's attachments cannot go through the shared one.
+
 ## Libraries that talk to a running server
 
 These do not read a phone backup. They load or save the chat-file directory, or change a directory that is already in Message Crate's format. The desktop app links them directly; none is a command a person runs.
 
 | Library | What it does |
 |---------|----------------|
-| `message-crate-import` | Loads a chat-file directory into a running server. Used by **Import**. |
-| `message-crate-export` | Writes a chat-file directory from a running server. Used by **Export**. |
-| `message-reexport` | Turns an existing Message Crate export directory into another format, such as CSV or mail. Used by **Export** for any format other than JSON Lines. See [Convert an existing export](/docs/developer/formats/convert/). |
+| `import` | Loads a chat-file directory into a running server. Used by **Import**. |
+| `export` | Writes a chat-file directory from a running server. Used by **Export**. |
+| `reexport` | Turns an existing Message Crate export directory into another format, such as CSV or mail. Used by **Export** for any format other than JSON Lines. See [Convert an existing export](/docs/developer/formats/convert/). |

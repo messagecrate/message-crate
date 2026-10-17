@@ -3,12 +3,19 @@
 //! Writers produce a single backup file (`smses.xml`) with root
 //! `<smses count="N">`. See the [SMS Backup & Restore XML output](https://messagecrate.app/docs/developer/formats/sms-backup-restore-xml/).
 
+mod addresses;
+mod conversations;
+mod mms_box;
+mod owner;
+mod parts;
 mod read;
+mod xml;
 
-pub use read::{
-    AttachmentBlob, ConversationKind, ParseStats, Record, SourceFields, address_handle,
-    contact_name, infer_owner_phones, parse_file_with,
-};
+pub use addresses::address_handle;
+pub use conversations::{ConversationKind, contact_name};
+pub use owner::infer_owner_phones;
+pub use parts::AttachmentBytes;
+pub use read::{ParseStats, Record, SourceFields, parse_file_with};
 
 use anyhow::{Context, Result};
 use base64::Engine;
@@ -109,11 +116,11 @@ impl SbrBackupWriter {
         self.characters_left_out
     }
 
-    /// Note when the backup of messages written to this file was made, in
-    /// Unix milliseconds. The file's root `backup_date` says the newest date
-    /// noted, as the reader dates a conversation read from two files by the
-    /// newer, and is left out when none was noted. Without it, the reader
-    /// would date the file by when it was written.
+    /// Note the Backup Date of a message written to this file, in Unix
+    /// milliseconds. The format dates a whole file, not each message, so the
+    /// file's root `backup_date` says the newest date noted, and is left out
+    /// when none was noted. Without it, the reader would date the file by
+    /// when it was written.
     pub fn note_backup_date(&mut self, unix_ms: Option<i64>) {
         self.backup_date_unix_ms = self.backup_date_unix_ms.max(unix_ms);
     }
@@ -124,8 +131,8 @@ impl SbrBackupWriter {
     /// # Errors
     ///
     /// Returns an error when the body write fails.
-    pub fn write_message(&mut self, msg: &SbrMessage) -> Result<()> {
-        match msg {
+    pub fn write_message(&mut self, message: &SbrMessage) -> Result<()> {
+        match message {
             SbrMessage::Sms { attrs } => {
                 self.characters_left_out += write_empty_element(&mut self.body, "sms", attrs)?;
             }

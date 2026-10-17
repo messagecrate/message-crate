@@ -1,6 +1,6 @@
 //! Config file model ([`Config`]) plus path/source validation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -54,7 +54,7 @@ fn key_list(unknown: &BTreeMap<String, toml::Value>) -> String {
 
 /// Take a section's known keys, refusing it when it carries any other.
 ///
-/// A key the server does not use is an error, never ignored: a misspelt key
+/// A key the server does not use is an error, never ignored: a misspelled key
 /// would load as its default, and a key that was removed would sit in the
 /// file looking as though it still held.
 fn known_keys<T>(name: &str, section: Section<T>) -> Result<T> {
@@ -126,13 +126,21 @@ impl ConfigFile {
                 paths.assets_dir
             );
         }
-        Ok(Config {
-            paths,
-            server: self
-                .server
-                .map(|section| known_keys("server", section))
-                .transpose()?,
-        })
+        let server = self
+            .server
+            .map(|section| known_keys("server", section))
+            .transpose()?;
+        if server
+            .as_ref()
+            .is_some_and(|server| server.transcode_stall_secs == 0)
+        {
+            bail!(
+                "[server] transcode_stall_secs = 0 is not a wait. It is how many seconds a \
+                 video or audio conversion may go without progress before it is stopped, and \
+                 must be greater than 0"
+            );
+        }
+        Ok(Config { paths, server })
     }
 }
 
@@ -142,18 +150,37 @@ pub struct ServerConfig {
     /// Bind address (default `127.0.0.1:8080`).
     #[serde(default = "default_server_bind")]
     pub bind: String,
-    /// Largest multipart part, in bytes. Default 64 MiB (under Cloudflare
-    /// Free/Pro ~100 MB). The part size a client is told is this or the
-    /// attachment size limit, whichever is smaller. The limit is a Server
-    /// Setting the owner changes in the app and has no key in this file.
+    /// Largest multipart part, in bytes. Default
+    /// `asset_uploads::DEFAULT_PART_SIZE`. The part size a client is
+    /// told is this or the attachment size limit, whichever is smaller. The
+    /// limit is a Server Setting the owner changes in the app and has no key
+    /// in this file.
     #[serde(default = "default_asset_part_size")]
     pub asset_part_size: usize,
+    /// Seconds a request body may go with no byte arriving before the server
+    /// stops reading it and answers `body-stalled`. Every body is held to
+    /// it. An answer the client takes no byte of for this long closes its
+    /// connection. An attachment upload nothing has been written to for this
+    /// long, with no request to it running, is abandoned and removed
+    /// (`asset_store::sweep_incoming`). Default 60. Must be greater than 0.
+    #[serde(default = "default_body_stall_secs")]
+    pub body_stall_secs: u64,
+    /// Seconds a whole request body may take to arrive before the server
+    /// stops reading it and answers `body-stalled`, counted from the start
+    /// of the read for an upload and from when the request arrives for any
+    /// other body. Every body is held to it, as to `body_stall_secs`.
+    /// Default 300. Must be greater than 0.
+    #[serde(default = "default_body_total_secs")]
+    pub body_total_secs: u64,
     /// Cross-Origin Resource Sharing (CORS) origins allowed to call this API,
     /// on top of the packaged desktop app's own origins, which are always
     /// allowed. CORS is the browser rule that decides which other websites may
     /// call this API. Empty is the right setting for a server serving its own
     /// website, since that UI is same-origin and needs no header at all.
-    /// Use `["*"]` only for local debugging. Example: `["https://app.example.com"]`.
+    /// Each `serve --cors-origin` adds one more origin to this list.
+    /// `["*"]` allows every website, so it is for local debugging only, and
+    /// the server writes a `WARN` line to its log as it starts when the list
+    /// holds a `*` (#2218). Example: `["https://app.example.com"]`.
     #[serde(default)]
     pub cors_origins: Vec<String>,
     /// Serve Swagger UI at `/docs` and the spec at `/openapi.json`. Default false.
@@ -164,11 +191,16 @@ pub struct ServerConfig {
     #[serde(default = "default_static_dir")]
     pub static_dir: PathBuf,
     /// The desktop app's Tools Directory, where ffmpeg and ffprobe are
-    /// looked for after `PATH`. Only `serve --tools-dir` sets it, and the
+    /// looked for after `PATH` ([`Config::media_tools`]). Only
+    /// `serve --tools-dir` sets it, and the
     /// config file has no key for it: a server started by hand finds ffmpeg
     /// on `PATH` or makes no Previews or Thumbnails (#1053).
     #[serde(skip)]
     pub tools_dir: Option<PathBuf>,
+    /// How many seconds a video or audio conversion may go without moving
+    /// forward before ffmpeg is stopped (default 120). Greater than 0.
+    #[serde(default = "default_transcode_stall_secs")]
+    pub transcode_stall_secs: u64,
 }
 
 impl Default for ServerConfig {
@@ -177,12 +209,29 @@ impl Default for ServerConfig {
         Self {
             bind: default_server_bind(),
             asset_part_size: default_asset_part_size(),
+            body_stall_secs: default_body_stall_secs(),
+            body_total_secs: default_body_total_secs(),
             cors_origins: Vec::new(),
             openapi_ui: default_openapi_ui(),
             static_dir: default_static_dir(),
             tools_dir: None,
+            transcode_stall_secs: default_transcode_stall_secs(),
         }
     }
+}
+
+impl ServerConfig {
+    /// How long a conversion may go without progress before ffmpeg is
+    /// stopped (`transcode_stall_secs`).
+    #[must_use]
+    pub fn transcode_stall_wait(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.transcode_stall_secs)
+    }
+}
+
+/// serde default for `[server] transcode_stall_secs`.
+fn default_transcode_stall_secs() -> u64 {
+    media::DEFAULT_STALL_WAIT.as_secs()
 }
 
 /// serde default for `[server] static_dir`.
@@ -195,9 +244,19 @@ fn default_server_bind() -> String {
     "127.0.0.1:8080".to_string()
 }
 
-/// serde default for `[server] asset_part_size` (64 MiB).
+/// serde default for `[server] asset_part_size` (16 MiB).
 fn default_asset_part_size() -> usize {
-    64 * 1024 * 1024
+    crate::asset_uploads::DEFAULT_PART_SIZE
+}
+
+/// serde default for `[server] body_stall_secs` (one minute).
+fn default_body_stall_secs() -> u64 {
+    60
+}
+
+/// serde default for `[server] body_total_secs` (five minutes).
+fn default_body_total_secs() -> u64 {
+    300
 }
 
 /// serde default for `[server] openapi_ui`.
@@ -289,7 +348,7 @@ impl PathsConfig {
 impl Config {
     /// Read and parse a TOML config file. A relative path in it (`[paths] db`,
     /// `[paths] data_dir`, `[server] static_dir`) resolves against
-    /// [`config_root`], the directory above the config file's directory: the
+    /// `config_root`, the directory above the config file's directory: the
     /// repository root for `config/config.toml`.
     ///
     /// # Errors
@@ -378,6 +437,90 @@ impl Config {
         file.into_config()
     }
 
+    /// Refuse a layout where the website directory and what the server
+    /// stores overlap: the Data Directory or the database inside the website
+    /// directory, or the website directory inside the Data Directory.
+    /// Everything in the website directory is served at `/` to anyone who
+    /// reaches the server, without a login, so the database and every
+    /// account's attachments would be published (#2175).
+    ///
+    /// Paths are compared as the filesystem resolves them, so neither a
+    /// symlink nor a `..` hides the nesting. Run it once every path is
+    /// resolved, after the command line's flags. A config with no `[server]`
+    /// section serves no website and is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming both paths when they overlap, or when the
+    /// working directory cannot be read to resolve a relative path.
+    pub fn require_static_dir_apart(&self) -> Result<()> {
+        let Some(server) = &self.server else {
+            return Ok(());
+        };
+        let website = real_path(&server.static_dir)?;
+        let data_dir = real_path(&self.paths.data_dir)?;
+        let db = real_path(&self.paths.db)?;
+        let website_dir = Place {
+            name: "the website directory",
+            configured: &server.static_dir,
+            real: &website,
+        };
+        let data_directory = Place {
+            name: "the Data Directory",
+            configured: &self.paths.data_dir,
+            real: &data_dir,
+        };
+        let database = Place {
+            name: "the database",
+            configured: &self.paths.db,
+            real: &db,
+        };
+        for (inner, outer) in [
+            (&data_directory, &website_dir),
+            (&database, &website_dir),
+            (&website_dir, &data_directory),
+        ] {
+            if is_within(inner.real, outer.real) {
+                bail!(
+                    "{} {} is inside {} {}. Everything in the website directory is served to \
+                     anyone who can reach the server, without a login. Move one outside the other",
+                    capitalized(inner.name),
+                    inner.shown(),
+                    outer.name,
+                    outer.shown()
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// How long a conversion may go without progress before ffmpeg is
+    /// stopped: `[server] transcode_stall_secs`, or its default when the
+    /// file has no `[server]` section.
+    #[must_use]
+    pub fn transcode_stall_wait(&self) -> std::time::Duration {
+        self.server
+            .as_ref()
+            .map_or(media::DEFAULT_STALL_WAIT, |server| {
+                server.transcode_stall_wait()
+            })
+    }
+
+    /// The ffmpeg and ffprobe this process runs: on `PATH`, then in the
+    /// Tools Directory `serve --tools-dir` names, with
+    /// [`Config::transcode_stall_wait`] as the no-progress wait. The one
+    /// place the server turns its configuration into the tools it passes to
+    /// the `media` crate.
+    #[must_use]
+    pub fn media_tools(&self) -> media::InstalledTools {
+        media::InstalledTools::new(
+            self.server
+                .as_ref()
+                .and_then(|server| server.tools_dir.clone()),
+        )
+        .with_stall_wait(self.transcode_stall_wait())
+    }
+
     /// Server settings for `serve`. Fails if `[server]` is missing.
     pub fn require_server(&self) -> Result<&ServerConfig> {
         let server = self
@@ -386,6 +529,14 @@ impl Config {
             .context("config missing [server] section (needed for serve)")?;
         if server.asset_part_size == 0 {
             bail!("server.asset_part_size must be > 0");
+        }
+        for (key, secs) in [
+            ("body_stall_secs", server.body_stall_secs),
+            ("body_total_secs", server.body_total_secs),
+        ] {
+            if secs == 0 {
+                bail!("[server] {key} must be greater than 0");
+            }
         }
         Ok(server)
     }
@@ -410,6 +561,140 @@ fn resolve_path(base: &Path, configured: &Path) -> PathBuf {
         configured.to_path_buf()
     } else {
         base.join(configured)
+    }
+}
+
+/// How many symlinks [`real_path`] follows in one path before it gives up,
+/// as Linux does (`MAXSYMLINKS`).
+const MAX_SYMLINKS: usize = 40;
+
+/// `path` as the filesystem resolves it: absolute, with every symlink
+/// followed and every `.` and `..` gone. A link is followed even when what
+/// it points at does not exist yet, because a file or directory made at the
+/// path is made where the link points. The part that does not exist is kept
+/// as written.
+///
+/// # Errors
+///
+/// Returns an error when `path` is relative and the working directory
+/// cannot be read, or when it leads through more than [`MAX_SYMLINKS`]
+/// links, as a loop of links does.
+fn real_path(path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)
+        .with_context(|| format!("could not resolve {}", path.display()))?;
+    let mut to_walk: VecDeque<PathBuf> = absolute
+        .components()
+        .map(|component| PathBuf::from(component.as_os_str()))
+        .collect();
+    let mut real = PathBuf::new();
+    let mut links = 0;
+    while let Some(next) = to_walk.pop_front() {
+        match next.components().next() {
+            Some(Component::Normal(_)) => {
+                let candidate = real.join(&next);
+                // Fails for anything that is not a link, including a path
+                // that does not exist, which is then taken as written.
+                let Ok(target) = fs::read_link(&candidate) else {
+                    real = candidate;
+                    continue;
+                };
+                links += 1;
+                if links > MAX_SYMLINKS {
+                    bail!(
+                        "{} leads through more than {MAX_SYMLINKS} symlinks",
+                        path.display()
+                    );
+                }
+                if target.is_absolute() {
+                    real = PathBuf::new();
+                }
+                for component in target.components().rev() {
+                    to_walk.push_front(PathBuf::from(component.as_os_str()));
+                }
+            }
+            // `real` holds no link, so its parent is the real parent.
+            Some(Component::ParentDir) => {
+                real.pop();
+            }
+            Some(Component::CurDir) | None => {}
+            Some(Component::RootDir | Component::Prefix(_)) => real.push(&next),
+        }
+    }
+    Ok(with_existing_part_canonical(real))
+}
+
+/// `path`, which holds no link, `.` or `..`, with the part that exists
+/// canonicalized and the rest joined on as written. Every path compared then
+/// has one form: on Windows a link's target comes back verbatim (`\\?\C:\`)
+/// and a short name (`MESSAG~1`) stands for a long one, and canonicalizing
+/// gives both the form every other path gets.
+fn with_existing_part_canonical(path: PathBuf) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut existing = path.as_path();
+    loop {
+        if let Ok(real) = existing.canonicalize() {
+            return missing
+                .iter()
+                .rev()
+                .fold(real, |real, name| real.join(name));
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name);
+                existing = parent;
+            }
+            _ => return path.clone(),
+        }
+    }
+}
+
+/// One of the paths [`Config::require_static_dir_apart`] compares.
+struct Place<'a> {
+    /// What the path is, as a refusal names it.
+    name: &'static str,
+    /// The path the config and the flags give.
+    configured: &'a Path,
+    /// Where [`real_path`] says it leads.
+    real: &'a Path,
+}
+
+impl Place<'_> {
+    /// The configured path for a refusal, with where it really leads when a
+    /// link or a `..` makes that differ.
+    fn shown(&self) -> String {
+        if self.configured == self.real {
+            self.configured.display().to_string()
+        } else {
+            format!(
+                "{} (really {})",
+                self.configured.display(),
+                self.real.display()
+            )
+        }
+    }
+}
+
+/// `text` with its first letter capitalized.
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
+/// Whether `path` is `dir` or inside it, component by component, so `website`
+/// is not inside `web`. macOS and Windows ignore letter case by default, so
+/// there `Static` and `static` are one directory. A part of a path that does
+/// not exist yet has no case on disk to compare, so the case is folded here.
+/// On a volume of theirs that does tell case apart, two names differing only
+/// in case are refused too. Refusing a safe layout is a cheaper mistake than
+/// publishing the data.
+fn is_within(path: &Path, dir: &Path) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        let fold = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
+        fold(path).starts_with(fold(dir))
+    } else {
+        path.starts_with(dir)
     }
 }
 

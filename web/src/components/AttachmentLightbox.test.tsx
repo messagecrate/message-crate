@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveFile } from "../lib/saveFile";
 import { fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { MessageAttachment } from "../lib/types";
 import { attachment } from "../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import AttachmentLightbox from "./AttachmentLightbox";
@@ -18,28 +20,28 @@ vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const render = renderWithProviders;
 
-const items: MessageAttachment[] = [
-  attachment({
-    path: "first.png",
-    original_name: "first.png",
-    mime_type: "image/png",
-    sha256: "aaa",
-    is_sticker: false,
-    transcription: null,
-    shown_as_is: true,
-  }),
-  attachment({
-    path: "second.png",
-    original_name: "second.png",
-    mime_type: "image/png",
-    sha256: "bbb",
-    is_sticker: false,
-    transcription: null,
-    shown_as_is: true,
-  }),
-];
+const firstPhoto: MessageAttachment = attachment({
+  path: "first.png",
+  original_name: "first.png",
+  mime_type: "image/png",
+  sha256: "aaa",
+  is_sticker: false,
+  transcription: null,
+  shown_as_is: true,
+});
+const secondPhoto: MessageAttachment = attachment({
+  path: "second.png",
+  original_name: "second.png",
+  mime_type: "image/png",
+  sha256: "bbb",
+  is_sticker: false,
+  transcription: null,
+  shown_as_is: true,
+});
+const items: MessageAttachment[] = [firstPhoto, secondPhoto];
 
 beforeEach(() => {
+  startFakeClock();
   vi.mocked(fetchAssetObjectUrl).mockImplementation(
     async (sha, options) => `blob:${options?.version ?? "original"}-${sha}`,
   );
@@ -54,6 +56,7 @@ function fetches(): { sha256: string; version: string | undefined }[] {
 
 afterEach(() => {
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 /** Render the viewer over `items`, with a spy on each callback. */
@@ -76,7 +79,8 @@ describe("AttachmentLightbox", () => {
         onNext={onNext}
       />,
     );
-    await screen.findByRole("img", { name: "first.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
 
@@ -96,7 +100,8 @@ describe("AttachmentLightbox", () => {
         onNext={onNext}
       />,
     );
-    await screen.findByRole("img", { name: "second.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "second.png" })).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "ArrowLeft" });
 
@@ -116,7 +121,8 @@ describe("AttachmentLightbox buttons", () => {
   it("moves forward and back with the on-screen arrows", async () => {
     const user = setupUser();
     const spies = open(0);
-    await screen.findByRole("img", { name: "first.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Next attachment" }));
     expect(spies.onNext).toHaveBeenCalledTimes(1);
@@ -130,7 +136,8 @@ describe("AttachmentLightbox buttons", () => {
   it("closes on the close button", async () => {
     const user = setupUser();
     const spies = open(0);
-    await screen.findByRole("img", { name: "first.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Close attachment viewer" }));
 
@@ -139,7 +146,8 @@ describe("AttachmentLightbox buttons", () => {
 
   it("closes on Escape, which is the way out people try first", async () => {
     const spies = open(0);
-    await screen.findByRole("img", { name: "first.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
 
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 
@@ -147,8 +155,9 @@ describe("AttachmentLightbox buttons", () => {
   });
 
   it("hides the arrows when there is only one attachment", async () => {
-    open(0, [items[0]]);
-    await screen.findByRole("img", { name: "first.png" });
+    open(0, [firstPhoto]);
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: "Next attachment" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Previous attachment" })).not.toBeInTheDocument();
@@ -158,7 +167,8 @@ describe("AttachmentLightbox buttons", () => {
 
   it("says which of how many is on screen", async () => {
     open(1);
-    await screen.findByRole("img", { name: "second.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "second.png" })).toBeInTheDocument();
 
     expect(screen.getByText("2 / 2")).toBeInTheDocument();
   });
@@ -187,7 +197,8 @@ describe("AttachmentLightbox and the type rule", () => {
   it("opens a JPEG's original", async () => {
     open(0, [jpeg]);
 
-    expect(await screen.findByRole("img", { name: "IMG_0002.jpg" })).toHaveAttribute(
+    await settle();
+    expect(screen.getByRole("img", { name: "IMG_0002.jpg" })).toHaveAttribute(
       "src",
       "blob:original-jjj",
     );
@@ -197,7 +208,8 @@ describe("AttachmentLightbox and the type rule", () => {
   it("opens a HEIC's Preview, and never asks for the original", async () => {
     open(0, [heic]);
 
-    expect(await screen.findByRole("img", { name: "IMG_0001.heic" })).toHaveAttribute(
+    await settle();
+    expect(screen.getByRole("img", { name: "IMG_0001.heic" })).toHaveAttribute(
       "src",
       "blob:preview-ccc",
     );
@@ -213,21 +225,43 @@ describe("AttachmentLightbox and the type rule", () => {
     expect(screen.getByText(/no copy a browser can show yet/)).toBeInTheDocument();
     expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
 
-    await user.click(screen.getAllByRole("button", { name: "Download IMG_0001.heic" })[0]);
+    await user.click(nth(screen.getAllByRole("button", { name: "Download IMG_0001.heic" }), 0));
+    await settle();
 
-    await waitFor(() => expect(saveFile).toHaveBeenCalledWith("IMG_0001.heic", original));
+    expect(saveFile).toHaveBeenCalledWith("IMG_0001.heic", original);
     expect(fetchAsset).toHaveBeenCalledWith("ccc", { version: "original" });
+  });
+
+  it("says why the server could not make a HEIC's Preview, and offers the original", () => {
+    open(0, [
+      {
+        ...heic,
+        preview_mime_type: null,
+        preview_not_made_reason: "Error opening input file ab/ccc.heic.",
+      },
+    ]);
+
+    expect(
+      screen.getByText(/No Preview could be made: Error opening input file ab\/ccc\.heic\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no copy a browser can show yet/)).not.toBeInTheDocument();
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByRole("button", { name: "Download IMG_0001.heic" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("downloads the original of a photo it shows as its Preview", async () => {
     const user = setupUser();
     vi.mocked(fetchAsset).mockResolvedValue(new Blob(["heic"]));
     open(0, [heic]);
-    await screen.findByRole("img", { name: "IMG_0001.heic" });
+    await settle();
+    expect(screen.getByRole("img", { name: "IMG_0001.heic" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Download IMG_0001.heic" }));
+    await settle();
 
-    await waitFor(() => expect(fetchAsset).toHaveBeenCalledWith("ccc", { version: "original" }));
+    expect(fetchAsset).toHaveBeenCalledWith("ccc", { version: "original" });
     expect(saveFile).toHaveBeenCalled();
   });
 });
@@ -247,15 +281,17 @@ describe("AttachmentLightbox while it loads", () => {
             finish = resolve;
           }),
     );
-    open(0, [{ ...items[0], thumbnail_mime_type: "image/jpeg" }]);
+    open(0, [{ ...firstPhoto, thumbnail_mime_type: "image/jpeg" }]);
 
-    expect(await screen.findByRole("img", { name: "first.png" })).toHaveAttribute(
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toHaveAttribute(
       "src",
       "blob:thumbnail-aaa",
     );
     expect(screen.getByText("Loading…")).toBeInTheDocument();
 
-    await act(async () => finish("blob:original-aaa"));
+    finish("blob:original-aaa");
+    await settle();
 
     expect(screen.getByRole("img", { name: "first.png" })).toHaveAttribute(
       "src",
@@ -265,9 +301,10 @@ describe("AttachmentLightbox while it loads", () => {
   });
 
   it("fetches the next and the previous photo along with the one on screen", async () => {
-    const third: MessageAttachment = { ...items[0], original_name: "third.png", sha256: "ttt" };
+    const third: MessageAttachment = { ...firstPhoto, original_name: "third.png", sha256: "ttt" };
     open(1, [...items, third]);
-    await screen.findByRole("img", { name: "second.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "second.png" })).toBeInTheDocument();
 
     expect(fetches()).toEqual(
       expect.arrayContaining([
@@ -280,12 +317,13 @@ describe("AttachmentLightbox while it loads", () => {
   });
 
   it("finds the next photo already loaded when it steps to it", async () => {
-    const third: MessageAttachment = { ...items[0], original_name: "third.png", sha256: "ttt" };
-    const fourth: MessageAttachment = { ...items[0], original_name: "fourth.png", sha256: "fff" };
+    const third: MessageAttachment = { ...firstPhoto, original_name: "third.png", sha256: "ttt" };
+    const fourth: MessageAttachment = { ...firstPhoto, original_name: "fourth.png", sha256: "fff" };
     const all = [...items, third, fourth];
     const spies = { onClose: vi.fn(), onPrev: vi.fn(), onNext: vi.fn() };
     const { rerender } = render(<AttachmentLightbox items={all} currentIndex={0} {...spies} />);
-    await screen.findByRole("img", { name: "first.png" });
+    await settle();
+    expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
     const before = fetches().length;
 
     rerender(<AttachmentLightbox items={all} currentIndex={1} {...spies} />);
@@ -311,8 +349,9 @@ describe("AttachmentLightbox while the file is not there", () => {
   it("says the attachment could not be loaded when the server refuses it", async () => {
     vi.mocked(fetchAssetObjectUrl).mockRejectedValue(new Error("404"));
     open(0);
+    await settle();
 
-    expect(await screen.findByText("Failed to load attachment")).toBeInTheDocument();
+    expect(screen.getByText("Failed to load attachment")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 

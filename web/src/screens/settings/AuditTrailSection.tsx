@@ -1,5 +1,5 @@
 import AuditTrail from "../auditTrail/AuditTrail";
-import { sectionHint, sectionTitle } from "./storage/storageUtils";
+import { sectionHintClass, sectionTitleClass } from "./storage/storageUtils";
 
 /**
  * The account's own Audit Trail, under Settings: every entry about this
@@ -10,8 +10,8 @@ import { sectionHint, sectionTitle } from "./storage/storageUtils";
 export function AuditTrailSection({ managedAccountId }: { managedAccountId?: number }) {
   return (
     <section>
-      <h3 className={sectionTitle}>Audit Trail</h3>
-      <p className={sectionHint}>
+      <h3 className={sectionTitleClass}>Audit Trail</h3>
+      <p className={sectionHintClass}>
         What was done with this account and when: logins, imports, exports, and changes made by the
         account holder or the owner.
       </p>

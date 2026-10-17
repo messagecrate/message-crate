@@ -4,7 +4,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAccountProfile } from "../lib/serverApi";
-import { mockedAuth, Providers } from "../test/providers";
+import { account } from "../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import SettingsScreen from "./SettingsScreen";
 
 /**
@@ -24,50 +26,29 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 
 const getAccountProfileMock = vi.mocked(getAccountProfile);
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
-vi.mock("../lib/auth", () => ({
-  useAuth: () => ({ ...mockedAuth, updateToken: vi.fn() }),
-}));
+vi.mock("../hooks/useAuth", () => authModule({ updateToken: vi.fn() }));
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   tauriState.isTauri = false;
   getAccountProfileMock.mockReset();
-  getAccountProfileMock.mockResolvedValue(baseProfile());
+  // A test that reads the screen as it is first drawn gets no answer, so the
+  // Account tab's sections are never drawn for it. A test about what the
+  // account's answer changes gives one.
+  getAccountProfileMock.mockReturnValue(new Promise(() => {}));
 });
 
 function baseProfile(): Awaited<ReturnType<typeof getAccountProfile>> {
-  return {
-    account_id: 7,
-    username: "bob",
-    app: null,
-    app_build: null,
-    last_login_at: null,
-    preferred_name: null,
-    phones: [],
-    emails: [],
-    can_import: true,
-    can_export: true,
-    can_delete: false,
-    disabled: false,
-    has_password: true,
-    is_demo: false,
-    is_owner: false,
-    message_count: 0,
-    must_set_up_profile: false,
-    storage_bytes: 0,
-    time_zone: "UTC",
-  };
+  return account({ account_id: 7, username: "bob" });
 }
 
 function renderSettings(initialEntries: string[]) {
@@ -101,27 +82,32 @@ describe("SettingsScreen has no account management", () => {
  * account keeps Storage.
  */
 describe("SettingsScreen tabs follow the account it reads", () => {
+  // Both open on Audit Trail, so the account's answer doesn't draw the
+  // Account tab's sections, which the tests have no use for.
   it("keeps Storage for an ordinary account", async () => {
-    renderSettings(["/settings"]);
+    getAccountProfileMock.mockResolvedValue(baseProfile());
+    renderSettings(["/settings?tab=audit-trail"]);
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Storage" })).toBeInTheDocument();
+    expect(getAccountProfileMock).toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
   });
 
   it("drops Storage once the account read is the owner's", async () => {
     getAccountProfileMock.mockResolvedValue({ ...baseProfile(), is_owner: true });
-    renderSettings(["/settings"]);
+    renderSettings(["/settings?tab=audit-trail"]);
 
     // Storage shows until the account arrives, then goes.
-    await vi.waitFor(() => {
-      expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
-    });
+    expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
+    await settle();
+    expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Account" })).toBeInTheDocument();
     expect(getAccountProfileMock).toHaveBeenCalled();
   });
 });
 
 /**
- * Convert runs `message-reexport` inside the desktop process, so the tab is a
+ * Convert runs `reexport` inside the desktop process, so the tab is a
  * desktop-only tool. In a browser the tab must not exist and `?tab=convert`
  * must fall back to Account, like every other tab `visibleTabs` leaves out.
  */

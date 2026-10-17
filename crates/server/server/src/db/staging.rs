@@ -16,12 +16,13 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::query::Query;
 use sqlx::sqlite::SqliteArguments;
-use sqlx::{Row, Sqlite, SqliteConnection};
+use sqlx::{AssertSqlSafe, Row, SqlSafeStr, SqlStr, Sqlite, SqliteConnection};
 
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
+use crate::models::StoredTime;
 
 // ── Staging: what one import writes before promotion ─────────────────────
 
@@ -35,7 +36,8 @@ pub async fn reset_for_account(conn: &mut SqliteConnection, account_id: i64) -> 
     sqlx::query("DELETE FROM staging_conversations WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("clear the account's staged conversations")?;
     Ok(())
 }
 
@@ -45,7 +47,7 @@ pub struct StagingConversation<'a> {
     pub account_id: i64,
     /// The thread's identity handle, already written to `handles`.
     pub chat_handle_id: i64,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: &'a str,
     /// Group label, when set.
     pub group_title: Option<&'a str>,
@@ -53,14 +55,14 @@ pub struct StagingConversation<'a> {
     /// messages, in the form `staging_messages.timestamp` holds, when it has
     /// a title and a message, else `None`. It decides the title when two
     /// copies of one conversation merge.
-    pub group_title_at: Option<&'a str>,
+    pub group_title_at: Option<&'a StoredTime>,
     /// Name of the file the thread came from.
     pub source_file: &'a str,
 }
 
 /// Stage one conversation and return its staging id.
 ///
-/// Two chat ids that differ as written can normalise to one handle, such as
+/// Two chat ids that differ as written can normalize to one handle, such as
 /// `+15555550119` and `5555550119`. A conversation on a handle the account
 /// has already staged in this import merges into that row, the way promote
 /// merges into `conversations` on the same key, and the id returned is the
@@ -82,7 +84,7 @@ pub async fn insert_conversation(
     // newer than the title held. Both columns take the same condition.
     // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
     // under Two copies of one conversation take the later copy's title.
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         r"
         INSERT INTO staging_conversations (
             account_id, chat_handle_id, conversation_type, group_title, group_title_at,
@@ -111,7 +113,8 @@ pub async fn insert_conversation(
     .bind(row.group_title_at)
     .bind(row.source_file)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("stage a conversation")
 }
 
 /// The `sort_order` the next staged message of the conversation on
@@ -135,7 +138,7 @@ pub async fn first_sort_order(
     account_id: i64,
     chat_handle_id: i64,
 ) -> Result<i64> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         r"
         SELECT COALESCE(MAX(sort_order) + 1, 0) FROM (
             SELECT m.sort_order
@@ -153,7 +156,8 @@ pub async fn first_sort_order(
     .bind(account_id)
     .bind(chat_handle_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("read the next sort order in a conversation")
 }
 
 /// Insert one staged participant, and say whether a row was added.
@@ -185,7 +189,8 @@ pub async fn insert_participant(
     .bind(handle_id)
     .bind(name_alias)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("stage a participant")?;
     Ok(done.rows_affected() == 1)
 }
 
@@ -202,9 +207,9 @@ pub struct StagingMessage<'a> {
     /// without one.
     pub guid: &'a str,
     /// RFC 3339 UTC instant the message was sent.
-    pub timestamp: &'a str,
+    pub timestamp: &'a StoredTime,
     /// Whether the source recorded `timestamp` to the millisecond.
-    pub time_precision: message_ir::TimePrecision,
+    pub time_precision: ir::TimePrecision,
     /// 1 when the account holder sent it.
     pub is_from_me: i64,
     /// Sender's handle id; `None` when unknown.
@@ -226,17 +231,17 @@ pub struct StagingMessage<'a> {
     /// The part of the quoted message a reply answers.
     pub reply_to_part: Option<i64>,
     /// Deleted in the source app, Unsent, or `None` for neither.
-    pub deletion: Option<message_ir::Deletion>,
+    pub deletion: Option<ir::Deletion>,
     /// Stable order within the conversation when timestamps collide.
     pub sort_order: i64,
     /// Import run that staged the row.
     pub import_id: Option<i64>,
     /// When the backup the row was read from was made, in the form
     /// `timestamp` takes; `None` when its file did not say.
-    pub backup_taken_at: Option<&'a str>,
+    pub backup_taken_at: Option<&'a StoredTime>,
 }
 
-/// One attachment row as the import stages it: the stored blob's digest,
+/// One attachment row as the import stages it: the stored Asset's digest,
 /// path and type when the file was stored, the record's own type and
 /// missing reason when it was not.
 pub struct StagingAttachment {
@@ -276,6 +281,25 @@ pub struct StagingTapback {
     pub is_from_me: i64,
     /// Reactor's handle id; `None` when unknown.
     pub sender_handle_id: Option<i64>,
+    /// The reactor's name, set only for an incoming reaction whose source
+    /// gave no address, so never together with a handle taken from the
+    /// reactor's identity; see `TapbackRecord::sender_display_name`.
+    pub sender_display_name: Option<String>,
+}
+
+/// One earlier version of one part of an edited message, as the import read
+/// it from the conversation file, before it has a staging message id;
+/// [`StagingEarlierVersion`] is its staging row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EarlierVersionRecord {
+    /// The part of the message this version belongs to.
+    pub part_index: i64,
+    /// The part's text in this version; `None` when the source recorded the
+    /// edit and not the text it replaced, as iMazing does.
+    pub text: Option<String>,
+    /// When this version was written, to the millisecond; `None` when the
+    /// source does not record it.
+    pub edited_at: Option<StoredTime>,
 }
 
 /// One earlier version of a staged message, as the import stages it.
@@ -284,22 +308,23 @@ pub struct StagingEarlierVersion<'a> {
     pub message_id: i64,
     /// The part of the message the version belongs to.
     pub part_index: i64,
-    /// The part's text in this version.
-    pub text: &'a str,
+    /// The part's text in this version; `None` when the source recorded the
+    /// edit and not the text it replaced.
+    pub text: Option<&'a str>,
     /// When the version was written, in the form a message's timestamp
     /// takes; `None` when the source does not record it.
-    pub edited_at: Option<&'a str>,
+    pub edited_at: Option<&'a StoredTime>,
 }
 
 impl<'a> StagingEarlierVersion<'a> {
     /// The staging row of `version`, one earlier version of the staged
     /// message `message_id`.
-    pub fn from_record(message_id: i64, version: &'a crate::models::EarlierVersionRecord) -> Self {
+    pub fn from_record(message_id: i64, version: &'a EarlierVersionRecord) -> Self {
         Self {
             message_id,
             part_index: version.part_index,
-            text: &version.text,
-            edited_at: version.edited_at.as_deref(),
+            text: version.text.as_deref(),
+            edited_at: version.edited_at.as_ref(),
         }
     }
 }
@@ -343,6 +368,7 @@ const TAPBACK_COLUMNS: &[&str] = &[
     "emoji",
     "is_from_me",
     "sender_handle_id",
+    "sender_display_name",
 ];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
@@ -381,7 +407,7 @@ pub async fn insert_messages(
         ",
         values_tuples(rows.len(), MESSAGE_BIND_COLUMNS)
     );
-    let mut q = sqlx::query(&sql);
+    let mut q = sqlx::query(AssertSqlSafe(sql));
     for row in rows {
         q = q
             .bind(row.conversation_id)
@@ -400,33 +426,33 @@ pub async fn insert_messages(
             .bind(row.is_reply)
             .bind(row.reply_to_guid)
             .bind(row.reply_to_part)
-            .bind(row.deletion.map(message_ir::Deletion::as_str))
+            .bind(row.deletion.map(ir::Deletion::as_str))
             .bind(row.sort_order)
             .bind(row.import_id)
             .bind(row.backup_taken_at)
             .bind(
                 row.deletion
                     .filter(|_| row.backup_taken_at.is_none())
-                    .map(message_ir::Deletion::as_str),
+                    .map(ir::Deletion::as_str),
             )
             .bind(row.backup_taken_at.is_none());
     }
-    let returned = q.fetch_all(&mut *conn).await?;
-    let mut by_sort = HashMap::with_capacity(returned.len());
-    for row in &returned {
-        let id: i64 = row.try_get(0)?;
-        let sort_order: i64 = row.try_get(1)?;
-        by_sort.insert(sort_order, id);
-    }
-    Ok(by_sort)
+    q.fetch_all(&mut *conn)
+        .await
+        .and_then(|rows| {
+            rows.iter()
+                .map(|row| Ok((row.try_get("sort_order")?, row.try_get("id")?)))
+                .collect()
+        })
+        .context("stage a chunk of messages")
 }
 
 /// `q` with the [`ATTACHMENT_BIND_COLUMNS`] values of each of `rows` bound
 /// in turn, in the order of [`ATTACHMENT_COLUMNS`].
 fn bind_attachments<'q>(
-    mut q: Query<'q, Sqlite, SqliteArguments<'q>>,
+    mut q: Query<'q, Sqlite, SqliteArguments>,
     rows: &'q [StagingAttachment],
-) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+) -> Query<'q, Sqlite, SqliteArguments> {
     for row in rows {
         q = q
             .bind(row.message_id)
@@ -463,9 +489,10 @@ pub async fn insert_attachments(
             ATTACHMENT_COLUMNS.join(", "),
             values_tuples(chunk.len(), ATTACHMENT_BIND_COLUMNS)
         );
-        bind_attachments(sqlx::query(&sql), chunk)
+        bind_attachments(sqlx::query(AssertSqlSafe(sql)), chunk)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("stage a chunk of attachments")?;
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
@@ -474,9 +501,9 @@ pub async fn insert_attachments(
 /// `q` with the [`TAPBACK_BIND_COLUMNS`] values of each of `rows` bound in
 /// turn, in the order of [`TAPBACK_COLUMNS`].
 fn bind_tapbacks<'q>(
-    mut q: Query<'q, Sqlite, SqliteArguments<'q>>,
+    mut q: Query<'q, Sqlite, SqliteArguments>,
     rows: &'q [StagingTapback],
-) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+) -> Query<'q, Sqlite, SqliteArguments> {
     for row in rows {
         q = q
             .bind(row.message_id)
@@ -484,7 +511,8 @@ fn bind_tapbacks<'q>(
             .bind(&row.kind)
             .bind(row.emoji.as_deref())
             .bind(row.is_from_me)
-            .bind(row.sender_handle_id);
+            .bind(row.sender_handle_id)
+            .bind(row.sender_display_name.as_deref());
     }
     q
 }
@@ -506,9 +534,10 @@ pub async fn insert_tapbacks(conn: &mut SqliteConnection, rows: &[StagingTapback
             TAPBACK_COLUMNS.join(", "),
             values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
         );
-        bind_tapbacks(sqlx::query(&sql), chunk)
+        bind_tapbacks(sqlx::query(AssertSqlSafe(sql)), chunk)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("stage a chunk of reactions")?;
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
@@ -535,7 +564,7 @@ pub async fn insert_earlier_versions(
             ",
             values_tuples(chunk.len(), EARLIER_VERSION_BIND_COLUMNS)
         );
-        let mut q = sqlx::query(&sql);
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for row in chunk {
             q = q
                 .bind(row.message_id)
@@ -543,7 +572,9 @@ pub async fn insert_earlier_versions(
                 .bind(row.text)
                 .bind(row.edited_at);
         }
-        q.execute(&mut *conn).await?;
+        q.execute(&mut *conn)
+            .await
+            .context("stage a chunk of earlier versions")?;
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
@@ -558,14 +589,15 @@ pub async fn staged_message_id(
     conn: &mut SqliteConnection,
     key: StagingMessageKey<'_>,
 ) -> Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT id FROM staging_messages WHERE account_id = $1 AND source = $2 AND guid = $3",
     )
     .bind(key.account_id)
     .bind(key.source)
     .bind(key.guid)
     .fetch_optional(&mut *conn)
-    .await?)
+    .await
+    .context("find a staged message by its source and id")
 }
 
 /// The text of a second copy of a staged message from the same import:
@@ -574,7 +606,7 @@ pub struct StagedCopy<'a> {
     /// The copy's text.
     pub body: Option<&'a str>,
     /// The copy's earlier versions, in the order its file listed them.
-    pub versions: &'a [crate::models::EarlierVersionRecord],
+    pub versions: &'a [EarlierVersionRecord],
     /// Whether the copy's file has no backup date.
     pub undated: bool,
 }
@@ -582,12 +614,14 @@ pub struct StagedCopy<'a> {
 /// What decides whether a second copy of a staged message gives its text:
 /// when the backup the row was read from was made, and whether its text
 /// came from a file without a date.
+#[derive(sqlx::FromRow)]
 pub struct StagedText {
     /// When the newest backup with a date the row was read from was made,
     /// or `None` when no copy's file said.
-    pub backup_taken_at: Option<String>,
+    pub backup_taken_at: Option<StoredTime>,
     /// Whether the row's text came from a copy from a file without a date
     /// (`staging_messages.undated_body`).
+    #[sqlx(rename = "undated_body")]
     pub undated: bool,
 }
 
@@ -597,15 +631,13 @@ pub struct StagedText {
 ///
 /// Returns an error when the query fails.
 pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<StagedText> {
-    let (backup_taken_at, undated): (Option<String>, bool) =
-        sqlx::query_as("SELECT backup_taken_at, undated_body FROM staging_messages WHERE id = $1")
-            .bind(staged)
-            .fetch_one(&mut *conn)
-            .await?;
-    Ok(StagedText {
-        backup_taken_at,
-        undated,
-    })
+    sqlx::query_as::<_, StagedText>(
+        "SELECT backup_taken_at, undated_body FROM staging_messages WHERE id = $1",
+    )
+    .bind(staged)
+    .fetch_one(&mut *conn)
+    .await
+    .context("read a staged message's backup date")
 }
 
 /// Give the staged message `staged` the mark `deletion` of another copy of
@@ -621,49 +653,38 @@ pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<Sta
 pub async fn add_staged_copy_mark(
     conn: &mut SqliteConnection,
     staged: i64,
-    deletion: Option<message_ir::Deletion>,
-    backup_taken_at: Option<&str>,
+    deletion: Option<ir::Deletion>,
+    backup_taken_at: Option<&StoredTime>,
 ) -> Result<()> {
     let undated_deletion = deletion.filter(|_| backup_taken_at.is_none());
+    let copy = MarkSql {
+        backup_taken_at: "$1",
+        deletion: "$2",
+        undated_deletion: "$3",
+    };
+    let held = MarkSql {
+        backup_taken_at: "backup_taken_at",
+        deletion: "deletion",
+        undated_deletion: "undated_deletion",
+    };
     let sql = format!(
         "UPDATE staging_messages \
          SET deletion = {mark}, \
              undated_deletion = {undated}, \
              backup_taken_at = CASE WHEN {later} THEN $1 ELSE backup_taken_at END \
          WHERE id = $4",
-        mark = copy_mark_sql(
-            &MarkSql {
-                backup_taken_at: "$1",
-                deletion: "$2",
-                undated_deletion: "$3",
-            },
-            &MarkSql {
-                backup_taken_at: "backup_taken_at",
-                deletion: "deletion",
-                undated_deletion: "undated_deletion",
-            },
-        ),
-        undated = kept_undated_mark_sql(
-            &MarkSql {
-                backup_taken_at: "$1",
-                deletion: "$2",
-                undated_deletion: "$3",
-            },
-            &MarkSql {
-                backup_taken_at: "backup_taken_at",
-                deletion: "deletion",
-                undated_deletion: "undated_deletion",
-            },
-        ),
+        mark = copy_mark_sql(&copy, &held),
+        undated = kept_undated_mark_sql(&copy, &held),
         later = later_dated_backup_sql("$1", "backup_taken_at"),
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(backup_taken_at)
-        .bind(deletion.map(message_ir::Deletion::as_str))
-        .bind(undated_deletion.map(message_ir::Deletion::as_str))
+        .bind(deletion.map(ir::Deletion::as_str))
+        .bind(undated_deletion.map(ir::Deletion::as_str))
         .bind(staged)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("update a staged message's deletion mark")?;
     Ok(())
 }
 
@@ -692,17 +713,18 @@ pub async fn take_later_staged_copy(
     let newest = copy
         .versions
         .iter()
-        .filter_map(|v| v.edited_at.as_deref())
+        .filter_map(|v| v.edited_at.as_ref())
         .max();
-    let later: bool = sqlx::query_scalar(&format!(
+    let later: bool = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT {} FROM staging_message_versions WHERE message_id = $3",
         later_edit_sql("$1", "$2", "COUNT(*)", "MAX(edited_at)")
-    ))
+    )))
     .bind(n)
     .bind(newest)
     .bind(staged)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("compare a copy's edits with a staged message's")?;
     if !later {
         return Ok(false);
     }
@@ -723,7 +745,7 @@ pub async fn note_backed_staged_text(
     conn: &mut SqliteConnection,
     staged: i64,
     copy: &StagedCopy<'_>,
-    backup_taken_at: &str,
+    backup_taken_at: &StoredTime,
 ) -> Result<()> {
     let sql = format!(
         "UPDATE staging_messages SET undated_body = 0 \
@@ -732,13 +754,14 @@ pub async fn note_backed_staged_text(
         backed = backs_undated_sql("$3", "backup_taken_at"),
         held_versions = versions_json_sql("staging_message_versions", "$1"),
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(staged)
         .bind(copy.body)
         .bind(backup_taken_at)
         .bind(versions_json(copy.versions))
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("mark a staged message's text as backed by a dated backup")?;
     Ok(())
 }
 
@@ -762,11 +785,13 @@ pub async fn replace_staged_text(
         .bind(copy.undated)
         .bind(staged)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("replace a staged message's text")?;
     sqlx::query("DELETE FROM staging_message_versions WHERE message_id = $1")
         .bind(staged)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("delete a staged message's earlier versions")?;
     let rows: Vec<StagingEarlierVersion<'_>> = copy
         .versions
         .iter()
@@ -778,8 +803,8 @@ pub async fn replace_staged_text(
 
 /// A `(SELECT ...)` of `rows` rows bound in turn, each with one value per
 /// column of `columns` (such as [`ATTACHMENT_COLUMNS`]), under those
-/// column names: the copies [`add_copy_attachments`] and
-/// [`add_copy_tapbacks`] hand the shared rules.
+/// column names: the copies [`add_copy_attachments`] hands the shared
+/// rules.
 fn bound_rows_sql(columns: &[&str], rows: usize) -> String {
     let aliases: Vec<String> = columns
         .iter()
@@ -818,24 +843,31 @@ pub async fn add_copy_attachments(
     for chunk in rows.chunks(size) {
         let copies = bound_rows_sql(ATTACHMENT_COLUMNS, chunk.len());
         let fill = fill_attachments_sql("staging_attachments", &copies);
-        bind_attachments(sqlx::query(&fill), chunk)
+        bind_attachments(sqlx::query(fill), chunk)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("fill staged attachments from a copy")?;
         let insert = insert_new_attachments_sql("staging_attachments", &copies);
-        inserted += bind_attachments(sqlx::query(&insert), chunk)
+        inserted += bind_attachments(sqlx::query(insert), chunk)
             .execute(&mut *conn)
-            .await?
+            .await
+            .context("stage a copy's new attachments")?
             .rows_affected();
     }
     Ok(inserted)
 }
 
 /// Add the tapbacks `rows` of another copy of a staged message from the
-/// same import to that message, skipping any the message holds field for
-/// field, by the rule promotion adds a copy's tapbacks to a stored message
+/// same import to that message, skipping any the message holds already, by
+/// the rule promotion adds a copy's tapbacks to a stored message
 /// ([`insert_new_tapbacks_sql`]). Every row's `message_id` is the staged
 /// message's. Returns how many were inserted. The caller passes one copy
 /// at a time, as for [`add_copy_attachments`].
+///
+/// The copy goes into the temp table `_copy_tapbacks` first, in chunks
+/// that fit the bind limit, and the rule then runs once over all of it: a
+/// rule run per chunk would count a later chunk's reactions with no
+/// reactor against the rows an earlier chunk added.
 ///
 /// # Errors
 ///
@@ -844,17 +876,30 @@ pub async fn add_copy_tapbacks(
     conn: &mut SqliteConnection,
     rows: &[StagingTapback],
 ) -> Result<u64> {
-    let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
-    let mut inserted = 0u64;
-    for chunk in rows.chunks(size) {
-        let copies = bound_rows_sql(TAPBACK_COLUMNS, chunk.len());
-        let sql = insert_new_tapbacks_sql("staging_tapbacks", &copies);
-        inserted += bind_tapbacks(sqlx::query(&sql), chunk)
-            .execute(&mut *conn)
-            .await?
-            .rows_affected();
+    if rows.is_empty() {
+        return Ok(0);
     }
-    Ok(inserted)
+    let columns = TAPBACK_COLUMNS.join(", ");
+    reset_temp_table(conn, "_copy_tapbacks", &columns).await?;
+    let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
+    for chunk in rows.chunks(size) {
+        let sql = format!(
+            "INSERT INTO _copy_tapbacks ({columns}) VALUES {}",
+            values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
+        );
+        bind_tapbacks(sqlx::query(AssertSqlSafe(sql)), chunk)
+            .execute(&mut *conn)
+            .await
+            .context("hold a chunk of a copy's reactions")?;
+    }
+    let copies = format!("(SELECT {columns}, rowid AS seq FROM _copy_tapbacks)");
+    Ok(
+        sqlx::query(insert_new_tapbacks_sql("staging_tapbacks", &copies))
+            .execute(&mut *conn)
+            .await
+            .context("stage a copy's new reactions")?
+            .rows_affected(),
+    )
 }
 
 // ── Promotion: staging rows into the production tables ───────────────────
@@ -864,20 +909,37 @@ pub async fn add_copy_tapbacks(
 // below fill in the order `imports_api::promote` calls them.
 
 /// Create, or empty, a temp table mapping staging ids to production ids,
-/// with the column definitions `extra_columns` after those two.
-/// Two statements on purpose: one prepared statement holds one command.
+/// with the column definitions `extra_columns` after those two
+/// ([`reset_temp_table`]).
 async fn reset_id_map(
     conn: &mut SqliteConnection,
     table: &str,
     extra_columns: &[&str],
 ) -> Result<()> {
     let extra: String = extra_columns.iter().map(|c| format!(", {c}")).collect();
-    let create = format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra})"
-    );
-    sqlx::query(&create).execute(&mut *conn).await?;
-    let clear = format!("DELETE FROM {table}");
-    sqlx::query(&clear).execute(&mut *conn).await?;
+    reset_temp_table(
+        conn,
+        table,
+        &format!("staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra}"),
+    )
+    .await
+    .context("reset a promotion id map")
+}
+
+/// Create the temp table `table` with the column definitions `columns`,
+/// or empty it when it exists. Two statements on purpose: one prepared
+/// statement holds one command.
+async fn reset_temp_table(conn: &mut SqliteConnection, table: &str, columns: &str) -> Result<()> {
+    sqlx::query(AssertSqlSafe(format!(
+        "CREATE TEMP TABLE IF NOT EXISTS {table} ({columns})"
+    )))
+    .execute(&mut *conn)
+    .await
+    .with_context(|| format!("create the temp table {table}"))?;
+    sqlx::query(AssertSqlSafe(format!("DELETE FROM {table}")))
+        .execute(&mut *conn)
+        .await
+        .with_context(|| format!("empty the temp table {table}"))?;
     Ok(())
 }
 
@@ -890,12 +952,11 @@ pub async fn count_staged_conversations(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COUNT(*) FROM staging_conversations WHERE account_id = $1")
-            .bind(account_id)
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT COUNT(*) FROM staging_conversations WHERE account_id = $1")
+        .bind(account_id)
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the account's staged conversations")
 }
 
 /// The highest `conversations.id`, or 0 in an empty table: the watermark
@@ -905,11 +966,10 @@ pub async fn count_staged_conversations(
 ///
 /// Returns an error when the query fails.
 pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM conversations")
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM conversations")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the highest conversation id")
 }
 
 /// Upsert the account's staged conversations into `conversations`, keyed by
@@ -958,7 +1018,8 @@ pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) 
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("promote the staged conversations")?;
     Ok(())
 }
 
@@ -984,7 +1045,8 @@ pub async fn write_conversation_map(conn: &mut SqliteConnection, account_id: i64
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("map staged conversations to their promoted ones")?;
     Ok(())
 }
 
@@ -998,12 +1060,11 @@ pub async fn count_mapped_conversations_above(
     conn: &mut SqliteConnection,
     max_before: i64,
 ) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COUNT(*) FROM _promote_conv_map WHERE prod_id > $1")
-            .bind(max_before)
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT COUNT(*) FROM _promote_conv_map WHERE prod_id > $1")
+        .bind(max_before)
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the newly promoted conversations")
 }
 
 /// How many participants the account has staged.
@@ -1015,7 +1076,7 @@ pub async fn count_staged_participants(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<i64> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         r"
         SELECT COUNT(*) FROM staging_participants
         WHERE conversation_id IN (
@@ -1025,7 +1086,8 @@ pub async fn count_staged_participants(
     )
     .bind(account_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("count the account's staged participants")
 }
 
 /// Insert the staged participants under their production conversations,
@@ -1045,7 +1107,8 @@ pub async fn promote_participants(conn: &mut SqliteConnection) -> Result<u64> {
         ",
     )
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("promote the staged participants")?
     .rows_affected())
 }
 
@@ -1055,7 +1118,7 @@ pub async fn promote_participants(conn: &mut SqliteConnection) -> Result<u64> {
 ///
 /// Returns an error when the count fails.
 pub async fn count_staged_messages(conn: &mut SqliteConnection, account_id: i64) -> Result<i64> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         r"
         SELECT COUNT(*) FROM staging_messages
         WHERE conversation_id IN (
@@ -1065,7 +1128,8 @@ pub async fn count_staged_messages(conn: &mut SqliteConnection, account_id: i64)
     )
     .bind(account_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("count the account's staged messages")
 }
 
 /// How many messages production holds, every account counted: what decides
@@ -1075,9 +1139,10 @@ pub async fn count_staged_messages(conn: &mut SqliteConnection, account_id: i64)
 ///
 /// Returns an error when the count fails.
 pub async fn count_messages(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+    sqlx::query_scalar("SELECT COUNT(*) FROM messages")
         .fetch_one(&mut *conn)
-        .await?)
+        .await
+        .context("count the messages")
 }
 
 /// The highest `messages.id`, or 0 in an empty table: the watermark new
@@ -1087,11 +1152,10 @@ pub async fn count_messages(conn: &mut SqliteConnection) -> Result<i64> {
 ///
 /// Returns an error when the query fails.
 pub async fn max_message_id(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM messages")
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM messages")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the highest message id")
 }
 
 /// The highest `attachments.id`, or 0 in an empty table: the watermark new
@@ -1100,12 +1164,11 @@ pub async fn max_message_id(conn: &mut SqliteConnection) -> Result<i64> {
 /// # Errors
 ///
 /// Returns an error when the query fails.
-pub async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM attachments")
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM attachments")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the highest attachment id")
 }
 
 /// The highest `message_versions.id`, or 0 when there is none. Every
@@ -1115,15 +1178,23 @@ pub async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
 ///
 /// Returns an error when the query fails.
 pub async fn max_earlier_version_id(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM message_versions")
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM message_versions")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the highest earlier version id")
+}
+
+/// The bounds [`staged_message_id_bounds`] reads.
+#[derive(Debug, Clone, Copy, sqlx::FromRow)]
+pub struct StagedIdBounds {
+    /// The lowest staged message id.
+    pub low: Option<i64>,
+    /// The highest staged message id.
+    pub high: Option<i64>,
 }
 
 /// The lowest and highest staged message id under a mapped conversation,
-/// or `(None, None)` when nothing is staged.
+/// each `None` when nothing is staged.
 ///
 /// # Errors
 ///
@@ -1131,10 +1202,10 @@ pub async fn max_earlier_version_id(conn: &mut SqliteConnection) -> Result<i64> 
 pub async fn staged_message_id_bounds(
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<(Option<i64>, Option<i64>)> {
-    Ok(sqlx::query_as(
+) -> Result<StagedIdBounds> {
+    sqlx::query_as::<_, StagedIdBounds>(
         r"
-        SELECT MIN(sm.id), MAX(sm.id)
+        SELECT MIN(sm.id) AS low, MAX(sm.id) AS high
         FROM staging_messages sm
         JOIN _promote_conv_map cm ON cm.staging_id = sm.conversation_id
         WHERE sm.account_id = $1
@@ -1142,7 +1213,8 @@ pub async fn staged_message_id_bounds(
     )
     .bind(account_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("read the range of staged message ids")
 }
 
 /// The column list and SELECT every staged-message insert shares; the caller
@@ -1190,12 +1262,13 @@ pub async fn promote_messages_in_range(
     hi: i64,
 ) -> Result<u64> {
     let sql = format!("{INSERT_MESSAGES_FROM_STAGING}{IN_ID_RANGE}");
-    Ok(sqlx::query(&sql)
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(lo)
         .bind(hi)
         .execute(&mut *conn)
-        .await?
+        .await
+        .context("promote a range of staged messages")?
         .rows_affected())
 }
 
@@ -1216,12 +1289,13 @@ pub async fn promote_new_messages_in_range(
     hi: i64,
 ) -> Result<u64> {
     let sql = format!("{INSERT_MESSAGES_FROM_STAGING}{IN_ID_RANGE} ON CONFLICT DO NOTHING");
-    Ok(sqlx::query(&sql)
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(lo)
         .bind(hi)
         .execute(&mut *conn)
-        .await?
+        .await
+        .context("promote the new messages in a range of staged messages")?
         .rows_affected())
 }
 
@@ -1238,12 +1312,13 @@ pub async fn staged_message_ids_in_range(
     hi: i64,
 ) -> Result<Vec<i64>> {
     let sql = format!("{STAGED_MESSAGE_IDS}{IN_ID_RANGE}");
-    Ok(sqlx::query_scalar(&sql)
+    sqlx::query_scalar(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(lo)
         .bind(hi)
         .fetch_all(&mut *conn)
-        .await?)
+        .await
+        .context("read a range of staged message ids")
 }
 
 /// The account's production message ids above `max_before`, in id order:
@@ -1257,13 +1332,12 @@ pub async fn message_ids_above(
     account_id: i64,
     max_before: i64,
 ) -> Result<Vec<i64>> {
-    Ok(
-        sqlx::query_scalar("SELECT id FROM messages WHERE id > $1 AND account_id = $2 ORDER BY id")
-            .bind(max_before)
-            .bind(account_id)
-            .fetch_all(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT id FROM messages WHERE id > $1 AND account_id = $2 ORDER BY id")
+        .bind(max_before)
+        .bind(account_id)
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the account's messages added by the import")
 }
 
 /// Write `_promote_msg_map`, the staging-to-production message id map the
@@ -1286,11 +1360,13 @@ pub async fn write_message_map(
             "INSERT INTO _promote_msg_map (staging_id, prod_id) VALUES {}",
             values_tuples(chunk.len(), 2)
         );
-        let mut q = sqlx::query(&sql);
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for &(staging_id, prod_id) in chunk {
             q = q.bind(staging_id).bind(prod_id);
         }
-        q.execute(&mut *conn).await?;
+        q.execute(&mut *conn)
+            .await
+            .context("map a chunk of staged messages to their promoted ones")?;
     }
     sqlx::query(
         r"
@@ -1308,7 +1384,8 @@ pub async fn write_message_map(
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("map staged messages to the messages already held")?;
     Ok(())
 }
 
@@ -1454,7 +1531,7 @@ pub enum BackupOrder {
 /// in one import: whether the copy from the backup made at `staged` is
 /// later than the copy held from the backup made at `held`.
 #[must_use]
-pub fn later_backup(staged: Option<&str>, held: Option<&str>) -> BackupOrder {
+pub fn later_backup(staged: Option<&StoredTime>, held: Option<&StoredTime>) -> BackupOrder {
     match (staged, held) {
         (Some(staged), Some(held)) if staged > held => BackupOrder::Later,
         (Some(staged), Some(held)) if staged < held => BackupOrder::Earlier,
@@ -1481,6 +1558,11 @@ pub fn later_backup(staged: Option<&str>, held: Option<&str>) -> BackupOrder {
 /// Returns an error when a statement fails.
 pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
     reset_id_map(conn, "_promote_mark_map", &["deletion TEXT"]).await?;
+    let staged = MarkSql {
+        backup_taken_at: "sm.backup_taken_at",
+        deletion: "sm.deletion",
+        undated_deletion: "sm.undated_deletion",
+    };
     let sql = format!(
         r"
         INSERT INTO _promote_mark_map (staging_id, prod_id, deletion)
@@ -1494,11 +1576,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
         WHERE deletion IS NOT held
         ",
         mark = copy_mark_sql(
-            &MarkSql {
-                backup_taken_at: "sm.backup_taken_at",
-                deletion: "sm.deletion",
-                undated_deletion: "sm.undated_deletion",
-            },
+            &staged,
             &MarkSql {
                 backup_taken_at: "m.backup_taken_at",
                 deletion: "m.deletion",
@@ -1506,21 +1584,20 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
             },
         ),
     );
-    sqlx::query(&sql).execute(&mut *conn).await?;
+    sqlx::query(AssertSqlSafe(sql))
+        .execute(&mut *conn)
+        .await
+        .context("map the deletion marks a promotion changes")?;
     // Before the mark changes: the rule reads the mark held.
     let undated = kept_undated_mark_sql(
-        &MarkSql {
-            backup_taken_at: "sm.backup_taken_at",
-            deletion: "sm.deletion",
-            undated_deletion: "sm.undated_deletion",
-        },
+        &staged,
         &MarkSql {
             backup_taken_at: "messages.backup_taken_at",
             deletion: "messages.deletion",
             undated_deletion: "messages.undated_deletion",
         },
     );
-    sqlx::query(&format!(
+    sqlx::query(AssertSqlSafe(format!(
         r"
         UPDATE messages
         SET undated_deletion = {undated}
@@ -1529,9 +1606,10 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
         WHERE messages.id = mm.prod_id
           AND messages.undated_deletion IS NOT {undated}
         "
-    ))
+    )))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("promote the undated deletion marks")?;
     let changed = sqlx::query(
         r"
         UPDATE messages
@@ -1541,7 +1619,8 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
         ",
     )
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("promote the deletion marks")?
     .rows_affected();
     Ok(changed)
 }
@@ -1563,7 +1642,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
 /// Returns an error when the update fails.
 pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
     let backed = backs_undated_sql("sm.backup_taken_at", "messages.backup_taken_at");
-    sqlx::query(&format!(
+    sqlx::query(AssertSqlSafe(format!(
         r"
         UPDATE messages
         SET undated_body = 0
@@ -1578,9 +1657,10 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
         ",
         staged_versions = versions_json_sql("staging_message_versions", "mm.staging_id"),
         held_versions = versions_json_sql("message_versions", "mm.prod_id"),
-    ))
+    )))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("mark promoted messages' text as backed by a dated backup")?;
     let sql = format!(
         r"
         UPDATE messages
@@ -1592,7 +1672,11 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
         ",
         later = later_dated_backup_sql("sm.backup_taken_at", "messages.backup_taken_at"),
     );
-    Ok(sqlx::query(&sql).execute(&mut *conn).await?.rows_affected())
+    Ok(sqlx::query(AssertSqlSafe(sql))
+        .execute(&mut *conn)
+        .await
+        .context("promote the later backup dates")?
+        .rows_affected())
 }
 
 /// Mark each stored message `milliseconds` when its staged row is and has
@@ -1619,9 +1703,10 @@ pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<()> {
           AND sm.timestamp = messages.timestamp
         ",
     )
-    .bind(message_ir::TimePrecision::Milliseconds.as_str())
+    .bind(ir::TimePrecision::Milliseconds.as_str())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("promote the millisecond time precision")?;
     Ok(())
 }
 
@@ -1636,14 +1721,15 @@ pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<()> {
 pub async fn add_staged_copy_milliseconds(
     conn: &mut SqliteConnection,
     staged: i64,
-    timestamp: &str,
+    timestamp: &StoredTime,
 ) -> Result<()> {
     sqlx::query("UPDATE staging_messages SET time_precision = $1 WHERE id = $2 AND timestamp = $3")
-        .bind(message_ir::TimePrecision::Milliseconds.as_str())
+        .bind(ir::TimePrecision::Milliseconds.as_str())
         .bind(staged)
         .bind(timestamp)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("mark a staged message's time as precise to the millisecond")?;
     Ok(())
 }
 
@@ -1755,10 +1841,11 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
         held_versions = versions("message_versions", "mm.prod_id"),
         later_edit = later_edit_sql("n", "newest", "held_n", "held_newest"),
     );
-    Ok(sqlx::query(&sql)
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .bind(messages_before)
         .execute(&mut *conn)
-        .await?
+        .await
+        .context("map the messages with later edits")?
         .rows_affected())
 }
 
@@ -1773,7 +1860,7 @@ fn versions_json_sql(table: &str, id: &str) -> String {
 }
 
 /// `versions` in the form [`versions_json_sql`] gives, to bind.
-fn versions_json(versions: &[crate::models::EarlierVersionRecord]) -> String {
+fn versions_json(versions: &[EarlierVersionRecord]) -> String {
     serde_json::Value::Array(
         versions
             .iter()
@@ -1819,7 +1906,8 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
         ",
     )
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("promote the later edits' text")?
     .rows_affected();
     let versions_removed = sqlx::query(
         r"
@@ -1828,7 +1916,8 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
         ",
     )
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("delete the earlier versions the later edits replace")?
     .rows_affected();
     Ok(PromotedEdits {
         messages,
@@ -1839,6 +1928,9 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
 /// What [`promote_attachments`] did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PromotedAttachments {
+    /// The highest attachment id before the insert: every row inserted is
+    /// above it.
+    pub attachments_before: i64,
     /// Production rows stored without a file that took the file from a
     /// staged row.
     pub filled: u64,
@@ -1857,8 +1949,8 @@ pub struct PromotedAttachments {
 /// when their message, path, original name and sticker flag match, the
 /// held row has no file and the copy has one. So importing again after
 /// the file turns up fills the row in instead of adding a second one.
-fn fill_attachments_sql(held: &str, copies: &str) -> String {
-    format!(
+fn fill_attachments_sql(held: &str, copies: &str) -> SqlStr {
+    AssertSqlSafe(format!(
         r"
         UPDATE {held} AS a
         SET sha256 = f.sha256,
@@ -1875,7 +1967,8 @@ fn fill_attachments_sql(held: &str, copies: &str) -> String {
           AND a.is_sticker = f.is_sticker
           AND a.sha256 IS NULL
         "
-    )
+    ))
+    .into_sql_str()
 }
 
 /// The statement that inserts into `held` each attachment row of `copies`
@@ -1887,9 +1980,9 @@ fn fill_attachments_sql(held: &str, copies: &str) -> String {
 /// one import ([`add_copy_attachments`]): an attachment with a path is the
 /// same attachment when its message, path, original name and sticker flag
 /// match; one without a path is the same only when every field matches.
-fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
+fn insert_new_attachments_sql(held: &str, copies: &str) -> SqlStr {
     let columns = ATTACHMENT_COLUMNS.join(", ");
-    format!(
+    AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
         SELECT {columns}
@@ -1914,41 +2007,79 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
               )
         )
         "
-    )
+    ))
+    .into_sql_str()
 }
 
-/// The statement that inserts into `held` each tapback row of `copies`
-/// that `held` does not hold field for field, where `copies` is a table
-/// or `(SELECT ...)` with the [`TAPBACK_COLUMNS`] whose `message_id` is a
-/// row of `held`'s message. The one rule for when another copy of a
-/// reaction is new, for a stored message ([`promote_tapbacks`]) and for
-/// two copies staged in one import ([`add_copy_tapbacks`]).
-fn insert_new_tapbacks_sql(held: &str, copies: &str) -> String {
+/// The statement that inserts into `held` the tapback rows of `copies`
+/// that `held` does not hold yet, where `copies` is a table or
+/// `(SELECT ...)` with the [`TAPBACK_COLUMNS`] and `seq`, whose
+/// `message_id` is a row of `held`'s message. The one rule for when
+/// another copy of a reaction is new, for a stored message
+/// ([`promote_tapbacks`]) and for two copies staged in one import
+/// ([`add_copy_tapbacks`]).
+///
+/// A reaction that names its reactor (a handle, a display name, or the
+/// account holder) is new when no row of `held` matches it field for field.
+/// A reaction with no reactor ([`NO_REACTOR`]) cannot be told from another
+/// person's reaction with the same emoji, so those are counted instead:
+/// per message, part, kind and emoji, the copy adds as many as it holds
+/// above the count `held` has. A copy with fewer adds none and removes
+/// none (#3112). iMazing writes only reactions with no reactor, and
+/// WhatsApp writes one when the backup does not name who reacted.
+///
+/// `seq` orders the rows of `copies`, such as by the staging row's id. The
+/// rows are numbered and inserted in that order, so readers that sort
+/// reactions by id see the source's order.
+fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
     let columns = TAPBACK_COLUMNS.join(", ");
-    format!(
+    // A row of `held` that matches the copy's row `st` field for field. A
+    // copy's row with no reactor matches exactly the held rows with no
+    // reactor, so the count below needs no test of its own.
+    let same = r"
+                t.message_id = st.message_id
+                AND t.part_index = st.part_index
+                AND t.kind = st.kind
+                AND t.emoji IS NOT DISTINCT FROM st.emoji
+                AND t.is_from_me = st.is_from_me
+                AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
+                AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name";
+    AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
         SELECT {columns}
-        FROM {copies} AS st
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM {held} t
-            WHERE t.message_id = st.message_id
-              AND t.part_index = st.part_index
-              AND t.kind = st.kind
-              AND t.emoji IS NOT DISTINCT FROM st.emoji
-              AND t.is_from_me = st.is_from_me
-              AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
-        )
+        FROM (
+            SELECT {columns},
+                   seq,
+                   {NO_REACTOR} AS no_reactor,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY message_id, part_index, kind, emoji, {NO_REACTOR}
+                       ORDER BY seq
+                   ) AS nth
+            FROM {copies}
+        ) AS st
+        WHERE CASE
+            WHEN st.no_reactor
+                THEN st.nth > (SELECT COUNT(*) FROM {held} t WHERE {same})
+            ELSE NOT EXISTS (SELECT 1 FROM {held} t WHERE {same})
+        END
+        ORDER BY st.seq
         "
-    )
+    ))
+    .into_sql_str()
 }
+
+/// True in SQL for a tapback row that names no reactor: not the account
+/// holder's, with no handle and no display name ([`insert_new_tapbacks_sql`]).
+const NO_REACTOR: &str =
+    "(is_from_me = 0 AND sender_handle_id IS NULL AND sender_display_name IS NULL)";
 
 /// The rows of the staging table `table`, whose columns are `columns`
 /// (such as [`ATTACHMENT_COLUMNS`]), each under its production message as
 /// the shared rules ([`insert_new_attachments_sql`] and the others) take
 /// them. `columns` starts with `message_id`, which becomes the production
-/// message's id, so the columns keep their order.
+/// message's id, so the columns keep their order. After them comes `seq`,
+/// the staging row's id, which orders the rows ([`insert_new_tapbacks_sql`]).
 fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
     debug_assert_eq!(columns.first(), Some(&"message_id"));
     let rest: Vec<String> = columns[1..]
@@ -1956,7 +2087,7 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
         .map(|name| format!("s.{name}"))
         .collect();
     format!(
-        "(SELECT mm.prod_id AS message_id, {} \
+        "(SELECT mm.prod_id AS message_id, {}, s.id AS seq \
           FROM {table} s JOIN _promote_msg_map mm ON mm.staging_id = s.message_id)",
         rest.join(", ")
     )
@@ -1965,26 +2096,55 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 /// Insert the staged attachments under their production messages: fill in
 /// the stored rows another copy has the file for
 /// ([`fill_attachments_sql`]), then insert the rows the message does not
-/// hold yet ([`insert_new_attachments_sql`]).
+/// hold yet ([`insert_new_attachments_sql`]). Every row it fills or inserts
+/// takes the Import Run of its staged message as its `import_id`, so the
+/// server queues its Asset when the run ends
+/// (`db::media_queue::queue_import_run`), even when an earlier run created
+/// the message (#1946).
 ///
 /// # Errors
 ///
 /// Returns an error when a statement fails.
 pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
+    let attachments_before = max_attachment_id(conn).await?;
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
-    let filled = sqlx::query(&fill_attachments_sql("attachments", &staged))
+    let filled_ids: Vec<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
+        "{} RETURNING id",
+        fill_attachments_sql("attachments", &staged).as_str()
+    )))
+    .fetch_all(&mut *conn)
+    .await
+    .context("fill held attachments from staged copies")?;
+    let filled = filled_ids.len() as u64;
+    let inserted = sqlx::query(insert_new_attachments_sql("attachments", &staged))
         .execute(&mut *conn)
-        .await?
+        .await
+        .context("promote the new attachments")?
         .rows_affected();
-    let inserted = sqlx::query(&insert_new_attachments_sql("attachments", &staged))
-        .execute(&mut *conn)
-        .await?
-        .rows_affected();
-    Ok(PromotedAttachments { filled, inserted })
+    sqlx::query(
+        r"
+        UPDATE attachments
+        SET import_id = sm.import_id
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        WHERE mm.prod_id = attachments.message_id
+          AND (attachments.id > $1 OR attachments.id IN (SELECT value FROM json_each($2)))
+        ",
+    )
+    .bind(attachments_before)
+    .bind(serde_json::to_string(&filled_ids)?)
+    .execute(&mut *conn)
+    .await
+    .context("mark promoted attachments with their import")?;
+    Ok(PromotedAttachments {
+        attachments_before,
+        filled,
+        inserted,
+    })
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any
-/// row production already has ([`insert_new_tapbacks_sql`]). Returns how
+/// production already holds ([`insert_new_tapbacks_sql`]). Returns how
 /// many were inserted.
 ///
 /// # Errors
@@ -1992,9 +2152,10 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 /// Returns an error when the statement fails.
 pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
     let staged = staged_by_production_message("staging_tapbacks", TAPBACK_COLUMNS);
-    Ok(sqlx::query(&insert_new_tapbacks_sql("tapbacks", &staged))
+    Ok(sqlx::query(insert_new_tapbacks_sql("tapbacks", &staged))
         .execute(&mut *conn)
-        .await?
+        .await
+        .context("promote the new reactions")?
         .rows_affected())
 }
 
@@ -2027,7 +2188,8 @@ pub async fn promote_earlier_versions(
     )
     .bind(messages_before)
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("promote the earlier versions")?
     .rows_affected())
 }
 

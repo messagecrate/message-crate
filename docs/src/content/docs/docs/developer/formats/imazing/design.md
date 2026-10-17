@@ -18,16 +18,17 @@ Discovery walks the selected path recursively without following directory symbol
 
 ## Output policy
 
-- Pipeline: iMazing CSV → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) Import writes JSON Lines; the other formats come from [Convert](/docs/developer/formats/convert/). Shared header: [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs) / [CSV columns](/docs/developer/reference/csv-columns/).
+- Pipeline: iMazing CSV → `ConversationDocument` → [`ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) Import writes JSON Lines; the other formats come from [Convert](/docs/developer/formats/convert/). Shared header: [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs) / [CSV columns](/docs/developer/reference/csv-columns/).
 - SMS + iMessage for the same peer merge into one conversation (Messages family).
 - WhatsApp for the same peer is a **separate** file (`…__whatsapp.csv` / matching stem suffix for other formats).
 - Notification rows keep `imazing_type=Notification` in `source_fields_json`; direction is emitted as `incoming`.
 - Vendor-lossy fields live in `source_fields_json` (not top-level CSV columns): `imazing_type`,
-  `imazing_status`, `replying_to`, `forwarded`, `attachment_info`, `reactions`, `delivered_date`,
-  `read_date`, `edited_date`, `deleted_date`, `sent_date`, plus `group_title` when the session
-  string is a display title.
+  `imazing_status`, `forwarded`, `attachment_info`, `delivered_date`, `read_date`, `sent_date`,
+  plus `group_title` when the session string is a display title. The `Reactions`,
+  `Replying to`, `Deleted Date` and `Edited Date` cells are the message's own fields instead
+  (see "Reactions, replies, deletions and edits").
 - `participants_json` is always written (unified header).
-- The shared dedupe step (`message_ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
+- The shared dedupe step (`ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
   Rows of one conversation and one second that name one file, and that iMazing wrote different files for (`image0.jpg`, `image0 2.jpg`), are compared by the SHA-256 of each file instead, because their cell is the same.
   Different pictures are then two messages, each with its own picture, and two copies of one picture are one message.
   A group is hashed only when one CSV holds two or more of its rows with different files, and its rows from every CSV are then hashed, so a second export of the chat still repeats the same messages.
@@ -57,7 +58,7 @@ Discovery walks the selected path recursively without following directory symbol
 
 ## Conversation identity and participants
 
-Each chat session has a `message_ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
+Each chat session has an `ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
 The key's chat id is the conversation's `chat_identifier`: the address, `group:` and the group's id, or `name:` and the whole trimmed name.
 Each kind other than an address has a prefix of its own, so a name never takes an address's or a group's key.
 The rows of one session in one CSV are one conversation.
@@ -99,7 +100,7 @@ That text is in the phone's language and in words iMazing, Messages and WhatsApp
 
 The conversation's address is the number in `Chat Session`, a `Chat Session` that is itself an address, or else the address of the earliest received row that has one, so new messages from a second address do not change it.
 The conversation lists that one address as its participant. A person's other address is not a participant: it is the sender of the messages written from it, with the same `Sender Name`.
-Without any of these, the conversation is known by its name: its `chat_identifier` is a name stem, it is counted as `name_only_chat`, and the server matches the name to a contact on import.
+Without any of these, the conversation is known by its name: its `chat_identifier` is a name stem, it is counted as `name_only_conversation`, and the server matches the name to a contact on import.
 A received row with no `Sender ID` is from the conversation's number or short code.
 
 ### Groups
@@ -133,6 +134,37 @@ A group message's sender comes only from its row. A received row with no `Sender
 WhatsApp `Chat Session` is a **title**, not a roster, so a WhatsApp group's members are the people who wrote.
 Non-senders are invisible in the CSV.
 
+## Reactions, replies, deletions and edits
+
+iMazing writes each of the four as text with no id, and the exporter keeps only part of what the text says (`row_marks.rs`, [#2030](https://github.com/messagecrate/message-crate/issues/2030)). The row counts below were measured on the maintainer's export of 83,079 rows on 2026-10-09, and the line grammar of the `Reactions` cell on the same export's 681 Messages CSVs on 2026-10-15 ([#2045](https://github.com/messagecrate/message-crate/issues/2045)).
+
+### Reactions
+
+5,253 rows. The `Reactions` cell holds one reaction per line, separated by a line feed, and every one of its 5,860 lines has one of two shapes:
+
+- `<Name> reacted with <emoji> on <M/D/YYYY h:mm:ss AM/PM>` (5,855 lines). `<Name>` is a contact name, a phone number, or `You` for the account holder, never `Me`.
+- `<Name> removed the reaction <emoji> on <M/D/YYYY h:mm:ss AM/PM>` (5 lines). Each stands alone in its cell.
+
+The same export's 66 WhatsApp CSVs write all 3,683 lines of their `Reactions` cells in the first shape.
+
+Only the emoji is kept. Each `reacted with` line becomes one reaction of the common message, with part `0`, kind `emoji`, and the emoji: the text between ` reacted with ` and the last ` on `, whole with its variation selector, joiners and skin tone. The reaction carries no reactor (`reactor_identity` and `reactor_display_name` are absent, and `is_from_me` is false, on a `You` line too), and no time, which the common message has no field for. One of the 5,855 `reacted with` lines reads `reacted with a sticker`: it becomes kind `sticker` with no emoji, as Apple Messages writes a sticker reaction.
+
+A `removed the reaction` line, and a line in neither shape, gives no reaction.
+
+### Replies
+
+979 rows. The `Replying to` cell reads `↩ <sender>, <YYYY-MM-DD HH:MM:SS>: « <snippet> »`, and four rows have no sender before the date. The reply is linked to the message of the same chat session whose `Message Date` is the quoted date, which finds 975 of the 979. The sender is not compared, because the cell does not write it as `Sender Name` does. Both dates are read in the zone the Import form gives, so they compare as instants.
+
+A cell whose date no row has, or that two kept rows share, is a reply with no link (`reply_to` with no `guid`): the date names one message or none. So is a cell whose date is the reply's own second when the quoted message is gone, because a message never quotes itself.
+
+### Deletions
+
+90 rows. A row with a `Deleted Date` is Deleted in the source app. iMazing never says a message was unsent, so no row is Unsent.
+
+### Edits
+
+539 rows. A row with an `Edited Date` carries the final text only. It gets one earlier version of part `0` with no text and the edit's time, which the web app shows as "Earlier version not in the backup" and search does not index.
+
 ## Validation matrix
 
 | Date | iMazing | Sample | Result |
@@ -145,9 +177,8 @@ Non-senders are invisible in the CSV.
 ## Future work (not yet implemented)
 
 - An optional owner phone number on the Import form to annotate the outgoing sender identity.
-- Structured parse of reactions / replies if a stable grammar is confirmed.
 
 ## Related docs
 
 - Input format and source limitations: [iMazing input format](/docs/developer/formats/imazing/input/)
-- Shared model and output contracts: [message-ir architecture](/docs/developer/architecture/common-message/), [export structure](/docs/developer/reference/export-structure/), [CSV columns](/docs/developer/reference/csv-columns/)
+- Shared model and output contracts: [common message architecture](/docs/developer/architecture/common-message/), [export structure](/docs/developer/reference/export-structure/), [CSV columns](/docs/developer/reference/csv-columns/)

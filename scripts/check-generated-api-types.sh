@@ -9,11 +9,14 @@
 #
 # Regenerate with: (cd web && npm run gen:api)
 #
-# The generator runs through npx rather than as a web/ dependency: it declares
-# a peer dependency on TypeScript 5 and this project is on TypeScript 7, so
-# installing it into web/ fails to resolve. Running it in its own tree sidesteps
-# that, and only its text output ever reaches the repository. Keep the pinned
-# version here in step with web/package.json's gen:api script.
+# The generator is not a web/ dependency: it declares a peer dependency on
+# TypeScript 5 and this project is on TypeScript 7, so installing it into web/
+# fails to resolve. It has a tree of its own instead, scripts/openapi-typescript/,
+# whose package-lock.json pins every package it runs, so a new release of one of
+# its dependencies cannot run here unreviewed, and Dependabot and `npm audit` see
+# that tree. Its `generate` script installs the tree with npm ci and writes the
+# types to the path it is given; this check and web/package.json's gen:api both
+# run it. Only its text output ever reaches the repository.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -21,7 +24,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GENERATED="web/src/lib/serverApi.types.ts"
-SPEC="docs/src/assets/openapi.json"
 
 if [[ ! -f "${GENERATED}" ]]; then
   echo "missing ${GENERATED}; run: (cd web && npm run gen:api)" >&2
@@ -31,13 +33,14 @@ fi
 tmp="$(mktemp -t serverApi.types.XXXXXX.ts)"
 trap 'rm -f "${tmp}"' EXIT
 
-npx --yes openapi-typescript@7.13.0 "${SPEC}" -o "${tmp}" >/dev/null
+npm run --prefix scripts/openapi-typescript --silent generate -- "${tmp}" >/dev/null
 
 if ! diff -u "${GENERATED}" "${tmp}"; then
   echo >&2
-  echo "${GENERATED} is out of date with ${SPEC}." >&2
+  echo "${GENERATED} is out of date with the OpenAPI document" >&2
+  echo "that the generate script in scripts/openapi-typescript/ reads." >&2
   echo "run: (cd web && npm run gen:api)" >&2
   exit 1
 fi
 
-echo "${GENERATED} matches ${SPEC}"
+echo "${GENERATED} matches the OpenAPI document"

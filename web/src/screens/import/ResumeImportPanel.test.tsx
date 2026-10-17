@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import type { ActiveImportRun } from "../../lib/importRun";
+import { activeImportRun } from "../../test/apiShapes";
 import { fill, setupUser } from "../../test/user";
 import ResumeImportPanel from "./ResumeImportPanel";
 import type { ResumeDecision } from "./resumeDecision";
@@ -11,24 +11,6 @@ import type { ResumeDecision } from "./resumeDecision";
 afterEach(() => {
   cleanup();
 });
-
-function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
-  return {
-    id: 7,
-    source: "imessage",
-    mode: "append",
-    status: "running",
-    started_at: "2026-08-30T00:00:00Z",
-    stage: "upload",
-    run_dir: "/home/u/message-crate/staging-260830",
-    device_id: "this-device",
-    form: { source: "imessage-ios" },
-    source_fingerprint: null,
-    source_identities: null,
-    summary: null,
-    ...overrides,
-  };
-}
 
 describe("ResumeImportPanel", () => {
   it("renders nothing when there is no run to decide about", () => {
@@ -43,7 +25,7 @@ describe("ResumeImportPanel", () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
-    const decision: ResumeDecision = { kind: "resume_upload", run: importRun() };
+    const decision: ResumeDecision = { kind: "resume_upload", run: activeImportRun() };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
     expect(screen.getByText("Finish your last import")).toBeInTheDocument();
@@ -67,11 +49,11 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "restart",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("Pick up your last import")).toBeInTheDocument();
+    expect(screen.getByText("Your last import did not finish")).toBeInTheDocument();
     expect(
       screen.getByText(
         "The extract did not finish. Starting again reuses your settings and reads the backup from the beginning.",
@@ -91,11 +73,11 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_review",
-      run: importRun({ stage: "staging_review" }),
+      run: activeImportRun({ stage: "staging_review" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("Pick up where you left off")).toBeInTheDocument();
+    expect(screen.getByText("Resume where you left off")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Your messages are staged. Opening the import again shows you the same summary, read fresh from the directory.",
@@ -109,24 +91,24 @@ describe("ResumeImportPanel", () => {
     expect(onDiscard).toHaveBeenCalledTimes(1);
   });
 
-  it("offers to carry on for a run that died mid Media stage", async () => {
+  it("offers to resume a run that died mid Media Stage", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_media",
-      run: importRun({ stage: "media" }),
+      run: activeImportRun({ stage: "media" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
     expect(screen.getByText("Finish preparing your media")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The Media stage did not finish. Carrying on picks up the files it had not reached yet.",
+        "The Media Stage did not finish. Resuming it processes the files it had not reached yet.",
       ),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Carry on" }));
+    await user.click(screen.getByRole("button", { name: "Resume" }));
     expect(onResume).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Discard this import" }));
@@ -139,7 +121,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "directory_missing",
-      run: importRun({ run_dir: "/home/u/message-crate/staging-260830" }),
+      run: activeImportRun({ run_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -165,14 +147,14 @@ describe("ResumeImportPanel", () => {
     // a tool of someone's own — stores a null run_dir.
     const decision: ResumeDecision = {
       kind: "directory_missing",
-      run: importRun({ run_dir: null }),
+      run: activeImportRun({ run_dir: null }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("There is nothing staged to pick up")).toBeInTheDocument();
+    expect(screen.getByText("There is nothing staged to resume")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
+        "This import did not record a staged directory, so there is nothing here to resume. Discarding it lets you start a new one.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/no longer at/)).not.toBeInTheDocument();
@@ -189,7 +171,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "directory_unknown",
-      run: importRun({ run_dir: "/home/u/message-crate/staging-260830" }),
+      run: activeImportRun({ run_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -212,7 +194,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "other_device",
-      run: importRun({ device_id: "other-device" }),
+      run: activeImportRun({ device_id: "other-device" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -234,7 +216,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "settings_unreadable",
-      run: importRun(),
+      run: activeImportRun(),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -255,7 +237,7 @@ describe("ResumeImportPanel", () => {
   it("says nothing extra when there is no error to report", () => {
     const decision: ResumeDecision = {
       kind: "resume_review",
-      run: importRun({ stage: "staging_review" }),
+      run: activeImportRun({ stage: "staging_review" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -266,7 +248,7 @@ describe("ResumeImportPanel", () => {
     const onResume = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_review",
-      run: importRun({ stage: "staging_review" }),
+      run: activeImportRun({ stage: "staging_review" }),
     };
     render(
       <ResumeImportPanel
@@ -279,29 +261,29 @@ describe("ResumeImportPanel", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("disk unavailable");
     // The panel's own copy for the decision still renders underneath.
-    expect(screen.getByText("Pick up where you left off")).toBeInTheDocument();
+    expect(screen.getByText("Resume where you left off")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show me the summary" }));
     expect(onResume).toHaveBeenCalledTimes(1);
   });
-  it("offers to pick up a copy that did not finish", async () => {
+  it("offers to resume a copy that did not finish", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_write",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
     expect(screen.getByText("Finish copying your backup")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The copy did not finish. Picking up where you left off reads the backup again and skips the conversations already copied.",
+        "The copy did not finish. Resuming it reads the backup again and skips the conversations already copied.",
       ),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Pick up" }));
+    await user.click(screen.getByRole("button", { name: "Resume" }));
     expect(onResume).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Discard this import" }));
@@ -314,7 +296,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "source_changed",
-      run: importRun({
+      run: activeImportRun({
         stage: "write",
         source_fingerprint: {
           path: "/backups/iphone.tar",
@@ -339,7 +321,7 @@ describe("ResumeImportPanel", () => {
   it("says the backup changed without a path when the run recorded none", () => {
     const decision: ResumeDecision = {
       kind: "source_changed",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
 
@@ -350,13 +332,13 @@ describe("ResumeImportPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("asks for the backup password and holds Pick up until it is filled", async () => {
+  it("asks for the backup password and holds Resume until it is filled", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_write",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(
       <ResumeImportPanel
@@ -368,7 +350,7 @@ describe("ResumeImportPanel", () => {
     );
 
     const field = screen.getByLabelText("Encryption password");
-    const resume = screen.getByRole("button", { name: "Pick up" });
+    const resume = screen.getByRole("button", { name: "Resume" });
     expect(resume).toBeDisabled();
     expect(screen.getByRole("button", { name: "Discard this import" })).toBeEnabled();
 
@@ -382,7 +364,7 @@ describe("ResumeImportPanel", () => {
   it("asks for the backup password and holds Start over until it is filled", async () => {
     const user = setupUser();
     const onResume = vi.fn();
-    const decision: ResumeDecision = { kind: "restart", run: importRun({ stage: "parse" }) };
+    const decision: ResumeDecision = { kind: "restart", run: activeImportRun({ stage: "parse" }) };
     render(
       <ResumeImportPanel
         decision={decision}
@@ -404,14 +386,17 @@ describe("ResumeImportPanel", () => {
   });
 
   it.each([
-    ["resume_write", "write", "Pick up"],
+    ["resume_write", "write", "Resume"],
     ["restart", "parse", "Start over"],
   ] as const)(
     "asks for the WhatsApp key on %s and holds the button until it is filled",
     async (kind, stage, label) => {
       const user = setupUser();
       const onResume = vi.fn();
-      const decision: ResumeDecision = { kind, run: importRun({ source: "whatsapp", stage }) };
+      const decision: ResumeDecision = {
+        kind,
+        run: activeImportRun({ source: "whatsapp", stage }),
+      };
       render(
         <ResumeImportPanel
           decision={decision}
@@ -434,13 +419,13 @@ describe("ResumeImportPanel", () => {
   it("shows no password or key field when the Import Run had neither", () => {
     const decision: ResumeDecision = {
       kind: "resume_write",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
 
     expect(screen.queryByLabelText("Encryption password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Decryption key")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pick up" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeEnabled();
   });
   // Resuming starts a Stage, which the desktop refuses while another job
   // runs, so the button waits for it and says which job it waits for, as
@@ -449,7 +434,7 @@ describe("ResumeImportPanel", () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
-    const decision: ResumeDecision = { kind: "resume_upload", run: importRun() };
+    const decision: ResumeDecision = { kind: "resume_upload", run: activeImportRun() };
     const release = holdDesktopJob("Export");
     try {
       render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
@@ -471,7 +456,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("leaves a discard-only decision alone while another desktop job runs", () => {
-    const decision: ResumeDecision = { kind: "other_device", run: importRun() };
+    const decision: ResumeDecision = { kind: "other_device", run: activeImportRun() };
     const release = holdDesktopJob("Convert");
     try {
       render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);

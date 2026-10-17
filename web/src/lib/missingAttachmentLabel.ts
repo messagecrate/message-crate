@@ -6,19 +6,15 @@ function missingWhy(reason: string | null | undefined): string {
   if (!reason || reason === "no_path") return "missing";
   if (reason === "too_large") return "missing — too large";
   if (reason === "file_missing") return "missing — file not found";
-  // Chosen on import ("Do not copy"), so the file is absent by request, not
-  // lost.
+  // An Export could not fetch the file from the server.
+  if (reason === "not_fetched") return "missing — not fetched by the export";
+  // Chosen on import (Skip), so the file is absent by request, not lost.
   if (reason === "not_copied") return "skipped";
   if (reason.startsWith("convert_failed: ")) {
     const detail = reason.slice("convert_failed: ".length);
     return detail ? `could not be converted — ${detail}` : "could not be converted";
   }
-  if (reason.startsWith("unknown: ")) {
-    const detail = reason.slice("unknown: ".length);
-    return detail ? `could not be imported — ${detail}` : "could not be imported";
-  }
-  // Keep an unrecognized reason visible and reportable, never uniform,
-  // whether or not it carries the `unknown: ` prefix.
+  // Keep an unrecognized reason visible and reportable, never uniform.
   return `could not be imported — ${reason}`;
 }
 

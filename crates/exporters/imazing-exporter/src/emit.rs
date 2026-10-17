@@ -1,5 +1,7 @@
 //! Convert iMazing Messages / WhatsApp rows into the shared conversation
-//! structure, then write the chosen output format via [`ExportWriter`].
+//! structure, then write the chosen output format through [`convert_backup`].
+
+mod session;
 
 use crate::attachments::{
     DirectoryFiles, attachment_cell, file_name_second, mime_hint, row_sources,
@@ -8,29 +10,32 @@ use crate::attachments_emit::{
     attachment_content_key, attachment_digests, attachment_matches_any_file_key,
     attachment_source_key, pending_attachment_to_ir,
 };
-use crate::parse::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
-use crate::parse_emit::{
+use crate::read::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
+use crate::row_marks;
+use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
+use crate::zone::Zone;
+use anyhow::Result;
+use ir::{
+    Attachment, ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta,
+    Participant, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
+    ProjectedRole, ProjectionHooks, Reaction, Transport, VendorFields,
+};
+use message_crate_core::{
+    ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
+};
+use serde_json::Map;
+use session::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
     parse_message_date, resolve_sender, session_key,
 };
-use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
-use anyhow::Result;
-use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
-    project_conversation,
+use staging::{
+    AttachmentPaths, AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup,
 };
-use message_csv::Zone;
-use message_ir::{
-    ConversationKey, ExportMeta, IrAttachment, IrParticipant, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, ProjectedRole, ProjectionHooks,
-};
-use message_staging::{AttachmentSource, ExportWriter};
-use serde_json::Map;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "imazing";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::Imazing.source_id();
 const EXPORT_TOOL: &str = "iMazing";
 const EXPORT_TOOL_VERSION: &str = "3.5.5";
 
@@ -89,14 +94,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
     pub timezone: Option<&'a str>,
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error and note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert iMazing Messages / WhatsApp CSV(s) under `input`.
@@ -104,7 +102,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// `timezone`: a fixed UTC offset (`UTC-05:00`) or an IANA zone name
 /// (`America/New_York`). When `None`, use the host local zone.
 /// When `transforms` copies attachments, media files are copied into `output/attachments/`.
-/// When `cancel` is set, cooperative cancellation is checked between CSV files.
+/// Cancellation is checked between CSV files and between conversations.
 ///
 /// # Errors
 ///
@@ -115,111 +113,143 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         input,
         output,
         timezone,
-        transforms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        convert_run,
     } = args;
     let tz = Zone::parse(timezone)?;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
-    let writer = ExportWriter::open(&output, output_format, transforms, resume)?;
-    let copy_attachments = writer.copies_attachments();
+    convert_backup(
+        &output,
+        convert_run,
+        WriterSetup::default(),
+        |writer, cancel, report| {
+            let copy_attachments = writer.files().copies();
+            let mut ingest = Ingest {
+                tz,
+                copy_attachments,
+                conversations: BTreeMap::new(),
+                claims: Vec::new(),
+                directory_texts: BTreeMap::new(),
+                whatsapp_directories: HashSet::new(),
+                report,
+            };
+            let discovered_files = discover_csv_files(input)?;
+            for (csv_index, discovered) in discovered_files.iter().enumerate() {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_file(csv_index, discovered)?;
+            }
+            // An iMazing export records no date inside it, so the backup is as
+            // new as the newest CSV iMazing wrote: the export date.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                discovered_files
+                    .iter()
+                    .map(|discovered| discovered.path.as_path()),
+            );
+            if copy_attachments {
+                ingest.attach_unnamed_files()?;
+                ingest.tell_apart_files_of_one_name();
+            }
+            let Ingest {
+                tz,
+                mut conversations,
+                report,
+                ..
+            } = ingest;
+            separate_groups_with_one_earliest_row(&mut conversations);
 
-    let mut ingest = Ingest {
-        tz,
-        copy_attachments,
-        conversations: BTreeMap::new(),
-        claims: Vec::new(),
-        directory_texts: BTreeMap::new(),
-        whatsapp_directories: HashSet::new(),
-        report: ExportReport::with_issues(issues.cloned()),
-    };
-    let discovered_files = discover_csv_files(input)?;
-    for (csv_index, discovered) in discovered_files.iter().enumerate() {
-        message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_file(csv_index, discovered)?;
-    }
-    // An iMazing export records no date inside it, so the backup is as new
-    // as the newest CSV iMazing wrote: the export date.
-    let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
-        discovered_files
-            .iter()
-            .map(|discovered| discovered.path.as_path()),
-    );
-    if copy_attachments {
-        ingest.attach_unnamed_files()?;
-        ingest.tell_apart_files_of_one_name();
-    }
-    let Ingest {
-        mut conversations,
-        mut report,
-        ..
-    } = ingest;
-    separate_groups_with_one_earliest_row(&mut conversations);
+            let export = message_crate_core::export_meta(
+                EXPORT_SOURCE,
+                EXPORT_TOOL,
+                EXPORT_TOOL_VERSION,
+                None,
+                None,
+            );
+            Ok(ReadBackup {
+                conversations: conversations.into_values().collect(),
+                project: ImazingDocuments {
+                    export,
+                    backup_taken_at_unix_ms,
+                    tz,
+                    sources: AttachmentPaths::default(),
+                },
+                report,
+            })
+        },
+    )
+}
 
-    let export = message_crate_core::export_meta(
-        EXPORT_SOURCE,
-        EXPORT_TOOL,
-        EXPORT_TOOL_VERSION,
-        None,
-        None,
-        backup_taken_at_unix_ms,
-    );
-    let mut documents = Vec::new();
-    let mut sources = Vec::new();
-    for (_, Conversation { key, mut convo, .. }) in conversations {
+/// The projection of each conversation read, for [`convert_backup`], and
+/// the source file of each attachment it keeps.
+struct ImazingDocuments {
+    export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
+    /// The zone every date of the export is read in.
+    tz: Zone,
+    /// The source file of each attachment of the documents projected so
+    /// far, in the order the writer asks for them
+    /// ([`ImazingProjection::sources`]).
+    sources: AttachmentPaths,
+}
+
+impl Project for ImazingDocuments {
+    type Conversation = Conversation;
+
+    fn project(
+        &mut self,
+        Conversation {
+            key, mut pending, ..
+        }: Conversation,
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
         let hooks = ImazingProjection {
-            export: &export,
+            export: &self.export,
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms,
+            tz: self.tz,
             key: &key,
             sources: RefCell::new(Vec::new()),
         };
-        let chat_id = convo.chat_id.clone();
-        let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) else {
-            continue;
-        };
-        sources.extend(hooks.sources.into_inner());
-        documents.push(doc);
+        let chat_id = pending.chat_id.clone();
+        let document = project_conversation(&chat_id, &mut pending, &hooks, report)?;
+        for source in hooks.sources.into_inner() {
+            self.sources.push(source);
+        }
+        Some(document)
     }
 
-    let mut source_iter = sources.into_iter();
-    writer.finish(
-        documents,
-        &mut |att| match source_iter.next().flatten() {
-            Some(path) => {
-                // iMazing's rows carry no size; stat the source so the byte
-                // counters and the headroom check see it.
-                let hint = att
-                    .size_bytes
-                    .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()));
-                (AttachmentSource::Path(path), hint)
-            }
-            None => (AttachmentSource::Missing, att.size_bytes),
-        },
-        cancel,
-        &mut report,
-    )?;
-
-    Ok(report)
+    fn attachment_source(
+        &mut self,
+        attachment: &mut Attachment,
+    ) -> (AttachmentSource, Option<u64>) {
+        // iMazing's rows carry no size, so the source's size on disk is
+        // what the byte counters and the headroom check see.
+        self.sources.next_source(attachment)
+    }
 }
 
 /// One conversation being read: its key, and its messages so far.
 struct Conversation {
     key: ConversationKey,
-    convo: PendingConversation,
+    pending: PendingConversation,
     /// For a group, its rows' digests, earliest first (`Session::row_digests`).
     row_digests: Vec<[u8; 32]>,
 }
 
 /// Which pending conversation a session's rows go to.
 ///
+/// Built when a session's rows are read, from its [`ConversationKey`]'s chat
+/// id, with the transport family and, for a group, the CSV session.
+///
 /// A one-to-one conversation is one conversation across every CSV that
 /// names its address. A group session is a conversation of its own, even
-/// when another starts with the same row: `separate_groups_with_one_earliest_row`
-/// decides which ones are one group once every CSV is read.
+/// when another starts with the same row and so has the same
+/// `ConversationKey`. Once every CSV is read,
+/// `separate_groups_with_one_earliest_row` merges such groups that have one
+/// session name, and gives the others new keys. It does not re-key this map,
+/// so after it runs a group's `chat_id` here can differ from its
+/// conversation's.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ConvoKey {
+struct ChatIdKey {
     /// Keeps a Messages conversation and a WhatsApp conversation with the
     /// same peer apart.
     family: TransportFamily,
@@ -253,8 +283,8 @@ struct GroupSession {
 /// Such a key depends on the groups it is told apart from, so it changes
 /// when one of them is gone from the phone, or a new one shares more of its
 /// earliest rows.
-fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ConvoKey, Conversation>) {
-    let mut by_chat_id: BTreeMap<(TransportFamily, String), Vec<ConvoKey>> = BTreeMap::new();
+fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ChatIdKey, Conversation>) {
+    let mut by_chat_id: BTreeMap<(TransportFamily, String), Vec<ChatIdKey>> = BTreeMap::new();
     for key in conversations
         .keys()
         .filter(|key| key.group_session.is_some())
@@ -268,7 +298,7 @@ fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ConvoKey, 
         // Longest first, so a group read from an older export folds into
         // the newest one.
         keys.sort_by_key(|key| std::cmp::Reverse(conversations[key].row_digests.len()));
-        let mut kept: Vec<ConvoKey> = Vec::new();
+        let mut kept: Vec<ChatIdKey> = Vec::new();
         for key in keys {
             let Some(same_group) = kept
                 .iter()
@@ -319,13 +349,13 @@ fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ConvoKey, 
             if let ConversationKey::Group { vendor_id, .. } = &mut conversation.key {
                 *vendor_id = id;
             }
-            conversation.convo.chat_id = conversation.key.chat_id();
+            conversation.pending.chat_id = conversation.key.chat_id();
         }
     }
 }
 
-/// The session name of a group's [`ConvoKey`].
-fn session_name(key: &ConvoKey) -> Option<&str> {
+/// The session name of a group's [`ChatIdKey`].
+fn session_name(key: &ChatIdKey) -> Option<&str> {
     key.group_session
         .as_ref()
         .map(|session| session.session_name.as_str())
@@ -333,7 +363,7 @@ fn session_name(key: &ConvoKey) -> Option<&str> {
 
 /// Fold `other`, the same group read from another export, into `into`.
 fn merge_group_into(into: &mut Conversation, other: Conversation) {
-    into.convo.messages.extend(other.convo.messages);
+    into.pending.messages.extend(other.pending.messages);
     if let (
         ConversationKey::Group { members, .. },
         ConversationKey::Group {
@@ -343,7 +373,7 @@ fn merge_group_into(into: &mut Conversation, other: Conversation) {
     ) = (&mut into.key, other.key)
     {
         for member in other_members {
-            let same = |held: &IrParticipant| {
+            let same = |held: &Participant| {
                 held.identity == member.identity && held.display_name == member.display_name
             };
             if !members.iter().any(same) {
@@ -357,7 +387,7 @@ fn merge_group_into(into: &mut Conversation, other: Conversation) {
 struct Ingest {
     tz: Zone,
     copy_attachments: bool,
-    conversations: BTreeMap<ConvoKey, Conversation>,
+    conversations: BTreeMap<ChatIdKey, Conversation>,
     /// Every row matched to a file, in the order the rows were read.
     claims: Vec<FileClaim>,
     /// Each Messages chat directory's Messages row texts, keyed by the row's
@@ -379,19 +409,19 @@ struct Ingest {
 /// conversation and one second whose row names one file.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct NameGroup {
-    convo_key: ConvoKey,
+    chat_id_key: ChatIdKey,
     /// The row's `Attachment` cell, which is its attachment's `rel_path`.
     name: String,
     second: i64,
 }
 
 impl NameGroup {
-    /// The group of a message in `convo_key`, or `None` when its row names
+    /// The group of a message in `chat_id_key`, or `None` when its row names
     /// no file.
-    fn of(convo_key: &ConvoKey, message: &PendingMessage) -> Option<Self> {
+    fn of(chat_id_key: &ChatIdKey, message: &PendingMessage) -> Option<Self> {
         let attachment = message.attachments.first()?;
         Some(Self {
-            convo_key: convo_key.clone(),
+            chat_id_key: chat_id_key.clone(),
             name: attachment.rel_path.clone(),
             second: message.sort_key,
         })
@@ -408,7 +438,7 @@ struct FileClaim {
     /// Where the row sits in the export: the CSV's place in discovery order,
     /// then the row's place in that CSV.
     order: (usize, usize),
-    convo_key: ConvoKey,
+    chat_id_key: ChatIdKey,
     message: usize,
 }
 
@@ -501,10 +531,10 @@ impl Ingest {
         let csv_path = discovered.path.display();
         if session.key.is_name_only() {
             self.report.caveat(
-                message_crate_core::NAME_ONLY_CHAT,
+                message_crate_core::NAME_ONLY_CONVERSATION,
                 1,
                 format!("{csv_path} ({session_name})"),
-                message_crate_core::NAME_ONLY_CHAT_NOTE,
+                message_crate_core::NAME_ONLY_CONVERSATION_NOTE,
             );
         }
         for label in &session.unresolved_roster_labels {
@@ -517,7 +547,7 @@ impl Ingest {
             );
         }
         let chat_id = session.key.chat_id();
-        let convo_key = ConvoKey {
+        let chat_id_key = ChatIdKey {
             family: TransportFamily::from_kind(discovered.kind),
             chat_id: chat_id.clone(),
             group_session: session.key.is_group().then(|| GroupSession {
@@ -526,21 +556,21 @@ impl Ingest {
             }),
         };
         self.conversations
-            .entry(convo_key.clone())
+            .entry(chat_id_key.clone())
             .or_insert_with(|| {
                 let is_group = session.key.is_group();
-                let mut convo = PendingConversation::new(
+                let mut pending = PendingConversation::new(
                     chat_id,
                     is_group,
                     is_group.then(|| session_name.to_string()),
                     Vec::new(),
                 );
-                convo
+                pending
                     .extra
                     .insert("source_kind".into(), discovered.kind.as_str().to_string());
                 Conversation {
                     key: session.key.clone(),
-                    convo,
+                    pending,
                     row_digests: session.row_digests.clone(),
                 }
             });
@@ -551,9 +581,9 @@ impl Ingest {
             };
             let messages = &mut self
                 .conversations
-                .get_mut(&convo_key)
+                .get_mut(&chat_id_key)
                 .expect("conversation inserted above")
-                .convo
+                .pending
                 .messages;
             let source = message.extra_str(&attachment_source_key(0));
             if !source.is_empty() {
@@ -562,7 +592,7 @@ impl Ingest {
                     is_image: row.attachment_type.trim().eq_ignore_ascii_case("image"),
                     csv_name: row.attachment.clone(),
                     order: (csv.index, row_index),
-                    convo_key: convo_key.clone(),
+                    chat_id_key: chat_id_key.clone(),
                     message: messages.len(),
                 });
             }
@@ -584,8 +614,8 @@ impl Ingest {
             self.report.skipped_invalid_date += 1;
             return None;
         };
-        let is_notification = is_notification(&row.msg_type);
-        let is_from_me = !is_notification && is_outgoing(&row.msg_type);
+        let is_notification = is_notification(&row.message_type);
+        let is_from_me = !is_notification && is_outgoing(&row.message_type);
         let (sender_identity, sender_display_name) =
             resolve_sender(row, is_from_me, is_notification, session);
         let (attachments, attachment_extra) =
@@ -608,27 +638,40 @@ impl Ingest {
         extra.insert("contact_name".into(), session.contact_name.clone());
         extra.insert("service".into(), service);
         extra.insert("imazing_status".into(), row.status.clone());
-        extra.insert("imazing_type".into(), row.msg_type.clone());
-        extra.insert("reactions".into(), row.reactions.clone());
-        extra.insert("replying_to".into(), row.replying_to.clone());
+        extra.insert("imazing_type".into(), row.message_type.clone());
         extra.insert("forwarded".into(), row.forwarded.clone());
         extra.insert("attachment_info".into(), row.attachment_info.clone());
         extra.insert("delivered_date".into(), row.delivered_date.clone());
         extra.insert("read_date".into(), row.read_date.clone());
-        extra.insert("edited_date".into(), row.edited_date.clone());
-        extra.insert("deleted_date".into(), row.deleted_date.clone());
         extra.insert("sent_date".into(), row.sent_date.clone());
         extra.extend(attachment_extra);
+        extra.extend(Self::mark_cells(row));
 
         Some(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_identity,
-            sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text.clone(),
             attachments,
             extra,
         })
+    }
+
+    /// The cells of a row that mark it, as written, for [`ImazingProjection`]
+    /// to read through [`row_marks`]: `reactions_cell`, `replying_to_cell`,
+    /// `deleted_date_cell` and `edited_date_cell`. A blank cell is left out,
+    /// and none of them is copied into the message's source fields.
+    fn mark_cells(row: &RawRow) -> BTreeMap<String, String> {
+        [
+            ("reactions_cell", &row.reactions),
+            ("replying_to_cell", &row.replying_to),
+            ("deleted_date_cell", &row.deleted_date),
+            ("edited_date_cell", &row.edited_date),
+        ]
+        .into_iter()
+        .filter(|(_, cell)| !cell.trim().is_empty())
+        .map(|(key, cell)| (key.to_string(), cell.clone()))
+        .collect()
     }
 
     /// Deal with the files that no row names in each Messages chat directory:
@@ -649,7 +692,7 @@ impl Ingest {
         // Each picture an Image row names, with those rows in CSV order.
         let mut pictures: HashMap<PathBuf, Vec<usize>> = HashMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            if claim.is_image && claim.convo_key.family == TransportFamily::Messages {
+            if claim.is_image && claim.chat_id_key.family == TransportFamily::Messages {
                 pictures
                     .entry(claim.source.clone())
                     .or_default()
@@ -710,12 +753,12 @@ impl Ingest {
     fn tell_apart_files_of_one_name(&mut self) {
         let mut groups: BTreeMap<NameGroup, Vec<usize>> = BTreeMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            let message = &self.conversations[&claim.convo_key].convo.messages[claim.message];
-            if let Some(group) = NameGroup::of(&claim.convo_key, message) {
+            let message = &self.conversations[&claim.chat_id_key].pending.messages[claim.message];
+            if let Some(group) = NameGroup::of(&claim.chat_id_key, message) {
                 groups.entry(group).or_default().push(index);
             }
         }
-        let mut digests: Vec<(ConvoKey, usize, String)> = Vec::new();
+        let mut digests: Vec<(ChatIdKey, usize, String)> = Vec::new();
         let mut hashed: BTreeSet<NameGroup> = BTreeSet::new();
         for (group, claims) in groups {
             let mut files_by_csv: BTreeMap<usize, HashSet<&Path>> = BTreeMap::new();
@@ -731,24 +774,26 @@ impl Ingest {
             }
             for index in claims {
                 let claim = &self.claims[index];
-                let digest = message_ir::file_sha256(&claim.source)
+                let digest = file_io::file_sha256(&claim.source)
                     .unwrap_or_else(|_| claim.source.to_string_lossy().into_owned());
-                digests.push((claim.convo_key.clone(), claim.message, digest));
+                digests.push((claim.chat_id_key.clone(), claim.message, digest));
             }
             hashed.insert(group);
         }
-        for (convo_key, message, digest) in digests {
-            self.messages_mut(&convo_key)[message]
+        for (chat_id_key, message, digest) in digests {
+            self.messages_mut(&chat_id_key)[message]
                 .extra
                 .insert(attachment_content_key(0), digest);
         }
-        let convo_keys: BTreeSet<ConvoKey> =
-            hashed.iter().map(|group| group.convo_key.clone()).collect();
-        for convo_key in convo_keys {
-            for message in self.messages_mut(&convo_key) {
+        let chat_id_keys: BTreeSet<ChatIdKey> = hashed
+            .iter()
+            .map(|group| group.chat_id_key.clone())
+            .collect();
+        for chat_id_key in chat_id_keys {
+            for message in self.messages_mut(&chat_id_key) {
                 let no_file = message.extra_str(&attachment_source_key(0)).is_empty();
                 if no_file
-                    && NameGroup::of(&convo_key, message)
+                    && NameGroup::of(&chat_id_key, message)
                         .is_some_and(|group| hashed.contains(&group))
                 {
                     message
@@ -759,13 +804,13 @@ impl Ingest {
         }
     }
 
-    /// The messages of the conversation `convo_key` names.
-    fn messages_mut(&mut self, convo_key: &ConvoKey) -> &mut Vec<PendingMessage> {
+    /// The messages of the conversation `chat_id_key` names.
+    fn messages_mut(&mut self, chat_id_key: &ChatIdKey) -> &mut Vec<PendingMessage> {
         &mut self
             .conversations
-            .get_mut(convo_key)
+            .get_mut(chat_id_key)
             .expect("a claim names a conversation that exists")
-            .convo
+            .pending
             .messages
     }
 
@@ -798,9 +843,9 @@ impl Ingest {
             .into_owned();
         let message = &mut self
             .conversations
-            .get_mut(&first.convo_key)
+            .get_mut(&first.chat_id_key)
             .expect("a claim names a conversation that exists")
-            .convo
+            .pending
             .messages[first.message];
         message.extra.insert(
             attachment_source_key(message.attachments.len()),
@@ -879,10 +924,14 @@ fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
     }
 }
 
-/// iMazing deltas of the shared [`message_ir::pending_to_document`]
+/// iMazing deltas of the shared [`ir::project_pending`]
 /// projection, for one conversation.
 struct ImazingProjection<'a> {
     export: &'a ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
+    /// The zone every date of the export is read in.
+    tz: Zone,
     /// The key of the conversation being projected.
     key: &'a ConversationKey,
     /// The source file of each attachment of the messages the projection
@@ -897,95 +946,152 @@ impl ProjectionHooks for ImazingProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, msg: &PendingMessage) -> IrService {
-        IrService::parse(msg.extra_str("service"))
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
-    fn role(&self, msg: &PendingMessage) -> ProjectedRole {
-        if msg.extra_flag("is_notification") {
+    fn service(&self, message: &PendingMessage) -> Transport {
+        Transport::parse(message.extra_str("service"))
+    }
+
+    fn role(&self, message: &PendingMessage) -> ProjectedRole {
+        if message.extra_flag("is_notification") {
             ProjectedRole::Notification
-        } else if msg.is_from_me {
+        } else if message.is_from_me {
             ProjectedRole::Outgoing
         } else {
             ProjectedRole::Incoming
         }
     }
 
-    fn subject(&self, msg: &PendingMessage) -> Option<String> {
-        msg.extra_opt("subject")
+    fn subject(&self, message: &PendingMessage) -> Option<String> {
+        message.extra_opt("subject")
     }
 
-    fn attachment_digests(&self, msg: &PendingMessage) -> Vec<String> {
-        attachment_digests(msg)
+    fn attachment_digests(&self, message: &PendingMessage) -> Vec<String> {
+        attachment_digests(message)
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
+    /// Every message is quotable by its second: a reply names the quoted
+    /// message by its Message Date, and iMazing writes whole seconds. Two
+    /// kept messages in one second name neither, as the projection rules.
+    fn reply_key(&self, message: &PendingMessage) -> Option<String> {
+        Some(message.sort_key.to_string())
+    }
+
+    /// A row with a `Replying to` cell is a reply, linked to the message of
+    /// the same chat whose Message Date the cell quotes, whoever the cell
+    /// names as its sender: the name is not always the `Sender Name` as
+    /// written, so it is not compared. The quoted date is read in the
+    /// export's zone, as every Message Date is, so the two compare as
+    /// instants. A cell with no date, or one that names a second no row of
+    /// the export has, is a reply with no link.
+    fn reply(&self, message: &PendingMessage) -> Option<PendingReply> {
+        let cell = message.extra_opt("replying_to_cell")?;
+        Some(PendingReply {
+            quoted_key: row_marks::quoted_date(&cell)
+                .and_then(|date| parse_message_date(date, self.tz))
+                .map(|second| second.to_string()),
+        })
+    }
+
+    /// The reactions the row's `Reactions` cell holds, each its emoji
+    /// alone, with no reactor.
+    fn reactions(&self, message: &PendingMessage) -> Vec<Reaction> {
+        row_marks::parse_reactions(message.extra_str("reactions_cell"))
+    }
+
+    /// A row with a `Deleted Date` was deleted in Messages; never Unsent.
+    fn deletion(&self, message: &PendingMessage) -> Option<Deletion> {
+        row_marks::deletion(message.extra_str("deleted_date_cell"))
+    }
+
+    /// A row with an `Edited Date` has one earlier version, with no text:
+    /// iMazing writes the final text only.
+    fn edits(&self, message: &PendingMessage) -> Vec<EarlierVersion> {
+        let Some(cell) = message.extra_opt("edited_date_cell") else {
+            return Vec::new();
+        };
+        vec![row_marks::textless_edit(
+            parse_message_date(&cell, self.tz).map(|secs| secs * 1000),
+        )]
+    }
+
+    fn attachment_to_ir(
+        &self,
+        attachment: &PendingAttachment,
+        message: &PendingMessage,
+    ) -> Attachment {
         // A message's attachments have different names: the row's file, and
         // a Live Photo video named as the picture with the video's extension.
-        let source = msg
+        let source = message
             .attachments
             .iter()
-            .position(|held| held.rel_path == att.rel_path)
-            .map(|index| msg.extra_str(&attachment_source_key(index)))
+            .position(|held| held.rel_path == attachment.rel_path)
+            .map(|index| message.extra_str(&attachment_source_key(index)))
             .filter(|source| !source.is_empty())
             .map(PathBuf::from);
         self.sources.borrow_mut().push(source);
-        pending_attachment_to_ir(att, msg)
+        pending_attachment_to_ir(attachment, message)
     }
 
     /// A group's members come from its key, never from its chat id. A
     /// one-to-one conversation's one participant is the person it is with:
     /// their address, or for a conversation keyed by a name, the name and no
     /// address.
-    fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, pending: &PendingConversation) -> Vec<Participant> {
         match self.key {
             ConversationKey::Group { members, .. } => members.clone(),
-            ConversationKey::OneToOne(handle) => vec![IrParticipant {
+            ConversationKey::OneToOne(handle) => vec![Participant {
                 identity: Some(handle.clone()),
-                display_name: convo.first_contact_name(),
+                display_name: pending.first_contact_name(),
+                country: None,
             }],
-            ConversationKey::NameOnly(_) => vec![IrParticipant {
+            ConversationKey::NameOnly(_) => vec![Participant {
                 identity: None,
-                display_name: convo.first_contact_name(),
+                display_name: pending.first_contact_name(),
+                country: None,
             }],
         }
     }
 
-    fn packaging_stem_suffix(&self, convo: &PendingConversation) -> Option<String> {
-        imazing_packaging_stem_suffix(convo.extra_str("source_kind"))
+    fn packaging_stem_suffix(&self, pending: &PendingConversation) -> Option<String> {
+        imazing_packaging_stem_suffix(pending.extra_str("source_kind"))
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        pending: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous
         // CSV/mail stem).
-        let session_title = convo.display_name.as_deref().unwrap_or("");
+        let session_title = pending.display_name.as_deref().unwrap_or("");
         if !session_title.is_empty() {
             fields.insert(
                 "group_title".into(),
                 serde_json::Value::String(session_title.to_string()),
             );
         }
+        // The reactions, the reply, the deleted mark and the edit are the
+        // message's own fields, not vendor leftovers.
         for key in [
             "imazing_status",
             "imazing_type",
-            "reactions",
-            "replying_to",
             "forwarded",
             "attachment_info",
             "delivered_date",
             "read_date",
-            "edited_date",
-            "deleted_date",
             "sent_date",
         ] {
-            let val = msg.extra_str(key);
+            let val = message.extra_str(key);
             if !val.is_empty() {
                 fields.insert(key.into(), serde_json::Value::String(val.to_string()));
             }
         }
-        IrSource {
+        VendorFields {
             android_type: None,
             fields,
         }

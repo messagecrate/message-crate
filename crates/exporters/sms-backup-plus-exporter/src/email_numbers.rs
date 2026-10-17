@@ -11,7 +11,7 @@
 
 use crate::flat_eml::{group_key, names_a_group};
 use crate::types::ParsedMessage;
-use message_ir::{IdentityType, IrConversationType};
+use ir::{ConversationType, IdentityType};
 use phone::Handle;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -76,19 +76,19 @@ pub(crate) struct KeptByEmail {
     pub several_numbers: BTreeSet<String>,
 }
 
-/// True when `msg` names a group member by email address: a group's member
+/// True when `message` names a group member by email address: a group's member
 /// or sender, or the sender of a group mail that did not name the owner and
 /// was filed under them.
-pub(crate) fn names_a_member_by_email(msg: &ParsedMessage) -> bool {
-    (msg.is_group() || msg.owner_not_named)
-        && msg
+pub(crate) fn names_a_member_by_email(message: &ParsedMessage) -> bool {
+    (message.is_group() || message.owner_not_named)
+        && message
             .participants
             .iter()
-            .chain(&msg.sender)
+            .chain(&message.sender)
             .any(|h| h.kind() == IdentityType::Email)
 }
 
-/// Key every member `msg` names by email address by the one number
+/// Key every member `message` names by email address by the one number
 /// `numbers` gives that address, and work the conversation's key out again.
 /// An address with no number, or with several, keeps its place and is noted
 /// in `kept`.
@@ -96,7 +96,7 @@ pub(crate) fn names_a_member_by_email(msg: &ParsedMessage) -> bool {
 /// Two members that turn out to be one person are one member, and a group
 /// left with a single member is that person's one-to-one conversation.
 pub(crate) fn key_members_by_number(
-    msg: &mut ParsedMessage,
+    message: &mut ParsedMessage,
     numbers: &NumbersByEmail,
     kept: &mut KeptByEmail,
 ) {
@@ -116,23 +116,23 @@ pub(crate) fn key_members_by_number(
         handle.clone()
     };
     let mut seen = HashSet::new();
-    let participants: Vec<Handle> = msg
+    let participants: Vec<Handle> = message
         .participants
         .iter()
         .map(&mut by_number)
         .filter(|h| seen.insert(h.key().to_string()))
         .collect();
-    msg.sender = msg.sender.as_ref().map(&mut by_number);
-    if msg.is_group() && names_a_group(&participants) {
+    message.sender = message.sender.as_ref().map(&mut by_number);
+    if message.is_group() && names_a_group(&participants) {
         let (chat_key, title) = group_key(&participants);
-        msg.chat_key = chat_key;
-        msg.group_title = Some(title);
+        message.chat_key = chat_key;
+        message.group_title = Some(title);
     } else if let Some(peer) = participants.first() {
-        msg.chat_key = peer.key().to_string();
-        msg.conversation_type = IrConversationType::Individual;
-        msg.group_title = None;
+        message.chat_key = peer.key().to_string();
+        message.conversation_type = ConversationType::OneToOne;
+        message.group_title = None;
     }
-    msg.participants = participants;
+    message.participants = participants;
 }
 
 #[cfg(test)]

@@ -1,35 +1,34 @@
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { getBaseUrl } from "../../lib/api";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
+import { invokeExportDirectory } from "../../lib/desktop/export";
 import {
-  getOpenToNetwork,
-  isOwnAddress,
+  invokeOpenMessageCrateDirectory,
+  invokeSetOpenToNetwork,
   type LocalServerStatus,
-  openDataDirectory,
-  setLocalServerOpenToNetwork,
-  setOpenToNetwork,
-} from "../../lib/localServer";
-import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
-import {
-  invokeExportDirectory,
-  invokeSetStagingRoot,
-  invokeStagingRoot,
-  type ToolName,
-  type ToolStatus,
-  type ToolsStatus,
-} from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+} from "../../lib/desktop/localServer";
+import { invokeSetStagingDirectory, invokeStagingDirectory } from "../../lib/desktop/staging";
+import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
+import { getOpenToNetwork, isOwnAddress, setOpenToNetwork } from "../../lib/localServer";
+import { keys } from "../../lib/queryKeys";
+import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/systemSettings";
+import { isTauri } from "../../lib/tauriCheck";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
-import { accentLink } from "../../lib/uiStyles";
-import { useToolsStatus } from "../../lib/useToolsStatus";
+import type { ToolName } from "../../lib/types";
+import { accentLinkClass } from "../../lib/uiStyles";
+import { AccountStagingUsage } from "./StagingDirectoryUsage";
 
-const sectionHeading = "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
+const sectionHeadingClass =
+  "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
 
 const EXAMPLE_STAGING = "staging-iphone-ios-260809-143022";
 
@@ -38,19 +37,19 @@ const EXAMPLE_STAGING = "staging-iphone-ios-260809-143022";
  * Below the `sm` width the label sits above its control, so a phone-width
  * window does not scroll sideways.
  */
-const settingsGrid =
+const settingsGridClass =
   "grid grid-cols-[minmax(0,1fr)] items-center gap-x-3 gap-y-1 sm:grid-cols-[13.5rem_minmax(0,1fr)]";
-const settingsLabel = "whitespace-nowrap text-[0.875rem] font-medium text-text";
+const settingsLabelClass = "whitespace-nowrap text-[0.875rem] font-medium text-text";
 /** A line under a control, kept in the control's column from `sm`. */
-const settingsNoteLayout = "pl-2 text-[0.75rem] sm:col-start-2";
-const settingsHelp = `${settingsNoteLayout} text-muted`;
+const settingsNoteLayoutClass = "pl-2 text-[0.75rem] sm:col-start-2";
+const settingsHelpClass = `${settingsNoteLayoutClass} text-muted`;
 
 /** Example path shown under the Staging directory field. */
 function stagingHelpExample(stagingDir: string, defaultDir: string): string {
   const trimmed = stagingDir.trim().replace(/[/\\]+$/, "");
   const defaultTrimmed = defaultDir.trim().replace(/[/\\]+$/, "");
   if (!trimmed || (defaultTrimmed && trimmed === defaultTrimmed)) {
-    return `~/message-crate/${EXAMPLE_STAGING}`;
+    return `~/message-crate/staging/${EXAMPLE_STAGING}`;
   }
   return `${trimmed}/${EXAMPLE_STAGING}`;
 }
@@ -61,26 +60,19 @@ const DOWNLOAD_RETRIED =
 
 /**
  * Where to put a program that is missing, as the words before the Tools
- * Directory's path (`dir`), or the whole sentence when `dir` is null.
- * ffmpeg and ffprobe are used only from one place, so a missing one goes
- * beside the one that was found, or both go in the Tools Directory.
- * wtsexporter is looked for in the Tools Directory only.
+ * Directory's path. ffmpeg and ffprobe are used only from one place, so a
+ * missing one goes beside the one that was found, or both go in the Tools
+ * Directory. wtsexporter is looked for in the Tools Directory only.
  */
-function missingFix(
-  name: ToolName,
-  partner: ToolStatus | null,
-  toolsDir: string | null,
-): { text: string; dir: string | null } | null {
+function missingFix(name: ToolName, partner: ToolStatus | null): string {
   if (partner == null) {
-    return toolsDir ? { text: "Put it in the Tools Directory", dir: toolsDir } : null;
+    return "Put it in the Tools Directory";
   }
   const other = name === "ffmpeg" ? "ffprobe" : "ffmpeg";
   if (partner.state === "found") {
-    return toolsDir
-      ? { text: `Put it beside ${other}, or put both in the Tools Directory`, dir: toolsDir }
-      : { text: `Put it beside ${other}`, dir: null };
+    return `Put it beside ${other}, or put both in the Tools Directory`;
   }
-  return toolsDir ? { text: `Put it and ${other} in the Tools Directory`, dir: toolsDir } : null;
+  return `Put it and ${other} in the Tools Directory`;
 }
 
 /**
@@ -92,36 +84,25 @@ function statusExtra(
   name: ToolName,
   status: ToolStatus,
   partner: ToolStatus | null,
-  toolsDir: string | null,
+  toolsDir: string,
 ): { label: string; node: ReactNode } | null {
-  const fixWithDir = (fix: { text: string; dir: string | null } | null) =>
-    fix == null
-      ? null
-      : {
-          label: fix.dir ? `${fix.text}, ${fix.dir}.` : `${fix.text}.`,
-          node: (
-            <>
-              {fix.text}
-              {fix.dir ? (
-                <>
-                  , <code className="break-all font-mono text-[0.7rem]">{fix.dir}</code>
-                </>
-              ) : null}
-              .
-            </>
-          ),
-        };
+  const fixWithDir = (text: string) => ({
+    label: `${text}, ${toolsDir}.`,
+    node: (
+      <>
+        {text}, <code className="break-all font-mono text-[0.7rem]">{toolsDir}</code>.
+      </>
+    ),
+  });
   switch (status.state) {
     // An app opened from the Dock on macOS doesn't see the PATH a shell
     // sets, so a program installed with Homebrew is missing here until it
     // is linked into the Tools Directory.
     case "missing":
-      return fixWithDir(missingFix(name, partner, toolsDir));
+      return fixWithDir(missingFix(name, partner));
     // No download for this computer: only a copy put there by hand is used.
     case "unavailable":
-      return fixWithDir(
-        toolsDir ? { text: "Put a copy in the Tools Directory", dir: toolsDir } : null,
-      );
+      return fixWithDir("Put a copy in the Tools Directory");
     case "downloadFailed": {
       const { before, section, after } = troubleshootingSentence(name);
       return {
@@ -129,7 +110,7 @@ function statusExtra(
         node: (
           <>
             {DOWNLOAD_RETRIED} {before}
-            <a href={section.url} target="_blank" rel="noopener" className={accentLink}>
+            <a href={section.url} target="_blank" rel="noopener" className={accentLinkClass}>
               {section.heading}
             </a>
             {after}
@@ -156,7 +137,7 @@ function ToolStatusRow({
   status: ToolStatus;
   /** For ffmpeg the status of ffprobe, and the reverse; null for wtsexporter. */
   partner: ToolStatus | null;
-  toolsDir: string | null;
+  toolsDir: string;
 }) {
   if (status.state === "found") {
     return (
@@ -201,14 +182,14 @@ function ToolStatusRow({
 function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string | null }) {
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Media</h3>
+      <h3 className={sectionHeadingClass}>Media</h3>
       <p className="m-0 max-w-prose text-[0.813rem] text-muted">
         ffmpeg and ffprobe are looked for on PATH, then in the Tools Directory, and both must come
         from one of them. wtsexporter is looked for in the Tools Directory only.
       </p>
-      {tools?.toolsDir ? (
-        <div className={`${settingsGrid} mt-2`}>
-          <span className={settingsLabel}>Tools directory</span>
+      {tools ? (
+        <div className={`${settingsGridClass} mt-2`}>
+          <span className={settingsLabelClass}>Tools directory</span>
           <span className="break-all pl-2 font-mono text-[0.813rem] text-text">
             {tools.toolsDir}
           </span>
@@ -249,9 +230,9 @@ function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string
 function AppVersion() {
   return (
     <div>
-      <h3 className={sectionHeading}>About</h3>
-      <div className={settingsGrid}>
-        <span className={settingsLabel}>Version</span>
+      <h3 className={sectionHeadingClass}>About</h3>
+      <div className={settingsGridClass}>
+        <span className={settingsLabelClass}>Version</span>
         <span className="break-all pl-2 font-mono text-[0.813rem] text-text">{APP_BUILD}</span>
       </div>
     </div>
@@ -266,21 +247,21 @@ function AppVersion() {
  * build never shows this.
  */
 function ThirdPartySoftware() {
-  const link = "text-accent";
+  const linkClass = "text-accent";
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Third-party software</h3>
+      <h3 className={sectionHeadingClass}>Third-party software</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
         Apple Messages are read by the Apple Messages reader (imessage-reader), a separate program
         installed beside this app. It is free software under the GNU General Public License, version
         3 or later, and its source is published with each release.
       </p>
       <p className="m-0 mt-1 text-[0.875rem]">
-        <a href={readerSourceUrl(APP_BUILD)} target="_blank" rel="noopener" className={link}>
+        <a href={readerSourceUrl(APP_BUILD)} target="_blank" rel="noopener" className={linkClass}>
           Source
         </a>
         <span className="text-muted"> · </span>
-        <a href={readerLicenseUrl(APP_BUILD)} target="_blank" rel="noopener" className={link}>
+        <a href={readerLicenseUrl(APP_BUILD)} target="_blank" rel="noopener" className={linkClass}>
           License
         </a>
       </p>
@@ -306,8 +287,8 @@ function DataDirectory() {
     // While the app uses another Message Crate, the setting waits for the
     // next start of its own.
     if (!isOwnAddress(getBaseUrl())) return;
-    setLocalServerOpenToNetwork(on).then(setServer, (caught: unknown) => {
-      setNetworkError(caught instanceof Error ? caught.message : String(caught));
+    invokeSetOpenToNetwork(on).then(setServer, (caught: unknown) => {
+      setNetworkError(errorLine(caught));
     });
   };
   // A Message Crate the app only found (Docker on this computer) listens
@@ -315,21 +296,22 @@ function DataDirectory() {
   const notOurs = server?.status === "ready" && !server.started_by_app;
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Message Crate on this computer</h3>
+      <h3 className={sectionHeadingClass}>Message Crate on this computer</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
-        The Message Crate this app starts keeps its database and attachments in one directory. A
-        copy of that directory is a backup.
+        This app keeps everything it stores in the Message Crate directory, message-crate in the
+        home directory. The Message Crate it starts keeps its database and attachments in data
+        inside it. A copy of data is a backup.
       </p>
       <PlainButton
         className="mt-2 rounded border border-border px-3 py-1.5 text-[0.875rem] text-text hover:bg-elevated"
         onPress={() => {
           setError(null);
-          openDataDirectory().catch((caught: unknown) => {
-            setError(caught instanceof Error ? caught.message : String(caught));
+          invokeOpenMessageCrateDirectory().catch((caught: unknown) => {
+            setError(errorLine(caught));
           });
         }}
       >
-        Open data directory
+        Open Message Crate directory
       </PlainButton>
       {error ? (
         <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
@@ -371,28 +353,20 @@ function DataDirectory() {
 /**
  * Where each Export and Convert gets a directory of its own, unless the
  * person chooses another one on its screen. The desktop process keeps it in
- * the app-data directory; the button opens it.
+ * the Message Crate Directory; the button opens it.
  */
 function ExportDirectory() {
-  const [path, setPath] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    invokeExportDirectory().then(
-      (dir) => {
-        if (live) setPath(dir);
-      },
-      (caught: unknown) => {
-        if (live) setError(caught instanceof Error ? caught.message : String(caught));
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
+  const query = useQuery({
+    queryKey: keys.desktopExportDirectory.all,
+    queryFn: invokeExportDirectory,
+    enabled: isTauri(),
+    retry: false,
+  });
+  const path = query.data ?? null;
+  const error = query.error ? errorLine(query.error) : null;
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Exports</h3>
+      <h3 className={sectionHeadingClass}>Exports</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
         Each Export and Convert gets a directory of its own in the Export Directory, unless you
         choose another directory to save to.
@@ -415,34 +389,29 @@ function ExportDirectory() {
 }
 
 export function SystemSection() {
+  const queryClient = useQueryClient();
   const stagingId = useId();
-  const [stagingPath, setStagingPath] = useState("");
-  const [defaultStagingPath, setDefaultStagingPath] = useState("");
   /** The Staging Directory the desktop process holds now. */
-  const [stagingError, setStagingError] = useState<string | null>(null);
-  const [rememberPaths, setRememberPaths] = useState(false);
+  const stagingQuery = useQuery({
+    queryKey: keys.desktopStagingDirectory.all,
+    queryFn: invokeStagingDirectory,
+    enabled: isTauri(),
+    retry: false,
+  });
+  /** What is typed in the field; `null` until something is, so the field shows the one held. */
+  const [typedStagingPath, setTypedStagingPath] = useState<string | null>(null);
+  const stagingPath = typedStagingPath ?? stagingQuery.data?.root ?? "";
+  const defaultStagingPath = stagingQuery.data?.defaultRoot ?? "";
+  /** Why the last value typed was not saved, or why reading the directory again failed. */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const stagingError = saveError ?? (stagingQuery.error ? errorLine(stagingQuery.error) : null);
+  const [rememberPaths, setRememberPaths] = useState(() => isTauri() && getRememberImporterPaths());
   // Asked again each second while a download runs.
   const toolsQuery = useToolsStatus();
   const tools: ToolsStatus | null = toolsQuery.data ?? null;
   const toolsError = toolsQuery.error
-    ? `Could not look for the media tools. ${toolsQuery.error instanceof Error ? toolsQuery.error.message : String(toolsQuery.error)}`
+    ? `Could not look for the media tools. ${errorLine(toolsQuery.error)}`
     : null;
-
-  useEffect(() => {
-    if (!isTauri()) return;
-
-    setRememberPaths(getRememberImporterPaths());
-
-    void (async () => {
-      try {
-        const staging = await invokeStagingRoot();
-        setDefaultStagingPath(staging.defaultRoot);
-        setStagingPath(staging.root);
-      } catch (caught: unknown) {
-        setStagingError(caught instanceof Error ? caught.message : String(caught));
-      }
-    })();
-  }, []);
 
   // The desktop process keeps the setting and decides what it takes: every
   // value typed is sent, and a refusal is shown as the desktop process gave
@@ -452,18 +421,23 @@ export function SystemSection() {
   const stagingSaveGen = useRef(0);
   const lastStagingSave = useRef<Promise<unknown>>(Promise.resolve());
   const onStagingPathChange = (next: string) => {
-    setStagingPath(next);
+    setTypedStagingPath(next);
     const gen = ++stagingSaveGen.current;
-    const save = invokeSetStagingRoot(next.trim());
+    const save = invokeSetStagingDirectory(next.trim());
     lastStagingSave.current = save;
     save.then(
       () => {
+        // Read again rather than keep this answer: answers can arrive out of
+        // order, and the read after the last one is what the process holds.
+        void queryClient.invalidateQueries({ queryKey: keys.desktopStagingDirectory.all });
+        // The Import form reads the free space of the new directory's disk.
+        void queryClient.invalidateQueries({ queryKey: keys.desktopLowDiskSpace.all });
         if (gen !== stagingSaveGen.current) return;
-        setStagingError(null);
+        setSaveError(null);
       },
       (caught: unknown) => {
         if (gen !== stagingSaveGen.current) return;
-        setStagingError(`Not saved. ${caught instanceof Error ? caught.message : String(caught)}`);
+        setSaveError(`Not saved. ${errorLine(caught)}`);
       },
     );
   };
@@ -471,22 +445,24 @@ export function SystemSection() {
   // A value the desktop process refused stays in the field until it is left.
   // The field then shows the directory the desktop process holds, read once the
   // last save has answered, so a value accepted after the refusal is never
-  // hidden behind the one shown before it.
+  // hidden behind the one shown before it. What it reads goes into the
+  // query's cache, which the field shows once the typed value is dropped.
   const onStagingPathBlur = () => {
     if (stagingError === null) return;
     const gen = ++stagingSaveGen.current;
-    setStagingError(null);
+    setSaveError(null);
     lastStagingSave.current
       .catch(() => undefined)
-      .then(() => invokeStagingRoot())
+      .then(() => invokeStagingDirectory())
       .then(
-        (staging) => {
+        (held) => {
           if (gen !== stagingSaveGen.current) return;
-          setStagingPath(staging.root);
+          queryClient.setQueryData(keys.desktopStagingDirectory.all, held);
+          setTypedStagingPath(null);
         },
         (caught: unknown) => {
           if (gen !== stagingSaveGen.current) return;
-          setStagingError(caught instanceof Error ? caught.message : String(caught));
+          setSaveError(errorLine(caught));
         },
       );
   };
@@ -507,9 +483,9 @@ export function SystemSection() {
 
   return (
     <div>
-      <h3 className={sectionHeading}>Staging</h3>
-      <div className={settingsGrid}>
-        <label htmlFor={stagingId} className={settingsLabel}>
+      <h3 className={sectionHeadingClass}>Staging</h3>
+      <div className={settingsGridClass}>
+        <label htmlFor={stagingId} className={settingsLabelClass}>
           Staging directory
         </label>
         <div>
@@ -519,17 +495,18 @@ export function SystemSection() {
             onChange={onStagingPathChange}
             onBlur={onStagingPathBlur}
             directory
-            placeholder={defaultStagingPath || "~/message-crate"}
+            placeholder={defaultStagingPath || "~/message-crate/staging"}
           />
         </div>
         {stagingError ? (
-          <p className={`${settingsNoteLayout} m-0 text-danger`} role="alert">
+          <p className={`${settingsNoteLayoutClass} m-0 text-danger`} role="alert">
             {stagingError}
           </p>
         ) : null}
-        <p className={settingsHelp}>
+        <p className={settingsHelpClass}>
           Each Import Run gets a directory here while it runs. For example {helpExample}
         </p>
+        <AccountStagingUsage className={settingsNoteLayoutClass} />
       </div>
 
       <Checkbox

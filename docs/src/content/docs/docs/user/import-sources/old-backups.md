@@ -25,8 +25,8 @@ Reads a backup directory with `gosms_sys*.xml` (SMS) and `I_*.pdu` files (MMS).
 
 Reads Messages or WhatsApp CSV files from the third-party iMazing backup tool.
 
-- **What you need**: iMazing CSV export files, chat directories, or a full device export tree
-- **Known gaps**: CSV format omits information present in a native iPhone backup. Group membership, reactions, and reply threads may be incomplete or absent
+- **What you need**: iMazing CSV export files, conversation directories, or a full device export tree
+- **Known gaps**: CSV format omits information present in a native iPhone backup. Group membership, reactions, and replies may be incomplete or absent
 
 ## OpenExtract
 
@@ -41,5 +41,6 @@ Reads offline `.eml` files, not a live email account. SMS Backup+ was an older A
 
 - **What you need**: the `.eml` files from a local backup, owner phone numbers, and owner email addresses
 - **Known gaps**: sent-message detection depends on correct owner identity. Some MMS content and group threading may be incomplete
+- **Skipped**: call log entries, and the WhatsApp messages SMS Backup+ backed up from 2013 to 2015. Each is counted in the import's summary, and none is imported
 
 Field-level mapping: [Formats](/docs/developer/formats/).

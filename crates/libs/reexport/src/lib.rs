@@ -1,44 +1,48 @@
 //! Convert an existing Message Crate output directory to another format.
 
 use anyhow::{Context, Result, bail};
-use media::{CompressOptions, MediaMode};
-pub use message_crate_core::RunResult;
-use message_crate_core::{
-    ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, ExportReport, ExportTransforms, ExporterConfig,
-    LogSink, MediaConfig, OutputFormat, SourceConfig, attachment_size_hint, document_messages,
-    prepare_outputs,
-};
-use message_ir::{ConversationDocument, IrMessage};
-use message_ir_format::{
+use ir::{ConversationDocument, Message, missing_reason};
+use ir_format::{
     CSV_HEADERS, EXPORT_SENTINEL, FormatSink, MergedArchive, clean_previous_ir_output,
     read_conversation_csv, read_conversation_eml_dir, read_conversation_json,
     read_conversation_jsonl, read_conversation_mbox,
 };
-use message_staging::{
-    AttachmentSource, AttachmentSpool, CountedAttachments, Disk, PathSources, check_headroom,
-    load_attachment_source,
+pub use message_crate_core::RunResult;
+use message_crate_core::{
+    ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, AttachmentFiles, ExportReport, ExportTransforms,
+    FormatConfig, LogSink, OutputConfig, OutputFormat, ProgressSink, RunContext, Sinks,
+    attachment_size_hint, document_messages, prepare_outputs, require_input,
 };
 use sms_backup_plus_exporter::SmsBackupPlusArchive;
 use sms_backup_restore_exporter::{
     ReadOptions, SbrArchive, read_backup, spooled_attachments, stage_read_attachments,
+};
+use staging::{
+    AttachmentSource, AttachmentSpool, CountedAttachments, Disk, PathSources, check_headroom,
+    load_attachment_source,
 };
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-/// Convert the prior export in `config.inputs[0]` to `config.output_format`.
+/// Convert the prior export in `inputs[0]` to `output.format`.
 ///
 /// # Errors
 ///
 /// Returns an error when the input is missing or ambiguous, the output is or
 /// holds the input directory, an artifact cannot be read, or the output cannot be written.
-pub fn run(config: &ExporterConfig) -> Result<RunResult> {
-    let input = config.require_input().map_err(anyhow::Error::msg)?;
-    if config.output.as_os_str().is_empty() {
+pub fn run(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    format: &FormatConfig,
+) -> Result<RunResult> {
+    let input = require_input(inputs).map_err(anyhow::Error::msg)?;
+    if output.directory.as_os_str().is_empty() {
         bail!("output directory is required");
     }
-    let report = convert_export(input, config)?;
+    let report = convert_export(input, context, output, format)?;
     Ok(RunResult::new(report.log_lines(), &report.report))
 }
 
@@ -53,8 +57,7 @@ struct ReexportReport {
     /// The name of the format written when it holds only SMS and MMS, for
     /// the line that says how many messages were left out of it.
     sms_only_format: Option<&'static str>,
-    /// Conversations written, attachments staged, what media conversion
-    /// did, and obfuscation.
+    /// Conversations written, attachments staged, and obfuscation.
     report: ExportReport,
 }
 
@@ -79,26 +82,27 @@ impl ReexportReport {
         if missing > 0 {
             lines.push(format!("  {}", ATTACHMENTS_MISSING.line(missing)));
         }
-        lines.extend(self.report.media_lines());
+        lines.extend(self.report.obfuscated_line());
         lines
     }
 }
 
 /// Detect the input format, copy attachments if needed, and write the new export.
-fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportReport> {
+fn convert_export(
+    input_dir: &Path,
+    context: &RunContext,
+    output: &OutputConfig,
+    format: &FormatConfig,
+) -> Result<ReexportReport> {
     // SMS Backup+ mail records when its backup was made: the start of the
     // Export Run this conversion is part of, or of this run when it is one.
-    let started = match &config.source {
-        SourceConfig::Format(format) => format.run_started,
-        _ => None,
-    }
-    .unwrap_or_else(chrono::Utc::now);
+    let started = format.run_started.unwrap_or_else(chrono::Utc::now);
     // The output is cleaned below, so one that is or holds the input is
     // refused before anything is written.
-    let (inputs, output) = prepare_outputs(&[input_dir.to_path_buf()], &config.output)?;
+    let (inputs, output_dir) = prepare_outputs(&[input_dir.to_path_buf()], &output.directory)?;
 
     let detected = detect_ir_export(input_dir)?;
-    let transforms = ExportTransforms::from_config(config);
+    let transforms = ExportTransforms::new(context, output);
     let copy_attachments = transforms.copies_attachments();
 
     // The input is read before the output is cleaned, so an input the read
@@ -106,8 +110,8 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // backup, stops the run with the previous output left as it was.
     let (mut documents, sms_backup) = if detected.format == OutputFormat::Xml {
         let file = sms_backup_file(&inputs[0])?;
-        let backup = SmsBackupRead::open(&file, output, &config.scratch_dir, copy_attachments);
-        (backup.read(config)?, Some(backup))
+        let backup = SmsBackupRead::open(&file, output_dir, &context.scratch_dir, copy_attachments);
+        (backup.read(context)?, Some(backup))
     } else {
         (read_conversation_files(input_dir, detected.format)?, None)
     };
@@ -117,12 +121,10 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
 
     // A mail export's reader holds the attachments in memory, and the
     // export has no `attachments/` directory to copy, so its attachments are
-    // staged even when the media is only cloned.
-    let stages_again = matches!(transforms.media, MediaMode::Convert | MediaMode::Compress)
-        || (copy_attachments && detected.format.is_mail_archive());
-    // Only the input's own sources, staged below from what the disk check
-    // counted, need the reasons taken before that count.
-    let stages_from_input = copy_attachments && stages_again && sms_backup.is_none();
+    // staged again from the input. Only those sources, staged below from
+    // what the disk check counted, need the reasons taken before that count.
+    let stages_from_input =
+        copy_attachments && detected.format.is_mail_archive() && sms_backup.is_none();
     let reasons = if stages_from_input {
         missing_reasons(&documents)
     } else {
@@ -138,31 +140,39 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // counts as free, and a run that will not fit leaves the earlier output
     // as it was. The input's attachments are staged from the sources
     // counted here; a backup's are staged by its own step below. Either
-    // way each attachment is on the disk once: a backup's staged files are
-    // staged again under the same names, and the convert pass replaces each
-    // one in place, so the check counts one copy (#1759).
+    // way each attachment is on the disk once, so the check counts one copy
+    // (#1759).
     let mut from_input = None;
+    let no_log = LogSink::none();
     if copy_attachments {
         let counted = match &sms_backup {
-            Some(backup) => backup.counted(&mut documents, config),
+            Some(backup) => backup.counted(&mut documents, context),
             None => attachments_in(
                 &mut documents,
                 input_dir,
-                staging_media(&transforms),
+                AttachmentFiles::Originals,
                 // A file found missing is logged only by a run that then
                 // stages: a cloned copy of `attachments/` reads no file.
-                config.log.as_ref().filter(|_| stages_from_input),
+                if stages_from_input {
+                    &context.log
+                } else {
+                    &no_log
+                },
             ),
         };
-        let needed = counted.bytes_to_write(config.output_format);
-        let freed = previous_attachment_bytes(&config.output);
-        check_headroom(&config.output, needed.saturating_sub(freed), Disk::Staging)?;
+        let needed = counted.bytes_to_write(output.format);
+        let freed = previous_attachment_bytes(&output.directory);
+        check_headroom(
+            &output.directory,
+            needed.saturating_sub(freed),
+            Disk::Staging,
+        )?;
         if stages_from_input {
             from_input = Some(counted);
         }
     }
 
-    clean_previous_ir_output(&config.output)?;
+    clean_previous_ir_output(&output.directory)?;
 
     // The input's `attachments/` is copied only when nothing stages the
     // attachments again. A run that stages from the input writes every
@@ -170,24 +180,19 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // so a copy would stay beside the staged files on a disk the check
     // counted for one copy (#1759).
     if copy_attachments && from_input.is_none() && sms_backup.is_none() {
-        copy_attachments_dir(input_dir, &config.output)?;
+        copy_attachments_dir(input_dir, &output.directory)?;
     }
     let mut report = ExportReport::default();
     if let Some(counted) = from_input {
-        stage_again(counted, config, &mut report)?;
+        stage_again(counted, context, &output.directory, &mut report)?;
         keep_missing_reasons(&mut documents, reasons, &mut report);
-    } else {
-        if let Some(backup) = sms_backup {
-            backup.stage(&mut documents, config)?;
-        }
-        if stages_again {
-            apply_reexport_convert(&mut documents, config, &transforms, &mut report)?;
-        }
+    } else if let Some(backup) = sms_backup {
+        backup.stage(&mut documents, context)?;
     }
 
-    let mut sink = FormatSink::open(&config.output, config.output_format, transforms)?;
+    let mut sink = FormatSink::open(&output.directory, output.format, transforms)?;
     report.conversations = documents.len() as u64;
-    let sms_only = sms_only_archive(config.output_format, started);
+    let sms_only = sms_only_archive(output.format, started);
     let sms_only_format = sms_only.as_ref().map(|archive| archive.format_name());
     if let Some(archive) = sms_only {
         sink = sink.with_archive(archive);
@@ -195,7 +200,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
         // so only the others are counted.
         report.conversations = documents
             .iter()
-            .filter(|doc| doc.messages.iter().any(IrMessage::is_sms_or_mms))
+            .filter(|document| document.messages.iter().any(Message::is_sms_or_mms))
             .count() as u64;
     }
     for document in documents {
@@ -231,16 +236,16 @@ fn sms_only_archive(
 fn attachments_in<'a>(
     documents: &'a mut [ConversationDocument],
     dir: &Path,
-    media: MediaConfig,
-    log: Option<&LogSink>,
+    files: AttachmentFiles,
+    log: &LogSink,
 ) -> CountedAttachments<'a> {
     CountedAttachments::new(
         document_messages(documents),
-        media,
+        files,
         PathSources::OnDisk,
-        |att| {
-            let hint = attachment_size_hint(att);
-            let source = match (att.bytes.take(), att.path.as_deref()) {
+        |attachment| {
+            let hint = attachment_size_hint(attachment);
+            let source = match (attachment.bytes.take(), attachment.path.as_deref()) {
                 (Some(bytes), _) => AttachmentSource::Bytes(bytes),
                 (None, Some(rel)) => AttachmentSource::Path(
                     dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
@@ -253,55 +258,19 @@ fn attachments_in<'a>(
     )
 }
 
-/// Stage the attachments again through the shared step from the files in
-/// the output: those a backup's own step staged there, or, for a run that
-/// copies no attachments (an obfuscated one with the media converted or
-/// compressed), whatever is there. A convert or compress pass then rewrites
-/// each document's paths, hashes and MIME types. Adds the distinct files
-/// written to `report.attachments_saved` and the attachments left without
-/// a file to `attachments_missing`.
-fn apply_reexport_convert(
-    documents: &mut [ConversationDocument],
-    config: &ExporterConfig,
-    transforms: &ExportTransforms,
-    report: &mut ExportReport,
-) -> Result<()> {
-    let reasons = missing_reasons(documents);
-    let counted = attachments_in(
-        documents,
-        &config.output,
-        staging_media(transforms),
-        config.log.as_ref(),
-    );
-    stage_again(counted, config, report)?;
-    keep_missing_reasons(documents, reasons, report);
-    Ok(())
-}
-
-/// The media settings a conversion stages its attachments with.
-fn staging_media(transforms: &ExportTransforms) -> MediaConfig {
-    MediaConfig {
-        mode: transforms.media,
-        compress: transforms.compress.clone(),
-    }
-}
-
-/// Stage `counted` into the output's `attachments/`, adding the distinct
-/// files written to `report.attachments_saved`.
+/// Stage `counted` into the `attachments/` of `output_dir`, adding the
+/// distinct files written to `report.attachments_saved`.
 fn stage_again(
     counted: CountedAttachments<'_>,
-    config: &ExporterConfig,
+    context: &RunContext,
+    output_dir: &Path,
     report: &mut ExportReport,
 ) -> Result<()> {
-    let saved = counted
-        .stage(
-            &config.output.join("attachments"),
-            load_attachment_source,
-            config.log.as_ref(),
-            config.progress.as_ref(),
-            config.cancel.as_ref(),
-        )
-        .map_err(anyhow::Error::msg)?;
+    let saved = counted.stage(
+        &output_dir.join("attachments"),
+        load_attachment_source,
+        context.sinks(),
+    )?;
     report.attachments_saved += saved;
     Ok(())
 }
@@ -311,9 +280,9 @@ fn stage_again(
 fn missing_reasons(documents: &[ConversationDocument]) -> Vec<Option<String>> {
     documents
         .iter()
-        .flat_map(|doc| doc.messages.iter())
-        .flat_map(|msg| msg.attachments.iter())
-        .map(|att| att.missing_reason.clone())
+        .flat_map(|document| document.messages.iter())
+        .flat_map(|message| message.attachments.iter())
+        .map(|attachment| attachment.missing_reason.clone())
         .collect()
 }
 
@@ -327,16 +296,16 @@ fn keep_missing_reasons(
     report: &mut ExportReport,
 ) {
     let mut missing = 0;
-    for (att, reason) in documents
+    for (attachment, reason) in documents
         .iter_mut()
-        .flat_map(|doc| doc.messages.iter_mut())
-        .flat_map(|msg| msg.attachments.iter_mut())
+        .flat_map(|document| document.messages.iter_mut())
+        .flat_map(|message| message.attachments.iter_mut())
         .zip(reasons)
     {
-        if att.missing_reason.as_deref() == Some("file_missing") {
+        if attachment.missing_reason.as_deref() == Some(missing_reason::FILE_MISSING) {
             missing += 1;
             if reason.is_some() {
-                att.missing_reason = reason;
+                attachment.missing_reason = reason;
             }
         }
     }
@@ -381,6 +350,19 @@ struct SmsBackupRead {
     /// The payloads the read spooled; `None` when the run does not copy
     /// attachments. The spool is removed when this is dropped.
     spool: Option<AttachmentSpool>,
+    /// The log and progress a pass that reports nothing sends to, held here
+    /// because the [`ReadOptions`] a pass is given borrows them.
+    no_log: LogSink,
+    no_progress: ProgressSink,
+}
+
+/// Where a pass of an [`SmsBackupRead`] sends its lines and counts.
+#[derive(Debug, Clone, Copy)]
+enum Reports {
+    /// Nowhere: the pass reports nothing.
+    Nowhere,
+    /// To the run's log and progress bar.
+    ToTheRun,
 }
 
 impl SmsBackupRead {
@@ -397,25 +379,33 @@ impl SmsBackupRead {
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
             spool: copy_attachments.then(|| AttachmentSpool::new(scratch_dir)),
+            no_log: LogSink::none(),
+            no_progress: ProgressSink::none(),
         }
     }
 
-    /// The options the read and the staging share. The read leaves the
+    /// The options the read, the count and the staging share, sending their
+    /// lines and counts where `reports` says. The read leaves the
     /// attachments in the spool, for [`SmsBackupRead::stage`].
-    fn options<'a>(&'a self, config: &'a ExporterConfig) -> ReadOptions<'a> {
+    fn options<'a>(&'a self, context: &'a RunContext, reports: Reports) -> ReadOptions<'a> {
+        let (log, progress) = match reports {
+            Reports::Nowhere => (&self.no_log, &self.no_progress),
+            Reports::ToTheRun => (&context.log, &context.progress),
+        };
         ReadOptions {
             owner_phones: &[],
             attachments_dir: Some(&self.attachments_dir),
             spool: self.spool.as_ref(),
-            media: if self.spool.is_some() {
-                MediaMode::Clone
+            files: if self.spool.is_some() {
+                AttachmentFiles::Originals
             } else {
-                MediaMode::Disabled
+                AttachmentFiles::Skip
             },
-            compress: CompressOptions::default(),
-            log: None,
-            progress: None,
-            cancel: config.cancel.as_ref(),
+            sinks: Sinks {
+                log,
+                progress,
+                cancel: &context.cancel,
+            },
         }
     }
 
@@ -424,28 +414,33 @@ impl SmsBackupRead {
     /// read goes to the log the moment the read returns, so a run that then
     /// fails, such as one that found no conversation, still says why. It
     /// comes before every line of the run's summary, `Conversations:`
-    /// included.
-    fn read(&self, config: &ExporterConfig) -> Result<Vec<ConversationDocument>> {
-        let (documents, report) = read_backup(&self.input, self.options(config))?;
-        for line in report.log_lines() {
-            config.emit_log(line);
-        }
+    /// included. The read itself reports nowhere, so each of those lines
+    /// reaches the log once, from its report.
+    fn read(&self, context: &RunContext) -> Result<Vec<ConversationDocument>> {
+        let (documents, report) =
+            read_backup(&self.input, self.options(context, Reports::Nowhere))?;
+        report.write_log(&context.log);
         Ok(documents)
     }
 
     /// Every attachment of `documents` paired with its spooled payload and
-    /// counted, for the disk check made before the output is cleaned.
+    /// counted, for the disk check made before the output is cleaned. The
+    /// count logs nothing: [`Self::stage`] counts again and logs each
+    /// attachment with no file then, so the run's log names it once (#2644).
     fn counted<'a>(
         &self,
         documents: &'a mut [ConversationDocument],
-        config: &ExporterConfig,
+        context: &RunContext,
     ) -> CountedAttachments<'a> {
-        spooled_attachments(documents, &self.options(config))
+        spooled_attachments(documents, &self.options(context, Reports::Nowhere))
     }
 
-    /// Stage the spooled attachments into the output's `attachments/`.
-    fn stage(self, documents: &mut [ConversationDocument], config: &ExporterConfig) -> Result<()> {
-        stage_read_attachments(documents, &self.options(config))
+    /// Stage the spooled attachments into the output's `attachments/` with
+    /// the run's log and progress: each attachment with no file, or one that
+    /// could not be staged, is logged, and the staging's counts reach the
+    /// run's progress bar.
+    fn stage(self, documents: &mut [ConversationDocument], context: &RunContext) -> Result<()> {
+        stage_read_attachments(documents, &self.options(context, Reports::ToTheRun))
     }
 }
 
@@ -743,18 +738,19 @@ fn copy_attachments_dir(input_dir: &Path, output_dir: &Path) -> Result<()> {
         return Ok(());
     }
     let destination = output_dir.join("attachments");
-    fs::create_dir_all(&destination)?;
+    fs::create_dir_all(&destination)
+        .with_context(|| format!("create {}", destination.display()))?;
     copy_dir_recursive(&source, &destination)
 }
 
 /// Recursively copy files from `source` into `destination`.
 fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     for entry in fs::read_dir(source).with_context(|| format!("read {}", source.display()))? {
-        let entry = entry?;
+        let entry = entry.with_context(|| format!("read {}", source.display()))?;
         let from = entry.path();
         let to = destination.join(entry.file_name());
         if from.is_dir() {
-            fs::create_dir_all(&to)?;
+            fs::create_dir_all(&to).with_context(|| format!("create {}", to.display()))?;
             copy_dir_recursive(&from, &to)?;
         } else {
             fs::copy(&from, &to)

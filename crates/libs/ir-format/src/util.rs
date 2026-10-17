@@ -1,13 +1,13 @@
 //! Small shared helpers for reading and writing conversation documents.
 
 use anyhow::{Context, Result};
-use message_ir::{ConversationDocument, IrAttachment};
+use ir::{Attachment, ConversationDocument};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// Give `doc` back the stem suffix its file was written with.
+/// Give `document` back the stem suffix its file was written with.
 ///
 /// An exporter chooses the suffix, such as one per source app so two apps'
 /// chats with one person land in two files, and the suffix is never written
@@ -15,14 +15,14 @@ use std::path::Path;
 /// without one, when that starts with `__`. This crate knows no suffix by
 /// name. A document that already has a suffix, or a file renamed so its
 /// stem no longer starts with the document's own, is left as it is.
-pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Option<&OsStr>) {
-    if doc.packaging_stem_suffix.is_some() {
+pub(crate) fn recover_stem_suffix(document: &mut ConversationDocument, file_stem: Option<&OsStr>) {
+    if document.packaging_stem_suffix.is_some() {
         return;
     }
     let Some(file_stem) = file_stem.and_then(OsStr::to_str) else {
         return;
     };
-    let base = doc.filename_stem();
+    let base = crate::filename_stem(document);
     if base.is_empty() {
         return;
     }
@@ -30,7 +30,7 @@ pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Opt
         && rest.len() > 2
         && rest.starts_with("__")
     {
-        doc.packaging_stem_suffix = Some(rest.to_string());
+        document.packaging_stem_suffix = Some(rest.to_string());
     }
 }
 
@@ -39,11 +39,11 @@ pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Opt
 /// Missing paths yield an empty buffer. IO failures return an error. The
 /// loader every writer that embeds attachment bytes uses, including the
 /// merged archives other crates implement.
-pub fn load_attachment_bytes(att: &IrAttachment, output_dir: &Path) -> Result<Vec<u8>> {
-    if let Some(b) = &att.bytes {
+pub fn load_attachment_bytes(attachment: &Attachment, output_dir: &Path) -> Result<Vec<u8>> {
+    if let Some(b) = &attachment.bytes {
         return Ok(b.clone());
     }
-    match read_attachment_file(att, output_dir) {
+    match read_attachment_file(attachment, output_dir) {
         Ok(Some(bytes)) => Ok(bytes),
         Ok(None) => Ok(Vec::new()),
         Err(err) => Err(err),
@@ -52,18 +52,18 @@ pub fn load_attachment_bytes(att: &IrAttachment, output_dir: &Path) -> Result<Ve
 
 /// Read attachment bytes from disk when the relative path exists.
 ///
-/// Missing paths yield `Ok(None)`. IO failures return an error (strict) — callers
+/// Missing paths yield `Ok(None)`. IO failures return an error (strict). Callers
 /// that want lenient behavior map with `.ok().flatten()`.
 ///
-/// The relative path is validated via [`message_ir::safe_attachment_path`].
+/// The relative path is validated via [`ir::safe_attachment_path`].
 pub(crate) fn read_attachment_file(
-    att: &IrAttachment,
+    attachment: &Attachment,
     output_dir: &Path,
 ) -> Result<Option<Vec<u8>>> {
-    let Some(rel) = att.path.as_deref() else {
+    let Some(rel) = attachment.path.as_deref() else {
         return Ok(None);
     };
-    let path = message_ir::safe_attachment_path(output_dir, rel)?;
+    let path = ir::safe_attachment_path(output_dir, rel)?;
     if !path.is_file() {
         return Ok(None);
     }
@@ -98,22 +98,14 @@ pub fn is_complete_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IrAttachment;
+    use ir::Attachment;
     use std::fs;
     use std::io::Write;
 
-    fn att_with_path(rel: &str) -> IrAttachment {
-        IrAttachment {
+    fn attachment_with_path(rel: &str) -> Attachment {
+        Attachment {
             path: Some(rel.into()),
-            original_name: None,
-            mime_type: None,
-            digest_sha256: None,
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
-            bytes: None,
+            ..ir::testutil::sample_attachment()
         }
     }
 
@@ -142,11 +134,11 @@ mod tests {
 
     #[test]
     fn strict_prefers_in_memory_bytes() {
-        let mut att = att_with_path("attachments/missing.bin");
-        att.bytes = Some(vec![1, 2, 3]);
+        let mut attachment = attachment_with_path("attachments/missing.bin");
+        attachment.bytes = Some(vec![1, 2, 3]);
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            load_attachment_bytes(&att, dir.path()).unwrap(),
+            load_attachment_bytes(&attachment, dir.path()).unwrap(),
             vec![1, 2, 3]
         );
     }
@@ -159,14 +151,21 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(b"hello").unwrap();
-        let att = att_with_path(rel);
-        assert_eq!(load_attachment_bytes(&att, dir.path()).unwrap(), b"hello");
+        let attachment = attachment_with_path(rel);
+        assert_eq!(
+            load_attachment_bytes(&attachment, dir.path()).unwrap(),
+            b"hello"
+        );
     }
 
     #[test]
     fn read_file_returns_none_for_missing() {
-        let att = att_with_path("attachments/missing.bin");
+        let attachment = attachment_with_path("attachments/missing.bin");
         let dir = tempfile::tempdir().unwrap();
-        assert!(read_attachment_file(&att, dir.path()).unwrap().is_none());
+        assert!(
+            read_attachment_file(&attachment, dir.path())
+                .unwrap()
+                .is_none()
+        );
     }
 }

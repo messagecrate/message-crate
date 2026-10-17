@@ -24,7 +24,7 @@
 
 ## Impact
 
-[Discuss the impact of your changes on the project. This might include effects on performance, new dependencies, or changes in behaviour.]
+[Discuss the impact of your changes on the project. This might include effects on performance, new dependencies, or changes in behavior.]
 
 ## Additional Information
 

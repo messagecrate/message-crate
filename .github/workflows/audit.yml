@@ -4,14 +4,15 @@ name: Audit
 # somebody writes bad code, so they do not run on every pull request. They
 # run when a change could alter the dependency graph (a manifest, a lockfile
 # or the deny config moves — which is every Dependabot PR), when the audit
-# itself changes (this file or scripts/audit-docs.sh), and on a weekly
-# schedule that catches newly published advisories on main. These checks
-# are deliberately not in the ruleset's required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
+# itself changes (this file, scripts/audit-docs.sh, or the Node.js major in
+# .nvmrc it installs), and on a weekly schedule that catches newly published
+# advisories on main. These checks are deliberately not in the ruleset's
+# required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
-# The same trigger runs the licence policy
+# The same trigger runs the license policy
 # (docs/adr/0014-gpl-code-only-behind-a-process-boundary.md): every
 # crate in the workspace and in the desktop app must carry a permissive
-# licence, and the two GPL readers of Apple Messages may appear only under
+# license, and the two GPL readers of Apple Messages may appear only under
 # the imessage-reader helper program. A new dependency is a lockfile change,
 # so a GPL crate added to a Fair Core License crate fails here.
 
@@ -28,6 +29,11 @@ on:
       - "web/package.json"
       - "docs/package-lock.json"
       - "docs/package.json"
+      - "scripts/openapi-typescript/package-lock.json"
+      - "scripts/openapi-typescript/package.json"
+      - "scripts/website-check/package-lock.json"
+      - "scripts/website-check/package.json"
+      - ".nvmrc"
       - ".github/workflows/audit.yml"
       - "scripts/audit-docs.sh"
   schedule:
@@ -40,14 +46,14 @@ permissions:
 
 jobs:
   deny:
-    name: cargo-deny (advisories, licences, bans)
+    name: cargo-deny (advisories, licenses, bans)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Workspace
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           command: check advisories licenses bans
 
@@ -55,7 +61,7 @@ jobs:
       # This is the graph the installers ship, and the one that must hold no
       # GPL code.
       - name: Desktop app
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           manifest-path: src-tauri/Cargo.toml
           arguments: --config deny.toml
@@ -66,20 +72,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The Node.js that builds web/ and docs/ elsewhere. Each npm ci below
+      # runs its tree's install scripts and engine checks, so on any other
+      # Node.js the audit could fail, or pass, for a reason the builds do
+      # not share.
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: |
             web/package-lock.json
             docs/package-lock.json
+            scripts/openapi-typescript/package-lock.json
+            scripts/website-check/package-lock.json
 
       - name: Audit web frontend
         run: |
           cd web
+          npm ci
+          npm audit --audit-level=high
+
+      # The generator of the web app's server API types runs in CI and on
+      # developers' machines, from its own tree beside web/.
+      - name: Audit API type generator
+        run: |
+          cd scripts/openapi-typescript
+          npm ci
+          npm audit --audit-level=high
+
+      # The browser check of the served website, which nightly.yml runs
+      # from its own tree beside web/.
+      - name: Audit website check
+        run: |
+          cd scripts/website-check
           npm ci
           npm audit --audit-level=high
 

@@ -5,32 +5,83 @@
  * rebuilds form values from it when Import reopens on that run. They sit
  * together so a field added to one is added to the other in the same place.
  */
-import type { AttachmentMediaMode } from "../../lib/types";
-import type { ImportJobFormValues } from "./useImportJob";
-
-/** The one secret an Import Run can be started with: neither is ever stored. */
-export type SnapshotSecret = "backupPassword" | "whatsappKey";
+import { findImportSource, isImportMethod } from "../../lib/importSources";
+import type { ImportJobFormValues, SnapshotSecret } from "../../lib/importSources/types";
+import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 
 /**
- * Form snapshot for the run record, without the secrets.
+ * The form fields the run record stores: exactly the ones
+ * `restoreFormFromSnapshot` reads back. The snapshot is built from this list
+ * rather than from the whole form less its secrets, so a field added to the
+ * form is not stored until it is added here on purpose, and a new secret is
+ * never stored by default. The server drops `backupPassword` and
+ * `whatsappKey` again before it writes the record.
+ */
+const SNAPSHOT_FIELDS = [
+  "source",
+  "backupPath",
+  "attachmentMedia",
+  "maxResolution",
+  "maxFps",
+  "minSizeMb",
+  "ownerPhones",
+  "ownerEmails",
+  "obfuscate",
+  "timeZone",
+  "phoneCountry",
+  "attachmentRoot",
+  "appleContacts",
+  "whatsappWa",
+  "whatsappMedia",
+  "whatsappDb",
+  "isBusinessApp",
+  "whatsappOwnerPhone",
+  "assetMaxBytes",
+] as const satisfies readonly Exclude<
+  keyof ImportJobFormValues,
+  "backupPassword" | "whatsappKey"
+>[];
+
+/**
+ * The record `formSnapshot` writes, field by field: the form fields in
+ * `SNAPSHOT_FIELDS`, and whether a backup password or WhatsApp key was
+ * given. `formSnapshot` returns it, and tests write their stored snapshots
+ * to it, so a field added to the record fails to compile until each of them
+ * gives it a value.
+ */
+export type StoredFormSnapshot = Pick<ImportJobFormValues, (typeof SNAPSHOT_FIELDS)[number]> & {
+  backupPasswordGiven: boolean;
+  whatsappKeyGiven: boolean;
+};
+
+/** `keys` of `source` and nothing else, each copied under its own name. */
+function pick<T, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
+  const picked = {} as Pick<T, K>;
+  for (const key of keys) {
+    picked[key] = source[key];
+  }
+  return picked;
+}
+
+/**
+ * Form snapshot for the run record, without the secrets: the fields in
+ * `SNAPSHOT_FIELDS` and nothing else.
  *
  * It carries `assetMaxBytes`, the server's attachment size limit as the run
  * read it before Staging, so a resumed run works to the same number.
  *
  * It records that a backup password or WhatsApp key was given, never the
  * secret itself, so a resume that reads the backup again knows to ask for
- * it. Each is recorded only for a source whose extract reads it: the
- * iPhone backup password (iMessage and WhatsApp from an iPhone backup) and
- * the Android WhatsApp key.
+ * it. Each is recorded only for a method whose extract reads it, as its
+ * source's descriptor says: the iPhone backup password (iMessage and
+ * WhatsApp from an iPhone backup) and the Android WhatsApp key.
  */
-export function formSnapshot(form: ImportJobFormValues): Record<string, unknown> {
-  const { backupPassword, whatsappKey, ...rest } = form;
+export function formSnapshot(form: ImportJobFormValues): StoredFormSnapshot {
+  const secret = findImportSource(form.source)?.snapshotSecret(form.source) ?? null;
   return {
-    ...rest,
-    backupPasswordGiven:
-      (form.source === "imessage-ios" || form.source === "whatsapp-ios") &&
-      backupPassword.trim() !== "",
-    whatsappKeyGiven: form.source === "whatsapp-android" && whatsappKey.trim() !== "",
+    ...pick(form, SNAPSHOT_FIELDS),
+    backupPasswordGiven: secret === "backupPassword" && form.backupPassword.trim() !== "",
+    whatsappKeyGiven: secret === "whatsappKey" && form.whatsappKey.trim() !== "",
   };
 }
 
@@ -65,6 +116,20 @@ export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+/** The four attachment choices out of a stored snapshot, or null when any is missing or not of its type. */
+function attachmentChoicesFromSnapshot(r: Record<string, unknown>): AttachmentChoices | null {
+  if (!isAttachmentMediaMode(r.attachmentMedia)) return null;
+  if (typeof r.maxResolution !== "string") return null;
+  if (typeof r.maxFps !== "string") return null;
+  if (typeof r.minSizeMb !== "string") return null;
+  return {
+    attachmentMedia: r.attachmentMedia,
+    maxResolution: r.maxResolution,
+    maxFps: r.maxFps,
+    minSizeMb: r.minSizeMb,
+  };
+}
+
 /**
  * Rebuild form values from a run's stored snapshot.
  *
@@ -76,31 +141,27 @@ export function isStringArray(value: unknown): value is string[] {
  *
  * The snapshot came from the database, not from this run's own state,
  * so its shape is checked field by field rather than trusted. Returns
- * null for anything that doesn't match, instead of throwing.
+ * null for anything that doesn't match, instead of throwing, and for a
+ * method no source in `IMPORT_SOURCES` has.
  */
 export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  if (typeof r.source !== "string") return null;
+  if (typeof r.source !== "string" || !isImportMethod(r.source)) return null;
   if (typeof r.backupPath !== "string") return null;
-  if (!isAttachmentMediaMode(r.attachmentMedia)) {
-    return null;
-  }
-  if (typeof r.maxResolution !== "string") return null;
-  if (typeof r.maxFps !== "string") return null;
-  if (typeof r.minSizeMb !== "string") return null;
+  const attachments = attachmentChoicesFromSnapshot(r);
+  if (attachments === null) return null;
   if (!isStringArray(r.ownerPhones)) return null;
   // Snapshots written before SMS Backup+ had an email field carry none.
   const ownerEmails = isStringArray(r.ownerEmails) ? r.ownerEmails : [];
   if (typeof r.obfuscate !== "boolean") return null;
   if (typeof r.timeZone !== "string") return null;
-  if (typeof r.isAndroidSms !== "boolean") return null;
   if (typeof r.attachmentRoot !== "string") return null;
   if (typeof r.appleContacts !== "string") return null;
   if (typeof r.whatsappWa !== "string") return null;
   if (typeof r.whatsappMedia !== "string") return null;
   if (typeof r.whatsappDb !== "string") return null;
-  if (typeof r.whatsappBusiness !== "boolean") return null;
+  if (typeof r.isBusinessApp !== "boolean") return null;
   if (typeof r.whatsappOwnerPhone !== "string") return null;
   if (typeof r.backupPasswordGiven !== "boolean") return null;
   if (typeof r.whatsappKeyGiven !== "boolean") return null;
@@ -112,23 +173,19 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
     source: r.source,
     backupPath: r.backupPath,
     backupPassword: "",
-    attachmentMedia: r.attachmentMedia as AttachmentMediaMode,
-    maxResolution: r.maxResolution,
-    maxFps: r.maxFps,
-    minSizeMb: r.minSizeMb,
+    ...attachments,
     ownerPhones: r.ownerPhones,
     ownerEmails,
     obfuscate: r.obfuscate,
     timeZone: r.timeZone,
     phoneCountry: typeof r.phoneCountry === "string" ? r.phoneCountry : "",
-    isAndroidSms: r.isAndroidSms,
     attachmentRoot: r.attachmentRoot,
     appleContacts: r.appleContacts,
     whatsappKey: "",
     whatsappWa: r.whatsappWa,
     whatsappMedia: r.whatsappMedia,
     whatsappDb: r.whatsappDb,
-    whatsappBusiness: r.whatsappBusiness,
+    isBusinessApp: r.isBusinessApp,
     whatsappOwnerPhone: r.whatsappOwnerPhone,
     assetMaxBytes: r.assetMaxBytes,
   };

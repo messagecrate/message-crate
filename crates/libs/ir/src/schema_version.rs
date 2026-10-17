@@ -1,14 +1,15 @@
 //! The one check that refuses a file from another schema version.
 //!
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
-//! its JSON Lines header — the format reader, the import client, the server's
-//! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-12
-//! file is not expected to match version 13 (version 12 gave each
-//! participant an `identity_type` that the import trusted over the address,
-//! where version 13 leaves the type to the server, which works it out from
-//! the service and the address), and the person should read "schema version
-//! 12", not a file that imports by other rules than its own.
+//! its JSON Lines header (the format reader, the import client, the server's
+//! import) refuses a version other than [`SCHEMA_VERSION`] with the same
+//! words, and refuses it before parsing the rest of the file. The refusal is
+//! the one rule for every bump, whichever way the shapes differ. A version-13
+//! file would parse under version 14's rules, because version 14 only made
+//! the text of an earlier version optional. It is refused all the same: a
+//! file is imported by its own version's rules or not at all, and the person
+//! should read "schema version 13", not an import that quietly read an older
+//! shape.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -26,7 +27,7 @@ impl fmt::Display for UnsupportedSchemaVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "This file is schema version {}; Message Crate reads version {SCHEMA_VERSION}",
+            "this file is schema version {}; Message Crate reads version {SCHEMA_VERSION}",
             self.found
         )
     }
@@ -76,7 +77,7 @@ mod tests {
     fn names_the_version_found_and_the_version_read() {
         assert_eq!(
             check_schema_version(3).unwrap_err().to_string(),
-            format!("This file is schema version 3; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 3; Message Crate reads version {SCHEMA_VERSION}")
         );
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
     }
@@ -91,7 +92,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":9,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 9; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 9; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
@@ -105,7 +106,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":10,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 10; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 10; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
@@ -120,23 +121,55 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":11,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 11; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 11; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
-    /// Version 12 gave each participant an `identity_type`, which the import
-    /// took over the address's shape; version 13 has none, and the server
-    /// types every address from its service and shape. A version-12 file is
-    /// refused by its version, never read with its stated types ignored.
+    /// Version 13 required the text of every earlier version; version 14
+    /// lets a source record an edit without the text it replaced, as iMazing
+    /// does. Version 12 gave each participant an `identity_type`, which the
+    /// import took over the address's shape; version 13 has none, and the
+    /// server types every address from its service and shape. A file at
+    /// either version is refused by its version, never read by rules that
+    /// are not its own.
     #[test]
     fn refuses_a_version_12_file_by_name() {
         assert_eq!(
             check_schema_version_in_json(r#"{"schema_version":12,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 13);
+    }
+
+    /// Version 16 gave the whole file one backup date in
+    /// `export.backup_taken_at_unix_ms`; version 17 dates each message by
+    /// its own backup and says when the file was written. A version-16 file
+    /// is refused by its version, never read as a file whose messages have
+    /// no backup date.
+    #[test]
+    fn refuses_a_version_16_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":16,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("this file is schema version 16; Message Crate reads version {SCHEMA_VERSION}")
+        );
+    }
+
+    /// Version 17 carried a message's sender as `sender_identity`,
+    /// `sender_display_name` and `sender_country`; version 18 carries one
+    /// `sender` object. A version-17 file is refused by its version, never
+    /// read as a file whose messages have no sender.
+    #[test]
+    fn refuses_a_version_17_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":17,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("this file is schema version 17; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 18);
     }
 
     #[test]

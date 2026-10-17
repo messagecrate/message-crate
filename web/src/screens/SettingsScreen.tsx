@@ -1,10 +1,9 @@
 import { TabList, TabPanel, Tabs } from "react-aria-components";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import Tab from "../components/Tab";
 import { canUseConvert } from "../lib/desktopFeatures";
 import { parseSelectKey } from "../lib/selectKey";
-import { isTauri } from "../lib/tauri-check";
-import { useSettingsAccount } from "../lib/useSettingsAccount";
+import { isTauri } from "../lib/tauriCheck";
 import { AccountSettingsPanel } from "./settings/AccountSettingsPanel";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditTrailSection } from "./settings/AuditTrailSection";
@@ -13,6 +12,8 @@ import { NewAccountPanel } from "./settings/NewAccountPanel";
 import { ProfileSettingsPanel } from "./settings/ProfileSettingsPanel";
 import { StorageSection } from "./settings/StorageSection";
 import { SystemSection } from "./settings/SystemSection";
+import { useNameEdit } from "./settings/useNameEdit";
+import { useSettingsAccount } from "./settings/useSettingsAccount";
 
 const ALL_TABS = [
   "account",
@@ -44,7 +45,7 @@ const OWNER_HIDDEN_TABS: readonly SettingsTab[] = ["storage", "system", "convert
 /**
  * Tabs this person can open, in display order.
  *
- * - Convert is a desktop-only tool: it runs `message-reexport` in the desktop
+ * - Convert is a desktop-only tool: it runs `reexport` in the desktop
  *   process, so a browser visiting the website never sees it.
  * - An account the owner opened from User Accounts has the tabs that
  *   are the account's. The device tabs would change the owner's own browser,
@@ -109,8 +110,16 @@ export default function SettingsScreen({
   backToAccounts?: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const { profile } = useSettingsAccount(managedAccountId);
   const managed = managedAccountId !== undefined;
+  // Held here, not in the Profile panel, so a tab switch keeps a typed name
+  // and the server's refusal of it. A refusal that arrives after this screen
+  // has gone names the account and the Profile to go back to.
+  const nameEdit = useNameEdit({
+    profilePath: `${pathname}?tab=profile`,
+    username: managed ? (profile?.username ?? null) : null,
+  });
   const tabs = creating
     ? visibleTabs(isTauri(), true, false)
     : visibleTabs(isTauri(), managed, profile?.is_owner === true);
@@ -171,7 +180,7 @@ export default function SettingsScreen({
           )}
         </TabPanel>
         <TabPanel id="profile" className="mt-6">
-          <ProfileSettingsPanel managedAccountId={managedAccountId} />
+          <ProfileSettingsPanel managedAccountId={managedAccountId} nameEdit={nameEdit} />
         </TabPanel>
         {tabs.includes("storage") ? (
           <TabPanel id="storage" className="mt-6">

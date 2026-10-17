@@ -1,13 +1,18 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
 import { APP_BUILD } from "../lib/build";
 import { productVersionOf } from "../lib/buildFormat";
+import { clearNameRefusals } from "../lib/nameRefusals";
 import { ThemeProvider } from "../lib/ThemeProvider";
-import { Providers } from "../test/providers";
+import { account } from "../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
+import { authModule, Providers } from "../test/providers";
+import { MIB } from "../test/units";
 import { fill, setupUser } from "../test/user";
 import OwnerHome from "./OwnerHome";
 
@@ -37,9 +42,9 @@ const listApiTokens = vi.hoisted(() => vi.fn());
 const listServerLogLines = vi.hoisted(() => vi.fn());
 const listServerLogFiles = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/auth", () => ({
-  useAuth: () => ({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
-}));
+vi.mock("../hooks/useAuth", () =>
+  authModule({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
+);
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
@@ -70,25 +75,15 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   listServerLogFiles: (...a: unknown[]) => listServerLogFiles(...a),
 }));
 
-const anAccount = {
+const anAccount = account({
   account_id: 101,
   username: "bob",
   preferred_name: "Bob Archer",
   time_zone: "America/New_York",
   phones: [{ address: "+15555550100", services: ["phone"] }],
-  emails: [],
-  is_demo: false,
-  is_owner: false,
-  disabled: false,
-  can_import: true,
-  can_export: true,
-  can_delete: false,
   message_count: 1234,
   storage_bytes: 2048,
-  last_login_at: null,
-  app: null,
-  app_build: null,
-};
+});
 
 /** The owner's own row, which leads the list and is account 1, the one logged in. */
 const theOwner = {
@@ -102,8 +97,19 @@ const theOwner = {
   storage_bytes: 0,
 };
 
+// An account's Settings is a lazy chunk, and loading its code is real I/O the
+// fake clock doesn't drive. Loaded here first, the chunk lands within a
+// `settle()` once a test opens Settings.
+beforeAll(async () => {
+  await import("./SettingsScreen");
+});
+
 beforeEach(() => {
-  // jsdom has no matchMedia, and the theme reads the system colour scheme from it.
+  // A test that leaves a refused name in the field sends it again as its
+  // screen unmounts, and that refusal is held for the top of the page, which
+  // outlives the test. The next test starts without it.
+  clearNameRefusals();
+  // jsdom has no matchMedia, and the theme reads the system color scheme from it.
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener: () => {},
@@ -150,7 +156,7 @@ beforeEach(() => {
       start_date: "2020-01-01T00:00:00Z",
       end_date: "2020-02-03T00:00:00Z",
       conversations: 2,
-      direct_messages: 12,
+      one_to_one_messages: 12,
       group_messages: 30,
     },
   ]);
@@ -159,17 +165,21 @@ beforeEach(() => {
   deleteAccountById.mockResolvedValue(undefined);
   deleteAccountMessages.mockResolvedValue(undefined);
   listAccounts.mockResolvedValue([theOwner, anAccount]);
-  getServerSettings.mockResolvedValue({ public_registration: false });
+  getServerSettings.mockResolvedValue({
+    public_registration: false,
+    asset_max_bytes: 512 * MIB,
+    journal: { mode: "wal", wal_error: null },
+  });
   getDemoAccount.mockResolvedValue({ status: "ready", size: null, error: null });
   getServerStorage.mockResolvedValue({
     message_count: 5678,
     conversation_count: 90,
     contact_count: 120,
     attachment_count: 21,
-    total_bytes: 3 * 1024 * 1024,
-    database_bytes: 581 * 1024 * 1024,
-    messages_bytes: 400 * 1024 * 1024,
-    fts_bytes: 149 * 1024 * 1024,
+    total_bytes: 3 * MIB,
+    database_bytes: 581 * MIB,
+    messages_bytes: 400 * MIB,
+    fts_bytes: 149 * MIB,
     accounts: [
       {
         account_id: 1,
@@ -182,15 +192,15 @@ beforeEach(() => {
         account_id: 101,
         username: "alice",
         message_count: 5000,
-        text_bytes: 6 * 1024 * 1024,
-        estimated_message_bytes: 300 * 1024 * 1024,
+        text_bytes: 6 * MIB,
+        estimated_message_bytes: 300 * MIB,
       },
       {
         account_id: 102,
         username: "bob",
         message_count: 678,
-        text_bytes: 2 * 1024 * 1024,
-        estimated_message_bytes: 100 * 1024 * 1024,
+        text_bytes: 2 * MIB,
+        estimated_message_bytes: 100 * MIB,
       },
     ],
   });
@@ -200,7 +210,11 @@ beforeEach(() => {
     version: APP_BUILD,
     schema_fingerprint: 1234567890,
   });
-  updateServerSettings.mockResolvedValue({ public_registration: true });
+  updateServerSettings.mockResolvedValue({
+    public_registration: true,
+    asset_max_bytes: 512 * MIB,
+    journal: { mode: "wal", wal_error: null },
+  });
   updateAccount.mockResolvedValue({ ...anAccount, disabled: true });
   setAccountPassword.mockResolvedValue(undefined);
   // A new account has no profile yet, so the row comes back with no name.
@@ -211,9 +225,13 @@ beforeEach(() => {
     preferred_name: null,
     phones: [],
   });
+  startFakeClock();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 function renderHome(entries: string[] = ["/owner/accounts"], { keepUnread = false } = {}) {
   render(
@@ -287,18 +305,20 @@ describe("OwnerHome", () => {
 
     expect(selectedSection()).toBe("Dashboard");
     expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Contents" })).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contents" })).toBeInTheDocument();
     expect(screen.getByText("3.0 MB")).toBeInTheDocument();
     expect(screen.getByText(/5,678 messages, 21 attachments/)).toBeInTheDocument();
     expect(screen.getByText(/90 conversations, 120 contacts/)).toBeInTheDocument();
     expect(listAccounts).not.toHaveBeenCalled();
-    expect(getServerSettings).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Server Settings" })).not.toBeInTheDocument();
   });
 
   it("shows the database's size, the messages' share of it and the search index on the Dashboard", async () => {
     renderHome(["/owner/dashboard"]);
+    await settle();
 
-    const heading = await screen.findByRole("heading", { name: "Database" });
+    const heading = screen.getByRole("heading", { name: "Database" });
     // The section is the heading's parent; the messages figure repeats in the
     // totals row further down, so the checks stay inside it.
     const section = within(heading.closest("section") as HTMLElement);
@@ -313,8 +333,9 @@ describe("OwnerHome", () => {
 
   it("lists every account's messages, text and estimated size on disk, with a totals row", async () => {
     renderHome(["/owner/dashboard"]);
+    await settle();
 
-    expect(await screen.findByRole("heading", { name: "Messages by account" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Messages by account" })).toBeInTheDocument();
     expect(screen.getByText(/split by each account's share of text/)).toBeInTheDocument();
 
     const table = screen.getByRole("table", { name: "Messages by account" });
@@ -325,10 +346,10 @@ describe("OwnerHome", () => {
         .map((cell) => cell.textContent);
     // A heading row, one row per account in the server's order, and the totals.
     expect(rows).toHaveLength(5);
-    expect(cells(rows[1])).toEqual(["root", "0", "0 B", "0 B"]);
-    expect(cells(rows[2])).toEqual(["alice", "5,000", "6.0 MB", "300 MB"]);
-    expect(cells(rows[3])).toEqual(["bob", "678", "2.0 MB", "100 MB"]);
-    expect(cells(rows[4])).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
+    expect(cells(nth(rows, 1))).toEqual(["root", "0", "0 B", "0 B"]);
+    expect(cells(nth(rows, 2))).toEqual(["alice", "5,000", "6.0 MB", "300 MB"]);
+    expect(cells(nth(rows, 3))).toEqual(["bob", "678", "2.0 MB", "100 MB"]);
+    expect(cells(nth(rows, 4))).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
   });
 
   it("opens /owner/logs on the server's log, at warnings and up", async () => {
@@ -350,12 +371,55 @@ describe("OwnerHome", () => {
 
     expect(selectedSection()).toBe("Logs");
     expect(screen.getByRole("heading", { name: "Logs" })).toBeInTheDocument();
-    expect(await screen.findByText("the database is locked")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("the database is locked")).toBeInTheDocument();
     expect(listServerLogLines).toHaveBeenCalledWith(
       expect.objectContaining({ level: "warn" }),
       expect.anything(),
     );
-    expect(getServerSettings).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Server Settings" })).not.toBeInTheDocument();
+  });
+
+  it("opens the server's log on an Audit Trail entry's request, at every level", async () => {
+    const user = setupUser();
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listServerLogFiles.mockResolvedValue([]);
+    listAuditTrail.mockResolvedValue({
+      items: [
+        {
+          id: 4,
+          action: "logged_in",
+          at: "2026-10-01T09:00:00+00:00",
+          actor: "holder",
+          account_id: 101,
+          username: "bob",
+          request_id: "7f3a9c21",
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    // The log was rotated since, so it holds none of the request's lines.
+    listServerLogLines.mockResolvedValue({ items: [], limit: 200, has_more: false });
+    renderHome(["/owner/audit-trail"]);
+    await settle();
+
+    await user.click(screen.getByRole("link", { name: "View in log" }));
+    await settle();
+
+    expect(selectedSection()).toBe("Logs");
+    expect(screen.getByRole("textbox", { name: "Search the log" })).toHaveValue("7f3a9c21");
+    expect(screen.getByRole("button", { name: /^Everything/ })).toBeInTheDocument();
+    expect(listServerLogLines).toHaveBeenLastCalledWith(
+      expect.objectContaining({ level: undefined, text: "7f3a9c21" }),
+      expect.anything(),
+    );
+    expect(
+      screen.getByText(
+        "The server's log holds no line of this request. Either its oldest files were deleted as the log grew, or the log's level left the request's lines out.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("lists every account's Audit Trail, a deleted account's under its old username, and narrows it to one account", async () => {
@@ -369,6 +433,7 @@ describe("OwnerHome", () => {
           at: "2026-10-02T10:00:00+00:00",
           actor: "owner",
           account_id: null,
+          account_deleted: true,
           username: "carol",
         },
         {
@@ -404,24 +469,25 @@ describe("OwnerHome", () => {
     renderHome(["/owner/audit-trail"]);
 
     expect(selectedSection()).toBe("Audit Trail");
-    const table = await screen.findByRole("table");
+    await settle();
+    const table = screen.getByRole("table");
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(3);
-    expect(within(rows[1]).getByText("carol")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("deleted")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Account deleted")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Owner")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("carol")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("Account deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("Owner")).toBeInTheDocument();
     expect(
-      within(rows[2]).getByText("Logged in from the website (0.10.0+aaaa1111)"),
+      within(nth(rows, 2)).getByText("Logged in from the website (0.10.0+aaaa1111)"),
     ).toBeInTheDocument();
 
-    await user.click(await screen.findByRole("button", { name: /Every account/ }));
-    await user.click(await screen.findByRole("option", { name: "bob" }));
-    await waitFor(() => expect(listAccountAuditTrail).toHaveBeenCalled());
-    expect(listAccountAuditTrail.mock.calls[0][2]).toBe(101);
-    await waitFor(() =>
-      expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
-    );
+    await user.click(screen.getByRole("button", { name: /Every account/ }));
+    await settle();
+    await user.click(screen.getByRole("option", { name: "bob" }));
+    await settle();
+    expect(listAccountAuditTrail).toHaveBeenCalled();
+    expect(nth(listAccountAuditTrail.mock.calls, 0)[2]).toBe(101);
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
   });
 
   it("lists each deleted account below the live ones, and narrows the Audit Trail to one", async () => {
@@ -437,6 +503,7 @@ describe("OwnerHome", () => {
       at: "2026-10-03T10:00:00+00:00",
       actor: "owner",
       account_id: null,
+      account_deleted: true,
       username: "carol",
     };
     listAuditTrail.mockImplementation(async (params: { deleted_account_id?: number }) => ({
@@ -458,11 +525,13 @@ describe("OwnerHome", () => {
       offset: 0,
     }));
     renderHome(["/owner/audit-trail"]);
-    await screen.findByRole("table");
-    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+    await settle();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(listDeletedAccounts).toHaveBeenCalled();
 
-    await user.click(await screen.findByRole("button", { name: /Every account/ }));
-    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    await user.click(screen.getByRole("button", { name: /Every account/ }));
+    await settle();
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
     expect(options).toHaveLength(5);
     expect(options.slice(0, 3)).toEqual(["Every account", "root", "bob"]);
     expect(options[3]).toMatch(/^carol, deleted .*2026/);
@@ -470,17 +539,14 @@ describe("OwnerHome", () => {
     expect(options[3]).not.toBe(options[4]);
     expect(screen.getByText("Deleted accounts")).toBeInTheDocument();
     await user.click(screen.getByRole("option", { name: options[3] ?? "" }));
+    await settle();
 
-    await waitFor(() =>
-      expect(listAuditTrail).toHaveBeenCalledWith(
-        expect.objectContaining({ deleted_account_id: 31, offset: 0 }),
-        expect.anything(),
-      ),
+    expect(listAuditTrail).toHaveBeenCalledWith(
+      expect.objectContaining({ deleted_account_id: 31, offset: 0 }),
+      expect.anything(),
     );
     expect(listAccountAuditTrail).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
-    );
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
     expect(screen.getByRole("button", { name: /carol, deleted/ })).toBeInTheDocument();
   });
 
@@ -493,10 +559,12 @@ describe("OwnerHome", () => {
     ]);
     listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     renderHome(["/owner/audit-trail"]);
-    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+    await settle();
+    expect(listDeletedAccounts).toHaveBeenCalled();
 
-    await user.click(await screen.findByRole("button", { name: /Every account/ }));
-    await screen.findByText("Deleted accounts");
+    await user.click(screen.getByRole("button", { name: /Every account/ }));
+    await settle();
+    expect(screen.getByText("Deleted accounts")).toBeInTheDocument();
     const options = screen.getAllByRole("option").map((option) => option.textContent);
     expect(options[2]).toMatch(/^demo, deleted .*\(#31\)$/);
     expect(options[3]).toMatch(/^demo, deleted .*\(#12\)$/);
@@ -507,10 +575,12 @@ describe("OwnerHome", () => {
     listAccounts.mockResolvedValue([theOwner, anAccount]);
     listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     renderHome(["/owner/audit-trail"]);
-    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+    await settle();
+    expect(listDeletedAccounts).toHaveBeenCalled();
 
-    await user.click(await screen.findByRole("button", { name: /Every account/ }));
-    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    await user.click(screen.getByRole("button", { name: /Every account/ }));
+    await settle();
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual(["Every account", "root", "bob"]);
     expect(screen.queryByText("Deleted accounts")).not.toBeInTheDocument();
   });
@@ -541,8 +611,9 @@ describe("OwnerHome", () => {
       { ...anAccount, account_id: 102, username: "carol" },
     ]);
     renderHome();
+    await settle();
 
-    await screen.findByText("bob");
+    expect(screen.getByText("bob")).toBeInTheDocument();
     await fill(user, screen.getByRole("combobox", { name: "Search accounts" }), "CAR");
 
     expect(screen.getByText("carol")).toBeInTheDocument();
@@ -558,20 +629,24 @@ describe("OwnerHome", () => {
     await fill(user, screen.getByRole("combobox", { name: "Search accounts" }), "b");
 
     expect(selectedSection()).toBe("User Accounts");
-    expect(await screen.findByText("bob")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("bob")).toBeInTheDocument();
   });
 
   it("opens the owner's Settings from the account button", async () => {
     const user = setupUser();
     renderHome();
+    await settle();
 
-    await screen.findByText("bob");
+    expect(screen.getByText("bob")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Account menu" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+    await settle();
+    await user.click(screen.getByRole("menuitem", { name: "Settings" }));
 
     // The owner's own row in User Accounts is the owner's Settings.
-    expect(await screen.findByRole("heading", { name: "Settings for Owner" })).toBeInTheDocument();
-    expect(await screen.findByText("Change Password")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("heading", { name: "Settings for Owner" })).toBeInTheDocument();
+    expect(screen.getByText("Change Password")).toBeInTheDocument();
     expect(selectedSection()).toBe("User Accounts");
     // It was opened from User Accounts, so it links back there as any account does.
     expect(screen.getByRole("link", { name: "← User Accounts" })).toBeInTheDocument();
@@ -579,23 +654,31 @@ describe("OwnerHome", () => {
 
   it("lists the owner first, with no status or permissions to set", async () => {
     renderHome();
+    await settle();
 
-    const rows = (await screen.findAllByRole("row")).slice(1);
-    expect(within(rows[0]).getByRole("button", { name: "Settings for root" })).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Owner")).toBeInTheDocument();
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(
+      within(nth(rows, 0)).getByRole("button", { name: "Settings for root" }),
+    ).toBeInTheDocument();
+    expect(within(nth(rows, 0)).getByText("Owner")).toBeInTheDocument();
     // The owner cannot be disabled and holds no messages to import, export or delete.
-    expect(within(rows[0]).queryByRole("button", { name: /Status of/ })).not.toBeInTheDocument();
-    expect(within(rows[0]).queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(within(rows[1]).getByRole("button", { name: "Settings for bob" })).toBeInTheDocument();
+    expect(
+      within(nth(rows, 0)).queryByRole("button", { name: /Status of/ }),
+    ).not.toBeInTheDocument();
+    expect(within(nth(rows, 0)).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      within(nth(rows, 1)).getByRole("button", { name: "Settings for bob" }),
+    ).toBeInTheDocument();
     // The gear opens the account; the name itself is plain text.
-    expect(within(rows[1]).getByText("bob").closest("button")).toBeNull();
+    expect(within(nth(rows, 1)).getByText("bob").closest("button")).toBeNull();
   });
 
   it("shows an account's preferred name under its username, and searches it too", async () => {
     const user = setupUser();
     renderHome();
+    await settle();
 
-    expect(await screen.findByText("Bob Archer")).toBeInTheDocument();
+    expect(screen.getByText("Bob Archer")).toBeInTheDocument();
     await fill(user, screen.getByRole("combobox", { name: "Search accounts" }), "archer");
 
     // The header names the logged-in owner, root, so the search is checked in the table alone.
@@ -607,11 +690,13 @@ describe("OwnerHome", () => {
   it("opens an account's Settings from the gear in its row, with the account's own tabs", async () => {
     const user = setupUser();
     renderHome();
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Settings for bob" }));
+    await user.click(screen.getByRole("button", { name: "Settings for bob" }));
+    await settle();
 
     expect(
-      await screen.findByRole("heading", { name: "User Settings: bob (Bob Archer)" }),
+      screen.getByRole("heading", { name: "User Settings: bob (Bob Archer)" }),
     ).toBeInTheDocument();
     expect(getAccount).toHaveBeenCalledWith(101, expect.anything());
     // System, Convert and Appearance are this device's, not bob's.
@@ -622,7 +707,7 @@ describe("OwnerHome", () => {
       "Audit Trail",
     ]);
     // The owner sees bob's API Tokens, to revoke a leaked one, and makes none.
-    expect(await screen.findByRole("heading", { name: "API Tokens" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "API Tokens" })).toBeInTheDocument();
     expect(listApiTokens).toHaveBeenCalledWith(expect.anything(), 101);
     expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
   });
@@ -630,10 +715,12 @@ describe("OwnerHome", () => {
   it("sets an account's display name from its Profile, as its holder does", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Profile" }));
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
 
-    const name = await screen.findByLabelText("Display name");
+    const name = screen.getByLabelText("Display name");
     expect(name).toHaveValue("Bob Archer");
     expect(screen.getByRole("heading", { name: "Identities" })).toBeInTheDocument();
     expect(screen.getByText("+15555550100")).toBeInTheDocument();
@@ -643,39 +730,64 @@ describe("OwnerHome", () => {
     updateAccount.mockResolvedValue({ ...anAccount, preferred_name: "Robert" });
     await user.clear(name);
     await fill(user, name, "Robert");
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" }),
-    );
+    // Moving on to another tab is all it takes. There is no Save to forget (#2985).
+    await user.click(screen.getByRole("tab", { name: "Account" }));
+    await settle();
+    expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
+  });
+
+  it("shows a display name refused after a tab switch when the owner comes back to Profile", async () => {
+    const user = setupUser();
+    renderHome(["/owner/accounts/101"]);
+    await settle();
+
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+
+    updateAccount.mockRejectedValue(new ApiError(400, "display name is too long"));
+    const name = screen.getByLabelText("Display name");
+    await user.clear(name);
+    await fill(user, name, "Robert");
+    // The refusal arrives after the Profile panel is gone.
+    await user.click(screen.getByRole("tab", { name: "Account" }));
+    await settle();
+    expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
+
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+    expect(screen.getByLabelText("Display name")).toHaveValue("Robert");
+    expect(screen.getByText("Display name is too long")).toBeInTheDocument();
   });
 
   it("removes an identity from an account's Profile once the owner agrees", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Profile" }));
-    expect(await screen.findByText("+15555550100")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+    expect(screen.getByText("+15555550100")).toBeInTheDocument();
 
     updateAccount.mockResolvedValue({ ...anAccount, phones: [] });
     getAccount.mockResolvedValue({ ...anAccount, phones: [] });
     listAccountIdentities.mockResolvedValue([]);
     // Remove asks first; the identity goes only once the dialog agrees.
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (Text Message)" }));
+    await settle();
     expect(updateAccount).not.toHaveBeenCalledWith(
       101,
       expect.objectContaining({ remove_identities: expect.anything() }),
     );
-    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
-    await waitFor(() =>
-      expect(updateAccount).toHaveBeenCalledWith(101, {
-        remove_identities: [{ address: "+15555550100", service: "phone" }],
-      }),
-    );
-    expect(await screen.findByText("No identities yet.")).toBeInTheDocument();
+    await settle();
+    expect(updateAccount).toHaveBeenCalledWith(101, {
+      remove_identities: [{ address: "+15555550100", service: "phone" }],
+    });
+    expect(screen.getByText("No identities yet")).toBeInTheDocument();
   });
 
-  it("shows an account's last login and its app on Profile, marking another release", async () => {
+  it("shows an account's last login and its app on Account, marking another release", async () => {
     getServerState.mockResolvedValue({
       state: "closed",
       version: "0.10.0+343fe0d8",
@@ -689,23 +801,30 @@ describe("OwnerHome", () => {
     });
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Profile" }));
-
-    const lastLogin = await screen.findByRole("heading", { name: "Last Login" });
+    // Last Login and App are facts about the account, on its Account tab (#2988).
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
+    const lastLogin = screen.getByRole("heading", { name: "Last Login" });
     expect(lastLogin.nextElementSibling).toHaveTextContent("2026");
     const app = screen.getByRole("heading", { name: "App" }).nextElementSibling as HTMLElement;
     expect(app).toHaveTextContent("Desktop app 0.9.0+aaaa1111");
-    await waitFor(() => expect(app).toHaveTextContent("The server is 0.10.0"));
+    expect(app).toHaveTextContent("The server is 0.10.0");
+
+    // Profile holds what the holder sets about themselves, and not these.
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+    expect(screen.getByRole("heading", { name: "Display Name" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Last Login" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "App" })).not.toBeInTheDocument();
   });
 
-  it("says Never and not connected on Profile for an account that has done neither", async () => {
-    const user = setupUser();
+  it("says Never and not connected on Account for an account that has done neither", async () => {
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Profile" }));
-
-    const lastLogin = await screen.findByRole("heading", { name: "Last Login" });
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
+    const lastLogin = screen.getByRole("heading", { name: "Last Login" });
     expect(lastLogin.nextElementSibling).toHaveTextContent("Never");
     expect(screen.getByText("Never connected.")).toBeInTheDocument();
   });
@@ -713,15 +832,17 @@ describe("OwnerHome", () => {
   it("shows the owner an account's Storage as the account sees it", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Storage" }));
+    await user.click(screen.getByRole("tab", { name: "Storage" }));
+    await settle();
 
-    await waitFor(() => expect(getAccountStorage).toHaveBeenCalledWith(expect.anything(), 101));
+    expect(getAccountStorage).toHaveBeenCalledWith(expect.anything(), 101);
     const firstPage = { limit: 50, offset: 0 };
     expect(listAccountImports).toHaveBeenCalledWith(firstPage, expect.anything(), 101);
     expect(listAccountExports).toHaveBeenCalledWith(firstPage, expect.anything(), 101);
     // What the accounts table used to carry: the message count and the storage total.
-    expect(await screen.findByText(/1,234 messages/)).toBeInTheDocument();
+    expect(screen.getByText(/1,234 messages/)).toBeInTheDocument();
     expect(screen.getByText(/7 attachments/)).toBeInTheDocument();
     // Counts of conversations and contacts, and never their names.
     expect(screen.getByText(/12 conversations, 34 contacts/)).toBeInTheDocument();
@@ -740,10 +861,12 @@ describe("OwnerHome", () => {
     });
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Storage" }));
+    await user.click(screen.getByRole("tab", { name: "Storage" }));
+    await settle();
 
-    expect(await screen.findByText("big.mov")).toBeInTheDocument();
+    expect(screen.getByText("big.mov")).toBeInTheDocument();
     const table = screen.getByText("big.mov").closest("table") as HTMLElement;
     const headers = Array.from(table.querySelectorAll("th")).map((h) => h.textContent);
     expect(headers).toEqual(["Name", "Size"]);
@@ -752,49 +875,59 @@ describe("OwnerHome", () => {
   it("counts the contacts an import made for the owner, and does not name them", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("tab", { name: "Storage" }));
-    await user.click(await screen.findByText("imessage"));
+    await user.click(screen.getByRole("tab", { name: "Storage" }));
+    await settle();
+    await user.click(screen.getByText("imessage"));
+    await settle();
 
-    await waitFor(() => expect(getAccountImport).toHaveBeenCalledWith(9, expect.anything(), 101));
-    expect(await screen.findByText("12 new, 3 changed")).toBeInTheDocument();
+    expect(getAccountImport).toHaveBeenCalledWith(9, expect.anything(), 101);
+    expect(screen.getByText("12 new, 3 changed")).toBeInTheDocument();
     expect(getImportContacts).not.toHaveBeenCalled();
   });
 
   it("deletes an account from its Settings and returns to User Accounts", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: /Danger zone/ }));
+    await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
-    const dialog = await screen.findByRole("dialog", { name: "Delete bob's account?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Delete bob's account?" });
     // The owner deletes on the strength of the count, so the dialog states it.
     expect(dialog).toHaveTextContent("1,234 messages");
     await user.click(within(dialog).getByRole("button", { name: "Delete account" }));
+    await settle();
 
-    await waitFor(() => expect(deleteAccountById).toHaveBeenCalledWith(101));
-    expect(await screen.findByRole("heading", { name: "User Accounts" })).toBeInTheDocument();
+    expect(deleteAccountById).toHaveBeenCalledWith(101);
+    expect(screen.getByRole("heading", { name: "User Accounts" })).toBeInTheDocument();
   });
 
   it("deletes an account's messages from its Settings", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: /Danger zone/ }));
+    await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete all messages" }));
-    const dialog = await screen.findByRole("dialog", { name: "Delete bob's messages?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Delete bob's messages?" });
     await user.click(within(dialog).getByRole("button", { name: "Delete all messages" }));
+    await settle();
 
-    await waitFor(() => expect(deleteAccountMessages).toHaveBeenCalledWith(101));
+    expect(deleteAccountMessages).toHaveBeenCalledWith(101);
   });
 
   it("lists each user with a status and a last login, and nothing else", async () => {
     renderHome();
+    await settle();
 
-    expect(await screen.findByText("bob")).toBeInTheDocument();
+    expect(screen.getByText("bob")).toBeInTheDocument();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).toEqual(["User", "Status", "Last login"]);
-    // What an account holds is under its Storage tab, and its app under Profile.
+    // What an account holds is under its Storage tab, and its app under Account.
     expect(screen.queryByText("1,234")).not.toBeInTheDocument();
     expect(screen.queryByText(/The accounts on this Message Crate/)).not.toBeInTheDocument();
     // The table sets nothing: status reads as text, and the permissions, like
@@ -807,8 +940,9 @@ describe("OwnerHome", () => {
 
   it("has no Admin column, because no account can be made one", async () => {
     renderHome();
+    await settle();
 
-    await screen.findByText("bob");
+    expect(screen.getByText("bob")).toBeInTheDocument();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).not.toContain("Admin");
   });
@@ -824,8 +958,9 @@ describe("OwnerHome", () => {
       },
     ]);
     renderHome();
+    await settle();
 
-    expect(await screen.findByText("Never")).toBeInTheDocument();
+    expect(screen.getByText("Never")).toBeInTheDocument();
     // Rendered in the browser's own zone and locale, so match the parts
     // that survive either way.
     expect(screen.getByText(/2026/)).toBeInTheDocument();
@@ -833,19 +968,122 @@ describe("OwnerHome", () => {
 
   it("states the server's version and schema fingerprint in Settings", async () => {
     renderHome(["/owner/settings"]);
+    await settle();
 
-    const version = await screen.findByText("Version");
+    const version = screen.getByText("Version");
     expect(version.nextElementSibling).toHaveTextContent(APP_BUILD);
     expect(screen.getByText("Schema fingerprint").nextElementSibling).toHaveTextContent(
       "1234567890",
+    );
+    expect(screen.getByText("Journal mode").nextElementSibling).toHaveTextContent("wal");
+  });
+
+  it("says so on every section, with SQLite's error and what to do, when the database runs without write-ahead logging", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: "delete", wal_error: "database is locked" },
+    });
+    renderHome(["/owner/dashboard"]);
+    await settle();
+
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent(
+      "The server could not turn on write-ahead logging when it started",
+    );
+    expect(notice).toHaveTextContent("SQLite answered: database is locked.");
+    expect(notice).toHaveTextContent("If another program has the database file open, close it.");
+    expect(notice).toHaveTextContent("Then restart the server");
+    // The mode is the owner's to read, never on the route anyone may ask.
+    expect(getServerSettings).toHaveBeenCalled();
+    cleanup();
+
+    renderHome(["/owner/accounts"]);
+    await settle();
+    expect(screen.getByRole("status")).toHaveTextContent("write-ahead logging");
+    // It blocks nothing: the screen under it still loads and works.
+    expect(screen.getByText("bob")).toBeInTheDocument();
+  });
+
+  it("names the mode SQLite kept when it turned write-ahead logging down without an error", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: "memory", wal_error: null },
+    });
+    renderHome(["/owner/dashboard"]);
+    await settle();
+
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent(
+      "SQLite kept the database in journal mode memory without giving an error.",
+    );
+    expect(notice).not.toHaveTextContent("SQLite answered");
+  });
+
+  it("says nothing about write-ahead logging when the server could not read the mode", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: null, wal_error: null },
+    });
+    renderHome();
+    await settle();
+
+    expect(screen.getByText("bob")).toBeInTheDocument();
+    expect(getServerSettings).toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("quotes SQLite's error when the server refused write-ahead logging and cannot read the mode now", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: null, wal_error: "disk I/O error" },
+    });
+    renderHome(["/owner/dashboard"]);
+    await settle();
+
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent(
+      "The server could not turn on write-ahead logging when it started",
+    );
+    expect(notice).toHaveTextContent("SQLite answered: disk I/O error.");
+  });
+
+  it("says nothing about write-ahead logging while the mode is wal, whatever SQLite answered at start", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: "wal", wal_error: "database is locked" },
+    });
+    renderHome();
+    await settle();
+
+    expect(screen.getByText("bob")).toBeInTheDocument();
+    expect(getServerSettings).toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows the journal mode as unknown in Server Settings when the server could not read it", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: null, wal_error: null },
+    });
+    renderHome(["/owner/settings"]);
+    await settle();
+    expect(screen.getByText("Journal mode").nextElementSibling).toHaveTextContent(
+      "unknown (the server's log says why)",
     );
   });
 
   it("says nothing under the header while the server and the app are one release", async () => {
     renderHome();
+    await settle();
 
-    await screen.findByText("bob");
-    await waitFor(() => expect(getServerState).toHaveBeenCalled());
+    expect(screen.getByText("bob")).toBeInTheDocument();
+    expect(getServerState).toHaveBeenCalled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -856,40 +1094,50 @@ describe("OwnerHome", () => {
       schema_fingerprint: 1234567890,
     });
     renderHome();
+    await settle();
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveTextContent(
       `The server is 99.0.0. This app is ${productVersionOf(APP_BUILD)}.`,
     );
     // It blocks nothing: the screen under it still loads and works.
-    expect(await screen.findByText("bob")).toBeInTheDocument();
+    expect(screen.getByText("bob")).toBeInTheDocument();
   });
 
   it("sets an account's status from its Settings", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: /Status/ }));
-    await user.click(await screen.findByRole("option", { name: "Disabled" }));
+    await user.click(screen.getByRole("button", { name: /Status/ }));
+    await settle();
+    await user.click(screen.getByRole("option", { name: "Disabled" }));
+    await settle();
 
-    await waitFor(() => expect(updateAccount).toHaveBeenCalledWith(101, { disabled: true }));
+    expect(updateAccount).toHaveBeenCalledWith(101, { disabled: true });
   });
 
   it("sets an account's permissions from its Settings, under Permissions", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    expect(await screen.findByRole("heading", { name: "Message Permissions" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Message Permissions" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Delete" }));
+    await settle();
 
-    await waitFor(() => expect(updateAccount).toHaveBeenCalledWith(101, { can_delete: true }));
+    expect(updateAccount).toHaveBeenCalledWith(101, { can_delete: true });
   });
 
   it("gives the owner's own account no status and no permissions", async () => {
     renderHome(["/owner/accounts/1"]);
+    await settle();
 
-    await screen.findByRole("heading", { name: "Change Password" });
+    expect(screen.getByRole("heading", { name: "Change Password" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Message Permissions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Status" })).not.toBeInTheDocument();
+    // Last Login and App are the owner's view of another account.
+    expect(screen.queryByRole("heading", { name: "Last Login" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "App" })).not.toBeInTheDocument();
   });
 
   it("sets an account's password from its Settings, typed twice the same way", async () => {
@@ -898,11 +1146,13 @@ describe("OwnerHome", () => {
 
     // The server judges the pair, so a differing one goes to it and its
     // sentence comes back to the screen.
-    setAccountPassword.mockRejectedValueOnce(new Error("New passwords do not match."));
-    await fill(user, await screen.findByLabelText("New password"), "correct horse");
+    setAccountPassword.mockRejectedValueOnce(new Error("new passwords do not match"));
+    await settle();
+    await fill(user, screen.getByLabelText("New password"), "correct horse");
     await fill(user, screen.getByLabelText("Confirm new password"), "correct hors");
     await user.click(screen.getByRole("button", { name: "Change password" }));
-    expect(await screen.findByText("New passwords do not match.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("New passwords do not match")).toBeInTheDocument();
     expect(setAccountPassword).toHaveBeenCalledWith(101, {
       password: "correct horse",
       password_confirmation: "correct hors",
@@ -910,13 +1160,12 @@ describe("OwnerHome", () => {
 
     await user.type(screen.getByLabelText("Confirm new password"), "e");
     await user.click(screen.getByRole("button", { name: "Change password" }));
+    await settle();
 
-    await waitFor(() =>
-      expect(setAccountPassword).toHaveBeenCalledWith(101, {
-        password: "correct horse",
-        password_confirmation: "correct horse",
-      }),
-    );
+    expect(setAccountPassword).toHaveBeenCalledWith(101, {
+      password: "correct horse",
+      password_confirmation: "correct horse",
+    });
     // Nothing about a forced change: the person keeps this password.
     expect(screen.queryByText(/made to replace/)).not.toBeInTheDocument();
   });
@@ -924,32 +1173,35 @@ describe("OwnerHome", () => {
   it("clears a user's password from the account's Settings", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Reset password" }));
+    await user.click(screen.getByRole("button", { name: "Reset password" }));
+    await settle();
 
-    await waitFor(() =>
-      expect(setAccountPassword).toHaveBeenCalledWith(101, {
-        password: "",
-        password_confirmation: "",
-      }),
-    );
+    expect(setAccountPassword).toHaveBeenCalledWith(101, {
+      password: "",
+      password_confirmation: "",
+    });
   });
 
   it("offers the owner no way to reset their own password to none", async () => {
     renderHome(["/owner/accounts/1"]);
+    await settle();
 
-    expect(await screen.findByRole("button", { name: "Change password" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change password" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
   });
 
   it("opens a new account's Settings from Add account, in place of the table", async () => {
     const user = setupUser();
     renderHome();
+    await settle();
 
-    await screen.findByText("bob");
+    expect(screen.getByText("bob")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add account" }));
+    await settle();
 
-    expect(await screen.findByRole("heading", { name: "New account" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "New account" })).toBeInTheDocument();
     expect(screen.queryByText("bob")).not.toBeInTheDocument();
     // The username is typed here, where an existing account's is only shown.
     expect(screen.getByLabelText("Username")).not.toHaveAttribute("readonly");
@@ -961,11 +1213,9 @@ describe("OwnerHome", () => {
 
   it("holds a new account's Profile and Storage back until the account exists", async () => {
     renderHome(["/owner/accounts/new?tab=storage"]);
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Account" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("tab", { name: "Storage" })).toHaveAttribute("aria-disabled", "true");
   });
@@ -974,12 +1224,14 @@ describe("OwnerHome", () => {
     const user = setupUser();
     // The answer to Create is written to the cache before its screen mounts.
     renderHome(["/owner/accounts/new"], { keepUnread: true });
+    await settle();
 
-    await fill(user, await screen.findByLabelText("Username"), "carol");
+    await fill(user, screen.getByLabelText("Username"), "carol");
     await fill(user, screen.getByLabelText("Password"), "hunter2hunter2");
     await fill(user, screen.getByLabelText("Confirm password"), "hunter2hunter");
     await user.click(screen.getByRole("button", { name: "Create" }));
-    expect(await screen.findByText("Passwords do not match.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("Passwords do not match.")).toBeInTheDocument();
     expect(createAccount).not.toHaveBeenCalled();
 
     // The server is never asked for the new row here, so what the screen shows
@@ -990,19 +1242,16 @@ describe("OwnerHome", () => {
     await user.type(screen.getByLabelText("Confirm password"), "2");
     await user.click(screen.getByRole("button", { name: "Create" }));
     // The same request Create Account on the Login screen sends.
-    await waitFor(() =>
-      expect(createAccount).toHaveBeenCalledWith({
-        username: "carol",
-        password: "hunter2hunter2",
-        preferred_name: null,
-        phone: null,
-      }),
-    );
+    await settle();
+    expect(createAccount).toHaveBeenCalledWith({
+      username: "carol",
+      password: "hunter2hunter2",
+      preferred_name: null,
+      phone: null,
+    });
     // The created account's own Settings, with every tab, drawn from the
     // server's answer to Create: nothing waits on a fetch, so nothing flickers.
-    expect(
-      await screen.findByRole("heading", { name: "User Settings: carol" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "User Settings: carol" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("carol")).toHaveAttribute("readonly");
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Storage" })).not.toHaveAttribute("aria-disabled");
@@ -1011,8 +1260,9 @@ describe("OwnerHome", () => {
   it("names no one in the heading while a managed account is still loading", async () => {
     getAccount.mockReturnValue(new Promise(() => {}));
     renderHome(["/owner/accounts/101"]);
+    await settle();
 
-    expect(await screen.findByText("Loading…")).toBeInTheDocument();
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Settings for Owner" })).not.toBeInTheDocument();
   });
 
@@ -1027,20 +1277,23 @@ describe("OwnerHome", () => {
       }),
     );
     renderHome(["/owner/accounts/new"]);
+    await settle();
 
-    await fill(user, await screen.findByLabelText("Username"), "bob");
+    await fill(user, screen.getByLabelText("Username"), "bob");
     await fill(user, screen.getByLabelText("Password"), "hunter2hunter2");
     await fill(user, screen.getByLabelText("Confirm password"), "hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create" }));
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Invalid username.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Invalid username.");
     expect(screen.queryByText(/already taken/)).not.toBeInTheDocument();
   });
 
   it("shows only the fields a new account needs", async () => {
     renderHome(["/owner/accounts/new"]);
+    await settle();
 
-    expect(await screen.findByRole("heading", { name: "Password (optional)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Password (optional)" })).toBeInTheDocument();
     expect(screen.queryByText(/Profile and Storage open/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Hand this password over/)).not.toBeInTheDocument();
   });
@@ -1049,8 +1302,9 @@ describe("OwnerHome", () => {
     renderHome(["/owner/settings"]);
 
     expect(selectedSection()).toBe("Server Settings");
+    await settle();
     expect(
-      await screen.findByText(/Let anyone who can reach this server create their own account/),
+      screen.getByText(/Let anyone who can reach this server create their own account/),
     ).toBeInTheDocument();
   });
 
@@ -1061,7 +1315,8 @@ describe("OwnerHome", () => {
 
     renderHome(["/owner/conversations"]);
     expect(selectedSection()).toBe("User Accounts");
-    expect(await screen.findByText("bob")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("bob")).toBeInTheDocument();
   });
 
   it("moves between sections from the side panel", async () => {
@@ -1070,33 +1325,35 @@ describe("OwnerHome", () => {
 
     await user.click(screen.getByRole("button", { name: "Server Settings" }));
     expect(selectedSection()).toBe("Server Settings");
+    await settle();
     expect(
-      await screen.findByText(/Let anyone who can reach this server create their own account/),
+      screen.getByText(/Let anyone who can reach this server create their own account/),
     ).toBeInTheDocument();
   });
 
   it("turns public registration on from Settings", async () => {
     const user = setupUser();
     renderHome(["/owner/settings"]);
+    await settle();
 
-    const box = await screen.findByRole("checkbox", {
+    const box = screen.getByRole("checkbox", {
       name: /Let anyone who can reach this server create their own account/,
     });
     expect(box).not.toBeChecked();
 
     await user.click(box);
+    await settle();
 
-    await waitFor(() =>
-      expect(updateServerSettings).toHaveBeenCalledWith({
-        public_registration: true,
-      }),
-    );
+    expect(updateServerSettings).toHaveBeenCalledWith({
+      public_registration: true,
+    });
   });
 
   it("gives the owner's own Settings the tabs that mean something to an owner", async () => {
     renderHome(["/owner/accounts/1"]);
+    await settle();
 
-    expect(await screen.findByText("Change Password")).toBeInTheDocument();
+    expect(screen.getByText("Change Password")).toBeInTheDocument();
     // The owner's own account is read as the logged-in account, not as a managed one.
     expect(getAccount).not.toHaveBeenCalled();
     // No Storage, System or Convert: the owner holds no messages.
@@ -1115,8 +1372,9 @@ describe("OwnerHome", () => {
 
   it("shows the owner a name and a time zone on Profile, and no identities", async () => {
     renderHome(["/owner/accounts/1?tab=profile"]);
+    await settle();
 
-    expect(await screen.findByText("Display Name")).toBeInTheDocument();
+    expect(screen.getByText("Display Name")).toBeInTheDocument();
     expect(screen.getByText("Time Zone")).toBeInTheDocument();
     expect(screen.queryByText("My Identities")).not.toBeInTheDocument();
   });

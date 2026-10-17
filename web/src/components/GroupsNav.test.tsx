@@ -1,16 +1,22 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockedAuth, Providers } from "../test/providers";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { advanceToNextFrame, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", () => authModule());
+
+beforeEach(() => {
+  startFakeClock();
+});
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 function renderNav(path: string) {
@@ -113,7 +119,10 @@ describe("GroupsNav", () => {
     const trigger = screen.getByRole("button", { name: "Contact Group options for College" });
     await user.click(trigger);
     await user.keyboard("{Escape}");
-    // React Aria puts focus back a frame after the menu unmounts.
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    // React Aria puts focus back a frame after the menu unmounts, and the
+    // frame comes when the fake clock moves to it.
+    expect(document.activeElement).not.toBe(trigger);
+    advanceToNextFrame();
+    expect(document.activeElement).toBe(trigger);
   });
 });

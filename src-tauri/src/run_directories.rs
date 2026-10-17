@@ -20,11 +20,13 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
+use ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
-use crate::app_directories::{MESSAGE_CRATE_DIRECTORY_NAME, import_run_log};
-use crate::commands::paths::{resolve_openable_path, resolve_staging_root};
+use crate::app_directories::{RunLog, import_run_log};
+use crate::commands::paths::{require_absolute, resolve_openable_path, resolve_staging_root};
+use crate::run_logs::account_of;
 
 /// File in the app-data directory that holds the Staging Directory setting
 /// and the run directories this app made.
@@ -37,7 +39,7 @@ const LOCK_FILE: &str = "staging.json.lock";
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct Record {
     /// The Staging Directory from Settings. `None` means the default,
-    /// `{home}/message-crate`.
+    /// `{home}/message-crate/staging`.
     root: Option<PathBuf>,
     /// Every run directory this app made and has not deleted.
     directories: Vec<MadeDirectory>,
@@ -60,8 +62,77 @@ struct MadeDirectory {
 pub struct StagingRoot {
     /// The directory new run directories are made in.
     pub root: String,
-    /// `{home}/message-crate`: the directory used when Settings name none.
+    /// `{home}/message-crate/staging`: the directory used when Settings name
+    /// none.
     pub default_root: String,
+}
+
+/// A run directory this app made, and the Import Run its log says it holds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryOfRun {
+    /// The directory, as it was recorded when it was made.
+    pub run_dir: String,
+    /// The Import Run's id on the Message Crate it imported into.
+    pub import_run_id: i64,
+}
+
+/// An account on one Message Crate: the signed-in account, which a run's log
+/// must name for the app to act on the run's directory.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedIn {
+    /// The account's id on that Message Crate.
+    pub account_id: i64,
+    /// The id of the Message Crate, as `GET /v1/server` answers it.
+    pub message_crate_id: String,
+}
+
+impl SignedIn {
+    /// Whether the run log's account line `account` names this account on
+    /// this Message Crate.
+    fn ran(&self, account: &message_crate_core::RunLogAccount) -> bool {
+        account.account_id == self.account_id && account.message_crate_id == self.message_crate_id
+    }
+}
+
+/// The directory of a closed Import Run, and the run as its log names it.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClosedRun {
+    /// The run's directory, as [`RunDirectories::runs_of`] gave it.
+    pub run_dir: String,
+    /// The Import Run's id on the Message Crate it imported into.
+    pub import_run_id: i64,
+    /// The account that ran it, on that Message Crate.
+    #[serde(flatten)]
+    pub signed_in: SignedIn,
+    /// How the server reports the run ended.
+    pub status: ClosedStatus,
+}
+
+/// How a closed Import Run ended, in the words the server's `status` uses.
+/// `running` is not one of them, so a running run's directory cannot be
+/// handed to [`RunDirectories::delete_closed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClosedStatus {
+    Completed,
+    CompletedWithIssues,
+    Failed,
+    Canceled,
+}
+
+impl ClosedStatus {
+    /// The status as the server writes it.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::CompletedWithIssues => "completed_with_issues",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
 }
 
 /// The Staging Directory and the run directories made under it, kept in
@@ -70,20 +141,31 @@ pub struct StagingRoot {
 pub struct RunDirectories {
     /// Where the record is saved.
     file: PathBuf,
-    /// The home directory, for the default Staging Directory. `None` when the
-    /// operating system reports none.
-    home: Option<PathBuf>,
+    /// The default Staging Directory, `staging` in the Message Crate
+    /// Directory.
+    default_root: PathBuf,
     /// The Logs Directory, where each run's log outlives its directory. A
     /// name whose log is there is not given to a new run, so two runs never
     /// share a log.
     logs: PathBuf,
+    /// Held for the whole of each delete, so two deletes of one directory in
+    /// this process, such as a discard and the clean-up when Import opens,
+    /// run one after the other. The second then finds the directory gone,
+    /// instead of failing on a file the first removed under it.
+    deleting: Mutex<()>,
 }
 
 impl RunDirectories {
-    /// The record kept in `file`, read from it on every use, for runs whose
-    /// logs go to `logs`.
-    pub fn at(file: PathBuf, home: Option<PathBuf>, logs: PathBuf) -> Self {
-        Self { file, home, logs }
+    /// The record kept in `file`, read from it on every use, with
+    /// `default_root` as the Staging Directory when Settings name none, for
+    /// runs whose logs go to `logs`.
+    pub fn at(file: PathBuf, default_root: PathBuf, logs: PathBuf) -> Self {
+        Self {
+            file,
+            default_root,
+            logs,
+            deleting: Mutex::new(()),
+        }
     }
 
     /// The record as the file holds it now.
@@ -152,37 +234,27 @@ impl RunDirectories {
         }
     }
 
-    /// `{home}/message-crate`.
-    fn default_root(&self) -> Result<PathBuf, String> {
-        self.home
-            .as_ref()
-            .map(|home| home.join(MESSAGE_CRATE_DIRECTORY_NAME))
-            .ok_or_else(|| "Could not determine the user home directory".to_string())
-    }
-
     /// The Staging Directory new run directories are made in.
     ///
     /// # Errors
     ///
-    /// Returns an error when Settings name no directory and the operating
-    /// system reports no home directory.
+    /// Returns an error when the record cannot be read.
     pub fn root(&self) -> Result<PathBuf, String> {
-        match self.read()?.root {
-            Some(root) => Ok(root),
-            None => self.default_root(),
-        }
+        Ok(self
+            .read()?
+            .root
+            .unwrap_or_else(|| self.default_root.clone()))
     }
 
     /// The Staging Directory and its default, for Settings.
     ///
     /// # Errors
     ///
-    /// Returns an error when the operating system reports no home directory, or
-    /// the record cannot be read.
+    /// Returns an error when the record cannot be read.
     pub fn describe(&self) -> Result<StagingRoot, String> {
         Ok(StagingRoot {
             root: self.root()?.display().to_string(),
-            default_root: self.default_root()?.display().to_string(),
+            default_root: self.default_root.display().to_string(),
         })
     }
 
@@ -201,7 +273,7 @@ impl RunDirectories {
         } else {
             resolve_staging_root(trimmed)?;
             let path = PathBuf::from(trimmed);
-            if self.default_root().ok().as_ref() == Some(&path) {
+            if path == self.default_root {
                 None
             } else {
                 Some(path)
@@ -241,7 +313,10 @@ impl RunDirectories {
                 directory = root.join(format!("{base}-{n}"));
                 continue;
             }
-            match std::fs::create_dir(&directory) {
+            // Owner-only whatever the umask: the run's staged conversations
+            // go in it (#2969). The Staging Directory is the person's and
+            // keeps its mode.
+            match file_io::create_dir_owner_only(&directory) {
                 Ok(()) => break,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     n += 1;
@@ -278,7 +353,7 @@ impl RunDirectories {
     /// Returns an error when `dir` is empty or relative, is not on disk, was
     /// not made by [`RunDirectories::create`], or has no sentinel.
     pub fn directory(&self, dir: &str) -> Result<PathBuf, String> {
-        let path = absolute(dir)?;
+        let path = require_absolute(dir)?;
         let canonical = path
             .canonicalize()
             .map_err(|error| format!("Could not find the run directory {dir}: {error}"))?;
@@ -315,7 +390,20 @@ impl RunDirectories {
     /// Returns an error when the directory fails [`RunDirectories::directory`]'s
     /// checks, cannot be removed, or the record cannot be saved.
     pub fn delete(&self, dir: &str) -> Result<(), String> {
-        let path = absolute(dir)?;
+        let _deleting = self.one_delete_at_a_time();
+        self.delete_now(dir)
+    }
+
+    /// The lock that runs this process's deletes one at a time. A delete that
+    /// panicked left nothing the next one relies on, so a poisoned lock is
+    /// taken as it is.
+    fn one_delete_at_a_time(&self) -> MutexGuard<'_, ()> {
+        self.deleting.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The work of [`RunDirectories::delete`], with the delete lock held.
+    fn delete_now(&self, dir: &str) -> Result<(), String> {
+        let path = require_absolute(dir)?;
         let made = self
             .read()?
             .directories
@@ -338,6 +426,130 @@ impl RunDirectories {
         self.forget(&directory)
     }
 
+    /// The run directories this app made whose Import Run was run by
+    /// `signed_in`, each with that run's id. A directory is tied to its run by
+    /// the first line of the run's log ([`message_crate_core::RunLogAccount`]),
+    /// which the window writes once the server has created the run. A
+    /// directory whose log names no run, or names another account or another
+    /// Message Crate, is left out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn runs_of(&self, signed_in: &SignedIn) -> Result<Vec<DirectoryOfRun>, String> {
+        Ok(self.runs_in(&made_paths(self.read()?), signed_in))
+    }
+
+    /// The directories among `made` whose log ties them to a run of
+    /// `signed_in`, each with that run's id.
+    fn runs_in(&self, made: &[PathBuf], signed_in: &SignedIn) -> Vec<DirectoryOfRun> {
+        made.iter()
+            .filter_map(|path| {
+                let account = account_of(&import_run_log(&self.logs, path))?;
+                signed_in.ran(&account).then(|| DirectoryOfRun {
+                    run_dir: path.display().to_string(),
+                    import_run_id: account.import_run_id,
+                })
+            })
+            .collect()
+    }
+
+    /// The disk space the run directories of `signed_in`'s Import Runs take
+    /// on this computer, in bytes: the directories [`RunDirectories::runs_of`]
+    /// lists, measured now. A run directory made inside another, as when the
+    /// Staging Directory was set inside a run's directory, counts once, as
+    /// its own run's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn bytes_of(&self, signed_in: &SignedIn) -> Result<u64, String> {
+        // One read, so the runs measured and the runs skipped inside them
+        // come from the same record.
+        let made = made_paths(self.read()?);
+        Ok(self
+            .runs_in(&made, signed_in)
+            .iter()
+            .map(|run| {
+                let run = Path::new(&run.run_dir);
+                directory_bytes(run, &|path| path != run && made.iter().any(|m| m == path))
+            })
+            .sum())
+    }
+
+    /// The disk space the whole Staging Directory takes on this computer, in
+    /// bytes, measured now: everything in the directory Settings name, for
+    /// every account and every Message Crate this computer imported into,
+    /// and every run directory this app made under an earlier setting and
+    /// still keeps. Each byte counts once, wherever one of these directories
+    /// sits inside another.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record cannot be read.
+    pub fn bytes_of_all(&self) -> Result<u64, String> {
+        let record = self.read()?;
+        let root = record
+            .root
+            .clone()
+            .unwrap_or_else(|| self.default_root.clone());
+        let mut tops = made_paths(record);
+        // A Staging Directory not made yet holds nothing.
+        if let Ok(root) = root.canonicalize() {
+            tops.push(root);
+        }
+        let inside_another =
+            |path: &PathBuf| tops.iter().any(|top| top != path && path.starts_with(top));
+        let mut counted: Vec<&PathBuf> = tops.iter().filter(|top| !inside_another(top)).collect();
+        counted.sort();
+        counted.dedup();
+        Ok(counted
+            .into_iter()
+            .map(|top| directory_bytes(top, &|_| false))
+            .sum())
+    }
+
+    /// Delete the directory of the closed Import Run `closed` names, and say
+    /// so in the run's log, naming the run and the directory. A closed run's
+    /// files are never read again. Returns whether a directory was removed:
+    /// one already gone is only forgotten, and the log says nothing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the run's log does not name that run, account
+    /// and Message Crate, so the directory is not tied to that run, or when
+    /// the delete fails as [`RunDirectories::delete`] does.
+    pub fn delete_closed(&self, closed: &ClosedRun) -> Result<bool, String> {
+        let path = require_absolute(&closed.run_dir)?;
+        let import_run_id = closed.import_run_id;
+        // Import Run ids are counted per Message Crate, so the run's id alone
+        // could name another Message Crate's run, still running there.
+        let tied = account_of(&import_run_log(&self.logs, &path)).is_some_and(|account| {
+            account.import_run_id == import_run_id && closed.signed_in.ran(&account)
+        });
+        if !tied {
+            return Err(format!(
+                "{} is not the directory of Import Run {import_run_id}",
+                path.display()
+            ));
+        }
+        let on_disk = {
+            let _deleting = self.one_delete_at_a_time();
+            let on_disk = std::fs::symlink_metadata(&path).is_ok();
+            self.delete_now(&closed.run_dir)?;
+            on_disk
+        };
+        let status = closed.status;
+        if on_disk {
+            RunLog::open(&self.logs, &path).line(&format!(
+                "Deleted the directory of Import Run {import_run_id}, {}, because the server reports the run as {}",
+                path.display(),
+                status.as_str()
+            ));
+        }
+        Ok(on_disk)
+    }
+
     /// Drop `directory` from the record.
     fn forget(&self, directory: &Path) -> Result<(), String> {
         self.change(|record| {
@@ -354,7 +566,7 @@ impl RunDirectories {
     /// Returns an error when the path is empty or relative, or is in no
     /// run directory this app made.
     pub fn openable(&self, path: &str) -> Result<PathBuf, String> {
-        absolute(path)?;
+        require_absolute(path)?;
         self.read()?
             .directories
             .iter()
@@ -408,6 +620,41 @@ fn device_of(_metadata: &std::fs::Metadata) -> Option<u64> {
     None
 }
 
+/// The run directories `record` lists.
+fn made_paths(record: Record) -> Vec<PathBuf> {
+    record
+        .directories
+        .into_iter()
+        .map(|made| made.path)
+        .collect()
+}
+
+/// The bytes the files under `directory` hold, `directory` included, leaving
+/// out every directory under it that `skip` names. A symbolic link counts as
+/// itself and is never followed, so a link out of a run directory does not
+/// count what it points at. An entry that cannot be read counts as nothing:
+/// the total is what could be measured.
+fn directory_bytes(directory: &Path, skip: &dyn Fn(&Path) -> bool) -> u64 {
+    let mut total = 0;
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.is_dir() {
+            if skip(&path) {
+                continue;
+            }
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
+            }
+        } else {
+            total += metadata.len();
+        }
+    }
+    total
+}
+
 /// Whether `path` is a directory with nothing in it.
 fn is_empty_dir(path: &Path) -> bool {
     std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
@@ -436,19 +683,6 @@ fn remove_sentinel_last(directory: &Path) -> std::io::Result<()> {
     std::fs::remove_dir(directory)
 }
 
-/// `raw`, trimmed, when it is a non-empty absolute path.
-fn absolute(raw: &str) -> Result<PathBuf, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("Path is empty".to_string());
-    }
-    let path = PathBuf::from(trimmed);
-    if !path.is_absolute() {
-        return Err("Path must be absolute".to_string());
-    }
-    Ok(path)
-}
-
 /// The short name a run directory carries for `label`: an Import source id
 /// shortened the way the directory names have always read, or `label` itself.
 fn directory_slug(label: &str) -> Result<&str, String> {
@@ -474,7 +708,8 @@ pub fn timestamp_now() -> String {
 }
 
 /// A record of run directories in its own temporary app-data and home
-/// directories, for tests here and in the staging commands.
+/// directories, with the Message Crate Directory in that home, for tests here
+/// and in the staging commands.
 #[cfg(test)]
 pub(crate) struct Scratch {
     pub directories: RunDirectories,
@@ -497,11 +732,22 @@ impl Scratch {
 
     /// The record kept in `app_data`, with `home` as the home directory.
     fn open(app_data: &tempfile::TempDir, home: &tempfile::TempDir) -> RunDirectories {
+        let directory = Self::directory_in(home);
         RunDirectories::at(
             app_data.path().join(RECORD_FILE),
-            Some(home.path().to_path_buf()),
-            crate::app_directories::logs_dir_in(app_data.path()),
+            directory.staging(),
+            directory.logs(),
         )
+    }
+
+    /// The Message Crate Directory in `home`.
+    fn directory_in(home: &tempfile::TempDir) -> crate::app_directories::MessageCrateDirectory {
+        crate::app_directories::MessageCrateDirectory::in_home(home.path(), false)
+    }
+
+    /// The Logs Directory the runs' logs go to.
+    pub fn logs(&self) -> PathBuf {
+        Self::directory_in(&self.home).logs()
     }
 
     /// The same record, as another process or a restarted app opens it.
@@ -552,7 +798,7 @@ mod tests {
     fn a_name_whose_log_is_kept_is_not_given_to_a_new_run() {
         let scratch = Scratch::new();
         let first = scratch.directories.create("imessage-ios", NOW).unwrap();
-        let logs = crate::app_directories::logs_dir_in(scratch.app_data.path());
+        let logs = scratch.logs();
         fs::create_dir_all(&logs).unwrap();
         fs::write(import_run_log(&logs, &first), "the first run's log").unwrap();
         // The first run ended and its directory went; its log stays.
@@ -579,10 +825,34 @@ mod tests {
             .path()
             .canonicalize()
             .unwrap()
-            .join("message-crate");
+            .join("message-crate")
+            .join("staging");
         assert_eq!(run, root.join("staging-iphone-ios-261002-101500"));
         assert_eq!(again, root.join("staging-iphone-ios-261002-101500-2"));
         assert!(run.join(EXPORT_SENTINEL).is_file());
+    }
+
+    /// A run directory holds the conversations it staged until the run ends,
+    /// so no other user of the computer may read it, whatever the umask
+    /// (#2969). The Staging Directory itself is the person's and keeps its
+    /// mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_run_directory_is_its_owner_s_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let scratch = Scratch::new();
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        scratch
+            .directories
+            .set_root(root.path().to_str().unwrap())
+            .unwrap();
+
+        let run = scratch.directories.create("imessage-ios", NOW).unwrap();
+
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&run), 0o700);
+        assert_eq!(mode(root.path()), 0o755);
     }
 
     #[test]
@@ -800,7 +1070,7 @@ mod tests {
     fn the_staging_directory_is_stored_and_the_default_is_not() {
         let scratch = Scratch::new();
         let directories = &scratch.directories;
-        let default_root = scratch.home.path().join("message-crate");
+        let default_root = scratch.home.path().join("message-crate").join("staging");
 
         directories.set_root("/data/imports").unwrap();
         let reloaded = scratch.reopen();
@@ -817,6 +1087,290 @@ mod tests {
         directories.set_root("/data/imports").unwrap();
         directories.set_root("  ").unwrap();
         assert_eq!(directories.root().unwrap(), default_root);
+    }
+
+    /// The Message Crate the runs below imported into.
+    const CRATE: &str = "3f2a9c";
+
+    /// Start the log of the run whose directory is `run` with the line that
+    /// ties it to Import Run `id` by `account` on `message_crate`, as the
+    /// window does once the server has created the run.
+    fn tie(scratch: &Scratch, run: &Path, id: i64, account: i64, message_crate: &str) {
+        RunLog::open(&scratch.logs(), run).account(&message_crate_core::RunLogAccount {
+            import_run_id: id,
+            account_id: account,
+            server: "http://127.0.0.1:8080".to_string(),
+            message_crate_id: message_crate.to_string(),
+        });
+    }
+
+    /// Account 7 on [`CRATE`].
+    fn signed_in() -> SignedIn {
+        SignedIn {
+            account_id: 7,
+            message_crate_id: CRATE.to_string(),
+        }
+    }
+
+    /// Import Run `id` by account 7 on [`CRATE`], whose directory is `run`,
+    /// closed as `status`.
+    fn closed(run: &Path, id: i64, status: ClosedStatus) -> ClosedRun {
+        ClosedRun {
+            run_dir: run.display().to_string(),
+            import_run_id: id,
+            signed_in: signed_in(),
+            status,
+        }
+    }
+
+    /// The bytes of `run`'s sentinel, which every run directory holds.
+    fn sentinel_bytes(run: &Path) -> u64 {
+        fs::metadata(run.join(EXPORT_SENTINEL)).unwrap().len()
+    }
+
+    #[test]
+    fn an_account_s_staged_bytes_are_its_own_runs_and_the_whole_is_every_run() {
+        // #3087: Settings shows an account the space its own Import Runs take
+        // on this computer, and the owner the space every run takes.
+        let scratch = Scratch::new();
+        let mine = scratch.directories.create("whatsapp", NOW).unwrap();
+        let theirs = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &mine, 42, 7, CRATE);
+        tie(&scratch, &theirs, 43, 8, CRATE);
+        fs::create_dir_all(mine.join("media")).unwrap();
+        fs::write(mine.join("media").join("a.jpg"), vec![0; 1000]).unwrap();
+        fs::write(mine.join("chat.jsonl"), vec![0; 24]).unwrap();
+        fs::write(theirs.join("chat.jsonl"), vec![0; 300]).unwrap();
+        fs::write(untied.join("chat.jsonl"), vec![0; 5]).unwrap();
+        let sentinels = sentinel_bytes(&mine) + sentinel_bytes(&theirs) + sentinel_bytes(&untied);
+
+        let directories = scratch.reopen();
+
+        assert_eq!(
+            directories.bytes_of(&signed_in()).unwrap(),
+            1024 + sentinel_bytes(&mine)
+        );
+        assert_eq!(directories.bytes_of_all().unwrap(), 1329 + sentinels);
+    }
+
+    #[test]
+    fn the_whole_staging_directory_is_everything_in_it_and_runs_kept_elsewhere() {
+        // The owner's total is the whole Staging Directory, a file the person
+        // left in it included, and a run still staged under an earlier
+        // setting.
+        let scratch = Scratch::new();
+        let earlier = tempfile::tempdir().unwrap();
+        scratch
+            .directories
+            .set_root(earlier.path().to_str().unwrap())
+            .unwrap();
+        let kept = scratch.directories.create("whatsapp", NOW).unwrap();
+        fs::write(kept.join("chat.jsonl"), vec![0; 70]).unwrap();
+        let now = tempfile::tempdir().unwrap();
+        scratch
+            .directories
+            .set_root(now.path().to_str().unwrap())
+            .unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        fs::write(run.join("chat.jsonl"), vec![0; 300]).unwrap();
+        fs::write(now.path().join("notes.txt"), vec![0; 9]).unwrap();
+        // Beside the earlier run, but not a run: not part of the Staging
+        // Directory any more.
+        fs::write(earlier.path().join("other.txt"), vec![0; 4000]).unwrap();
+
+        assert_eq!(
+            scratch.directories.bytes_of_all().unwrap(),
+            379 + sentinel_bytes(&kept) + sentinel_bytes(&run)
+        );
+    }
+
+    #[test]
+    fn a_run_made_inside_another_run_s_directory_counts_once_as_its_own() {
+        // The Staging Directory was set inside a run's directory, so the next
+        // run was made inside it, and run by another account.
+        let scratch = Scratch::new();
+        let outer = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &outer, 42, 7, CRATE);
+        fs::write(outer.join("chat.jsonl"), vec![0; 100]).unwrap();
+        scratch
+            .directories
+            .set_root(outer.to_str().unwrap())
+            .unwrap();
+        let inner = scratch.directories.create("imessage-ios", NOW).unwrap();
+        tie(&scratch, &inner, 43, 8, CRATE);
+        fs::write(inner.join("chat.jsonl"), vec![0; 5000]).unwrap();
+
+        assert_eq!(
+            scratch.directories.bytes_of(&signed_in()).unwrap(),
+            100 + sentinel_bytes(&outer)
+        );
+        assert_eq!(
+            scratch.directories.bytes_of_all().unwrap(),
+            5100 + sentinel_bytes(&outer) + sentinel_bytes(&inner)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_a_run_directory_is_not_measured_through() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::write(elsewhere.path().join("big.bin"), vec![0; 100_000]).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), run.join("link")).unwrap();
+
+        let bytes = scratch.directories.bytes_of(&signed_in()).unwrap();
+
+        assert!(bytes < 100_000, "{bytes}");
+    }
+
+    #[test]
+    fn a_run_directory_no_longer_on_disk_measures_nothing() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        fs::remove_dir_all(&run).unwrap();
+
+        assert_eq!(scratch.directories.bytes_of(&signed_in()).unwrap(), 0);
+        assert_eq!(scratch.directories.bytes_of_all().unwrap(), 0);
+    }
+
+    #[test]
+    fn the_runs_of_an_account_are_its_own_directories_on_that_message_crate() {
+        // #2822: Import cleans up only the directories it can tie to the
+        // signed-in account's runs on the Message Crate it is signed in to.
+        let scratch = Scratch::new();
+        let mine = scratch.directories.create("whatsapp", NOW).unwrap();
+        let another_account = scratch.directories.create("whatsapp", NOW).unwrap();
+        let another_crate = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &mine, 42, 7, CRATE);
+        tie(&scratch, &another_account, 43, 8, CRATE);
+        tie(&scratch, &another_crate, 44, 7, "another");
+
+        let runs = scratch.reopen().runs_of(&signed_in()).unwrap();
+
+        assert_eq!(
+            runs,
+            [DirectoryOfRun {
+                run_dir: mine.display().to_string(),
+                import_run_id: 42,
+            }]
+        );
+        assert!(untied.exists());
+    }
+
+    #[test]
+    fn a_closed_run_s_directory_is_deleted_and_its_log_says_so() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+
+        let deleted = scratch
+            .reopen()
+            .delete_closed(&closed(&run, 42, ClosedStatus::Canceled))
+            .unwrap();
+
+        assert!(deleted);
+        assert!(!run.exists());
+        assert!(scratch.reopen().runs_of(&signed_in()).unwrap().is_empty());
+        let log = std::fs::read_to_string(import_run_log(&scratch.logs(), &run)).unwrap();
+        let last = log.lines().last().unwrap();
+        assert!(last.contains(" INFO "), "{last}");
+        assert!(
+            last.contains(&format!(
+                "Deleted the directory of Import Run 42, {}, because the server reports the run as canceled",
+                run.display()
+            )),
+            "{last}"
+        );
+    }
+
+    #[test]
+    fn a_closed_run_s_directory_already_gone_is_forgotten_without_a_log_line() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+        fs::remove_dir_all(&run).unwrap();
+        let log = import_run_log(&scratch.logs(), &run);
+        let before = fs::read_to_string(&log).unwrap();
+
+        let deleted = scratch
+            .directories
+            .delete_closed(&closed(&run, 42, ClosedStatus::Completed))
+            .unwrap();
+
+        assert!(!deleted);
+        assert!(scratch.directories.read().unwrap().directories.is_empty());
+        assert_eq!(fs::read_to_string(&log).unwrap(), before);
+    }
+
+    #[test]
+    fn a_directory_whose_log_names_another_run_is_not_deleted_as_closed() {
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        let untied = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, CRATE);
+
+        let err = scratch
+            .directories
+            .delete_closed(&closed(&run, 41, ClosedStatus::Failed))
+            .unwrap_err();
+        assert!(err.contains("not the directory of Import Run 41"), "{err}");
+        assert!(
+            scratch
+                .directories
+                .delete_closed(&closed(&untied, 42, ClosedStatus::Failed))
+                .is_err()
+        );
+
+        assert!(run.exists());
+        assert!(untied.exists());
+    }
+
+    #[test]
+    fn a_run_of_the_same_id_on_another_message_crate_keeps_its_directory() {
+        // Import Run ids are counted per Message Crate. Run 42 on another
+        // Message Crate may still be running there, whatever this one says
+        // about its own run 42.
+        let scratch = Scratch::new();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
+        tie(&scratch, &run, 42, 7, "another");
+
+        let err = scratch
+            .directories
+            .delete_closed(&closed(&run, 42, ClosedStatus::Canceled))
+            .unwrap_err();
+
+        assert!(err.contains("not the directory of Import Run 42"), "{err}");
+        assert!(run.exists());
+    }
+
+    #[test]
+    fn a_closed_status_is_written_in_the_log_as_the_server_writes_it() {
+        for status in [
+            ClosedStatus::Completed,
+            ClosedStatus::CompletedWithIssues,
+            ClosedStatus::Failed,
+            ClosedStatus::Canceled,
+        ] {
+            let quoted = format!("\"{}\"", status.as_str());
+            assert_eq!(
+                serde_json::from_str::<ClosedStatus>(&quoted).unwrap(),
+                status
+            );
+        }
+    }
+
+    #[test]
+    fn running_is_not_a_closed_status() {
+        assert!(serde_json::from_str::<ClosedStatus>("\"running\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<ClosedStatus>("\"completed_with_issues\"").unwrap(),
+            ClosedStatus::CompletedWithIssues
+        );
     }
 
     #[test]

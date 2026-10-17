@@ -9,10 +9,11 @@ use std::time::Duration;
 use axum::http::StatusCode;
 
 use super::*;
+use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, attachment, conversation_header, fixture_with_account,
-    message_line,
+    RegisteredAccount, TestFixture, attachment, conversation_header, expect_problem,
+    fixture_with_account, message_line,
 };
 
 /// The three synthetic files the tests import: an 800x600 PNG, a half-second
@@ -46,7 +47,7 @@ fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
     let message = files.iter().zip(shas).fold(
         message_line("g-media", "some files").sender("+15555550123"),
         |message, ((name, mime), sha)| {
-            message.attachment(message_ir::IrAttachment {
+            message.attachment(ir::Attachment {
                 digest_sha256: Some(sha.clone()),
                 ..attachment(&format!("attachments/{name}"), name, mime)
             })
@@ -81,17 +82,15 @@ async fn import_files(
     files: &[(&str, &str, Vec<u8>)],
 ) -> (Vec<String>, i64) {
     let state = &fixture.state;
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    let (run, _) = crate::test_support::start_import_run(
         state,
-        "/v1/imports",
         &alice.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let run = run["id"].as_i64().unwrap();
     let mut shas = Vec::new();
     for (name, mime, bytes) in files {
-        let sha = crate::assets_api::sha256_hex(bytes);
+        let sha = file_io::sha256_hex(bytes);
         let (status, text) = crate::test_support::put_raw(
             state,
             &format!("/v1/assets/{sha}"),
@@ -104,23 +103,8 @@ async fn import_files(
         shas.push(sha);
     }
     let names: Vec<(&str, &str)> = files.iter().map(|(name, mime, _)| (*name, *mime)).collect();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{run}/batches"),
-        &alice.token,
-        "application/jsonl",
-        batch(&names, &shas),
-    )
-    .await;
-    assert!(status.is_success(), "batch: {status} {text}");
-    let completed: serde_json::Value = crate::test_support::post_json(
-        state,
-        &format!("/v1/imports/{run}/complete"),
-        &alice.token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
-    assert_eq!(completed["status"], "completed", "{completed}");
+    crate::test_support::post_import_batch(state, &alice.token, run, batch(&names, &shas)).await;
+    crate::test_support::complete_import_run(state, &alice.token, run).await;
 
     let conversation_id: i64 =
         sqlx::query_scalar("SELECT id FROM conversations WHERE account_id = $1")
@@ -154,9 +138,7 @@ async fn get_bytes(
     token: Option<&str>,
 ) -> (StatusCode, String, Vec<u8>) {
     let server = crate::test_support::serve(state).await;
-    let mut request = reqwest::Client::new()
-        .get(format!("{}{path}", server.base()))
-        .header(reqwest::header::ACCEPT, "image/*");
+    let mut request = server.get(path).header(reqwest::header::ACCEPT, "image/*");
     if let Some(token) = token {
         request = request.bearer_auth(token);
     }
@@ -181,12 +163,30 @@ async fn queued(state: &AppState) -> i64 {
         .unwrap()
 }
 
-/// Run `test` on its own runtime with the real ffmpeg held available, or skip
+/// One second after the newest row in the queue, or
+/// [`crate::test_support::fixed_instant`] when the queue is empty. A test
+/// that queues an Asset again passes this instant, so the new row sorts after
+/// every row already queued, as it does when a later Import Run ends. The
+/// fixture's import may have queued its rows at any instant.
+async fn instant_after_newest_queued(
+    conn: &mut sqlx::SqliteConnection,
+) -> chrono::DateTime<chrono::Utc> {
+    let newest: Option<i64> = sqlx::query_scalar("SELECT MAX(queued_at) FROM media_queue")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    newest.map_or_else(crate::test_support::fixed_instant, |at| {
+        chrono::DateTime::from_timestamp(at + 1, 0).unwrap()
+    })
+}
+
+/// Run `test` on its own runtime when the real ffmpeg is on `PATH`, or skip
 /// it the way every ffmpeg test in the workspace skips (and fail under CI).
+/// The test state runs the same tools ([`crate::server::test_app_state`]).
 fn with_real_ffmpeg(test: impl Future<Output = ()>) {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    if media::testutil::real_ffmpeg().is_none() {
         return;
-    };
+    }
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -217,13 +217,17 @@ async fn an_import_run_completes_before_its_thumbnails_are_made() {
             "no Thumbnail is made yet: {attachment}"
         );
     }
-    let (status, _, _) = get_bytes(
+    let (status, _, body) = get_bytes(
         state,
         &format!("/v1/assets/{}/thumbnail", imported.photo),
         Some(&alice.token),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    expect_problem(
+        status,
+        &String::from_utf8(body).unwrap(),
+        ProblemType::NotFound,
+    );
 }
 
 /// After the pass, every image and video has a Thumbnail, and only the HEVC
@@ -236,12 +240,17 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
         let state = &fixture.state;
         let imported = import_three(&fixture, &alice).await;
 
-        let made = work_through(&state.db, &state.cfg, &AtomicBool::new(false))
-            .await
-            .unwrap();
+        let made = work_through(
+            &state.db,
+            &state.cfg,
+            state.media_tools.as_ref(),
+            &AtomicBool::new(false),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
-            (made.thumbnails, made.derived, made.not_made),
+            (made.thumbnails, made.previews, made.not_made),
             (3, 1, 0),
             "{made:?}"
         );
@@ -280,12 +289,8 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
 
         let server = crate::test_support::serve(state).await;
-        let link: serde_json::Value = reqwest::Client::new()
-            .post(format!(
-                "{}/v1/assets/{}/media-links",
-                server.base(),
-                imported.h264
-            ))
+        let link: serde_json::Value = server
+            .post(&format!("/v1/assets/{}/media-links", imported.h264))
             .bearer_auth(&alice.token)
             .send()
             .await
@@ -345,9 +350,14 @@ fn the_pass_decides_which_originals_are_shown_as_they_are() {
             );
         }
 
-        work_through(&state.db, &state.cfg, &AtomicBool::new(false))
-            .await
-            .unwrap();
+        work_through(
+            &state.db,
+            &state.cfg,
+            state.media_tools.as_ref(),
+            &AtomicBool::new(false),
+        )
+        .await
+        .unwrap();
 
         let after = attachments(state, &alice, conversation_id).await;
         let decided = shas
@@ -370,6 +380,58 @@ fn the_pass_decides_which_originals_are_shown_as_they_are() {
     });
 }
 
+/// A declared type is only a claim. A video uploaded and imported as
+/// `application/octet-stream` is a video by its bytes (#2805): the
+/// attachment says `video/mp4`, the original is served as one, the pass
+/// makes its Thumbnail, a HEVC one gets a Preview, and an H.264 one is
+/// shown as it is.
+#[test]
+fn a_video_declared_as_no_media_type_is_a_video_by_its_bytes() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        let files: Vec<(&str, &str, Vec<u8>)> = ["hevc.mp4", "h264.mp4"]
+            .into_iter()
+            .map(|name| (name, "application/octet-stream", fixture_bytes(name)))
+            .collect();
+        let (shas, conversation_id) = import_files(&fixture, &alice, &files).await;
+
+        let before = attachments(state, &alice, conversation_id).await;
+        for sha in &shas {
+            let attachment = before.iter().find(|a| a["sha256"] == sha.as_str()).unwrap();
+            assert_eq!(attachment["mime_type"], "video/mp4", "{attachment}");
+            let (status, content_type, _) =
+                get_bytes(state, &format!("/v1/assets/{sha}"), Some(&alice.token)).await;
+            assert_eq!(
+                (status, content_type.as_str()),
+                (StatusCode::OK, "video/mp4")
+            );
+        }
+
+        work_through(
+            &state.db,
+            &state.cfg,
+            state.media_tools.as_ref(),
+            &AtomicBool::new(false),
+        )
+        .await
+        .unwrap();
+
+        let after = attachments(state, &alice, conversation_id).await;
+        let [hevc, h264] = [&shas[0], &shas[1]]
+            .map(|sha| after.iter().find(|a| a["sha256"] == sha.as_str()).unwrap());
+        assert_eq!(hevc["preview_mime_type"], "video/mp4", "{hevc}");
+        assert_eq!(hevc["shown_as_is"], false, "{hevc}");
+        assert_eq!(h264["shown_as_is"], true, "{h264}");
+        for attachment in [hevc, h264] {
+            assert_eq!(
+                attachment["thumbnail_mime_type"], "image/jpeg",
+                "{attachment}"
+            );
+        }
+    });
+}
+
 /// The queue is a table, so what a stopped server left in it is worked on
 /// when the server starts again: a new state over the same database, whose
 /// pass starts with the queue as it was.
@@ -381,9 +443,11 @@ fn a_server_started_again_works_through_what_was_queued() {
         assert_eq!(queued(&fixture.state).await, 3);
 
         let restarted = crate::server::test_app_state(fixture.state.db.clone(), fixture.dir());
-        restarted
-            .media_queue
-            .start(restarted.db.clone(), Arc::clone(&restarted.cfg));
+        restarted.media_queue.start(
+            restarted.db.clone(),
+            Arc::clone(&restarted.cfg),
+            Arc::clone(&restarted.media_tools),
+        );
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
         while queued(&restarted).await > 0 {
@@ -408,8 +472,7 @@ fn a_server_started_again_works_through_what_was_queued() {
 /// is, for a server that finds ffmpeg later. What needs no ffprobe is
 /// decided all the same, so a photo opens as it is on a server that cannot
 /// convert. An MP4's codec cannot be read without ffprobe, so nothing says
-/// it is shown as it is yet. The tools are hidden outside any `await`,
-/// which Clippy's `await_holding_lock` refuses.
+/// it is shown as it is yet.
 #[test]
 fn without_ffmpeg_the_queue_waits() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -420,12 +483,14 @@ fn without_ffmpeg_the_queue_waits() {
     let imported = runtime.block_on(import_three(&fixture, &alice));
     let state = &fixture.state;
 
-    let made = {
-        let _hidden = media::testutil::hide_ffmpeg();
-        runtime
-            .block_on(work_through(&state.db, &state.cfg, &AtomicBool::new(false)))
-            .unwrap()
-    };
+    let made = runtime
+        .block_on(work_through(
+            &state.db,
+            &state.cfg,
+            &media::testutil::no_ffmpeg(),
+            &AtomicBool::new(false),
+        ))
+        .unwrap();
 
     assert_eq!(made, ProcessAssetsStats::default());
     assert_eq!(runtime.block_on(queued(state)), 3);
@@ -455,6 +520,7 @@ fn decide_queued_records_every_queued_original_and_leaves_the_queue() {
         decide_queued(
             &state.db,
             &state.cfg,
+            state.media_tools.as_ref(),
             &AtomicBool::new(false),
             0,
             &mut stats,
@@ -493,16 +559,25 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
     let undecide_photo = || async {
         crate::db::attachment_versions::record_shown_as_is(
             &mut state.db.acquire().await.unwrap(),
-            alice.account_id,
-            &imported.photo,
+            crate::db::attachment_versions::OriginalRows {
+                account_id: alice.account_id,
+                original_sha: &imported.photo,
+            },
             false,
         )
         .await
         .unwrap();
     };
-    let last = decide_queued(&state.db, &state.cfg, &stop, 0, &mut stats)
-        .await
-        .unwrap();
+    let last = decide_queued(
+        &state.db,
+        &state.cfg,
+        state.media_tools.as_ref(),
+        &stop,
+        0,
+        &mut stats,
+    )
+    .await
+    .unwrap();
     undecide_photo().await;
 
     // A later Import Run queues the same Assets again, in new rows.
@@ -511,16 +586,22 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
         .fetch_one(&state.db)
         .await
         .unwrap();
-    crate::db::media_queue::queue_import_run(
-        &mut state.db.acquire().await.unwrap(),
-        alice.account_id,
-        run,
+    let mut conn = state.db.acquire().await.unwrap();
+    let later = instant_after_newest_queued(&mut conn).await;
+    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later)
+        .await
+        .unwrap();
+    drop(conn);
+    let newest = decide_queued(
+        &state.db,
+        &state.cfg,
+        state.media_tools.as_ref(),
+        &stop,
+        last,
+        &mut stats,
     )
     .await
     .unwrap();
-    let newest = decide_queued(&state.db, &state.cfg, &stop, last, &mut stats)
-        .await
-        .unwrap();
 
     let after = attachments(state, &alice, imported.conversation_id).await;
     assert_eq!(
@@ -531,9 +612,16 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
 
     // Nothing was queued since, so the next sweep decides nothing.
     undecide_photo().await;
-    decide_queued(&state.db, &state.cfg, &stop, newest, &mut stats)
-        .await
-        .unwrap();
+    decide_queued(
+        &state.db,
+        &state.cfg,
+        state.media_tools.as_ref(),
+        &stop,
+        newest,
+        &mut stats,
+    )
+    .await
+    .unwrap();
     let after = attachments(state, &alice, imported.conversation_id).await;
     assert_eq!(
         shown_as_is(&after, &imported.photo),
@@ -553,14 +641,17 @@ fn a_pass_without_ffprobe_keeps_what_one_with_it_decided_about_an_mp4() {
     let (fixture, alice) = runtime.block_on(fixture_with_account());
     let state = &fixture.state;
     let imported = runtime.block_on(import_three(&fixture, &alice));
-    {
-        let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-            return;
-        };
-        runtime
-            .block_on(work_through(&state.db, &state.cfg, &AtomicBool::new(false)))
-            .unwrap();
+    if media::testutil::real_ffmpeg().is_none() {
+        return;
     }
+    runtime
+        .block_on(work_through(
+            &state.db,
+            &state.cfg,
+            state.media_tools.as_ref(),
+            &AtomicBool::new(false),
+        ))
+        .unwrap();
     let run: i64 = runtime
         .block_on(
             sqlx::query_scalar("SELECT id FROM imports WHERE account_id = $1")
@@ -571,16 +662,19 @@ fn a_pass_without_ffprobe_keeps_what_one_with_it_decided_about_an_mp4() {
     runtime
         .block_on(async {
             let mut conn = state.db.acquire().await.unwrap();
-            crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run).await
+            let later = instant_after_newest_queued(&mut conn).await;
+            crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later).await
         })
         .unwrap();
 
-    {
-        let _hidden = media::testutil::hide_ffmpeg();
-        runtime
-            .block_on(work_through(&state.db, &state.cfg, &AtomicBool::new(false)))
-            .unwrap();
-    }
+    runtime
+        .block_on(work_through(
+            &state.db,
+            &state.cfg,
+            &media::testutil::no_ffmpeg(),
+            &AtomicBool::new(false),
+        ))
+        .unwrap();
 
     let after = runtime.block_on(attachments(state, &alice, imported.conversation_id));
     assert_eq!(shown_as_is(&after, &imported.h264), serde_json::json!(true));
@@ -603,17 +697,15 @@ fn without_ffmpeg_every_original_of_an_account_is_decided() {
     let state = &fixture.state;
     let imported = runtime.block_on(import_three(&fixture, &alice));
 
-    {
-        let _hidden = media::testutil::hide_ffmpeg();
-        runtime
-            .block_on(crate::process_assets::decide_shown_as_is(
-                &state.cfg,
-                &state.db,
-                alice.account_id,
-                None,
-            ))
-            .unwrap();
-    }
+    runtime
+        .block_on(crate::process_assets::decide_shown_as_is(
+            &state.cfg,
+            &media::testutil::no_ffmpeg(),
+            &state.db,
+            alice.account_id,
+            None,
+        ))
+        .unwrap();
 
     let after = runtime.block_on(attachments(state, &alice, imported.conversation_id));
     assert_eq!(
@@ -642,7 +734,8 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
         .unwrap()
         .unwrap();
 
-    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run)
+    let later = instant_after_newest_queued(&mut conn).await;
+    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later)
         .await
         .unwrap();
     crate::db::media_queue::remove(&mut conn, &worked_on)
@@ -659,7 +752,9 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
 /// A video that takes ffmpeg seconds to convert: the HEVC fixture played
 /// 8000 times over, copied rather than encoded, so it is made in an instant.
 fn long_video() -> Vec<u8> {
-    let ffmpeg = media::ffmpeg_path().expect("ffmpeg, which the guard found");
+    let ffmpeg = media::testutil::path_ffmpeg()
+        .ffmpeg_path()
+        .expect("ffmpeg, which with_real_ffmpeg found");
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("long.mov");
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/media/hevc.mov");
@@ -729,9 +824,11 @@ fn stopping_the_pass_stops_its_conversion_and_leaves_the_asset_queued() {
         assert_eq!(queued(state).await, 1);
         let work = state.cfg.paths.data_dir.join(".media-work");
 
-        state
-            .media_queue
-            .start(state.db.clone(), Arc::clone(&state.cfg));
+        state.media_queue.start(
+            state.db.clone(),
+            Arc::clone(&state.cfg),
+            Arc::clone(&state.media_tools),
+        );
         let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
         while making_a_preview_in(&work).is_empty() || files_under(&work).is_empty() {
             assert!(
@@ -782,4 +879,411 @@ fn a_missing_program_is_named_as_not_found() {
         ffprobe: Some("/usr/bin/ffprobe".into()),
     };
     assert_eq!(tools_unavailable(&Ok(both)), None);
+}
+
+/// What a backup holds of the photo of `g-photo` in [`import_photo_run`].
+#[derive(Clone, Copy)]
+enum Photo {
+    /// The message has no attachment.
+    NotListed,
+    /// The attachment is listed, but the backup did not hold its file.
+    Missing,
+    /// The attachment and its file, uploaded first.
+    Present,
+}
+
+/// One Import Run in Append mode of one message, `g-photo`, with the JPEG
+/// `photo.jpg` (ffmpeg's test pattern, made small) as `photo` says.
+/// Answers the JPEG's fingerprint.
+async fn import_photo_run(
+    fixture: &TestFixture,
+    alice: &RegisteredAccount,
+    photo: Photo,
+) -> String {
+    let state = &fixture.state;
+    let bytes = fixture_bytes("photo.jpg");
+    let sha = file_io::sha256_hex(&bytes);
+    let (run, _) = crate::test_support::start_import_run(
+        state,
+        &alice.token,
+        serde_json::json!({ "source": "imessage", "mode": "append" }),
+    )
+    .await;
+    let listed = attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg");
+    let attached = match photo {
+        Photo::Present => {
+            let (status, text) = crate::test_support::put_raw(
+                state,
+                &format!("/v1/assets/{sha}"),
+                &alice.token,
+                "image/jpeg",
+                bytes,
+            )
+            .await;
+            assert!(status.is_success(), "upload: {status} {text}");
+            Some(ir::Attachment {
+                digest_sha256: Some(sha.clone()),
+                ..listed
+            })
+        }
+        Photo::Missing => Some(ir::Attachment {
+            missing_reason: Some("not_exported".into()),
+            ..listed
+        }),
+        Photo::NotListed => None,
+    };
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+    let message = message_line("g-photo", "a photo").sender("+15555550123");
+    let message = match attached {
+        Some(attached) => message.attachment(attached),
+        None => message,
+    };
+    crate::test_support::post_import_batch(
+        state,
+        &alice.token,
+        run,
+        format!("{header}\n{message}\n"),
+    )
+    .await;
+    crate::test_support::complete_import_run(state, &alice.token, run).await;
+    sha
+}
+
+/// A backup imported again in Append mode now holds a JPEG that was missing
+/// the first time. The second run gives the stored attachment row its file,
+/// on a message the first run created, and queues that Asset (#1946).
+#[tokio::test]
+async fn a_run_that_gives_a_stored_attachment_its_file_queues_the_asset() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = &fixture.state;
+    import_photo_run(&fixture, &alice, Photo::Missing).await;
+    assert_eq!(queued(state).await, 0, "the first run stored no file");
+
+    let sha = import_photo_run(&fixture, &alice, Photo::Present).await;
+
+    let queued_sha: Vec<String> = sqlx::query_scalar("SELECT sha256 FROM media_queue")
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(queued_sha, vec![sha]);
+    let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        messages, 1,
+        "the second run met the message the first stored"
+    );
+}
+
+/// A backup imported again in Append mode now lists a JPEG on a message
+/// that had no attachment the first time. The second run adds the
+/// attachment row under the message the first run created, and queues its
+/// Asset (#1946).
+#[tokio::test]
+async fn a_run_that_adds_an_attachment_to_a_stored_message_queues_the_asset() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = &fixture.state;
+    import_photo_run(&fixture, &alice, Photo::NotListed).await;
+
+    let sha = import_photo_run(&fixture, &alice, Photo::Present).await;
+
+    let queued_sha: Vec<String> = sqlx::query_scalar("SELECT sha256 FROM media_queue")
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(queued_sha, vec![sha]);
+    let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        messages, 1,
+        "the second run met the message the first stored"
+    );
+}
+
+/// The Asset the second run queues in
+/// [`a_run_that_gives_a_stored_attachment_its_file_queues_the_asset`] gets
+/// its Thumbnail from the pass.
+#[test]
+fn a_file_a_later_run_fills_in_gets_its_thumbnail() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_photo_run(&fixture, &alice, Photo::Missing).await;
+        let sha = import_photo_run(&fixture, &alice, Photo::Present).await;
+
+        let made = work_through(
+            &state.db,
+            &state.cfg,
+            state.media_tools.as_ref(),
+            &AtomicBool::new(false),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(made.thumbnails, 1, "{made:?}");
+        let conversation_id: i64 =
+            sqlx::query_scalar("SELECT id FROM conversations WHERE account_id = $1")
+                .bind(alice.account_id)
+                .fetch_one(&mut *fixture.conn().await)
+                .await
+                .unwrap();
+        let attachments = attachments(state, &alice, conversation_id).await;
+        assert_eq!(attachments.len(), 1, "{attachments:?}");
+        assert_eq!(attachments[0]["sha256"], sha.as_str());
+        assert_eq!(attachments[0]["thumbnail_mime_type"], "image/jpeg");
+    });
+}
+
+/// A file ffmpeg cannot read gets no Thumbnail and no Preview, and the
+/// conversation answers why for each (`docs/architecture/media.md`, rule 4),
+/// in ffmpeg's words, so the viewer can say it rather than the owner
+/// searching the server's log. The words name no path outside the data
+/// directory: the original's and the work file's paths are made relative.
+/// A file made beside it carries no reason.
+#[test]
+fn a_file_ffmpeg_cannot_read_answers_why_it_has_no_versions() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        let files: Vec<(&str, &str, Vec<u8>)> = vec![
+            ("photo.png", "image/png", fixture_bytes("photo.png")),
+            (
+                "broken.heic",
+                "image/heic",
+                b"not a picture at all".to_vec(),
+            ),
+        ];
+        let (shas, conversation_id) = import_files(&fixture, &alice, &files).await;
+
+        let made = work_through(
+            &state.db,
+            &state.cfg,
+            state.media_tools.as_ref(),
+            &AtomicBool::new(false),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(made.not_made, 1, "{made:?}");
+        let after = attachments(state, &alice, conversation_id).await;
+        let of = |sha: &str| {
+            after
+                .iter()
+                .find(|attachment| attachment["sha256"] == sha)
+                .unwrap_or_else(|| panic!("no attachment {sha} in {after:?}"))
+                .clone()
+        };
+        let photo = of(&shas[0]);
+        assert_eq!(photo["thumbnail_mime_type"], "image/jpeg", "{photo}");
+        assert_eq!(photo["thumbnail_not_made_reason"], serde_json::Value::Null);
+        assert_eq!(photo["preview_not_made_reason"], serde_json::Value::Null);
+
+        let broken = of(&shas[1]);
+        assert_eq!(broken["preview_mime_type"], serde_json::Value::Null);
+        assert_eq!(broken["thumbnail_mime_type"], serde_json::Value::Null);
+        let data_dir = state.cfg.paths.data_dir.display().to_string();
+        for field in ["preview_not_made_reason", "thumbnail_not_made_reason"] {
+            let reason = broken[field]
+                .as_str()
+                .unwrap_or_else(|| panic!("{field} says why: {broken}"));
+            assert!(
+                reason.contains("Invalid data"),
+                "{field} is what ffmpeg said about the file: {reason}"
+            );
+            assert!(
+                !reason.contains(&data_dir),
+                "{field} names no path outside the data directory: {reason}"
+            );
+        }
+    });
+}
+
+/// When each run of [`keep_working`]'s pass started, on the test's paused
+/// clock.
+#[derive(Default)]
+struct Runs(std::sync::Mutex<Vec<tokio::time::Instant>>);
+
+impl Runs {
+    /// Note a run now, and answer how many runs came before it.
+    fn start(&self) -> usize {
+        let mut runs = self.0.lock().unwrap();
+        runs.push(tokio::time::Instant::now());
+        runs.len() - 1
+    }
+
+    /// The time from the first run to each run.
+    fn after_first(&self) -> Vec<Duration> {
+        let runs = self.0.lock().unwrap();
+        runs.iter().map(|at| at.duration_since(runs[0])).collect()
+    }
+}
+
+/// A pass that fails, as on a database that stays busy, runs again after a
+/// wait that doubles, without an Import Run waking it (#2091); one that
+/// panics runs again the same way rather than ending the pass for good
+/// (#2072). A pass that ends cleanly waits for a wake, and the wait after
+/// the next failure starts short again. The clock is paused, so the waits
+/// pass at once.
+#[tokio::test(start_paused = true)]
+async fn a_pass_that_fails_or_panics_runs_again_without_an_import_run() {
+    let wake = Notify::new();
+    let stop = AtomicBool::new(false);
+    let runs = Runs::default();
+
+    let working = keep_working(&wake, &stop, FIRST_RETRY, async || match runs.start() {
+        0 | 3 => Err(anyhow::anyhow!("database is locked")),
+        1 => panic!("a bug in the pass"),
+        2 => {
+            // What an Import Run that ends does.
+            wake.notify_one();
+            Ok(ProcessAssetsStats::default())
+        }
+        _ => {
+            stop.store(true, Ordering::Relaxed);
+            Ok(ProcessAssetsStats::default())
+        }
+    });
+    tokio::time::timeout(Duration::from_secs(60 * 60), working)
+        .await
+        .expect("the pass ran again without an Import Run");
+
+    let secs = Duration::from_secs;
+    assert_eq!(
+        runs.after_first(),
+        vec![secs(0), secs(5), secs(15), secs(15), secs(20)],
+        "5 seconds after the failure, 10 after the panic, at the wake, \
+         then 5 again after the next failure"
+    );
+}
+
+/// A wake ends the wait after a failure at once: an Import Run that ends
+/// while the pass waits to run again after a panic is worked on now.
+#[tokio::test(start_paused = true)]
+async fn after_a_panic_the_next_wake_runs_the_pass() {
+    let wake = Notify::new();
+    let stop = AtomicBool::new(false);
+    let runs = Runs::default();
+
+    keep_working(&wake, &stop, FIRST_RETRY, async || {
+        if runs.start() == 0 {
+            wake.notify_one();
+            panic!("a bug in the pass");
+        }
+        stop.store(true, Ordering::Relaxed);
+        Ok(ProcessAssetsStats::default())
+    })
+    .await;
+
+    assert_eq!(runs.after_first(), vec![Duration::ZERO, Duration::ZERO]);
+}
+
+/// An Asset whose work panics fails like any other: it leaves the queue,
+/// and the pass goes on to the Assets after it (#2072).
+#[tokio::test]
+async fn an_asset_whose_work_panics_leaves_the_queue_and_the_pass_goes_on() {
+    {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_three(&fixture, &alice).await;
+        let made = std::sync::atomic::AtomicUsize::new(0);
+
+        let stats = work_through_with(
+            &state.db,
+            &state.cfg,
+            &media::testutil::FakeTools::new(),
+            &AtomicBool::new(false),
+            async |_work: &Path, _asset: &media_queue::QueuedAsset| {
+                assert!(
+                    made.fetch_add(1, Ordering::Relaxed) != 0,
+                    "a bug in making the first Asset's versions"
+                );
+                Ok(ProcessAssetsStats::default())
+            },
+        )
+        .await
+        .expect("the pass ends cleanly");
+
+        assert_eq!(made.load(Ordering::Relaxed), 3, "every Asset was worked on");
+        assert_eq!(stats.not_made, 1, "the Asset that panicked is not made");
+        assert_eq!(queued(state).await, 0, "every Asset left the queue");
+    }
+}
+
+/// A real database error fails `work_through`, and the pass works through
+/// the queue on its next run with no Import Run ending (#2091). The queue's
+/// table is renamed away for the first run, so the queries fail, and put
+/// back after it. The wait before the next run is zero, so the test waits
+/// on no clock.
+#[test]
+fn after_a_database_error_the_pass_works_through_the_queue_without_an_import_run() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_three(&fixture, &alice).await;
+        let rename = async |from: &str, to: &str| {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "ALTER TABLE {from} RENAME TO {to}"
+            )))
+            .execute(&state.db)
+            .await
+            .unwrap();
+        };
+        rename("media_queue", "media_queue_away").await;
+        let wake = Notify::new();
+        let stop = AtomicBool::new(false);
+        let mut results = Vec::new();
+
+        keep_working(&wake, &stop, Duration::ZERO, async || {
+            let ran = work_through(&state.db, &state.cfg, state.media_tools.as_ref(), &stop).await;
+            results.push(ran.is_ok());
+            if results.len() == 1 {
+                rename("media_queue_away", "media_queue").await;
+            } else {
+                stop.store(true, Ordering::Relaxed);
+            }
+            ran
+        })
+        .await;
+
+        assert_eq!(results, vec![false, true], "failed, then worked through");
+        assert_eq!(queued(state).await, 0, "every Asset left the queue");
+    });
+}
+
+/// After a pass panics, the next wake runs the pass again, and it works
+/// through what is queued (#2072).
+#[test]
+fn after_a_pass_panics_the_next_wake_works_through_the_queue() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_three(&fixture, &alice).await;
+        let wake = Notify::new();
+        let stop = AtomicBool::new(false);
+        let mut runs = 0;
+
+        keep_working(&wake, &stop, FIRST_RETRY, async || {
+            runs += 1;
+            if runs == 1 {
+                // What an Import Run that ends while the pass waits does.
+                wake.notify_one();
+                panic!("a bug in the pass");
+            }
+            stop.store(true, Ordering::Relaxed);
+            work_through(
+                &state.db,
+                &state.cfg,
+                state.media_tools.as_ref(),
+                &AtomicBool::new(false),
+            )
+            .await
+        })
+        .await;
+
+        assert_eq!(runs, 2);
+        assert_eq!(queued(state).await, 0, "every Asset left the queue");
+    });
 }

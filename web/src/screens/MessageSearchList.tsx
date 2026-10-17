@@ -3,9 +3,10 @@ import ListRangeHeader from "../components/ListRangeHeader";
 import MessageSearchRow from "../components/MessageSearchRow";
 import SortMenu, { type SortField } from "../components/SortMenu";
 import VirtualList from "../components/VirtualList";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { useDebouncedQuery } from "../hooks/useDebouncedQuery";
+import { useRoutePagedList } from "../hooks/useRouteQuery";
+import { errorLine } from "../lib/apiErrorMessage";
 import { MAX_LIST_OFFSET } from "../lib/listPaging";
-import { messageCount } from "../lib/messageRowText";
 import {
   type MessageSearchSort,
   type MessageSearchSortKey,
@@ -13,11 +14,11 @@ import {
   messageSortFromParam,
   messageSortParam,
 } from "../lib/messageSearchSort";
+import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
+import type { PagedFetchPage } from "../lib/routeQuery";
 import { listMessages } from "../lib/serverApi";
 import type { FreeTextTerm, Message, MessageSearch } from "../lib/types";
-import { useDebouncedQuery } from "../lib/useDebouncedQuery";
 
 /** Rows read at a time as the person scrolls. */
 const PAGE_SIZE = 40;
@@ -140,7 +141,7 @@ function MessageResults({
       <div className="flex min-h-0 flex-1 flex-col">
         <ListRangeHeader actions={sortMenu} />
         <div className="p-4 text-[0.813rem] text-danger">
-          {apiErrorMessage(error, "Could not load messages.")}
+          {errorLine(error, "Could not load messages.")}
         </div>
       </div>
     );
@@ -149,7 +150,7 @@ function MessageResults({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <ListRangeHeader
-        rangeLabel={loading && items.length === 0 ? "Loading…" : messageCount(total)}
+        rangeLabel={loading && items.length === 0 ? "Loading…" : countOf(total, "message")}
         refreshing={refreshing}
         filling={filling}
         actions={sortMenu}

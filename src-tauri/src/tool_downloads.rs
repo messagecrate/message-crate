@@ -3,10 +3,12 @@
 //!
 //! At every start the app checks the Tools Directory in the background and
 //! downloads what is missing or older than the release pinned here. Login
-//! and browsing don't wait for it, and a failed download is tried again at
-//! the next start, or when **Try again** on the Import form asks
-//! ([`retry`]). An import that needs a program still downloading waits for
-//! it ([`ToolDownloads::wait_for`]).
+//! and browsing don't wait for it. A download that finds no network is
+//! tried again a few times by the check itself, after a growing wait
+//! ([`NO_NETWORK_WAITS`]); a download that failed is tried again at the next
+//! start, or when **Try again** on the Import form asks ([`retry`]). An
+//! import that needs a program still downloading waits for it
+//! ([`ToolDownloads::wait_for`]).
 //!
 //! - **ffmpeg and ffprobe** are not downloaded when both are on `PATH`,
 //!   because a person who installed ffmpeg chose it.
@@ -29,32 +31,42 @@
 //! app:
 //!
 //! - **The pinned one stays.** A file is the pinned one when its entry
-//!   names the pinned release and its stamp is the one recorded, so no file
-//!   is read again at start-up. One that does not run is not downloaded
-//!   again, because the download would be the same file: Settings says it
-//!   doesn't run until a newer pin or another file changes that.
+//!   names the pinned release and its stamp is the one recorded, so ffmpeg
+//!   and ffprobe are not read again at start-up. wtsexporter is read once
+//!   per start, because its lookup counts it only by its SHA-256 (#2692).
+//!   One that does not run is not downloaded again, because the download
+//!   would be the same file: Settings says it doesn't run until a newer pin
+//!   or another file changes that.
 //! - **A pinned file with no entry is adopted.** A file with no entry, or
 //!   whose stamp changed, whose SHA-256 is the pinned program's gets an
 //!   entry and stays. The pinned program's SHA-256 is carried beside the
 //!   asset's, because ffmpeg's and ffprobe's assets are gzipped.
 //! - **Anything else is replaced** after a good download, whoever put it
 //!   there: a file from an older release, or any other file. Until the
-//!   download passes, the old file stays in use, so with no internet a file
-//!   put there by hand is still the one used.
+//!   download passes, an ffmpeg or ffprobe put there by hand is still the
+//!   one used, so with no internet it still works.
+//! - **Only the pinned wtsexporter counts** (#2692). The app needs the
+//!   fork's pinned build, so a wtsexporter with any other SHA-256, such as
+//!   a copy still being written or another build, is treated as missing
+//!   until the download replaces it, by the import's lookup
+//!   (`whatsapp_exporter::wtsexporter_in_dir`) and by the check alike
+//!   ([`in_place`]). A failed download says so in its reason.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Read, Seek, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
+use media::InstalledTools;
 
+mod fetch;
 mod pins;
+use fetch::{Fetch, HttpFetch, install, make_executable};
 pub use pins::pinned_for;
 
 /// Where the pinned releases are downloaded from. Tests point the download
@@ -157,7 +169,7 @@ pub struct Pinned {
     pub program_sha256: &'static str,
     /// Whether the asset is gzipped: the checksum is over the gzipped
     /// file, and the program is what it unpacks to.
-    pub gzip: bool,
+    pub gzipped: bool,
 }
 
 impl Pinned {
@@ -280,7 +292,9 @@ enum Need {
     /// The file there is the pinned one and runs: it stays.
     Keep,
     /// The file there is the pinned one and does not run: it stays, and
-    /// Settings says so, since downloading it again gives the same file.
+    /// Settings says so. Downloading it again gives the same file, and a
+    /// file this account may not run, such as one another account took
+    /// ownership of, is left for that account to fix, as an adopted one is.
     DoesNotRun,
     /// The file there is the pinned program with no entry, or with a stamp
     /// that changed: it stays and goes into the record.
@@ -296,6 +310,12 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
     let Ok(stamp) = Stamp::at(&path) else {
         return Need::Download;
     };
+    // The lookup reads wtsexporter whatever the record says, so the check
+    // reads it too, or a file changed under the same stamp would show as
+    // missing while every check keeps it.
+    if not_the_pinned_file(pinned, dir) {
+        return Need::Download;
+    }
     if let Some(written) = manifest.get(&pinned.program)
         && written.is(pinned)
         && written.stamp == stamp
@@ -306,7 +326,7 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
             Need::DoesNotRun
         };
     }
-    if file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
+    if media::file_has_sha256(&path, pinned.program_sha256) {
         Need::Adopt
     } else {
         Need::Download
@@ -315,43 +335,61 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
 
 /// Whether `program` in `dir` runs, as the lookup that uses it decides:
 /// ffmpeg and ffprobe answer `-version` (an answer `media` keeps until the
-/// file changes), and wtsexporter is a file with an executable bit, which
-/// is all its lookup asks because a `pipx` shim is slow to start.
+/// file changes), and wtsexporter is a file with an executable bit this
+/// account may run, which is all its lookup asks because a `pipx` shim is
+/// slow to start. A bit alone is not enough: a root-owned `0o744` file has
+/// one, and the app can't run it (#2793).
 fn runs(program: Program, dir: &Path) -> bool {
     match program {
         Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),
-        Program::Wtsexporter => is_executable(&dir.join(program.file_name())),
+        Program::Wtsexporter => media::is_executable(&dir.join(program.file_name())),
     }
 }
 
-/// Whether the file at `path` is a file with an executable bit.
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+/// Whether `pin`'s program is a wtsexporter in `dir` that is not the pinned
+/// file, such as a copy still being written or another build. Only the
+/// pinned wtsexporter counts, as the WhatsApp import's lookup asks (#2692),
+/// so such a file is not used. ffmpeg and ffprobe are never one. The file is
+/// read once per version of it ([`media::file_has_sha256`]).
+fn not_the_pinned_file(pin: &Pinned, dir: &Path) -> bool {
+    let path = dir.join(pin.program.file_name());
+    pin.program == Program::Wtsexporter
+        && path.is_file()
+        && !media::file_has_sha256(&path, pin.program_sha256)
 }
 
-/// Windows runs any `.exe`, so a file is enough.
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    path.is_file()
+/// Whether `pin`'s program in `dir` is in place for the lookup that uses
+/// it: it [`runs`], and is not [`not_the_pinned_file`].
+fn in_place(pin: &Pinned, dir: &Path) -> bool {
+    runs(pin.program, dir) && !not_the_pinned_file(pin, dir)
 }
 
-/// The SHA-256 of the file at `path`, in lowercase hex.
-fn file_sha256(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        match file.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => hasher.update(&buffer[..read]),
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
-            Err(err) => return Err(err),
+/// The reason a download of `pin`'s program into `dir` failed with `err`.
+/// A wtsexporter there that is not the pinned file is not used, so the
+/// reason starts by saying so, because Settings shows wtsexporter as
+/// missing though a file is there (#2692).
+fn failure_reason(pin: &Pinned, dir: &Path, err: &DownloadError) -> String {
+    if not_the_pinned_file(pin, dir) {
+        format!(
+            "{} {err}",
+            whatsapp_exporter::not_pinned_reason(pin.release)
+        )
+    } else {
+        err.to_string()
+    }
+}
+
+/// The advice that ends the text of a program in the Tools Directory that
+/// does not run: ffmpeg and ffprobe are found on `PATH` too. wtsexporter
+/// has none here, because the run's error and Settings add its
+/// troubleshooting section.
+fn path_advice(program: Program) -> &'static str {
+    match program {
+        Program::Ffmpeg | Program::Ffprobe => {
+            " Install it with your package manager instead. The app uses the copy on PATH."
         }
+        Program::Wtsexporter => "",
     }
-    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Why a download failed, as Settings shows it.
@@ -369,11 +407,19 @@ pub enum DownloadError {
         /// The SHA-256 of what arrived.
         actual: String,
     },
-    /// The file could not be written to the Tools Directory.
+    /// The file could not be written to the Tools Directory, or read back
+    /// from it.
     CouldNotWrite(String),
+    /// The file arrived and passed its checksum, and is gzipped, and does
+    /// not unpack.
+    CouldNotUnpack(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
-    /// The check's thread could not be started, so nothing was downloaded.
+    /// The program found in place has no executable bit, and setting it
+    /// failed, for the reason given.
+    CouldNotMakeExecutable(Program, String),
+    /// The check's thread could not be started, or the client the downloads
+    /// go through could not be built, so nothing was downloaded.
     CouldNotStart(String),
     /// The check stopped partway through the download, such as on a panic
     /// in its thread, so the download never ended.
@@ -400,149 +446,28 @@ impl fmt::Display for DownloadError {
             Self::CouldNotWrite(why) => {
                 write!(
                     f,
-                    "The file could not be written to the Tools Directory: {why}."
+                    "The file could not be written to or read back from the Tools Directory: {why}."
                 )
             }
-            Self::DoesNotRun(program @ (Program::Ffmpeg | Program::Ffprobe)) => write!(
-                f,
-                "{program} in the Tools Directory doesn't run on this computer. \
-                 Install it with your package manager instead; the app uses the copy on PATH.",
-                program = program.name()
-            ),
-            // The run's error and Settings add the troubleshooting section.
-            Self::DoesNotRun(Program::Wtsexporter) => {
-                f.write_str("wtsexporter in the Tools Directory doesn't run on this computer.")
+            Self::CouldNotUnpack(why) => {
+                write!(f, "The downloaded file could not be unpacked: {why}.")
             }
+            Self::DoesNotRun(program) => write!(
+                f,
+                "{} in the Tools Directory doesn't run on this computer.{}",
+                program.name(),
+                path_advice(*program)
+            ),
+            Self::CouldNotMakeExecutable(program, why) => write!(
+                f,
+                "{} in the Tools Directory could not be marked as a program that runs: {why}.{}",
+                program.name(),
+                path_advice(*program)
+            ),
             Self::CouldNotStart(why) => write!(f, "The download could not be started: {why}."),
             Self::Interrupted => f.write_str("The download was interrupted."),
         }
     }
-}
-
-/// An error and the errors under it, as one line.
-fn error_chain(err: &dyn std::error::Error) -> String {
-    let mut line = err.to_string();
-    let mut source = err.source();
-    while let Some(cause) = source {
-        line.push_str(": ");
-        line.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    line
-}
-
-/// The client the downloads use: rustls, a `User-Agent` naming the app, 30
-/// seconds to connect, and 60 seconds for any one read, so a stalled
-/// download fails rather than hanging the check.
-fn download_client() -> reqwest::Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
-        .user_agent(concat!(
-            "MessageCrate/",
-            env!("MESSAGE_CRATE_BUILD"),
-            " (desktop app tool download)"
-        ))
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(60))
-        .build()
-}
-
-/// Download `pinned` from `url` into `dir` and put it in place.
-///
-/// The file is streamed to a temporary file in `dir` and its SHA-256
-/// computed on the way. On a match it is unpacked when gzipped and the
-/// program's SHA-256 checked, then made executable and renamed over the
-/// program; on a mismatch, or any failure,
-/// the temporary file is deleted and the program there is left as it was.
-/// `progress` hears the bytes received so far and the total when the
-/// server says it.
-fn download(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    pinned: &Pinned,
-    dir: &Path,
-    progress: &dyn Fn(u64, Option<u64>),
-) -> Result<Written, DownloadError> {
-    let write_error = |err: io::Error| DownloadError::CouldNotWrite(err.to_string());
-    let mut response = client
-        .get(url)
-        .send()
-        .map_err(|err| DownloadError::NoNetwork(error_chain(&err)))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(DownloadError::Http(status.as_u16()));
-    }
-    let total = response.content_length();
-    let mut arrived = tempfile::Builder::new()
-        .prefix(&temp_prefix(pinned.program, "download"))
-        .tempfile_in(dir)
-        .map_err(write_error)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
-    let mut received = 0u64;
-    progress(received, total);
-    loop {
-        let read = match response.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => read,
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-            Err(err) => return Err(DownloadError::NoNetwork(error_chain(&err))),
-        };
-        hasher.update(&buffer[..read]);
-        arrived.write_all(&buffer[..read]).map_err(write_error)?;
-        received += read as u64;
-        progress(received, total);
-    }
-    let actual = hex::encode(hasher.finalize());
-    if actual != pinned.sha256 {
-        return Err(DownloadError::ChecksumMismatch {
-            expected: pinned.sha256.to_string(),
-            actual,
-        });
-    }
-    let mut program = if pinned.gzip {
-        let mut unpacked = tempfile::Builder::new()
-            .prefix(&temp_prefix(pinned.program, "unpack"))
-            .tempfile_in(dir)
-            .map_err(write_error)?;
-        let packed = arrived.as_file_mut();
-        packed.rewind().map_err(write_error)?;
-        io::copy(&mut flate2::read::GzDecoder::new(packed), &mut unpacked).map_err(write_error)?;
-        unpacked.flush().map_err(write_error)?;
-        let actual = file_sha256(unpacked.path()).map_err(write_error)?;
-        if actual != pinned.program_sha256 {
-            return Err(DownloadError::ChecksumMismatch {
-                expected: pinned.program_sha256.to_string(),
-                actual,
-            });
-        }
-        unpacked
-    } else {
-        arrived
-    };
-    program.flush().map_err(write_error)?;
-    program.as_file().sync_all().map_err(write_error)?;
-    make_executable(program.path()).map_err(write_error)?;
-    let target = dir.join(pinned.program.file_name());
-    program
-        .persist(&target)
-        .map_err(|err| write_error(err.error))?;
-    // Renaming keeps the size, modified time and inode, so the stamp taken
-    // now is the one the next start sees.
-    let stamp = Stamp::at(&target).map_err(write_error)?;
-    Ok(Written::of(pinned, stamp))
-}
-
-/// Give the file at `path` its executable bits.
-#[cfg(unix)]
-fn make_executable(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-}
-
-/// Windows runs any `.exe`, so there is no bit to set.
-#[cfg(not(unix))]
-fn make_executable(_path: &Path) -> io::Result<()> {
-    Ok(())
 }
 
 /// Where one program's download stands, as Settings shows it.
@@ -629,6 +554,20 @@ impl Drop for CheckRun {
     }
 }
 
+/// The waits before a download that found no network is tried again, one
+/// before each new try (#2200): about two minutes in all, long enough for a
+/// laptop opened before its Wi-Fi connects to come online. The programs of
+/// one check share one round, which starts over only after a download
+/// reaches its server, so when the network never comes the check ends
+/// after one round, and an import waiting for a program hears it failed
+/// within about two minutes.
+const NO_NETWORK_WAITS: [Duration; 4] = [
+    Duration::from_secs(5),
+    Duration::from_secs(15),
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+];
+
 /// How often an import waiting for a download looks at its cancel flag when
 /// no state changes.
 const WAIT_TICK: Duration = Duration::from_millis(250);
@@ -673,7 +612,7 @@ impl ToolDownloads {
     /// a program still downloading goes on once it has arrived (#1053).
     ///
     /// `waiting` hears the program waited for and its progress each time it
-    /// changes, for the import's progress line. `cancelled` is asked at
+    /// changes, for the import's progress line. `canceled` is asked at
     /// least every [`WAIT_TICK`], so a Cancel ends the wait.
     ///
     /// Returns at once when none of `programs` is downloading: the import
@@ -682,11 +621,11 @@ impl ToolDownloads {
     /// # Errors
     ///
     /// [`WaitError::Failed`] when a download waited for ended failed, with
-    /// its reason; [`WaitError::Cancelled`] when `cancelled` said so.
+    /// its reason; [`WaitError::Canceled`] when `canceled` said so.
     pub fn wait_for(
         &self,
         programs: &[Program],
-        cancelled: &dyn Fn() -> bool,
+        canceled: &dyn Fn() -> bool,
         waiting: &mut dyn FnMut(Program, u64, Option<u64>),
     ) -> Result<(), WaitError> {
         let mut waited = Vec::new();
@@ -707,8 +646,8 @@ impl ToolDownloads {
                 waited.push(program);
             }
             drop(states);
-            if cancelled() {
-                return Err(WaitError::Cancelled);
+            if canceled() {
+                return Err(WaitError::Canceled);
             }
             waiting(program, received, total);
             states = self.states();
@@ -742,8 +681,8 @@ pub enum WaitError {
         /// Why, as [`DownloadError`] says it.
         reason: String,
     },
-    /// The import was cancelled while it waited.
-    Cancelled,
+    /// The import was canceled while it waited.
+    Canceled,
 }
 
 impl fmt::Display for WaitError {
@@ -755,7 +694,7 @@ impl fmt::Display for WaitError {
                 program.name(),
                 troubleshooting(*program)
             ),
-            Self::Cancelled => f.write_str("cancelled"),
+            Self::Canceled => fmt::Display::fmt(&message_crate_core::Canceled, f),
         }
     }
 }
@@ -784,9 +723,86 @@ fn does_not_run(program: Program) -> DownloadState {
     }
 }
 
+/// What became of a program the start-up check adopts.
+#[derive(Debug)]
+enum Adopted {
+    /// It runs. The error is why its executable bits could not be set,
+    /// when that failed and it runs anyway.
+    Runs(Option<io::Error>),
+    /// Its executable bits were set, and it does not run.
+    DoesNotRun,
+    /// It does not run, and setting its executable bits failed for this
+    /// reason.
+    NotExecutable(io::Error),
+}
+
+/// What became of an adopted program, given the result of setting its
+/// executable bits and whether it `runs` after that. A file that does not
+/// run, and whose bits could not be set, is blamed on the bits even when
+/// some are set: its mode can't tell whether this user may run it, such as
+/// a file another user owns with only the owner's bit.
+fn classify_adopted(made_executable: io::Result<()>, runs: bool) -> Adopted {
+    match (runs, made_executable) {
+        (true, result) => Adopted::Runs(result.err()),
+        (false, Ok(())) => Adopted::DoesNotRun,
+        (false, Err(err)) => Adopted::NotExecutable(err),
+    }
+}
+
+/// Write the record in `dir`. A failure goes to the desktop app's log
+/// ([`crate::app_log`]) and fails nothing: `program` is in place either
+/// way, and without its entry the next start reads the file again and
+/// adopts it.
+fn write_manifest_or_log(dir: &Path, manifest: &Manifest, program: Program) {
+    if let Err(err) = write_manifest(dir, manifest) {
+        crate::app_log::warn(&format!(
+            "{} is in place in the Tools Directory, and {MANIFEST_FILE} could not be written: {err}",
+            program.name()
+        ));
+    }
+}
+
+/// Record `pin`'s program, adopted at `path` in `dir`, with the stamp of
+/// `path`, and write the record in `dir`. A failure goes to the desktop app's
+/// log and fails nothing: the program is in place either way, and without
+/// its entry the next start reads the file again.
+fn record_adopted_or_log(dir: &Path, path: &Path, manifest: &mut Manifest, pin: &Pinned) {
+    let program = pin.program;
+    match Stamp::at(path) {
+        Ok(stamp) => {
+            manifest.insert(program, Written::of(pin, stamp));
+            write_manifest_or_log(dir, manifest, program);
+        }
+        Err(err) => {
+            let name = program.name();
+            crate::app_log::warn(&format!(
+                "{name} is in place in the Tools Directory, and was not recorded in {MANIFEST_FILE} \
+                 because {name}'s size and modified time could not be read: {err}"
+            ));
+        }
+    }
+}
+
+/// The lock on [`LOCK_FILE`] a check holds, let go when it is dropped.
+///
+/// It is let go by unlocking, not only by closing the file. A child this
+/// process starts on another thread holds every descriptor the process had
+/// open from its fork until its exec, and a lock belongs to the open file
+/// the descriptors share, so a lock let go only by closing would stay held
+/// for that instant, and a check that starts then would read it as another
+/// check running and do nothing.
+#[derive(Debug)]
+struct CheckLock(File);
+
+impl Drop for CheckLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 /// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
-/// another check holds it. The lock is let go when the file is closed.
-fn lock_check(dir: &Path) -> io::Result<Option<File>> {
+/// another check holds it.
+fn lock_check(dir: &Path) -> io::Result<Option<CheckLock>> {
     std::fs::create_dir_all(dir)?;
     let file = File::options()
         .create(true)
@@ -794,14 +810,14 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
         .write(true)
         .open(dir.join(LOCK_FILE))?;
     match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
+        Ok(()) => Ok(Some(CheckLock(file))),
         Err(std::fs::TryLockError::WouldBlock) => Ok(None),
         Err(std::fs::TryLockError::Error(err)) => Err(err),
     }
 }
 
 /// Check `dir` against `pinned` and download, one after another, what is
-/// missing or not the pinned release, from `base`. ffmpeg and ffprobe are
+/// missing or not the pinned release, with `fetch`. ffmpeg and ffprobe are
 /// passed over when both are on `PATH`. Each download's progress and
 /// failure go to the downloads `run` belongs to, and each file written goes
 /// into the record.
@@ -809,13 +825,23 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// Another app's check running on `dir` already does the work, so this one
 /// returns at once. When the lock can't be taken because the Tools Directory
 /// can't be written, the check goes on and its downloads say why.
-fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun) {
+///
+/// `wait` pauses the check before it tries a download again that found no
+/// network: [`std::thread::sleep`] in the app.
+fn download_missing(
+    dir: &Path,
+    installed: &InstalledTools,
+    fetch: &dyn Fetch,
+    pinned: &[Pinned],
+    mut run: CheckRun,
+    wait: &dyn Fn(Duration),
+) {
     let lock = match lock_check(dir) {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => return,
         Err(_) => None,
     };
-    check(dir, base, pinned, &mut run, lock);
+    check(dir, installed, fetch, pinned, &mut run, lock, wait);
 }
 
 /// What [`retry`] did.
@@ -833,7 +859,9 @@ pub enum Retry {
 }
 
 /// Start the check of `dir` again on a thread of its own, as **Try again**
-/// on the Import form asks (#1053), and return without waiting for it.
+/// on the Import form asks (#1053), and return without waiting for it. The
+/// files are downloaded from the releases under `base`, which is [`GITHUB`]
+/// outside tests.
 ///
 /// `not_found` are the programs the window says are not found. They show as
 /// downloading before this returns, so the window, which asks again only
@@ -843,26 +871,37 @@ pub enum Retry {
 /// started: [`Retry::AlreadyRunning`] or [`Retry::CouldNotStart`].
 pub fn retry(
     dir: PathBuf,
+    installed: InstalledTools,
     base: String,
     pinned: Vec<Pinned>,
     downloads: &ToolDownloads,
     not_found: &[Program],
 ) -> Retry {
-    retry_with(dir, base, pinned, downloads, not_found, |work| {
-        std::thread::Builder::new()
-            .name("tool-downloads-retry".into())
-            .spawn(work)
-    })
+    let fetch = Box::new(HttpFetch::new(base));
+    retry_with(
+        dir,
+        installed,
+        fetch,
+        pinned,
+        downloads,
+        not_found,
+        |work| {
+            std::thread::Builder::new()
+                .name("tool-downloads-retry".into())
+                .spawn(work)
+        },
+    )
 }
 
 /// The work [`retry`] hands to a new thread.
 type Work = Box<dyn FnOnce() + Send>;
 
-/// [`retry`], starting the check's thread with `spawn`, so a test can make
-/// the start fail.
+/// [`retry`], getting the files with `fetch` and starting the check's
+/// thread with `spawn`, so a test can make the start fail.
 fn retry_with(
     dir: PathBuf,
-    base: String,
+    installed: InstalledTools,
+    fetch: Box<dyn Fetch>,
     pinned: Vec<Pinned>,
     downloads: &ToolDownloads,
     not_found: &[Program],
@@ -889,7 +928,15 @@ fn retry_with(
     let (hand_over, handed) = std::sync::mpsc::sync_channel::<CheckRun>(1);
     let spawned = spawn(Box::new(move || {
         if let Ok(mut run) = handed.recv() {
-            check(&dir, &base, &pinned, &mut run, lock);
+            check(
+                &dir,
+                &installed,
+                &*fetch,
+                &pinned,
+                &mut run,
+                lock,
+                &std::thread::sleep,
+            );
         }
     }));
     match spawned {
@@ -919,13 +966,22 @@ fn retry_with(
 /// The check [`download_missing`] and [`retry`] run as `run`, holding
 /// `_lock`, or no lock when the Tools Directory can't be written. Every
 /// pinned program ends with its state decided: none when it is in place and
-/// runs, failed with the reason otherwise.
-fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: Option<File>) {
+/// runs, failed with the reason otherwise. `wait` is the pause before a
+/// download that found no network is tried again.
+fn check(
+    dir: &Path,
+    installed: &InstalledTools,
+    fetch: &dyn Fetch,
+    pinned: &[Pinned],
+    run: &mut CheckRun,
+    _lock: Option<CheckLock>,
+    wait: &dyn Fn(Duration),
+) {
     // A clone of the handle (one `Arc`), because `run` is borrowed mutably
     // below to mark the programs wanted as downloading.
     let downloads = &run.downloads.clone();
     delete_leftovers(dir);
-    let ffmpeg_on_path = media::ffmpeg_on_path();
+    let ffmpeg_on_path = installed.on_path();
     let mut manifest = read_manifest(dir);
     let mut wanted = Vec::new();
     for pin in pinned {
@@ -936,17 +992,36 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
         match need(pin, dir, &manifest) {
             Need::Keep => downloads.clear(pin.program),
             Need::Adopt => {
-                let path = dir.join(pin.program.file_name());
-                let _ = make_executable(&path);
-                if let Ok(stamp) = Stamp::at(&path) {
-                    manifest.insert(pin.program, Written::of(pin, stamp));
-                    let _ = write_manifest(dir, &manifest);
+                let program = pin.program;
+                let path = dir.join(program.file_name());
+                let made_executable = make_executable(&path);
+                match classify_adopted(made_executable, runs(program, dir)) {
+                    Adopted::Runs(None) => downloads.clear(program),
+                    Adopted::Runs(Some(err)) => {
+                        crate::app_log::warn(&format!(
+                            "{} in the Tools Directory runs, and its executable bits could not be set: {err}",
+                            program.name()
+                        ));
+                        downloads.clear(program);
+                    }
+                    Adopted::DoesNotRun => downloads.set(program, does_not_run(program)),
+                    // Left out of the record, so the next start sets the
+                    // bits again and, if that fails again, says why again.
+                    Adopted::NotExecutable(err) => {
+                        downloads.set(
+                            program,
+                            DownloadState::Failed {
+                                reason: DownloadError::CouldNotMakeExecutable(
+                                    program,
+                                    err.to_string(),
+                                )
+                                .to_string(),
+                            },
+                        );
+                        continue;
+                    }
                 }
-                if runs(pin.program, dir) {
-                    downloads.clear(pin.program);
-                } else {
-                    downloads.set(pin.program, does_not_run(pin.program));
-                }
+                record_adopted_or_log(dir, &path, &mut manifest, pin);
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
             Need::Download => wanted.push(pin),
@@ -961,6 +1036,16 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
     for pin in &wanted {
         run.mark_downloading(pin.program);
     }
+    // Each program's file as the check found it. One that appears or
+    // changes later, while an earlier program's tries wait included, was
+    // put there by someone else, such as a copy put in by hand.
+    let found: HashMap<Program, Option<Stamp>> = wanted
+        .iter()
+        .map(|pin| {
+            let path = dir.join(pin.program.file_name());
+            (pin.program, Stamp::at(&path).ok())
+        })
+        .collect();
     let fail_all = |err: DownloadError| {
         for pin in &wanted {
             downloads.set(
@@ -971,19 +1056,58 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
             );
         }
     };
-    let client = match download_client() {
-        Ok(client) => client,
-        Err(err) => return fail_all(DownloadError::NoNetwork(error_chain(&err))),
-    };
     if let Err(err) = std::fs::create_dir_all(dir) {
         return fail_all(DownloadError::CouldNotWrite(err.to_string()));
     }
+    let mut no_network_waits = NO_NETWORK_WAITS.iter();
     for pin in wanted {
         let program = pin.program;
         let progress = |received, total| {
             downloads.set(program, DownloadState::Downloading { received, total });
         };
-        match download(&client, &pin.url(base), pin, dir, &progress) {
+        let mut attempt = || install(fetch, pin, dir, &progress);
+        let show_downloading = || {
+            downloads.set(
+                program,
+                DownloadState::Downloading {
+                    received: 0,
+                    total: None,
+                },
+            );
+        };
+        let path = dir.join(program.file_name());
+        let was_put_in_place = || {
+            Stamp::at(&path)
+                .ok()
+                .is_some_and(|now| found.get(&program) != Some(&Some(now)))
+                && in_place(pin, dir)
+        };
+        // Put in place while an earlier program's tries waited.
+        if was_put_in_place() {
+            downloads.clear(program);
+            continue;
+        }
+        let tried = try_until_answered(
+            &mut no_network_waits,
+            wait,
+            show_downloading,
+            was_put_in_place,
+            &mut attempt,
+        );
+        let result = match tried {
+            Tried::Done(result) => result,
+            // The lookup finds it, so nothing waits for the download.
+            Tried::PutInPlace => {
+                downloads.clear(program);
+                continue;
+            }
+        };
+        if !matches!(result, Err(DownloadError::NoNetwork(_))) {
+            // The download reached its server, so the network is there:
+            // the next program that finds none gets the whole round again.
+            no_network_waits = NO_NETWORK_WAITS.iter();
+        }
+        match result {
             Ok(written) => {
                 manifest.insert(program, written);
                 if runs(program, dir) {
@@ -991,22 +1115,55 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
                 } else {
                     downloads.set(program, does_not_run(program));
                 }
-                if let Err(err) = write_manifest(dir, &manifest) {
-                    // The program is in place and the lookup finds it, so
-                    // its download did not fail. Without the record the
-                    // next start reads the file again and adopts it.
-                    eprintln!(
-                        "The {} download is in place, and {MANIFEST_FILE} could not be written: {err}",
-                        program.name()
-                    );
-                }
+                // The program is in place and the lookup finds it, so its
+                // download did not fail when the record can't be written.
+                write_manifest_or_log(dir, &manifest, program);
             }
             Err(err) => downloads.set(
                 program,
                 DownloadState::Failed {
-                    reason: err.to_string(),
+                    reason: failure_reason(pin, dir, &err),
                 },
             ),
+        }
+    }
+}
+
+/// What [`try_until_answered`] came to.
+enum Tried<T> {
+    /// The last try's result: one that reached the server, a failure for
+    /// any other reason included, or [`DownloadError::NoNetwork`] once the
+    /// waits were spent.
+    Done(Result<T, DownloadError>),
+    /// During a wait the program was put in place by someone else, and it
+    /// runs, so no try is needed.
+    PutInPlace,
+}
+
+/// Run `attempt` until it gets past [`DownloadError::NoNetwork`], waiting
+/// the next of `waits` before each new try. `show_downloading` runs before
+/// each wait. After each wait `was_put_in_place` is asked whether the program
+/// is now there without the download, and when it is the tries end.
+fn try_until_answered<T>(
+    waits: &mut std::slice::Iter<'static, Duration>,
+    wait: &dyn Fn(Duration),
+    show_downloading: impl Fn(),
+    was_put_in_place: impl Fn() -> bool,
+    attempt: &mut dyn FnMut() -> Result<T, DownloadError>,
+) -> Tried<T> {
+    loop {
+        match attempt() {
+            Err(DownloadError::NoNetwork(why)) => match waits.next() {
+                Some(&pause) => {
+                    show_downloading();
+                    wait(pause);
+                    if was_put_in_place() {
+                        return Tried::PutInPlace;
+                    }
+                }
+                None => return Tried::Done(Err(DownloadError::NoNetwork(why))),
+            },
+            answered => return Tried::Done(answered),
         }
     }
 }
@@ -1016,12 +1173,21 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
 ///
 /// The check counts as running from before the thread starts, so a window
 /// that asks for the status at once keeps asking until the check ends.
-pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
+pub fn start(dir: PathBuf, installed: InstalledTools, downloads: &ToolDownloads) {
     let pinned = pinned_for(std::env::consts::OS, std::env::consts::ARCH);
     let run = downloads.begin_check();
     let _ = std::thread::Builder::new()
         .name("tool-downloads".into())
-        .spawn(move || download_missing(&dir, GITHUB, &pinned, run));
+        .spawn(move || {
+            download_missing(
+                &dir,
+                &installed,
+                &HttpFetch::new(GITHUB),
+                &pinned,
+                run,
+                &std::thread::sleep,
+            )
+        });
 }
 
 #[cfg(test)]

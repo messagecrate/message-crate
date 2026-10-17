@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
+import { useTimeZone } from "../hooks/useTimeZone";
+import { conversationName } from "../lib/conversationName";
 import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
 import { type MatchRange, matchRanges, snippet } from "../lib/messageMatch";
-import { messageConversationName, messageRowText, messageSenderName } from "../lib/messageRowText";
-import { useTimeZone } from "../lib/timeZone";
-import { listRowDivider } from "../lib/tw";
+import { messageRowText, messageSenderName } from "../lib/messageRowText";
+import { countOf } from "../lib/plural";
+import { listRowDividerClass } from "../lib/tw";
 import type { FreeTextTerm, Message } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import PlainButton from "./PlainButton";
 
 /** `text` with each range in bold. */
@@ -52,9 +54,13 @@ function matchedNewestFirst(message: Message): EarlierVersion[] {
     .map(({ version }) => version);
 }
 
-/** Whether `version` holds `term`, the way the full-text index matches it. */
+/**
+ * Whether `version` holds `term`, the way the full-text index matches it. A
+ * version with no text, as iMazing records an edit, is in no index and holds
+ * nothing.
+ */
 function holds(version: EarlierVersion, term: FreeTextTerm): boolean {
-  return matchRanges(version.text, [term]).length > 0;
+  return version.text !== null && matchRanges(version.text, [term]).length > 0;
 }
 
 /**
@@ -121,7 +127,7 @@ export default function MessageSearchRow({
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
   const versionCuts = versionsToQuote(message, terms, cut.text).map(([version, words]) => {
-    const text = snippet(version.text, words).text;
+    const text = snippet(version.text ?? "", words).text;
     return {
       key: message.earlier_versions.indexOf(version),
       text,
@@ -133,13 +139,13 @@ export default function MessageSearchRow({
     <PlainButton
       onPress={onClick}
       aria-current={isSelected ? "true" : undefined}
-      className={`box-border flex w-full cursor-pointer flex-col gap-[0.3rem] border-none px-[0.85rem] py-[0.7rem] text-left ${focusRing} ${listRowDivider} ${
+      className={`box-border flex w-full cursor-pointer flex-col gap-[0.3rem] border-none px-[0.85rem] py-[0.7rem] text-left ${focusRingClass} ${listRowDividerClass} ${
         isSelected ? "bg-hover" : "bg-transparent"
       }`}
     >
       <span className="flex min-w-0 items-baseline justify-between gap-2">
         <span className="min-w-0 flex-1 truncate text-[0.875rem] font-medium leading-[1.35] text-text">
-          {messageConversationName(message.conversation)}
+          {conversationName(message.conversation)}
         </span>
         <span className="shrink-0 text-[0.75rem] text-muted">
           {formatDay(message.timestamp, zone)}
@@ -157,9 +163,9 @@ export default function MessageSearchRow({
         {attachmentCount > 0 ? (
           <span
             className="shrink-0 text-[0.75rem] text-muted"
-            title={attachmentCount === 1 ? "1 attachment" : `${attachmentCount} attachments`}
+            title={countOf(attachmentCount, "attachment")}
           >
-            📎 {attachmentCount}
+            📎 {attachmentCount.toLocaleString()}
           </span>
         ) : null}
       </span>

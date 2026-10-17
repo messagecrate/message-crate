@@ -8,19 +8,19 @@ use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
 };
 use anyhow::Result;
-use media::{CompressOptions, MediaMode};
+use ir::{Attachment, ConversationDocument};
+use ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat, ProgressSink,
+    AttachmentFiles, CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat,
+    ProgressSink, Sinks,
 };
-use message_ir::{ConversationDocument, IrAttachment};
-use message_ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use std::path::{Path, PathBuf};
 
 /// Owns the write tail of an exporter run: output preparation, the
 /// queue-or-sink decision, attachment staging, and the format write.
 ///
 /// [`open`](Self::open) runs before parse (it cleans or resumes the output
-/// directory, so the exporter can query [`copies_attachments`](Self::copies_attachments),
+/// directory, so the exporter can query [`files`](Self::files),
 /// [`use_queue`](Self::use_queue), and [`attachments_dir`](Self::attachments_dir)
 /// while collecting messages); [`finish`](Self::finish) takes the collected
 /// documents and writes everything. An exporter whose drain cannot go
@@ -33,13 +33,11 @@ pub struct ExportWriter {
     format: OutputFormat,
     sink: FormatSink,
     attachments_dir: PathBuf,
-    media_mode: MediaMode,
-    compress: CompressOptions,
-    log: Option<LogSink>,
-    progress: Option<ProgressSink>,
+    files: AttachmentFiles,
+    log: LogSink,
+    progress: ProgressSink,
     resume: bool,
     use_queue: bool,
-    copy_attachments: bool,
     /// Set by [`with_spool`](Self::with_spool), for an exporter whose
     /// attachments arrive as bytes.
     spool: Option<AttachmentSpool>,
@@ -56,16 +54,13 @@ pub struct ExportWriterParts {
     pub attachments_dir: PathBuf,
     /// Whether the run should drain the write queue instead of the sink.
     pub use_queue: bool,
-    /// Media mode ([`MediaMode::Disabled`] when attachments are not copied).
-    pub media_mode: MediaMode,
-    /// Whether this run stages attachment bytes.
-    pub copy_attachments: bool,
-    /// Compression options from the transforms.
-    pub compress: CompressOptions,
+    /// Whether this run stages the original attachment files
+    /// ([`AttachmentFiles::Skip`] when the transforms do not copy them).
+    pub files: AttachmentFiles,
     /// Log sink captured from the transforms.
-    pub log: Option<LogSink>,
+    pub log: LogSink,
     /// Progress sink captured from the transforms.
-    pub progress: Option<ProgressSink>,
+    pub progress: ProgressSink,
 }
 
 impl ExportWriter {
@@ -74,8 +69,8 @@ impl ExportWriter {
     /// When `resume` is set the previous run's output is kept and its
     /// conversations are skipped ([`FormatSink::open_resume`]); otherwise the
     /// directory is cleaned first ([`FormatSink::open_prepared`]). When the
-    /// transforms do not copy attachments, media handling is forced to
-    /// [`MediaMode::Disabled`].
+    /// transforms do not copy attachments, the run stages
+    /// [`AttachmentFiles::Skip`].
     ///
     /// # Errors
     ///
@@ -87,13 +82,11 @@ impl ExportWriter {
         transforms: ExportTransforms,
         resume: bool,
     ) -> Result<Self> {
-        let copy_attachments = transforms.copies_attachments();
-        let media_mode = if copy_attachments {
-            transforms.media
+        let files = if transforms.copies_attachments() {
+            AttachmentFiles::Originals
         } else {
-            MediaMode::Disabled
+            AttachmentFiles::Skip
         };
-        let compress = transforms.compress.clone();
         let log = transforms.log.clone();
         let progress = transforms.progress.clone();
         // The queue path is for the import, which is JSONL and never
@@ -110,13 +103,11 @@ impl ExportWriter {
             format,
             sink,
             attachments_dir,
-            media_mode,
-            compress,
+            files,
             log,
             progress,
             resume,
             use_queue,
-            copy_attachments,
             spool: None,
         })
     }
@@ -125,7 +116,7 @@ impl ExportWriter {
     /// directory, when it copies attachments; see [`spool`](Self::spool).
     #[must_use]
     pub fn with_spool(mut self, scratch_dir: &Path) -> Self {
-        if self.copy_attachments {
+        if self.files.copies() {
             self.spool = Some(AttachmentSpool::new(scratch_dir).with_copy_dir(&self.output_dir));
         }
         self
@@ -145,13 +136,6 @@ impl ExportWriter {
         &self.attachments_dir
     }
 
-    /// Whether this run stages attachment bytes (false when obfuscating or
-    /// media is disabled). Exporters check this while parsing to decide
-    /// whether to keep payloads around.
-    pub fn copies_attachments(&self) -> bool {
-        self.copy_attachments
-    }
-
     /// Whether [`finish`](Self::finish) will drain the write queue instead of
     /// the buffered sink.
     pub fn use_queue(&self) -> bool {
@@ -169,20 +153,32 @@ impl ExportWriter {
         self.spool.as_ref()
     }
 
-    /// Media mode this run stages with ([`MediaMode::Disabled`] when the
-    /// transforms do not copy attachments).
-    pub fn media_mode(&self) -> MediaMode {
-        self.media_mode
+    /// Whether this run stages the original attachment files
+    /// ([`AttachmentFiles::Skip`] when obfuscating or when the transforms do
+    /// not copy them). Exporters check this while parsing to decide whether
+    /// to keep payloads around.
+    pub fn files(&self) -> AttachmentFiles {
+        self.files
     }
 
     /// Log sink captured from the transforms.
-    pub fn log(&self) -> Option<&LogSink> {
-        self.log.as_ref()
+    pub fn log(&self) -> &LogSink {
+        &self.log
     }
 
     /// Progress sink captured from the transforms.
-    pub fn progress(&self) -> Option<&ProgressSink> {
-        self.progress.as_ref()
+    pub fn progress(&self) -> &ProgressSink {
+        &self.progress
+    }
+
+    /// The sinks captured from the transforms, with `cancel`, for a step
+    /// that takes them together.
+    pub fn sinks<'a>(&'a self, cancel: &'a CancelFlag) -> Sinks<'a> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel,
+        }
     }
 
     /// Give up the writer and take the opened sink plus the decisions
@@ -193,9 +189,7 @@ impl ExportWriter {
             sink: self.sink,
             attachments_dir: self.attachments_dir,
             use_queue: self.use_queue,
-            media_mode: self.media_mode,
-            copy_attachments: self.copy_attachments,
-            compress: self.compress,
+            files: self.files,
             log: self.log,
             progress: self.progress,
         }
@@ -211,11 +205,10 @@ impl ExportWriter {
     /// the per-exporter hook. It is called once per attachment, in document
     /// order, and returns where that attachment's bytes come from plus a
     /// size hint for the progress totals. Exporters carrying bytes on the document move them out with
-    /// `att.bytes.take()`; path-backed exporters return
+    /// `attachment.bytes.take()`; path-backed exporters return
     /// [`AttachmentSource::Path`] from their own source list.
     ///
-    /// Folds conversation, attachment, media and obfuscation counts into
-    /// `report`.
+    /// Folds conversation, attachment and obfuscation counts into `report`.
     ///
     /// # Errors
     ///
@@ -225,35 +218,38 @@ impl ExportWriter {
     pub fn finish(
         self,
         documents: Vec<ConversationDocument>,
-        source_for: &mut dyn FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
-        cancel: Option<&CancelFlag>,
+        source_for: &mut dyn FnMut(&mut Attachment) -> (AttachmentSource, Option<u64>),
+        cancel: &CancelFlag,
         report: &mut ExportReport,
     ) -> Result<()> {
-        let spool = self.spool.as_ref();
-        let mut source_for = |att: &mut IrAttachment| match spool.and_then(|s| s.source(att)) {
-            Some(spooled) => spooled,
-            None => source_for(att),
+        // Built from the fields, not with `sinks`, so the sink below can
+        // still move out of `self`.
+        let sinks = Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel,
         };
+        let spool = self.spool.as_ref();
+        let mut source_for =
+            |attachment: &mut Attachment| match spool.and_then(|s| s.source(attachment)) {
+                Some(spooled) => spooled,
+                None => source_for(attachment),
+            };
         if self.use_queue {
             let units: Vec<ConversationUnit> = documents
                 .into_iter()
-                .map(|doc| ConversationUnit::from_doc(doc, |_, att| source_for(att)))
+                .map(|document| {
+                    ConversationUnit::from_document(document, |_, attachment| {
+                        source_for(attachment)
+                    })
+                })
                 .collect();
             let options = WriteQueueOptions {
-                media: self.media_mode,
-                compress: self.compress.clone(),
+                files: self.files,
                 resume: self.resume,
                 writer_count: 0,
             };
-            return drain_units(
-                &self.output_dir,
-                units,
-                &options,
-                self.log.as_ref(),
-                self.progress.as_ref(),
-                cancel,
-                report,
-            );
+            return drain_units(&self.output_dir, units, &options, sinks, report);
         }
 
         let mut documents = documents;
@@ -263,51 +259,33 @@ impl ExportWriter {
         // (#1701).
         let counted = CountedAttachments::new(
             message_crate_core::document_messages(&mut documents),
-            message_crate_core::MediaConfig {
-                mode: self.media_mode,
-                compress: self.compress.clone(),
-            },
+            self.files,
             PathSources::OnDisk,
             &mut source_for,
-            self.log.as_ref(),
+            &self.log,
         );
         // The same check the queue arm makes, before anything is written:
         // the staged copies, and for a mail or merged archive every
         // embedded copy too, need room on the disk that holds the output. A
         // spool on that disk has already taken its share of what is free.
-        if self.media_mode != MediaMode::Disabled {
+        if self.files.copies() {
             check_headroom(
                 &self.output_dir,
                 counted.bytes_to_write(self.format),
                 Disk::Staging,
             )?;
         }
-        report.attachments_saved += counted
-            .stage(
-                &self.attachments_dir,
-                load_attachment_source,
-                self.log.as_ref(),
-                self.progress.as_ref(),
-                cancel,
-            )
-            .map_err(anyhow::Error::msg)?;
+        report.attachments_saved +=
+            counted.stage(&self.attachments_dir, load_attachment_source, sinks)?;
 
-        write_documents_through_sink(
-            documents,
-            self.sink,
-            self.log.as_ref(),
-            self.progress.as_ref(),
-            cancel,
-            report,
-        )
+        write_documents_through_sink(documents, self.sink, sinks, report)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_crate_core::ProgressEvent;
-    use message_crate_core::testutil::names_in;
+    use message_crate_core::{ProgressEvent, testutil::names_in};
     use std::fs;
     use std::sync::{Arc, Mutex};
 
@@ -327,34 +305,24 @@ mod tests {
 
         let jsonl = open(OutputFormat::Jsonl, false);
         assert!(jsonl.use_queue());
-        assert!(jsonl.copies_attachments());
-        assert_eq!(jsonl.media_mode(), MediaMode::Clone);
+        assert_eq!(jsonl.files(), AttachmentFiles::Originals);
 
         assert!(!open(OutputFormat::Csv, false).use_queue());
         assert!(!open(OutputFormat::Json, false).use_queue());
 
         let obfuscated = open(OutputFormat::Jsonl, true);
         assert!(!obfuscated.use_queue());
-        assert!(!obfuscated.copies_attachments());
-        assert_eq!(obfuscated.media_mode(), MediaMode::Disabled);
+        assert_eq!(obfuscated.files(), AttachmentFiles::Skip);
     }
 
     /// One conversation whose only message carries one attachment's bytes.
     fn document_with_bytes() -> ConversationDocument {
-        let mut doc = message_ir::testutil::sample_document("with a photo");
-        doc.messages[0].attachments = vec![IrAttachment {
-            path: None,
-            original_name: Some("photo.jpg".into()),
-            mime_type: Some("image/jpeg".into()),
-            digest_sha256: None,
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
+        let mut document = ir::testutil::sample_document("with a photo");
+        document.messages[0].attachments = vec![Attachment {
             bytes: Some(b"\xff\xd8\xffphoto".to_vec()),
+            ..ir::testutil::sample_attachment()
         }];
-        doc
+        document
     }
 
     /// Both paths stage the attachment's bytes, write the conversation, and
@@ -370,7 +338,7 @@ mod tests {
                 .finish(
                     vec![document_with_bytes()],
                     &mut AttachmentSource::take_bytes,
-                    None,
+                    &CancelFlag::default(),
                     &mut report,
                 )
                 .unwrap();
@@ -412,18 +380,18 @@ mod tests {
             &tmp.path().join("out"),
             OutputFormat::Csv,
             ExportTransforms {
-                progress: Some(progress),
+                progress,
                 ..transforms(false)
             },
             false,
         )
         .unwrap();
-        let mut doc = document_with_bytes();
-        let attachment = doc.messages[0].attachments[0].clone();
+        let mut document = document_with_bytes();
+        let attachment = document.messages[0].attachments[0].clone();
         // The real attachment comes first, so the first event is sent before
         // the run reaches a missing one and could take its size off.
-        doc.messages[0].attachments = [5, 700, 1_000, 30]
-            .map(|size| IrAttachment {
+        document.messages[0].attachments = [5, 700, 1_000, 30]
+            .map(|size| Attachment {
                 size_bytes: Some(size),
                 ..attachment.clone()
             })
@@ -438,9 +406,11 @@ mod tests {
 
         writer
             .finish(
-                vec![doc],
-                &mut |att: &mut IrAttachment| (sources.next().unwrap(), att.size_bytes),
-                None,
+                vec![document],
+                &mut |asked_about: &mut Attachment| {
+                    (sources.next().unwrap(), asked_about.size_bytes)
+                },
+                &CancelFlag::default(),
                 &mut ExportReport::default(),
             )
             .unwrap();
@@ -486,14 +456,14 @@ mod tests {
         ] {
             let tmp = tempfile::tempdir().unwrap();
             let writer = ExportWriter::open(tmp.path(), format, transforms(false), false).unwrap();
-            let mut doc = document_with_bytes();
-            doc.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
+            let mut document = document_with_bytes();
+            document.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
 
             let err = writer
                 .finish(
-                    vec![doc],
+                    vec![document],
                     &mut AttachmentSource::take_bytes,
-                    None,
+                    &CancelFlag::default(),
                     &mut ExportReport::default(),
                 )
                 .unwrap_err();
@@ -538,16 +508,16 @@ mod tests {
         );
         assert_eq!(names_in(&out), [".message-crate-export", "attachments"]);
 
-        let mut doc = document_with_bytes();
-        let att = &mut doc.messages[0].attachments[0];
-        att.bytes = None;
-        att.digest_sha256 = Some(digest);
+        let mut document = document_with_bytes();
+        let attachment = &mut document.messages[0].attachments[0];
+        attachment.bytes = None;
+        attachment.digest_sha256 = Some(digest);
         let mut report = ExportReport::default();
         writer
             .finish(
-                vec![doc],
+                vec![document],
                 &mut AttachmentSource::take_bytes,
-                None,
+                &CancelFlag::default(),
                 &mut report,
             )
             .unwrap();

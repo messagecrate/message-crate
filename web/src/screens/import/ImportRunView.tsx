@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { type ImportSummaryView, NOTES_HELP } from "../../components/import/ImportSummaryPanel";
@@ -7,20 +8,20 @@ import VirtualizedImportIssuesTable, {
 } from "../../components/import/VirtualizedImportIssuesTable";
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
-import { formatBytes } from "../../lib/attachmentProgressCopy";
+import { useDesktopJob } from "../../hooks/useDesktopJob";
+import { useRouteQuery } from "../../hooks/useRouteQuery";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
-import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
-import { useRouteQuery } from "../../lib/routeQuery";
+import { invokeImportRunLog } from "../../lib/desktop/runLog";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
+import { ffmpegMissing } from "../../lib/desktop/tools";
+import { desktopJobRunningText } from "../../lib/desktopJob";
+import { formatBytes } from "../../lib/formatBytes";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
+import { keys } from "../../lib/queryKeys";
 import { getImport } from "../../lib/serverApi";
-import {
-  type AttachmentForecast,
-  ffmpegMissing,
-  invokeImportRunLog,
-  type MediaToolName,
-  type StagingSummary,
-} from "../../lib/tauri";
-import type { AttachmentMediaMode } from "../../lib/types";
-import { useToolsStatus } from "../../lib/useToolsStatus";
+import { isTauri } from "../../lib/tauriCheck";
+import type { AttachmentMediaMode, MediaToolName } from "../../lib/types";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import {
   type ImportPhase,
@@ -39,7 +40,6 @@ import {
 import { TryAgain } from "./MissingProgramNotice";
 import { ExpandableFactRow, FactGroup, FactGroups, FactList, FactRow } from "./RunFacts";
 import { estimatePiles, estimatesHeading, filesOverLimit } from "./reviewForecast";
-import type { ImportJobFormValues } from "./useImportJob";
 
 const STAGING_REVIEW_LABEL = "Staging Review";
 const MEDIA_REVIEW_LABEL = "Media Review";
@@ -47,12 +47,12 @@ const MEDIA_REVIEW_LABEL = "Media Review";
 /** What approving does next, in the mode's own verb. */
 const APPROVE_LABEL: Record<AttachmentMediaMode, string> = {
   convert: "Convert media",
-  compress: "Compress media",
+  compress: "Convert & Compress media",
   copy: "Upload to Message Crate",
   skip: "Upload to Message Crate",
 };
 
-const PATH_LINK =
+const PATH_LINK_CLASS =
   "max-w-full border-0 bg-transparent p-0 text-right text-[0.813rem] text-accent underline-offset-2 [overflow-wrap:anywhere] hover:underline";
 
 function count(value: number | undefined | null): string {
@@ -210,36 +210,23 @@ function FinishedExits({ importId }: { importId: number }) {
  * with `keep` the last log named is kept rather than dropped.
  */
 function useImportRunLog(runDir: string | null, keep: boolean): string | null {
-  const [log, setLog] = useState<string | null>(null);
-  // The run directory the log was last asked for: `keep` changing on its own
-  // asks again for nothing.
-  const askedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!runDir) {
-      if (!keep) {
-        askedFor.current = null;
-        setLog(null);
-      }
-      return;
-    }
-    if (askedFor.current === runDir) return;
-    askedFor.current = runDir;
-    setLog(null);
-    let live = true;
-    invokeImportRunLog(runDir).then(
-      (path) => {
-        if (live) setLog(path);
-      },
-      (caught: unknown) => {
+  // The run directory the log is named for: the current one, or with `keep`
+  // the last one, once the run has ended and its directory has gone.
+  const [named, setNamed] = useState(runDir);
+  const target = runDir ?? (keep ? named : null);
+  if (target !== named) setNamed(target);
+  const query = useQuery({
+    queryKey: keys.desktopImportRunLog.of(target ?? ""),
+    queryFn: () =>
+      invokeImportRunLog(target ?? "").catch((caught: unknown) => {
         // The run goes on without the link; the reason is worth a line.
         console.error("Could not name the Import Run's log", caught);
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [runDir, keep]);
-  return log;
+        return null;
+      }),
+    enabled: isTauri() && target !== null,
+    retry: false,
+  });
+  return target === null ? null : (query.data ?? null);
 }
 
 /** The last part of `path`, after its last slash or backslash. */
@@ -305,8 +292,8 @@ export default function ImportRunView({
   /** Why the contact-match lookup failed, shown in place of the split; null when it did not. */
   unknownContactsError: string | null;
   /**
-   * Convert or compress is chosen and these of ffmpeg and ffprobe can't be
-   * used: approving would only fail later.
+   * Convert media or Convert & Compress media is chosen and these of ffmpeg
+   * and ffprobe can't be used: approving would only fail later.
    */
   mediaToolsMissing?: MediaToolName[];
   /**
@@ -328,7 +315,7 @@ export default function ImportRunView({
   /** Leave a finished run for the import form. */
   onBack: () => void;
   /**
-   * True while a not-cancellable step (recomputing the staging summary) is
+   * True while a not-cancelable step (recomputing the staging summary) is
    * running: Cancel stays visible, since a running job is still shown, but
    * disabled rather than offered as a control with nothing to stop.
    */
@@ -367,7 +354,7 @@ export default function ImportRunView({
           <FactGroup
             title="This Import Run's directory"
             value={
-              <OpenPathButton path={trimmedRunDir} className={PATH_LINK}>
+              <OpenPathButton path={trimmedRunDir} className={PATH_LINK_CLASS}>
                 {trimmedRunDir}
               </OpenPathButton>
             }
@@ -543,7 +530,7 @@ export default function ImportRunView({
           <FactGroup
             title="Import log"
             value={
-              <OpenPathButton path={logPath} title={logPath} className={PATH_LINK}>
+              <OpenPathButton path={logPath} title={logPath} className={PATH_LINK_CLASS}>
                 {fileName(logPath)}
               </OpenPathButton>
             }

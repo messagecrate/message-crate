@@ -1,30 +1,30 @@
-//! Obfuscation, and dropping attachment paths when media is disabled, applied
-//! before writing files.
+//! Obfuscation, and dropping attachment paths when no attachment files are
+//! copied, applied before writing files.
 
 use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
-use media::MediaMode;
-use message_crate_core::{ExportTransforms, emit_log};
-use message_ir::{
-    ConversationDocument, IrAttachment, IrDirection, IrImessage, IrParticipant, MessageGuid,
-    MessageIdentity, Reaction,
+use ir::{
+    Attachment, ConversationDocument, Direction, ImessageExtensions, MessageGuid, MessageIdentity,
+    Participant, Reaction,
 };
+use message_crate_core::{AttachmentFiles, ExportTransforms};
 use obfuscate::{
     Obfuscator, classify_attachment, placeholder_rel_path, resolve_obfuscator_with_log,
 };
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Drop attachment paths and bytes when the media mode is disabled, keeping the metadata.
-pub fn clear_attachments_when_disabled(doc: &mut ConversationDocument, mode: MediaMode) {
-    if !matches!(mode, MediaMode::Disabled) {
+/// Drop attachment paths and bytes when no attachment files are copied,
+/// keeping the metadata.
+pub fn clear_attachments_when_skipped(document: &mut ConversationDocument, files: AttachmentFiles) {
+    if files.copies() {
         return;
     }
-    for msg in &mut doc.messages {
-        for att in &mut msg.attachments {
-            att.path = None;
-            att.bytes = None;
-            att.digest_sha256 = None;
+    for message in &mut document.messages {
+        for attachment in &mut message.attachments {
+            attachment.path = None;
+            attachment.bytes = None;
+            attachment.digest_sha256 = None;
         }
     }
 }
@@ -45,17 +45,17 @@ type RenamedGuids = HashMap<String, String>;
 /// the one the reply meant. A target in no document of the export, such as
 /// one the date range left out, keeps its keyed stand-in, so its original id
 /// does not survive and it points at nothing, as it does in a plain export.
-pub(crate) fn obfuscate_documents(docs: &mut [ConversationDocument], anon: &mut Obfuscator) {
-    let renamed_per_doc: Vec<RenamedGuids> = docs
+pub(crate) fn obfuscate_documents(documents: &mut [ConversationDocument], anon: &mut Obfuscator) {
+    let renamed_per_document: Vec<RenamedGuids> = documents
         .iter_mut()
-        .map(|doc| obfuscate_document(doc, anon))
+        .map(|document| obfuscate_document(document, anon))
         .collect();
     let mut export_wide: HashMap<&str, &str> = HashMap::new();
-    for (stand_in, guid) in renamed_per_doc.iter().flatten() {
+    for (stand_in, guid) in renamed_per_document.iter().flatten() {
         export_wide.entry(stand_in).or_insert(guid);
     }
-    for (doc, own) in docs.iter_mut().zip(&renamed_per_doc) {
-        for target in reply_and_tapback_targets(doc) {
+    for (document, own) in documents.iter_mut().zip(&renamed_per_document) {
+        for target in reply_and_tapback_targets(document) {
             let guid = own
                 .get(target.as_str())
                 .map(String::as_str)
@@ -72,62 +72,66 @@ pub(crate) fn obfuscate_documents(docs: &mut [ConversationDocument], anon: &mut 
 ///
 /// Each reply and tapback target is left as the keyed stand-in for the id it
 /// named, for [`obfuscate_documents`] to point at the new `guid`.
-fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> RenamedGuids {
-    doc.conversation.chat_identifier = anon.obfuscate_handle(&doc.conversation.chat_identifier);
+fn obfuscate_document(document: &mut ConversationDocument, anon: &mut Obfuscator) -> RenamedGuids {
+    document.conversation.chat_identifier =
+        anon.obfuscate_handle(&document.conversation.chat_identifier);
     // A group title is chosen by people and often names them, so every word
     // goes, not only the addresses in it.
-    if let Some(title) = doc.conversation.group_title.as_mut() {
+    if let Some(title) = document.conversation.group_title.as_mut() {
         *title = anon.obfuscate_text(title);
     }
-    for p in &mut doc.conversation.participants {
+    for p in &mut document.conversation.participants {
         obfuscate_participant(p, anon);
     }
-    if let Some(h) = doc.export.owner_identity.as_mut() {
+    if let Some(h) = document.export.owner_identity.as_mut() {
         *h = anon.obfuscate_handle(h);
     }
-    if let Some(n) = doc.export.owner_display_name.as_mut() {
+    if let Some(n) = document.export.owner_display_name.as_mut() {
         *n = anon.obfuscate_display_name(n);
     }
-    for msg in &mut doc.messages {
-        if let Some(h) = msg.sender_identity.as_mut() {
+    for message in &mut document.messages {
+        if let Some(h) = message.sender.identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
-        if let Some(h) = msg.owner_identity.as_mut() {
+        if let Some(h) = message.owner_identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
-        if let Some(n) = msg.sender_display_name.as_mut() {
-            if msg.direction == IrDirection::Outgoing && n == "Me" {
+        if let Some(n) = message.sender.display_name.as_mut() {
+            if message.direction == Direction::Outgoing && n == "Me" {
                 // Keep the conventional outgoing label.
             } else {
                 *n = anon.obfuscate_display_name(n);
             }
         }
-        if let Some(s) = msg.subject.as_mut() {
+        if let Some(s) = message.subject.as_mut() {
             *s = anon.obfuscate_text(s);
         }
-        msg.text = anon.obfuscate_text(&msg.text);
+        message.text = anon.obfuscate_text(&message.text);
         // Reactions are imported, so they stay with only the reactor
         // rewritten.
-        for reaction in &mut msg.reactions {
+        for reaction in &mut message.reactions {
             obfuscate_reactor(reaction, anon);
         }
         // Earlier versions are imported too, so each keeps its part and time
-        // and has its text rewritten like the final version's.
-        for version in &mut msg.edits {
-            version.text = anon.obfuscate_text(&version.text);
+        // and has its text, when it has one, rewritten like the final
+        // version's.
+        for version in &mut message.edits {
+            if let Some(text) = &version.text {
+                version.text = Some(anon.obfuscate_text(text));
+            }
         }
-        if let Some(im) = msg.imessage.as_mut() {
+        if let Some(im) = message.imessage.as_mut() {
             obfuscate_imessage(im, anon);
         }
-        for att in &mut msg.attachments {
-            obfuscate_attachment(att);
+        for attachment in &mut message.attachments {
+            obfuscate_attachment(attachment);
         }
         // The vendor bag is raw source attributes and can carry the real
         // sender address, so obfuscated output drops it whole. `android_type`
         // goes with it: `direction` already says sent or received.
-        msg.source = None;
+        message.source = None;
     }
-    obfuscate_guids(doc, anon)
+    obfuscate_guids(document, anon)
 }
 
 /// Give every message a new `guid` made from its obfuscated content, replace
@@ -141,37 +145,39 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
 /// the obfuscated message, with a keyed stand-in for the old `guid` as its
 /// vendor key: two messages the original told apart stay apart, and nobody
 /// without the obfuscation seed can work back to the original.
-fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> RenamedGuids {
+fn obfuscate_guids(document: &mut ConversationDocument, anon: &Obfuscator) -> RenamedGuids {
     let mut renamed = RenamedGuids::new();
-    let chat = doc.conversation.chat_identifier.clone();
-    for msg in &mut doc.messages {
-        let stand_in = anon.obfuscate_id(&msg.guid);
-        let digests: Vec<String> = msg
+    let chat = document.conversation.chat_identifier.clone();
+    for message in &mut document.messages {
+        let stand_in = anon.obfuscate_id(&message.guid);
+        let digests: Vec<String> = message
             .attachments
             .iter()
             .filter_map(|a| a.digest_sha256.clone())
             .collect();
-        msg.guid = MessageGuid::new(&MessageIdentity {
+        message.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
-            is_from_me: msg.direction == IrDirection::Outgoing,
-            sender: msg.sender_identity.as_deref(),
-            timestamp_unix_ms: msg.timestamp_unix_ms,
-            text: &msg.text,
+            is_from_me: message.direction == Direction::Outgoing,
+            sender: message.sender.identity.as_deref(),
+            timestamp_unix_ms: message.timestamp_unix_ms,
+            text: &message.text,
             attachment_digests: &digests,
             vendor_key: Some(&stand_in),
         })
         .into_string();
-        renamed.insert(stand_in, msg.guid.clone());
+        renamed.insert(stand_in, message.guid.clone());
     }
-    for target in reply_and_tapback_targets(doc) {
+    for target in reply_and_tapback_targets(document) {
         *target = anon.obfuscate_id(target);
     }
     renamed
 }
 
 /// Every message id a reply or a tapback in the document names.
-fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<Item = &mut String> {
-    doc.messages.iter_mut().flat_map(|m| {
+fn reply_and_tapback_targets(
+    document: &mut ConversationDocument,
+) -> impl Iterator<Item = &mut String> {
+    document.messages.iter_mut().flat_map(|m| {
         let reply = m.reply_to.as_mut().and_then(|r| r.guid.as_mut());
         let tapback = m
             .imessage
@@ -186,7 +192,7 @@ fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<It
 /// `parts` repeats the body, `app` holds link previews, and
 /// `shared_location` holds a place. None of them is read on import, so
 /// obfuscated output drops them whole.
-fn obfuscate_imessage(im: &mut IrImessage, anon: &mut Obfuscator) {
+fn obfuscate_imessage(im: &mut ImessageExtensions, anon: &mut Obfuscator) {
     if let Some(a) = im.announcement.as_mut() {
         *a = anon.obfuscate_text(a);
     }
@@ -209,7 +215,7 @@ fn obfuscate_reactor(reaction: &mut Reaction, anon: &mut Obfuscator) {
 }
 
 /// Obfuscate one participant's identity and display name.
-fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
+fn obfuscate_participant(p: &mut Participant, anon: &mut Obfuscator) {
     if let Some(handle) = p.identity.as_mut() {
         *handle = anon.obfuscate_handle(handle);
     }
@@ -219,58 +225,63 @@ fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
 }
 
 /// Replace an attachment with the placeholder file for its media class.
-fn obfuscate_attachment(att: &mut IrAttachment) {
-    let class = classify_attachment(att.mime_type.as_deref(), att.path.as_deref());
+fn obfuscate_attachment(attachment: &mut Attachment) {
+    let class = classify_attachment(attachment.mime_type.as_deref(), attachment.path.as_deref());
     let rel = placeholder_rel_path(class);
-    att.path = Some(rel.to_string());
+    attachment.path = Some(rel.to_string());
     let ext = Path::new(rel)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("bin");
-    att.original_name = Some(format!("attachment.{ext}"));
-    if att.transcription.as_deref().is_some_and(|s| !s.is_empty()) {
-        att.transcription = Some("[redacted]".into());
+    attachment.original_name = Some(format!("attachment.{ext}"));
+    if attachment
+        .transcription
+        .as_deref()
+        .is_some_and(|s| !s.is_empty())
+    {
+        attachment.transcription = Some("[redacted]".into());
     }
     // The digest and the size both describe the real file the export
     // leaves out.
-    att.digest_sha256 = None;
-    att.size_bytes = None;
-    att.bytes = None;
+    attachment.digest_sha256 = None;
+    attachment.size_bytes = None;
+    attachment.bytes = None;
 }
 
 pub(crate) struct TransformOutcome {
-    pub obfuscated_docs: usize,
+    pub obfuscated_documents: usize,
 }
 
-/// Apply the export transforms (media mode, obfuscation) to every document.
+/// Apply the export transforms (attachment files, obfuscation) to every document.
 ///
 /// Attachment bytes are not loaded here. Every writer that embeds them reads
 /// each file through [`crate::load_attachment_bytes`] before the sink removes
 /// the staged `attachments/`.
 pub(crate) fn apply_transforms(
-    docs: &mut [ConversationDocument],
+    documents: &mut [ConversationDocument],
     output_dir: &Path,
     transforms: &ExportTransforms,
 ) -> Result<TransformOutcome> {
     // Keep MIME/path for placeholder classification when obfuscating.
     if !transforms.obfuscate {
-        for doc in docs.iter_mut() {
-            clear_attachments_when_disabled(doc, transforms.media);
+        for document in documents.iter_mut() {
+            clear_attachments_when_skipped(document, transforms.files);
         }
     }
 
-    // Convert/compress runs in `run_attachment_jobs` before documents are
-    // written. Finish only obfuscates and packages.
+    // Finish only obfuscates and packages.
     if !transforms.obfuscate {
-        return Ok(TransformOutcome { obfuscated_docs: 0 });
+        return Ok(TransformOutcome {
+            obfuscated_documents: 0,
+        });
     }
     materialize_placeholders(output_dir)?;
-    let log_fn = |line: &str| emit_log(transforms.log.as_ref(), line);
+    let log_fn = |line: &str| transforms.log.emit(line);
     let mut anon =
         resolve_obfuscator_with_log(transforms.obfuscate_seed.as_deref(), Some(&log_fn))?;
-    obfuscate_documents(docs, &mut anon);
+    obfuscate_documents(documents, &mut anon);
     Ok(TransformOutcome {
-        obfuscated_docs: docs.len(),
+        obfuscated_documents: documents.len(),
     })
 }
 

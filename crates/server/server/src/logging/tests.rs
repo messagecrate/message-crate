@@ -80,6 +80,24 @@ fn rotation_never_keeps_more_than_the_limits_files() {
     assert_eq!(numbers, (newest - 4..=newest).collect::<Vec<_>>());
 }
 
+/// `serve` opens its log before the database, so on a new Message Crate
+/// the log is what makes the Data Directory: both are readable by the
+/// server's user alone, as the log names every account's routes and ids
+/// (#2097).
+#[cfg(unix)]
+#[test]
+fn a_new_log_and_the_data_directory_it_is_made_in_are_the_owner_s_alone() {
+    use crate::test_support::permission_bits as mode;
+
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+
+    LogFiles::open(&super::log_dir(&data_dir), SERVER_LOG_LIMITS).unwrap();
+
+    assert_eq!(mode(&data_dir), 0o700);
+    assert_eq!(mode(&super::log_dir(&data_dir)), 0o700);
+}
+
 /// A restarted server writes on the end of the newest file, and a log with
 /// more files than the limit is trimmed when it is opened.
 #[test]
@@ -117,6 +135,48 @@ fn a_line_break_inside_an_event_is_written_as_backslash_n() {
     );
 }
 
+/// `tracing-subscriber` escapes a control character in an event's message
+/// but not in a field written with `%`, such as a path from a backup. The
+/// line holds it as `\xNN` or `\u{..}`, so a terminal showing the file shows
+/// it rather than clearing the screen, and the reader reads the line back
+/// whole.
+#[test]
+fn a_control_character_in_a_display_field_is_escaped() {
+    let tmp = TempDir::new().unwrap();
+    let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
+    let path = "IMG\x1b[2J\x07\u{9b}2J.jpg";
+    tracing::subscriber::with_default(super::subscriber_for(files, "info"), || {
+        tracing::warn!(path = %path, "could not store the attachment");
+    });
+
+    let number = file_numbers(tmp.path()).unwrap()[0];
+    let text = std::fs::read_to_string(tmp.path().join(file_name(number))).unwrap();
+    assert!(
+        text.contains(r"path=IMG\x1b[2J\x07\u{9b}2J.jpg"),
+        "{text:?}"
+    );
+    assert!(!text.trim_end().chars().any(char::is_control), "{text:?}");
+    let (lines, _) = read_lines(tmp.path(), &query(1)).unwrap();
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    assert!(lines[0].text.contains(r"IMG\x1b[2J\x07\u{9b}2J.jpg"));
+}
+
+/// `write_event` itself, for bytes no subscriber escaped: line breaks become
+/// `\n`, every other control character `\xNN` or `\u{..}`.
+#[test]
+fn every_control_character_in_an_event_is_escaped() {
+    let tmp = TempDir::new().unwrap();
+    let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
+    files
+        .write_event(b"2026-10-04T12:00:00.000000Z ERROR a\x1b[2J\x08\tb\x7f\xc2\x9b\none\r\n")
+        .unwrap();
+    let text = std::fs::read_to_string(tmp.path().join(file_name(1))).unwrap();
+    assert_eq!(
+        text,
+        "2026-10-04T12:00:00.000000Z ERROR a\\x1b[2J\\x08\\x09b\\x7f\\u{9b}\\none\n"
+    );
+}
+
 /// What the subscriber writes is what the reader reads back: the level and
 /// the text of the event, newest first.
 #[test]
@@ -148,7 +208,7 @@ fn the_subscriber_writes_lines_the_reader_reads_back() {
 }
 
 /// The desktop app writes each Import Run's log with
-/// `message_crate_log_lines::format_lines`: a line it writes is the line the
+/// `log_lines::format_lines`: a line it writes is the line the
 /// subscriber writes for the same time, level and text, and the server's
 /// reader reads it back.
 #[test]
@@ -160,13 +220,13 @@ fn a_line_the_desktop_app_writes_is_a_line_the_subscriber_writes() {
     });
     let number = file_numbers(tmp.path()).unwrap()[0];
     let written = std::fs::read_to_string(tmp.path().join(file_name(number))).unwrap();
-    let parsed = message_crate_log_lines::parse_line(written.trim_end()).unwrap();
+    let parsed = log_lines::parse_line(written.trim_end()).unwrap();
     assert_eq!(
-        message_crate_log_lines::format_lines(parsed.time, parsed.level, parsed.text),
+        log_lines::format_lines(parsed.time, parsed.level, parsed.text),
         written
     );
 
-    let run_log = message_crate_log_lines::format_lines(
+    let run_log = log_lines::format_lines(
         "2026-10-08T12:00:00.123456Z",
         LogLevel::Error,
         "chat.jsonl failed: the server refused it",

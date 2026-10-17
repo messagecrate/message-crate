@@ -11,13 +11,16 @@ use crate::extract::{Json, Path, Query};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 use super::{Admits, Reach, require_account_reach};
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, LoggedIn, refuse_for_demo_account};
+use crate::db::account_profile;
 use crate::db::api_tokens;
 use crate::db::audit_trail::{self, AuditAction, Details};
 use crate::db::permissions::Permissions;
-use crate::db::{account_profile, schema};
-use crate::server::{ApiError, AppState, Created, FullAccess, LoggedIn};
+use crate::server::Created;
 
 /// Admit only the account whose tokens the path names, for making and
 /// renaming. The refusal reads the same whether or not the other account
@@ -80,7 +83,9 @@ fn map_label_error(e: crate::db::api_tokens::ApiTokenMutationError) -> ApiError 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateApiTokenRequest {
-    /// User-chosen label shown in Settings.
+    /// User-chosen label shown in Settings, which the server trims. A label
+    /// that is blank or over 120 characters is refused with
+    /// `422 Unprocessable Entity`.
     pub label: String,
     /// May call the import endpoints. Default true.
     #[serde(default = "default_true")]
@@ -112,7 +117,7 @@ pub struct CreateApiTokenResponse {
     pub created_at: String,
     /// Unix-seconds expiry; `null` means no expiry.
     pub expires_at: Option<String>,
-    /// Plaintext secret — returned once at creation.
+    /// Plaintext secret, returned once at creation.
     pub token: String,
     /// Masked form for the Settings list (also persisted).
     pub token_hint: String,
@@ -121,7 +126,7 @@ pub struct CreateApiTokenResponse {
 /// Body for renaming a token.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateApiTokenRequest {
-    /// Replacement label.
+    /// Replacement label, under the rules a new token's label follows.
     pub label: String,
 }
 
@@ -144,16 +149,15 @@ pub struct UpdateApiTokenRequest {
     )
 )]
 pub async fn list_api_tokens(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(account_id): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<ApiToken>>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
 
-    schema::ensure_accounts_schema(&mut conn).await?;
     let rows = api_tokens::list_api_tokens(&mut conn, account_id).await?;
     let account_permissions = holder_permissions(&mut conn, account_id).await?;
     let items: Vec<ApiToken> = rows
@@ -214,16 +218,15 @@ fn as_shown_to(
     )
 )]
 pub async fn get_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((account_id, id)): Path<(i64, i64)>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<ApiToken>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
-    schema::ensure_accounts_schema(&mut conn).await?;
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("API token not found".into()))?;
+        .ok_or_else(|| ApiError::not_found("API token"))?;
     let account_permissions = holder_permissions(&mut conn, account_id).await?;
     Ok(Json(as_shown_to(reach, row, account_permissions)))
 }
@@ -244,28 +247,38 @@ pub async fn get_api_token(
             body = CreateApiTokenResponse,
             headers(("Location" = String, description = "Path of the new token"))
         ),
+        crate::problem::openapi::DemoAccountProtected,
     )
 )]
 pub async fn create_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(account_id): Path<i64>,
     FullAccess(auth): FullAccess,
     Json(req): Json<CreateApiTokenRequest>,
 ) -> Result<Created<CreateApiTokenResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, HOLDER_ONLY).await?;
+    // Every visitor is the Demo Account, so a token it made would outlive the
+    // visit, and every later visitor would see its hint and could revoke it.
+    refuse_for_demo_account(account_id, "API tokens cannot be made")?;
     let label = req.label;
     // A token can narrow its account's permissions, never widen them, so
     // what it stores is what the request asked and the account holds.
     let permissions =
         Permissions::token(req.can_import, req.can_export).intersect(auth.permissions());
     let expires_in_days = req.expires_in_days;
+    let now = chrono::Utc::now();
 
-    schema::ensure_accounts_schema(&mut conn).await?;
-    let created =
-        api_tokens::create_api_token(&mut conn, account_id, &label, permissions, expires_in_days)
-            .await
-            .map_err(map_label_error)?;
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        account_id,
+        &label,
+        permissions,
+        expires_in_days,
+        now,
+    )
+    .await
+    .map_err(map_label_error)?;
     let token_hint = api_tokens::mask_api_token(&created.token);
     audit_trail::record_about(
         &mut conn,
@@ -277,6 +290,7 @@ pub async fn create_api_token(
             api_token_hint: Some(token_hint.clone()),
             ..Details::default()
         },
+        now,
     )
     .await?;
 
@@ -313,13 +327,12 @@ pub async fn create_api_token(
     )
 )]
 pub async fn delete_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((account_id, id)): Path<(i64, i64)>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
-    schema::ensure_accounts_schema(&mut conn).await?;
     let token = api_tokens::list_api_tokens(&mut conn, account_id)
         .await?
         .into_iter()
@@ -327,7 +340,7 @@ pub async fn delete_api_token(
     let deleted = api_tokens::delete_api_token(&mut conn, account_id, id).await?;
 
     let Some(token) = token.filter(|_| deleted) else {
-        return Err(ApiError::NotFound("API token not found".into()));
+        return Err(ApiError::not_found("API token"));
     };
     audit_trail::record_about(
         &mut conn,
@@ -339,6 +352,7 @@ pub async fn delete_api_token(
             api_token_hint: Some(token.token_hint),
             ..Details::default()
         },
+        chrono::Utc::now(),
     )
     .await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
@@ -361,27 +375,26 @@ pub async fn delete_api_token(
     )
 )]
 pub async fn update_api_token(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((account_id, id)): Path<(i64, i64)>,
     FullAccess(auth): FullAccess,
     Json(req): Json<UpdateApiTokenRequest>,
 ) -> Result<Json<ApiToken>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, HOLDER_ONLY).await?;
     let label = req.label;
 
-    schema::ensure_accounts_schema(&mut conn).await?;
     let trimmed = label.trim().to_string();
     let ok = api_tokens::update_api_token_label(&mut conn, account_id, id, &trimmed)
         .await
         .map_err(map_label_error)?;
 
     if !ok {
-        return Err(ApiError::NotFound("API token not found".into()));
+        return Err(ApiError::not_found("API token"));
     }
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("API token not found".into()))?;
+        .ok_or_else(|| ApiError::not_found("API token"))?;
     let account_permissions = holder_permissions(&mut conn, account_id).await?;
     Ok(Json(as_shown_to(reach, row, account_permissions)))
 }
@@ -389,7 +402,8 @@ pub async fn update_api_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::api_tokens::{ApiTokenLabelError, ApiTokenMutationError};
+    use crate::db::api_tokens::ApiTokenMutationError;
+    use crate::text_caps::RequiredTextError;
 
     /// One token read at its own path answers it as the list shows it, with
     /// its masked secret and never the secret itself; a token id the account
@@ -423,19 +437,25 @@ mod tests {
     #[test]
     fn label_errors_map_to_validation_failed_with_the_same_message() {
         let err = map_label_error(ApiTokenMutationError::InvalidLabel(
-            ApiTokenLabelError::Required,
+            RequiredTextError::Blank("label".to_string()),
         ));
         match err {
-            ApiError::ValidationFailed(msg) => assert_eq!(msg, ["label is required"]),
+            ApiError::ValidationFailed(msg) => assert_eq!(msg, ["label required"]),
             other => panic!("expected ValidationFailed, got {other:?}"),
         }
 
+        let too_long = crate::text_caps::capped_text(
+            "label",
+            &"x".repeat(121),
+            crate::text_caps::MAX_API_TOKEN_LABEL_CHARS,
+        )
+        .unwrap_err();
         let err = map_label_error(ApiTokenMutationError::InvalidLabel(
-            ApiTokenLabelError::TooLong,
+            RequiredTextError::TooLong(too_long),
         ));
         match err {
             ApiError::ValidationFailed(msg) => {
-                assert_eq!(msg, ["label must be at most 120 characters"]);
+                assert_eq!(msg, ["label: must be at most 120 characters"]);
             }
             other => panic!("expected ValidationFailed, got {other:?}"),
         }
@@ -475,12 +495,11 @@ mod tests {
             crate::test_support::register_via_api(&state, "token-owner", "hunter2hunter2").await;
 
         let collection = format!("/v1/accounts/{}/api-tokens", account.account_id);
-        let (status, text) = crate::test_support::post_raw(
+        let (status, text) = crate::test_support::post_json_raw(
             &state,
             &collection,
             &account.token,
-            "application/json",
-            r#"{"label": "cli token", "can_delete": true}"#,
+            serde_json::json!({ "label": "cli token", "can_delete": true }),
         )
         .await;
         crate::test_support::expect_problem(
@@ -489,14 +508,53 @@ mod tests {
             crate::problem::ProblemType::ValidationFailed,
         );
 
-        let mut conn = state.db.acquire().await.unwrap();
-        let rows: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
-                .bind(account.account_id)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap();
-        assert_eq!(rows, 0, "a refused create stores no token");
+        assert_eq!(
+            token_count(&state.db, account.account_id).await,
+            0,
+            "a refused create stores no token"
+        );
+    }
+
+    /// How many API tokens the account holds, read from the table itself.
+    async fn token_count(db: &SqlitePool, account_id: i64) -> i64 {
+        let mut conn = db.acquire().await.unwrap();
+        sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
+            .bind(account_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap()
+    }
+
+    /// The Demo Account makes no API token, with or without an expiry: every
+    /// visitor is the same account, so a token would outlive the visit and
+    /// be seen and revoked by every other visitor (ADR 0016).
+    #[tokio::test]
+    async fn the_demo_account_makes_no_api_token() {
+        let fixture = crate::test_support::test_fixture().await;
+        let state = fixture.state.clone();
+        let (demo, demo_token) = fixture.demo_account_session().await;
+
+        let collection = format!("/v1/accounts/{demo}/api-tokens");
+        for expires_in_days in [0, 30] {
+            let (status, text) = crate::test_support::post_json_raw(
+                &state,
+                &collection,
+                &demo_token,
+                serde_json::json!({ "label": "visitor", "expires_in_days": expires_in_days }),
+            )
+            .await;
+            crate::test_support::expect_problem(
+                status,
+                &text,
+                crate::problem::ProblemType::DemoAccountProtected,
+            );
+        }
+
+        assert_eq!(
+            token_count(&state.db, demo).await,
+            0,
+            "a refused create stores no token"
+        );
     }
 
     /// The owner lists another account's tokens, each with its label,
@@ -561,9 +619,10 @@ mod tests {
     /// from then on.
     #[tokio::test]
     async fn the_owner_revokes_an_accounts_token() {
+        use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_status, get_status, post_created_json, register_via_api,
-            test_fixture,
+            claim_as_owner, delete_status, expect_problem, get_raw, get_status, post_created_json,
+            register_via_api, test_fixture,
         };
         use axum::http::StatusCode;
 
@@ -590,10 +649,8 @@ mod tests {
             delete_status(&state, &format!("{alices}/{id}"), &owner.token).await,
             StatusCode::NO_CONTENT
         );
-        assert_eq!(
-            get_status(&state, "/v1/exports", token).await,
-            StatusCode::UNAUTHORIZED
-        );
+        let (status, text) = get_raw(&state, "/v1/exports", token).await;
+        expect_problem(status, &text, ProblemType::AuthenticationRequired);
     }
 
     /// The owner sees and revokes; making and renaming stay with the
@@ -602,11 +659,11 @@ mod tests {
     /// token reaches any token route.
     #[tokio::test]
     async fn only_the_account_itself_makes_and_renames_its_tokens() {
+        use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_status, get_status, patch_status, post_created_json,
-            post_status, register_via_api, test_fixture,
+            claim_as_owner, delete_raw, expect_problem, expect_problem_for, get_raw,
+            patch_json_raw, post_created_json, post_json_raw, register_via_api, test_fixture,
         };
-        use axum::http::StatusCode;
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
@@ -624,46 +681,53 @@ mod tests {
         let one = format!("{alices}/{}", created["id"]);
 
         for (who, token) in [("bob", &bob.token), ("the owner", &owner.token)] {
-            assert_eq!(
-                post_status(&state, &alices, token, serde_json::json!({ "label": "x" })).await,
-                StatusCode::FORBIDDEN,
-                "{who} must not mint a token for alice"
+            let (status, text) =
+                post_json_raw(&state, &alices, token, serde_json::json!({ "label": "x" })).await;
+            expect_problem_for(
+                &format!("{who} minting a token for alice"),
+                status,
+                &text,
+                ProblemType::InsufficientScope,
             );
-            assert_eq!(
-                patch_status(&state, &one, token, serde_json::json!({ "label": "y" })).await,
-                StatusCode::FORBIDDEN,
-                "{who} must not rename alice's token"
+            let (status, text) =
+                patch_json_raw(&state, &one, token, serde_json::json!({ "label": "y" })).await;
+            expect_problem_for(
+                &format!("{who} renaming alice's token"),
+                status,
+                &text,
+                ProblemType::InsufficientScope,
             );
         }
-        assert_eq!(
-            get_status(&state, &alices, &bob.token).await,
-            StatusCode::FORBIDDEN,
-            "bob must not list alice's tokens"
+        let (status, text) = get_raw(&state, &alices, &bob.token).await;
+        expect_problem_for(
+            "bob listing alice's tokens",
+            status,
+            &text,
+            ProblemType::NotTheOwner,
         );
-        assert_eq!(
-            delete_status(&state, &one, &bob.token).await,
-            StatusCode::FORBIDDEN,
-            "bob must not revoke alice's token"
+        let (status, text) = delete_raw(&state, &one, &bob.token).await;
+        expect_problem_for(
+            "bob revoking alice's token",
+            status,
+            &text,
+            ProblemType::NotTheOwner,
         );
         let secret = created["token"].as_str().unwrap();
-        assert_eq!(
-            get_status(&state, &alices, secret).await,
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            delete_status(&state, &one, secret).await,
-            StatusCode::FORBIDDEN
-        );
+        let (status, text) = get_raw(&state, &alices, secret).await;
+        expect_problem(status, &text, ProblemType::InsufficientScope);
+        let (status, text) = delete_raw(&state, &one, secret).await;
+        expect_problem(status, &text, ProblemType::InsufficientScope);
     }
 
     /// A rename answers the token with its new label, trimmed, as the list
     /// shows it; an id the account does not hold is a 404.
     #[tokio::test]
     async fn renaming_a_token_answers_and_stores_the_new_label() {
+        use crate::problem::ProblemType;
         use crate::test_support::{
-            fixture_with_account, get_json, patch_json, patch_status, post_created_json,
+            expect_problem, fixture_with_account, get_json, patch_json, patch_json_raw,
+            post_created_json,
         };
-        use axum::http::StatusCode;
 
         let (fixture, alice) = fixture_with_account().await;
         let state = fixture.state.clone();
@@ -691,16 +755,14 @@ mod tests {
             "the rename answers the token as the list shows it"
         );
 
-        assert_eq!(
-            patch_status(
-                &state,
-                &format!("{collection}/{}", id + 1000),
-                &alice.token,
-                serde_json::json!({ "label": "nobody" })
-            )
-            .await,
-            StatusCode::NOT_FOUND
-        );
+        let (status, text) = patch_json_raw(
+            &state,
+            &format!("{collection}/{}", id + 1000),
+            &alice.token,
+            serde_json::json!({ "label": "nobody" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NotFound);
     }
 
     /// A token created without naming `can_export` may export: the default is

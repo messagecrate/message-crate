@@ -8,7 +8,7 @@
 //! timestamps suggest afterwards. The run's Contact Group, its new and
 //! changed counts, and `GET /v1/imports/{id}/contacts` all read this table.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -90,7 +90,8 @@ pub async fn record(
     .bind(import_id)
     .bind(contact_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read why the Import Run recorded the contact")?;
     match existing.as_deref().and_then(ContactReason::parse) {
         Some(kept) if kept <= reason => Ok(()),
         Some(_) => {
@@ -102,7 +103,8 @@ pub async fn record(
             .bind(contact_id)
             .bind(reason.as_str())
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("update why the Import Run recorded the contact")?;
             Ok(())
         }
         None => {
@@ -115,7 +117,8 @@ pub async fn record(
             .bind(contact_id)
             .bind(reason.as_str())
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("record the contact on the Import Run")?;
             Ok(())
         }
     }
@@ -173,11 +176,21 @@ pub(in crate::db) fn tally_sql(import_id: &str) -> [String; 2] {
 /// Returns an error when the query fails.
 pub async fn counts(conn: &mut SqliteConnection, import_id: i64) -> Result<ContactCounts> {
     let [new, changed] = tally_sql("$1");
-    let (new_count, changed_count): (i64, i64) =
-        sqlx::query_as(&format!("SELECT {new}, {changed}"))
-            .bind(import_id)
-            .fetch_one(&mut *conn)
-            .await?;
+    #[derive(sqlx::FromRow)]
+    struct Counts {
+        new_count: i64,
+        changed_count: i64,
+    }
+    let Counts {
+        new_count,
+        changed_count,
+    } = sqlx::query_as::<_, Counts>(sqlx::AssertSqlSafe(format!(
+        "SELECT {new} AS new_count, {changed} AS changed_count"
+    )))
+    .bind(import_id)
+    .fetch_one(&mut *conn)
+    .await
+    .context("count the contacts the Import Run created and changed")?;
     Ok(ContactCounts {
         new_count: new_count.max(0) as u64,
         changed_count: changed_count.max(0) as u64,
@@ -201,9 +214,16 @@ pub async fn page(
         sqlx::query_scalar("SELECT COUNT(*) FROM import_contacts WHERE import_id = $1")
             .bind(import_id)
             .fetch_one(&mut *conn)
-            .await?;
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT c.id, c.preferred_name, ic.reason
+            .await
+            .context("count the Import Run's contacts")?;
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        name: String,
+        reason: String,
+    }
+    let rows = sqlx::query_as::<_, Row>(
+        "SELECT c.id, c.preferred_name AS name, ic.reason
          FROM import_contacts ic
          JOIN contacts c ON c.id = ic.contact_id
          WHERE ic.import_id = $1
@@ -220,10 +240,11 @@ pub async fn page(
     .bind(limit as i64)
     .bind(i64::try_from(offset)?)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read a page of the Import Run's contacts")?;
     let items = rows
         .into_iter()
-        .filter_map(|(id, name, reason)| {
+        .filter_map(|Row { id, name, reason }| {
             ContactReason::parse(&reason).map(|reason| ImportContact { id, name, reason })
         })
         .collect();
@@ -242,7 +263,8 @@ pub async fn contact_ids(conn: &mut SqliteConnection, import_id: i64) -> Result<
     )
     .bind(import_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the Import Run's contact ids")?;
     Ok(ids)
 }
 
@@ -272,7 +294,8 @@ pub async fn set_aside(
     .bind(account_id)
     .bind(contact_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("set aside a contact's Import Run records")?;
     Ok(())
 }
 
@@ -300,7 +323,8 @@ pub async fn give_back(
     .bind(handle_id)
     .bind(contact_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("give back the Import Run records set aside under an identity")?;
     Ok(())
 }
 
@@ -322,6 +346,7 @@ pub async fn forget_set_aside(
     .bind(account_id)
     .bind(handle_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("forget the Import Run records set aside under an identity")?;
     Ok(())
 }

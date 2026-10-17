@@ -1,62 +1,107 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render as renderPlain, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DOWNLOAD_POLL_MS } from "../../hooks/useToolsStatus";
 import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
-import { renderWithProviders as render } from "../../test/providers";
+import {
+  advanceTimersAndSettle,
+  settle,
+  startFakeClock,
+  stopFakeClock,
+} from "../../test/fakeTimers";
+import { authModule, renderWithProviders as render, testQueryClient } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
 const toolsStatus = vi.hoisted(() => vi.fn());
 /** The Staging Directory as the desktop process keeps it. */
-const desktopStaging = vi.hoisted(() => ({ root: "", defaultRoot: "/home/demo/message-crate" }));
-const setStagingRoot = vi.hoisted(() => vi.fn());
-const openDataDirectory = vi.hoisted(() => vi.fn());
+const desktopStaging = vi.hoisted(() => ({
+  root: "",
+  defaultRoot: "/home/demo/message-crate",
+  /** Set to make reading the Staging Directory fail with this text. */
+  readError: null as string | null,
+}));
+const setStagingDirectory = vi.hoisted(() => vi.fn());
+/** What the desktop process measures for the signed-in account's Import Runs. */
+const accountStagingBytes = vi.hoisted(() => vi.fn());
+/** What `GET /v1/server` answers. */
+const serverState = vi.hoisted(() => vi.fn());
+const invokeOpenMessageCrateDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
-const setLocalServerOpenToNetwork = vi.hoisted(() => vi.fn());
+const invokeSetOpenToNetwork = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/localServer")>()),
-  openDataDirectory: () => openDataDirectory(),
   startLocalServer: () => startLocalServer(),
-  setLocalServerOpenToNetwork: (on: boolean) => setLocalServerOpenToNetwork(on),
 }));
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
+
+vi.mock("../../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/serverApi")>()),
+  getServerState: () => serverState(),
+}));
+
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  toolsDownloading: (await importOriginal<typeof import("../../lib/tauri")>()).toolsDownloading,
-  invokeToolsStatus: () => toolsStatus(),
-  invokeStagingRoot: async () => ({
-    root: desktopStaging.root || desktopStaging.defaultRoot,
-    defaultRoot: desktopStaging.defaultRoot,
-  }),
-  invokeSetStagingRoot: (root: string) => setStagingRoot(root),
+vi.mock("../../lib/desktop/export", () => ({
   invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
+vi.mock("../../lib/desktop/localServer", () => ({
+  invokeOpenMessageCrateDirectory: () => invokeOpenMessageCrateDirectory(),
+  invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
 }));
+
+vi.mock("../../lib/desktop/staging", () => ({
+  invokeStagingDirectory: async () => {
+    if (desktopStaging.readError !== null) throw desktopStaging.readError;
+    return {
+      root: desktopStaging.root || desktopStaging.defaultRoot,
+      defaultRoot: desktopStaging.defaultRoot,
+    };
+  },
+  invokeSetStagingDirectory: (root: string) => setStagingDirectory(root),
+  invokeAccountStagingBytes: (accountId: number, messageCrateId: string) =>
+    accountStagingBytes(accountId, messageCrateId),
+}));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/desktop/tools")>();
+  return {
+    toolsDownloading: actual.toolsDownloading,
+    invokeToolsStatus: () => toolsStatus(),
+  };
+});
 
 afterEach(() => {
   cleanup();
   setBaseUrl("");
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   localStorage.clear();
   tauriState.isTauri = true;
   desktopStaging.root = "";
-  setStagingRoot.mockReset();
-  setStagingRoot.mockImplementation(async (root: string) => {
+  desktopStaging.readError = null;
+  accountStagingBytes.mockReset();
+  accountStagingBytes.mockResolvedValue(0);
+  serverState.mockReset();
+  serverState.mockResolvedValue({ id: "3f2a9c" });
+  setStagingDirectory.mockReset();
+  setStagingDirectory.mockImplementation(async (root: string) => {
     // The desktop process refuses a relative directory, as resolve_staging_root does.
     if (root !== "" && !root.startsWith("/")) throw "The staging directory must be a full path.";
     desktopStaging.root = root === desktopStaging.defaultRoot ? "" : root;
@@ -76,6 +121,63 @@ beforeEach(() => {
 });
 
 describe("SystemSection", () => {
+  // #3087: an account sees the disk space its own Import Runs take in the
+  // Staging Directory on this computer, measured when Settings opens.
+  it("says how much space the account's Import Runs take on this computer", async () => {
+    accountStagingBytes.mockResolvedValue(1.5 * 1024 * MIB);
+    render(<SystemSection />);
+    await settle();
+
+    expect(accountStagingBytes).toHaveBeenCalledWith(7, "3f2a9c");
+    expect(screen.getByText("Your Import Runs on this computer take up 1.5 GB.")).toBeTruthy();
+  });
+
+  it("says when the Staging Directory could not be measured", async () => {
+    accountStagingBytes.mockRejectedValue("Could not read staging.json");
+    render(<SystemSection />);
+    await settle();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not measure the Staging Directory. Could not read staging.json",
+    );
+  });
+
+  it("says why nothing is measured when the server does not say which Message Crate it is", async () => {
+    serverState.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<SystemSection />);
+    await settle();
+
+    expect(accountStagingBytes).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not measure the Staging Directory.");
+    expect(screen.queryByText("Measuring…")).toBeNull();
+  });
+
+  it("keeps a measurement when a later read of the server fails", async () => {
+    accountStagingBytes.mockResolvedValue(2 * 1024 * MIB);
+    const client = testQueryClient();
+    renderPlain(
+      <QueryClientProvider client={client}>
+        <SystemSection />
+      </QueryClientProvider>,
+    );
+    await settle();
+    serverState.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(() => client.refetchQueries());
+    await settle();
+
+    expect(screen.getByText("Your Import Runs on this computer take up 2.0 GB.")).toBeTruthy();
+    expect(screen.queryByText(/Could not measure/)).toBeNull();
+  });
+
+  it("measures nothing in a browser", async () => {
+    tauriState.isTauri = false;
+    render(<SystemSection />);
+    await settle();
+
+    expect(accountStagingBytes).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Your Import Runs on this computer/)).toBeNull();
+  });
+
   it("shows this app's version in the browser and in the desktop app", async () => {
     tauriState.isTauri = false;
     render(<SystemSection />);
@@ -84,13 +186,15 @@ describe("SystemSection", () => {
 
     tauriState.isTauri = true;
     render(<SystemSection />);
-    expect((await screen.findByText("Version")).nextElementSibling).toHaveTextContent(APP_BUILD);
+    await settle();
+    expect(screen.getByText("Version").nextElementSibling).toHaveTextContent(APP_BUILD);
   });
 
   it("names the Apple Messages reader and its GPL license in the desktop app only", async () => {
     tauriState.isTauri = true;
     render(<SystemSection />);
-    expect(await screen.findByText("Third-party software")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("Third-party software")).toBeTruthy();
     expect(screen.getByText(/Apple Messages reader/)).toHaveTextContent("imessage-reader");
     expect(screen.getByText(/GNU General Public License/)).toBeTruthy();
     const source = screen.getByRole("link", { name: "Source" });
@@ -104,29 +208,34 @@ describe("SystemSection", () => {
     expect(screen.queryByText("Third-party software")).toBeNull();
   });
 
-  it("opens the data directory of the app's own Message Crate", async () => {
-    openDataDirectory.mockResolvedValue(undefined);
+  it("opens the Message Crate directory", async () => {
+    invokeOpenMessageCrateDirectory.mockResolvedValue(undefined);
     render(<SystemSection />);
+    await settle();
     const user = setupUser();
-    await user.click(await screen.findByRole("button", { name: "Open data directory" }));
-    expect(openDataDirectory).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Open Message Crate directory" }));
+    await settle();
+    expect(invokeOpenMessageCrateDirectory).toHaveBeenCalledTimes(1);
   });
 
-  it("says why the data directory could not be opened", async () => {
-    openDataDirectory.mockRejectedValue(new Error("Could not open /data"));
+  it("says why the Message Crate directory could not be opened", async () => {
+    invokeOpenMessageCrateDirectory.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
+    await settle();
     const user = setupUser();
-    await user.click(await screen.findByRole("button", { name: "Open data directory" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not open /data");
+    await user.click(screen.getByRole("button", { name: "Open Message Crate directory" }));
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not open /data");
   });
 
   it("keeps the app's own Message Crate closed to the network until asked", async () => {
     setBaseUrl("http://127.0.0.1:8080");
     startLocalServer.mockReset();
-    setLocalServerOpenToNetwork.mockReset();
-    setLocalServerOpenToNetwork.mockResolvedValue({ status: "starting", first_time: false });
+    invokeSetOpenToNetwork.mockReset();
+    invokeSetOpenToNetwork.mockResolvedValue({ status: "starting", first_time: false });
     render(<SystemSection />);
-    const box = await screen.findByRole("checkbox", {
+    await settle();
+    const box = screen.getByRole("checkbox", {
       name: /Let other devices on this network connect/,
     });
     expect(box).not.toBeChecked();
@@ -135,13 +244,15 @@ describe("SystemSection", () => {
 
     const user = setupUser();
     await user.click(box);
+    await settle();
 
     expect(getOpenToNetwork()).toBe(true);
-    expect(setLocalServerOpenToNetwork).toHaveBeenLastCalledWith(true);
+    expect(invokeSetOpenToNetwork).toHaveBeenLastCalledWith(true);
 
     await user.click(box);
+    await settle();
     expect(getOpenToNetwork()).toBe(false);
-    expect(setLocalServerOpenToNetwork).toHaveBeenLastCalledWith(false);
+    expect(invokeSetOpenToNetwork).toHaveBeenLastCalledWith(false);
     // The setting restarts a server the app runs; it never starts one.
     expect(startLocalServer).not.toHaveBeenCalled();
   });
@@ -149,35 +260,39 @@ describe("SystemSection", () => {
   it("changes no server while the app uses another Message Crate", async () => {
     setBaseUrl("https://crate.example");
     startLocalServer.mockReset();
-    setLocalServerOpenToNetwork.mockReset();
+    invokeSetOpenToNetwork.mockReset();
     render(<SystemSection />);
+    await settle();
 
     const user = setupUser();
     await user.click(
-      await screen.findByRole("checkbox", { name: /Let other devices on this network connect/ }),
+      screen.getByRole("checkbox", { name: /Let other devices on this network connect/ }),
     );
+    await settle();
 
     expect(getOpenToNetwork()).toBe(true);
-    expect(setLocalServerOpenToNetwork).not.toHaveBeenCalled();
+    expect(invokeSetOpenToNetwork).not.toHaveBeenCalled();
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
   it("says the setting does not change a Message Crate the app did not start", async () => {
     setBaseUrl("http://127.0.0.1:8080");
-    setLocalServerOpenToNetwork.mockReset();
-    setLocalServerOpenToNetwork.mockResolvedValue({ status: "ready", started_by_app: false });
+    invokeSetOpenToNetwork.mockReset();
+    invokeSetOpenToNetwork.mockResolvedValue({ status: "ready", started_by_app: false });
     render(<SystemSection />);
+    await settle();
     const user = setupUser();
     await user.click(
-      await screen.findByRole("checkbox", { name: /Let other devices on this network connect/ }),
+      screen.getByRole("checkbox", { name: /Let other devices on this network connect/ }),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent("This app did not start");
+    await settle();
+    expect(screen.getByRole("status")).toHaveTextContent("This app did not start");
   });
 
-  it("offers no data directory in the browser", () => {
+  it("offers no Message Crate directory in the browser", () => {
     tauriState.isTauri = false;
     render(<SystemSection />);
-    expect(screen.queryByRole("button", { name: "Open data directory" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open Message Crate directory" })).toBeNull();
   });
 
   it("shows the desktop-only stub when not in Tauri", () => {
@@ -189,17 +304,17 @@ describe("SystemSection", () => {
 
   it("has no Save button and labels the path fields", async () => {
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Staging directory")).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByLabelText("Staging directory")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull();
   });
 
   it("names the Export Directory, where each Export and Convert gets a directory", async () => {
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByRole("button", {
+      screen.getByRole("button", {
         name: "/home/demo/.local/share/app.messagecrate.desktop/exports",
       }),
     ).toBeTruthy();
@@ -209,42 +324,48 @@ describe("SystemSection", () => {
   it("stores the staging directory in the desktop process on change", async () => {
     const user = setupUser();
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/home/demo/message-crate");
 
     await user.clear(stagingInput);
     await fill(user, stagingInput, "/tmp/my-staging");
+    await settle();
 
-    await waitFor(() => expect(desktopStaging.root).toBe("/tmp/my-staging"));
-    expect(setStagingRoot).toHaveBeenLastCalledWith("/tmp/my-staging");
+    expect(desktopStaging.root).toBe("/tmp/my-staging");
+    expect(setStagingDirectory).toHaveBeenLastCalledWith("/tmp/my-staging");
   });
 
   it("says why the desktop process refused a staging directory", async () => {
     const user = setupUser();
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
-    setStagingRoot.mockRejectedValue("Could not save staging.json: disk full");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/home/demo/message-crate");
+    setStagingDirectory.mockRejectedValue("Could not save staging.json: disk full");
 
     await user.type(stagingInput, "/x");
+    await settle();
 
-    expect(await screen.findByText(/disk full/)).toBeInTheDocument();
+    expect(screen.getByText(/disk full/)).toBeInTheDocument();
   });
 
   it("shows a directory accepted after a refusal when the field is left before the answer", async () => {
     const user = setupUser();
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/home/demo/message-crate");
     await user.type(stagingInput, "x", {
       initialSelectionStart: 0,
       initialSelectionEnd: "/home/demo/message-crate".length,
     });
-    expect(await screen.findByText(/Not saved/)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText(/Not saved/)).toBeInTheDocument();
 
     // The pasted directory replaces the refused one in one change, so the
     // refusal is still shown when the field is left.
     (stagingInput as HTMLInputElement).select();
     // The desktop process accepts the pasted directory, but answers late.
     let answer!: () => void;
-    setStagingRoot.mockImplementationOnce(
+    setStagingDirectory.mockImplementationOnce(
       (root: string) =>
         new Promise((resolve) => {
           answer = () => {
@@ -256,8 +377,9 @@ describe("SystemSection", () => {
     await user.paste("/data/mc");
     await user.tab();
     answer();
+    await settle();
 
-    await waitFor(() => expect(stagingInput).toHaveValue("/data/mc"));
+    expect(stagingInput).toHaveValue("/data/mc");
     expect(screen.queryByText(/Not saved/)).toBeNull();
   });
 
@@ -265,7 +387,8 @@ describe("SystemSection", () => {
     const user = setupUser();
     desktopStaging.root = "/srv/staging";
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/srv/staging");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/srv/staging");
 
     // Typed over the whole path: an empty field would clear the setting on its own.
     await user.type(stagingInput, "staging", {
@@ -273,23 +396,44 @@ describe("SystemSection", () => {
       initialSelectionEnd: "/srv/staging".length,
     });
 
+    await settle();
     expect(stagingInput).toHaveValue("staging");
     expect(
-      await screen.findByText("Not saved. The staging directory must be a full path."),
+      screen.getByText("Not saved. The staging directory must be a full path."),
     ).toBeInTheDocument();
     expect(desktopStaging.root).toBe("/srv/staging");
 
     await user.tab();
+    await settle();
 
     expect(stagingInput).toHaveValue("/srv/staging");
     expect(screen.queryByText(/must be a full path/)).toBeNull();
   });
 
+  it("says why the staging directory could not be read, and reads it again when the field is left", async () => {
+    const user = setupUser();
+    desktopStaging.readError = "Could not read staging.json: permission denied";
+    desktopStaging.root = "/srv/staging";
+    render(<SystemSection />);
+    await settle();
+
+    expect(screen.getByText(/permission denied/)).toBeInTheDocument();
+    const stagingInput = screen.getByLabelText("Staging directory");
+    expect(stagingInput).toHaveValue("");
+
+    desktopStaging.readError = null;
+    await user.click(stagingInput);
+    await user.tab();
+    await settle();
+
+    expect(stagingInput).toHaveValue("/srv/staging");
+    expect(screen.queryByText(/permission denied/)).toBeNull();
+  });
+
   it("shows where ffmpeg, ffprobe and wtsexporter were found, and the Tools Directory", async () => {
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
     expect(screen.getByLabelText(/Found wtsexporter/i)).toBeTruthy();
     expect(screen.getByText("/usr/bin/ffmpeg")).toBeTruthy();
@@ -309,13 +453,12 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(
-        screen.getByLabelText(
-          "ffmpeg not found. Put it beside ffprobe, or put both in the Tools Directory, /home/demo/message-crate/tools.",
-        ),
-      ).toBeTruthy();
-    });
+    await settle();
+    expect(
+      screen.getByLabelText(
+        "ffmpeg not found. Put it beside ffprobe, or put both in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
     expect(
       screen.getByLabelText(
@@ -333,8 +476,9 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByLabelText(
+      screen.getByLabelText(
         "ffmpeg not found. Put it and ffprobe in the Tools Directory, /home/demo/message-crate/tools.",
       ),
     ).toBeTruthy();
@@ -356,13 +500,15 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText(`ffmpeg not used. ${reason}`)).toBeTruthy();
+    await settle();
+    expect(screen.getByLabelText(`ffmpeg not used. ${reason}`)).toBeTruthy();
     expect(screen.getByLabelText(`ffprobe not used. ${reason}`)).toBeTruthy();
   });
 
   it("has nothing to type for the media tools: the ffmpeg directory field is gone (#1053)", async () => {
     render(<SystemSection />);
-    await screen.findByLabelText(/Found ffmpeg/i);
+    await settle();
+    expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     expect(screen.queryByLabelText("ffmpeg directory")).toBeNull();
     const media = screen.getByRole("list", { name: "Media tools" }).parentElement;
     expect(media?.querySelector("input")).toBeNull();
@@ -377,24 +523,32 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText(/wtsexporter not found/)).toBeTruthy();
-    // The next answer, a second later, has wtsexporter in place.
-    expect(await screen.findByLabelText(/Found wtsexporter/i, {}, { timeout: 3000 })).toBeTruthy();
+    await settle();
+    expect(screen.getByLabelText(/wtsexporter not found/)).toBeTruthy();
+    // The next answer, at the next poll, has wtsexporter in place.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
+    expect(screen.getByLabelText(/wtsexporter not found/)).toBeTruthy();
+    await advanceTimersAndSettle(1);
+    expect(screen.getByLabelText(/Found wtsexporter/i)).toBeTruthy();
   });
 
   it("shows a download's progress, and asks again until it ends", async () => {
     toolsStatus.mockResolvedValueOnce({
       toolsDir: "/home/demo/message-crate/tools",
       checking: false,
-      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 29 * 1024 * 1024 },
+      ffmpeg: { state: "downloading", received: 12 * MIB, total: 29 * MIB },
       ffprobe: { state: "downloading", received: 0, total: null },
       wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
+    await settle();
+    expect(screen.getByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
     expect(screen.getByLabelText("Downloading ffprobe: 0 B so far.")).toBeTruthy();
-    // The next answer, a second later, has both in place.
-    expect(await screen.findByLabelText(/Found ffmpeg/i, {}, { timeout: 3000 })).toBeTruthy();
+    // The next answer, at the next poll, has both in place.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
+    expect(screen.getByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
+    await advanceTimersAndSettle(1);
+    expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
   });
 
@@ -407,8 +561,9 @@ describe("SystemSection", () => {
       wtsexporter: { state: "unavailable" },
     });
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByLabelText(
+      screen.getByLabelText(
         "wtsexporter not found, and the app has no download of it for this computer. Put a copy in the Tools Directory, /home/demo/message-crate/tools.",
       ),
     ).toBeTruthy();
@@ -424,8 +579,9 @@ describe("SystemSection", () => {
       wtsexporter: { state: "downloadFailed", reason },
     });
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByLabelText(
+      screen.getByLabelText(
         `wtsexporter download failed. ${reason} It is tried again the next time the app starts, or with Try again on the Import form. See "Import can't find wtsexporter" in Troubleshooting at messagecrate.app.`,
       ),
     ).toBeTruthy();
@@ -439,8 +595,9 @@ describe("SystemSection", () => {
   it("says so when the desktop process cannot be asked", async () => {
     toolsStatus.mockRejectedValue(new Error("no desktop process"));
     render(<SystemSection />);
-    expect(await screen.findByText(/Could not look for the media tools/)).toHaveTextContent(
-      "no desktop process",
+    await settle();
+    expect(screen.getByText(/Could not look for the media tools/)).toHaveTextContent(
+      "Could not look for the media tools. No desktop process",
     );
   });
 });

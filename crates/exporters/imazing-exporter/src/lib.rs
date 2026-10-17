@@ -1,21 +1,19 @@
 //! Convert iMazing Messages / WhatsApp CSV
-//! into the shared conversation structure ([`message_ir::ConversationDocument`])
+//! into the shared conversation structure ([`ir::ConversationDocument`])
 //! every exporter writes.
 //!
-//! Library entry: [`run`] for the full pipeline; the desktop app calls it
+//! Library entry: [`run()`] for the full pipeline; the desktop app calls it
 //! in process.
 
 mod attachments;
 mod attachments_emit;
 mod chat_directory;
 mod emit;
-mod parse;
-mod parse_emit;
+mod read;
+mod row_marks;
 mod run;
 mod unnamed_files;
-
-#[cfg(test)]
-mod test_support;
+mod zone;
 
 pub use run::run;
 

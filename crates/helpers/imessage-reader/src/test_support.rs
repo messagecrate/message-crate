@@ -12,7 +12,7 @@ use chat_db_fixture::ios_backup::{
     Encryption, SystemTempTurn, system_temp_turn, write_messages_backup,
 };
 use chat_db_fixture::listing::{file_names, paths_under};
-use imessage_database::tables::{messages::Message, table::Table};
+use imessage_database::tables::{attachment::Attachment, messages::Message, table::Table};
 use imessage_reader_protocol::{ExportRequest, Platform, Source};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -69,7 +69,8 @@ impl FixtureDb {
     pub(crate) fn messages(session: &MailSession) -> Vec<Message> {
         let db = session.data_source.db();
         let mut statement =
-            Message::stream_rows(db, &session.options.query_context).expect("the message query");
+            Message::stream_rows(db, &session.capabilities, &session.options.query_context)
+                .expect("the message query");
         let mut out: Vec<Message> = Message::rows(&mut statement, [])
             .expect("message rows")
             .map(|row| row.expect("a message row"))
@@ -132,6 +133,24 @@ impl FixtureBackup {
     /// decrypting wrote nothing there.
     pub(crate) fn backup_listing(&self) -> Vec<std::path::PathBuf> {
         paths_under(self.backup.path())
+    }
+}
+
+/// An attachment row with `guid` and every other field blank. A test that
+/// needs other fields sets them with `..attachment(..)`.
+pub(crate) fn attachment(guid: Option<&str>) -> Attachment {
+    Attachment {
+        rowid: 0,
+        guid: guid.map(str::to_string),
+        filename: None,
+        uti: None,
+        mime_type: None,
+        transfer_name: None,
+        total_bytes: 0,
+        is_sticker: false,
+        hide_attachment: 0,
+        emoji_description: None,
+        copied_path: None,
     }
 }
 

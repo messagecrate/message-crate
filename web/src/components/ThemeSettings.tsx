@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Checkbox, Radio, RadioGroup, ToggleButton } from "react-aria-components";
 import { parseSelectKey } from "../lib/selectKey";
-import { useTheme } from "../lib/ThemeProvider";
 import type { ThemeSeeds } from "../lib/theme";
-import { focusOutline, focusRing } from "../lib/uiStyles";
+import { focusOutlineClass, focusRingClass } from "../lib/uiStyles";
+import { ToggleCheckIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import { ColorRow, formatCompare } from "./theme/ThemeColorRow";
+import { useTheme } from "./useTheme";
 
 const SEED_FIELDS: {
   key: keyof ThemeSeeds;
@@ -25,24 +26,6 @@ const MODE_OPTIONS = [
 const sectionTitleClass = "m-0 text-[0.75rem] font-semibold uppercase tracking-[0.05em] text-muted";
 
 const mutedTextClass = "mt-1 text-[0.813rem] text-muted";
-
-/** Check glyph shared by the mode radio dots and the system-mode checkbox. */
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className={className}
-    >
-      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
-    </svg>
-  );
-}
 
 export default function ThemeSettings() {
   const {
@@ -97,7 +80,7 @@ export default function ThemeSettings() {
             value={opt.value}
             className={({ isSelected, isFocusVisible }) =>
               `cursor-pointer overflow-hidden rounded-lg border text-left
-               ${isFocusVisible ? focusOutline : ""}
+               ${isFocusVisible ? focusOutlineClass : ""}
                ${isSelected ? "border-accent" : "border-border"}`
             }
           >
@@ -126,7 +109,7 @@ export default function ThemeSettings() {
                         : "border-border bg-panel"
                     }`}
                   >
-                    {isSelected ? <CheckIcon className="h-3 w-3" /> : null}
+                    {isSelected ? <ToggleCheckIcon className="h-3 w-3" /> : null}
                   </span>
                   <span className="text-[0.875rem] font-medium text-text">{opt.label}</span>
                 </div>
@@ -144,7 +127,7 @@ export default function ThemeSettings() {
         }}
         className={({ isFocusVisible }) =>
           `mt-4 flex cursor-pointer items-center gap-2.5 text-[0.875rem] text-text ${
-            isFocusVisible ? focusOutline : ""
+            isFocusVisible ? focusOutlineClass : ""
           }`
         }
       >
@@ -157,7 +140,7 @@ export default function ThemeSettings() {
                   : "border-border bg-elevated"
               }`}
             >
-              {isSelected ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+              {isSelected ? <ToggleCheckIcon className="h-3.5 w-3.5" /> : null}
             </span>
             Match your device theme
           </>
@@ -243,7 +226,7 @@ export default function ThemeSettings() {
                   if (el && el.title !== preset.label) el.title = preset.label;
                 }}
                 className={({ isSelected }) =>
-                  `relative h-10 w-10 cursor-pointer rounded-full border-2 ${focusRing}
+                  `relative h-10 w-10 cursor-pointer rounded-full border-2 ${focusRingClass}
                    ${isSelected ? "border-accent" : "border-transparent"}`
                 }
                 style={{

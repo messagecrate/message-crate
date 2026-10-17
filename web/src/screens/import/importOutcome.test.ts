@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
-import type {
-  AttachmentForecast,
-  SizeVerdict,
-  StagingSummary,
-  UploadFinishedReport,
-} from "../../lib/tauri";
+import type { AttachmentForecast, SizeVerdict, StagingSummary } from "../../lib/desktop/staging";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
+import { MIB } from "../../test/units";
 import { importOutcome, stableStem } from "./importOutcome";
 
 function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
-    cancelled: false,
+    canceled: false,
     session_refused: false,
     messages_attempted: 100,
     messages_inserted: 100,
@@ -23,14 +20,14 @@ function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedRe
     conversations_total: 10,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 0,
+    conversations_canceled: 0,
     results: [],
     ...overrides,
   };
 }
 
 /** `n` Upload issues for attachments the plan flagged as too big to upload —
- * the `"{conversationFile}:{relativePath}"` shape `message-crate-import` actually
+ * the `"{conversationFile}:{relativePath}"` shape `import` actually
  * emits (`AttachmentSkip`, built in `crates/libs/import/src/prepare.rs`), not
  * a bare path. */
 function tooLargeIssues(n: number): ImportIssue[] {
@@ -61,7 +58,7 @@ function approvedPlan(counts: { tooLarge?: number } = {}): StagingSummary {
     attachments: forecasts.length,
     attachmentBytes: 0,
     forecasts,
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
   };
 }
@@ -130,7 +127,7 @@ describe("importOutcome", () => {
       conversations_total: 10,
       conversations_ok: 7,
       conversations_failed: 1,
-      conversations_cancelled: 2,
+      conversations_canceled: 2,
     });
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("paused");
   });
@@ -144,7 +141,7 @@ describe("importOutcome", () => {
     // What run.rs reports when the cancel flag pauses `drive` after 200 of 681.
     const r = report({
       ok: false,
-      cancelled: true,
+      canceled: true,
       conversations_total: 681,
       conversations_ok: 200,
       conversations_failed: 0,
@@ -263,7 +260,7 @@ describe("importOutcome against an approved plan", () => {
         {
           kind: "skip",
           stage: "upload",
-          // The committed derivative after the Media stage: same stem,
+          // The committed derivative after the Media Stage: same stem,
           // "-mv" suffix, new extension.
           item: "conversation.jsonl:attachments/2024-01-15-9f2a3b4c-mv.jpg",
           reason: "attachment is 200000000 bytes, over the configured asset max",

@@ -1,17 +1,18 @@
 /** @vitest-environment jsdom */
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render as rtlRender, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
-import { mockedAuth, renderWithProviders as render, testQueryClient } from "../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, renderWithProviders as render, testQueryClient } from "../test/providers";
 import { inTimeZone } from "../test/timeZone";
 import { setupUser } from "../test/user";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", () => authModule());
 const summaries = vi.fn();
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
@@ -20,11 +21,15 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 }));
 
 beforeEach(() => {
+  startFakeClock();
   summaries.mockReset();
   summaries.mockResolvedValue({ items: [] });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 describe("CheckedContactsPanel", () => {
   it("names its columns the way the contact's identity table does", () => {
@@ -46,7 +51,7 @@ describe("CheckedContactsPanel", () => {
       "First heard from",
       "Last heard from",
       "Conversations",
-      "DirectMessages",
+      "One-to-oneMessages",
       "GroupMessages",
     ]);
   });
@@ -57,10 +62,10 @@ describe("CheckedContactsPanel", () => {
         {
           id: 1,
           name: "Ada",
-          individual_conversations: 2,
+          one_to_one_conversations: 2,
           group_conversations: 1,
           orphaned_conversations: 4,
-          individual_message_count: 314,
+          one_to_one_message_count: 314,
           group_message_count: 15,
           orphaned_message_count: 9,
         },
@@ -69,7 +74,7 @@ describe("CheckedContactsPanel", () => {
 
     render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
 
-    await screen.findByText("314");
+    await settle();
     const headers = screen
       .getAllByRole("columnheader")
       .map((h) => h.textContent?.replace(/[▲▼]/g, "").trim());
@@ -78,7 +83,7 @@ describe("CheckedContactsPanel", () => {
     const cells = within(row as HTMLElement)
       .getAllByRole("gridcell")
       .map((c) => c.textContent);
-    // Conversations: 2 direct + 1 group + 4 orphaned.
+    // Conversations: 2 one-to-one + 1 group + 4 orphaned.
     expect(cells.slice(2)).toEqual(["7", "314", "15", "9"]);
   });
 
@@ -88,10 +93,10 @@ describe("CheckedContactsPanel", () => {
         {
           id: 1,
           name: "Ada",
-          individual_conversations: 2,
+          one_to_one_conversations: 2,
           group_conversations: 1,
           orphaned_conversations: 0,
-          individual_message_count: 314,
+          one_to_one_message_count: 314,
           group_message_count: 15,
           orphaned_message_count: 0,
         },
@@ -100,7 +105,7 @@ describe("CheckedContactsPanel", () => {
 
     render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
 
-    await screen.findByText("314");
+    await settle();
     const headers = screen
       .getAllByRole("columnheader")
       .map((h) => h.textContent?.replace(/[▲▼]/g, "").trim());
@@ -110,6 +115,25 @@ describe("CheckedContactsPanel", () => {
       .getAllByRole("gridcell")
       .map((c) => c.textContent);
     expect(cells.slice(2)).toEqual(["3", "314", "15"]);
+  });
+
+  // The heading is written by countOf, whose own tests cover the separator: a
+  // panel of 1,234 rows is too slow to render here.
+  it("counts the picked contacts in its heading", () => {
+    render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
+    expect(screen.getByRole("heading", { name: "1 contact selected" })).toBeInTheDocument();
+    cleanup();
+
+    render(
+      <CheckedContactsPanel
+        contacts={[
+          { id: "1", name: "Ada" },
+          { id: "2", name: "Bob" },
+        ]}
+        onClear={() => {}}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "2 contacts selected" })).toBeInTheDocument();
   });
 
   // The app's own :focus-visible outline loses to the outline-none utility, so
@@ -151,10 +175,10 @@ describe("CheckedContactsPanel", () => {
         {
           id: 1,
           name: "Ada",
-          individual_conversations: 2,
+          one_to_one_conversations: 2,
           group_conversations: 1,
           orphaned_conversations: 0,
-          individual_message_count: 314,
+          one_to_one_message_count: 314,
           group_message_count: 15,
           orphaned_message_count: 0,
         },
@@ -164,15 +188,15 @@ describe("CheckedContactsPanel", () => {
 
     render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
 
-    const alert = await screen.findByRole("alert");
+    await settle();
+    const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("The figures for these contacts could not be loaded.");
     expect(alert.textContent).toContain("The server could not answer.");
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("314")).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByText("314")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -185,7 +209,7 @@ describe("CheckedContactsPanel", () => {
       start_date: "2024-06-01T12:00:00Z",
       end_date: "2024-06-01T12:00:00Z",
       conversations: 1,
-      direct_messages: 0,
+      one_to_one_messages: 0,
       group_messages: 2,
       orphaned_messages: 0,
       country_unknown: false,
@@ -199,7 +223,7 @@ describe("CheckedContactsPanel", () => {
         { ...shared, address: "+15550101", service: "phone" },
         { ...shared, address: "sam@example.com", service: "email" },
       ],
-      direct_conversations: 0,
+      one_to_one_conversations: 0,
       group_conversations: 1,
       orphaned_conversations: 0,
       total_messages: 4,

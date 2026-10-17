@@ -5,9 +5,9 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, at_current_schema_version,
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
-    get_status, message_line, register_via_api, seed_conversation,
+    message_line, register_via_api, seed_conversation, stored_time,
 };
-use message_ir::{IrAttachment, IrImessage, IrService, Reaction};
+use ir::{Attachment, ImessageExtensions, Reaction, Transport};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -19,19 +19,19 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-01T10:00:00.000Z"),
                     is_from_me: false,
                     body: "dentist on tuesday",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-02T10:00:00.000Z"),
                     is_from_me: true,
                     body: "see you there",
                 },
@@ -49,7 +49,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-02-01T10:00:00.000Z",
+                timestamp: stored_time("2024-02-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "the dentist called again",
             }],
@@ -79,12 +79,12 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
         &SeedConversation {
             account_id: bob.account_id,
             handle: "+15555550167",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-03-01T10:00:00.000Z",
+                timestamp: stored_time("2024-03-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "bob's dentist",
             }],
@@ -266,7 +266,6 @@ async fn source_sms_is_a_422_that_names_the_sources() {
     let (fixture, alice) = fixture_with_account().await;
     let (status, text) = get_raw(&fixture.state, "/v1/messages?q=source%3Asms", &alice.token).await;
     let problem = expect_problem(status, &text, ProblemType::SearchQueryInvalid);
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
         problem
             .detail
@@ -285,7 +284,7 @@ async fn a_bad_sort_is_reported_before_a_bad_query() {
     let (fixture, alice) = fixture_with_account().await;
     let (status, text) = get_raw(
         &fixture.state,
-        "/v1/messages?q=conversations%3A0&sort=colour",
+        "/v1/messages?q=conversations%3A0&sort=color",
         &alice.token,
     )
     .await;
@@ -299,13 +298,13 @@ fn ir_message(
     text: &str,
     is_sticker: bool,
     reactions: Vec<Reaction>,
-    imessage: Option<IrImessage>,
+    imessage: Option<ImessageExtensions>,
     is_reply: bool,
 ) -> String {
     let mut message = message_line(guid, text)
         .at(ms)
         .sender("+15555550123")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             is_sticker,
             size_bytes: Some(12),
             missing_reason: Some("not_found".into()),
@@ -373,9 +372,9 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         "an announcement",
         false,
         vec![reaction_by("loved", None, 2, "+15555550167")],
-        Some(IrImessage {
+        Some(ImessageExtensions {
             announcement: Some("named the conversation Reactions".into()),
-            ..IrImessage::default()
+            ..ImessageExtensions::default()
         }),
         false,
     );
@@ -398,19 +397,21 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     .unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let counts = crate::imports_api::import_jsonl_files_on_conn(
+    let counts = crate::imports_api::pipeline::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
-        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: &dir,
-            mode: crate::imports_api::ImportMode::Append,
-            source: "imessage",
-            account_id,
-            import_id: None,
-            phone_country: None,
-        }),
-        crate::imports_api::ImportSchemaMode::Ensure,
+        &crate::imports_api::pipeline::ImportOptions::fixed(
+            crate::imports_api::pipeline::FixedImportArgs {
+                assets_dir: &assets,
+                asset_root: Some(&dir),
+                mode: api_types::ImportMode::Append,
+                source: "imessage",
+                account_id,
+                import_id: None,
+                phone_country: None,
+                now: crate::test_support::fixed_instant(),
+            },
+        ),
     )
     .await
     .unwrap();
@@ -477,26 +478,28 @@ async fn import_conversation_file(
     name: &str,
     contents: &str,
     source: &str,
-) -> crate::imports_api::ImportCounts {
+) -> crate::imports_api::pipeline::ImportCounts {
     let dir = fixture.dir().join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.jsonl"));
     std::fs::write(&path, contents).unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    crate::imports_api::import_jsonl_files_on_conn(
+    crate::imports_api::pipeline::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
-        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: &dir,
-            mode: crate::imports_api::ImportMode::Append,
-            source,
-            account_id,
-            import_id: None,
-            phone_country: None,
-        }),
-        crate::imports_api::ImportSchemaMode::Ensure,
+        &crate::imports_api::pipeline::ImportOptions::fixed(
+            crate::imports_api::pipeline::FixedImportArgs {
+                assets_dir: &assets,
+                asset_root: Some(&dir),
+                mode: api_types::ImportMode::Append,
+                source,
+                account_id,
+                import_id: None,
+                phone_country: None,
+                now: crate::test_support::fixed_instant(),
+            },
+        ),
     )
     .await
     .unwrap()
@@ -594,7 +597,7 @@ async fn deleted_and_unsent_each_find_only_their_own_mark() {
 /// sent about the lighthouse under the subject "Weekend plans" with a map of
 /// the harbour attached, marked `deletion`, and a reply that mentions none
 /// of them.
-fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
+fn lighthouse_file(deletion: Option<ir::Deletion>) -> String {
     let header = conversation_header("imessage", "+15555550107")
         .owner("+15555550106", None)
         .participant("+15555550107", None);
@@ -602,7 +605,7 @@ fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
         .at(1_578_308_040_000)
         .outgoing()
         .subject("Weekend plans")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             missing_reason: Some("not_found".into()),
             ..attachment(
                 "attachments/harbour-map.png",
@@ -670,7 +673,7 @@ async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() 
         assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
     }
 
-    let later = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    let later = lighthouse_file(Some(ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
 
     for q in HIDDEN_TEXT_QUERIES {
@@ -710,7 +713,7 @@ async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() 
 #[tokio::test]
 async fn a_message_unsent_in_its_first_import_is_not_found_by_its_text() {
     let (fixture, alice) = fixture_with_account().await;
-    let file = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    let file = lighthouse_file(Some(ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "only", &file, "imessage").await;
 
     for q in HIDDEN_TEXT_QUERIES {
@@ -727,7 +730,7 @@ async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text()
     let (fixture, alice) = fixture_with_account().await;
     let first = lighthouse_file(None);
     import_conversation_file(&fixture, alice.account_id, "first", &first, "imessage").await;
-    let later = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
+    let later = lighthouse_file(Some(ir::Deletion::DeletedInSourceApp));
     import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
     for q in HIDDEN_TEXT_QUERIES {
         assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
@@ -741,9 +744,9 @@ async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text()
 #[tokio::test]
 async fn an_unsent_message_a_later_import_marks_deleted_is_found_by_its_text_again() {
     let (fixture, alice) = fixture_with_account().await;
-    let unsent = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    let unsent = lighthouse_file(Some(ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "unsent", &unsent, "imessage").await;
-    let deleted = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
+    let deleted = lighthouse_file(Some(ir::Deletion::DeletedInSourceApp));
     import_conversation_file(&fixture, alice.account_id, "deleted", &deleted, "imessage").await;
     for q in HIDDEN_TEXT_QUERIES {
         assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
@@ -905,7 +908,7 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
 /// twice was edited a third time, from the bakery to the park, and the
 /// message never edited has been edited once, from "Nothing changed here".
 ///
-/// The message lines are read into `message_ir::IrMessage` and changed by
+/// The message lines are read into `ir::Message` and changed by
 /// field, so the change holds whatever order or spacing the exporter wrote
 /// the fixture's fields in (#1899). The header line is kept as it is.
 fn later_apple_messages_edits() -> String {
@@ -916,8 +919,8 @@ fn later_apple_messages_edits() -> String {
     let mut edited = Vec::new();
     let mut later = format!("{header}\n");
     for line in messages.lines() {
-        let mut message: message_ir::IrMessage =
-            serde_json::from_str(line).expect("each message line is message-ir");
+        let mut message: ir::Message =
+            serde_json::from_str(line).expect("each message line is a conversation file message");
         let (was, now, edited_at) = match message.guid.as_str() {
             "guid-edited-twice" => ("Meet at the bakery", "Meet at the park", 1_578_309_090_000),
             "guid-never-edited" => (
@@ -932,9 +935,9 @@ fn later_apple_messages_edits() -> String {
             }
         };
         assert_eq!(message.text, was, "{} before the later edit", message.guid);
-        message.edits.push(message_ir::EarlierVersion {
+        message.edits.push(ir::EarlierVersion {
             part_index: 0,
-            text: std::mem::replace(&mut message.text, now.to_string()),
+            text: Some(std::mem::replace(&mut message.text, now.to_string())),
             edited_at_unix_ms: Some(edited_at),
         });
         edited.push(message.guid.clone());
@@ -1469,16 +1472,19 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
         reply["tapbacks"],
         serde_json::json!([
             {"part_index": 0, "kind": "liked", "emoji": null,
-             "is_from_me": false, "sender": "+15555550167"},
+             "is_from_me": false, "sender": "+15555550167",
+             "sender_display_name": null},
             {"part_index": 1, "kind": "emoji", "emoji": "🎉",
-             "is_from_me": false, "sender": "+15555550161"}
+             "is_from_me": false, "sender": "+15555550161",
+             "sender_display_name": null}
         ])
     );
     assert_eq!(
         announcement["tapbacks"],
         serde_json::json!([
             {"part_index": 2, "kind": "loved", "emoji": null,
-             "is_from_me": false, "sender": "+15555550167"}
+             "is_from_me": false, "sender": "+15555550167",
+             "sender_display_name": null}
         ])
     );
     assert_eq!(plain["tapbacks"], serde_json::json!([]));
@@ -1496,6 +1502,61 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
     assert_eq!(flags(&plain), (false, false, false), "{plain}");
 }
 
+/// A source can name a reactor by display name alone, with no address. The
+/// import kept the identity and dropped the name, so the reaction was read
+/// back from nobody and the web showed it as from "Someone". The name is
+/// now stored on the reaction and read back, and makes no identity (#2044).
+#[tokio::test]
+async fn a_reaction_named_with_no_identity_is_read_back_by_its_name() {
+    let (fixture, alice) = fixture_with_account().await;
+    let header = conversation_header("imazing", "chat-named-reactor")
+        .group()
+        .title("Named")
+        .participant("+15555550123", Some("Ada"));
+    let named = Reaction {
+        part_index: 0,
+        kind: "loved".into(),
+        emoji: None,
+        is_from_me: false,
+        reactor_identity: None,
+        reactor_display_name: Some("Grace".into()),
+    };
+    let message = message_line("g-named-reaction", "hello")
+        .sender("+15555550123")
+        .reaction(named);
+    import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "named-reactor",
+        &format!("{}{}", header.line(), message.line()),
+        "imazing",
+    )
+    .await;
+
+    let page: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+    let conversation_id = &page["items"][0]["conversation"]["id"];
+    let thread: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations/{conversation_id}/messages"),
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        thread["items"][0]["tapbacks"],
+        serde_json::json!([
+            {"part_index": 0, "kind": "loved", "emoji": null, "is_from_me": false,
+             "sender": null, "sender_display_name": "Grace"}
+        ]),
+        "{thread}"
+    );
+    let mut conn = fixture.conn().await;
+    let named_handles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM handles WHERE raw = 'Grace'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(named_handles, 0, "a reactor's name makes no identity");
+}
+
 /// A message's reply count is the number of replies that name it, counted
 /// when read: a reply whose quoted message was not in the export is a reply
 /// that counts toward nothing, and a reply later flagged as a duplicate stops
@@ -1507,7 +1568,7 @@ async fn the_reply_count_is_the_replies_that_link_to_the_message() {
     let line = |guid: &str, ms: i64| {
         message_line(guid, guid)
             .at(ms)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender("+15555550123")
     };
     let lines = [
@@ -1584,7 +1645,7 @@ async fn the_reply_count_takes_the_replies_that_quote_a_hidden_copy() {
     let line = |guid: &str, text: &str, ms: i64| {
         message_line(guid, text)
             .at(ms)
-            .service(IrService::IMessage)
+            .service(Transport::IMessage)
             .sender("+15555550123")
     };
     // Two chats, so trashing the reply's conversation keeps the message's.
@@ -1670,19 +1731,14 @@ async fn one_message_is_read_by_id_and_only_by_the_account_that_owns_it() {
     assert_eq!(message["id"], serde_json::json!(id));
     assert_eq!(message["text"], serde_json::json!(text));
 
-    assert_eq!(
-        get_status(&fixture.state, &format!("/v1/messages/{id}"), &bob.token).await,
-        StatusCode::NOT_FOUND,
-        "another account's message is absent, not forbidden"
-    );
-    assert_eq!(
-        get_status(&fixture.state, "/v1/messages/999999", &alice.token).await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        get_status(&fixture.state, &format!("/v1/messages/{id}"), "not-a-token").await,
-        StatusCode::UNAUTHORIZED
-    );
+    // Another account's message is absent, not forbidden.
+    let (status, text) = get_raw(&fixture.state, &format!("/v1/messages/{id}"), &bob.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) = get_raw(&fixture.state, "/v1/messages/999999", &alice.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) =
+        get_raw(&fixture.state, &format!("/v1/messages/{id}"), "not-a-token").await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
     // An id that is not a number is a problem document like every other
     // failure, not Axum's plain-text rejection.
     let (status, text) = get_raw(&fixture.state, "/v1/messages/abc", &alice.token).await;
@@ -1743,15 +1799,14 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
     }
 }
 
-/// `date:today` means today on the account's clock, not UTC's. The account
-/// is on Kiritimati, 14 hours ahead of UTC, so the local day starts at 10:00
-/// UTC the day before. A message half an hour into the local day is today; one
-/// half an hour before it is not, whatever day it is in UTC. A message stamped
-/// now is today in every zone.
+/// A `date:` day is a day on the account's clock, not UTC's. The account is
+/// on Kiritimati, 14 hours ahead of UTC, so 2 September there starts at 10:00
+/// UTC on the 1st. A message half an hour into that day is on the 2nd; one
+/// half an hour before it is not, though both are on the 1st in UTC. The day
+/// is named, never `today`, so the test does not read the clock (#2216);
+/// `today` in a zone is tested where it is computed, in `search`.
 #[tokio::test]
-async fn date_today_is_the_day_on_the_accounts_clock() {
-    use chrono::TimeZone;
-
+async fn a_date_is_a_day_on_the_accounts_clock() {
     let (fixture, alice) = fixture_with_account().await;
     let zone = chrono_tz::Pacific::Kiritimati;
     let _: serde_json::Value = crate::test_support::patch_json(
@@ -1762,60 +1817,39 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
     )
     .await;
 
-    let today = chrono::Utc::now().with_timezone(&zone).date_naive();
-    let local = |day: chrono::NaiveDate, h: u32, m: u32| {
-        let instant = zone
-            .from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap())
-            .single()
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        crate::models::utc_timestamp_text(instant)
-    };
-    let early_today = local(today, 0, 30);
-    let late_yesterday = local(today.pred_opt().unwrap(), 23, 30);
-    let now = crate::models::utc_timestamp_text(chrono::Utc::now());
     seed_conversation(
         &fixture.state,
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: &late_yesterday,
+                    timestamp: stored_time("2026-09-01T09:30:00.000Z"),
                     is_from_me: false,
-                    body: "late yesterday",
+                    body: "late on the 1st",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: &early_today,
+                    timestamp: stored_time("2026-09-01T10:30:00.000Z"),
                     is_from_me: false,
-                    body: "early today",
-                },
-                SeedMessage {
-                    source: "imessage",
-                    timestamp: &now,
-                    is_from_me: true,
-                    body: "right now",
+                    body: "early on the 2nd",
                 },
             ],
         },
     )
     .await;
 
-    let page: serde_json::Value =
-        get_json(&fixture.state, "/v1/messages?q=date%3Atoday", &alice.token).await;
-    let mut bodies: Vec<&str> = page["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|m| m["text"].as_str().unwrap())
-        .collect();
-    bodies.sort_unstable();
-    assert_eq!(bodies, ["early today", "right now"], "{page}");
+    let page: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=date%3A2026-09-02",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(texts(&page), ["early on the 2nd"], "{page}");
 }
 
 /// Bodies of a page's messages, in the order the page lists them.
@@ -1837,31 +1871,31 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-01T10:00:00.000Z"),
                     is_from_me: false,
                     body: "dentist dentist dentist",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-02T10:00:00.000Z"),
                     is_from_me: false,
                     body: "after work I will call the office of the dentist about next week",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-03T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-03T10:00:00.000Z"),
                     is_from_me: true,
                     body: "the dentist moved it",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-04T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-04T10:00:00.000Z"),
                     is_from_me: true,
                     body: "nothing to see",
                 },
@@ -2111,7 +2145,10 @@ async fn a_relevance_search_reads_the_index_once() {
         let (sql, params) = message_list_page_sql(&filter, &order, 40, 0).unwrap();
         let rows = sqlx::Executor::fetch_all(
             &mut *conn,
-            crate::db::sql::bind_all(&format!("EXPLAIN QUERY PLAN {sql}"), &params),
+            crate::db::sql::bind_all(
+                sqlx::AssertSqlSafe(format!("EXPLAIN QUERY PLAN {sql}")),
+                &params,
+            ),
         )
         .await
         .unwrap();
@@ -2136,7 +2173,7 @@ async fn a_relevance_search_reads_the_index_once() {
 #[tokio::test]
 async fn an_unknown_sort_names_date_and_relevance() {
     let (fixture, alice) = fixture_with_account().await;
-    let (status, text) = get_raw(&fixture.state, "/v1/messages?sort=colour", &alice.token).await;
+    let (status, text) = get_raw(&fixture.state, "/v1/messages?sort=color", &alice.token).await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
     assert!(text.contains("date, relevance"), "{text}");
 }

@@ -14,7 +14,7 @@ use crate::server::AppState;
 #[openapi(
     info(
         title = "Message Crate HTTP API",
-        description = "HTTP API for a Message Crate server. Bearer session tokens come from login. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.",
+        description = "HTTP API for a Message Crate server. Bearer Session tokens come from logging in. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.\n\nAn operation that reads or writes the database answers `503 Service Unavailable` as a [`database-busy`](https://messagecrate.app/docs/developer/reference/errors/database-busy) problem document, with `Retry-After`, when the database stays busy for longer than the request can wait. No operation lists it, because almost every operation can answer it.\n\nEvery `/v1` answer carries `Cache-Control: no-store` unless the operation lists a `Cache-Control` of its own, as the asset reads do.",
         license(
             name = "Fair Core License 1.0 (ALv2 future)",
             url = "https://github.com/messagecrate/message-crate/blob/main/LICENSE.md"
@@ -29,7 +29,7 @@ use crate::server::AppState;
         crate::exports_api::OwnerExportRun
     )),
     tags(
-        (name = "Health", description = "Process liveness"),
+        (name = "Health", description = "Whether the server is up and can reach its database"),
         (name = "Session", description = "The logged-in credential: log in, check it, log out"),
         (name = "Accounts", description = "The accounts: the owner manages them, and each account reads and writes its own, API tokens included"),
         (name = "Audit Trail", description = "What each user did on this Message Crate, and when: the owner reads every account's, and each account its own"),
@@ -181,6 +181,9 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::phone_countries_api::list_phone_countries))
         .routes(routes!(crate::contacts_api::address_book::create_contacts))
         .routes(routes!(crate::contacts_api::address_book::get_address_book))
+        .routes(routes!(
+            crate::contacts_api::address_book::get_vcard_address_book
+        ))
         .routes(routes!(crate::named_set_api::list_contact_groups))
         .routes(routes!(crate::named_set_api::create_contact_group))
         .routes(routes!(crate::named_set_api::get_contact_group))
@@ -275,20 +278,19 @@ pub fn dump_openapi_json() -> String {
     let (_b, rest) = api_openapi().split_for_parts();
     spec.merge(rest);
     finish(&mut spec);
-    serde_json::to_string_pretty(&spec).expect("OpenAPI document serializes to JSON")
+    let mut json =
+        serde_json::to_string_pretty(&spec).expect("OpenAPI document serializes to JSON");
+    // The committed file ends in a newline, as `.editorconfig` asks, so the
+    // dump does too, whether it goes to stdout or to `--output`.
+    json.push('\n');
+    json
 }
 
 /// Write the dump to `path`, or stdout when `path` is `None`.
 pub fn write_openapi(path: Option<&Path>) -> anyhow::Result<()> {
     let json = dump_openapi_json();
     match path {
-        None => {
-            let mut out = std::io::stdout().lock();
-            out.write_all(json.as_bytes())?;
-            if !json.ends_with('\n') {
-                out.write_all(b"\n")?;
-            }
-        }
+        None => std::io::stdout().lock().write_all(json.as_bytes())?,
         Some(p) => std::fs::write(p, json.as_bytes())
             .map_err(|e| anyhow::anyhow!("write {}: {e}", p.display()))?,
     }
@@ -425,11 +427,15 @@ mod tests {
 
     #[test]
     fn committed_openapi_matches_dump() {
-        let dumped = dump_openapi_json();
+        // Compares the file `dump-openapi --output` writes, byte for byte, so
+        // a missing final newline fails here as well as a stale document.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("openapi.json");
+        super::write_openapi(Some(&path)).unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
         let committed = include_str!("../../../../docs/src/assets/openapi.json");
         assert_eq!(
-            dumped.trim_end(),
-            committed.trim_end(),
+            written, committed,
             "run: cargo run -p message-crate-server -- dump-openapi --output docs/src/assets/openapi.json"
         );
     }

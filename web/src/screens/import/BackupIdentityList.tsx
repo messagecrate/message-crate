@@ -6,9 +6,9 @@ import {
   identityType,
 } from "../../lib/backupIdentity";
 
-const HEAD_CELL =
+const HEAD_CELL_CLASS =
   "border-b border-border pb-1 pr-4 text-left text-[0.75rem] font-normal text-muted";
-const BODY_CELL = "border-b border-border py-1 pr-4 align-middle";
+const BODY_CELL_CLASS = "border-b border-border py-1 pr-4 align-middle";
 
 /**
  * The addresses a backup's device sent from, each marked as on the
@@ -57,19 +57,19 @@ export default function BackupIdentityList({
           <table className="w-full border-collapse text-[0.813rem]">
             <thead>
               <tr>
-                <th scope="col" className={HEAD_CELL}>
+                <th scope="col" className={HEAD_CELL_CLASS}>
                   Identity
                 </th>
-                <th scope="col" className={`${HEAD_CELL} text-right`}>
+                <th scope="col" className={`${HEAD_CELL_CLASS} text-right`}>
                   Sent
                 </th>
-                <th scope="col" className={`${HEAD_CELL} text-right`}>
+                <th scope="col" className={`${HEAD_CELL_CLASS} text-right`}>
                   Received
                 </th>
-                <th scope="col" className={HEAD_CELL}>
+                <th scope="col" className={HEAD_CELL_CLASS}>
                   On your profile
                 </th>
-                <th scope="col" className={`${HEAD_CELL} w-px pr-0`}>
+                <th scope="col" className={`${HEAD_CELL_CLASS} w-px pr-0`}>
                   <span className="sr-only">Action</span>
                 </th>
               </tr>
@@ -80,19 +80,19 @@ export default function BackupIdentityList({
                 const { sent, received } = identityMessageCounts(identity, messageCounts);
                 return (
                   <tr key={identity}>
-                    <td className={`${BODY_CELL} text-text [overflow-wrap:anywhere]`}>
+                    <td className={`${BODY_CELL_CLASS} text-text [overflow-wrap:anywhere]`}>
                       {identity}
                     </td>
-                    <td className={`${BODY_CELL} text-right tabular-nums text-text`}>
+                    <td className={`${BODY_CELL_CLASS} text-right tabular-nums text-text`}>
                       {sent.toLocaleString()}
                     </td>
-                    <td className={`${BODY_CELL} text-right tabular-nums text-text`}>
+                    <td className={`${BODY_CELL_CLASS} text-right tabular-nums text-text`}>
                       {received.toLocaleString()}
                     </td>
-                    <td className={`${BODY_CELL} text-muted`}>
+                    <td className={`${BODY_CELL_CLASS} text-muted`}>
                       {matched == null ? "" : matched ? "Yes" : "No"}
                     </td>
-                    <td className={`${BODY_CELL} whitespace-nowrap pr-0 text-right`}>
+                    <td className={`${BODY_CELL_CLASS} whitespace-nowrap pr-0 text-right`}>
                       {matched === false ? (
                         <Button
                           variant="ghost"

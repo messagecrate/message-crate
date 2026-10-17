@@ -7,11 +7,7 @@ async fn who_may_name_a_contact() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 't')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT_ID, "t").await;
 
     let name_of = async |conn: &mut SqliteConnection, id: i64| -> String {
         sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")
@@ -32,15 +28,23 @@ async fn who_may_name_a_contact() {
             TEST_ACCOUNT_ID,
             nameless,
             "Bobby",
-            Origin::Import
+            Origin::Import,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap()
     );
     assert!(
-        !propose_name(&mut conn, TEST_ACCOUNT_ID, nameless, "Bob", Origin::Import)
-            .await
-            .unwrap()
+        !propose_name(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            nameless,
+            "Bob",
+            Origin::Import,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
     );
     assert_eq!(name_of(&mut conn, nameless).await, "Bobby");
 
@@ -51,7 +55,8 @@ async fn who_may_name_a_contact() {
             TEST_ACCOUNT_ID,
             nameless,
             "Robert Smith",
-            Origin::AddressBook
+            Origin::AddressBook,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap()
@@ -61,9 +66,16 @@ async fn who_may_name_a_contact() {
     // The person typing outranks an import, which never renames the row
     // afterwards.
     assert!(
-        propose_name(&mut conn, TEST_ACCOUNT_ID, nameless, "Bob S", Origin::User)
-            .await
-            .unwrap()
+        propose_name(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            nameless,
+            "Bob S",
+            Origin::User,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
     );
     assert!(
         !propose_name(
@@ -71,7 +83,8 @@ async fn who_may_name_a_contact() {
             TEST_ACCOUNT_ID,
             nameless,
             "Someone Else",
-            Origin::Import
+            Origin::Import,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap(),
@@ -87,7 +100,8 @@ async fn who_may_name_a_contact() {
             TEST_ACCOUNT_ID,
             nameless,
             "Bob S",
-            Origin::AddressBook
+            Origin::AddressBook,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap()
@@ -98,7 +112,8 @@ async fn who_may_name_a_contact() {
             TEST_ACCOUNT_ID,
             nameless,
             "Bob Smith",
-            Origin::AddressBook
+            Origin::AddressBook,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap()
@@ -112,9 +127,16 @@ async fn who_may_name_a_contact() {
             .await
             .unwrap();
         assert!(
-            propose_name(&mut conn, TEST_ACCOUNT_ID, made, "Ann", Origin::Import)
-                .await
-                .unwrap(),
+            propose_name(
+                &mut conn,
+                TEST_ACCOUNT_ID,
+                made,
+                "Ann",
+                Origin::Import,
+                crate::test_support::fixed_instant()
+            )
+            .await
+            .unwrap(),
             "{origin:?}"
         );
         assert_eq!(name_of(&mut conn, made).await, "Ann", "{origin:?}");
@@ -125,9 +147,16 @@ async fn who_may_name_a_contact() {
         .await
         .unwrap();
     assert!(
-        !propose_name(&mut conn, TEST_ACCOUNT_ID, blank, "   ", Origin::User)
-            .await
-            .unwrap()
+        !propose_name(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            blank,
+            "   ",
+            Origin::User,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
     );
     assert_eq!(name_of(&mut conn, blank).await, "");
 }

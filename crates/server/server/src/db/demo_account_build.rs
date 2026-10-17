@@ -4,22 +4,53 @@
 //! first write and removes it after its last, so a row that is there when the
 //! server starts belongs to a build the server stopped part-way (#1215).
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
-use crate::db::session_tokens::unix_secs_string;
+use crate::db::unix_secs;
 
-/// Record that a Demo Account build has started. A record already there is
-/// replaced, since only one build runs at a time.
+/// How much Demo Data the Demo Account holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DemoDataSize {
+    /// About 54,000 messages. A new Message Crate starts with this.
+    Medium,
+    /// About 613,000 messages. Building it takes about a minute.
+    Large,
+}
+
+impl From<DemoDataSize> for demo_seed::DemoSize {
+    fn from(size: DemoDataSize) -> Self {
+        match size {
+            DemoDataSize::Medium => Self::Medium,
+            DemoDataSize::Large => Self::Large,
+        }
+    }
+}
+
+impl From<demo_seed::DemoSize> for DemoDataSize {
+    fn from(size: demo_seed::DemoSize) -> Self {
+        match size {
+            demo_seed::DemoSize::Medium => Self::Medium,
+            demo_seed::DemoSize::Large => Self::Large,
+        }
+    }
+}
+
+/// Record that a Demo Account build started at `now`. A record already
+/// there is replaced, since only one build runs at a time.
 ///
 /// # Errors
 ///
 /// Returns an error when the row cannot be written.
-pub async fn begin(conn: &mut SqliteConnection) -> Result<()> {
+pub async fn begin(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<()> {
     sqlx::query("INSERT OR REPLACE INTO demo_account_build (id, started_at) VALUES (1, $1)")
-        .bind(unix_secs_string())
+        .bind(unix_secs(now).to_string())
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("record that a Demo Account build started")?;
     Ok(())
 }
 
@@ -31,7 +62,8 @@ pub async fn begin(conn: &mut SqliteConnection) -> Result<()> {
 pub async fn end(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("DELETE FROM demo_account_build WHERE id = 1")
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("remove the record of a Demo Account build")?;
     Ok(())
 }
 
@@ -43,6 +75,7 @@ pub async fn end(conn: &mut SqliteConnection) -> Result<()> {
 pub async fn is_unfinished(conn: &mut SqliteConnection) -> Result<bool> {
     let row: Option<i64> = sqlx::query_scalar("SELECT id FROM demo_account_build WHERE id = 1")
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read the record of an unfinished Demo Account build")?;
     Ok(row.is_some())
 }

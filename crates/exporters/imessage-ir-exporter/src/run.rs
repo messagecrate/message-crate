@@ -1,5 +1,5 @@
-//! Library entry: [`ExporterConfig`] to the shared conversation structure, then
-//! the chosen output format.
+//! Library entry: an Apple Messages source to the shared conversation
+//! structure, then the chosen output format.
 //!
 //! Everything a person can get wrong about the source is checked here, in
 //! this process, before the `imessage-reader` program is started: the
@@ -9,17 +9,16 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
-    AppleConfig, ApplePlatform, CancelFlag, ExportTransforms, ExporterConfig,
-    IMESSAGE_READER_DIRECTORY, IssueSink, LogSink, OutputFormat, ProgressEvent, ProgressSink,
-    RunIssue, RunResult, ScratchDir, SourceConfig, emit_progress, prepare_outputs,
+    AppleConfig, ApplePlatform, ConvertRun, IMESSAGE_READER_DIRECTORY, LogSink, OutputConfig,
+    ProgressSink, RunContext, RunResult, ScratchDir, Sinks, prepare_outputs,
 };
-use message_staging::{Disk, check_headroom};
+use staging::{Disk, check_headroom};
 
-use crate::convert;
+use crate::emit;
 
 /// User-facing copy when a custom attachment directory is missing.
 pub(crate) const ATTACHMENT_DIRECTORY_MISSING: &str = "Attachment directory does not exist.";
@@ -60,7 +59,7 @@ pub(crate) enum AttachmentEmbed {
 /// Map `AppleConfig.copy_method` to attachment handling.
 ///
 /// `clone` copies files, `basic` embeds thumbnails, and `full` embeds
-/// originals — all three resolve bytes through the same embed path in this
+/// originals. All three resolve bytes through the same embed path in this
 /// exporter. `disabled` skips media bytes entirely.
 fn attachment_embed_from_copy_method(copy_method: &str) -> Result<AttachmentEmbed> {
     match copy_method.trim().to_ascii_lowercase().as_str() {
@@ -82,27 +81,28 @@ pub(crate) struct ExportOptions {
     /// [`ExportRequest::use_caller_id`].
     pub use_caller_id: bool,
     pub export_path: PathBuf,
-    /// the Scratch Directory; the program decrypts into a directory under it.
-    pub scratch_dir: PathBuf,
     pub attachment_embed: AttachmentEmbed,
-    /// Media / obfuscate transforms applied by [`message_ir_format::FormatSink`].
-    pub transforms: ExportTransforms,
-    /// CSV, EML, MBOX, JSON, or JSON Lines (one JSON object per line).
-    pub output_format: OutputFormat,
-    /// Human-readable mid-run notes and warnings (desktop sink or stderr).
-    pub log: Option<LogSink>,
+    /// Human-readable mid-run notes and warnings.
+    pub log: LogSink,
     /// Typed progress events for the desktop's progress bar.
-    pub progress: Option<ProgressSink>,
-    /// Rows for the Import Run's record, sent as they are recorded.
-    pub issues: Option<IssueSink>,
-    /// Cooperative cancel flag, checked between events and before every write.
-    pub cancel: Option<CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
+    pub progress: ProgressSink,
+    /// The run-wide settings ([`ConvertRun`]). This exporter checks the
+    /// cancel flag between events and before every write, and the program
+    /// decrypts into a directory under its Scratch Directory.
+    pub convert_run: ConvertRun,
 }
 
 impl ExportOptions {
+    /// The run's log, progress and cancel flag, for a staging step that
+    /// takes them together.
+    pub(crate) fn sinks(&self) -> Sinks<'_> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &self.convert_run.cancel,
+        }
+    }
+
     /// The request for the program, which decrypts into `scratch_dir`.
     pub fn export_request(&self, scratch_dir: &Path) -> Request {
         Request::Export(ExportRequest {
@@ -114,27 +114,6 @@ impl ExportOptions {
         })
     }
 
-    /// Write one log line when a log sink is configured.
-    pub fn emit_log(&self, line: impl AsRef<str>) {
-        message_crate_core::emit_log(self.log.as_ref(), line);
-    }
-
-    /// Send one typed progress event when a progress sink is configured.
-    pub fn emit_progress(&self, event: ProgressEvent) {
-        emit_progress(self.progress.as_ref(), event);
-    }
-
-    /// Send one row for the Import Run's record when an issue sink is
-    /// configured.
-    pub fn emit_issue(&self, issue: RunIssue) {
-        message_crate_core::emit_issue(self.issues.as_ref(), issue);
-    }
-
-    /// The shared cancel check.
-    pub fn check_cancel(&self) -> Result<()> {
-        message_crate_core::check_cancel(self.cancel.as_ref()).map_err(|e| anyhow!(e))
-    }
-
     /// When the Messages data was backed up, in Unix milliseconds: an
     /// iPhone backup's `Manifest.plist` date, or the last time Messages
     /// wrote a Mac's `chat.db`: the newest modification time of `chat.db`
@@ -143,6 +122,17 @@ impl ExportOptions {
     /// checkpoint. `None` when neither can be read.
     pub fn backup_taken_at_unix_ms(&self) -> Option<i64> {
         backup_taken_at_unix_ms(&self.source)
+    }
+
+    /// The dates every conversation file of the run carries: each
+    /// message's Backup Date ([`Self::backup_taken_at_unix_ms`]) and the
+    /// file's Export Date, which the caller gave
+    /// ([`ConvertRun::exported_at_unix_ms`](message_crate_core::ConvertRun::exported_at_unix_ms)).
+    pub(crate) fn file_dates(&self) -> crate::emit::FileDates {
+        crate::emit::FileDates {
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms(),
+            exported_at_unix_ms: self.convert_run.exported_at_unix_ms,
+        }
     }
 }
 
@@ -166,26 +156,34 @@ pub(crate) fn backup_taken_at_unix_ms(source: &Source) -> Option<i64> {
     }
 }
 
-/// Build options from [`ExporterConfig`], start the `imessage-reader`
-/// program on the Messages database, and write the export.
+/// Check the source, start the `imessage-reader` program on the Messages
+/// database, and write the export.
 ///
 /// # Errors
 ///
-/// Returns an error when the source is not Apple Messages, the program
-/// cannot be found or the database cannot be opened, conversion fails, media
-/// processing fails for every candidate file, or the user cancels.
-pub fn run(config: &ExporterConfig) -> Result<RunResult> {
-    run_with(config, Helper::spawn)
+/// Returns an error when the source is refused, the program cannot be found
+/// or the database cannot be opened, conversion fails, media processing
+/// fails for every candidate file, or the user cancels.
+pub fn run(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &AppleConfig,
+) -> Result<RunResult> {
+    run_with(context, output, inputs, source, Helper::spawn)
 }
 
 /// [`run`], starting the program with `spawn`. Tests pass a fake program.
 fn run_with(
-    config: &ExporterConfig,
-    spawn: impl FnOnce(&Request, Option<LogSink>, Option<ProgressSink>) -> Result<Helper>,
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &AppleConfig,
+    spawn: impl FnOnce(&Request, LogSink, ProgressSink) -> Result<Helper>,
 ) -> Result<RunResult> {
-    let options = options_from_export_config(config)?;
-    options.check_cancel()?;
-    let output = convert::open_output(&options)?;
+    let options = export_options(context, output, inputs, source)?;
+    message_crate_core::check_cancel(&options.convert_run.cancel)?;
+    let writer = emit::open_output(&options)?;
 
     // The program writes decrypted files into a directory of this run's own
     // under the Scratch Directory, beside the identities request's: not
@@ -194,7 +192,10 @@ fn run_with(
     // output (#1402). The directory is deleted when the run ends, whichever
     // way it ends; what a killed run left is deleted by the next request
     // and by the sweep when the app starts.
-    let scratch_root = options.scratch_dir.join(IMESSAGE_READER_DIRECTORY);
+    let scratch_root = options
+        .convert_run
+        .scratch_dir
+        .join(IMESSAGE_READER_DIRECTORY);
     let report = {
         let scratch = ScratchDir::create(&scratch_root)?;
         check_headroom(
@@ -202,41 +203,48 @@ fn run_with(
             decrypted_bytes(&options.source),
             Disk::Scratch,
         )?;
+        // Cancel kills the program even while it sends nothing (#2085).
         let mut helper = spawn(
             &options.export_request(scratch.path()),
             options.log.clone(),
             options.progress.clone(),
-        )?;
-        let report = convert::export(&mut helper, &options, output)?;
+        )?
+        .cancel_on(options.convert_run.cancel.clone());
+        let report = emit::convert_export(emit::ConvertExportArgs {
+            helper: &mut helper,
+            options: &options,
+            output: writer,
+        })?;
         helper.finish()?;
         report
     };
-    options.check_cancel()?;
+    message_crate_core::check_cancel(&options.convert_run.cancel)?;
 
-    message_crate_core::finish_run(config, &report, config.media.mode.needs_tools())
+    Ok(message_crate_core::finish_run(output, &report))
 }
 
-/// Translate the shared exporter config into this exporter's options, rejecting non-Apple sources.
-fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> {
-    let SourceConfig::Apple(source) = &config.source else {
-        bail!("imessage-ir-exporter requires SourceConfig::Apple");
-    };
-
-    let db_path = db_path_for(config.primary_input());
+/// Check the run's Apple source and turn it into this exporter's options.
+fn export_options(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &AppleConfig,
+) -> Result<ExportOptions> {
+    let db_path = db_path_for(inputs.first().map(PathBuf::as_path));
     let platform = platform_for(source, &db_path)?;
 
     if source.backup_password.is_some() && platform != Platform::Ios {
         bail!("backup password is enabled; it can only be used with iOS backups.");
     }
     check_macos_only_path(
-        config,
+        &context.log,
         platform,
         source.attachment_root.as_deref().map(Path::new),
         ATTACHMENT_DIRECTORY_MISSING,
         "An attachment directory was given, but iPhone backups keep attachments inside the backup, so it will be ignored.",
     )?;
     check_macos_only_path(
-        config,
+        &context.log,
         platform,
         source.apple_contacts.as_deref(),
         APPLE_CONTACTS_MISSING,
@@ -248,14 +256,14 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
 
     // Create the output directory, refused when it is or holds the database,
     // the backup or the attachment directory a Mac export reads, because
-    // `convert` cleans it through ExportWriter::open.
+    // `emit::open_output` cleans it through ExportWriter::open.
     let mut inputs = vec![db_path.clone()];
     if platform == Platform::MacOs
         && let Some(root) = &source.attachment_root
     {
         inputs.push(PathBuf::from(root));
     }
-    prepare_outputs(&inputs, &config.output)?;
+    prepare_outputs(&inputs, &output.directory)?;
 
     Ok(ExportOptions {
         source: Source {
@@ -266,16 +274,11 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         attachment_root: source.attachment_root.clone(),
         contacts_path: source.apple_contacts.clone(),
         use_caller_id: source.use_caller_id,
-        export_path: config.output.clone(),
-        scratch_dir: config.scratch_dir.clone(),
+        export_path: output.directory.clone(),
         attachment_embed,
-        transforms: ExportTransforms::from_config(config),
-        output_format: config.output_format,
-        log: config.log.clone(),
-        progress: config.progress.clone(),
-        issues: config.issues.clone(),
-        cancel: config.cancel.clone(),
-        resume: config.resume,
+        log: context.log.clone(),
+        progress: context.progress.clone(),
+        convert_run: ConvertRun::new(context, output),
     })
 }
 
@@ -333,9 +336,10 @@ fn detect_platform(db_path: &Path) -> Result<Platform> {
 }
 
 /// A path option that only a macOS export reads: refused when it points
-/// nowhere, and noted in the log as having no effect on an iOS backup.
+/// nowhere, and a warning in the log on an iOS backup, which goes on
+/// without it.
 fn check_macos_only_path(
-    config: &ExporterConfig,
+    log: &LogSink,
     platform: Platform,
     path: Option<&Path>,
     missing: &str,
@@ -348,7 +352,7 @@ fn check_macos_only_path(
         bail!("{missing}");
     }
     if platform == Platform::Ios {
-        config.emit_log(ignored_on_ios);
+        log.warn(ignored_on_ios);
     }
     Ok(())
 }

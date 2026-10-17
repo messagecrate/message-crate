@@ -5,7 +5,7 @@
 
 /// Conversation id header.
 pub(crate) const CHAT_IDENTIFIER: &str = "X-ME-Chat-Identifier";
-/// `individual` or `group`.
+/// `one-to-one` or `group`.
 pub(crate) const CONVERSATION_TYPE: &str = "X-ME-Conversation-Type";
 /// `incoming` or `outgoing`.
 pub(crate) const DIRECTION: &str = "X-ME-Direction";
@@ -16,7 +16,7 @@ pub(crate) const MESSAGE_KIND: &str = "X-ME-Message-Kind";
 /// Message timestamp in Unix milliseconds.
 pub(crate) const TIMESTAMP_UNIX_MS: &str = "X-ME-Timestamp-Unix-Ms";
 /// Whether the timestamp has milliseconds: `seconds` or `milliseconds`, as
-/// `message_ir::TimePrecision` names them.
+/// `ir::TimePrecision` names them.
 pub(crate) const TIME_PRECISION: &str = "X-ME-Time-Precision";
 /// Message guid.
 pub(crate) const GUID: &str = "X-ME-Guid";
@@ -26,18 +26,21 @@ pub(crate) const EXPORT_SOURCE: &str = "X-ME-Export-Source";
 pub(crate) const EXPORT_TOOL: &str = "X-ME-Export-Tool";
 /// Export tool version.
 pub(crate) const EXPORT_TOOL_VERSION: &str = "X-ME-Export-Tool-Version";
-/// When the backup the export was read from was made, in Unix milliseconds.
+/// The message's Backup Date: when the backup it was read from was made,
+/// in Unix milliseconds.
 pub(crate) const BACKUP_TAKEN_AT_UNIX_MS: &str = "X-ME-Backup-Taken-At-Unix-Ms";
-/// Group chat title.
+/// The Export Date: when the file was written, in Unix milliseconds.
+pub(crate) const EXPORTED_AT_UNIX_MS: &str = "X-ME-Exported-At-Unix-Ms";
+/// Group conversation title.
 pub(crate) const GROUP_TITLE: &str = "X-ME-Group-Title";
 /// Conversation roster as JSON.
 pub(crate) const PARTICIPANTS: &str = "X-ME-Participants";
 /// Sender identity.
 pub(crate) const SENDER_IDENTITY: &str = "X-ME-Sender-Identity";
-/// The message's reactions as JSON, a list of `message_ir::Reaction`.
+/// The message's reactions as JSON, a list of `ir::Reaction`.
 pub(crate) const REACTIONS: &str = "X-ME-Reactions";
 /// Why the message's content is gone in the source app:
-/// `deleted_in_source_app` or `unsent`, as `message_ir::Deletion` writes it.
+/// `deleted_in_source_app` or `unsent`, as `ir::Deletion` writes it.
 pub(crate) const DELETION: &str = "X-ME-Deletion";
 /// The header an earlier Message Crate kept the Apple Messages deleted mark
 /// in. The reader refuses a mail that carries it: nothing reads it, so the
@@ -92,7 +95,7 @@ pub(crate) const READ_RECEIPT: &str = "X-ME-Read-Receipt";
 /// Message parts as JSON.
 pub(crate) const PARTS: &str = "X-ME-Parts";
 /// An edited message's earlier versions as JSON, a list of
-/// `message_ir::EarlierVersion`.
+/// `ir::EarlierVersion`.
 pub(crate) const EARLIER_VERSIONS: &str = "X-ME-Earlier-Versions";
 /// The header an earlier Message Crate kept the Apple Messages edit history
 /// in. The reader refuses a mail that carries it: nothing reads it, so the

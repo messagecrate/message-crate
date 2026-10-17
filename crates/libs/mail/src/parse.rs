@@ -3,11 +3,11 @@
 use crate::headers as hn;
 use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
-use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
-use message_ir::{
-    Deletion, EarlierVersion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
-    IrSource, Reaction, ReplyTo, TimePrecision,
+use ir::{
+    Deletion, Direction, EarlierVersion, ImessageExtensions, Message, MessageKind, Reaction,
+    ReplyTo, TimePrecision, Transport, VendorFields,
 };
+use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::fs;
@@ -79,7 +79,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type =
-        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "individual".into());
+        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "one-to-one".into());
     let group_title = optional_header(headers, hn::GROUP_TITLE);
     let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;
@@ -93,12 +93,12 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         .to_ascii_lowercase()
         .as_str()
     {
-        "outgoing" => IrDirection::Outgoing,
-        _ => IrDirection::Incoming,
+        "outgoing" => Direction::Outgoing,
+        _ => Direction::Incoming,
     };
     let service =
-        IrService::parse(&typed_header(headers, hn::SERVICE).unwrap_or_else(|| "sms".into()));
-    let message_kind = IrMessageKind::parse(
+        Transport::parse(&typed_header(headers, hn::SERVICE).unwrap_or_else(|| "sms".into()));
+    let message_kind = MessageKind::parse(
         &typed_header(headers, hn::MESSAGE_KIND).unwrap_or_else(|| "sms".into()),
     );
     let sender_identity = optional_header(headers, hn::SENDER_IDENTITY);
@@ -109,7 +109,8 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let export_source = optional_header(headers, hn::EXPORT_SOURCE).unwrap_or_default();
     let export_tool = optional_header(headers, hn::EXPORT_TOOL).unwrap_or_default();
     let export_tool_version = optional_header(headers, hn::EXPORT_TOOL_VERSION).unwrap_or_default();
-    let backup_taken_at_unix_ms = parse_backup_taken_at(headers)?;
+    let backup_taken_at_unix_ms = parse_unix_ms(headers, hn::BACKUP_TAKEN_AT_UNIX_MS)?;
+    let exported_at_unix_ms = parse_unix_ms(headers, hn::EXPORTED_AT_UNIX_MS)?;
 
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers)?;
@@ -122,7 +123,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         let android_type =
             typed_header(headers, hn::ANDROID_TYPE).and_then(|s| s.parse::<i32>().ok());
         let fields = json_header(headers, hn::SOURCE_FIELDS, "source fields")?.unwrap_or_default();
-        let src = IrSource {
+        let src = VendorFields {
             android_type,
             fields,
         };
@@ -134,7 +135,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     };
 
     let imessage = {
-        let bag = IrImessage {
+        let bag = ImessageExtensions {
             send_effect: optional_header(headers, hn::SEND_EFFECT),
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
@@ -162,17 +163,19 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         export_source,
         export_tool,
         export_tool_version,
-        backup_taken_at_unix_ms,
-        filename_suffix: None,
-        message: IrMessage {
+        exported_at_unix_ms,
+        message: Message {
             guid,
             timestamp_unix_ms,
             time_precision,
             direction,
             service,
             message_kind,
-            sender_identity,
-            sender_display_name,
+            sender: ir::Sender {
+                identity: sender_identity,
+                display_name: sender_display_name,
+                country: None,
+            },
             owner_identity: optional_header(headers, hn::MESSAGE_OWNER_IDENTITY),
             subject,
             text,
@@ -185,6 +188,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             reply_to,
             imessage,
             source,
+            backup_taken_at_unix_ms,
         },
         attachments,
     })
@@ -193,7 +197,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 /// The message a reply quotes, from `X-ME-Is-Reply` and the `X-ME-Reply-To-*`
 /// headers; `None` for a mail that is not a reply.
 fn parse_reply_to(headers: &[MailHeader<'_>]) -> Option<ReplyTo> {
-    message_ir::reply_to_from_mark(
+    ir::reply_to_from_mark(
         header_bool(headers, hn::IS_REPLY),
         optional_header(headers, hn::REPLY_TO_GUID),
         header_u32(headers, hn::REPLY_TO_PART),
@@ -234,9 +238,9 @@ pub fn mail_messages_from_mbox(path: &Path) -> Result<Vec<MailMessage>> {
     let records = split_mboxrd(&text);
     let mut out = Vec::with_capacity(records.len());
     for (i, eml) in records.iter().enumerate() {
-        let msg = mail_message_from_eml_bytes(eml)
+        let message = mail_message_from_eml_bytes(eml)
             .with_context(|| format!("parse mbox record {} in {}", i + 1, path.display()))?;
-        out.push(msg);
+        out.push(message);
     }
     Ok(out)
 }
@@ -327,16 +331,17 @@ fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     typed_header(headers, name)?.parse().ok()
 }
 
-/// When the backup was made, from `X-ME-Backup-Taken-At-Unix-Ms`, or none
+/// A time in Unix milliseconds from the header `name`
+/// (`X-ME-Backup-Taken-At-Unix-Ms`, `X-ME-Exported-At-Unix-Ms`), or none
 /// when the header is absent. A value that is not a whole number is refused
 /// rather than read as no date.
-fn parse_backup_taken_at(headers: &[MailHeader<'_>]) -> Result<Option<i64>> {
-    let Some(raw) = typed_header(headers, hn::BACKUP_TAKEN_AT_UNIX_MS) else {
+fn parse_unix_ms(headers: &[MailHeader<'_>], name: &str) -> Result<Option<i64>> {
+    let Some(raw) = typed_header(headers, name) else {
         return Ok(None);
     };
     raw.parse()
         .map(Some)
-        .with_context(|| format!("This mail's {} header {raw:?}", hn::BACKUP_TAKEN_AT_UNIX_MS))
+        .with_context(|| format!("This mail's {name} header {raw:?}"))
 }
 
 /// Whether the message's time has milliseconds, from the required
@@ -360,7 +365,7 @@ fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
     let Some(raw) = typed_header(headers, hn::DELETION) else {
         return Ok(None);
     };
-    message_ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
+    ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
 }
 
 /// The message's reactions from `X-ME-Reactions`, or none when the header is
@@ -417,20 +422,20 @@ fn merge_attachments(
     let meta: Vec<AttachmentMetaCell> =
         json_header(headers, hn::ATTACHMENT_META, "attachment metadata")?.unwrap_or_default();
 
-    let mut mime_atts = Vec::new();
-    collect_mime_attachments(mail, &mut mime_atts);
+    let mut mime_attachments = Vec::new();
+    collect_mime_attachments(mail, &mut mime_attachments);
 
-    let n = meta.len().max(mime_atts.len());
+    let n = meta.len().max(mime_attachments.len());
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let m = meta.get(i);
-        let (bytes, mime_fallback, name_fallback) = mime_atts
+        let (bytes, mime_fallback, name_fallback) = mime_attachments
             .get(i)
             .cloned()
             .unwrap_or_else(|| (Vec::new(), None, None));
         out.push(MailAttachment {
             bytes,
-            meta: message_ir::AttachmentMeta {
+            meta: ir::AttachmentMeta {
                 path: None,
                 original_name: m.and_then(|c| c.original_name.clone()).or(name_fallback),
                 mime_type: m.and_then(|c| c.mime_type.clone()).or(mime_fallback),
@@ -483,59 +488,39 @@ fn collect_mime_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::base_sms;
     use crate::{MailMessage, Participant, write_conversation_mbox, write_message_file};
 
     #[test]
     fn roundtrip_eml_headers_and_body() {
-        let msg = MailMessage {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: "individual".into(),
-            group_title: None,
-            participants: vec![Participant {
-                identity: "+15555550101".into(),
-                display_name: Some("Sam".into()),
-            }],
-            owner_identity: "+15555550100".into(),
+        let base = base_sms();
+        let message = MailMessage {
             owner_display_name: Some("Me".into()),
-            export_source: "sms-backup-restore".into(),
-            export_tool: "SMS Backup & Restore".into(),
-            export_tool_version: "10.26.003".into(),
-            backup_taken_at_unix_ms: None,
-            filename_suffix: None,
-            message: IrMessage {
-                guid: "aabbccddeeff00112233445566778899".into(),
-                timestamp_unix_ms: 1_400_773_261_000,
-                time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Outgoing,
-                service: IrService::Sms,
-                message_kind: IrMessageKind::Sms,
-                sender_identity: Some("+15555550100".into()),
-                sender_display_name: Some("Me".into()),
-                owner_identity: None,
-                subject: None,
+            message: Message {
+                direction: Direction::Outgoing,
+                sender: ir::Sender {
+                    identity: Some("+15555550100".into()),
+                    display_name: Some("Me".into()),
+                    country: None,
+                },
                 text: "hello roundtrip".into(),
-                attachments: Vec::new(),
-                reactions: Vec::new(),
-                deletion: None,
-                edits: Vec::new(),
-                reply_to: None,
-                imessage: None,
-                source: Some(IrSource {
+                source: Some(VendorFields {
                     android_type: Some(2),
                     fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
                 }),
+                ..base.message
             },
-            attachments: vec![],
+            ..base
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let bytes = fs::read(&path).unwrap();
         let parsed = mail_message_from_eml_bytes(&bytes).unwrap();
         assert_eq!(parsed.message.text, "hello roundtrip");
-        assert_eq!(parsed.message.direction, IrDirection::Outgoing);
+        assert_eq!(parsed.message.direction, Direction::Outgoing);
         assert_eq!(
-            parsed.message.sender_identity.as_deref(),
+            parsed.message.sender.identity.as_deref(),
             Some("+15555550100")
         );
         assert_eq!(parsed.owner_identity, "+15555550100");
@@ -572,20 +557,25 @@ mod tests {
         let edits = vec![
             EarlierVersion {
                 part_index: 0,
-                text: "full bg".into(),
+                text: Some("full bg".into()),
                 edited_at_unix_ms: Some(1_400_773_261_000),
             },
             EarlierVersion {
                 part_index: 1,
-                text: "=?utf-8?Q?=22?= second\npart".into(),
+                text: Some("=?utf-8?Q?=22?= second\npart".into()),
                 edited_at_unix_ms: None,
+            },
+            EarlierVersion {
+                part_index: 0,
+                text: None,
+                edited_at_unix_ms: Some(1_400_773_321_000),
             },
         ];
         let reply_to = ReplyTo {
             guid: Some("parent-guid-1111".into()),
             part_index: Some(1),
         };
-        let imessage = message_ir::IrImessage {
+        let imessage = ir::ImessageExtensions {
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
@@ -600,7 +590,8 @@ mod tests {
             tapback_emoji: Some("\u{2764}".into()),
             tapback_action: Some("add".into()),
         };
-        let msg = MailMessage {
+        let base = base_sms();
+        let message = MailMessage {
             chat_identifier: "chat-group1".into(),
             conversation_type: "group".into(),
             group_title: Some("Family".into()),
@@ -614,39 +605,35 @@ mod tests {
                     display_name: None,
                 },
             ],
-            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
             export_tool_version: "3.1.0".into(),
-            backup_taken_at_unix_ms: None,
-            filename_suffix: None,
-            message: IrMessage {
+            message: Message {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
-                timestamp_unix_ms: 1_400_773_261_000,
-                time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
-                service: IrService::IMessage,
-                message_kind: IrMessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
-                sender_display_name: Some("Sam".into()),
-                owner_identity: None,
+                service: Transport::IMessage,
+                message_kind: MessageKind::IMessage,
+                sender: ir::Sender {
+                    display_name: Some("Sam".into()),
+                    ..base.message.sender.clone()
+                },
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
-                attachments: Vec::new(),
                 reactions: reactions.clone(),
-                deletion: Some(message_ir::Deletion::Unsent),
+                deletion: Some(ir::Deletion::Unsent),
                 edits: edits.clone(),
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
-                source: Some(IrSource {
-                    android_type: Some(1),
-                    fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
+                source: Some(VendorFields {
+                    android_type: None,
+                    fields: serde_json::from_str(r#"{"delivered_date":"2014-05-22 15:41:01"}"#)
+                        .unwrap(),
                 }),
+                ..base.message
             },
             attachments: vec![MailAttachment {
                 bytes: b"\xff\xd8\xfffakejpeg".to_vec(),
-                meta: message_ir::AttachmentMeta {
+                meta: ir::AttachmentMeta {
                     path: None,
                     original_name: Some("photo.jpg".into()),
                     mime_type: Some("image/jpeg".into()),
@@ -658,10 +645,11 @@ mod tests {
                 transcription: Some("a beach".into()),
                 sticker_effect: Some("stroke".into()),
             }],
+            ..base
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let bytes = fs::read(&path).unwrap();
         let parsed = mail_message_from_eml_bytes(&bytes).unwrap();
 
@@ -672,7 +660,7 @@ mod tests {
         assert_eq!(parsed.participants[0].identity, "+15555550101");
         assert_eq!(parsed.participants[0].display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.participants[1].display_name, None);
-        assert_eq!(parsed.message.sender_display_name.as_deref(), Some("Sam"));
+        assert_eq!(parsed.message.sender.display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.message.subject.as_deref(), Some("MMS subject"));
         assert_eq!(
             parsed.message.text, "full bag",
@@ -682,17 +670,17 @@ mod tests {
         assert_eq!(parsed.export_tool, "imessage-exporter");
         assert_eq!(parsed.export_tool_version, "3.1.0");
         let source = parsed.message.source.as_ref().expect("source bag");
-        assert_eq!(source.android_type, Some(1));
+        assert_eq!(source.android_type, None);
         assert_eq!(
             serde_json::to_value(&source.fields).unwrap(),
-            serde_json::json!({"address": "+15555550101"})
+            serde_json::json!({"delivered_date": "2014-05-22 15:41:01"})
         );
 
         assert_eq!(
             parsed.message.reactions, reactions,
             "each reaction keeps its reactor, even a name that looks like an encoded word"
         );
-        assert_eq!(parsed.message.deletion, Some(message_ir::Deletion::Unsent));
+        assert_eq!(parsed.message.deletion, Some(ir::Deletion::Unsent));
         assert_eq!(
             parsed.message.edits, edits,
             "each earlier version keeps its part, text and time"
@@ -708,22 +696,22 @@ mod tests {
         );
 
         assert_eq!(parsed.attachments.len(), 1);
-        let att = &parsed.attachments[0];
-        assert_eq!(att.meta.original_name.as_deref(), Some("photo.jpg"));
-        assert_eq!(att.meta.mime_type.as_deref(), Some("image/jpeg"));
-        assert_eq!(att.meta.digest_sha256.as_deref(), Some("deadbeef"));
-        assert_eq!(att.meta.size_bytes, Some(13));
-        assert!(att.is_sticker);
-        assert_eq!(att.transcription.as_deref(), Some("a beach"));
-        assert_eq!(att.sticker_effect.as_deref(), Some("stroke"));
-        assert_eq!(att.bytes, b"\xff\xd8\xfffakejpeg".to_vec());
+        let attachment = &parsed.attachments[0];
+        assert_eq!(attachment.meta.original_name.as_deref(), Some("photo.jpg"));
+        assert_eq!(attachment.meta.mime_type.as_deref(), Some("image/jpeg"));
+        assert_eq!(attachment.meta.digest_sha256.as_deref(), Some("deadbeef"));
+        assert_eq!(attachment.meta.size_bytes, Some(13));
+        assert!(attachment.is_sticker);
+        assert_eq!(attachment.transcription.as_deref(), Some("a beach"));
+        assert_eq!(attachment.sticker_effect.as_deref(), Some("stroke"));
+        assert_eq!(attachment.bytes, b"\xff\xd8\xfffakejpeg".to_vec());
     }
 
     /// A message whose attachments are a text file, a picture, and a web page.
     fn message_with_text_and_binary_attachments() -> MailMessage {
         let attachment = |name: &str, mime: &str, bytes: &[u8]| MailAttachment {
             bytes: bytes.to_vec(),
-            meta: message_ir::AttachmentMeta {
+            meta: ir::AttachmentMeta {
                 path: None,
                 original_name: Some(name.into()),
                 mime_type: Some(mime.into()),
@@ -735,46 +723,25 @@ mod tests {
             transcription: None,
             sticker_effect: None,
         };
+        let base = base_sms();
         MailMessage {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: "individual".into(),
-            group_title: None,
-            participants: vec![Participant {
-                identity: "+15555550101".into(),
-                display_name: Some("Sam".into()),
-            }],
-            owner_identity: "+15555550100".into(),
-            owner_display_name: None,
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
             export_tool_version: "3.1.0".into(),
-            backup_taken_at_unix_ms: None,
-            filename_suffix: None,
-            message: IrMessage {
+            message: Message {
                 guid: "11111111-2222-3333-4444-555555555555".into(),
-                timestamp_unix_ms: 1_400_773_261_000,
-                time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
-                service: IrService::IMessage,
-                message_kind: IrMessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
-                sender_display_name: Some("Sam".into()),
-                owner_identity: None,
-                subject: None,
+                service: Transport::IMessage,
+                message_kind: MessageKind::IMessage,
                 text: "the message text".into(),
-                attachments: Vec::new(),
-                reactions: Vec::new(),
-                deletion: None,
-                edits: Vec::new(),
-                reply_to: None,
-                imessage: None,
                 source: None,
+                ..base.message
             },
             attachments: vec![
                 attachment("notes.txt", "text/plain", b"the notes file\nline two\n"),
                 attachment("photo.jpg", "image/jpeg", b"\xff\xd8\xfffakejpeg"),
                 attachment("page.html", "text/html", b"<p>the page</p>"),
             ],
+            ..base
         }
     }
 
@@ -819,18 +786,20 @@ mod tests {
     /// after it was paired with the text file's name.
     #[test]
     fn eml_roundtrip_keeps_the_bytes_of_text_attachments() {
-        let msg = message_with_text_and_binary_attachments();
+        let message = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let parsed = mail_message_from_eml_bytes(&fs::read(&path).unwrap()).unwrap();
         assert_text_and_binary_attachments(&parsed);
     }
 
     #[test]
     fn mbox_roundtrip_keeps_the_bytes_of_text_attachments() {
-        let msg = message_with_text_and_binary_attachments();
+        let message = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_conversation_mbox(tmp.path(), std::slice::from_ref(&msg)).unwrap();
+        let path =
+            write_conversation_mbox(&tmp.path().join("c.mbox"), std::slice::from_ref(&message))
+                .unwrap();
         let parsed = mail_messages_from_mbox(&path).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_text_and_binary_attachments(&parsed[0]);

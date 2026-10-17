@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// Axum's `Query`, rejecting as `validation-failed`: the string was read and
 /// a value in it does not fit the parameter.
@@ -62,7 +62,8 @@ where
 pub struct Json<T>(pub T);
 
 /// Axum's rejection as the problem on the right side of the line: well-formed
-/// JSON that does not fit the target type parsed and then broke a rule;
+/// JSON that does not fit the target type parsed and then broke a rule; a
+/// body that stopped arriving in time is `body-stalled`, as every body is;
 /// everything else could not be read.
 fn json_rejection(rejection: JsonRejection) -> ApiError {
     match rejection {
@@ -70,9 +71,10 @@ fn json_rejection(rejection: JsonRejection) -> ApiError {
         JsonRejection::JsonSyntaxError(e) => ApiError::MalformedBody(e.body_text()),
         JsonRejection::MissingJsonContentType(e) => ApiError::UnsupportedMediaType(e.body_text()),
         rejection if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            ApiError::PayloadTooLarge(rejection.body_text())
+            ApiError::PayloadTooLarge
         }
-        rejection => ApiError::MalformedBody(rejection.body_text()),
+        rejection => crate::request_body::body_too_slow(&rejection)
+            .unwrap_or_else(|| ApiError::MalformedBody(rejection.body_text())),
     }
 }
 
@@ -139,8 +141,8 @@ impl<T: Serialize> IntoResponse for Json<T> {
 #[cfg(test)]
 mod tests {
     use super::Json;
+    use crate::api_error::ApiError;
     use crate::problem::ProblemType;
-    use crate::server::ApiError;
     use crate::test_support::{
         PASSWORD, delete_raw, expect_problem, fixture_with_account, get_raw, post_raw, test_fixture,
     };
@@ -205,10 +207,10 @@ mod tests {
     /// `malformed-body`: the cap never turns a syntax error into a 413, and
     /// a 413 is never a 400.
     ///
-    /// [`MAX_JSON_BODY_BYTES`]: crate::server::MAX_JSON_BODY_BYTES
+    /// [`MAX_JSON_BODY_BYTES`]: crate::limits::MAX_JSON_BODY_BYTES
     #[tokio::test]
     async fn a_json_body_is_read_up_to_the_json_body_cap_and_a_byte_more_is_a_json_413() {
-        use crate::server::MAX_JSON_BODY_BYTES;
+        use crate::limits::MAX_JSON_BODY_BYTES;
         let (fixture, user) = fixture_with_account().await;
         let state = fixture.state.clone();
         let body_of = |bytes: usize| {
@@ -279,10 +281,11 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            matches!(error, ApiError::PayloadTooLarge(_)),
+            matches!(error, ApiError::PayloadTooLarge),
             "a body over the limit is payload-too-large, got {error:?}"
         );
         assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.to_string(), "the request body is too large");
     }
 
     /// A body that fails while being read is the other rejection on the
@@ -348,8 +351,9 @@ mod tests {
     #[tokio::test]
     async fn a_json_body_over_the_auth_router_body_limit_is_a_json_413() {
         let fixture = test_fixture().await;
-        // The auth router caps request bodies at 32 KiB (server.rs,
-        // `limited_auth_router`); pad well past it with a valid JSON string.
+        // The auth router (`limited_auth_router` in server.rs) caps request
+        // bodies at 32 KiB (`MAX_AUTH_BODY_BYTES` in limits.rs); pad well
+        // past it with a valid JSON string.
         let padding = "a".repeat(64 * 1024);
         let body = serde_json::json!({ "username": padding, "password": PASSWORD }).to_string();
         let (status, text) = post_raw(

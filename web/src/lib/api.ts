@@ -1,8 +1,10 @@
 import { appHeaders } from "./build";
+import { createExternalStore } from "./externalStore";
+import { startTimeLimit } from "./timeLimit";
 
 let baseUrl = "";
 let authToken: string | null = null;
-let accountId: number | null = null;
+const accountId = createExternalStore<number | null>(null);
 
 /** Set the server URL. An empty string means "same host as this page". */
 export function setBaseUrl(url: string) {
@@ -26,28 +28,17 @@ export function getToken(): string | null {
  * belongs to. Pass null to log out.
  */
 export function setAccountId(id: number | null) {
-  if (id === accountId) return;
-  accountId = id;
-  for (const listener of accountIdListeners) listener();
+  accountId.set(id);
 }
-
-const accountIdListeners = new Set<() => void>();
 
 /**
  * Call `listener` whenever the logged-in account changes, logging out
  * included. Returns the function that stops it.
  */
-export function onAccountIdChange(listener: () => void): () => void {
-  accountIdListeners.add(listener);
-  return () => {
-    accountIdListeners.delete(listener);
-  };
-}
+export const onAccountIdChange = accountId.subscribe;
 
 /** The logged-in account's id, or null when logged out. */
-export function getAccountId(): number | null {
-  return accountId;
-}
+export const getAccountId = accountId.get;
 
 export function getBaseUrl(): string {
   return baseUrl;
@@ -58,7 +49,7 @@ export function getBaseUrl(): string {
  * (`docs/architecture/http-api.md`). `type` is the URL of the page describing the kind of failure,
  * or `about:blank` for an internal error.
  */
-export type Problem = {
+type Problem = {
   type: string;
   title: string;
   status: number;
@@ -82,7 +73,12 @@ const RAW_BODY_FALLBACK_LIMIT = 200;
  * A failed response from the server: the HTTP status, the problem's slug so a
  * screen can branch on what went wrong, and `message`, the sentence a person
  * reads — the problem's `detail`, or its `errors` joined for a validation
- * failure.
+ * failure, followed by the request id for a `5xx` (`problemFromBody`).
+ *
+ * A call that got no answer at all is an `ApiError` of status 0 too, so every
+ * screen shows a sentence rather than the browser's own text: `timedOut` when
+ * its time limit ended it (`requestTimeoutError`), and not when the server
+ * could not be reached (`noAnswerError`).
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -92,16 +88,31 @@ export class ApiError extends Error {
   readonly detail: string | null;
   readonly errors: string[];
   readonly requestId: string | null;
+  /**
+   * Seconds the server asked the client to wait before trying again, for
+   * `database-busy`; null when it named none. A read refused with
+   * `database-busy` waits it before trying again (`createQueryClient`).
+   */
+  readonly retryAfter: number | null;
+  /** True when the call's time limit ended it and no answer arrived (`requestTimeoutError`). */
+  readonly timedOut: boolean;
 
-  constructor(status: number, message: string, problem: Problem | null = null) {
+  constructor(
+    status: number,
+    message: string,
+    problem: Problem | null = null,
+    { timedOut = false }: { timedOut?: boolean } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.timedOut = timedOut;
     this.type = problem ? problemSlug(problem.type) : null;
     this.title = problem?.title ?? null;
     this.detail = problem?.detail ?? null;
     this.errors = problem?.errors ?? [];
     this.requestId = problem?.request_id ?? null;
+    this.retryAfter = problem?.retry_after ?? null;
   }
 }
 
@@ -135,8 +146,12 @@ function parseProblem(text: string): Problem | null {
  *
  * The server answers a problem document, and its `detail` (or, for a
  * validation failure, every one of its `errors`) is what a user should read —
- * not the status code and not the envelope around it. Anything else (a
- * proxy's HTML error page, an empty body) falls back to the raw text — clamped
+ * not the status code and not the envelope around it. A `5xx` hides its cause
+ * from the client, so its sentence ends with the problem's request id, which
+ * a person can quote to find the matching line in the server's log
+ * (`docs/architecture/server-log.md`, "A request's lines carry its id,
+ * spawned work included"). Anything else (a proxy's HTML error page, an
+ * empty body) falls back to the raw text — clamped
  * to `RAW_BODY_FALLBACK_LIMIT` characters, since a reverse proxy or other
  * host can answer with a whole HTML page — then to a generic sentence.
  */
@@ -148,8 +163,10 @@ export function problemFromBody(status: number, text: string): ApiError {
   if (problem) {
     const detail = problem.detail?.trim();
     const errors = (problem.errors ?? []).map((e) => e.trim()).filter(Boolean);
-    const message =
+    const sentence =
       detail || errors.join("; ") || problem.title.trim() || `Request failed (${status})`;
+    const requestId = problem.request_id?.trim();
+    const message = status >= 500 && requestId ? `${sentence} (request ${requestId})` : sentence;
     return new ApiError(status, message, problem);
   }
   if (trimmed.length > RAW_BODY_FALLBACK_LIMIT) {
@@ -158,30 +175,149 @@ export function problemFromBody(status: number, text: string): ApiError {
   return new ApiError(status, trimmed);
 }
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  signal?: AbortSignal,
-): Promise<T> {
+/**
+ * How every call that carries the Session's header treats a redirect: as a
+ * network error. `/v1` never redirects (`docs/architecture/http-api.md`,
+ * "Credentials and reach"), so a redirect comes from something in front of
+ * the server, such as a misconfigured proxy, and following it could send
+ * the Session token to another host in a WebView that keeps `Authorization`
+ * across origins. The failure reads as an unreachable server.
+ */
+export const NEVER_FOLLOW: RequestRedirect = "error";
+
+/**
+ * How long a call waits for the server's whole answer, the body included,
+ * unless its caller asks for longer. A server that takes the connection and
+ * then never answers (a stalled container, a request stuck behind the
+ * database's write lock) would otherwise leave a screen loading until the
+ * browser's own limit, which can be minutes.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+export type ApiRequestOptions = {
+  signal?: AbortSignal;
+  /** How long to wait for the answer; `REQUEST_TIMEOUT_MS` when not given. */
+  timeoutMs?: number;
+};
+
+/** A time limit in words: "30 seconds", "10 minutes". */
+function durationText(ms: number): string {
+  if (ms >= 60_000 && ms % 60_000 === 0) {
+    const minutes = ms / 60_000;
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  }
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return seconds === 1 ? "1 second" : `${seconds} seconds`;
+}
+
+/**
+ * The error for a call its time limit ended: an `ApiError` of status 0 (no
+ * answer arrived, so there is no HTTP status) whose message says how long it
+ * waited, so a screen shows a sentence rather than the browser's abort text.
+ */
+export function requestTimeoutError(ms: number): ApiError {
+  return new ApiError(0, `The server didn't answer within ${durationText(ms)}.`, null, {
+    timedOut: true,
+  });
+}
+
+/**
+ * The error for a call that reached no server: an `ApiError` of status 0 whose
+ * message names the address tried, in place of the browser's own text
+ * ("Failed to fetch", "Load failed"), which says neither. An empty base URL
+ * means this page's own host, so that is the address named.
+ */
+export function noAnswerError(): ApiError {
+  return new ApiError(0, `The server at ${serverAddress()} didn't answer.`);
+}
+
+/**
+ * The error for a call whose answer started and then stopped arriving, such
+ * as a server that restarted partway through a long list or a download.
+ */
+function stoppedAnsweringError(): ApiError {
+  return new ApiError(0, `The server at ${serverAddress()} stopped answering.`);
+}
+
+/** The server's address as a person reads it: the base URL, or this page's own host. */
+function serverAddress(): string {
+  return baseUrl || location.origin;
+}
+
+/**
+ * The headers every call carries: this app and its Build, the Session's
+ * token when there is one, and `contentType` when the call has a body.
+ */
+function callHeaders(contentType: string | null): Record<string, string> {
   const headers: Record<string, string> = { ...appHeaders() };
-  // A request says it carries JSON only when it does. The server reads a body
-  // wherever the media type promises one, so an empty DELETE marked as JSON is
-  // refused as unparseable.
-  if (body) {
-    headers["Content-Type"] = "application/json";
+  if (contentType) {
+    headers["Content-Type"] = contentType;
   }
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
+  return headers;
+}
 
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-  });
+/**
+ * Send one request and read its answer with `read`, within the call's time
+ * limit. The limit covers the body as well as the headers, since a server
+ * can stall partway through either, unless `untilHeaders` says it ends once
+ * the answer starts: a download as large as a video then takes as long as it
+ * needs, while a server that never answers still ends the call.
+ *
+ * A call the limit ends rejects with `requestTimeoutError`. A call its
+ * caller's signal ends rejects with that abort, as before, since a cancel is
+ * not a failure to show. A request that reaches no server, which `fetch`
+ * rejects with a `TypeError`, rejects with `noAnswerError`, and an answer
+ * whose body stops arriving with `stoppedAnsweringError`.
+ */
+async function exchange<T>(
+  method: string,
+  path: string,
+  body: { text: string; contentType: string } | null,
+  opts: ApiRequestOptions | undefined,
+  read: (res: Response) => Promise<T>,
+  { untilHeaders = false }: { untilHeaders?: boolean } = {},
+): Promise<T> {
+  const timeoutMs = opts?.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const limit = startTimeLimit(timeoutMs, opts?.signal);
+  try {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: callHeaders(body?.contentType ?? null),
+      body: body?.text,
+      signal: limit.signal,
+      redirect: NEVER_FOLLOW,
+    }).catch((e: unknown) => {
+      // An aborted signal, the caller's or the time limit's, is sorted below.
+      throw limit.signal.aborted ? e : noAnswerError();
+    });
+    if (untilHeaders) limit.stopClock();
+    return await read(res).catch((e: unknown) => {
+      // A body that stops arriving rejects with the browser's `TypeError`
+      // too. A body that is not the JSON it claims to be is a `SyntaxError`.
+      throw !limit.signal.aborted && e instanceof TypeError ? stoppedAnsweringError() : e;
+    });
+  } catch (e: unknown) {
+    if (limit.timedOut()) throw requestTimeoutError(timeoutMs);
+    throw e;
+  } finally {
+    limit.dispose();
+  }
+}
 
+/**
+ * A JSON body, or none. A request says it carries JSON only when it does: the
+ * server reads a body wherever the media type promises one, so an empty
+ * DELETE marked as JSON is refused as unparseable.
+ */
+function jsonBody(body: unknown): { text: string; contentType: string } | null {
+  return body ? { text: JSON.stringify(body), contentType: "application/json" } : null;
+}
+
+/** Read a JSON answer: a failure's problem document, nothing for a 204, or the body. */
+async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     throw problemFromBody(res.status, text);
@@ -192,55 +328,11 @@ async function request<T>(
     return undefined as T;
   }
 
-  return res.json() as Promise<T>;
+  return (await res.json()) as T;
 }
 
-async function requestRaw<T>(
-  method: string,
-  path: string,
-  body: string,
-  contentType: string,
-  signal?: AbortSignal,
-): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": contentType, ...appHeaders() };
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  const res = await fetch(`${baseUrl}${path}`, { method, headers, body, signal });
-  if (!res.ok) {
-    const text = await res.text();
-    throw problemFromBody(res.status, text);
-  }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  return res.json() as Promise<T>;
-}
-
-/**
- * Ask a route that answers a file's text instead of JSON, and return that
- * text: a POST with a JSON body, or a GET with none. A failure is still a
- * problem document, read as everywhere else.
- */
-async function requestText(
-  method: "GET" | "POST",
-  path: string,
-  body: unknown,
-  signal?: AbortSignal,
-): Promise<string> {
-  const headers: Record<string, string> = { ...appHeaders() };
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
+/** Read a file's text, or a failure's problem document as everywhere else. */
+async function readText(res: Response): Promise<string> {
   const text = await res.text();
   if (!res.ok) {
     throw problemFromBody(res.status, text);
@@ -248,13 +340,27 @@ async function requestText(
   return text;
 }
 
-export type ApiRequestOptions = {
-  signal?: AbortSignal;
-};
+/** Read an answer's bytes, or a failure's problem document as everywhere else. */
+async function readBlob(res: Response): Promise<Blob> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw problemFromBody(res.status, text);
+  }
+  return res.blob();
+}
+
+function request<T>(
+  method: string,
+  path: string,
+  body: unknown,
+  opts?: ApiRequestOptions,
+): Promise<T> {
+  return exchange(method, path, jsonBody(body), opts, readJson<T>);
+}
 
 export const apiClient = {
   get<T>(path: string, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("GET", path, undefined, opts?.signal);
+    return request<T>("GET", path, undefined, opts);
   },
   /** POST a body that is not JSON — a file's text — under its own media type. */
   postRaw<T>(
@@ -263,26 +369,43 @@ export const apiClient = {
     contentType: string,
     opts?: ApiRequestOptions,
   ): Promise<T> {
-    return requestRaw<T>("POST", path, body, contentType, opts?.signal);
+    return exchange("POST", path, { text: body, contentType }, opts, readJson<T>);
+  },
+  /** POST a file's text under its own media type and read the answer as text: a file the server writes from it. */
+  postRawText(
+    path: string,
+    body: string,
+    contentType: string,
+    opts?: ApiRequestOptions,
+  ): Promise<string> {
+    return exchange("POST", path, { text: body, contentType }, opts, readText);
   },
   /** POST a JSON body and read the answer as text: a file the server writes. */
   postText(path: string, body: unknown, opts?: ApiRequestOptions): Promise<string> {
-    return requestText("POST", path, body, opts?.signal);
+    return exchange("POST", path, jsonBody(body), opts, readText);
   },
   /** GET a route that answers a file's text instead of JSON. */
   getText(path: string, opts?: ApiRequestOptions): Promise<string> {
-    return requestText("GET", path, undefined, opts?.signal);
+    return exchange("GET", path, null, opts, readText);
+  },
+  /**
+   * GET a route that answers bytes, such as an attachment, as a Blob. The time
+   * limit covers only the wait for the answer to start, so a large file that
+   * is arriving is never cut off.
+   */
+  getBlob(path: string, opts?: ApiRequestOptions): Promise<Blob> {
+    return exchange("GET", path, null, opts, readBlob, { untilHeaders: true });
   },
   post<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("POST", path, body, opts?.signal);
+    return request<T>("POST", path, body, opts);
   },
   put<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("PUT", path, body, opts?.signal);
+    return request<T>("PUT", path, body, opts);
   },
   patch<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("PATCH", path, body, opts?.signal);
+    return request<T>("PATCH", path, body, opts);
   },
   delete<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("DELETE", path, body, opts?.signal);
+    return request<T>("DELETE", path, body, opts);
   },
 };

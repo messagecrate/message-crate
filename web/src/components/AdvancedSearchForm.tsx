@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Key } from "react-aria-components";
-import { popupShadow } from "../lib/uiStyles";
+import { popupShadowClass } from "../lib/uiStyles";
 import { Z_INLINE_PANEL, Z_INLINE_PANEL_TAIL } from "../lib/zLayers";
 import {
   type ActivityFilter,
@@ -103,7 +103,7 @@ export default function AdvancedSearchForm({
 
   return (
     <div
-      className={`relative rounded-md border border-border bg-panel p-3 ${Z_INLINE_PANEL} ${popupShadow}`}
+      className={`relative rounded-md border border-border bg-panel p-3 ${Z_INLINE_PANEL} ${popupShadowClass}`}
     >
       {withTail ? (
         <span

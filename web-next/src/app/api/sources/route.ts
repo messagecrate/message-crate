@@ -14,7 +14,7 @@ function authError(err: unknown): NextResponse | null {
   return null;
 }
 
-/** Import source ids, from `GET /v1/auth/check`. */
+/** Import source ids, from `GET /v1/session`. */
 export async function GET() {
   try {
     return await withAccountHandler(async () => {

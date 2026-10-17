@@ -3,8 +3,9 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
+import { imessageMessage } from "../../test/apiShapes";
 import { BUBBLES, renderBubbleInUtc } from "../../test/bubbles";
-import { sampleMessage } from "../../test/messages";
+import { nth } from "../../test/nth";
 import { setupUser } from "../../test/user";
 
 afterEach(() => {
@@ -16,7 +17,7 @@ afterEach(() => {
  * to "See you at half past noon", and later to its final text.
  */
 function edited(source: string, service: string, partial: Partial<Message> = {}): Message {
-  return sampleMessage({
+  return imessageMessage({
     source,
     service,
     text: "See you at one",
@@ -71,6 +72,24 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
 
     expect(control).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("See you at noon")).not.toBeInTheDocument();
+  });
+
+  it("reads a version whose text the backup does not hold as one line with its time", async () => {
+    const user = setupUser();
+    renderBubbleInUtc(
+      Bubble,
+      edited(source, service, {
+        earlier_versions: [
+          { part_index: 0, text: null, edited_at: "2026-08-11T15:06:00Z", matched: false },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edited" }));
+
+    const only = nth(versionItems(), 0);
+    expect(only).toHaveTextContent("Aug 11, 3:06 PM · Earlier version not in the backup");
+    expect(only.querySelector("div")).toBeNull();
   });
 
   it("opens a message a search found only by an earlier version, with that version highlighted", () => {
@@ -160,7 +179,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
   });
 
   it("draws no Edited control on a message never edited", () => {
-    renderBubbleInUtc(Bubble, sampleMessage({ source, service }));
+    renderBubbleInUtc(Bubble, imessageMessage({ source, service }));
 
     expect(screen.queryByRole("button", { name: "Edited" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Edited/)).not.toBeInTheDocument();

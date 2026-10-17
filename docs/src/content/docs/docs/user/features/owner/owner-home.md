@@ -45,7 +45,7 @@ The Owner's row reads zero, because the Owner holds no messages.
 
 ## Server Settings
 
-**Server Settings** holds one switch, the attachment size limit, the Demo Account, and two facts about the server.
+**Server Settings** holds one switch, the attachment size limit, the space the Staging Directory takes on this computer in the desktop app, the Demo Account, and three facts about the server.
 
 The switch is **Let anyone who can reach this server create their own account**.
 
@@ -65,10 +65,21 @@ Any number above zero is accepted.
 A new limit holds for every upload after it is saved, with no restart.
 An Import Run already under way keeps the limit it started with, so its Staging Review still describes what it will upload.
 
+### Staging Directory on this computer
+
+In the desktop app, **Staging Directory on this computer** says how much disk space the whole Staging Directory takes on the computer running the app.
+That is everything in the directory **Settings → System** names.
+It includes the Import Runs of every account that imports from this computer, into this Message Crate or another.
+It also counts any run still staged under an earlier setting.
+The Staging Directory is on that computer, so a browser doesn't show it.
+The size is measured when Server Settings opens.
+Each account sees what its own Import Runs take under [Settings → System](/docs/user/features/settings/system/#space-used).
+
 ### Demo Account
 
 The Demo Account holds made-up conversations.
 Anyone who reaches the server opens it with **Explore Demo Account** on the login screen, and it has no password.
+On a server [published on the network](/docs/user/features/owner/run-on-another-machine/#only-on-a-trusted-network), that means every device on the network.
 Every new Message Crate starts with it.
 
 - **Add Demo Account** shows when there is none. It builds the account with the size chosen beside it.
@@ -79,13 +90,17 @@ Medium takes a few seconds. Large takes about a minute.
 The card shows **Building the Demo Account** until the build ends, and the server keeps working meanwhile.
 Nobody can be in the Demo Account during a build: the build logs out anyone already in it, and the login screen offers **Explore Demo Account** again once the build ends.
 
-The Demo Account is removed under **User Accounts**, as any account is.
+The Demo Account is removed under **User Accounts**, as any account is, with **Delete account** in its **Danger zone**.
+That is how an Owner closes it to the network, because no setting does.
+A restart doesn't bring it back, because the server builds it only for a new Message Crate.
+**Add Demo Account** builds it again.
 Its page there shows its status, permissions, and identities, and none of them can be changed.
 
 Below the Demo Account:
 
 - **Version** is the version of the server that is running.
 - **Schema fingerprint** is a number the server derives from its database layout. [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) says what a changed number means.
+- **Journal mode** reads `wal` when the server runs the database with write-ahead logging, as it should. Any other mode means the server could not turn it on, and every page waits while an import writes: [Troubleshooting](/docs/user/features/owner/troubleshooting/#owner-home-says-the-server-could-not-turn-on-write-ahead-logging) says what to do. **unknown** means the server could not read the mode, and its log says why.
 
 ## User Accounts
 
@@ -94,7 +109,7 @@ Below the Demo Account:
 | Column | Meaning |
 |---|---|
 | **User** | The username, with the account's display name under it when it has one. |
-| **Status** | **Owner**, **Active**, or **Disabled**. |
+| **Status** | **Owner**, **Active**, or **Disabled**, with **No password** under it for an account that has no password: once the account is active, anyone who knows its username logs in with an empty one. The Demo Account has no password by design and is not marked. |
 | **Last login** | The date and time of the last login, or **Never**. |
 
 The search bar at the top reads **Search accounts**.
@@ -107,7 +122,7 @@ The gear opens that account's settings.
 
 1. Select **Add account**. The **New account** form opens. Its **Profile** and **Storage** tabs can't be opened yet, because they belong to an account that exists.
 2. Enter a **Username**.
-3. Enter a **Password** and repeat it in **Confirm password**. The heading reads **Password (optional)**, because the form allows an account with no password. An account that holds real messages should have one.
+3. Enter a **Password** and repeat it in **Confirm password**. The heading reads **Password (optional)**, because the form allows an account with no password. An account that holds real messages should have one. A password is at most 128 characters.
 4. Select **Create**.
 
 The form reports **Invalid username.** when the username is already taken.
@@ -127,8 +142,16 @@ The screen has three tabs: **Account**, **Profile**, and **Storage**.
 
 **Username** shows the username. It can't be changed.
 
+Under it, two more parts are for reading only:
+
+- **Last Login** is the date and time of the account's last login, or **Never**.
+- **App** is the app the account last connected with, **Desktop app** or **Website**, and that app's version. It reads **Never connected.** for an account that hasn't connected. When the app's version differs from the server's, a line under it gives the server's version. The server serves that app all the same.
+
 **Status** is **Active** or **Disabled**.
-The server refuses a disabled account's login, and refuses every request from a Session the account already has open.
+The server refuses a disabled account's login.
+Disabling the account ends any Session it has open, so the person logs in again after the account is enabled.
+The login answers a disabled account the same way it answers a wrong password.
+The Owner tells the account's holder that the account is disabled.
 The account's messages stay where they are.
 
 **Message Permissions** has three checkboxes: **Import**, **Export**, and **Delete**.
@@ -164,14 +187,9 @@ The Owner can't add or rename a token, because a token is the account's own cred
 
 The Owner sets the same three things the account's holder sets:
 
-- **Display Name**, saved with **Save**.
+- **Display Name**. It saves when the Owner leaves the field, presses Enter, or moves to another tab.
 - **Time Zone**, the zone the account's message times are shown in. It saves when a zone is chosen.
 - **Identities**, the account holder's own phone numbers and email addresses.
-
-Two more parts are for reading only:
-
-- **Last Login** is the date and time of the account's last login, or **Never**.
-- **App** is the app the account last connected with, **Desktop app** or **Website**, and that app's version. It reads **Never connected.** for an account that hasn't connected. When the app's version differs from the server's, a line under it gives the server's version. The server serves that app all the same.
 
 #### Storage
 
@@ -199,7 +217,7 @@ There is no **Danger zone**, because the Owner can't be deleted.
 
 ## Audit Trail
 
-**Audit Trail** lists what each user did on the Message Crate, and when, newest first: logins and how each session ended, refused logins, Import Runs and Export Runs, and every change to an account.
+**Audit Trail** lists what each user did on the Message Crate, and when, newest first: logins and how each Session ended, refused logins, Import Runs and Export Runs, and every change to an account.
 The **Account** column names the account each entry is about.
 **Account** at the top narrows the list to one account, the entries its holder reads in the **Audit Trail** tab of their [Settings](/docs/user/features/settings/audit-trail/).
 
@@ -208,7 +226,12 @@ A deleted account's entries stay under its old username, marked **deleted**.
 **Account** lists deleted accounts under **Deleted accounts**, below the live ones, each by its old username and when it was deleted.
 Picking one narrows the list to the entries and runs that account left.
 Another account given the same username, before or after, keeps its own entries apart.
-Opening and closing the Message Crate to new accounts is recorded too, under no account.
+Opening and closing the Message Crate to new accounts is recorded too, under no account, and so is each change to the attachment size limit, with the new limit.
+Adding the Demo Account is recorded under no account, and resetting it under the Demo Account it replaced, each with the set of Demo Data asked for.
+
+**View in log** on an entry opens [Logs](#logs) on the server's log with **Show** at **Everything** and the id of the request that made the entry in **Search the log**, so only that request's lines show.
+If the server's log holds no line of the request, Logs says so: either its oldest files were deleted as it grew, or `RUST_LOG` leaves out its `INFO` lines, as `RUST_LOG=warn` does.
+An entry made outside a request, such as one a server command made, an Import Run, an Export Run, or a Session that ran out, has no **View in log**.
 
 ## Logs
 
@@ -216,9 +239,10 @@ Opening and closing the Message Crate to new accounts is recorded too, under no 
 **Log** at the top picks which one:
 
 - **The server's log**, what the server did for every account. It opens on this one.
+- In the desktop app, **Desktop app**: what the desktop app went on without outside an Import Run, such as a program it downloaded whose record it could not write. It is listed once the app has written a line.
 - In the desktop app, each Import Run's log on this computer, whoever ran the import, under **Import Runs on this computer**. Each is named by its run, the account that ran it, and when its last line was written.
 
-A browser offers the server's log only, because an Import Run's log stays on the computer that ran the import.
+A browser offers the server's log only, because the desktop app's log and an Import Run's log stay on the computer that wrote them.
 
 Each line shows its time in UTC, its level, and what it says.
 

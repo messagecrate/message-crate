@@ -1,8 +1,8 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { apiErrorMessage } from "../../../lib/apiErrorMessage";
+import { useRouteQuery } from "../../../hooks/useRouteQuery";
+import { errorLine } from "../../../lib/apiErrorMessage";
 import { keys } from "../../../lib/queryKeys";
-import { useRouteQuery } from "../../../lib/routeQuery";
 import {
   getAccountImport,
   getAccountStorage,
@@ -142,12 +142,12 @@ export function useStorageData(managedAccountId?: number) {
     page,
     setPage,
     loading,
-    error: error ? apiErrorMessage(error, "Could not load storage.") : "",
+    error: error ? errorLine(error, "Could not load storage.") : "",
     selectedImportId,
     selectedImport: selectedImport ?? null,
     selectedImportLoading,
     selectedImportError: selectedImportError
-      ? apiErrorMessage(selectedImportError, "Could not load this import.")
+      ? errorLine(selectedImportError, "Could not load this import.")
       : "",
     closeImportDetail,
     toggleImportDetail,

@@ -1,24 +1,27 @@
 [package]
-name = "message-ir-format"
+name = "ir-format"
 version = "0.1.0"
 edition = "2024"
-description = "FormatSink, readers/writers, and transforms for message-ir ConversationDocument"
+description = "FormatSink, readers/writers, and transforms for the `ir` crate's ConversationDocument"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
 anyhow = { workspace = true }
 csv = { workspace = true }
-message-csv = { path = "../csv" }
+message-crate-csv = { path = "../csv" }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../ir" }
+file-io = { workspace = true }
+hex = { workspace = true }
+ir = { path = "../ir" }
 mail = { path = "../mail" }
-media = { path = "../media" }
 obfuscate = { path = "../obfuscate" }
 phone = { path = "../phone" }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
-message-ir = { path = "../ir", features = ["testutil"] }
+message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
+ir = { path = "../ir", features = ["testutil"] }
 tempfile = { workspace = true }
 
 [lints]

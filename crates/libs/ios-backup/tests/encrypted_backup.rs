@@ -12,6 +12,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -32,6 +33,7 @@ use ios_backup::{
     DecryptedDomain, Helper, backup_identities, decrypt_ios_backup_domain,
     reader_build::build_imessage_reader,
 };
+use message_crate_core::{CancelFlag, LogSink, ProgressSink, Sinks};
 
 /// A backup in a directory that lives as long as the value.
 fn backup(encryption: Encryption<'_>) -> tempfile::TempDir {
@@ -108,6 +110,9 @@ fn decrypted_in_system_temp() -> BTreeMap<String, Option<SystemTime>> {
 /// deleted again is not seen here. The test that fails when the copy goes
 /// there is
 /// `an_identities_request_decrypts_into_its_scratch_directory_while_it_runs`.
+///
+/// The line the reader logs once it has decrypted the backup reaches the
+/// sink the caller passed (#2645).
 #[test]
 fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     build_imessage_reader();
@@ -116,13 +121,28 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     let backup_before = paths_under(backup.path());
     let system_temp = SystemTemp::snapshot();
 
+    let logged = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log = {
+        let logged = Arc::clone(&logged);
+        LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
+    };
+
     let mut identities = backup_identities(
         backup.path(),
         true,
         Some(BACKUP_PASSWORD),
         scratch_root.path(),
+        log,
     )
     .unwrap();
+
+    let logged = logged.lock().unwrap();
+    assert!(
+        logged
+            .iter()
+            .any(|line| line.starts_with("Decrypted iOS backup: ")),
+        "{logged:?}"
+    );
 
     identities.sort();
     assert_eq!(identities, vec![OWNER.to_string(), OWNER_EMAIL.to_string()]);
@@ -156,8 +176,8 @@ fn an_identities_request_decrypts_into_its_scratch_directory_while_it_runs() {
 
     let mut helper = Helper::spawn(
         &identities_request(backup.path(), Some(BACKUP_PASSWORD), scratch.path()),
-        None,
-        None,
+        LogSink::none(),
+        ProgressSink::none(),
     )
     .unwrap();
     let names = wait_for_file(scratch.path(), "crabapple-contacts-");
@@ -205,7 +225,14 @@ fn an_unencrypted_backup_answers_without_a_password() {
     let backup = backup(Encryption::None);
     let scratch_root = tempfile::tempdir().unwrap();
 
-    let mut identities = backup_identities(backup.path(), true, None, scratch_root.path()).unwrap();
+    let mut identities = backup_identities(
+        backup.path(),
+        true,
+        None,
+        scratch_root.path(),
+        LogSink::none(),
+    )
+    .unwrap();
 
     identities.sort();
     assert_eq!(identities, vec![OWNER.to_string(), OWNER_EMAIL.to_string()]);
@@ -225,6 +252,7 @@ fn a_wrong_password_is_refused_in_the_readers_words() {
         true,
         Some("not-the-password"),
         scratch_root.path(),
+        LogSink::none(),
     )
     .unwrap_err();
 
@@ -250,6 +278,7 @@ fn a_request_that_fails_while_decrypting_leaves_no_scratch_directory() {
         true,
         Some(BACKUP_PASSWORD),
         scratch_root.path(),
+        LogSink::none(),
     )
     .unwrap_err();
 
@@ -274,8 +303,8 @@ fn the_reader_says_which_backup_is_encrypted() {
         let scratch = tempfile::tempdir().unwrap();
         let mut helper = Helper::spawn(
             &identities_request(backup.path(), password, scratch.path()),
-            None,
-            None,
+            LogSink::none(),
+            ProgressSink::none(),
         )
         .unwrap();
         let Event::Source { encrypted, .. } = helper.next_event().unwrap() else {
@@ -308,8 +337,8 @@ fn the_reader_decrypts_into_the_scratch_directory_the_request_names() {
 
     let mut helper = Helper::spawn(
         &identities_request(backup.path(), Some(BACKUP_PASSWORD), scratch.path()),
-        None,
-        None,
+        LogSink::none(),
+        ProgressSink::none(),
     )
     .unwrap();
     let err = helper.next_event().unwrap_err();
@@ -340,8 +369,8 @@ fn an_export_decrypts_into_its_scratch_directory_and_the_photo_comes_out_whole()
             use_caller_id: true,
             scratch_dir: scratch.path().to_path_buf(),
         }),
-        None,
-        None,
+        LogSink::none(),
+        ProgressSink::none(),
     )
     .unwrap();
 
@@ -405,8 +434,11 @@ fn a_backup_domain_request_decrypts_into_the_directory_it_names() {
             seen_before_the_go = file_names(work.path());
             Ok(())
         },
-        None,
-        None,
+        Sinks {
+            log: &LogSink::none(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
+        },
     )
     .unwrap();
 

@@ -4,7 +4,7 @@
 //! Calls are blocking so they can run on worker threads without an async
 //! runtime. The session type is [`message_crate_http::HttpSession`].
 //!
-//! The shapes are `message-crate-api-types`, the same definitions the server
+//! The shapes are `api-types`, the same definitions the server
 //! serializes from. This file used to mirror them by hand, and three defects
 //! shipped because the mirror and the server drifted apart with nothing to
 //! notice.
@@ -20,9 +20,13 @@ use sha2::{Digest, Sha256};
 
 use crate::part_file::write_asset;
 
-use message_crate_api_types::{ExportRun, ExportScope, Message, Page};
+use api_types::{CompleteExportStatus, ExportRun, ExportScope, Message, Page};
 
 pub use message_crate_http::HttpSession;
+
+/// How long one JSON call of an Export Run may take: starting it, reading
+/// one page of its messages, or closing it.
+const JSON_CALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The body of `POST /v1/exports`.
 #[derive(Debug, serde::Serialize)]
@@ -51,7 +55,7 @@ pub fn create_export(
         .server_request(Method::POST, base_url, "/v1/exports", token)
         .header("Content-Type", "application/json")
         .body(body)
-        .timeout(Duration::from_secs(120))
+        .timeout(JSON_CALL_TIMEOUT)
         .send()
         .with_context(|| format!("{what} failed"))?;
     let status = response.status();
@@ -69,11 +73,39 @@ pub(crate) struct ExportMessagesArgs<'a> {
     pub offset: usize,
 }
 
+/// What the person reads when the server answers a page of the run with
+/// `409 Conflict`: the run is no longer running, because the server closed
+/// it. It does that when another Export of the account starts, and when no
+/// page of the run was read for an hour.
+pub const RUN_CANCELED_ON_SERVER: &str = "The Export was canceled because another Export of this account started, or because the server heard nothing from it for an hour. Start the Export again.";
+
+/// The error for a page the server refused because the run is no longer
+/// running. It is context over the server's [`HttpError`], so its text is
+/// [`RUN_CANCELED_ON_SERVER`] and the retry rules still read the `409` as
+/// permanent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunCanceledOnServer;
+
+impl std::fmt::Display for RunCanceledOnServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(RUN_CANCELED_ON_SERVER)
+    }
+}
+
+/// Whether `error` is a page the server refused because it closed the run
+/// ([`RunCanceledOnServer`]), under any context added to it since.
+#[must_use]
+pub fn is_run_canceled_on_server(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<RunCanceledOnServer>().is_some()
+}
+
 /// Fetch one `Page<Message>` from `GET /v1/exports/{id}/messages`.
 ///
 /// # Errors
 ///
-/// Returns an error when the request fails or the body is not valid JSON.
+/// Returns an error when the request fails or the body is not valid JSON,
+/// and [`RunCanceledOnServer`] when the server answers `409 Conflict`
+/// because the run is no longer running.
 pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Result<Page<Message>> {
     let ExportMessagesArgs {
         base_url,
@@ -87,43 +119,36 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
     let response = http
         .server_request(Method::GET, base_url, &path, token)
         .query(&[("limit", limit.to_string()), ("offset", offset.to_string())])
-        .timeout(Duration::from_secs(120))
+        .timeout(JSON_CALL_TIMEOUT)
         .send()
         .with_context(|| format!("{what} failed"))?;
 
     let status = response.status();
     let body = response.text().unwrap_or_default();
-    ok_json(&what, status, &body)
+    let page = ok_json(&what, status, &body);
+    if status == reqwest::StatusCode::CONFLICT {
+        return page.context(RunCanceledOnServer);
+    }
+    page
 }
 
-/// How an Export ends its run on the server: with every file written, or
-/// given up.
+/// How an Export ends its run on the server: through `complete` with how
+/// it ended (its conversation files written, or stopped by an error), or
+/// through `cancel` when the person gave it up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CloseAction {
-    Complete,
+    Complete(CompleteExportStatus),
     Cancel,
 }
 
-impl CloseAction {
-    /// The last segment of the route that closes the run this way.
-    fn path_segment(self) -> &'static str {
-        match self {
-            Self::Complete => "complete",
-            Self::Cancel => "cancel",
-        }
-    }
-
-    /// The request's name in an error, after "Export Run 7".
-    fn noun(self) -> &'static str {
-        match self {
-            Self::Complete => "completion",
-            Self::Cancel => "cancellation",
-        }
-    }
+/// The body of `POST /v1/exports/{id}/complete`: how the run ended.
+#[derive(Debug, serde::Serialize)]
+struct CompleteExportBody {
+    status: CompleteExportStatus,
 }
 
-/// `POST /v1/exports/{id}/complete` or `.../cancel`: close the run and
-/// return it as it now stands.
+/// `POST /v1/exports/{id}/complete` with the run's outcome, or
+/// `.../cancel`: close the run and return it as it now stands.
 ///
 /// # Errors
 ///
@@ -136,17 +161,40 @@ pub fn close_export(
     export_id: i64,
     action: CloseAction,
 ) -> Result<ExportRun> {
-    let what = format!("Export Run {export_id} {}", action.noun());
-    let path = format!("/v1/exports/{export_id}/{}", action.path_segment());
-    let response = http
+    // The noun names the request in an error: "Export Run 7 completion
+    // failed".
+    let (noun, segment, body) = match action {
+        CloseAction::Complete(status @ CompleteExportStatus::Completed) => (
+            "completion",
+            "complete",
+            Some(CompleteExportBody { status }),
+        ),
+        CloseAction::Complete(status @ CompleteExportStatus::Failed) => {
+            ("closing", "complete", Some(CompleteExportBody { status }))
+        }
+        CloseAction::Cancel => ("cancellation", "cancel", None),
+    };
+    let what = format!("Export Run {export_id} {noun}");
+    let path = format!("/v1/exports/{export_id}/{segment}");
+    let mut request = http
         .server_request(Method::POST, base_url, &path, token)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .with_context(|| format!("{what} failed"))?;
+        .timeout(JSON_CALL_TIMEOUT);
+    if let Some(body) = body {
+        request = request
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_vec(&body)?);
+    }
+    let response = request.send().with_context(|| format!("{what} failed"))?;
     let status = response.status();
     let text = response.text().unwrap_or_default();
     ok_json(&what, status, &text)
 }
+
+/// How long one Asset fetch may take, from the request to its last byte.
+/// An Asset can be a video of several hundred megabytes, so five minutes
+/// leaves a slow link room to finish one, where a JSON call moves a page of
+/// messages at most and has [`JSON_CALL_TIMEOUT`].
+const ASSET_READ_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Fetch one Asset by its SHA-256 fingerprint to `dest`.
 ///
@@ -186,7 +234,7 @@ pub fn fetch_asset(
 
     let mut response = http
         .request_url(Method::GET, url, token)
-        .timeout(Duration::from_secs(300))
+        .timeout(ASSET_READ_TIMEOUT)
         .send()
         .with_context(fetch_failed)?;
 
@@ -372,6 +420,50 @@ mod tests {
         );
     }
 
+    /// A page the server refuses with `409 Conflict` says the Export was
+    /// canceled, keeps the server's sentence beneath it, and is not retried:
+    /// the run is closed on the server and stays closed (#2080).
+    #[test]
+    fn a_page_of_a_closed_run_says_the_export_was_canceled() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("GET").path("/v1/exports/7/messages");
+            then.status(409)
+                .header("content-type", "application/problem+json")
+                .json_body(serde_json::json!({
+                    "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
+                    "title": "State conflict",
+                    "status": 409,
+                    "detail": "export 7 is not running (status=canceled)"
+                }));
+        });
+        let http = HttpSession::new().unwrap();
+        let err = export_messages(
+            &http,
+            ExportMessagesArgs {
+                base_url: &server.base_url(),
+                token: "mc_test",
+                export_id: 7,
+                limit: 2,
+                offset: 0,
+            },
+        )
+        .expect_err("a 409 is an error");
+        assert_eq!(err.to_string(), RUN_CANCELED_ON_SERVER);
+        assert_eq!(
+            format!("{err:#}"),
+            format!(
+                "{RUN_CANCELED_ON_SERVER}: Export Run 7 page failed (HTTP 409 Conflict): \
+                 export 7 is not running (status=canceled)"
+            )
+        );
+        assert_eq!(
+            message_crate_http::classify_retry(&err),
+            message_crate_http::RetryKind::Permanent
+        );
+        assert!(is_run_canceled_on_server(&err.context("read a page")));
+    }
+
     /// A cancel goes to the cancel route and a refusal names it a cancellation.
     #[test]
     fn a_refused_cancel_names_the_cancellation() {
@@ -397,10 +489,48 @@ mod tests {
         );
     }
 
+    /// A failed run is recorded through `complete` with `failed`, never
+    /// through `cancel`, which would say the person gave the run up (#2069).
+    #[test]
+    fn a_failed_run_closes_through_complete_with_the_failed_status() {
+        let server = httpmock::MockServer::start();
+        let failed = server.mock(|when, then| {
+            when.method("POST")
+                .path("/v1/exports/7/complete")
+                .json_body(serde_json::json!({ "status": "failed" }));
+            then.status(200).json_body(serde_json::json!({
+                "id": 7,
+                "scope": { "kind": "everything" },
+                "tool": "message-crate-export",
+                "status": "failed",
+                "started_at": "2026-09-08T12:00:00Z",
+                "finished_at": "2026-09-08T12:00:09Z",
+                "message_count": 3,
+                "conversation_count": 1,
+                "attachment_count": 2,
+                "total_bytes": 22,
+                "messages_delivered": 2
+            }));
+        });
+        let http = HttpSession::new().unwrap();
+
+        let run = close_export(
+            &http,
+            &server.base_url(),
+            "mc_test",
+            7,
+            CloseAction::Complete(CompleteExportStatus::Failed),
+        )
+        .unwrap();
+
+        failed.assert();
+        assert_eq!(run.status, api_types::ExportStatus::Failed);
+    }
+
     #[test]
     fn the_create_body_carries_the_scope_as_given_and_the_tool() {
         let scope = ExportScope::Query {
-            list: message_crate_api_types::ExportQueryList::Conversations,
+            list: api_types::ExportQueryList::Conversations,
             q: "from:me".into(),
         };
         let body = serde_json::to_value(CreateExportBody {

@@ -1,5 +1,4 @@
 import { formatUnixDate } from "../../lib/formatDate";
-import type { components } from "../../lib/serverApi.types";
 
 /** Show a stored API Token hint, which the server writes as `mc-api-xx..yy`. */
 export function displayTokenHint(hint: string | null): string {
@@ -19,8 +18,6 @@ export function permissionsLabel(token: { can_import: boolean; can_export: boole
   return parts.length > 0 ? parts.join(" / ") : "None";
 }
 
-export type ApiTokenItem = components["schemas"]["ApiToken"];
-
 export const thClass = "px-3 py-2 text-left text-[0.75rem] font-bold text-muted";
 export const tdClass = "px-3 py-2 text-[0.75rem] text-text align-middle";
-export const tdMuted = "px-3 py-2 text-[0.75rem] text-muted align-middle";
+export const tdMutedClass = "px-3 py-2 text-[0.75rem] text-muted align-middle";

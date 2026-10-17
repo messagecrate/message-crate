@@ -1,10 +1,10 @@
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { type CSSProperties, type ReactNode, useEffect, useReducer, useRef } from "react";
-import { resizeHandleGutter } from "../lib/tw";
-import { useColumnResizing } from "./columnResizeState";
+import { useColumnResizing } from "../hooks/useColumnResizing";
+import { resizeHandleGutterClass } from "../lib/tw";
 
 /** How often the x–y of z label may update while scrolling. */
-const RANGE_REPORT_MS = 50;
+export const RANGE_REPORT_MS = 50;
 
 export type VisibleRange = {
   /** 1-based inclusive index of the first row intersecting the viewport. */
@@ -13,7 +13,7 @@ export type VisibleRange = {
   end: number;
 };
 
-type VirtualListProps = {
+type VirtualListComponentProps = {
   count: number;
   estimateSize?: number;
   /**
@@ -75,7 +75,7 @@ export default function VirtualList({
   empty,
   footer,
   visibleBottomInset = 0,
-}: VirtualListProps) {
+}: VirtualListComponentProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const onRangeRef = useRef(onVisibleRangeChange);
   onRangeRef.current = onVisibleRangeChange;
@@ -218,7 +218,7 @@ export default function VirtualList({
     return (
       <div
         ref={parentRef}
-        className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}
+        className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}
         style={style}
       >
         {empty}
@@ -229,7 +229,7 @@ export default function VirtualList({
   return (
     <div
       ref={parentRef}
-      className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}
+      className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}
       style={style}
     >
       <div

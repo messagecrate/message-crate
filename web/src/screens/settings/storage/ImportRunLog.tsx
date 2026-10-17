@@ -2,14 +2,14 @@ import { useState } from "react";
 import Button from "../../../components/Button";
 import LogViewer from "../../../components/logs/LogViewer";
 import {
-  runLogDownload,
-  runLogSource,
+  desktopLogDownload,
+  desktopLogSource,
   UNREADABLE_RUN_LOG,
-  useRunLogReader,
-  useRunLogs,
 } from "../../../components/logs/logSource";
-import { canReadImportRunLogs } from "../../../lib/desktopFeatures";
-import { isTauri } from "../../../lib/tauri-check";
+import { useDesktopLogs } from "../../../hooks/useDesktopLogs";
+import { useLogReader } from "../../../hooks/useLogReader";
+import { canReadDesktopLogs } from "../../../lib/desktopFeatures";
+import { isTauri } from "../../../lib/tauriCheck";
 
 /**
  * An Import Run's log, from the run's row in Settings → Storage. The log
@@ -18,14 +18,14 @@ import { isTauri } from "../../../lib/tauri-check";
  * (#1665). Anywhere else this shows nothing.
  */
 export default function ImportRunLog({ importRunId }: { importRunId: number }) {
-  if (!canReadImportRunLogs(isTauri())) return null;
+  if (!canReadDesktopLogs(isTauri())) return null;
   return <RunLogOnThisComputer importRunId={importRunId} />;
 }
 
 function RunLogOnThisComputer({ importRunId }: { importRunId: number }) {
   const [open, setOpen] = useState(false);
-  const reader = useRunLogReader();
-  const { logs } = useRunLogs(reader);
+  const reader = useLogReader();
+  const { logs } = useDesktopLogs(reader);
   // Run ids start again at 1 on every Message Crate, so the run's log is the
   // one from this Message Crate with its id.
   const log = logs.find(
@@ -48,8 +48,8 @@ function RunLogOnThisComputer({ importRunId }: { importRunId: number }) {
       </div>
       {open ? (
         <LogViewer
-          source={runLogSource(reader, log.name)}
-          downloads={[runLogDownload(reader, log.name)]}
+          source={desktopLogSource(reader, log.name)}
+          downloads={[desktopLogDownload(reader, log.name)]}
           unreadable={log.hasLines ? undefined : UNREADABLE_RUN_LOG}
         />
       ) : null}

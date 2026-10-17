@@ -1,16 +1,23 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
+import {
+  advanceTimersAndSettle,
+  settle,
+  startFakeClock,
+  stopFakeClock,
+} from "../../test/fakeTimers";
 import { installIntersectionObserver, scrollNear } from "../../test/intersectionObserver";
-import { Providers } from "../../test/providers";
-import { fill, setupUser } from "../../test/user";
-import LogViewer, { LOG_PAGE_SIZE } from "./LogViewer";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
+import LogViewer, { LOG_PAGE_SIZE, SEARCH_DELAY_MS } from "./LogViewer";
 import type { LinesRequest, LogSource } from "./logSource";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const saveMock = vi.mocked(saveFile);
@@ -73,17 +80,19 @@ describe("LogViewer", () => {
     vi.clearAllMocks();
     installIntersectionObserver();
     saveMock.mockResolvedValue(true);
+    startFakeClock();
   });
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("opens at warnings and up, newest first", async () => {
     const { source, readLines } = sourceOver(aLog(20));
     renderViewer(source);
+    await settle();
 
-    await screen.findByRole("list", { name: "Log lines" });
     expect(readLines).toHaveBeenCalledWith({
       level: "warn",
       text: undefined,
@@ -97,46 +106,90 @@ describe("LogViewer", () => {
     const user = setupUser();
     const { source, readLines } = sourceOver(aLog(20));
     renderViewer(source);
-    await screen.findByRole("list", { name: "Log lines" });
+    await settle();
 
     await pickLevel(user, "Errors");
-    await waitFor(() => expect(shownTexts()).toEqual(["line 20", "line 10"]));
+    await settle();
+    expect(shownTexts()).toEqual(["line 20", "line 10"]);
     expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ level: "error" }));
 
     await pickLevel(user, "Everything");
-    await waitFor(() => expect(shownTexts()).toHaveLength(20));
+    await settle();
+    expect(shownTexts()).toHaveLength(20);
     expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ level: undefined }));
     expect(shownTexts()[0]).toBe("line 20");
 
     await pickLevel(user, "Warnings and up");
-    await waitFor(() => expect(shownTexts()).toEqual(["line 20", "line 15", "line 10", "line 5"]));
+    await settle();
+    expect(shownTexts()).toEqual(["line 20", "line 15", "line 10", "line 5"]);
   });
 
-  it("searches as the words are typed", async () => {
-    const user = setupUser();
-    const { source, readLines } = sourceOver(aLog(20));
+  describe("search", () => {
+    function searchFor(text: string) {
+      fireEvent.change(screen.getByRole("textbox", { name: "Search the log" }), {
+        target: { value: text },
+      });
+    }
+
+    const textsRead = (readLines: ReturnType<typeof sourceOver>["readLines"]) =>
+      readLines.mock.calls.map(([request]) => request.text);
+
+    it("searches as the words are typed", async () => {
+      const { source, readLines } = sourceOver(aLog(20));
+      renderViewer(source);
+      await settle();
+
+      searchFor("line 1");
+      await advanceTimersAndSettle(SEARCH_DELAY_MS);
+      expect(shownTexts()).toEqual(["line 15", "line 10"]);
+      expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ text: "line 1" }));
+
+      searchFor("no such line");
+      await advanceTimersAndSettle(SEARCH_DELAY_MS);
+      expect(screen.getByText("No line matches the search")).toBeInTheDocument();
+    });
+
+    it("reads the log once, for the words as they stand when typing stops", async () => {
+      const { source, readLines } = sourceOver(aLog(20));
+      renderViewer(source);
+      await settle();
+      expect(textsRead(readLines)).toEqual([undefined]);
+
+      searchFor("l");
+      await advanceTimersAndSettle(SEARCH_DELAY_MS - 1);
+      searchFor("li");
+      await advanceTimersAndSettle(SEARCH_DELAY_MS - 1);
+      searchFor("  line 1 ");
+      await advanceTimersAndSettle(SEARCH_DELAY_MS - 1);
+      expect(textsRead(readLines)).toEqual([undefined]);
+
+      await advanceTimersAndSettle(1);
+      expect(textsRead(readLines)).toEqual([undefined, "line 1"]);
+      expect(shownTexts()).toEqual(["line 15", "line 10"]);
+    });
+  });
+
+  it("says when no line is at the level picked", async () => {
+    // Four info lines, and the viewer opens at warnings and up.
+    const { source } = sourceOver(aLog(4));
     renderViewer(source);
-    await screen.findByRole("list", { name: "Log lines" });
+    await settle();
 
-    await fill(user, screen.getByRole("textbox", { name: "Search the log" }), "line 1");
-    await waitFor(() => expect(shownTexts()).toEqual(["line 15", "line 10"]));
-    expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ text: "line 1" }));
-
-    await fill(user, screen.getByRole("textbox", { name: "Search the log" }), "no such line");
-    expect(await screen.findByText("No line matches the search.")).toBeInTheDocument();
+    expect(screen.getByText("No line at this level")).toBeInTheDocument();
   });
 
   it("downloads the log as it is, under its own name", async () => {
     const user = setupUser();
     const { source } = sourceOver(aLog(5));
     const read = renderViewer(source);
-    await screen.findByRole("list", { name: "Log lines" });
+    await settle();
 
     await user.click(screen.getByRole("button", { name: "Download" }));
+    await settle();
 
-    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(saveMock).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(1);
-    const [name, file] = saveMock.mock.calls[0];
+    const [name, file] = nth(saveMock.mock.calls, 0);
     expect(name).toBe("import-sms-261006.log");
     expect(await file.text()).toBe("the whole log\n");
   });
@@ -145,14 +198,16 @@ describe("LogViewer", () => {
     const user = setupUser();
     const { source, readLines } = sourceOver(aLog(LOG_PAGE_SIZE + 50));
     renderViewer(source);
-    await screen.findByRole("list", { name: "Log lines" });
+    await settle();
     await pickLevel(user, "Everything");
-    await waitFor(() => expect(shownTexts()).toHaveLength(LOG_PAGE_SIZE));
+    await settle();
+    expect(shownTexts()).toHaveLength(LOG_PAGE_SIZE);
     expect(shownTexts().at(-1)).toBe("line 51");
 
     scrollNear(screen.getByRole("list", { name: "Log lines" }).parentElement as HTMLElement);
+    await settle();
 
-    await waitFor(() => expect(shownTexts()).toHaveLength(LOG_PAGE_SIZE + 50));
+    expect(shownTexts()).toHaveLength(LOG_PAGE_SIZE + 50);
     expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ after: 5100 }));
     expect(shownTexts().at(-1)).toBe("line 1");
   });

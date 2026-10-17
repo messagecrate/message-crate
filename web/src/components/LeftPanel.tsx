@@ -1,20 +1,28 @@
-import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useColumnResize } from "../hooks/useColumnResize";
+import { useContactGroups } from "../hooks/useContactGroups";
+import { useMessageTags } from "../hooks/useMessageTags";
+import { useReportColumnResizing } from "../hooks/useReportColumnResizing";
+import { useWindowWidth } from "../hooks/useWindowWidth";
+import { errorLine } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
-import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "../lib/savedSearches";
-import { isTauri } from "../lib/tauri-check";
-import { resizeHandleGutter } from "../lib/tw";
-import { useAccountProfile } from "../lib/useAccountProfile";
-import { useContactGroups } from "../lib/useContactGroups";
-import { useMessageTags } from "../lib/useMessageTags";
-import { useWindowWidth } from "../lib/useWindowWidth";
-import { type ImportAttention, useImportAttention } from "../screens/import/useImportAttention";
+import { isTauri } from "../lib/tauriCheck";
+import { resizeHandleGutterClass } from "../lib/tw";
+import type { NavItem } from "./appLayoutContext";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
-import { useReportColumnResizing } from "./columnResizeState";
 import GroupsNav from "./GroupsNav";
-import { EllipsisIcon, SearchIcon, TrashIcon } from "./icons";
+import {
+  ContactsIcon,
+  ConversationsIcon,
+  EllipsisIcon,
+  ExportIcon,
+  ImportIcon,
+  SearchIcon,
+  TrashIcon,
+} from "./icons";
 import { LIST_TOOLBAR_CLASS } from "./ListRangeHeader";
 import {
   LEFT_PANEL_DEFAULT_WIDTH,
@@ -31,12 +39,15 @@ import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_LEADING_ROW_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navCurrent,
+  navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
 import PlainButton from "./PlainButton";
 import PopupMenu from "./PopupMenu";
 import SavedSearchForm from "./SavedSearchForm";
-import { useColumnResize } from "./useColumnResize";
+import { type ImportAttention, useImportAttention } from "./useImportAttention";
+import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "./useSavedSearches";
 
 /** The Import entry's badge: its word, and the sentence its tooltip reads. */
 const IMPORT_BADGE: Record<ImportAttention, { label: string; title: string }> = {
@@ -44,68 +55,6 @@ const IMPORT_BADGE: Record<ImportAttention, { label: string; title: string }> = 
   paused: { label: "Paused", title: "An import is paused and can be resumed" },
   failed: { label: "Failed", title: "The last import failed" },
 };
-
-function NavIcon({ children }: { children: ReactNode }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="shrink-0"
-    >
-      {children}
-    </svg>
-  );
-}
-
-function ConversationsIcon() {
-  return (
-    <NavIcon>
-      {/* Message bubble */}
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </NavIcon>
-  );
-}
-
-function ContactsIcon() {
-  return (
-    <NavIcon>
-      {/* Address book */}
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      <circle cx="12" cy="8" r="2" />
-      <path d="M9 14c0-1.1 1.3-2 3-2s3 .9 3 2" />
-    </NavIcon>
-  );
-}
-
-function ImportIcon() {
-  return (
-    <NavIcon>
-      {/* Import: arrow into tray */}
-      <path d="M12 3v12" />
-      <path d="m8 11 4 4 4-4" />
-      <path d="M4 19h16" />
-    </NavIcon>
-  );
-}
-
-function ExportIcon() {
-  return (
-    <NavIcon>
-      {/* Export: arrow out of tray */}
-      <path d="M12 15V3" />
-      <path d="m8 7 4-4 4 4" />
-      <path d="M4 19h16" />
-    </NavIcon>
-  );
-}
 
 /** Browse rows: same leading slot as section headings (no extra row padding). */
 function browseLinkClass(active: boolean): string {
@@ -116,6 +65,7 @@ function browseLinkClass(active: boolean): string {
 
 export default function LeftPanel({
   browseQuery,
+  navItem,
   besideMinWidth,
 }: {
   /**
@@ -125,6 +75,11 @@ export default function LeftPanel({
    * is one click and the file holds the conversations that list showed.
    */
   browseQuery: string;
+  /**
+   * The item the route is on, which the panel highlights, as the route
+   * declared it to the layout; null on a route with none, such as Settings.
+   */
+  navItem: NavItem | null;
   /**
    * The width the columns beside the panel need, dividers included, on a
    * screen with a list; not given on a screen without one. A narrow window
@@ -165,17 +120,14 @@ export default function LeftPanel({
     };
   }, []);
 
-  function isActive(path: string): boolean {
-    if (path === "/") {
-      return (
-        location.pathname === "/" ||
-        location.pathname.startsWith("/messages/") ||
-        location.pathname.startsWith("/tag/") ||
-        location.pathname === "/no-tag"
-      );
-    }
-    return location.pathname.startsWith(path);
-  }
+  /**
+   * The props of `item`'s row: its look from `rowClass`, highlighted when the
+   * route is on it, and `aria-current` to mark it for a screen reader.
+   */
+  const itemRow = (item: NavItem, rowClass: (active: boolean) => string) => {
+    const active = navItem === item;
+    return { className: rowClass(active), "aria-current": navCurrent(active) };
+  };
 
   const { savedSearches: groups } = useSavedSearches();
   const savedSearchActions = useSavedSearchActions();
@@ -194,7 +146,7 @@ export default function LeftPanel({
       await savedSearchActions.create(name, query);
       setShowGroupForm(false);
     } catch (err) {
-      setFormError(apiErrorMessage(err, "Could not create saved search"));
+      setFormError(errorLine(err, "Could not create saved search"));
     }
   };
 
@@ -204,7 +156,7 @@ export default function LeftPanel({
       await savedSearchActions.update(id, name, query);
       setEditFor(null);
     } catch (err) {
-      setFormError(apiErrorMessage(err, "Could not save saved search"));
+      setFormError(errorLine(err, "Could not save saved search"));
     }
   };
 
@@ -213,7 +165,7 @@ export default function LeftPanel({
     try {
       await savedSearchActions.remove(id);
     } catch (err) {
-      setDeleteError(apiErrorMessage(err, "Could not delete saved search"));
+      setDeleteError(errorLine(err, "Could not delete saved search"));
     }
   };
 
@@ -223,30 +175,27 @@ export default function LeftPanel({
       className={`relative flex h-full shrink-0 flex-col overflow-hidden ${COLUMN_DIVIDER_CLASS} bg-panel text-text`}
     >
       <div className={LIST_TOOLBAR_CLASS} aria-hidden />
-      <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}>
+      <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}>
         {/* Browse */}
         <div className="px-3 py-2">
-          <PlainButton className={browseLinkClass(isActive("/"))} onPress={() => navigate("/")}>
+          <PlainButton {...itemRow("messages", browseLinkClass)} onPress={() => navigate("/")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <ConversationsIcon />
+              <ConversationsIcon size={15} className="shrink-0" />
             </span>
             Messages
           </PlainButton>
           <PlainButton
-            className={browseLinkClass(isActive("/contacts"))}
+            {...itemRow("contacts", browseLinkClass)}
             onPress={() => navigate("/contacts")}
           >
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <ContactsIcon />
+              <ContactsIcon size={15} className="shrink-0" />
             </span>
             Contacts
           </PlainButton>
-          <PlainButton
-            className={browseLinkClass(isActive("/trash"))}
-            onPress={() => navigate("/trash")}
-          >
+          <PlainButton {...itemRow("trash", browseLinkClass)} onPress={() => navigate("/trash")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <TrashIcon size={15} />
+              <TrashIcon size={15} className="shrink-0" />
             </span>
             Trash
           </PlainButton>
@@ -257,15 +206,15 @@ export default function LeftPanel({
           <NavCollapsibleSection
             id="messages-import-export"
             title="Messages"
-            headingActive={isActive("/import") || isActive("/export")}
+            headingActive={navItem === "import" || navItem === "export"}
           >
             <PlainButton
               onPress={() => navigate("/import")}
-              className={`${navGlyphRowClass(isActive("/import"))} cursor-pointer`}
+              {...itemRow("import", navGlyphButtonRowClass)}
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
-                  <ImportIcon />
+                  <ImportIcon size={15} className="shrink-0" />
                 </span>
                 <span className="truncate">Import</span>
                 {importAttention ? (
@@ -290,11 +239,11 @@ export default function LeftPanel({
                     : "/export",
                 )
               }
-              className={`${navGlyphRowClass(isActive("/export"))} cursor-pointer`}
+              {...itemRow("export", navGlyphButtonRowClass)}
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
-                  <ExportIcon />
+                  <ExportIcon size={15} className="shrink-0" />
                 </span>
                 <span className="truncate">Export</span>
               </span>
@@ -331,9 +280,10 @@ export default function LeftPanel({
                     <PlainButton
                       onPress={() => navigate(`/?q=${encodeURIComponent(g.query)}`)}
                       className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
+                      aria-current={navCurrent(active)}
                     >
                       <span className={NAV_LEADING_GLYPH_CLASS}>
-                        <SearchIcon size={15} />
+                        <SearchIcon size={15} className="shrink-0" />
                       </span>
                       <span className="min-w-0 truncate">{g.name}</span>
                     </PlainButton>
@@ -348,7 +298,7 @@ export default function LeftPanel({
                               : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                           }
                         >
-                          <EllipsisIcon size={15} />
+                          <EllipsisIcon size={15} className="shrink-0" />
                         </NavGlyphButton>
                       }
                       label={`Saved search options for ${g.name}`}

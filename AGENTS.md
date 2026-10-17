@@ -11,9 +11,30 @@ vocabulary. Read it before writing any of those.
 ## Git Workflow
 
 - Every change goes on a branch or worktree. `main` takes pull requests only:
-  its ruleset requires one, plus the ten `ci.yml` checks.
+  its ruleset requires one, plus the `ci.yml` checks that
+  `docs/adr/0007-ci-is-the-only-gate.md` names as required.
 - Before pushing, run `git fetch`, then read the pull request's real state
-  with `gh pr list`, `gh pr view <number>`, and `gh pr checks <number>`.
+  with `gh pr list`, `gh pr view <number> --json <fields>`, and
+  `gh pr checks <number>`.
+- Older `gh` asks GitHub for classic Projects, and GitHub has turned them
+  off. So `gh issue view` without `--json` and `gh issue edit` fail before
+  `gh` 2.71.0, and `gh pr view` without `--json` and `gh pr edit` fail
+  before 2.73.0. Each fails with "Projects (classic) is being deprecated".
+  Read with `--json`. Change an issue or a pull request through `gh api`,
+  whose `issues/<N>` routes take either number:
+
+  ```bash
+  # Set the body from a file
+  gh api -X PATCH repos/{owner}/{repo}/issues/<N> -F body=@<file>
+  # Set the title
+  gh api -X PATCH repos/{owner}/{repo}/issues/<N> -f title='<title>'
+  # Add a label
+  gh api -X POST repos/{owner}/{repo}/issues/<N>/labels -f 'labels[]=<label>'
+  # Remove a label
+  gh api -X DELETE repos/{owner}/{repo}/issues/<N>/labels/<label>
+  # Assign the logged-in gh user
+  gh api -X POST repos/{owner}/{repo}/issues/<N>/assignees -f "assignees[]=$(gh api user -q .login)"
+  ```
 - Merge a pull request as "Merging" below says.
 
 ### Submitting Work
@@ -23,17 +44,18 @@ of `ci.yml` skips every job, and marking it ready starts a run that does the
 work. `pr-review` marks it ready after the review's last push. A draft's checks are skipped, and a
 skipped check reads as passed, so they say nothing. Why:
 `docs/adr/0007-ci-is-the-only-gate.md`, "Consequences".
-**Write the description to one of the templates in `.github/PULL_REQUEST_TEMPLATE/`.**
-They exist for whoever opens the pull request to fill in — an agent included —
+**Write the description to the matching pull request template.**
+The templates exist for whoever opens the pull request to fill in — an agent included —
 not as options offered to a reviewer:
 
-- `feature.md` for new behaviour: what it does and for whom, the key files
-  changed, HTTP API and schema changes, how to test it.
-- `bugfix.md` for a fix: expected against actual, the root cause stated
-  separately from the fix, steps to reproduce before and verify after,
-  impact, and regression risk.
-- `.github/pull_request_template.md` is the generic default applied
-  automatically. Use it for changes that are neither, such as documentation.
+- `.github/PULL_REQUEST_TEMPLATE/feature.md` for new behavior: what it does
+  and for whom, the key files changed, HTTP API and schema changes, how to
+  test it.
+- `.github/PULL_REQUEST_TEMPLATE/bugfix.md` for a fix: expected against
+  actual, the root cause stated separately from the fix, steps to reproduce
+  before and verify after, impact, and regression risk.
+- `.github/pull_request_template.md`, the generic template, for changes that
+  are neither, such as documentation.
 
 Fill the sections in rather than deleting them. Root Cause and Regression
 Risk on a fix are the two that make it reviewable, so answer them plainly
@@ -42,19 +64,46 @@ instead of dropping them.
 #### Review on the pull request
 
 The ruleset on `main` blocks a merge while any review conversation is open,
-and requires no approval: the reviewing agent and the author share one GitHub
-account, and GitHub does not let an author approve their own pull request.
+and requires no approval: the conversations are the review.
 Why: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Review a pull request with the `pr-review` skill (`.claude/skills/pr-review/`).
 It runs the steps below, fixes what it finds, and merges the pull request.
 
+`pr-review` posts as the `message-crate-reviewer` GitHub App: every call that
+posts or resolves (a review, a comment, a reply, a resolved thread, a deferred
+finding's issue) runs through `scripts/gh-as-reviewer.sh` in place of `gh`,
+so it counts against the app's posting limit, not the user's ("Posting
+pace").
+Reads, pushes, `gh pr ready` and the merge stay on the logged-in `gh` account.
+The app never pushes.
+
+Run `main`'s copy of the script, never the one in the review worktree, so the
+pull request under review never supplies the code that handles the app's key.
+At the start of a review, write it to a scratch file outside the worktree,
+named with the pull request number so parallel reviews never share it. That
+file is `<gh-as-reviewer>` in the commands below, and it works from any
+directory, including a branch older than the script:
+
+```bash
+git fetch origin main
+git show origin/main:scripts/gh-as-reviewer.sh > <scratch>/gh-as-reviewer-<N>.sh
+bash <scratch>/gh-as-reviewer-<N>.sh <gh arguments>
+```
+
+The script reads the key from
+`~/.ssh/message-crate-reviewer.pem`. When its own calls for a token fail, it
+prints `gh-as-reviewer:`, the step, GitHub's HTTP status and reply, and exits
+1. The `gh` call after them fails as `gh` does, with its own message and exit
+code. Why: `docs/adr/0007-ci-is-the-only-gate.md`.
+
 ##### The marker
 
-Every comment `pr-review` posts starts with the line `<!-- pr-review -->`. The user and the agents post from one GitHub account,
-so the marker is how their threads are told apart. A thread whose first
-comment carries it is an agent thread. Any other thread is a user thread, and
-only the user resolves it.
+Every comment `pr-review` posts starts with the line `<!-- pr-review -->`.
+The marker, not the author, is how agent and user threads are told apart, so
+the rule holds whichever account posted. A thread whose first comment carries
+it is an agent thread. Any other thread is a user thread, and only the user
+resolves it.
 
 1. **Read the pull request**: its head, base, draft state, the issues it
    closes, and the diff.
@@ -71,18 +120,25 @@ only the user resolves it.
    commit that was reviewed so a later push cannot move the lines:
 
    ```bash
-   gh api repos/messagecrate/message-crate/pulls/<N>/reviews \
+   bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/reviews \
      -f commit_id=<headRefOid> -f event=COMMENT \
-     -f body=$'<!-- pr-review -->\n<summary>' \
-     -f 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
-     -f comments[][body]=$'<!-- pr-review -->\n<the finding and why it matters>'
+     -F body=@<summary-file> \
+     -F 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
+     -F 'comments[][body]=@<finding-file>'
    ```
 
-   Repeat the three `comments[]` fields for each finding. The marker goes in
-   each `comments[][body]`, because that comment opens the thread. A finding
-   with no line in the diff goes in a top-level comment instead
-   (`gh pr comment <N>`), with the marker on its first line. It has no thread,
-   so it is answered by a new marked `gh pr comment <N>` that quotes it.
+   Repeat the three `comments[]` fields for each finding, every one with
+   `-F`. `gh` adds every `-f` field before every `-F` field, so with mixed
+   flags a second finding's line lands in the wrong `comments[]` object and
+   GitHub answers `422 Unprocessable Entity`. The marker starts the summary
+   file and each finding file, because the finding's comment opens the
+   thread. A finding with no line in the diff goes in a top-level comment
+   instead, with the marker on its first line. It has no thread, so it is
+   answered by a new marked top-level comment that quotes it:
+
+   ```bash
+   bash <gh-as-reviewer> pr comment <N> --body-file <file>
+   ```
 3. **Work on a detached worktree** made at the pull request's head, before
    the review. The branch may be checked out in another worktree, and a
    detached one works either way. Before every push, run the **local
@@ -105,21 +161,24 @@ only the user resolves it.
    stays as it is. Then resolve it if it is an agent thread:
 
    ```bash
-   gh api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
-       -f body=$'<!-- pr-review -->\nFixed in <sha>: <what changed>.'
+   bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
+       -F body=@<reply-file>   # first line <!-- pr-review -->, then a line: Fixed in <sha>: <what changed>.
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
-   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
+   bash <gh-as-reviewer> api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
    ```
 
    Never resolve a thread without a reply in it.
 5. **Merge the base into the pull request** before the review, whenever the
    base has commits the pull request lacks, so the review and the pull
-   request's checks see the code as it would land. Before merging, merge it
-   again only on `CONFLICTING`: GitHub cannot merge a pull request that
-   conflicts with the base, and merges one that is only behind as it is,
-   untested on the new base (ADR 0007 says why that is accepted).
+   request's checks see the code as it would land. Every later push the
+   review makes, such as its last push or a fix for a failed job, brings the
+   base in too. After the review, a push made only to bring the base in is
+   made only on `CONFLICTING`: GitHub cannot merge a pull request that conflicts with the
+   base, and merges one that is only behind as it is, untested on the new
+   base (ADR 0007 says why that is accepted). Step 6 says what a conflict
+   does to the CI watch.
    Merge rather than rebase: a rebase needs a force-push, and the squash
    merge drops the merge commit. GitHub reports `UNKNOWN`
    for a few seconds after a push, so wait for a settled answer:
@@ -151,6 +210,15 @@ only the user resolves it.
    pull request that is already ready, such as a fix for a failed job, starts
    its run itself, and the snippet's `isDraft` branch skips straight to it.
 
+   A conflict ends the watch at any point. The snippet reads the merge state
+   before it marks the pull request ready, and with every poll after. GitHub
+   starts no run for a pull request that conflicts with its base, and a run
+   on a head that conflicts cannot lead to a merge. On `CONFLICTING`, merge
+   the base in (step 5), fix any job of the run that already failed because
+   of the pull request, run the local checks, push, and watch the new run.
+   The push cancels the run it replaces. A run being waited on for its rerun
+   is left the same way, and the push replaces the rerun.
+
    A rejected push is handled as step 3 says. If the head moved past your
    push, another session pushed commits nobody reviewed: stop before marking
    the pull request ready, so it stays a draft, and report it.
@@ -173,29 +241,39 @@ only the user resolves it.
    and its commits have not been reviewed.
 
    ```bash
+   conflicting() { m=$(gh pr view <N> --json mergeable -q .mergeable) && [ "$m" = CONFLICTING ]; }
+   stop_if_conflicting() { [ "$m" != CONFLICTING ] || { echo conflicting; exit 1; }; }   # tests the state the last read left in $m
    before=$(gh pr view <N> --json headRefOid -q .headRefOid)
    git push origin HEAD:<headRefName> || exit 1   # rejected: see step 3
    sha=$(git rev-parse HEAD)
    until h=$(gh pr view <N> --json headRefOid -q .headRefOid) && [ "$h" != "$before" ] || [ "$sha" = "$before" ]
    do sleep 10; done
    [ "$h" = "$sha" ] || { echo moved; exit 1; }   # another session pushed on top
+   until m=$(gh pr view <N> --json mergeable -q .mergeable) && [ "$m" != UNKNOWN ]; do sleep 10; done
+   stop_if_conflicting                  # before any run
    if [ "$(gh pr view <N> --json isDraft -q .isDraft)" = true ]; then
-     until last=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId -q 'map(.databaseId) | max // empty') &&
-           [ -n "$last" ]
+     until conflicting || { last=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId \
+                                     -q 'map(.databaseId) | max // empty') && [ -n "$last" ]; }
      do sleep 10; done                  # the draft's own run, all skipped
+     stop_if_conflicting
      gh pr ready <N>
    else
      last=0                             # already ready: the push started the run
    fi
-   until run=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId \
-                 -q "map(select(.databaseId > $last)) | .[0].databaseId // empty") && [ -n "$run" ]
-   do sleep 10; done
-   until s=$(gh run view "$run" --json status,jobs \
-               -q 'if any(.jobs[]; .conclusion == "failure") then "failed" else .status end') &&
-         { [ "$s" = failed ] || [ "$s" = completed ]; }
-   do sleep 30; done                    # stops at the first failed job
+   until conflicting || { run=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId \
+                                  -q "map(select(.databaseId > $last)) | .[0].databaseId // empty") && [ -n "$run" ]; }
+   do sleep 10; done                    # no run starts on a conflicting pull request
+   stop_if_conflicting
+   until conflicting || { s=$(gh run view "$run" --json status,jobs \
+                                -q 'if any(.jobs[]; .conclusion == "failure") then "failed" else .status end') &&
+                          { [ "$s" = failed ] || [ "$s" = completed ]; }; }
+   do sleep 30; done                    # stops at the first failed job, or at a conflict
    gh run view "$run" --json conclusion,jobs -q '.conclusion, (.jobs[] | select(.conclusion == "failure") | .name)'
-   gh run watch "$run"                  # an outside failure: wait for the run to finish
+   stop_if_conflicting                  # fix the jobs listed above in the same push
+   until conflicting || { s=$(gh run view "$run" --json status -q .status) && [ "$s" = completed ]; }
+   do sleep 30; done                    # an outside failure: wait for the run to finish, or for a conflict
+   gh run view "$run" --json jobs -q '.jobs[] | select(.conclusion == "failure") | .name'   # every failed job, to sort
+   stop_if_conflicting                  # the push replaces the rerun
    main_run=$(gh run list --branch main --workflow ci.yml --event push --status completed -L 1 \
                 --json databaseId -q '.[0].databaseId')   # the last finished run on main
    gh run view "$main_run" --json url,jobs -q '.url, (.jobs[] | select(.conclusion == "failure") | .name)'
@@ -206,11 +284,14 @@ only the user resolves it.
 ##### Posting pace
 
 GitHub limits how fast one account creates content (reviews, comments,
-replies, pull requests), apart from its hourly limit, and every session posts
-from the same account. So make those calls one at a time, at least a second
-apart. When GitHub refuses one ("submitted too quickly", or a 403 or 422 that
-names a secondary rate limit), check that it did not land, wait a minute (or
-the `retry-after` it gives), and send the same call again.
+replies, pull requests), apart from its hourly limit: about 80 a minute and
+500 an hour. Every session shares one account: the user's, or the app's for
+`pr-review` ("Review on the pull request"). So make those calls one at a time,
+at least a second apart. When GitHub refuses one for this limit ("submitted
+too quickly", or a `403 Forbidden`, `422 Unprocessable Entity` or
+`429 Too Many Requests` whose reply names a secondary rate limit), check that
+it did not land, wait a minute (or the `retry-after` it gives), and send the
+same call again.
 
 #### Merging
 
@@ -226,7 +307,7 @@ draft. Any other merge waits for the user to ask for it.
 ## Tools
 
 - **GitHub MCP** (`plugin-github-github`) for issues, PR read/search, reviews, and GitHub code search when the server is authenticated; fall back to `gh` when it is not. See [`.cursor/rules/github-mcp.mdc`](.cursor/rules/github-mcp.mdc).
-- **Playwright MCP** (`plugin-playwright-playwright`) to verify browser UI after `web/` changes: navigate to the Vite app (`http://127.0.0.1:5173` with the server on `:8080`), take a snapshot, then click/type as needed. See [`.cursor/rules/playwright-mcp.mdc`](.cursor/rules/playwright-mcp.mdc). Desktop-only screens gated by `isTauri()` still need the Tauri window or unit tests — Playwright against Vite alone cannot exercise them.
+- **Playwright MCP** (`plugin-playwright-playwright`) to verify browser UI after `web/` changes: navigate to the Vite app (`http://127.0.0.1:5173` with the server on `:8080`), take a snapshot, then click/type as needed. See [`.cursor/rules/playwright-mcp.mdc`](.cursor/rules/playwright-mcp.mdc). Desktop-only screens gated by `isTauri()` still need the Tauri window or unit tests — Playwright against Vite alone cannot exercise them. `nightly.yml` checks only that the served website logs in, searches and opens a conversation (`scripts/check-served-website.sh`), so a change to any other screen still needs this check.
 
 ## Message Crate Repository
 
@@ -235,7 +316,7 @@ This repository is **messagecrate/message-crate**. The Cargo packages carry the 
 The product has two pieces:
 
 - **The server** — `message-crate-server`. Stores messages in SQLite (`data/messagecrate.db`), serves `/v1/*`, and can host the website from `static/`. Run it with `./scripts/run-dev.sh` (http://127.0.0.1:8080) or Docker. Login is a local account, not a cloud account.
-- **The desktop app** — Tauri v2 around the Vite SPA in `web/`. Reads phone backups, writes JSONL, and imports into a running server. Browse and search also work in the browser against the server; importing a backup needs the desktop app. The installer carries `message-crate-server` and the built website, and the app starts that server at `127.0.0.1:8080` when nothing answers there, with its data in the operating system's app-data directory; it stops it on close. A Message Crate already answering at that address (Docker, `./scripts/run-dev.sh`) is used as it is. Rules: `src-tauri/src/local_server.rs`; why: `docs/adr/0018-the-desktop-app-starts-the-server-it-ships.md`.
+- **The desktop app** — Tauri v2 around the Vite SPA in `web/`. Reads phone backups, writes JSONL, and imports into a running server. Browse and search also work in the browser against the server; importing a backup needs the desktop app. The installer carries `message-crate-server` and the built website, and the app starts that server at `127.0.0.1:8080` when nothing answers there, with its data in `~/message-crate/data`, the Data Directory in the Message Crate Directory; it stops it on close. A Message Crate already answering at that address (Docker, `./scripts/run-dev.sh`) is used as it is. Rules: `src-tauri/src/local_server.rs`; why: `docs/adr/0018-the-desktop-app-starts-the-server-it-ships.md`.
 
 ### Technology stack
 
@@ -246,9 +327,9 @@ The product has two pieces:
 | Database               | SQLite file at `data/messagecrate.db`. Table SQL lives in `schema/sql/`. The server fingerprints those files at compile time (`SCHEMA_FINGERPRINT` in `db/schema.rs`) and rebuilds a database stamped with any other fingerprint empty, so a schema change is only a change to the SQL: nothing to bump. The rebuilt database needs a fresh import. |
 | Desktop app            | Tauri 2 native window. Vite 8 + React 19 + TypeScript SPA in `web/`. React Router 7, React Aria, Tailwind CSS 4. Vitest + Biome.  |
 | Website                | Same `web/` SPA. Dev server on port 5173. Production copy in `static/`, served by the server on port 8080.                        |
-| Node                   | Node.js 22+ for `web/`, `docs/`, and Docker frontend builds.                                                                      |
+| Node                   | Node.js 24 for `web/`, `docs/`, the CI jobs that build them, and the Docker frontend build. `.nvmrc` holds the major and every workflow that installs Node.js reads it. `scripts/check-docker-context.sh` fails when the Dockerfile's frontend-builder stage is on another Node.js major. |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
-| Packaging              | Docker (Node 22 + Rust image). GitHub Actions on `v*` tags builds the image and Tauri installers.                                 |
+| Packaging              | Docker (Node.js 24 frontend build, Rust build, Debian 12 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
 | Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` for WhatsApp, downloaded by the app into the Tools Directory (a `pipx` install linked there where the app has no download, such as Linux on ARM). `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
 | Not the product path   | Restored Next.js 16 browse app (`web-next/`), an HTTP client of the server's `/v1` API for evaluating its screens. Kept on purpose; see CLAUDE.md before proposing its removal. |
 
@@ -262,7 +343,7 @@ message-crate
 │   ├── exporters/          # backup parsers (iMessage, WhatsApp, SMS, experimental)
 │   ├── helpers/            # imessage-reader (GPL helper process the app spawns) and its protocol
 │   ├── libs/               # shared libraries (ir, ir-format, reexport, contacts, media,
-│   │                       #   message-crate-import, message-crate-export, …)
+│   │                       #   import, export, …)
 │   └── server/             # message-crate-server (HTTP API + SQLite) and demo-seed
 ├── docker/                 # Dockerfile and Compose for a release-shaped server image
 ├── docs/                   # Astro Starlight site (messagecrate.app)
@@ -327,13 +408,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install tauri-cli --version "^2"
 ```
 
-**3. Node.js 22+**. Distro Node is usually too old. nvm example:
+**3. Node.js 24**, the major in `.nvmrc`. Distro Node is usually too old. nvm example:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 # new shell, then:
-nvm install 22
-nvm use 22
+nvm install 24
+nvm use 24
 ```
 
 **4. Optional helpers**
@@ -344,10 +425,15 @@ only the fork records the ids a WhatsApp reply is linked by.
 ```bash
 sudo apt install -y pipx && pipx ensurepath
 pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"   # wtsexporter
-mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/  # the app runs it only from its Tools Directory
+mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/  # used only where the app has no download (Linux on ARM); elsewhere the app downloads the pinned file over it
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh
+# gitleaks for ./scripts/check-secrets.sh, at the version and archive SHA-256 that
+# ci.yml's secrets job pins. Run from the clone (step 5), which holds ci.yml.
+v=$(sed -n 's/^ *GITLEAKS_VERSION: //p' .github/workflows/ci.yml); sum=$(sed -n 's/^ *GITLEAKS_SHA256: //p' .github/workflows/ci.yml); d=$(mktemp -d)
+curl -sSfL -o "$d/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_x64.tar.gz"
+echo "${sum}  $d/gitleaks.tar.gz" | sha256sum -c - && mkdir -p ~/.local/bin && tar -xzf "$d/gitleaks.tar.gz" -C ~/.local/bin gitleaks && rm -r "$d"
 ```
 
 **5. Clone and install the frontend**
@@ -376,9 +462,19 @@ Work from the repository root. The server process must be running before the web
 ./scripts/run-dev.sh --release       # optimized build; combines with any flag above
 ```
 
-`serve` adds the Demo Account to a database that does not exist yet, so a plain first start has it too; `--reset` creates the database empty first (`create-database`). `--reset` and `--reset-demo` cannot be combined. Neither claims the Message Crate; add `--owner` to either for that. `./scripts/run-dev.sh --help` lists every flag with examples. The script writes `config/config.toml` from the example (CORS for Vite `:5173` enabled) only when the file is missing. Later sessions omit `--reset-demo` so the existing database stays.
+`serve` adds the Demo Account to a database that does not exist yet, so a plain first start has it too; `--reset` creates the database empty first (`create-database`). `--reset` and `--reset-demo` cannot be combined. Neither claims the Message Crate; add `--owner` to either for that. `--owner` refuses to run unless `[server] bind` in `config/config.toml` is `127.0.0.1`, `localhost` or `[::1]`, because `admin` / `admin` must never be reachable from another machine. It also refuses a bind written other than as one `bind = "..."` line under `[server]`, because the script reads only that form. The check runs before anything is wiped. `./scripts/run-dev.sh --help` lists every flag with examples. The script writes `config/config.toml` from the example (CORS for Vite `:5173` enabled) only when the file is missing. Later sessions omit `--reset-demo` so the existing database stays.
 
 API: **http://127.0.0.1:8080**. After `--reset-demo`, press **Explore Demo Account** on the login card; the Demo Account has no password. After `--owner`, log in as `admin` / `admin`. Otherwise create the owner in the UI.
+
+The server is up when `GET http://127.0.0.1:8080/health` answers `200 OK` with `ok`. The address has no `/v1` prefix: `/v1/health` does not exist and answers `404 Not Found`. The host and port are `[server] bind` in `config/config.toml`, `127.0.0.1:8080` when that line is absent or unchanged. The line below uses `127.0.0.1:8080`, so a changed `bind` needs the same address in it.
+
+The server listens only after any seeding: `--reset-demo` seeds before `serve` starts, and `serve` seeds a database that does not exist yet before it listens. A `200 OK` does not say which process answered, so `/health` must fail before `./scripts/run-dev.sh` starts. Otherwise a server left running (an earlier run, the one `cargo tauri dev` started, the Docker stack) passes the wait.
+
+The line below asks once a second for at most 15 minutes, then asks once more, so it exits non-zero when the server never came up. The 15 minutes cover a first compile and the `--reset-demo --large` seed, which takes about 3 minutes on the debug build.
+
+```bash
+for _ in $(seq 900); do curl -fs --max-time 2 -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; curl -fs --max-time 2 http://127.0.0.1:8080/health
+```
 
 Restart terminal 1 after edits under `crates/server/server/` (debug `cargo run`; no hot reload).
 
@@ -395,7 +491,7 @@ Or, browser only (no Tauri):
 cd web && npm run dev        # http://localhost:5173, proxies /v1 to :8080
 ```
 
-`cargo tauri dev` uses the server on **127.0.0.1:8080** when one is running, so start `./scripts/run-dev.sh` first to work against the repository's `data/`. With nothing on that port the app starts its own server, built by `src-tauri/build.rs`, with its data in `data-dev` in the app-data directory (`~/.local/share/app.messagecrate.desktop/data-dev` on Linux), and stops it when the window closes. The installed app keeps its data in `data` beside it, and a dev build never opens that directory, because a branch with another Schema Fingerprint would rebuild the installed app's database empty. **Open data directory** in a dev build opens `data-dev`.
+`cargo tauri dev` uses the server on **127.0.0.1:8080** when one is running, so start `./scripts/run-dev.sh` first to work against the repository's `data/`. With nothing on that port the app starts its own server, built by `src-tauri/build.rs`, with its data in `data-dev` in the Message Crate Directory (`~/message-crate/data-dev`), and stops it when the window closes. The installed app keeps its data in `data` beside it, and a dev build never opens that directory, because a branch with another Schema Fingerprint would rebuild the installed app's database empty. The two share the rest of `~/message-crate`: staging, exports, logs, scratch and tools.
 
 Do not run `npm run dev` and `cargo tauri dev` at the same time. Point the app at **http://127.0.0.1:8080** (not `localhost` — that can resolve to IPv6, which the server does not listen on). `web/` and `src-tauri/` usually reload; restart `cargo tauri dev` if they do not.
 
@@ -407,17 +503,23 @@ Optional: `./scripts/build-static.sh` copies `web/dist` to `static/` so the serv
 
 Run these from the repository root unless a `cd` is shown.
 
-Rust formatter is `rustfmt`. CI gates Clippy at `-D warnings` on the workspace and on `src-tauri`. `src-tauri/` is not a workspace member, so format it with `--manifest-path`. `rust-toolchain.toml` pins the toolchain for every checkout, for CI, and for the release image (`docker/Dockerfile` copies the file and installs that toolchain; `scripts/check-docker-context.sh` fails when its base image drifts to another minor); bump it deliberately, in its own pull request, fixing any new Clippy lints there — a floating stable can redden `main` with no code change.
+Rust formatter is `rustfmt`. CI gates Clippy and rustdoc at `-D warnings` on the workspace and on `src-tauri`; rustdoc runs with `--document-private-items`, so a broken intra-doc link anywhere fails. `src-tauri/` is not a workspace member, so format it with `--manifest-path`. `rust-toolchain.toml` pins the toolchain for every checkout, for CI, and for the release image (`docker/Dockerfile` copies the file and installs that toolchain; `scripts/check-docker-context.sh` fails when its base image drifts to another minor); bump it deliberately, in its own pull request, fixing any new Clippy lints there — a floating stable can redden `main` with no code change.
 
 ```bash
 # Check format (what CI runs)
 cargo fmt --all -- --check
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
+# Rustdoc at -D warnings, private items included (what CI runs: a step of
+# the clippy job and of check-tauri; check-pr.sh runs both)
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
+
 # Rewrite Rust (workspace + src-tauri) and web/ (Biome)
 ./scripts/format-all.sh
 
-# Fast pre-flight: fmt --check, Clippy -D warnings, Biome ci, tsc.
+# Fast pre-flight: CHANGELOG.md format, fmt --check, Clippy -D warnings,
+# rustdoc -D warnings, Biome ci, tsc.
 ./scripts/check-pr.sh
 
 # Everything CI runs, serially (build, tests, audits, docs, the lot).
@@ -440,17 +542,35 @@ cargo build --manifest-path src-tauri/Cargo.toml
 # A full run is well over a day on one machine, so point it at the file
 # you changed.
 ./scripts/mutants.sh --file crates/libs/phone/src/lib.rs
+
+# Start docker/compose.release.yml on a built image under its own project,
+# volume and port (127.0.0.1:18080), check it drops its privileges, serves
+# the Demo Account, and imports a conversation with a video, makes its
+# Thumbnail and Preview and exports it under them, then remove it.
+# nightly.yml runs it; no pull request does. --website also uses the
+# website it serves in a headless browser (below); nightly.yml passes it.
+docker build -f docker/Dockerfile -t message-crate-server:check .
+./scripts/check-docker-compose.sh message-crate-server:check
+./scripts/check-docker-compose.sh --website message-crate-server:check
+
+# Use the website a running Message Crate serves in a headless browser: log in
+# to the Demo Account, search, open a conversation; fail on a console error or
+# a 5xx. Runs in the Playwright image, so it needs Docker and nothing else.
+./scripts/check-served-website.sh http://127.0.0.1:8080
 ```
 
 Coverage is a report, not a gate, and it points at gaps rather than measuring test quality: a function no test calls is worth a look, while uncovered lines inside a called function are not a target. Coverage cannot say whether the tests that do call a function would notice it breaking; mutation testing (below) measures that. Never write a test to raise the coverage number. Write one only when it would fail for a bug that matters, and name that bug. `scripts/coverage.sh` needs `cargo-llvm-cov`, the `llvm-tools` component that `rust-toolchain.toml` installs, and `python3`; it leaves test code out of the numbers and does not measure `src-tauri`. The `Coverage` workflow (`coverage.yml`) runs the same script on every push to `main`, puts the function headline on the run's summary page, and keeps the reports and the uncovered-functions list as a workflow artifact for 30 days.
 
 Mutation testing is a report too, and it answers what coverage cannot: whether a test that calls a function would fail if the function were wrong. cargo-mutants changes the code one small way at a time (`<` to `<=`, `&&` to `||`, a function returning `Default::default()`) and runs that package's tests. A mutant every test still passes is "missed", and that list is the finding. Every workspace crate is mutated except the few `.cargo/mutants.toml` leaves out (test-data generators, the build stamp, serde-only types), along with `Display` and `Debug` text, a handful of functions that only build a log or hint line, arithmetic in top-level constants, and retry jitter; it says why for each. `scripts/mutants.sh` needs `cargo-mutants`, `cargo-nextest` (it runs each mutant's tests and stops at the first failure, which halves the time of a caught mutant) and `python3`; other arguments go to `cargo mutants`, and `--file` mutates only that file. The `Mutants` workflow (`mutants.yml`) runs only when started by hand from the Actions tab, never on a schedule or a pull request. It splits the run across 40 shards of about 2.5 hours each (about 100 runner-hours in all, most of it the server crate, whose whole test suite runs for every mutant), puts the joined table and every missed mutant on the run's summary page, and keeps each shard's logs and diffs as a workflow artifact for 30 days.
 
-The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main` every day at 10:37 UTC, with the same steps as "Docker image builds" in `ci.yml`, because that job runs only on a pull request that changes the Dockerfile, a Cargo manifest or the lockfile, and a change anywhere else can break the image. It builds and never publishes; publishing a release stays with a `v*` tag, and a manual CI run can push `sha-<commit>` ("Releases and versions"). A scheduled run ends at once when `main` is still at the commit the previous scheduled run saw. A run started by hand from the Actions tab (`gh workflow run nightly.yml`) builds regardless. It is a report, not a gate: it does not run on pull requests and the ruleset does not require it. A failed night opens an issue titled "Nightly run failed" with the `bug` label, or adds a comment to that issue while it is open, naming the failed job and linking the run. A night that fails is not built again until `main` moves, so the fix is a commit or a run started by hand.
+The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main` every day at 10:37 UTC and starts the image with `scripts/check-docker-compose.sh`. It is the only run that starts the image before a release: no pull request builds it, and the release's `docker` job builds it but does not start it before it pushes (#3000). It passes `--website`, so a headless browser then loads the website the image serves, logs in to the Demo Account, searches and opens a conversation. It builds and never publishes; publishing a release stays with a `v*` tag, and a manual CI run can push `sha-<commit>` ("Releases and versions"). A scheduled run ends at once when `main` is still at the commit the previous scheduled run saw. A run started by hand from the Actions tab (`gh workflow run nightly.yml`) builds regardless. It is a report, not a gate: it does not run on pull requests and the ruleset does not require it. A failed night opens an issue titled "Nightly run failed" with the `bug` label, or adds a comment to that issue while it is open, naming the failed job and linking the run. A night that fails is not built again until `main` moves, so the fix is a commit or a run started by hand. The workflow has a second job, which checks on GitHub's Windows on ARM runner that the Windows x64 ffmpeg and ffprobe the desktop app downloads there run under emulation. `scripts/check-windows-arm-ffmpeg.sh` downloads the files `src-tauri/src/tool_downloads/pins.rs` pins for Windows on ARM, checks their SHA-256, probes a committed video and converts it the way the Media Stage does, to H.264 for Convert media and to HEVC for Convert & Compress media.
+
+
+Every `uses:` in a workflow names a third-party action by the full commit SHA of a tag, with the tag in a trailing comment: `actions/checkout@<40-hex-sha> # v7`. Anyone with push access to the action's repository can move a tag, and a moved tag would run new code on the runners that build the installers and hold `DOCKERHUB_TOKEN`; a commit cannot move. Look up the commit a tag names today with `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`. Dependabot's weekly `github-actions` update moves the SHA and its comment together.
 
 #### Frontend
 
-Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail). Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
+Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail), the timed-wait rule's canary (`web/src/test/noTimedWaitsInTests.canary.ts`, linted with `--error-on-warnings`; `web/src/test/README.md`, "The check", says why), the Tauri-mock rule's canary (`web/src/test/noTauriMocksOutsideDesktop.canary.ts`, linted the same way, for `web/biome-plugins/noTauriMocksOutsideDesktop.grit`), and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less what it lifts: one path, or every `@tauri-apps/` path together, which the override for `src/lib/desktop/` lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
 
 ```bash
 cd web
@@ -464,7 +584,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs everything CI runs, serially, starting with `check-pr.sh`. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check`, Clippy at `-D warnings`, and rustdoc at `-D warnings` with private items on both manifests, `biome ci`, the timed-wait and Tauri-mock rules' canaries, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`. It skips the secret scan (`scripts/check-secrets.sh`) when gitleaks is not installed ("First time setup", step 4). On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs, and the desktop app's Job Object tests, which CI's `windows-local-server` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 
@@ -488,7 +608,7 @@ The product follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (
 
 **`CHANGELOG.md` is written for the people who use Message Crate, not for developers.** Group every entry as **Features** (something a person can now do), **Fixes** (something that was wrong and now behaves correctly), or **Design** (a change in how the product works that is worth knowing about). Say what changed for the reader in plain language: no route paths, status codes, schema versions, type or crate names, or file paths. Internal rework earns a sentence about what it changes for the reader, or one line saying the internals were reworked with nothing visible — never a list of what was moved where. The developer-facing detail already lives in the pull request, the ADRs under `docs/adr/`, and the commit message.
 
-Bullets under the in-development heading start with an ISO date (`YYYY-MM-DD`), the day the change landed. Released sections carry their date on the heading alone. Where a change forces someone to do something — a config key that must be deleted, a database that is rebuilt empty — put it under an **Upgrading** heading in that release, in a sentence they can act on.
+Bullets under the in-development heading start with an ISO date (`YYYY-MM-DD`), the day the change landed. Every list is tight: no blank line anywhere inside a list, bulleted or numbered, including before an item's second paragraph or nested list, because one blank line makes the whole list render loose and each new entry copies whichever neighbor it lands beside. Released sections carry their date on the heading alone. `./scripts/check-changelog.sh` enforces these rules and lines of at most 80 characters; `check-pr.sh` and CI's `version` job run it, and each failure names its line and rule. Where a change forces someone to do something — a config key that must be deleted, a database that is rebuilt empty — put it under an **Upgrading** heading in that release, in a sentence they can act on.
 
 Three version numbers are easy to mix up:
 
@@ -520,7 +640,7 @@ Leave most other `Cargo.toml` files at `0.1.0`. Do not bump `web-next/` (`0.3.0`
 3. Set the four product version files to the new number (for example `0.8.0`).
 4. Push a git tag `v0.8.0` on that commit. Pushing the tag is what ships. Push/PR to `main` does not. The `version` job fails the tag run if the four files, their lockfiles, or the changelog heading disagree with the tag, and nothing is built or published.
 
-`.github/workflows/ci.yml` then: runs fmt/test, pushes `bitrealm/message-crate`, builds Tauri installers (Linux `.deb` + AppImage, Windows `.msi`, macOS `.dmg`), and creates a GitHub Release named `Message Crate v0.8.0`. `.github/workflows/docs.yml` publishes the documentation site to messagecrate.app on the same tag; a merge to `main` does not publish it.
+`.github/workflows/ci.yml` then: runs fmt/test, pushes `bitrealm/message-crate`, builds Tauri installers (Linux `.deb` + AppImage, Windows `.msi`, macOS `.dmg`), and creates a GitHub Release named `Message Crate v0.8.0`. The release carries `SHA256SUMS` beside the installers, and a build provenance attestation (`actions/attest-build-provenance`) for each installer and for the pushed image, which `gh attestation verify` checks. `.github/workflows/docs.yml` publishes the documentation site to messagecrate.app on the same tag; a merge to `main` does not publish it.
 
 The docs deploy runs in the `github-pages` environment, whose deployment branch policy in the repository settings must allow the `v*` tag rule as well as `main` (for `workflow_dispatch`). The workflow trigger and that policy have to agree: a tag push against an environment that only allows `main` builds the site and then refuses the deploy, which is what happened to `v0.9.0` (#654). Check and set it with:
 

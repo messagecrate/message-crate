@@ -12,11 +12,11 @@
  * against the row's own width, so dragging the column width slid both ends of
  * every rule horizontally.
  */
-export const listRowDivider =
+export const listRowDividerClass =
   "relative after:pointer-events-none after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-border";
 
 /** Lighter/thinner hairline under each contact row (one line between neighbors). */
-export const listRowDividersThin =
+export const listRowDividersThinClass =
   "relative after:pointer-events-none after:absolute after:inset-x-2 after:bottom-0 after:h-px after:origin-center after:scale-y-50 after:bg-border/40";
 
 /**
@@ -31,4 +31,4 @@ export const listRowDividersThin =
  * child, and the two widths must stay equal — a gutter narrower than the handle
  * leaves part of the scrollbar covered.
  */
-export const resizeHandleGutter = "mr-2";
+export const resizeHandleGutterClass = "mr-2";

@@ -1,11 +1,5 @@
-import { invokeCancel } from "./tauri";
-
-/**
- * The error a job refused by a Cancel throws: the same word the desktop side
- * reports for a job it cancelled (`message-crate-core`'s `check_cancel`), so
- * a caller handles both alike.
- */
-export const CANCELLED_MESSAGE = "cancelled";
+import { invokeCancel } from "./desktop/job";
+import { CanceledError } from "./desktopJobError";
 
 /**
  * The Cancel of one run of desktop jobs: an Import Run, or an Export's export step
@@ -16,31 +10,33 @@ export const CANCELLED_MESSAGE = "cancelled";
  * (`src-tauri/src/commands/jobs.rs`). A Cancel pressed while the run is
  * between jobs, or while a job command is starting, finds no job to stop and
  * would be lost. So the run remembers its Cancel here: `guard` refuses to
- * start a job once the run is cancelled, and sends the Cancel again after a
- * job command returns, when the run was cancelled while that command was
+ * start a job once the run is canceled, and sends the Cancel again after a
+ * job command returns, when the run was canceled while that command was
  * starting.
  */
 export type RunCancel = {
   /** Record the Cancel for this run and stop the job that is running. */
   cancel: () => Promise<void>;
   /**
-   * Wrap the invoke of a job command. The wrapped call throws
-   * `CANCELLED_MESSAGE` without invoking when the run is cancelled.
+   * Wrap the invoke of a job command. The wrapped call throws a
+   * `CanceledError` without invoking when the run is canceled, as a job
+   * the desktop app canceled rejects.
    */
   guard: (invokeFn: () => Promise<void>) => () => Promise<void>;
 };
 
-export function createRunCancel(): RunCancel {
-  let cancelled = false;
+/** A run's Cancel, stopping the running job with `stopJob` (the desktop side's Cancel). */
+export function createRunCancel(stopJob: () => Promise<void> = invokeCancel): RunCancel {
+  let canceled = false;
   return {
     cancel: async () => {
-      cancelled = true;
-      await invokeCancel();
+      canceled = true;
+      await stopJob();
     },
     guard: (invokeFn) => async () => {
-      if (cancelled) throw new Error(CANCELLED_MESSAGE);
+      if (canceled) throw new CanceledError();
       await invokeFn();
-      if (cancelled) await invokeCancel();
+      if (canceled) await stopJob();
     },
   };
 }

@@ -28,6 +28,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../test/nth";
 import { apiClient } from "./api";
 import * as serverApi from "./serverApi";
 
@@ -38,6 +39,7 @@ vi.mock("./api", () => ({
     post: vi.fn().mockResolvedValue({}),
     postRaw: vi.fn().mockResolvedValue({}),
     postText: vi.fn().mockResolvedValue(""),
+    postRawText: vi.fn().mockResolvedValue(""),
     getText: vi.fn().mockResolvedValue(""),
     put: vi.fn().mockResolvedValue({}),
     patch: vi.fn().mockResolvedValue({}),
@@ -78,13 +80,14 @@ const DOCUMENTED = Object.entries(openapi.paths).map(([template, item]) => ({
 
 /**
  * `postRaw` is a POST that carries its own media type; `postText` and
- * `getText` read a file back.
+ * `getText` read a file back, and `postRawText` does both.
  */
 const VERB_METHOD: Record<string, string> = {
   get: "GET",
   post: "POST",
   postRaw: "POST",
   postText: "POST",
+  postRawText: "POST",
   getText: "GET",
   put: "PUT",
   patch: "PATCH",
@@ -99,8 +102,8 @@ function calledRoute(): { method: string; path: string; query: string[] } {
       .mock.calls.map((args) => ({ method, path: String(args[0]) })),
   );
   expect(calls).toHaveLength(1);
-  const { method, path } = calls[0];
-  const [bare, search = ""] = path.split("?");
+  const { method, path } = nth(calls, 0);
+  const [bare = path, search = ""] = path.split("?");
   return { method, path: bare, query: [...new URLSearchParams(search).keys()] };
 }
 
@@ -237,6 +240,8 @@ const EXERCISED: Record<string, () => unknown> = {
   unmatchedIdentities: () => serverApi.unmatchedIdentities({ identifiers: ["+15555550100"] }),
   loadAddressBook: () => serverApi.loadAddressBook("contact_id,display_name\n", "edit"),
   exportAddressBook: () => serverApi.exportAddressBook({ q: "group:Family", ids: [1, 2] }),
+  convertVcardToAddressBook: () =>
+    serverApi.convertVcardToAddressBook("BEGIN:VCARD\nEND:VCARD\n", "US"),
   trashContact: () => serverApi.trashContact(42),
   restoreContact: () => serverApi.restoreContact(42),
   deleteContact: () => serverApi.deleteContact(42),
@@ -269,7 +274,7 @@ const EXERCISED: Record<string, () => unknown> = {
   getExport: () => serverApi.getExport(2),
   createExport: () =>
     serverApi.createExport({ scope: { kind: "everything" }, tool: "message-crate-export" }),
-  completeExport: () => serverApi.completeExport(2),
+  completeExport: () => serverApi.completeExport(2, { status: "completed" }),
   cancelExport: () => serverApi.cancelExport(2),
 
   // Imports

@@ -1,13 +1,13 @@
-//! `export` command — export messages from a Message Crate server.
+//! `export` command: export messages from a Message Crate server.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use message_crate_core::count_of;
-use message_crate_export::{
+use export::{
     DEFAULT_ASSET_FETCH_WORKERS, DEFAULT_PAGE_LIMIT, ExportConfig, ExportQueryList, ProgressEvent,
     run as run_export,
 };
+use message_crate_core::count_of;
 
 use super::events;
 use super::jobs::{spawn_job, start_job};
@@ -37,14 +37,14 @@ pub struct ExportArgs {
 /// Ask this process to export conversations from a server.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
-/// summary use the same `extract:log` / `extract:finished` / `extract:error`
-/// events as Extract.
+/// summary use the same `desktop-job:log` / `desktop-job:finished` /
+/// `desktop-job:error` events as the `extract` command.
 ///
 /// # Errors
 ///
 /// Returns an error if another job is running, or if another thread panicked
 /// while holding the shared state lock. Failures during the Export are
-/// sent as `extract:error`.
+/// sent as `desktop-job:error`.
 #[tauri::command(async)]
 pub fn export(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -55,7 +55,7 @@ pub fn export(
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, None, move || {
         let cfg = ExportConfig {
             out_dir: PathBuf::from(&args.out_dir),
             base_url: args.base_url,
@@ -64,8 +64,11 @@ pub fn export(
             list: args.list,
             skip_attachments: args.skip_attachments,
             page_limit: DEFAULT_PAGE_LIMIT,
-            cancel: Some(cancel),
+            cancel,
             asset_fetch_workers: DEFAULT_ASSET_FETCH_WORKERS,
+            // The run is given the instant it writes as each file's Export
+            // Date, and never reads the clock itself.
+            exported_at_unix_ms: chrono::Utc::now().timestamp_millis(),
         };
 
         let mut progress = |event: ProgressEvent| match event {
@@ -87,7 +90,11 @@ pub fn export(
         };
 
         let report = run_export(&cfg, Some(&mut progress))?;
-        Ok(finished_line(report.messages, report.conversations))
+        Ok(finished_line(
+            report.messages,
+            report.conversations,
+            report.assets_failed.len() as u64,
+        ))
     });
 
     Ok(())
@@ -102,13 +109,22 @@ fn fetched_line(messages: usize, total: u64) -> String {
     )
 }
 
-/// The line that ends an Export from a server.
-fn finished_line(messages: u64, conversations: u64) -> String {
-    format!(
+/// The line that ends an Export from a server, naming how many Assets
+/// could not be fetched when there were any.
+fn finished_line(messages: u64, conversations: u64, missing_assets: u64) -> String {
+    let line = format!(
         "Export complete: {} in {}",
         count_of(messages, "message", "messages"),
         count_of(conversations, "conversation", "conversations")
-    )
+    );
+    if missing_assets == 0 {
+        line
+    } else {
+        format!(
+            "{line}, without {} that could not be fetched",
+            count_of(missing_assets, "Asset", "Assets")
+        )
+    }
 }
 
 #[cfg(test)]
@@ -125,12 +141,28 @@ mod tests {
             "Fetched 500 messages (1200 so far)"
         );
         assert_eq!(
-            finished_line(1, 1),
+            finished_line(1, 1, 0),
             "Export complete: 1 message in 1 conversation"
         );
         assert_eq!(
-            finished_line(3, 2),
+            finished_line(3, 2, 0),
             "Export complete: 3 messages in 2 conversations"
+        );
+    }
+
+    /// An Export that could not fetch some Assets still completes, and its
+    /// last line says how many are missing (#2070).
+    #[test]
+    fn the_last_line_counts_the_assets_that_could_not_be_fetched() {
+        assert_eq!(
+            finished_line(3, 2, 1),
+            "Export complete: 3 messages in 2 conversations, without 1 Asset \
+             that could not be fetched"
+        );
+        assert_eq!(
+            finished_line(3, 2, 2),
+            "Export complete: 3 messages in 2 conversations, without 2 Assets \
+             that could not be fetched"
         );
     }
 }

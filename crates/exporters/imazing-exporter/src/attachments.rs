@@ -7,10 +7,10 @@
 //! when it wrote the file ([`names_on_disk`]).
 
 use crate::chat_directory::regular_files;
-use crate::parse::RawRow;
+use crate::read::RawRow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
-use message_csv::AttachmentCell;
+use message_crate_csv::AttachmentCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -342,7 +342,7 @@ fn with_ordinal(stem: &str, extension: Option<&str>, ordinal: usize) -> String {
 /// `file_missing`.
 pub(crate) fn attachment_cell(csv_name: &str, attachment_type: &str) -> AttachmentCell {
     AttachmentCell {
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some(csv_name.to_string()),
             mime_type: mime_hint(attachment_type, csv_name),
@@ -389,8 +389,10 @@ pub(crate) fn mime_hint(attachment_type: &str, filename: &str) -> Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_crate_core::{AttachmentJob, MediaConfig, run_attachment_jobs};
-    use message_ir::IrAttachment;
+    use ir::Attachment;
+    use message_crate_core::{
+        AttachmentFiles, AttachmentJob, CancelFlag, LogSink, run_attachment_jobs,
+    };
     use std::fs;
 
     /// The attachment-type column names the type when iMazing filled it in;
@@ -464,7 +466,7 @@ mod tests {
             "finding the file must not write files"
         );
         let source = source.expect("source path found");
-        let mut att = IrAttachment {
+        let mut attachment = Attachment {
             path: None,
             original_name: cell.meta.original_name,
             mime_type: cell.meta.mime_type,
@@ -477,23 +479,29 @@ mod tests {
             bytes: None,
         };
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_600_000_000_000,
             size_hint: None,
         }];
         run_attachment_jobs(
             &mut jobs,
             &attachments,
-            &MediaConfig::default(),
+            AttachmentFiles::Originals,
             |_| fs::read(source).map(Some).or(Ok(None)),
             |_| {},
-            None,
-            None,
+            &LogSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
-        let digest = att.digest_sha256.expect("digest set after runner");
+        let digest = attachment.digest_sha256.expect("digest set after runner");
         assert_eq!(digest.len(), 64);
-        assert!(att.path.as_deref().unwrap().starts_with("attachments/"));
+        assert!(
+            attachment
+                .path
+                .as_deref()
+                .unwrap()
+                .starts_with("attachments/")
+        );
         assert_eq!(fs::read_dir(&attachments).unwrap().count(), 1);
     }
 

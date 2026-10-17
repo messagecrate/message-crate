@@ -1,30 +1,31 @@
 import { useCallback, useRef, useState } from "react";
 import { ListBoxItem } from "react-aria-components";
 import { useSearchParams } from "react-router-dom";
+import DesktopJobFormShell from "../components/DesktopJobFormShell";
+import ExportFormatSelect from "../components/ExportFormatSelect";
 import FormRow from "../components/FormRow";
 import PathPicker from "../components/PathPicker";
 import Select, { selectItemClassName } from "../components/Select";
-import TauriJobFormShell from "../components/TauriJobFormShell";
 import TextField from "../components/TextField";
-import { useTauriJob } from "../hooks/useTauriJob";
+import { useAuth } from "../hooks/useAuth";
+import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
-import { useAuth } from "../lib/auth";
-import { holdDesktopJob } from "../lib/desktopJob";
-import { writeInExportDir } from "../lib/exportDir";
-import { createRunCancel, type RunCancel } from "../lib/runCancel";
-import { parseSelectKey } from "../lib/selectKey";
+import { errorLine, errorText } from "../lib/apiErrorMessage";
 import {
   EXPORT_FORMATS,
   type ExportFormat,
   type ExportQueryList,
   invokeExport,
   invokeFormat,
-} from "../lib/tauri";
-
-const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
+} from "../lib/desktop/export";
+import { holdDesktopJob } from "../lib/desktopJob";
+import { writeInExportDir } from "../lib/exportDir";
+import { createRunCancel, type RunCancel } from "../lib/runCancel";
+import { parseSelectKey } from "../lib/selectKey";
+import { isTauri } from "../lib/tauriCheck";
 
 /**
- * What an export covers. `everything` sends a blank query, which message-crate-export
+ * What an export covers. `everything` sends a blank query, which the `export` crate
  * reads as the whole account; `search` sends the text of the query box.
  */
 type ExportScope = "everything" | "search";
@@ -64,19 +65,19 @@ function formatLabel(id: ExportFormat): string {
 }
 
 /**
- * Desktop export: `message-crate-export` downloads the account's conversations as
- * JSON Lines, and for any other format `message-reexport` rewrites them into
+ * Desktop export: `export` downloads the account's conversations as
+ * JSON Lines, and for any other format `reexport` rewrites them into
  * the chosen format.
  *
  * Every export gets a directory of its own in the Export Directory, named for
  * when it started and its format (`export-2026-10-04-1430-mbox`). The result
  * lands there unless the person chose another directory under **Save to**.
  * The JSON Lines a non-JSONL export writes wait in that directory while they
- * are converted, since `message-reexport` refuses to write into a directory
+ * are converted, since `reexport` refuses to write into a directory
  * that holds its input, and the conversion writes beside them. When the export
  * finishes, the desktop deletes the JSON Lines and moves the result up, so the
  * directory holds only the result; a directory left empty because the result
- * went elsewhere is deleted. A failed or cancelled export deletes its
+ * went elsewhere is deleted. A failed or canceled export deletes its
  * directory whole, so no copy of the conversations is left behind.
  *
  * The scope is Everything or Search. The screen opens in Search when its URL
@@ -111,7 +112,7 @@ export default function ExportScreen() {
   const [busy, setBusy] = useState(false);
   // The directory each export wrote to and its format, so the success
   // message names what was written even after the form changes.
-  const { running, finished, run } = useTauriJob<{ savePath: string; format: ExportFormat }>({
+  const { running, finished, run } = useRunDesktopJob<{ savePath: string; format: ExportFormat }>({
     job: "Export",
   });
   // The Cancel of the export under way. A Cancel pressed after the export step and
@@ -188,9 +189,9 @@ export default function ExportScreen() {
           appendLog,
         );
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorText(err);
         appendLog(`Error: ${message}`);
-        setError(message);
+        setError(errorLine(err));
       } finally {
         releaseDesktop();
         setBusy(false);
@@ -198,11 +199,14 @@ export default function ExportScreen() {
     })();
   };
 
+  if (!isTauri()) {
+    return <div className="max-w-[700px] p-6 text-muted">Export requires the desktop app.</div>;
+  }
+
   return (
-    <TauriJobFormShell
+    <DesktopJobFormShell
       title="Export"
       job="Export"
-      requireTauri
       startLabel="Export"
       runningLabel="Exporting…"
       running={running || busy}
@@ -285,23 +289,7 @@ export default function ExportScreen() {
           isDisabled={running || busy}
         />
       </FormRow>
-      <FormRow label="Format">
-        <Select
-          selectedKey={format}
-          onSelectionChange={(key) => {
-            const next = parseSelectKey(key, FORMAT_IDS);
-            if (next) setFormat(next);
-          }}
-          aria-label="Format"
-          isDisabled={running || busy}
-        >
-          {EXPORT_FORMATS.map((option) => (
-            <ListBoxItem key={option.id} id={option.id} className={selectItemClassName}>
-              {option.label}
-            </ListBoxItem>
-          ))}
-        </Select>
-      </FormRow>
-    </TauriJobFormShell>
+      <ExportFormatSelect value={format} onChange={setFormat} isDisabled={running || busy} />
+    </DesktopJobFormShell>
   );
 }

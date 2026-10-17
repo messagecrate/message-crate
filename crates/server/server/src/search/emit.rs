@@ -5,7 +5,9 @@ use chrono::NaiveDate;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::conversation_messages::{duplicate_chain_sql, earlier_versions_holder_sql};
-use crate::db::conversations::{conversation_title_sql, is_with_yourself_sql};
+use crate::db::conversations::{is_with_yourself_sql, shown_title_sql};
+use crate::db::participant_names::named_from_chat_handle_sql;
+use crate::db::trash::{not_trashed_contact, not_trashed_contact_id, not_trashed_conversation};
 
 use super::bridge::{ListCtx, MessageAgg, Sql, TrashScope};
 use super::error::{QueryError, QueryErrorKind};
@@ -13,36 +15,7 @@ use super::fts;
 use super::parse::{Expr, FieldTerm, TextTerm};
 use super::value::{Cmp, DateCmp, Value, utc_instant};
 use super::{Filter, ListKind};
-use message_ir::{Deletion, IrConversationType};
-
-/// Contact `ct` is not in the trash.
-pub(crate) const NOT_TRASHED_CONTACT: &str = "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = ct.account_id AND tct.contact_id = ct.id)";
-/// Conversation `c` is not in the trash.
-pub(crate) const NOT_TRASHED_CONVERSATION: &str = "NOT EXISTS (SELECT 1 FROM trashed_conversations tc WHERE tc.account_id = c.account_id AND tc.conversation_id = c.id)";
-
-/// Conversation `conv` is not in the trash: [`NOT_TRASHED_CONVERSATION`]
-/// for a subquery whose conversations alias is not `c`. The one clause,
-/// written once, so the lists and the contact counts cannot drift apart.
-pub(crate) fn not_trashed_conversation(conv: &str) -> String {
-    format!(
-        "NOT EXISTS (SELECT 1 FROM trashed_conversations tc WHERE tc.account_id = {conv}.account_id AND tc.conversation_id = {conv}.id)"
-    )
-}
-
-/// Contact `ct` is not in the trash: [`NOT_TRASHED_CONTACT`] for a subquery
-/// whose contacts alias is not `ct`.
-pub(crate) fn not_trashed_contact(ct: &str) -> String {
-    not_trashed_contact_id(&format!("{ct}.account_id"), &format!("{ct}.id"))
-}
-
-/// The contact with id `id_expr` in account `account_expr` is not in the
-/// trash, for a row that carries a contact id without joining `contacts`
-/// (a `contact_handles` or a `participants` row).
-pub(crate) fn not_trashed_contact_id(account_expr: &str, id_expr: &str) -> String {
-    format!(
-        "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = {account_expr} AND tct.contact_id = {id_expr})"
-    )
-}
+use ir::{ConversationType, Deletion};
 
 /// Compile a parsed query into one parenthesised WHERE fragment.
 ///
@@ -116,13 +89,13 @@ fn compile_where(
         ListKind::Contacts => {
             if !uses("trashed") {
                 out.push(" AND ");
-                out.push(NOT_TRASHED_CONTACT);
+                out.push(&not_trashed_contact("ct"));
             }
         }
         ListKind::Conversations => {
             if !uses("trashed") {
                 out.push(" AND ");
-                out.push(NOT_TRASHED_CONVERSATION);
+                out.push(&not_trashed_conversation("c"));
             }
             // A thread with only duplicate messages is hidden, unless the
             // query is about one source or one Import Run, whose threads may
@@ -144,7 +117,7 @@ fn compile_where(
                 out.push(
                     " AND EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND ",
                 );
-                out.push(NOT_TRASHED_CONVERSATION);
+                out.push(&not_trashed_conversation("c"));
                 out.push(")");
             }
         }
@@ -192,7 +165,7 @@ fn emit_expr(ctx: &ListCtx, out: &mut Sql, expr: &Expr) -> Result<(), QueryError
 }
 
 /// A contains-or-prefix pattern against `column`, case-insensitive. A prefix means "a word starts with this", so it matches at the
-/// start of the column or just after a space — never only at the very
+/// start of the column or just after a space, never only at the very
 /// start, which would make `avoc*` find less than `avoc`. Anything else, a
 /// phrase included, is an ordinary substring.
 ///
@@ -261,6 +234,31 @@ fn participants_with_contact(trash: TrashScope) -> String {
     )
 }
 
+/// FROM and WHERE binding `chh` to the chat handle of conversation `c` and
+/// `chct` to the Contact it is on (NULL when none), when the list names the
+/// conversation's person from its chat handle (`named_from_chat_handle_sql`),
+/// so plain text and `name:` find the conversation by the name it is shown
+/// under (#2737). That person's name is [`CHAT_HANDLE_PERSON_NAME`]. A
+/// Contact in the trash is left out unless the query carries `trashed:`, as
+/// in [`participants_with_contact`] (#724). The caller appends ` AND ` and
+/// the match.
+fn chat_handle_person(trash: TrashScope) -> String {
+    format!(
+        "handles chh \
+         LEFT JOIN contact_handles chch ON chch.handle_id = chh.id AND chch.account_id = c.account_id \
+         LEFT JOIN contacts chct ON chct.id = chch.contact_id AND chct.account_id = c.account_id{} \
+         WHERE chh.id = c.chat_handle_id AND {}",
+        trash.contact_clause("chct"),
+        named_from_chat_handle_sql("c")
+    )
+}
+
+/// The name of the person [`chat_handle_person`] binds: the Contact's name,
+/// else `''`, as [`PARTICIPANT_NAME`] is for a participant. There is no
+/// per-conversation backup name to fall back on, since the conversation has
+/// no participants rows.
+const CHAT_HANDLE_PERSON_NAME: &str = "coalesce(chct.preferred_name, '')";
+
 /// Free text: the row's own text, one meaning applied per row type.
 fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
     match ctx.list {
@@ -277,9 +275,15 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         }
         ListKind::Conversations => {
             out.push("(");
-            free_text_match(out, &conversation_title_text(), term);
+            free_text_match(out, &shown_title_text(), term);
             out.push(" OR ");
             free_text_match(out, &conversation_identity_text(), term);
+            out.push(&format!(
+                " OR EXISTS (SELECT 1 FROM {} AND ",
+                chat_handle_person(ctx.trash)
+            ));
+            free_text_match(out, CHAT_HANDLE_PERSON_NAME, term);
+            out.push(")");
             // The handle join is a LEFT join: a source may name a participant
             // and record no address for them, and that person is searchable by
             // the name the source gave.
@@ -382,7 +386,7 @@ fn emit_one(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result
 
 /// A refusal naming `term`'s word, for a value shape the word does not
 /// accept. `what` is the tail of the sentence: `"needs text, a prefix, or
-/// none/any."`, `"needs a name or #id."`, and so on.
+/// none/any"`, `"needs a name or #id"`, and so on.
 fn bad_value(term: &FieldTerm, what: &str) -> QueryError {
     QueryError::new(
         QueryErrorKind::BadValue,
@@ -419,7 +423,7 @@ fn text_match(out: &mut Sql, column: &str, term: &FieldTerm, v: &Value) -> Resul
             out.push(&format!("NULLIF(trim({column}), '') IS NOT NULL"));
             Ok(())
         }
-        _ => Err(bad_value(term, "needs text, a prefix, or none/any.")),
+        _ => Err(bad_value(term, "needs text, a prefix, or none/any")),
     }
 }
 
@@ -472,7 +476,7 @@ fn emit_text_word(
         ("title", _) => ctx.conversation(out, |o| {
             result = text_match(
                 o,
-                &conversation_title_text(),
+                &shown_title_text(),
                 term,
                 v,
             );
@@ -482,11 +486,18 @@ fn emit_text_word(
         }
         ("name", _) => ctx.conversation(out, |o| {
             o.push(&format!(
-                "EXISTS (SELECT 1 FROM {} WHERE p.conversation_id = c.id AND ",
+                "(EXISTS (SELECT 1 FROM {} WHERE p.conversation_id = c.id AND ",
                 participants_with_contact(ctx.trash)
             ));
             result = text_match(o, PARTICIPANT_NAME, term, v);
-            o.push(")");
+            o.push(&format!(
+                ") OR EXISTS (SELECT 1 FROM {} AND ",
+                chat_handle_person(ctx.trash)
+            ));
+            if result.is_ok() {
+                result = text_match(o, CHAT_HANDLE_PERSON_NAME, term, v);
+            }
+            o.push("))");
         }),
         // `none` and `any` ask about addresses. An identity of type `other`
         // holds a name the backup gave with no address, so it is not one,
@@ -510,7 +521,7 @@ fn emit_text_word(
                 out.push("))");
             }
             _ => {
-                result = Err(bad_value(term, "needs text, a prefix, or none/any."));
+                result = Err(bad_value(term, "needs text, a prefix, or none/any"));
             }
         },
         ("identity", _) => ctx.conversation(out, |o| match v {
@@ -518,7 +529,7 @@ fn emit_text_word(
                 "NOT EXISTS (SELECT 1 FROM participants p JOIN handles h ON h.id = p.handle_id WHERE p.conversation_id = c.id AND h.handle_type <> 'other')",
             ),
             // The true complement of `none`: some participant has an
-            // address. Never `1=1` — a conversation can hold only people the
+            // address. Never `1=1`, because a conversation can hold only people the
             // source named with no address (see `named_participant` in the
             // fixture), whose identities are of type `other`, and `any` must
             // not match those.
@@ -542,7 +553,7 @@ fn emit_text_word(
                 o.push("))");
             }
             _ => {
-                result = Err(bad_value(term, "needs text, a prefix, or none/any."));
+                result = Err(bad_value(term, "needs text, a prefix, or none/any"));
             }
         }),
         ("filename", _) => ctx.message(out, |o| {
@@ -554,7 +565,7 @@ fn emit_text_word(
             result = Err(QueryError::new(
                 QueryErrorKind::BadValue,
                 term.span.clone(),
-                format!("{}: is not built yet.", term.spec.word),
+                format!("{}: is not built yet", term.spec.word),
             ));
         }
     }
@@ -599,7 +610,7 @@ fn person_matches(
             out.push("))");
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a name, an identity, or #id.")),
+        _ => Err(bad_value(term, "needs a name, an identity, or #id")),
     }
 }
 
@@ -619,16 +630,16 @@ fn participant_matches(out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(),
             like_contains(out, PARTICIPANT_NAME, t, prefix);
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a name, an identity, or #id.")),
+        _ => Err(bad_value(term, "needs a name, an identity, or #id")),
     }
 }
 
 /// Conversation `c`'s title as text to match, `''` when it has none: the one
-/// expression the conversation list shows (`conversation_title_sql`), so
+/// expression the conversation list shows (`shown_title_sql`), so
 /// plain text, `title:` and `in:` find a conversation by the name it is
 /// shown by.
-fn conversation_title_text() -> String {
-    format!("coalesce({}, '')", conversation_title_sql("c"))
+fn shown_title_text() -> String {
+    format!("coalesce({}, '')", shown_title_sql("c"))
 }
 
 /// The text of conversation `c`'s own identity, as plain text on
@@ -650,7 +661,7 @@ fn conversation_identity_text() -> String {
         "coalesce((SELECT CASE WHEN {} THEN substr(hc.raw, {}) WHEN {} THEN '' \
            ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
         is_a_name_key("hc.raw"),
-        message_ir::NAME_CHAT_ID_PREFIX.len() + 1,
+        ir::NAME_CHAT_ID_PREFIX.len() + 1,
         chat_handle_is_a_key("c", "hc.raw")
     )
 }
@@ -680,28 +691,28 @@ fn chat_handle_is_a_key(conv: &str, raw_col: &str) -> String {
 fn is_a_key_raw(raw_col: &str) -> String {
     format!(
         "({} OR {} OR {} OR {})",
-        starts_with_prefix(raw_col, message_ir::GROUP_CHAT_ID_PREFIX),
+        starts_with_prefix(raw_col, ir::GROUP_CHAT_ID_PREFIX),
         is_a_name_key(raw_col),
         is_the_nameless_key(raw_col),
-        starts_with_prefix(raw_col, message_ir::ORPHANED_CHAT_ID_PREFIX)
+        starts_with_prefix(raw_col, ir::ORPHANED_CHAT_ID_PREFIX)
     )
 }
 
 /// SQL that holds when the handle text `raw_col` is a `name:` key.
 fn is_a_name_key(raw_col: &str) -> String {
-    starts_with_prefix(raw_col, message_ir::NAME_CHAT_ID_PREFIX)
+    starts_with_prefix(raw_col, ir::NAME_CHAT_ID_PREFIX)
 }
 
 /// SQL that holds when the handle text `raw_col` starts with the key prefix
 /// `prefix`, compared as written: the exporters write the prefixes from the
-/// `message_ir` constants.
+/// `ir` constants.
 fn starts_with_prefix(raw_col: &str, prefix: &str) -> String {
     format!("substr({raw_col}, 1, {}) = '{prefix}'", prefix.len())
 }
 
 /// SQL that holds when the handle text `raw_col` is the `nameless:` key.
 fn is_the_nameless_key(raw_col: &str) -> String {
-    format!("{raw_col} = '{}'", message_ir::NAMELESS_CHAT_ID)
+    format!("{raw_col} = '{}'", ir::NAMELESS_CHAT_ID)
 }
 
 /// Some party to conversation `c` is `v`: its chat handle when that is an
@@ -821,7 +832,7 @@ impl NamedSet {
                 like_contains(out, "ns.name", t, true);
                 Ok(())
             }
-            _ => Err(bad_value(term, "needs a name or #id.")),
+            _ => Err(bad_value(term, "needs a name or #id")),
         };
         out.push(")");
         result
@@ -860,7 +871,7 @@ fn emit_people_word(
         "group" => emit_set_word(ctx, out, term, v, CONTACT_GROUPS),
         "tag" => emit_set_word(ctx, out, term, v, MESSAGE_TAGS),
         "import" => emit_import(ctx, out, term, v),
-        _ => Err(bad_value(term, "is not built yet.")),
+        _ => Err(bad_value(term, "is not built yet")),
     }
 }
 
@@ -895,7 +906,7 @@ fn emit_to(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
 }
 
 /// `in:#id` names a conversation; `in:<text>` matches its title
-/// (`conversation_title_sql`) or its own identity
+/// (`shown_title_sql`) or its own identity
 /// (`conversation_identity_text`).
 fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(), QueryError> {
     match v {
@@ -908,14 +919,14 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             let prefix = matches!(v, Value::Prefix(_));
             ctx.conversation(out, |o| {
                 o.push("(");
-                like_contains(o, &conversation_title_text(), t, prefix);
+                like_contains(o, &shown_title_text(), t, prefix);
                 o.push(" OR ");
                 like_contains(o, &conversation_identity_text(), t, prefix);
                 o.push(")");
             });
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a name or #id.")),
+        _ => Err(bad_value(term, "needs a name or #id")),
     }
 }
 
@@ -973,7 +984,7 @@ fn emit_import(
     let run = match v {
         Value::Keyword("last") => None,
         Value::Id(id) => Some(*id),
-        _ => return Err(bad_value(term, "needs #id or last.")),
+        _ => return Err(bad_value(term, "needs #id or last")),
     };
     let on_messages = ctx.list == ListKind::Messages;
     let alias = if on_messages { "m" } else { "mi" };
@@ -1054,10 +1065,10 @@ fn emit_kind_word(
     match (term.spec.word, v) {
         ("kind", Value::Choice(k)) => {
             let ty = match *k {
-                "direct" => IrConversationType::Individual,
-                "group" => IrConversationType::Group,
-                "orphaned" => IrConversationType::Orphaned,
-                _ => return Err(bad_value(term, "needs a value this word accepts.")),
+                "direct" => ConversationType::OneToOne,
+                "group" => ConversationType::Group,
+                "orphaned" => ConversationType::Orphaned,
+                _ => return Err(bad_value(term, "needs a value this word accepts")),
             }
             .as_str();
             ctx.conversation(out, |o| {
@@ -1129,11 +1140,11 @@ fn emit_kind_word(
         }
         ("trashed", Value::Choice(flag)) => {
             let not_trashed = match ctx.list {
-                ListKind::Contacts => NOT_TRASHED_CONTACT,
-                _ => NOT_TRASHED_CONVERSATION,
+                ListKind::Contacts => not_trashed_contact("ct"),
+                _ => not_trashed_conversation("c"),
             };
             let write = |o: &mut Sql| match *flag {
-                "no" => o.push(not_trashed),
+                "no" => o.push(&not_trashed),
                 "yes" => o.push(&format!("NOT ({not_trashed})")),
                 // "any" lifts the default and filters nothing: the one place
                 // an always-true predicate is legitimate, since the word
@@ -1148,7 +1159,7 @@ fn emit_kind_word(
             }
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a value this word accepts.")),
+        _ => Err(bad_value(term, "needs a value this word accepts")),
     }
 }
 
@@ -1174,7 +1185,7 @@ fn emit_deletion_word(
             out.push(&format!("m.deletion IS NOT '{}'", mark.as_str()));
             Ok(())
         }
-        _ => Err(bad_value(term, "needs yes or no.")),
+        _ => Err(bad_value(term, "needs yes or no")),
     }
 }
 
@@ -1203,7 +1214,7 @@ fn at_or_after_sql(out: &mut Sql, expr: &str, zone: chrono_tz::Tz, day: NaiveDat
     match utc_instant(zone, day) {
         Some(instant) => {
             out.push(&format!("{expr} >= "));
-            out.bind_text(instant);
+            out.bind_time(&instant);
         }
         None => out.push("0=1"),
     }
@@ -1217,7 +1228,7 @@ fn before_sql(out: &mut Sql, expr: &str, zone: chrono_tz::Tz, day: NaiveDate) {
     match utc_instant(zone, day) {
         Some(instant) => {
             out.push(&format!("{expr} < "));
-            out.bind_text(instant);
+            out.bind_time(&instant);
         }
         None => out.push(&format!("{expr} IS NOT NULL")),
     }
@@ -1293,6 +1304,6 @@ fn emit_measure_word(
             );
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a value this word accepts.")),
+        _ => Err(bad_value(term, "needs a value this word accepts")),
     }
 }

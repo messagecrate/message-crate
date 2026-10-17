@@ -1,15 +1,15 @@
 //! Read a unified conversation CSV back into a [`ConversationDocument`].
 
 use crate::CSV_HEADERS;
-use crate::normalize::{imessage_from_parts, source_from_parts};
+use crate::normalize::{imessage_from_parts, vendor_fields_from_parts};
 use anyhow::{Context, Result, bail};
-use message_csv::{AttachmentCell, ParticipantCell};
-use message_ir::{
-    ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, EarlierVersion,
-    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision,
-    nonempty, parse_android_type,
+use ir::{
+    Attachment, ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats,
+    ConversationType, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message,
+    MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport,
+    nonempty,
 };
+use message_crate_csv::{AttachmentCell, ParticipantCell, read_cell};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -58,17 +58,17 @@ pub fn read_conversation_csv(path: &Path) -> Result<ConversationDocument> {
         );
     }
 
-    let mut doc = header.into_document(messages);
-    crate::util::recover_stem_suffix(&mut doc, path.file_stem());
-    Ok(doc)
+    let mut document = header.into_document(messages);
+    crate::util::recover_stem_suffix(&mut document, path.file_stem());
+    Ok(document)
 }
 
 /// Rebuild the conversation header from the first CSV row's conversation columns.
 ///
 /// # Errors
 ///
-/// Returns an error when `backup_taken_at_unix_ms` holds anything but a
-/// whole number or a blank.
+/// Returns an error when `exported_at_unix_ms` holds anything but a whole
+/// number or a blank.
 fn header_from_row(
     cols: &HashMap<&str, usize>,
     row: &csv::StringRecord,
@@ -83,13 +83,7 @@ fn header_from_row(
             Some(t.to_string())
         }
     };
-    let backup_taken_at_unix_ms = match get("backup_taken_at_unix_ms").trim() {
-        "" => None,
-        ms => Some(
-            ms.parse::<i64>()
-                .with_context(|| format!("bad backup_taken_at_unix_ms {ms:?}"))?,
-        ),
-    };
+    let exported_at_unix_ms = unix_ms_cell(get("exported_at_unix_ms"), "exported_at_unix_ms")?;
     Ok(ConversationHeader {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
@@ -98,11 +92,11 @@ fn header_from_row(
             tool_version: get("export_tool_version").to_string(),
             owner_identity: nonempty(get("owner_identity")),
             owner_display_name: nonempty(get("owner_display_name")),
-            backup_taken_at_unix_ms,
+            exported_at_unix_ms,
         },
         conversation: ConversationMeta {
             chat_identifier: get("chat_identifier").to_string(),
-            conversation_type: IrConversationType::parse(get("conversation_type")),
+            conversation_type: ConversationType::parse(get("conversation_type")),
             group_title,
             participants,
             stats: ConversationStats::default(),
@@ -110,8 +104,25 @@ fn header_from_row(
     })
 }
 
+/// A time in Unix milliseconds from the cell of the column `name`: `None`
+/// when blank.
+///
+/// # Errors
+///
+/// Returns an error when the cell holds anything but a whole number or a
+/// blank.
+fn unix_ms_cell(raw: &str, name: &str) -> Result<Option<i64>> {
+    match raw.trim() {
+        "" => Ok(None),
+        ms => Ok(Some(
+            ms.parse::<i64>()
+                .with_context(|| format!("bad {name} {ms:?}"))?,
+        )),
+    }
+}
+
 /// Rebuild one message from a CSV row.
-fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Result<IrMessage> {
+fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Result<Message> {
     let get = |name: &str| cell(cols, row, name).unwrap_or("");
     let timestamp_unix_ms = get("timestamp_unix_ms")
         .parse::<i64>()
@@ -121,29 +132,31 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     let time_precision = TimePrecision::parse(get("time_precision"))
         .with_context(|| format!("bad time_precision {:?}", get("time_precision")))?;
     let direction = match get("direction").to_ascii_lowercase().as_str() {
-        "outgoing" => IrDirection::Outgoing,
-        _ => IrDirection::Incoming,
+        "outgoing" => Direction::Outgoing,
+        _ => Direction::Incoming,
     };
     let attachments = parse_attachments(get("attachments_json"))?;
     let reactions = parse_reactions(get("reactions_json"))?;
     let edits = parse_earlier_versions(get("earlier_versions_json"))?;
-    let source = source_from_parts(
-        parse_android_type(get("android_type")),
+    let source = vendor_fields_from_parts(
+        // Parsed as `android_fields::parse_android_type` parses a backup's
+        // field (trim, then a whole number); keep the two in step.
+        get("android_type").trim().parse().ok(),
         get("source_fields_json"),
     );
 
     let reply_to = reply_to_from_cells(
-        message_csv::parse_bool(get("is_reply")),
+        message_crate_csv::parse_bool(get("is_reply")),
         get("reply_to_guid"),
         get("reply_to_part"),
     );
     // A mark the CSV names wrongly is refused rather than read as none.
-    let deletion = message_ir::parse_deletion(get("deletion")).context("bad deletion")?;
+    let deletion = ir::parse_deletion(get("deletion")).context("bad deletion")?;
     let associated_part = {
         let s = get("associated_part");
         if s.is_empty() { None } else { s.parse().ok() }
     };
-    let imessage = imessage_from_parts(IrImessage {
+    let imessage = imessage_from_parts(ImessageExtensions {
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),
@@ -159,15 +172,18 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         tapback_action: nonempty(get("tapback_action")),
     });
 
-    Ok(IrMessage {
+    Ok(Message {
         guid: get("guid").to_string(),
         timestamp_unix_ms,
         time_precision,
         direction,
-        service: IrService::parse(get("service")),
-        message_kind: IrMessageKind::parse(get("message_kind")),
-        sender_identity: nonempty(get("sender_identity")),
-        sender_display_name: nonempty(get("sender_display_name")),
+        service: Transport::parse(get("service")),
+        message_kind: MessageKind::parse(get("message_kind")),
+        sender: ir::Sender {
+            identity: nonempty(get("sender_identity")),
+            display_name: nonempty(get("sender_display_name")),
+            country: None,
+        },
         owner_identity: nonempty(get("message_owner_identity")),
         subject: nonempty(get("subject")),
         text: get("text").to_string(),
@@ -178,6 +194,10 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         reply_to,
         imessage,
         source,
+        backup_taken_at_unix_ms: unix_ms_cell(
+            get("backup_taken_at_unix_ms"),
+            "backup_taken_at_unix_ms",
+        )?,
     })
 }
 
@@ -189,7 +209,7 @@ fn reply_to_from_cells(is_reply: bool, guid: &str, part: &str) -> Option<ReplyTo
     } else {
         part.parse().ok()
     };
-    message_ir::reply_to_from_mark(is_reply, nonempty(guid), part_index)
+    ir::reply_to_from_mark(is_reply, nonempty(guid), part_index)
 }
 
 /// Check every required column is present and return the name → index map
@@ -208,13 +228,14 @@ fn validate_headers(headers: &[String]) -> Result<HashMap<&str, usize>> {
     Ok(cols)
 }
 
-/// The value of the named column in this row, if the column exists.
+/// The value of the named column in this row, if the column exists, with
+/// the `'` the writer put in front of a formula-like cell taken off.
 fn cell<'a>(
     cols: &HashMap<&str, usize>,
     row: &'a csv::StringRecord,
     name: &str,
 ) -> Option<&'a str> {
-    row.get(*cols.get(name)?)
+    row.get(*cols.get(name)?).map(read_cell)
 }
 
 /// Parse a JSON cell. The writer leaves the cell blank when there is no
@@ -224,14 +245,14 @@ fn parse_json_cell(s: &str) -> Option<Value> {
 }
 
 /// Participants from the `participants_json` cell; malformed JSON yields none.
-fn parse_participants(raw: &str) -> Vec<IrParticipant> {
+fn parse_participants(raw: &str) -> Vec<Participant> {
     if raw.trim().is_empty() {
         return Vec::new();
     }
     let cells: Vec<ParticipantCell> = serde_json::from_str(raw).unwrap_or_default();
     cells
         .into_iter()
-        .map(|p| IrParticipant {
+        .map(|p| Participant {
             identity: if p.identity.is_empty() {
                 None
             } else {
@@ -242,6 +263,7 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
             } else {
                 Some(p.display_name)
             },
+            country: None,
         })
         .collect()
 }
@@ -264,7 +286,7 @@ fn parse_earlier_versions(raw: &str) -> Result<Vec<EarlierVersion>> {
 }
 
 /// Attachments from the `attachments_json` cell.
-fn parse_attachments(raw: &str) -> Result<Vec<IrAttachment>> {
+fn parse_attachments(raw: &str) -> Result<Vec<Attachment>> {
     let cells: Vec<AttachmentCell> =
         serde_json::from_str(raw).with_context(|| format!("parse attachments_json: {raw}"))?;
     Ok(cells.into_iter().map(Into::into).collect())

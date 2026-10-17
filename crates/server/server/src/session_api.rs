@@ -6,27 +6,33 @@
 
 use axum::extract::State;
 use axum::http::HeaderMap;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
-use crate::credentials::{
-    MAX_PASSWORD_BYTES, check_auth_rate_limit, dummy_password_hash, normalize_username,
-    password_bucket, unknown_username_bucket, verify_login_password, verify_password,
-};
+use crate::api_error::ApiError;
+use crate::auth::AuthIdentity;
+use crate::credentials::RefusalWait;
+use crate::credentials::{normalize_username, require_password_within_cap, verify_login_password};
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
-use crate::db::{account_profile, api_tokens, schema, session_tokens};
-use crate::dedupe;
+use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
 use crate::extract::Json;
-use crate::server::{ApiError, AppState, AuthIdentity, Created};
+use crate::server::{Created, DemoState};
+use crate::server_api::DemoBuild;
 
 /// Username and password, the body of `POST /v1/session`.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateSessionRequest {
     /// Login username.
     pub username: String,
-    /// Login password.
+    /// Login password, empty for an account with none. A password is at most
+    /// 128 characters, so a longer one is refused with
+    /// `422 Unprocessable Entity` before the username is looked up.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub password: String,
 }
 
@@ -41,24 +47,47 @@ pub struct CreateSessionResponse {
     pub username: String,
 }
 
+/// What a login whose password was right finds under the write lock.
+enum LoginOpened {
+    /// The Session was opened.
+    Session(CreateSessionResponse),
+    /// The account is disabled, so no Session was opened.
+    Disabled,
+    /// The account is gone, so no Session was opened.
+    Gone,
+}
+
 impl CreateSessionResponse {
     /// Open the Session for an existing account, replacing the one it had,
-    /// and record the login. `username` is the one the account's row holds.
+    /// and record the login at `now`, unless the account is disabled or gone.
+    /// `username` is the one the account's row holds.
+    ///
+    /// The account is read under the write lock that opens the Session, so
+    /// an owner disabling it during the password check, whose write ends
+    /// every Session the account has, cannot be followed by a Session that
+    /// outlives the disable and works again once the account is enabled
+    /// (#2074).
     async fn for_existing_account(
         conn: &mut SqliteConnection,
         account_id: i64,
         username: String,
         app: Option<&ConnectingApp>,
-    ) -> anyhow::Result<CreateSessionResponse> {
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<LoginOpened> {
         let mut tx = crate::db::begin_write(conn).await?;
-        let token = session_tokens::open_session(&mut tx, account_id, &username, app).await?;
-        account_profile::record_login(&mut tx, account_id).await?;
+        match account_profile::load_account_auth(&mut tx, account_id).await? {
+            None => return Ok(LoginOpened::Gone),
+            Some(auth) if auth.disabled => return Ok(LoginOpened::Disabled),
+            Some(_) => {}
+        }
+        let token = session_tokens::open_session(&mut tx, account_id, &username, app, now).await?;
+        account_profile::record_login(&mut tx, account_id, now).await?;
         tx.commit().await?;
-        Ok(CreateSessionResponse {
+        Ok(LoginOpened::Session(CreateSessionResponse {
             token,
             account_id,
             username,
-        })
+        }))
     }
 }
 
@@ -90,12 +119,12 @@ pub(crate) struct Session {
     )
 )]
 pub(crate) async fn get_session(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     auth: AuthIdentity,
 ) -> Result<Json<Session>, ApiError> {
     let account_id = auth.account_id;
-    let username = load_username(&state.db, account_id).await?;
-    let sources = list_account_sources(&state.db, account_id).await?;
+    let username = load_username(&db, account_id).await?;
+    let sources = list_account_sources(&db, account_id).await?;
     Ok(Json(Session {
         sources,
         account_id,
@@ -105,9 +134,8 @@ pub(crate) async fn get_session(
 
 /// Source ids this account has imported, oldest first.
 async fn list_account_sources(pool: &SqlitePool, account_id: i64) -> Result<Vec<String>, ApiError> {
-    // Read-only: do not run ensure_schema (avoids write locks on auth).
     let mut conn = pool.acquire().await?;
-    Ok(dedupe::source_priority_from_db(&mut conn, account_id).await?)
+    Ok(dedupe::sources_in_import_order(&mut conn, account_id).await?)
 }
 
 /// Username for the credential's account. An account deleted between the
@@ -122,12 +150,15 @@ async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<String, Api
 
 /// The answer to every refused login, whatever was wrong, so the answer does
 /// not tell a guesser which part failed.
-fn invalid_login() -> ApiError {
-    ApiError::InvalidCredentials("invalid username or password".into())
-}
+const INVALID_LOGIN: &str = "invalid username or password";
 
 /// Log in: verify a local username and password and answer the Session, a
 /// `201 Created` whose `Location` is the singleton itself.
+///
+/// A refused login waits about a second, then answers
+/// `invalid-credentials`, whatever was wrong: a username nobody holds, a
+/// wrong or empty password, a disabled account. A login with the right
+/// password does not wait.
 #[utoipa::path(
     post,
     path = "/v1/session",
@@ -140,13 +171,13 @@ fn invalid_login() -> ApiError {
             body = CreateSessionResponse,
             headers(("Location" = String, description = "`/v1/session`"))
         ),
-        crate::problem::openapi::InvalidCredentials,
-        crate::problem::openapi::AccountDisabled,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::InvalidCredentials
     )
 )]
 pub async fn create_session(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(demo): State<DemoState>,
+    State(refusal_wait): State<RefusalWait>,
     headers: HeaderMap,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Created<CreateSessionResponse>, ApiError> {
@@ -154,31 +185,41 @@ pub async fn create_session(
     if username.is_empty() {
         return Err(ApiError::validation("username is required"));
     }
-    let app = crate::server::connecting_app(&headers);
-    let app = app.as_ref();
-    let mut conn = state.db.acquire().await?;
-    let account_id = account_profile::lookup_account_by_username(&mut conn, &username).await?;
-    // Counted per account, not per username as typed: the lookup ignores
-    // case, so every spelling of a username guesses at the same password.
-    let bucket = match account_id {
-        Some(id) => password_bucket(id),
-        None => unknown_username_bucket(&username),
-    };
-    // A rate-limited attempt is turned away before anything is checked, and
-    // the Audit Trail records nothing of it.
-    check_auth_rate_limit(&state.auth_rate_limits, &bucket)?;
-    if req.password.len() > MAX_PASSWORD_BYTES {
-        return Err(ApiError::validation("password is too long"));
+    // Before the lookup, so the answer is the same whether or not the
+    // username names an account.
+    require_password_within_cap("password", &req.password)?;
+    let app = crate::auth::connecting_app(&headers);
+    // `log_in` has given its connection back by the time it answers, so a
+    // refusal waits holding none.
+    match log_in(&db, &demo.build, &username, &req.password, app.as_ref()).await? {
+        Some(body) => Ok(Created {
+            location: "/v1/session".to_string(),
+            body,
+        }),
+        None => Err(refusal_wait.refuse(INVALID_LOGIN).await),
     }
+}
+
+/// Check `username` and `password` and open the account's Session.
+/// `Ok(None)` when the login is refused; the Audit Trail records why. Each
+/// entry is stamped when it is written, after the password check, so the
+/// entries keep the order the writes land in however long each check took.
+async fn log_in(
+    db: &SqlitePool,
+    demo_build: &DemoBuild,
+    username: &str,
+    password: &str,
+    app: Option<&ConnectingApp>,
+) -> Result<Option<CreateSessionResponse>, ApiError> {
+    let mut conn = db.acquire().await?;
+    let account_id = account_profile::lookup_account_by_username(&mut conn, username).await?;
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
-    audit_trail::trim_refused_logins(&mut conn).await?;
-
-    let password = req.password.clone();
+    audit_trail::trim_refused_logins(&mut conn, Utc::now()).await?;
 
     // The username the account's row holds. An account deleted since the
     // lookup above is a username nobody holds by now, so it takes the same
-    // branch, with the same timing and the same Audit Trail entry.
+    // branch and gets the same Audit Trail entry.
     let account = match account_id {
         Some(id) => account_profile::username_for_account(&mut conn, id)
             .await?
@@ -186,68 +227,92 @@ pub async fn create_session(
         None => None,
     };
     let Some((account_id, stored_username)) = account else {
-        let _ = verify_password(dummy_password_hash(), &password);
+        // Argon2 runs against a dummy hash, as it runs against the real one
+        // below, and the connection goes back to the pool for the length of
+        // the run.
+        drop(conn);
+        let _ = verify_login_password(None, password).await?;
+        let mut conn = db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,
-            &username,
+            username,
             None,
             AuditReason::UnknownUsername,
             app,
+            Utc::now(),
         )
         .await?;
-        return Err(invalid_login());
+        return Ok(None);
     };
 
     // The Demo Account cannot be entered while it is being built: until the
     // build ends it holds part of its data, and a failed build removes it.
     // The login card is told there is no Demo Account, so the answer here is
     // the one for a username that does not exist.
-    if account_id == account_profile::DEMO_ACCOUNT_ID && state.demo_build.is_building() {
-        return Err(invalid_login());
+    if account_id == account_profile::DEMO_ACCOUNT_ID && demo_build.is_building() {
+        return Ok(None);
     }
 
     let account = Some((account_id, stored_username.as_str()));
     let password_hash = account_profile::load_password_hash(&mut conn, account_id).await?;
-    if !verify_login_password(password_hash.as_deref(), &password) {
+    // Argon2 runs on the blocking thread pool with no pooled connection held,
+    // so a burst of logins neither stalls the async workers nor empties the
+    // pool. An account changed meanwhile is read afresh below.
+    drop(conn);
+    let verified = verify_login_password(password_hash.as_deref(), password).await?;
+    let mut conn = db.acquire().await?;
+    let now = Utc::now();
+    if !verified {
         audit_trail::record_refused_login(
             &mut conn,
-            &username,
+            username,
             account,
             AuditReason::WrongPassword,
             app,
+            now,
         )
         .await?;
-        return Err(invalid_login());
+        return Ok(None);
     }
 
-    let auth = account_profile::load_account_auth(&mut conn, account_id)
-        .await?
-        .ok_or_else(invalid_login)?;
-    if auth.disabled {
-        audit_trail::record_refused_login(
-            &mut conn,
-            &username,
-            account,
-            AuditReason::AccountDisabled,
-            app,
-        )
-        .await?;
-        return Err(ApiError::AccountDisabled("this account is disabled".into()));
-    }
-
-    let body =
-        CreateSessionResponse::for_existing_account(&mut conn, account_id, stored_username, app)
+    // A disabled account gets the answer every refused login gets. Its own
+    // answer would come only after the right password, so a guesser would
+    // learn which guess was right, and that password works again once the
+    // owner enables the account. The Audit Trail still says why.
+    match CreateSessionResponse::for_existing_account(
+        &mut conn,
+        account_id,
+        stored_username.clone(),
+        app,
+        now,
+    )
+    .await?
+    {
+        LoginOpened::Session(body) => Ok(Some(body)),
+        LoginOpened::Disabled => {
+            audit_trail::record_refused_login(
+                &mut conn,
+                username,
+                account,
+                AuditReason::AccountDisabled,
+                app,
+                now,
+            )
             .await?;
-
-    Ok(Created {
-        location: "/v1/session".to_string(),
-        body,
-    })
+            Ok(None)
+        }
+        LoginOpened::Gone => Ok(None),
+    }
 }
 
-/// Revoke the session token. Returns whether it named a Session.
-async fn logout_on_conn(conn: &mut SqliteConnection, token: &str) -> anyhow::Result<bool> {
-    session_tokens::revoke_session_token(conn, token).await
+/// Revoke the session token, recording its end at `now`. Returns whether it
+/// named a Session.
+async fn logout_on_conn(
+    conn: &mut SqliteConnection,
+    token: &str,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    session_tokens::revoke_session_token(conn, token, now).await
 }
 
 /// Log out: revoke the presented session token, ending the Session.
@@ -265,16 +330,16 @@ async fn logout_on_conn(conn: &mut SqliteConnection, token: &str) -> anyhow::Res
     )
 )]
 pub async fn delete_session(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     headers: HeaderMap,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let token = crate::server::bearer_token(&headers)?;
-    let mut conn = state.db.acquire().await?;
-    schema::ensure_accounts_schema(&mut conn).await?;
-    if logout_on_conn(&mut conn, &token).await? {
+    let token = crate::auth::bearer_token(&headers)?;
+    let mut conn = db.acquire().await?;
+    let now = Utc::now();
+    if logout_on_conn(&mut conn, &token, now).await? {
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }
-    if api_tokens::lookup_account_for_api_token(&mut conn, &token)
+    if api_tokens::lookup_account_for_api_token(&mut conn, &token, now)
         .await?
         .is_some()
     {
@@ -283,9 +348,7 @@ pub async fn delete_session(
                 .into(),
         ));
     }
-    Err(ApiError::AuthenticationRequired(
-        "this token names no session".into(),
-    ))
+    Err(ApiError::TokenRefused("this token names no session".into()))
 }
 
 #[cfg(test)]

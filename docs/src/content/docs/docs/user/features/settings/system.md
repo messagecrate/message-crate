@@ -1,6 +1,6 @@
 ---
 title: System
-description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found and how their download stands, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
+description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found and how their download stands, the Export Directory, the Message Crate Directory, and the app's version.
 ---
 
 The **System** tab of **Settings** holds the settings of one installed desktop app.
@@ -16,10 +16,10 @@ The Owner's own Settings has no **System** tab, because every setting here serve
 ### Staging directory
 
 **Staging directory** is the Staging Directory, where Import keeps the backup it prepares.
-The default is `message-crate` in the person's home directory, shown as `~/message-crate`.
+The default is `staging` in the Message Crate Directory, shown as `~/message-crate/staging`.
 
 Each Import Run writes into a directory of its own inside it.
-The line under the field gives an example, `~/message-crate/staging-iphone-ios-260809-143022`.
+The line under the field gives an example, `~/message-crate/staging/staging-iphone-ios-260809-143022`.
 Export and Convert don't use it: they work in the Export Directory, under [Exports](#exports).
 
 The field takes a typed path or a directory chosen with the picker.
@@ -32,10 +32,18 @@ Two kinds of path are not saved, and the default stays in force:
 
 Emptying the field returns to the default.
 
+### Space used
+
+The line under the field says how much disk space the account's own Import Runs take in the Staging Directory on this computer, such as "Your Import Runs on this computer take up 1.5 GB."
+It counts each run's directory wherever the Staging Directory pointed when the run started.
+The size is measured when Settings opens and doesn't change while the tab is open.
+A run's directory is deleted when the run ends, and opening Import deletes the directory of any run Message Crate reports as ended, so the number is mostly runs that are paused or waiting at a Review.
+The Owner sees the size of the whole Staging Directory under [Server Settings](/docs/user/features/owner/owner-home/#staging-directory-on-this-computer).
+
 A change applies to the Import Runs started after it.
 An import already staged keeps the directory it was staged in, so it can still be resumed, discarded or cleaned up after the setting moves.
 
-When Message Crate can't delete the directory of a finished, cancelled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
+When Message Crate can't delete the directory of a finished, canceled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
 
 ### Remember importer paths
 
@@ -56,7 +64,10 @@ The app carries the SHA-256 checksum of every file it downloads, and refuses and
 
 The Tools Directory belongs to the app, and one rule holds for all three programs.
 A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
-The old file is replaced only after the new one has arrived and passed its checksum, so with no internet, or after a failed download, the old one stays in use.
+The old file is replaced only after the new one has arrived and passed its checksum, so with no internet, or after a failed download, an old `ffmpeg` or `ffprobe` stays in use.
+A `wtsexporter` that isn't the pinned program isn't used at all, because the app needs the build that release made.
+It shows as not found until the pinned program replaces it, and so does a copy still being copied in.
+Where the app has no download, on Linux on ARM, any `wtsexporter` in the Tools Directory that may run is used.
 
 **Tools directory** shows the full path of the Tools Directory, `tools` in the Message Crate Directory, such as `/home/sam/message-crate/tools` on Linux.
 
@@ -73,12 +84,16 @@ One line per program reports the result:
   For wtsexporter, the reason is that it has no permission to run.
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
-- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, or a program in the Tools Directory that doesn't run on this computer.
+- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, a program in the Tools Directory that couldn't be marked as a program that runs, or one that doesn't run on this computer.
+  When a download finds no connection, the app tries again after 5, 15, 30 and 60 seconds, and shows the download as in progress while it waits.
+  The programs share those four tries, so with no connection at all every download has failed about two minutes after the first one tried.
+  A copy put in the Tools Directory by hand during those waits ends them, and the app uses it: for `wtsexporter`, once the whole pinned file is in place.
   A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form or, for ffmpeg and ffprobe, at the Staging Review.
   The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
   A program that doesn't run is not downloaded again, because the download would be the same file.
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
-  While an older copy is in place, the line shows that copy as found instead, because the old copy is still the one used.
+  While an older `ffmpeg` or `ffprobe` is in place, the line shows that copy as found instead, because the old copy is still the one used.
+  A `wtsexporter` in the Tools Directory that isn't the pinned program shows as not found, so its failed download's reason starts by saying that file isn't used.
 
 On macOS, an app opened from the Dock or Finder doesn't see the `PATH` Homebrew sets in a terminal, so it doesn't find ffmpeg and ffprobe installed with Homebrew.
 It downloads its own copies into the Tools Directory instead, and nothing needs doing.
@@ -90,32 +105,35 @@ It downloads its own copies into the Tools Directory instead, and nothing needs 
 **Exports** names the Export Directory and opens it.
 Each [Export](/docs/user/features/messages/export/), and each [Convert](/docs/user/features/settings/convert/) with no output directory chosen, gets a directory of its own there, named for what it is, when it started and its format, such as `export-2026-10-04-1430-mbox` or `convert-2026-10-04-1502-csv`.
 The result is written there unless the Export form names another directory.
-The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it, and one the app did not see to its end is deleted the next time the app starts.
+The directory holds only the result once the run finishes; a run that fails or is canceled deletes it, and one the app did not see to its end is deleted the next time the app starts.
 
-The Export Directory is `exports` in the operating system's app-data directory, such as `~/.local/share/app.messagecrate.desktop/exports` on Linux.
+The Export Directory is `exports` in the Message Crate Directory, such as `/home/sam/message-crate/exports` on Linux.
 Message Crate never deletes a finished export from it.
 
 ## Where the app keeps its files
 
-The desktop app keeps everything that is not a phone backup or a chosen destination in the operating system's app-data directory, `~/.local/share/app.messagecrate.desktop` on Linux, `~/Library/Application Support/app.messagecrate.desktop` on macOS and `%APPDATA%\app.messagecrate.desktop` on Windows.
+The desktop app keeps everything that is not a phone backup or a chosen destination in the Message Crate Directory, `message-crate` in the home directory: `/home/sam/message-crate` on Linux, `/Users/sam/message-crate` on macOS and `C:\Users\sam\message-crate` on Windows.
+The app makes it, and every directory below, each time it starts.
+Only the user who runs the app can read it, because it holds every account's messages.
 
-| Directory | In the app-data directory | Holds |
+| Directory | In the Message Crate Directory | Holds |
 |---|---|---|
-| Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts |
+| Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts. A copy of it is a backup |
+| Staging Directory | `staging` | One directory per Import Run, unless [Staging directory](#staging-directory) names another place |
 | Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
-| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted. The run's account reads it from **Settings → Storage**, and the Owner from **Logs** on Owner Home |
+| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`, and the desktop app's own log, `desktop-app.log`. Never deleted. The run's account reads a run's log from **Settings → Storage**, and the Owner every log from **Logs** on Owner Home |
 | Scratch Directory | `scratch` | Decrypted iPhone backup databases, the WhatsApp database decrypted from an Android backup, WhatsApp's files read out of a phone backup, and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
-
-The Staging Directory is the one directory outside it: see [Staging directory](#staging-directory).
+| Tools Directory | `tools` | ffmpeg, ffprobe and wtsexporter, when the app downloaded them or they were put there by hand. See [Media](#media) |
 
 ## Message Crate on this computer
 
 This part is about the Message Crate the desktop app starts for itself.
 
-### Open data directory
+### Open Message Crate directory
 
-**Open data directory** opens the directory where that Message Crate keeps its database and attachments.
-A copy of the directory, made while the app is closed, is a backup.
+**Open Message Crate directory** opens the Message Crate Directory.
+That Message Crate keeps its database and attachments in `data` inside it.
+A copy of `data`, made while the app is closed, is a backup.
 
 ### Let other devices on this network connect
 

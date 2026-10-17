@@ -1,21 +1,25 @@
-//! Shared scaffolding for the export crates' tests, such as the exporters'
-//! `convert_smoke` tests and the attachment byte-total tests (behind
-//! `testutil`).
+//! Shared scaffolding for the export crates' tests and the Import Run log
+//! tests, such as the exporters' `convert_smoke` tests, the attachment
+//! byte-total tests, and the tests that read an Import Run log back through
+//! [`run_log_lines`] (behind `testutil`).
 
-use crate::{ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue};
+use crate::{
+    ExportReport, IssueSink, LogSink, OutputConfig, ProgressEvent, ProgressSink, RunContext,
+    RunIssue, RunLogLevel, parse_run_log_line,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// Give `config` an issue sink, and return the rows it receives, in the
+/// Give `context` an issue sink, and return the rows it receives, in the
 /// order the run sent them.
-pub fn collect_issues(config: &mut ExporterConfig) -> Arc<Mutex<Vec<RunIssue>>> {
+pub fn collect_issues(context: &mut RunContext) -> Arc<Mutex<Vec<RunIssue>>> {
     let issues = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&issues);
-    config.issues = Some(IssueSink::new(move |issue| {
+    context.issues = IssueSink::new(move |issue| {
         sink.lock().unwrap().push(issue);
-    }));
+    });
     issues
 }
 
@@ -41,6 +45,66 @@ pub fn attachment_totals() -> (ProgressSink, AttachmentTotals) {
         }
     });
     (progress, totals)
+}
+
+/// Every line and warning a test's log sink received, each with the level
+/// the desktop app would write it at, in the order the run sent them.
+pub type RecordedLog = Arc<Mutex<Vec<(RunLogLevel, String)>>>;
+
+/// A log sink, and every line it receives at `INFO` and every warning at
+/// `WARN`, as the desktop app's run log sink sorts them: what a test of a
+/// line's level asserts on.
+pub fn recorded_log() -> (LogSink, RecordedLog) {
+    let recorded: RecordedLog = Arc::new(Mutex::new(Vec::new()));
+    let lines = Arc::clone(&recorded);
+    let warnings = Arc::clone(&recorded);
+    let sink = LogSink::new(move |line| {
+        lines
+            .lock()
+            .unwrap()
+            .push((RunLogLevel::Info, line.to_string()));
+    })
+    .with_warnings(move |text| {
+        warnings
+            .lock()
+            .unwrap()
+            .push((RunLogLevel::Warn, text.to_string()));
+    });
+    (sink, recorded)
+}
+
+/// The level `recorded` holds the first line starting with `start` at,
+/// `None` when no line starts with it.
+///
+/// # Panics
+///
+/// Panics when the recording's lock is poisoned.
+pub fn level_of(recorded: &RecordedLog, start: &str) -> Option<RunLogLevel> {
+    recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(_, text)| text.starts_with(start))
+        .map(|(level, _)| *level)
+}
+
+/// Each line of the Import Run log at `path` as its level and text, in the
+/// order the file holds them: what a test of a run log asserts on.
+///
+/// # Panics
+///
+/// Panics when `path` cannot be read, or when a line of it is not a run log's
+/// line.
+pub fn run_log_lines(path: &Path) -> Vec<(RunLogLevel, String)> {
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|raw| {
+            let line =
+                parse_run_log_line(0, raw).unwrap_or_else(|| panic!("not a run log line: {raw:?}"));
+            (line.level, line.text)
+        })
+        .collect()
 }
 
 /// The names in `dir`, sorted, without the `.lock` files a scratch directory
@@ -73,12 +137,17 @@ pub fn csv_files(root: &Path) -> Vec<PathBuf> {
 
 /// Every data row of `path`, keyed by lower-cased column name.
 ///
-/// This reads the export with `message_csv::open_csv_lowercase`, the CSV reader
+/// This reads the export with `message_crate_csv::open_csv_lowercase`, the CSV reader
 /// the iMazing and OpenExtract exporters parse with, so a test asserts the
 /// value in a named column rather than a substring of the file. The
 /// distinction matters: a substring search over the
 /// whole file is satisfied by the header line, so `contains("direction")`
 /// passes whether or not a single message was written.
+///
+/// Each cell is the value as `message_crate_csv::read_cell` reads it, without the
+/// `'` the writer puts in front of a cell a spreadsheet would run as a
+/// formula, so a test compares a phone number such as `+15555550100` as it
+/// is.
 ///
 /// # Panics
 ///
@@ -86,14 +155,17 @@ pub fn csv_files(root: &Path) -> Vec<PathBuf> {
 /// missing export has already failed.
 pub fn csv_rows(path: &Path) -> Vec<BTreeMap<String, String>> {
     let (mut rdr, headers) =
-        message_csv::open_csv_lowercase(path).expect("the export must be readable CSV");
+        message_crate_csv::open_csv_lowercase(path).expect("the export must be readable CSV");
     rdr.records()
         .map(|rec| {
             let rec = rec.expect("a readable CSV row");
             headers
                 .iter()
                 .enumerate()
-                .map(|(i, h)| (h.clone(), rec.get(i).unwrap_or("").trim().to_string()))
+                .map(|(i, h)| {
+                    let cell = message_crate_csv::field(&rec, i);
+                    (h.clone(), message_crate_csv::read_cell(&cell).to_string())
+                })
                 .collect()
         })
         .collect()
@@ -308,34 +380,43 @@ pub fn test_scratch_dir() -> PathBuf {
     std::env::temp_dir().join("message-crate-test-cache")
 }
 
-/// The config an exporter's `run()` test passes: read `inputs`, write JSONL
-/// into `output`, copy no attachments and keep every name, so the result
-/// shows only what the exporter itself did. Scratch data goes under
-/// [`test_scratch_dir`].
-pub fn jsonl_run_config(
-    inputs: &[&Path],
-    output: &Path,
-    source: crate::SourceConfig,
-) -> crate::ExporterConfig {
-    crate::ExporterConfig {
+/// What an exporter's `run()` test passes: the [`RunContext`], the
+/// [`OutputConfig`], the inputs, and the exporter's own config `S`, the four
+/// arguments every exporter's `run` takes.
+#[derive(Debug, Clone)]
+pub struct TestRun<S> {
+    /// The run's plumbing.
+    pub context: RunContext,
+    /// What the run writes.
+    pub output: OutputConfig,
+    /// The paths the run reads.
+    pub inputs: Vec<PathBuf>,
+    /// The exporter's own config.
+    pub source: S,
+}
+
+impl<S> TestRun<S> {
+    /// Call `run`, an exporter's `run`, with this run's four parts.
+    pub fn run<R>(&self, run: impl FnOnce(&RunContext, &OutputConfig, &[PathBuf], &S) -> R) -> R {
+        run(&self.context, &self.output, &self.inputs, &self.source)
+    }
+}
+
+/// The run an exporter's `run()` test passes: read `inputs` with `source`,
+/// write JSONL into `output`, copy no attachments and keep every name, so
+/// the result shows only what the exporter itself did. Scratch data goes
+/// under [`test_scratch_dir`].
+pub fn jsonl_test_run<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<S> {
+    TestRun {
+        context: RunContext::new(test_scratch_dir()),
+        output: OutputConfig {
+            media: crate::MediaConfig {
+                files: crate::AttachmentFiles::Skip,
+                ..crate::MediaConfig::default()
+            },
+            ..OutputConfig::new(output, crate::OutputFormat::Jsonl)
+        },
         inputs: inputs.iter().map(|p| p.to_path_buf()).collect(),
-        output: output.to_path_buf(),
-        scratch_dir: test_scratch_dir(),
-        timezone: None,
-        obfuscate: crate::ObfuscateConfig {
-            enabled: false,
-            seed: None,
-        },
-        media: crate::MediaConfig {
-            mode: media::MediaMode::Disabled,
-            compress: media::CompressOptions::default(),
-        },
-        cancel: None,
-        log: None,
-        progress: None,
-        issues: None,
-        output_format: crate::OutputFormat::Jsonl,
-        resume: false,
         source,
     }
 }
@@ -393,21 +474,85 @@ pub fn set_modified_unix_ms(path: &Path, unix_ms: i64) {
         .expect("set the file's modification time");
 }
 
-/// Every JSON Lines file's `export.backup_taken_at_unix_ms` under `dir`, in
-/// file name order.
+/// For every JSON Lines file under `dir`, in file name order, the Backup
+/// Dates its messages carry (`backup_taken_at_unix_ms`), each date once, in
+/// the order first met. A file read from one backup gives one date.
 ///
 /// # Panics
 ///
-/// Panics when a file cannot be read or its first line is not JSON.
-pub fn jsonl_backup_dates(dir: &Path) -> Vec<Option<i64>> {
+/// Panics when a file cannot be read or a line is not JSON.
+pub fn jsonl_backup_dates(dir: &Path) -> Vec<Vec<Option<i64>>> {
     jsonl_names(dir)
         .iter()
         .map(|name| {
             let text = fs::read_to_string(dir.join(name)).expect("read jsonl");
-            let header: serde_json::Value =
-                serde_json::from_str(text.lines().next().expect("a header line"))
-                    .expect("the header is JSON");
-            header["export"]["backup_taken_at_unix_ms"].as_i64()
+            let mut dates = Vec::new();
+            for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+                let message: serde_json::Value =
+                    serde_json::from_str(line).expect("a message line is JSON");
+                let date = message["backup_taken_at_unix_ms"].as_i64();
+                if !dates.contains(&date) {
+                    dates.push(date);
+                }
+            }
+            dates
         })
         .collect()
+}
+
+/// How [`with_directory_mode`] checks whether a mode keeps the running user
+/// out of a directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectoryProbe {
+    /// List the directory: for a test of reading it.
+    List,
+    /// Write a file into the directory: for a test of writing into it.
+    Write,
+}
+
+/// Run `f` with the permissions of `directory` set to `mode`, then set them
+/// back to `0o755` before returning, so the temporary directory can still be
+/// removed.
+///
+/// `None`, with a line on stderr, when `probe` still succeeds on `directory`
+/// under `mode`: a user such as root gets past the permissions, cannot
+/// exercise the failure, and the test has nothing to check.
+///
+/// # Panics
+///
+/// Panics when the directory's mode cannot be set or restored.
+#[cfg(unix)]
+pub fn with_directory_mode<T>(
+    directory: &Path,
+    mode: u32,
+    probe: DirectoryProbe,
+    f: impl FnOnce() -> T,
+) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(directory, fs::Permissions::from_mode(mode))
+        .expect("set the directory's mode");
+    let (got_past, verb) = match probe {
+        DirectoryProbe::List => (fs::read_dir(directory).is_ok(), "listed"),
+        DirectoryProbe::Write => {
+            let file = directory.join("probe");
+            let written = fs::write(&file, b"").is_ok();
+            if written {
+                let _ = fs::remove_file(&file);
+            }
+            (written, "written")
+        }
+    };
+    let result = if got_past {
+        eprintln!(
+            "skipped: {} can still be {verb} with mode {mode:o}",
+            directory.display()
+        );
+        None
+    } else {
+        Some(f())
+    };
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o755))
+        .expect("restore the directory's mode");
+    result
 }

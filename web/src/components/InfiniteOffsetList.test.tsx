@@ -1,18 +1,30 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Z_LIFT } from "../lib/zLayers";
+import {
+  advanceTimersAndSettle,
+  advanceToNextFrame,
+  startFakeClock,
+  stopFakeClock,
+} from "../test/fakeTimers";
 import { setupUser } from "../test/user";
 import InfiniteOffsetList from "./InfiniteOffsetList";
+import { RANGE_REPORT_MS } from "./VirtualList";
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriMock.current,
 }));
 
+beforeEach(() => {
+  startFakeClock();
+});
+
 afterEach(() => {
   cleanup();
+  stopFakeClock();
   tauriMock.current = false;
 });
 
@@ -58,7 +70,7 @@ describe("InfiniteOffsetList in the desktop app", () => {
         { onSelect, sectioned: false },
       );
       const user = setupUser();
-      await user.click(await screen.findByText("Grace"));
+      await user.click(screen.getByText("Grace"));
       expect(onSelect).toHaveBeenCalledTimes(1);
       expect(onSelect).toHaveBeenCalledWith({ id: "2", name: "Grace" });
     }),
@@ -76,7 +88,9 @@ describe("InfiniteOffsetList in the desktop app", () => {
         total: 90,
       });
       const pill = screen.getByTestId("contact-list-range-pill");
-      await waitFor(() => expect(pill).toHaveTextContent("1–6 of 90"));
+      expect(requestMore).not.toHaveBeenCalled();
+      advanceToNextFrame();
+      expect(pill).toHaveTextContent("1–6 of 90");
       expect(requestMore).toHaveBeenCalled();
     } finally {
       restore();
@@ -91,7 +105,9 @@ describe("InfiniteOffsetList in the desktop app", () => {
     try {
       renderList(manyItems(), { sectioned: false, hasMore: true, requestMore, total: 90 });
       const pill = screen.getByTestId("contact-list-range-pill");
-      await waitFor(() => expect(pill).toHaveTextContent("1–4 of 90"));
+      expect(pill).not.toHaveTextContent("1–4 of 90");
+      advanceToNextFrame();
+      expect(pill).toHaveTextContent("1–4 of 90");
       expect(requestMore).not.toHaveBeenCalled();
     } finally {
       restore();
@@ -100,14 +116,23 @@ describe("InfiniteOffsetList in the desktop app", () => {
 
   it("works the range out again when a new search replaces the rows", async () => {
     tauriMock.current = true;
-    const restore = layOutDrawnRows(49);
+    let restore = layOutDrawnRows(49);
     try {
       const { rerender } = renderList(manyItems(), { sectioned: false, total: 90 });
       const pill = screen.getByTestId("contact-list-range-pill");
-      await waitFor(() => expect(pill).toHaveTextContent("1–8 of 90"));
+      expect(pill).not.toHaveTextContent("1–8 of 90");
+      advanceToNextFrame();
+      expect(pill).toHaveTextContent("1–8 of 90");
 
-      rerender(listElement(manyItems().slice(0, 3), { sectioned: false, total: 3 }));
-      await waitFor(() => expect(pill).toHaveTextContent("1–3 of 3"));
+      // The new search's rows are twice as tall, so four of its six fit where
+      // eight fit before. Until the list measures them, the old 1–8 reads as
+      // all six.
+      restore();
+      restore = layOutDrawnRows(98);
+      rerender(listElement(manyItems().slice(0, 6), { sectioned: false, total: 6 }));
+      expect(pill).toHaveTextContent("1–6 of 6");
+      advanceToNextFrame();
+      expect(pill).toHaveTextContent("1–4 of 6");
     } finally {
       restore();
     }
@@ -285,7 +310,9 @@ describe("InfiniteOffsetList asking for more", () => {
 
     layOutRows(root, 42 * 49);
     fireEvent.scroll(root);
-    await waitFor(() => expect(requestMore).toHaveBeenCalled());
+    expect(requestMore).not.toHaveBeenCalled();
+    advanceToNextFrame();
+    expect(requestMore).toHaveBeenCalled();
   });
 
   it("does not ask while the top of a long list is on screen", async () => {
@@ -295,7 +322,7 @@ describe("InfiniteOffsetList asking for more", () => {
 
     layOutRows(root, 0);
     fireEvent.scroll(root);
-    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    advanceToNextFrame();
 
     expect(requestMore).not.toHaveBeenCalled();
   });
@@ -307,7 +334,7 @@ describe("InfiniteOffsetList asking for more", () => {
 
     layOutRows(root, 42 * 49);
     fireEvent.scroll(root);
-    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    advanceToNextFrame();
 
     expect(requestMore).not.toHaveBeenCalled();
   });
@@ -316,7 +343,7 @@ describe("InfiniteOffsetList asking for more", () => {
     const requestMore = vi.fn();
     renderList([], { hasMore: true, requestMore });
 
-    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    advanceToNextFrame();
 
     expect(requestMore).not.toHaveBeenCalled();
   });
@@ -338,14 +365,17 @@ describe("InfiniteOffsetList asking for more without sections", () => {
     try {
       renderList(manyItems(), { sectioned: false, hasMore: true, requestMore, total: 90 });
       const pill = screen.getByTestId("contact-list-range-pill");
-      await waitFor(() => expect(pill).toHaveTextContent("1–8 of 90"));
+      expect(pill).not.toHaveTextContent("1–8 of 90");
+      advanceToNextFrame();
+      expect(pill).toHaveTextContent("1–8 of 90");
       expect(requestMore).not.toHaveBeenCalled();
 
       const listbox = screen.getByRole("listbox", { name: "Contacts" });
       Object.defineProperty(listbox, "scrollTop", { value: 42 * 49, configurable: true });
       fireEvent.scroll(listbox);
-
-      await waitFor(() => expect(requestMore).toHaveBeenCalled());
+      expect(requestMore).not.toHaveBeenCalled();
+      advanceToNextFrame();
+      expect(requestMore).toHaveBeenCalled();
     } finally {
       restore();
     }
@@ -362,14 +392,17 @@ describe("InfiniteOffsetList asking for more without sections", () => {
         total: 90,
       });
       const pill = screen.getByTestId("contact-list-range-pill");
-      await waitFor(() => expect(pill).toHaveTextContent(/^1–\d+ of 90/));
+      expect(pill).toHaveTextContent(/^1–\d+ of 90/);
       expect(requestMore).not.toHaveBeenCalled();
 
       const root = scroller(container);
       Object.defineProperty(root, "scrollTop", { value: 42 * 49, configurable: true });
       fireEvent.scroll(root);
-
-      await waitFor(() => expect(requestMore).toHaveBeenCalled());
+      // The browser's list reports a new range at most once a RANGE_REPORT_MS.
+      await advanceTimersAndSettle(RANGE_REPORT_MS - 1);
+      expect(requestMore).not.toHaveBeenCalled();
+      await advanceTimersAndSettle(1);
+      expect(requestMore).toHaveBeenCalled();
     } finally {
       restore();
     }
@@ -459,7 +492,7 @@ describe("InfiniteOffsetList choosing a row", () => {
     "draws the focus ring on a row of the desktop app's list, reached with the arrow keys",
     inDesktopViewport(async () => {
       renderList([{ id: "1", name: "Alice" }], { sectioned: false });
-      expect((await screen.findByRole("option", { name: "Alice" })).className).toContain(
+      expect(screen.getByRole("option", { name: "Alice" }).className).toContain(
         "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
       );
     }),
@@ -542,7 +575,6 @@ describe("InfiniteOffsetList marking the open row", () => {
       "marks only the open row as current",
       inDesktopViewport(async () => {
         renderList(people, { sectioned: false, selectedId: "2" });
-        await screen.findByRole("option", { name: "Bob" });
         expect(currentRows("option")).toEqual(["Bob=true"]);
         // Listbox selection stays off, so nothing claims to be selected.
         for (const row of screen.getAllByRole("option")) {
@@ -555,9 +587,9 @@ describe("InfiniteOffsetList marking the open row", () => {
       "moves the mark when another row opens",
       inDesktopViewport(async () => {
         const { rerender } = renderList(people, { sectioned: false, selectedId: "2" });
-        await screen.findByRole("option", { name: "Bob" });
+        expect(currentRows("option")).toEqual(["Bob=true"]);
         rerender(listElement(people, { sectioned: false, selectedId: "3" }));
-        await waitFor(() => expect(currentRows("option")).toEqual(["Carol=true"]));
+        expect(currentRows("option")).toEqual(["Carol=true"]);
         // The fill follows the mark: the list redraws its rows for the new open row.
         expect(screen.getByRole("option", { name: "Carol" }).className).toContain(
           "bg-hover-strong",
@@ -579,7 +611,6 @@ describe("InfiniteOffsetList marking the open row", () => {
           selectedId: "2",
           isRowHighlighted: (c) => checked.has(c.id),
         });
-        await screen.findByRole("option", { name: /Bob/ });
         expect(currentRows("option")).toEqual(["Bob=true"]);
         expect(screen.getByRole("option", { name: /Alice/ }).className).toContain(
           "bg-hover-strong",
@@ -597,7 +628,7 @@ describe("InfiniteOffsetList marking the open row", () => {
         const onSelect = vi.fn();
         renderList(people, { sectioned: false, selectedId: "2", onSelect });
         const user = setupUser();
-        await user.click(await screen.findByText("Carol"));
+        await user.click(screen.getByText("Carol"));
         expect(onSelect).toHaveBeenCalledTimes(1);
         expect(onSelect).toHaveBeenCalledWith({ id: "3", name: "Carol" });
       }),

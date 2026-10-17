@@ -4,8 +4,9 @@
 use chrono::NaiveDate;
 use sqlx::SqliteConnection;
 
-use super::{CompileRequest, ListKind, QueryError, compile};
+use super::{CompileRequest, Filter, ListKind, QueryError, compile, today_in};
 use crate::db::sql::bind_args;
+use crate::test_support::{ConversationRow, stored_time};
 
 pub(crate) const ACCOUNT: i64 = 7;
 pub(crate) const OTHER_ACCOUNT: i64 = 8;
@@ -116,6 +117,16 @@ pub(crate) async fn contact(
     id
 }
 
+/// Puts contact `id` of `account` in the trash.
+pub(crate) async fn trash_contact(conn: &mut SqliteConnection, account: i64, id: i64) {
+    sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
+        .bind(account)
+        .bind(id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+}
+
 /// A conversation whose chat handle is `chat` and whose participants are the
 /// given handles, each linked to its contact when one exists.
 pub(crate) async fn conversation(
@@ -126,17 +137,13 @@ pub(crate) async fn conversation(
     title: Option<&str>,
     participants: &[i64],
 ) -> i64 {
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, group_title, source_file)
-         VALUES ($1, $2, $3, $4, 'seed.jsonl') RETURNING id",
-    )
-    .bind(account)
-    .bind(chat)
-    .bind(kind)
-    .bind(title)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let id = ConversationRow {
+        conversation_type: kind,
+        group_title: title,
+        ..ConversationRow::new(account, chat)
+    }
+    .insert(conn)
+    .await;
     for h in participants {
         sqlx::query("INSERT INTO participants (conversation_id, handle_id) VALUES ($1, $2)")
             .bind(id)
@@ -161,7 +168,7 @@ pub(crate) async fn named_participant(conn: &mut SqliteConnection, conversation:
         conn,
         account,
         alias,
-        message_ir::IdentityType::Other,
+        ir::IdentityType::Other,
         Some("phone"),
     )
     .await
@@ -210,7 +217,7 @@ pub(crate) fn msg<'a>(
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
     crate::test_support::MessageRow {
         source: m.source,
-        timestamp: m.timestamp,
+        timestamp: stored_time(m.timestamp),
         is_from_me: m.from_me,
         sender_handle_id: m.sender,
         service: Some(m.service),
@@ -300,12 +307,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     for (id, name) in [(ACCOUNT, "alice"), (OTHER_ACCOUNT, "bob")] {
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $2)")
-            .bind(id)
-            .bind(name)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, id, name).await;
     }
     let a = ACCOUNT;
     let mut f = Fixture {
@@ -332,7 +334,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.ana_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.ana_handle],
     )
@@ -341,7 +343,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.bo_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.bo_handle],
     )
@@ -350,7 +352,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.jane_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.jane_handle],
     )
@@ -359,7 +361,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         f.sam_handle,
-        "individual",
+        "one-to-one",
         None,
         &[f.sam_handle],
     )
@@ -628,7 +630,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         a,
         dup_only_handle,
-        "individual",
+        "one-to-one",
         None,
         &[dup_only_handle],
     )
@@ -664,7 +666,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         &mut conn,
         OTHER_ACCOUNT,
         other_handle,
-        "individual",
+        "one-to-one",
         None,
         &[other_handle],
     )
@@ -698,14 +700,37 @@ pub(crate) async fn run_in(
     q: &str,
     zone: chrono_tz::Tz,
 ) -> Vec<i64> {
+    run_on(conn, list, q, zone, today()).await
+}
+
+/// [`run_in`] on the day `today` in place of the fixed [`today`].
+pub(crate) async fn run_on(
+    conn: &mut SqliteConnection,
+    list: ListKind,
+    q: &str,
+    zone: chrono_tz::Tz,
+    today: NaiveDate,
+) -> Vec<i64> {
     let f = compile(CompileRequest {
         list,
         query: q,
         account_id: ACCOUNT,
-        today: today(),
+        today,
         zone,
     })
     .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {}", e.message));
+    run_filter(conn, list, &f)
+        .await
+        .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {e}\n{}", f.where_sql()))
+}
+
+/// Run a compiled `filter` against `list`'s base table alone, and return
+/// the matching ids, ascending, or the database's error.
+pub(crate) async fn run_filter(
+    conn: &mut SqliteConnection,
+    list: ListKind,
+    filter: &Filter,
+) -> Result<Vec<i64>, sqlx::Error> {
     let table = match list {
         ListKind::Contacts => "contacts",
         ListKind::Conversations => "conversations",
@@ -714,13 +739,27 @@ pub(crate) async fn run_in(
     let alias = list.base_alias();
     let sql = format!(
         "SELECT {alias}.id FROM {table} {alias} WHERE {} ORDER BY {alias}.id",
-        f.where_sql()
+        filter.where_sql()
     );
-    let rows: Vec<i64> = sqlx::query_scalar_with(&sql, bind_args(f.params()))
+    sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), bind_args(filter.params()))
         .fetch_all(&mut *conn)
         .await
-        .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {e}\n{sql}"));
-    rows
+}
+
+/// What breaks the form `docs/architecture/http-api.md`, "Failures", gives
+/// every `detail`, if anything: one sentence, in lowercase, with no final
+/// stop, so the website decides how the line starts and ends (#2816).
+pub(crate) fn detail_form_problem(message: &str) -> Option<String> {
+    let Some(first) = message.chars().next() else {
+        return Some("a refusal with no sentence".into());
+    };
+    if first.is_uppercase() {
+        return Some(format!("starts with a capital: {message}"));
+    }
+    if message.ends_with(['.', '?', '!']) {
+        return Some(format!("ends with a stop: {message}"));
+    }
+    None
 }
 
 pub(crate) fn sorted(mut ids: Vec<i64>) -> Vec<i64> {
@@ -738,6 +777,48 @@ pub(crate) fn err(list: ListKind, q: &str) -> QueryError {
         zone: chrono_tz::UTC,
     })
     .expect_err("expected a refusal")
+}
+
+/// Every refusal is one sentence in lowercase with no final period, the form
+/// `docs/architecture/http-api.md`, "Failures", gives every `detail`, so the
+/// website decides how the line starts and ends (#2816). One query per kind
+/// of refusal, and per sentence the parser writes.
+#[test]
+fn every_refusal_takes_the_detail_form() {
+    let long = "a".repeat(super::lex::MAX_QUERY_BYTES + 1);
+    // Past the 32 words, the 64 parts and the 32 levels a search may hold.
+    let many_words = vec!["w"; 33].join(" ");
+    let many_parts = (0..65)
+        .map(|i| format!("tag:t{i}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let deep = format!("{}a{}", "(".repeat(40), ")".repeat(40));
+    let cases = [
+        (ListKind::Messages, long.as_str()),
+        (ListKind::Messages, many_words.as_str()),
+        (ListKind::Messages, many_parts.as_str()),
+        (ListKind::Messages, deep.as_str()),
+        (ListKind::Messages, r#"tag:"Book"#),
+        (ListKind::Messages, "(a"),
+        (ListKind::Messages, "a)"),
+        (ListKind::Messages, "()"),
+        (ListKind::Messages, "a or"),
+        (ListKind::Messages, "a and"),
+        (ListKind::Messages, "not"),
+        (ListKind::Messages, r#""""#),
+        (ListKind::Messages, "wombat:1"),
+        (ListKind::Messages, "paticipants:2"),
+        (ListKind::Contacts, "from:me"),
+        (ListKind::Messages, "tag:"),
+        (ListKind::Messages, "date:2019-13"),
+        (ListKind::Conversations, "kind:big"),
+        (ListKind::Messages, "import:x"),
+    ];
+    for (list, query) in cases {
+        if let Some(problem) = detail_form_problem(&err(list, query).message) {
+            panic!("{list:?} {query:.40}: {problem}");
+        }
+    }
 }
 
 mod free_text {
@@ -804,6 +885,92 @@ mod free_text {
             run(&mut conn, ListKind::Messages, "jane").await,
             Vec::<i64>::new()
         );
+    }
+
+    /// A one-to-one conversation with no participants rows is shown under the
+    /// Contact name of its chat handle (`db::participant_names`,
+    /// `load_from_chat_handle`), so plain text and `name:` find it by that
+    /// name (#2737). A group conversation's chat handle is not a person. A
+    /// Contact in the trash names nobody, as in the list, unless the query
+    /// carries `trashed:`: then its name is read, as a trashed participant's
+    /// Contact's name is (#724), though the list still shows the address.
+    #[tokio::test]
+    async fn plain_text_and_name_find_a_conversation_by_its_chat_handle_contact_name() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let alice_handle = handle(&mut conn, ACCOUNT, "+15550001111", "sms").await;
+        let alice = contact(&mut conn, ACCOUNT, "Alice Smith", &[alice_handle]).await;
+        let with_alice =
+            conversation(&mut conn, ACCOUNT, alice_handle, "one-to-one", None, &[]).await;
+        let to_alice = message(
+            &mut conn,
+            ACCOUNT,
+            msg(with_alice, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let group_handle = handle(&mut conn, ACCOUNT, "chat1000000005", "sms").await;
+        contact(&mut conn, ACCOUNT, "Quill Ward", &[group_handle]).await;
+        let group = conversation(&mut conn, ACCOUNT, group_handle, "group", None, &[]).await;
+        message(
+            &mut conn,
+            ACCOUNT,
+            msg(group, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in [
+            "alice",
+            "smith",
+            "\"Alice Smith\"",
+            "ali*",
+            "name:alice",
+            "name:\"Alice Smith\"",
+            "name:ali*",
+        ] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                vec![with_alice],
+                "Conversations {query}"
+            );
+        }
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "name:alice").await,
+            vec![to_alice]
+        );
+        for query in ["quill", "name:quill"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                Vec::<i64>::new(),
+                "{query}: a group conversation's chat handle named a person"
+            );
+        }
+
+        let named = run(&mut conn, ListKind::Conversations, "name:any").await;
+        assert!(named.contains(&with_alice) && !named.contains(&group));
+        let nameless = run(&mut conn, ListKind::Conversations, "name:none").await;
+        assert!(!nameless.contains(&with_alice) && !nameless.contains(&group));
+
+        trash_contact(&mut conn, ACCOUNT, alice).await;
+        // The list now shows the address alone: the person has no name.
+        assert!(
+            run(&mut conn, ListKind::Conversations, "name:none")
+                .await
+                .contains(&with_alice)
+        );
+        for query in ["alice", "name:alice"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                Vec::<i64>::new(),
+                "{query}: a trashed Contact named the conversation"
+            );
+        }
+        for query in ["trashed:any alice", "trashed:any name:alice"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                vec![with_alice],
+                "{query}"
+            );
+        }
     }
 
     /// `-(a or b)` negates the group, the same as `not (a or b)`, and the
@@ -1123,7 +1290,7 @@ mod text_words {
             &mut conn,
             ACCOUNT,
             late_handle,
-            "individual",
+            "one-to-one",
             None,
             &[late_handle],
         )
@@ -1560,13 +1727,9 @@ mod index_characters {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(ACCOUNT)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, ACCOUNT, "alice").await;
         let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
-        let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
+        let conv = conversation(&mut conn, ACCOUNT, chat, "one-to-one", None, &[chat]).await;
         let mut ids = Vec::new();
         for body in bodies() {
             let m = msg(conv, "2024-06-01T10:00:00Z", false, Some(chat), &body);
@@ -1633,20 +1796,7 @@ mod index_characters {
             zone: chrono_tz::UTC,
         })
         .map_err(|e| e.message)?;
-        let table = match list {
-            ListKind::Contacts => "contacts",
-            ListKind::Conversations => "conversations",
-            ListKind::Messages => "messages",
-        };
-        let alias = list.base_alias();
-        let sql = format!(
-            "SELECT {alias}.id FROM {table} {alias} WHERE {} ORDER BY {alias}.id",
-            f.where_sql()
-        );
-        sqlx::query_scalar_with(&sql, bind_args(f.params()))
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(|e| e.to_string())
+        run_filter(conn, list, &f).await.map_err(|e| e.to_string())
     }
 }
 
@@ -2096,7 +2246,7 @@ mod kind_words {
         "sms-backup-plus",
     ];
 
-    /// Import, through the whole pipeline, one direct conversation with one
+    /// Import, through the whole pipeline, a single one-to-one conversation with one
     /// message from `source`, and return the conversation's and the
     /// message's ids.
     async fn import_from(
@@ -2115,19 +2265,21 @@ mod kind_words {
         .sender(chat);
         std::fs::write(&path, format!("{header}\n{line}\n")).unwrap();
         let assets = dir.join("assets");
-        let counts = crate::imports_api::import_jsonl_files_on_conn(
+        let counts = crate::test_support::import_for_account(
             conn,
             &[path],
-            &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-                assets_dir: &assets,
-                asset_root: dir,
-                mode: crate::imports_api::ImportMode::Append,
-                source,
-                account_id: ACCOUNT,
-                import_id: None,
-                phone_country: None,
-            }),
-            crate::imports_api::ImportSchemaMode::Ensure,
+            &crate::imports_api::pipeline::ImportOptions::fixed(
+                crate::imports_api::pipeline::FixedImportArgs {
+                    assets_dir: &assets,
+                    asset_root: Some(dir),
+                    mode: api_types::ImportMode::Append,
+                    source,
+                    account_id: ACCOUNT,
+                    import_id: None,
+                    phone_country: None,
+                    now: crate::test_support::fixed_instant(),
+                },
+            ),
         )
         .await
         .unwrap();
@@ -2150,7 +2302,7 @@ mod kind_words {
     /// another source's kept message.
     #[tokio::test]
     async fn source_takes_every_id_an_import_writes() {
-        let (pool, dir) = crate::db::engine::test_pool().await;
+        let (pool, dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         let mut kept = Vec::new();
         let mut copies = Vec::new();
@@ -2209,7 +2361,7 @@ mod kind_words {
         let a = ACCOUNT;
         let quiet_h = handle(&mut conn, a, "+15555550121", "sms").await;
         let quiet = contact(&mut conn, a, "Quiet", &[quiet_h]).await;
-        let quiet_c = conversation(&mut conn, a, quiet_h, "individual", None, &[quiet_h]).await;
+        let quiet_c = conversation(&mut conn, a, quiet_h, "one-to-one", None, &[quiet_h]).await;
         let mut sent = msg(
             quiet_c,
             "2024-03-01T10:00:00Z",
@@ -2339,12 +2491,7 @@ mod kind_words {
             run(&mut conn, ListKind::Conversations, "trashed:yes gone").await,
             vec![f.trashed_conv]
         );
-        sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
-            .bind(ACCOUNT)
-            .bind(f.cy)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        trash_contact(&mut conn, ACCOUNT, f.cy).await;
         assert_eq!(
             run(&mut conn, ListKind::Contacts, "trashed:yes").await,
             vec![f.cy]
@@ -2516,12 +2663,7 @@ mod trash_across_lists {
     async fn a_conversations_words_leave_a_trashed_contact_out() {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
-        sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
-            .bind(ACCOUNT)
-            .bind(f.ana)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        trash_contact(&mut conn, ACCOUNT, f.ana).await;
         let anas = sorted(vec![f.ana_direct, f.archive_group, f.big_group]);
         let with_id = format!("with:#{}", f.ana);
         for q in [
@@ -2684,6 +2826,82 @@ mod measure_words {
         );
     }
 
+    /// `today` and `yesterday` are days on the account's clock, not in UTC.
+    /// Auckland is 12 hours ahead of UTC until 02:00 on 27 September 2026,
+    /// when daylight saving moves it to 13, so that day is 23 hours long: it
+    /// runs from 12:00 UTC on the 26th to 11:00 UTC on the 27th (#2216).
+    #[tokio::test]
+    async fn today_and_yesterday_are_days_in_the_accounts_zone() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let auckland = chrono_tz::Pacific::Auckland;
+        let today = NaiveDate::from_ymd_opt(2026, 9, 27).unwrap();
+        let a = ACCOUNT;
+        let c = f.ana_direct;
+        let h = Some(f.ana_handle);
+        // The last millisecond of the 25th in Auckland, and the first of the 28th.
+        message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-25T11:59:59.999Z", false, h, "a"),
+        )
+        .await;
+        message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-27T11:00:00.000Z", false, h, "f"),
+        )
+        .await;
+        let first_of_yesterday = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-25T12:00:00.000Z", false, h, "b"),
+        )
+        .await;
+        let last_of_yesterday = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-26T11:59:59.999Z", false, h, "c"),
+        )
+        .await;
+        let first_of_today = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-26T12:00:00.000Z", false, h, "d"),
+        )
+        .await;
+        let last_of_today = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-27T10:59:59.999Z", false, h, "e"),
+        )
+        .await;
+        let m = ListKind::Messages;
+        assert_eq!(
+            run_on(&mut conn, m, "date:today", auckland, today).await,
+            vec![first_of_today, last_of_today]
+        );
+        assert_eq!(
+            run_on(&mut conn, m, "date:yesterday", auckland, today).await,
+            vec![first_of_yesterday, last_of_yesterday]
+        );
+    }
+
+    /// Today turns over at midnight in the account's zone: 10:00 UTC on
+    /// Kiritimati, 14 hours ahead, while the same instant is still the
+    /// previous day in UTC (#2216).
+    #[test]
+    fn today_turns_over_at_midnight_in_the_zone() {
+        use chrono::TimeZone;
+        let kiritimati = chrono_tz::Pacific::Kiritimati;
+        let before = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 9, 59, 59).unwrap();
+        let at = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 10, 0, 0).unwrap();
+        let d = |day| NaiveDate::from_ymd_opt(2026, 9, day).unwrap();
+        assert_eq!(today_in(kiritimati, before), d(1));
+        assert_eq!(today_in(kiritimati, at), d(2));
+        assert_eq!(today_in(chrono_tz::UTC, at), d(1));
+    }
+
     /// A day begins at its first millisecond: a message sent then is on that
     /// day, and one sent a millisecond before is on the day before. The
     /// stored time has milliseconds, so the day's start is compared in the
@@ -2793,7 +3011,7 @@ mod measure_words {
         // You wrote in 2019 and they replied in 2020.
         let reply_h = handle(&mut conn, a, "+15555550141", "sms").await;
         let reply = contact(&mut conn, a, "Replier", &[reply_h]).await;
-        let reply_c = conversation(&mut conn, a, reply_h, "individual", None, &[reply_h]).await;
+        let reply_c = conversation(&mut conn, a, reply_h, "one-to-one", None, &[reply_h]).await;
         message(
             &mut conn,
             a,
@@ -2809,14 +3027,14 @@ mod measure_words {
         // You texted them in 2019 and they never replied.
         let silent_h = handle(&mut conn, a, "+15555550142", "sms").await;
         let silent = contact(&mut conn, a, "Silent", &[silent_h]).await;
-        let silent_c = conversation(&mut conn, a, silent_h, "individual", None, &[silent_h]).await;
+        let silent_c = conversation(&mut conn, a, silent_h, "one-to-one", None, &[silent_h]).await;
         message(
             &mut conn,
             a,
             msg(silent_c, "2019-04-02T10:00:00Z", true, None, "hi"),
         )
         .await;
-        // A 2015 group chat: one member never spoke, one first spoke in 2018.
+        // A 2015 group conversation: one member never spoke, one first spoke in 2018.
         let lurker_h = handle(&mut conn, a, "+15555550143", "sms").await;
         let lurker = contact(&mut conn, a, "Lurker", &[lurker_h]).await;
         let late_h = handle(&mut conn, a, "+15555550144", "sms").await;
@@ -2920,7 +3138,7 @@ mod measure_words {
             run(&mut conn, ListKind::Contacts, "last-message:2025").await,
             Vec::<i64>::new()
         );
-        // A busy group chat makes nobody recently heard from: the book club's
+        // A busy group conversation makes nobody recently heard from: the book club's
         // March 2024 message is Sam's, so Ana and Bo stay where they were.
         assert_eq!(
             run(&mut conn, ListKind::Contacts, "last-message:>=2024").await,
@@ -3016,11 +3234,11 @@ mod measure_words {
         let before_any = run(&mut conn, ListKind::Contacts, "messages:>0").await;
         let before_many = run(&mut conn, ListKind::Contacts, "messages:>=3").await;
         for i in 0..5 {
-            let ts = format!("2024-06-0{}T10:00:00Z", i + 1);
+            let rfc3339 = format!("2024-06-0{}T10:00:00Z", i + 1);
             message(
                 &mut conn,
                 ACCOUNT,
-                msg(f.trashed_conv, &ts, false, Some(f.ana_handle), "gone"),
+                msg(f.trashed_conv, &rfc3339, false, Some(f.ana_handle), "gone"),
             )
             .await;
         }
@@ -3662,6 +3880,8 @@ mod web_fixture {
     }
 }
 
+mod robustness;
+
 mod refusals {
     use super::*;
     use crate::search::error::QueryErrorKind;
@@ -3751,8 +3971,8 @@ mod refusals {
         }
     }
 
-    /// An unknown word's message is the plain "word: is not a search word."
-    /// sentence, full stop; any "Did you mean" suffix comes only from a word
+    /// An unknown word's message is the plain "word: is not a search word"
+    /// sentence; any "did you mean" clause comes only from a word
     /// that is actually in today's word list, never from a spelling the
     /// language used to have. These nine are invented, made-up spellings
     /// with no history in this language at all.
@@ -3773,8 +3993,8 @@ mod refusals {
             assert_eq!(e.kind, QueryErrorKind::UnknownWord, "{made_up}");
             let word = made_up.split(':').next().unwrap();
             assert_eq!(
-                e.message.trim_end_matches(|c: char| c != '.'),
-                format!("{word}: is not a search word."),
+                e.message.split(';').next().unwrap(),
+                format!("{word}: is not a search word"),
                 "{made_up}"
             );
         }
@@ -3788,11 +4008,11 @@ mod name_keyed_conversation {
     use super::*;
 
     #[tokio::test]
-    async fn is_found_and_labelled_by_the_name_not_the_key() {
+    async fn is_found_and_labeled_by_the_name_not_the_key() {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
-        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "one-to-one", None, &[]).await;
         named_participant(&mut conn, sarah, "Sarah Vale").await;
         let photo = message(
             &mut conn,
@@ -3827,7 +4047,7 @@ mod name_keyed_conversation {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
-        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "one-to-one", None, &[]).await;
         named_participant(&mut conn, sarah, "Sarah Vale").await;
         let to_sarah = message(
             &mut conn,
@@ -3835,8 +4055,8 @@ mod name_keyed_conversation {
             msg(sarah, "2024-03-01T10:00:00Z", false, None, "hello"),
         )
         .await;
-        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
-        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let nobody_key = handle(&mut conn, ACCOUNT, ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "one-to-one", None, &[]).await;
         let to_nobody = message(
             &mut conn,
             ACCOUNT,
@@ -3878,7 +4098,7 @@ mod name_keyed_conversation {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
-        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "one-to-one", None, &[]).await;
         named_participant(&mut conn, sarah, "Sarah Vale").await;
         let to_sarah = message(
             &mut conn,
@@ -3891,7 +4111,7 @@ mod name_keyed_conversation {
             &mut conn,
             ACCOUNT,
             titled_key,
-            "individual",
+            "one-to-one",
             Some("Theo Marsh"),
             &[],
         )
@@ -3903,8 +4123,8 @@ mod name_keyed_conversation {
             msg(theo, "2024-03-01T11:00:00Z", false, None, "hello"),
         )
         .await;
-        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
-        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let nobody_key = handle(&mut conn, ACCOUNT, ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "one-to-one", None, &[]).await;
         let to_nobody = message(
             &mut conn,
             ACCOUNT,

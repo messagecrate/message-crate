@@ -6,9 +6,10 @@
 //! ([`media::browser_shows`]). Originals are never changed. Each version is
 //! stored under the fingerprint of its own bytes and named by the
 //! attachment rows of its original (`attachments.thumbnail_*` and
-//! `attachments.derived_*`). The conversions are the `media` crate's, which
-//! finds ffmpeg and ffprobe on `PATH`, then in the Tools Directory the
-//! desktop app names with `serve --tools-dir`.
+//! `attachments.preview_*`). The conversions are the `media` crate's, run
+//! with the ffmpeg and ffprobe the caller passes in: on `PATH`, then in the
+//! Tools Directory the desktop app names with `serve --tools-dir`
+//! ([`crate::config::Config::media_tools`]).
 //!
 //! Two callers run it: the `process-assets` command over every attachment,
 //! for rebuilding and repair, and the server's background pass over the
@@ -25,11 +26,14 @@ use tempfile::TempDir;
 
 use crate::config::Config;
 use crate::counts::words;
-use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
+use crate::db::attachment_versions::{
+    self as versions_db, NotMade, NotMadeKind, OriginalRows, StoredOriginal, Version, VersionFile,
+    VersionWrite,
+};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
-use media::Kind;
+use media::{Kind, MediaTools};
 
 /// Options for one processing pass.
 #[derive(Debug, Clone, Default)]
@@ -49,7 +53,7 @@ pub struct ProcessAssetsOptions {
     /// Only process this account. `None` processes every account, which is
     /// what the `process-assets` command does. A Demo Account build names
     /// the Demo Account, so it converts nothing of any other account and
-    /// never sweeps another account's upload temps.
+    /// touches no other account's files.
     pub account: Option<i64>,
 }
 
@@ -59,16 +63,13 @@ pub struct ProcessAssetsStats {
     /// Stored originals examined.
     pub scanned: u64,
     /// Previews written (JPEG/MP4/MP3).
-    pub derived: u64,
+    pub previews: u64,
     /// Thumbnails written.
     pub thumbnails: u64,
-    /// Incomplete originals (`.part` files left by a transfer that never
-    /// finished) removed.
-    pub removed: u64,
     /// Damaged Previews and Thumbnails dropped, because they could not be
     /// made again: their original is missing or no longer gets one.
     pub dropped: u64,
-    /// Originals for which nothing was written, removed, dropped or shared:
+    /// Originals for which nothing was written, dropped or shared:
     /// not media, already done, or of a kind the options leave alone.
     pub skipped: u64,
     /// Existing Previews and Thumbnails given to attachment rows of their
@@ -77,8 +78,9 @@ pub struct ProcessAssetsStats {
     pub shared: u64,
     /// Originals whose Preview or Thumbnail could not be made.
     pub not_made: u64,
-    /// Incomplete originals that could not be removed.
-    pub not_removed: u64,
+    /// Originals not read because their stored path leaves the account's
+    /// assets directory (#2866).
+    pub not_read: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
     /// Originals whose shown-as-is decision (`attachments.shown_as_is`)
@@ -90,14 +92,13 @@ impl ProcessAssetsStats {
     /// Add the counts of another pass.
     pub(crate) fn add(&mut self, other: &Self) {
         self.scanned += other.scanned;
-        self.derived += other.derived;
+        self.previews += other.previews;
         self.thumbnails += other.thumbnails;
-        self.removed += other.removed;
         self.dropped += other.dropped;
         self.shared += other.shared;
         self.skipped += other.skipped;
         self.not_made += other.not_made;
-        self.not_removed += other.not_removed;
+        self.not_read += other.not_read;
         self.not_dropped += other.not_dropped;
         self.not_decided += other.not_decided;
     }
@@ -106,20 +107,18 @@ impl ProcessAssetsStats {
     fn count(&mut self, outcome: &Outcome) {
         self.scanned += 1;
         if outcome.preview {
-            self.derived += 1;
+            self.previews += 1;
         }
         if outcome.thumbnail {
             self.thumbnails += 1;
-        }
-        match outcome.removal {
-            Some(Ok(())) => self.removed += 1,
-            Some(Err(_)) => self.not_removed += 1,
-            None => {}
         }
         self.dropped += outcome.dropped;
         self.shared += outcome.shared;
         if outcome.not_made.is_some() {
             self.not_made += 1;
+        }
+        if outcome.not_read.is_some() {
+            self.not_read += 1;
         }
         if outcome.not_decided.is_some() {
             self.not_decided += 1;
@@ -149,11 +148,11 @@ impl ProcessAssetsStats {
         if self.not_made > 0 {
             failures.push(self.not_made_words());
         }
-        if self.not_removed > 0 {
+        if self.not_read > 0 {
             failures.push(words(
-                self.not_removed,
-                "1 incomplete original that could not be removed",
-                "{n} incomplete originals that could not be removed",
+                self.not_read,
+                "1 original whose stored location leaves its directory",
+                "{n} originals whose stored locations leave their directory",
             ));
         }
         if self.not_dropped > 0 {
@@ -193,36 +192,53 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
     )
 }
 
-/// Whether every browser shows `row`'s original, stored under `assets_dir`,
-/// as it is ([`media::browser_shows`]): the decision that both spares it a
-/// Preview and is answered as the `/v1` Attachment's `shown_as_is`. An
-/// incomplete `.part` original is never handed to ffprobe, and is not.
-/// `None` when nothing can be known, as for an MP4 while ffprobe is
-/// missing, so a decision an earlier pass recorded stays.
-fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
-    if is_part_path(&row.assets_path) {
-        return Some(false);
-    }
-    media::browser_shows(
-        &assets_dir.join(&row.assets_path),
-        media_type(row).as_deref(),
-    )
+/// What the pass reads of one stored original's type, from its file and
+/// its rows ([`read_original`]).
+struct ReadOriginal {
+    /// The media type the original's first bytes show
+    /// ([`media::media_type_in_file`]); `None` when it cannot be read or its
+    /// bytes match no signature.
+    by_bytes: Option<&'static str>,
+    /// The original's media type: the one its bytes show, else the one its
+    /// rows say ([`media_type`]). A declared type is only a claim, so a
+    /// video declared `application/octet-stream` is still a video (#2805).
+    media_type: Option<String>,
+    /// Whether every browser shows the original as it is
+    /// ([`media::browser_shows`]): the decision that both spares it a
+    /// Preview and is answered as the `/v1` Attachment's `shown_as_is`.
+    /// `None` when nothing can be known, as for an original that cannot be
+    /// read or an MP4 while ffprobe is missing, so a decision an earlier
+    /// pass recorded stays.
+    decided: Option<bool>,
 }
 
-/// Record `decided` on every row of `account_id`'s original `sha256`, the
-/// one write of the decision. `None` writes nothing.
+/// Read `row`'s original, stored at `path`, for its type and whether every
+/// browser shows it as it is: the one reading both [`decide_shown_as_is`]
+/// and the pass make.
+fn read_original(tools: &dyn MediaTools, path: &Path, row: &StoredOriginal) -> ReadOriginal {
+    let declared = media_type(row);
+    let by_bytes = media::media_type_in_file(path, declared.as_deref());
+    let media_type = by_bytes.map(str::to_string).or(declared);
+    ReadOriginal {
+        by_bytes,
+        decided: media::browser_shows(tools, path, media_type.as_deref()),
+        media_type,
+    }
+}
+
+/// Record `decided` on every one of `rows`, the one write of the decision.
+/// `None` writes nothing.
 ///
 /// # Errors
 ///
 /// Returns an error when the rows cannot be written.
 async fn record_decision_if_known(
     db: &SqlitePool,
-    account_id: i64,
-    sha256: &str,
+    rows: OriginalRows<'_>,
     decided: Option<bool>,
 ) -> Result<()> {
     if let Some(shown) = decided {
-        versions_db::record_shown_as_is(&mut *db.acquire().await?, account_id, sha256, shown)
+        versions_db::record_shown_as_is(&mut *db.acquire().await?, rows, shown)
             .await
             .context("record whether it is shown as it is")?;
     }
@@ -241,6 +257,7 @@ async fn record_decision_if_known(
 /// Returns an error when the rows cannot be read or written.
 pub(crate) async fn decide_shown_as_is(
     cfg: &Config,
+    tools: &dyn MediaTools,
     db: &SqlitePool,
     account_id: i64,
     only: Option<&str>,
@@ -248,35 +265,55 @@ pub(crate) async fn decide_shown_as_is(
     let assets_dir = cfg.paths.assets_dir_for_account(account_id);
     let rows = versions_db::stored_originals(&mut *db.acquire().await?, account_id, only).await?;
     // Rows come one per original and stored path; an original stored under
-    // two paths is decided once.
+    // two paths is decided once, from the first path that stays in the
+    // assets directory.
     let mut decided = std::collections::HashSet::new();
     for row in &rows {
-        if decided.insert(row.sha256.as_str()) {
-            record_decision_if_known(db, account_id, &row.sha256, shown_as_is(&assets_dir, row))
-                .await?;
+        if decided.contains(row.sha256.as_str()) {
+            continue;
         }
+        // A path that leaves the directory is logged and passed over (#2866).
+        // On a server without ffmpeg this is the only step that meets it.
+        let Some(path) = crate::asset_store::join_stored(
+            &assets_dir,
+            &row.assets_path,
+            account_id,
+            &crate::asset_store::describe_original(&row.sha256),
+        ) else {
+            continue;
+        };
+        decided.insert(row.sha256.as_str());
+        let original = OriginalRows {
+            account_id,
+            original_sha: &row.sha256,
+        };
+        let shown = read_original(tools, &path, row).decided;
+        record_decision_if_known(db, original, shown).await?;
     }
     Ok(())
 }
 
 /// Make the versions of every stored original of the account `opts` names,
 /// or of every account in the database when it names none, saying what it
-/// does on standard output. An account's attachments from every source share
-/// one originals directory and one converted directory, so each account is
-/// one pass.
+/// does through `progress`, which the caller picks: a command run from a
+/// shell prints it, and work under `serve` writes it to the server's log. An
+/// account's attachments from every source share one originals directory and
+/// one converted directory, so each account is one pass.
 ///
 /// # Errors
 ///
 /// Returns an error when no account is named and the database has none, a
 /// query fails, or an account's asset directories cannot be prepared. An
 /// original whose Preview or Thumbnail cannot be made is counted in
-/// `not_made`, an incomplete original that cannot be removed in
-/// `not_removed`, and a damaged version that cannot be dropped in
-/// `not_dropped`. Each is printed, and the run goes on.
+/// `not_made`, a damaged version that cannot be dropped in `not_dropped`,
+/// and an original whose shown-as-is decision cannot be recorded in
+/// `not_decided`. Each is said through `progress`, and the run goes on.
 pub async fn run(
     opened: &OpenDb,
+    tools: &dyn MediaTools,
     opts: &ProcessAssetsOptions,
     stop: &AtomicBool,
+    progress: Progress,
 ) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
     let account_ids = match opts.account {
@@ -284,7 +321,7 @@ pub async fn run(
         None => list_account_ids(&mut *opened.conn().await?, &cfg.paths.data_dir).await?,
     };
     if account_ids.is_empty() {
-        bail!("no accounts found — create an account or run reset-demo first");
+        bail!("no accounts found: create an account or run reset-demo first");
     }
 
     let work = work_dir(&cfg.paths.data_dir)?;
@@ -294,7 +331,9 @@ pub async fn run(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id, stop)? else {
+        let Some(pass) =
+            AccountPass::open(cfg, tools, opts, work.path(), account_id, stop, progress)?
+        else {
             continue;
         };
         let rows =
@@ -310,30 +349,23 @@ pub async fn run(
         );
     }
 
-    println!("{}", done_line(&stats, opts.dry_run));
+    progress.heading(done_line(&stats, opts.dry_run));
     Ok(stats)
 }
 
 /// The line that ends `process-assets`: each count of `stats` in words,
 /// singular for one, and `(dry run)` when nothing was written. The counts of
-/// incomplete originals, damaged versions and shared versions, which most
-/// runs never meet, are left out at zero.
+/// damaged versions and shared versions, which most runs never meet, are
+/// left out at zero.
 fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
     let mut parts = vec![
         words(stats.scanned, "read 1 original", "read {n} originals"),
         format!(
             "made {} and {}",
-            words(stats.derived, "1 Preview", "{n} Previews"),
+            words(stats.previews, "1 Preview", "{n} Previews"),
             words(stats.thumbnails, "1 Thumbnail", "{n} Thumbnails"),
         ),
     ];
-    if stats.removed > 0 {
-        parts.push(words(
-            stats.removed,
-            "removed 1 incomplete original",
-            "removed {n} incomplete originals",
-        ));
-    }
     if stats.dropped > 0 {
         parts.push(words(
             stats.dropped,
@@ -380,6 +412,7 @@ fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
 /// and logged.
 pub(crate) async fn process_one_asset(
     cfg: &Config,
+    tools: &dyn MediaTools,
     db: &SqlitePool,
     work_dir: &Path,
     account_id: i64,
@@ -387,7 +420,8 @@ pub(crate) async fn process_one_asset(
     stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
     let opts = ProcessAssetsOptions::default();
-    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Progress::Log)?
+    let Some(pass) =
+        AccountPass::new(cfg, tools, &opts, work_dir, account_id, stop, Progress::Log)?
     else {
         return Ok(ProcessAssetsStats::default());
     };
@@ -447,17 +481,18 @@ struct Outcome {
     preview: bool,
     /// A Thumbnail was written, or would be in a dry run.
     thumbnail: bool,
-    /// The original was incomplete: removed, or would be in a dry run, or
-    /// why it could not be removed. `None` when it is not incomplete or no
-    /// file was there.
-    removal: Option<Result<()>>,
     /// Damaged versions dropped, or that would be in a dry run.
     dropped: u64,
     /// Existing versions given to rows that named none, or that would be in
     /// a dry run.
     shared: u64,
-    /// Why a Preview or Thumbnail that was wanted was not made.
+    /// Why a Preview or Thumbnail that was wanted was not made. Each
+    /// version's reason is also recorded on the original's rows
+    /// ([`AccountPass::record_not_made`]).
     not_made: Option<anyhow::Error>,
+    /// Why the original was not read: its stored path leaves the assets
+    /// directory.
+    not_read: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
     /// Why whether the original is shown as it is could not be recorded.
@@ -479,21 +514,15 @@ impl Outcome {
     fn failures(&self) -> impl Iterator<Item = &anyhow::Error> {
         self.not_made
             .iter()
-            .chain(
-                self.removal
-                    .as_ref()
-                    .and_then(|removal| removal.as_ref().err()),
-            )
+            .chain(&self.not_read)
             .chain(&self.not_dropped)
             .chain(&self.not_decided)
     }
 
-    /// Nothing was written, removed, dropped or shared, and nothing
-    /// failed.
+    /// Nothing was written, dropped or shared, and nothing failed.
     fn left_as_it_was(&self) -> bool {
         !self.preview
             && !self.thumbnail
-            && self.removal.is_none()
             && self.dropped == 0
             && self.shared == 0
             && self.failures().next().is_none()
@@ -503,6 +532,8 @@ impl Outcome {
 /// One account's asset directories being processed: where its originals
 /// are, where the versions go, and the options every attachment shares.
 struct AccountPass<'a> {
+    /// The ffmpeg and ffprobe that make the versions.
+    tools: &'a dyn MediaTools,
     opts: &'a ProcessAssetsOptions,
     work_dir: &'a Path,
     /// Set to stop the pass: the conversion that runs is killed, and no
@@ -523,10 +554,9 @@ enum Derived {
 }
 
 impl<'a> AccountPass<'a> {
-    /// Find the directories, remove abandoned upload temps and the temporary
-    /// files a killed write left in the shard directories, and make the
-    /// converted directory. `None` when the account has no assets directory
-    /// to process.
+    /// Find the directories, remove the temporary files a killed write left
+    /// in the shard directories, and make the converted directory. `None`
+    /// when the account has no assets directory to process.
     ///
     /// # Errors
     ///
@@ -535,22 +565,24 @@ impl<'a> AccountPass<'a> {
     /// pass.
     fn open(
         cfg: &Config,
+        tools: &'a dyn MediaTools,
         opts: &'a ProcessAssetsOptions,
         work_dir: &'a Path,
         account_id: i64,
         stop: &'a AtomicBool,
+        progress: Progress,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let converted_dir = cfg.paths.assets_converted_dir_for_account(account_id);
-        println!(
+        progress.heading(format_args!(
             "Processing account {account_id}'s Assets in {}",
             assets_dir.display()
-        );
+        ));
         if !assets_dir.is_dir() {
-            eprintln!(
-                "  {} is missing or is not a directory, so this account's Assets are not processed",
+            progress.warn(format_args!(
+                "{} is missing or is not a directory, so this account's Assets are not processed",
                 assets_dir.display()
-            );
+            ));
             return Ok(None);
         }
         let cleaned_verb = if opts.dry_run {
@@ -558,22 +590,18 @@ impl<'a> AccountPass<'a> {
         } else {
             "Removed"
         };
-        let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
-        if cleaned > 0 {
-            let files = words(
-                cleaned,
-                "1 abandoned temporary upload file",
-                "{n} abandoned temporary upload files",
-            );
-            println!("  {cleaned_verb} {files} under .incoming/");
-        }
+        // `.incoming/` is left to `serve`, which removes abandoned uploads
+        // itself: only it knows which uploads a request is using, and this
+        // command may run while it does (#2652).
         let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {
             let files = words(left, "1 temporary file", "{n} temporary files");
-            println!("  {cleaned_verb} {files} a killed write left in the shard directories");
+            progress.say(format_args!(
+                "{cleaned_verb} {files} a killed write left in the shard directories"
+            ));
         }
-        Self::new(cfg, opts, work_dir, account_id, stop, Progress::Print)
+        Self::new(cfg, tools, opts, work_dir, account_id, stop, progress)
     }
 
     /// The pass over `account_id`'s directories, making the converted
@@ -585,6 +613,7 @@ impl<'a> AccountPass<'a> {
     /// Returns an error when the converted directory cannot be made.
     fn new(
         cfg: &Config,
+        tools: &'a dyn MediaTools,
         opts: &'a ProcessAssetsOptions,
         work_dir: &'a Path,
         account_id: i64,
@@ -599,6 +628,7 @@ impl<'a> AccountPass<'a> {
         fs::create_dir_all(&converted_dir)
             .with_context(|| format!("create converted dir {}", converted_dir.display()))?;
         Ok(Some(Self {
+            tools,
             opts,
             work_dir,
             stop,
@@ -612,6 +642,14 @@ impl<'a> AccountPass<'a> {
     /// `account/path`: how log lines name an attachment.
     fn label(&self, row: &StoredOriginal) -> String {
         format!("{}/{}", self.account_id, row.assets_path)
+    }
+
+    /// The attachment rows of this account for `row`'s original.
+    fn rows<'r>(&self, row: &'r StoredOriginal) -> OriginalRows<'r> {
+        OriginalRows {
+            account_id: self.account_id,
+            original_sha: &row.sha256,
+        }
     }
 
     /// Process each of `rows` and count what happened, logging each failure.
@@ -648,19 +686,45 @@ impl<'a> AccountPass<'a> {
     /// does what the plan says. An existing version is hashed, so one cut
     /// short by a killed run is made again.
     async fn process(&self, db: &SqlitePool, row: &StoredOriginal) -> Outcome {
-        let source_path = self.assets_dir.join(&row.assets_path);
+        // A path that leaves the directory is said once, through `progress`
+        // as a failure, so the run does not end as though everything was
+        // done (#2866).
+        let Some(source_path) = crate::asset_store::join_under(&self.assets_dir, &row.assets_path)
+        else {
+            return Outcome {
+                not_read: Some(anyhow::anyhow!(
+                    "the stored location of {} is not a plain relative path, so the server \
+                     neither opens nor converts its file",
+                    crate::asset_store::describe_original(&row.sha256)
+                )),
+                ..Outcome::default()
+            };
+        };
         let state = |version: Version| {
             preview_file(
                 row.named(version).assets_path.as_deref(),
                 &self.converted_dir,
+                self.account_id,
+                &version.describe_of(&row.sha256),
             )
         };
-        let decided = shown_as_is(&self.assets_dir, row);
+        let ReadOriginal {
+            by_bytes,
+            media_type,
+            decided,
+        } = read_original(self.tools, &source_path, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
             thumbnail: state(Version::Thumbnail),
-            browser_shows: decided.unwrap_or(false),
+            // With nothing known about the file, as for an original that
+            // cannot be read, the decision an earlier pass recorded stands
+            // (#2804), and with none recorded its type decides: a missing
+            // JPEG is not given a Preview its type never needs.
+            browser_shows: decided
+                .or(row.shown_as_is)
+                .unwrap_or_else(|| media::shown_as_is_by_type(media_type.as_deref())),
+            type_by_bytes: by_bytes,
         };
         // The decision is stored whatever the options leave alone, so the
         // `/v1` Attachment answers it without running ffprobe on a read. A
@@ -668,22 +732,11 @@ impl<'a> AccountPass<'a> {
         let not_decided = if self.opts.dry_run {
             None
         } else {
-            record_decision_if_known(db, self.account_id, &row.sha256, decided)
+            record_decision_if_known(db, self.rows(row), decided)
                 .await
                 .err()
         };
         let versions = match plan(row, self.opts, on_disk) {
-            Plan::RemoveIncomplete => {
-                return Outcome {
-                    removal: match self.remove_incomplete(row, &source_path) {
-                        Ok(true) => Some(Ok(())),
-                        Ok(false) => None,
-                        Err(err) => Some(Err(err)),
-                    },
-                    not_decided,
-                    ..Outcome::default()
-                };
-            }
             Plan::Skip(_) => {
                 return Outcome {
                     not_decided,
@@ -701,10 +754,11 @@ impl<'a> AccountPass<'a> {
             (Version::Thumbnail, versions.thumbnail),
             (Version::Preview, versions.preview),
         ] {
-            let damaged = match version {
+            let state = match version {
                 Version::Preview => on_disk.preview,
                 Version::Thumbnail => on_disk.thumbnail,
-            } == PreviewFile::Damaged;
+            };
+            let damaged = state == PreviewFile::Damaged;
             let done = match need {
                 Need::Nothing => Ok(false),
                 Need::Share => self.share_existing(db, row, version).await.map(|shared| {
@@ -719,7 +773,7 @@ impl<'a> AccountPass<'a> {
                     if damaged {
                         outcome.count_drop(version, self.drop_damaged(db, row, version).await);
                     }
-                    Err(anyhow::anyhow!("missing original"))
+                    Err(MissingOriginal.into())
                 }
                 Need::Make => {
                     self.make(db, row, version, versions.kind, &source_path, damaged)
@@ -729,7 +783,15 @@ impl<'a> AccountPass<'a> {
             match (done, version) {
                 (Ok(written), Version::Thumbnail) => outcome.thumbnail = written,
                 (Ok(written), Version::Preview) => outcome.preview = written,
-                (Err(err), _) => not_made.push(format!("{version}: {err:#}")),
+                (Err(err), _) => {
+                    let mut said = format!("{version}: {err:#}");
+                    if let Err(not_recorded) =
+                        self.record_not_made(db, row, version, state, &err).await
+                    {
+                        said.push_str(&format!(" (why could not be recorded: {not_recorded:#})"));
+                    }
+                    not_made.push(said);
+                }
             }
         }
         if !not_made.is_empty() {
@@ -756,16 +818,17 @@ impl<'a> AccountPass<'a> {
                 self.label(row)
             ));
         }
-        let blob = match self.derive(version, kind, source_path, row)? {
+        let version_file = match self.derive(version, kind, source_path, row)? {
             Derived::DryRun => return Ok(true),
-            Derived::Stored(blob) => blob,
+            Derived::Stored(version_file) => version_file,
         };
         let named = versions_db::record(
             &mut *db.acquire().await?,
-            version,
-            self.account_id,
-            &row.sha256,
-            &blob,
+            VersionWrite {
+                rows: self.rows(row),
+                version,
+                file: &version_file,
+            },
         )
         .await?;
         if named == 0 {
@@ -783,9 +846,48 @@ impl<'a> AccountPass<'a> {
         self.progress.say(format!(
             "Made the {version} of {} at {}",
             self.label(row),
-            blob.assets_path
+            version_file.assets_path
         ));
         Ok(true)
+    }
+
+    /// Record on the rows of `row`'s original why `version` was not made,
+    /// as [`not_made`] sorts and words `err`. `state` is the version the rows
+    /// named when the pass read them: an intact one still works, as after a
+    /// failed remake under `--force`, so nothing is recorded beside it. A
+    /// missing or damaged one does not, so the rows that still name it get
+    /// the reason, as do the rows that name none. A dry run writes nothing,
+    /// and neither does a pass being stopped: the stop failed the
+    /// conversion, not the file, and the next pass makes it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the rows cannot be written.
+    async fn record_not_made(
+        &self,
+        db: &SqlitePool,
+        row: &StoredOriginal,
+        version: Version,
+        state: PreviewFile,
+        err: &anyhow::Error,
+    ) -> Result<()> {
+        if self.opts.dry_run || self.stop.load(Ordering::Relaxed) || state == PreviewFile::Intact {
+            return Ok(());
+        }
+        let (kind, reason) = not_made(err, &[&self.assets_dir, self.work_dir]);
+        let named = row.named(version).assets_path;
+        versions_db::record_not_made(
+            &mut *db.acquire().await?,
+            NotMade {
+                rows: self.rows(row),
+                version,
+                named: named.as_deref(),
+                kind,
+                reason: &reason,
+            },
+        )
+        .await
+        .context("record why it was not made")
     }
 
     /// Point the rows of `row`'s original that name no `version` at the one
@@ -813,7 +915,7 @@ impl<'a> AccountPass<'a> {
         else {
             return Ok(false);
         };
-        let blob = VersionFile {
+        let version_file = VersionFile {
             sha256,
             assets_path,
             mime_type,
@@ -822,16 +924,17 @@ impl<'a> AccountPass<'a> {
             self.progress.say(format!(
                 "This dry run would point {} at its existing {version} {}",
                 self.label(row),
-                blob.assets_path
+                version_file.assets_path
             ));
             return Ok(true);
         }
         let pointed = versions_db::share(
             &mut *db.acquire().await?,
-            version,
-            self.account_id,
-            &row.sha256,
-            &blob,
+            VersionWrite {
+                rows: self.rows(row),
+                version,
+                file: &version_file,
+            },
         )
         .await?;
         if pointed == 0 {
@@ -841,7 +944,7 @@ impl<'a> AccountPass<'a> {
         self.progress.say(format!(
             "{} now names its existing {version} {}",
             self.label(row),
-            blob.assets_path
+            version_file.assets_path
         ));
         Ok(true)
     }
@@ -877,8 +980,12 @@ impl<'a> AccountPass<'a> {
             return Ok(true);
         }
         versions_db::clear(&mut *db.acquire().await?, version, self.account_id, &rel).await?;
-        if let Some(path) = crate::asset_store::join_under(&self.converted_dir, &rel)
-            && path.is_file()
+        if let Some(path) = crate::asset_store::join_stored(
+            &self.converted_dir,
+            &rel,
+            self.account_id,
+            &version.describe_of(&row.sha256),
+        ) && path.is_file()
         {
             crate::asset_store::remove_file(&path)
                 .with_context(|| format!("remove damaged {version} {}", path.display()))?;
@@ -888,31 +995,6 @@ impl<'a> AccountPass<'a> {
              made again, so it is dropped",
             self.label(row)
         ));
-        Ok(true)
-    }
-
-    /// Delete a `.part` left by an interrupted upload, or say so in a dry
-    /// run. True when it was removed, or would be in a dry run, and false
-    /// when no file is there.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the file cannot be deleted.
-    fn remove_incomplete(&self, row: &StoredOriginal, source_path: &Path) -> Result<bool> {
-        if !source_path.is_file() {
-            return Ok(false);
-        }
-        if self.opts.dry_run {
-            self.progress.say(format!(
-                "This dry run would remove the incomplete {}",
-                self.label(row)
-            ));
-        } else {
-            crate::asset_store::remove_file(source_path)
-                .with_context(|| format!("remove incomplete {}", source_path.display()))?;
-            self.progress
-                .say(format!("Removed the incomplete {}", self.label(row)));
-        }
         Ok(true)
     }
 
@@ -932,8 +1014,8 @@ impl<'a> AccountPass<'a> {
         let token = row.sha256.get(..12).unwrap_or(&row.sha256);
         let out = self.work_dir.join(format!("{version}-{token}{ext}"));
         let made = match version {
-            Version::Thumbnail => media::make_thumbnail(source_path, &out, self.stop),
-            Version::Preview => media::make_preview(source_path, kind, &out, self.stop),
+            Version::Thumbnail => media::make_thumbnail(self.tools, source_path, &out, self.stop),
+            Version::Preview => media::make_preview(self.tools, source_path, kind, &out, self.stop),
         };
         if let Err(err) = made {
             let _ = fs::remove_file(&out);
@@ -965,9 +1047,9 @@ impl<'a> AccountPass<'a> {
             let _ = fs::remove_file(out);
             bail!("the account's directory is gone");
         }
-        let blob = store_derived_file(&self.converted_dir, out, ext);
+        let version_file = store_derived_file(&self.converted_dir, out, ext);
         let _ = fs::remove_file(out);
-        Ok(Derived::Stored(blob?))
+        Ok(Derived::Stored(version_file?))
     }
 }
 
@@ -994,17 +1076,68 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
     Ok(ids)
 }
 
-/// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.
-fn is_part_path(path: &str) -> bool {
-    crate::asset_store::has_part_extension(Path::new(path))
+/// The failure of a version that must be made while its original is not on
+/// disk.
+#[derive(Debug, thiserror::Error)]
+#[error("missing original")]
+struct MissingOriginal;
+
+/// Why a version was not made, from `err`, the failure of making it: the
+/// kind of failure, which the owner's view of an Import Run counts, and the
+/// reason as the `/v1` Attachment answers it. The reason is what ffmpeg said
+/// about the file, with each path under one of `dirs` made relative to it;
+/// why ffmpeg was stopped (it made no progress, ran past twice the file's
+/// length, or did not finish one frame in time); or a phrase of the
+/// server's when ffmpeg did not read the file. Nothing else of `err` is
+/// kept: its context names the original by its full path, and a missing
+/// ffmpeg's error names every directory the server looked in. The `dirs` are
+/// the account's originals directory and the pass's work directory, both
+/// under the data directory, so what is left names no file outside it.
+fn not_made(err: &anyhow::Error, dirs: &[&Path]) -> (NotMadeKind, String) {
+    if let Some(failed) = err.downcast_ref::<media::FfmpegFailed>() {
+        let said = dirs.iter().fold(failed.said().to_string(), |said, dir| {
+            said.replace(
+                &format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR),
+                "",
+            )
+        });
+        if said.is_empty() {
+            return (
+                NotMadeKind::ConversionFailed,
+                "ffmpeg could not read the file and said nothing about it".to_string(),
+            );
+        }
+        return (NotMadeKind::ConversionFailed, said);
+    }
+    if let Some(killed) = err.downcast_ref::<media::Killed>() {
+        let kind = match killed.reason() {
+            media::KillReason::StalledBeforeOutput { .. }
+            | media::KillReason::StalledPartway { .. } => NotMadeKind::Stalled,
+            media::KillReason::RanPastLength { .. } => NotMadeKind::RanPastLength,
+            media::KillReason::TookTooLong { .. } => NotMadeKind::TookTooLong,
+            // A stop fails the conversion, not the file, and the pass records
+            // nothing for it ([`AccountPass::record_not_made`]).
+            media::KillReason::Stopped | media::KillReason::StoppedBeforeStart => {
+                NotMadeKind::ServerProblem
+            }
+        };
+        return (kind, killed.to_string());
+    }
+    if err.downcast_ref::<MissingOriginal>().is_some() {
+        return (
+            NotMadeKind::OriginalMissing,
+            "the original file is missing".to_string(),
+        );
+    }
+    (
+        NotMadeKind::ServerProblem,
+        "the server ran into a problem making it".to_string(),
+    )
 }
 
 /// What one stored original needs, decided before any file is touched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Plan {
-    /// A `.part` left by an interrupted transfer: delete it, never hand it to
-    /// ffmpeg.
-    RemoveIncomplete,
     /// Leave the original and its versions as they are.
     Skip(SkipReason),
     /// What each version needs.
@@ -1061,6 +1194,11 @@ struct OnDisk {
     /// Every browser shows the original as it is ([`media::browser_shows`]),
     /// so it needs no Preview.
     browser_shows: bool,
+    /// The media type the original's first bytes show
+    /// ([`media::media_type_in_file`]), which decides its kind over what
+    /// its rows say. `None` when it cannot be read or its bytes match no
+    /// signature.
+    type_by_bytes: Option<&'static str>,
 }
 
 /// The state of a version a row names, under the converted directory.
@@ -1079,18 +1217,26 @@ enum PreviewFile {
 /// Decide what one original needs from the row, the options and what is on
 /// disk. No IO happens here: `on_disk` carries the facts the caller read.
 fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
-    if is_part_path(&row.assets_path) {
-        return Plan::RemoveIncomplete;
-    }
-    // A GIF is an animation, so it gets no still Preview, but it is an image
-    // and gets a Thumbnail like any other.
-    let preview_kind = media::kind_of(
-        Path::new(&row.assets_path),
-        row.mime_type.as_deref(),
-        &row.name_hints(),
-    );
-    let is_gif = media_type(row).as_deref() == Some("image/gif");
-    let Some(kind) = preview_kind.or(is_gif.then_some(Kind::Image)) else {
+    // `kind_of` answers no kind for a GIF, but it is an image and gets a
+    // Thumbnail like any other. Whether it gets a Preview is `browser_shows`'s
+    // answer, as for every type: every browser shows a GIF, so it gets none,
+    // while a file called a GIF whose bytes are not one gets one.
+    //
+    // The type the bytes show decides over the declared one, so a video
+    // declared `application/octet-stream` is a video, and a file declared a
+    // photo whose bytes are a PDF is not media (#2805).
+    let kind = if let Some(by_bytes) = on_disk.type_by_bytes {
+        media::kind_for_mime(by_bytes)
+    } else {
+        let kind_by_type = media::kind_of(
+            Path::new(&row.assets_path),
+            row.mime_type.as_deref(),
+            &row.name_hints(),
+        );
+        let is_gif = media_type(row).as_deref() == Some("image/gif");
+        kind_by_type.or(is_gif.then_some(Kind::Image))
+    };
+    let Some(kind) = kind else {
         return Plan::Skip(SkipReason::NotMedia);
     };
     let wanted = match kind {
@@ -1123,19 +1269,25 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
     Plan::Versions(Versions {
         kind,
         thumbnail: need(matches!(kind, Kind::Image | Kind::Video), on_disk.thumbnail),
-        preview: need(
-            preview_kind.is_some() && !on_disk.browser_shows,
-            on_disk.preview,
-        ),
+        preview: need(!on_disk.browser_shows, on_disk.preview),
     })
 }
 
 /// The state of the version `assets_path` names under `converted_dir`. A
 /// path that is empty or leaves `converted_dir` names no file there, and a
 /// name that carries no fingerprint, which the server never writes, is
-/// damaged.
-fn preview_file(assets_path: Option<&str>, converted_dir: &Path) -> PreviewFile {
-    let Some(path) = assets_path.and_then(|rel| crate::asset_store::join_under(converted_dir, rel))
+/// damaged. A path that leaves `converted_dir` is logged with
+/// `account_id` and `describes`, as [`crate::asset_store::join_stored`]
+/// says, so the damaged row can be found (#2806).
+fn preview_file(
+    assets_path: Option<&str>,
+    converted_dir: &Path,
+    account_id: i64,
+    describes: &str,
+) -> PreviewFile {
+    let Some(path) = assets_path
+        .filter(|rel| !rel.is_empty())
+        .and_then(|rel| crate::asset_store::join_stored(converted_dir, rel, account_id, describes))
     else {
         return PreviewFile::Missing;
     };

@@ -3,13 +3,13 @@
 //! the crate that owns that archive's format.
 
 use crate::clean::{
-    clean_previous_ir_output, has_export_sentinel, record_archive_files, require_export_directory,
+    clean_previous_ir_output, has_export_sentinel, record_archive_outputs, require_export_directory,
 };
 use crate::export_transforms::apply_transforms;
 use crate::write::write_format;
 use anyhow::{Context, Result};
+use ir::ConversationDocument;
 use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
-use message_ir::ConversationDocument;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 /// and the caller that wants it hands it to [`FormatSink::with_archive`];
 /// this crate knows no archive format by name.
 pub trait MergedArchive: std::fmt::Debug + Send {
-    /// Write `documents` under `output_dir` and return the path of what was
-    /// written. Anything the format could not carry is counted in `report`.
+    /// Write `documents` under `output_dir`. Anything the format could not
+    /// carry is counted in `report`.
     ///
     /// # Errors
     ///
@@ -31,13 +31,19 @@ pub trait MergedArchive: std::fmt::Debug + Send {
         output_dir: &Path,
         documents: &[ConversationDocument],
         report: &mut ExportReport,
-    ) -> Result<PathBuf>;
+    ) -> Result<()>;
 
-    /// The names of the files [`write`](Self::write) creates in the output
-    /// directory, partial files included. The sink records them before it
-    /// writes, so the next fresh export into the directory removes them
-    /// whatever format it writes.
-    fn file_names(&self) -> Vec<String>;
+    /// The name of every file and directory [`write`](Self::write) creates
+    /// directly in the output directory when it writes `documents`, partial
+    /// files included. The sink records them before it writes, so the next
+    /// fresh export into the directory removes them, directories with
+    /// everything in them, whatever format it writes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the names cannot be worked out, for the same
+    /// reason [`write`](Self::write) would then fail.
+    fn outputs(&self, documents: &[ConversationDocument]) -> Result<Vec<String>>;
 
     /// The format's name as a person knows it, such as the app it belongs
     /// to, for the run's log. The crate that owns the archive names it, so
@@ -56,7 +62,7 @@ pub struct FormatSink {
     format: OutputFormat,
     transforms: ExportTransforms,
     archive: Option<Box<dyn MergedArchive>>,
-    docs: Vec<ConversationDocument>,
+    documents: Vec<ConversationDocument>,
 }
 
 impl FormatSink {
@@ -84,7 +90,7 @@ impl FormatSink {
             format,
             transforms,
             archive: None,
-            docs: Vec::new(),
+            documents: Vec::new(),
         })
     }
 
@@ -116,13 +122,13 @@ impl FormatSink {
     ) -> Result<(Self, PathBuf)> {
         fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
         clean_previous_ir_output(output)?;
-        let att_dir = output.join("attachments");
+        let attachments_dir = output.join("attachments");
         if transforms.copies_attachments() {
-            fs::create_dir_all(&att_dir)
-                .with_context(|| format!("create {}", att_dir.display()))?;
+            fs::create_dir_all(&attachments_dir)
+                .with_context(|| format!("create {}", attachments_dir.display()))?;
         }
         let sink = Self::open(output, format, transforms)?;
-        Ok((sink, att_dir))
+        Ok((sink, attachments_dir))
     }
 
     /// Reopen `output` to continue an interrupted export.
@@ -130,7 +136,7 @@ impl FormatSink {
     /// Unlike [`open_prepared`](Self::open_prepared), nothing is cleaned: the
     /// conversation files and staged attachments the interrupted run left
     /// behind are exactly the work a resumed run gets to skip. The directory
-    /// must already be an export directory — it carries the sentinel — because
+    /// must already be an export directory (it carries the sentinel), because
     /// resuming into anything else is a caller bug, not something to repair
     /// by cleaning.
     ///
@@ -149,13 +155,13 @@ impl FormatSink {
                 output.display()
             );
         }
-        let att_dir = output.join("attachments");
+        let attachments_dir = output.join("attachments");
         if transforms.copies_attachments() {
-            fs::create_dir_all(&att_dir)
-                .with_context(|| format!("create {}", att_dir.display()))?;
+            fs::create_dir_all(&attachments_dir)
+                .with_context(|| format!("create {}", attachments_dir.display()))?;
         }
         let sink = Self::open(output, format, transforms)?;
-        Ok((sink, att_dir))
+        Ok((sink, attachments_dir))
     }
 
     /// Output format this sink will write.
@@ -178,8 +184,8 @@ impl FormatSink {
     /// # Errors
     ///
     /// Currently always succeeds.
-    pub fn write_document(&mut self, doc: ConversationDocument) -> Result<()> {
-        self.docs.push(doc);
+    pub fn write_document(&mut self, document: ConversationDocument) -> Result<()> {
+        self.documents.push(document);
         Ok(())
     }
 
@@ -189,9 +195,9 @@ impl FormatSink {
     /// The staged `attachments/` directory is removed so the output directory
     /// holds only the archive.
     ///
-    /// Folds the obfuscated-document count into `report`. Convert and
-    /// compress ran in the staging step before documents reached the sink,
-    /// so finish itself does no media work and reports none.
+    /// Folds the obfuscated-document count into `report`. Finish does no
+    /// media work: an export copies the original attachment files, and
+    /// converting them is the Media Stage's work.
     ///
     /// # Errors
     ///
@@ -199,18 +205,18 @@ impl FormatSink {
     /// a merged archive and no [`MergedArchive`] was supplied.
     pub fn finish(mut self, report: &mut ExportReport) -> Result<()> {
         let embeds_media = self.format.is_mail_archive() || self.archive.is_some();
-        let outcome = apply_transforms(&mut self.docs, &self.output_dir, &self.transforms)?;
+        let outcome = apply_transforms(&mut self.documents, &self.output_dir, &self.transforms)?;
 
-        report.obfuscated_docs += outcome.obfuscated_docs as u64;
+        report.obfuscated_documents += outcome.obfuscated_documents as u64;
 
         if let Some(archive) = &self.archive {
-            record_archive_files(&self.output_dir, &archive.file_names())?;
-            archive.write(&self.output_dir, &self.docs, report)?;
+            record_archive_outputs(&self.output_dir, &archive.outputs(&self.documents)?)?;
+            archive.write(&self.output_dir, &self.documents, report)?;
         } else {
-            let mut docs: Vec<&mut ConversationDocument> = self.docs.iter_mut().collect();
-            message_ir::give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
-            for doc in self.docs {
-                write_format(&self.output_dir, self.format, doc)?;
+            let mut documents: Vec<&mut ConversationDocument> = self.documents.iter_mut().collect();
+            crate::give_each_document_its_own_file(&mut documents).map_err(anyhow::Error::msg)?;
+            for document in self.documents {
+                write_format(&self.output_dir, self.format, document)?;
             }
         }
 
@@ -223,47 +229,45 @@ impl FormatSink {
 
 /// Drop transform staging under `attachments/` after media has been embedded.
 fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
-    let att_dir = output_dir.join("attachments");
-    if att_dir.is_dir() {
-        fs::remove_dir_all(&att_dir)?;
+    let attachments_dir = output_dir.join("attachments");
+    if attachments_dir.is_dir() {
+        fs::remove_dir_all(&attachments_dir)?;
     }
     Ok(())
 }
 
 /// Write every document through the sink with the shared "Preparing N
-/// conversation files" log line and [`ProgressEvent::Prepare`] events,
+/// conversation files" log line and [`message_crate_core::ProgressEvent::Prepare`] events,
 /// bumping `report.conversations` per document, then finish the sink. The
 /// shared tail of every exporter's non-queue arm.
 pub fn write_documents_through_sink(
-    documents: Vec<message_ir::ConversationDocument>,
+    documents: Vec<ir::ConversationDocument>,
     mut sink: FormatSink,
-    log: Option<&message_crate_core::LogSink>,
-    progress: Option<&message_crate_core::ProgressSink>,
-    cancel: Option<&message_crate_core::CancelFlag>,
+    sinks: message_crate_core::Sinks<'_>,
     report: &mut ExportReport,
 ) -> anyhow::Result<()> {
-    use message_crate_core::{
-        CONVERSATION_FILES_PREPARING, ProgressEvent, emit_log, emit_progress,
-    };
+    use message_crate_core::{CONVERSATION_FILES_PREPARING, ProgressEvent, Sinks};
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     let total = documents.len();
-    emit_log(log, "");
-    emit_log(log, CONVERSATION_FILES_PREPARING.line(total as u64));
-    emit_progress(progress, ProgressEvent::Prepare { done: 0, total });
+    log.emit("");
+    log.emit(CONVERSATION_FILES_PREPARING.line(total as u64));
+    progress.emit(ProgressEvent::Prepare { done: 0, total });
     let mut written = 0usize;
-    for doc in documents {
+    for document in documents {
         message_crate_core::check_cancel(cancel)?;
         written += 1;
-        sink.write_document(doc)?;
+        sink.write_document(document)?;
         report.conversations += 1;
         if written.is_multiple_of(100) || written == total {
-            emit_log(log, format!("  preparing {written}/{total}"));
-            emit_progress(
-                progress,
-                ProgressEvent::Prepare {
-                    done: written,
-                    total,
-                },
-            );
+            log.emit(format!("  preparing {written}/{total}"));
+            progress.emit(ProgressEvent::Prepare {
+                done: written,
+                total,
+            });
         }
     }
     sink.finish(report)
@@ -272,13 +276,12 @@ pub fn write_documents_through_sink(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use media::MediaMode;
-    use message_ir::IrAttachment;
+    use ir::Attachment;
     use std::fs;
 
     #[test]
     fn write_documents_through_sink_reports_prepare_progress() {
-        use message_crate_core::{ProgressEvent, ProgressSink};
+        use message_crate_core::{CancelFlag, LogSink, ProgressEvent, ProgressSink, Sinks};
         use std::sync::{Arc, Mutex};
 
         let tmp = crate::export_dir();
@@ -290,11 +293,13 @@ mod tests {
         let mut report = ExportReport::default();
 
         write_documents_through_sink(
-            vec![message_ir::testutil::sample_document("hello")],
+            vec![ir::testutil::sample_document("hello")],
             sink,
-            None,
-            Some(&progress),
-            None,
+            Sinks {
+                log: &LogSink::none(),
+                progress: &progress,
+                cancel: &CancelFlag::default(),
+            },
             &mut report,
         )
         .unwrap();
@@ -315,11 +320,11 @@ mod tests {
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
         for chat in ["chat1", "chat2"] {
-            let mut doc = message_ir::testutil::sample_document(chat);
-            doc.conversation.chat_identifier = chat.into();
-            doc.conversation.conversation_type = message_ir::IrConversationType::Group;
-            doc.conversation.group_title = Some("Family".into());
-            sink.write_document(doc).unwrap();
+            let mut document = ir::testutil::sample_document(chat);
+            document.conversation.chat_identifier = chat.into();
+            document.conversation.conversation_type = ir::ConversationType::Group;
+            document.conversation.group_title = Some("Family".into());
+            sink.write_document(document).unwrap();
         }
 
         sink.finish(&mut ExportReport::default()).unwrap();
@@ -337,7 +342,7 @@ mod tests {
         let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
-        sink.write_document(message_ir::testutil::sample_document("hello"))
+        sink.write_document(ir::testutil::sample_document("hello"))
             .unwrap();
         sink.finish(&mut ExportReport::default()).unwrap();
         assert!(tmp.path().join("+15555550101.csv").is_file());
@@ -355,18 +360,18 @@ mod tests {
             output_dir: &Path,
             documents: &[ConversationDocument],
             _report: &mut ExportReport,
-        ) -> Result<PathBuf> {
+        ) -> Result<()> {
             let path = output_dir.join("all.txt");
             let body: Vec<String> = documents
                 .iter()
-                .map(|doc| doc.conversation.chat_identifier.clone())
+                .map(|document| document.conversation.chat_identifier.clone())
                 .collect();
             fs::write(&path, body.join("\n"))?;
-            Ok(path)
+            Ok(())
         }
 
-        fn file_names(&self) -> Vec<String> {
-            vec!["all.txt".into()]
+        fn outputs(&self, _documents: &[ConversationDocument]) -> Result<Vec<String>> {
+            Ok(vec!["all.txt".into()])
         }
 
         fn format_name(&self) -> &'static str {
@@ -381,9 +386,9 @@ mod tests {
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none())
             .unwrap()
             .with_archive(Box::new(LineArchive));
-        sink.write_document(message_ir::testutil::sample_document("one"))
+        sink.write_document(ir::testutil::sample_document("one"))
             .unwrap();
-        let mut doc2 = message_ir::testutil::sample_document("two");
+        let mut doc2 = ir::testutil::sample_document("two");
         doc2.conversation.chat_identifier = "+15555550102".into();
         sink.write_document(doc2).unwrap();
         sink.finish(&mut ExportReport::default()).unwrap();
@@ -402,7 +407,7 @@ mod tests {
         let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none()).unwrap();
-        sink.write_document(message_ir::testutil::sample_document("one"))
+        sink.write_document(ir::testutil::sample_document("one"))
             .unwrap();
         let err = sink
             .finish(&mut ExportReport::default())
@@ -418,34 +423,26 @@ mod tests {
     fn mail_archives_embed_the_staged_bytes_and_drop_attachments_dir() {
         for format in [OutputFormat::Eml, OutputFormat::Mbox] {
             let tmp = crate::export_dir();
-            let att_dir = tmp.path().join("attachments");
-            fs::create_dir_all(&att_dir).unwrap();
+            let attachments_dir = tmp.path().join("attachments");
+            fs::create_dir_all(&attachments_dir).unwrap();
             let rel = "attachments/photo.jpg";
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
-            let mut doc = message_ir::testutil::sample_document("with media");
-            doc.messages[0].attachments = vec![IrAttachment {
+            let mut document = ir::testutil::sample_document("with media");
+            document.messages[0].attachments = vec![Attachment {
                 path: Some(rel.into()),
-                original_name: Some("photo.jpg".into()),
-                mime_type: Some("image/jpeg".into()),
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
-                size_bytes: None,
-                missing_reason: None,
-                bytes: None,
+                ..ir::testutil::sample_attachment()
             }];
 
             let transforms = ExportTransforms {
-                media: MediaMode::Clone,
+                files: message_crate_core::AttachmentFiles::Originals,
                 ..ExportTransforms::none()
             };
             let mut sink = FormatSink::open(tmp.path(), format, transforms).unwrap();
-            sink.write_document(doc).unwrap();
+            sink.write_document(document).unwrap();
             sink.finish(&mut ExportReport::default()).unwrap();
 
-            assert!(!att_dir.exists(), "{format:?}");
+            assert!(!attachments_dir.exists(), "{format:?}");
             let back = match format {
                 OutputFormat::Eml => {
                     crate::read_conversation_eml_dir(&tmp.path().join("+15555550101"))
@@ -466,13 +463,13 @@ mod tests {
     #[test]
     fn format_sink_csv_keeps_attachments_dir() {
         let tmp = crate::export_dir();
-        let att_dir = tmp.path().join("attachments");
-        fs::create_dir_all(&att_dir).unwrap();
-        fs::write(att_dir.join("photo.jpg"), b"jpeg-bytes").unwrap();
+        let attachments_dir = tmp.path().join("attachments");
+        fs::create_dir_all(&attachments_dir).unwrap();
+        fs::write(attachments_dir.join("photo.jpg"), b"jpeg-bytes").unwrap();
 
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
-        sink.write_document(message_ir::testutil::sample_document("hello"))
+        sink.write_document(ir::testutil::sample_document("hello"))
             .unwrap();
         sink.finish(&mut ExportReport::default()).unwrap();
         assert!(tmp.path().join("attachments/photo.jpg").is_file());
@@ -491,15 +488,15 @@ mod tests {
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Csv, transforms).unwrap();
         // The fixture's `source` bag carries the raw sender address; obfuscation
         // must drop it, so the bag stays in and the assertion below covers it.
-        let doc = message_ir::testutil::sample_document("secret");
+        let document = ir::testutil::sample_document("secret");
         assert!(
-            doc.messages[0].source.is_some(),
+            document.messages[0].source.is_some(),
             "fixture should carry a vendor bag"
         );
-        sink.write_document(doc).unwrap();
+        sink.write_document(document).unwrap();
         let mut report = ExportReport::default();
         sink.finish(&mut report).unwrap();
-        assert_eq!(report.obfuscated_docs, 1);
+        assert_eq!(report.obfuscated_documents, 1);
         let mut found = false;
         for entry in fs::read_dir(tmp.path()).unwrap() {
             let path = entry.unwrap().path();
@@ -522,14 +519,14 @@ mod tests {
                 .is_err()
         );
 
-        let (_sink, att_dir) =
+        let (_sink, attachments_dir) =
             FormatSink::open_prepared(tmp.path(), OutputFormat::Jsonl, ExportTransforms::none())
                 .unwrap();
-        std::fs::create_dir_all(&att_dir).unwrap();
+        std::fs::create_dir_all(&attachments_dir).unwrap();
         std::fs::write(tmp.path().join("keep.jsonl"), "x").unwrap();
-        std::fs::write(att_dir.join("keep.jpg"), "y").unwrap();
+        std::fs::write(attachments_dir.join("keep.jpg"), "y").unwrap();
 
-        let (_sink, att_dir2) =
+        let (_sink, resumed_attachments_dir) =
             FormatSink::open_resume(tmp.path(), OutputFormat::Jsonl, ExportTransforms::none())
                 .unwrap();
 
@@ -538,7 +535,7 @@ mod tests {
             "a resumed run keeps the conversations the interrupted one wrote"
         );
         assert!(
-            att_dir2.join("keep.jpg").is_file(),
+            resumed_attachments_dir.join("keep.jpg").is_file(),
             "and the attachments they point at"
         );
     }

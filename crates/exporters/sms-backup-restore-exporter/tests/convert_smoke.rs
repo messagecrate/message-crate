@@ -3,7 +3,7 @@ use anyhow::Result;
 use message_crate_core::testutil::{
     assert_csv_export, assert_csv_row, assert_jsonl_resumes, csv_files,
 };
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, OutputFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,13 +17,12 @@ fn convert(
     convert_export(ConvertExportArgs {
         input,
         output_dir: output,
-        scratch_dir: cache.path(),
         owner_phones,
-        transforms: ExportTransforms::none(),
-        output_format,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format,
+            ..ConvertRun::default()
+        },
     })
 }
 
@@ -180,27 +179,28 @@ fn cancel_during_the_write_phase_stops_the_export() {
     let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
     let trip = Arc::clone(&cancel);
     let mut transforms = ExportTransforms::none();
-    transforms.log = Some(LogSink::new(move |line| {
+    transforms.log = LogSink::new(move |line| {
         if line.starts_with("Preparing ") {
             trip.store(true, Ordering::Relaxed);
         }
-    }));
+    });
 
     let cache = tempfile::tempdir().unwrap();
     let err = convert_export(ConvertExportArgs {
         input: &fixture,
         output_dir: &out,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        transforms,
-        output_format: OutputFormat::Csv,
-        cancel: Some(&cancel),
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            transforms,
+            output_format: OutputFormat::Csv,
+            cancel: cancel.clone(),
+            ..ConvertRun::default()
+        },
     })
     .expect_err("cancel must be honored during the write phase");
     assert!(
-        err.to_string().contains("cancelled"),
+        err.to_string().contains("canceled"),
         "unexpected error: {err:#}"
     );
 
@@ -295,30 +295,33 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         .find(|p| p.extension().and_then(|x| x.to_str()) == Some("json"))
         .expect("expected .json");
     let raw = fs::read_to_string(&json_path).unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(doc["schema_version"], 13);
+    let document: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(document["schema_version"], ir::SCHEMA_VERSION);
     assert!(
-        doc["conversation"]["stats"]["message_count"]
+        document["conversation"]["stats"]["message_count"]
             .as_u64()
             .unwrap()
             >= 1
     );
     assert!(!raw.contains("filename_suffix"));
     assert!(!raw.contains("\"bytes\""));
-    let msg = &doc["messages"][0];
-    assert!(msg["source"]["fields"].is_object());
-    assert!(msg["source"].get("contact_name").is_none());
-    assert!(msg["source"]["android_type"].is_number() || msg["source"]["android_type"].is_null());
-    assert!(msg["service"].as_str() == Some("sms"));
+    let message = &document["messages"][0];
+    assert!(message["source"]["fields"].is_object());
+    assert!(message["source"].get("contact_name").is_none());
+    assert!(
+        message["source"]["android_type"].is_number()
+            || message["source"]["android_type"].is_null()
+    );
+    assert!(message["service"].as_str() == Some("sms"));
     // Outgoing rows carry owner identity. The fixture includes an SMS type=2
     // (sent) and an MMS where the owner is a recipient; both must share the same
-    // individual conversation after owner-filtered peer resolution.
+    // one-to-one conversation after owner-filtered peer resolution.
     assert_eq!(
         report.conversations, 1,
-        "MMS must not fragment into a group chat"
+        "MMS must not fragment into a group conversation"
     );
-    let has_outgoing = doc["messages"].as_array().unwrap().iter().any(|m| {
-        m["direction"] == "outgoing" && m["sender_identity"].as_str() == Some("+15555550100")
+    let has_outgoing = document["messages"].as_array().unwrap().iter().any(|m| {
+        m["direction"] == "outgoing" && m["sender"]["identity"].as_str() == Some("+15555550100")
     });
     assert!(has_outgoing, "expected outgoing message with owner sender");
 
@@ -341,7 +344,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     let body = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = body.lines();
     let header: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 13);
+    assert_eq!(header["schema_version"], ir::SCHEMA_VERSION);
     assert!(header.get("messages").is_none());
     assert!(
         header["conversation"]["stats"]["message_count"]
@@ -349,8 +352,8 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
             .unwrap()
             >= 1
     );
-    let msg_line: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert!(msg_line["source"]["fields"].is_object());
+    let message_line: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert!(message_line["source"]["fields"].is_object());
 }
 
 #[test]
@@ -362,13 +365,13 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             input: &fixture,
             output_dir: tmp.path(),
-            scratch_dir: cache.path(),
             owner_phones: &[],
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
-            resume,
-            issues: None,
+            convert_run: ConvertRun {
+                scratch_dir: cache.path().to_path_buf(),
+                output_format: OutputFormat::Jsonl,
+                resume,
+                ..ConvertRun::default()
+            },
         })
     });
 }

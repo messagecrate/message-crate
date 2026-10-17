@@ -29,15 +29,15 @@ The Owner's login doesn't show **Import**, because the Owner holds no messages.
 2. **Backup File**: select **Browse** and pick the backup's `.xml` file, such as `sms-20261001120000.xml`. One import reads one backup, so a second `.xml` file is a second import.
 3. **Backup Device Phone Numbers**: every number that belonged to the phone. The numbers on the account's profile are filled in already.
 
-When none of the numbers in the field is on the account's profile, **Import** stays greyed out until **Allow import from phone numbers not on my profile** is ticked.
+When none of the numbers in the field is on the account's profile, **Import** stays grayed out until **Allow import from phone numbers not on my profile** is ticked.
 Adding the phone's number to the profile under **Settings → Profile** is the better fix, because messages sent from a number that isn't on the profile are not linked to the account.
 
 ### Attachments
 
 **Attachments** stays on **Copy**, which uploads every photo, video, and file as it is.
 
-**Convert** and **Compress & Convert** need ffmpeg, a separate program the desktop app downloads in the background when it starts.
-An import that chooses one waits for that download after the Staging Review is approved, and when the download has failed, the review's **Convert media** button stays disabled until **Try again** there has downloaded it.
+**Convert media** and **Convert & Compress media** need ffmpeg, a separate program the desktop app downloads in the background when it starts.
+An import that chooses one waits for that download after the Staging Review is approved, and when the download has failed, the review's **Convert media** or **Convert & Compress media** button stays disabled until **Try again** there has downloaded it.
 With **Copy**, a browser shows the formats it can show. Some iPhone photos and videos are in formats that not every browser displays, and those stay that way.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) describes what each choice does.
 
@@ -79,7 +79,7 @@ The record of the run stays under **Settings → Storage → Import history**.
 ## Importing again later
 
 Importing the same backup twice doesn't create duplicates.
-The Message Crate recognises messages it already holds and skips them, so a newer backup of the same phone adds only what is new.
+The Message Crate recognizes messages it already holds and skips them, so a newer backup of the same phone adds only what is new.
 
 ## Delete the Demo Account
 

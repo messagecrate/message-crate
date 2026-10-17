@@ -47,7 +47,7 @@ with no internet, and it was rejected because it makes Message Crate a
 distributor of a GPL ffmpeg build and adds about 100 MB to every installer.
 
 **Shipping wtsexporter and downloading ffmpeg.** wtsexporter is small and
-under the MIT licence, so nothing forbids it. It was rejected because two
+under the MIT license, so nothing forbids it. It was rejected because two
 programs would then reach the computer by two mechanisms.
 
 **A download button in Settings and on the Import form.** It was rejected
@@ -97,3 +97,15 @@ message and who is in each group, because the original's JSON does not say
 who sent a group message and the import needs to know. The fork's changes stay
 in the fork, and the fork is archived once the original has everything
 Message Crate needs (#1053). Nothing else in this decision changed.
+
+## Amended 2026-10-12: only the pinned wtsexporter counts
+
+Since #2692, a wtsexporter in the Tools Directory is used only when its
+SHA-256 is the pinned file's for the computer. The import needs the fork's
+pinned build, so another build is not a working copy, and a copy still being
+written by hand is not the file yet. Any other file is treated as missing
+until the download replaces it, and a failed download's reason says the file
+there is not used. The app reads the file once per version of it, not at
+every lookup. Where the app has no download, as on Linux on ARM, any
+wtsexporter there that may run is used, as before. ffmpeg and ffprobe keep
+the rule above.

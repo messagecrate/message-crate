@@ -6,14 +6,15 @@
 
 use std::collections::{HashMap, HashSet};
 
+use anyhow::Context;
 use serde::Serialize;
-use sqlx::SqliteConnection;
+use sqlx::{SqlSafeStr, SqliteConnection};
 
+use crate::db::SearchListError;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::{Participant, load_for_conversations};
 use crate::db::sql::{SqlParam, bind_args, fold_in_id_chunks, in_placeholders};
-use crate::paging::{Direction, Page, SortKey};
-use crate::server::ApiError;
+use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 
 /// The keys `GET /v1/conversations` accepts in `sort=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,7 +90,7 @@ pub struct ConversationSummary {
     /// person's name and "Orphaned", or "Orphaned · Unknown person" for the
     /// one that names nobody; for any other, the export's title. `null` when
     /// there is none, and the conversation goes by its participants.
-    pub label: Option<String>,
+    pub shown_title: Option<String>,
     /// Message tags on this conversation.
     pub tags: Vec<String>,
 }
@@ -101,39 +102,31 @@ pub(crate) fn is_group_type(conversation_type: &str) -> bool {
     conversation_type.eq_ignore_ascii_case("group")
 }
 
+/// One row of a [`conversation_row_select`]-shaped query.
+#[derive(sqlx::FromRow)]
 struct RawConversation {
     id: i64,
     conversation_type: String,
-    label: Option<String>,
+    shown_title: Option<String>,
     message_count: i64,
     first_message_at: Option<String>,
     last_message_at: Option<String>,
 }
 
-type RawConversationRow = (
-    i64,
-    String,
-    Option<String>,
-    i64,
-    Option<String>,
-    Option<String>,
-);
-
 /// One page of the conversation list for `q`, a query in the search language.
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when a
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when a statement fails.
 pub async fn list_conversations_sorted(
     conn: &mut SqliteConnection,
     account_id: i64,
     q: &str,
     order: &[SortKey<ConversationSort>],
-    limit: usize,
-    offset: usize,
+    page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<Page<ConversationSummary>, ApiError> {
+) -> Result<Page<ConversationSummary>, SearchListError> {
     let (zone, today) = clock;
     let filter = crate::search::compile(crate::search::CompileRequest {
         list: crate::search::ListKind::Conversations,
@@ -145,15 +138,17 @@ pub async fn list_conversations_sorted(
     let where_sql = filter.where_sql();
 
     let count_sql = format!("SELECT COUNT(*) FROM conversations c WHERE {where_sql}");
-    let total: i64 = sqlx::query_scalar_with(&count_sql, bind_args(filter.params()))
-        .fetch_one(&mut *conn)
-        .await?;
+    let total: i64 =
+        sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql), bind_args(filter.params()))
+            .fetch_one(&mut *conn)
+            .await
+            .context("count the conversations a list query matches")?;
     let total = total.max(0) as u64;
 
     let mut params = filter.params().to_vec();
-    params.push(SqlParam::Int(limit as i64));
+    params.push(SqlParam::Int(page.limit as i64));
     params.push(SqlParam::Int(
-        i64::try_from(offset).map_err(anyhow::Error::from)?,
+        i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     ));
     // The sort reads computed columns (`last_message_at`, `message_count`)
     // inside expressions. Sorting the rows as a derived table makes those
@@ -163,17 +158,12 @@ pub async fn list_conversations_sorted(
         select = conversation_row_select(),
         order_by = conversation_order_by(order),
     );
-    let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
-    Ok(Page {
-        items: out,
-        total,
-        limit,
-        offset,
-    })
+    let out = load_conversation_rows(conn, account_id, sqlx::AssertSqlSafe(sql), &params).await?;
+    Ok(page_from_rows(out, total, page))
 }
 
 /// One conversation by id, scoped to `account_id`. `None` when the id does
-/// not exist or belongs to another account — the two cases look identical to
+/// not exist or belongs to another account. The two cases look identical to
 /// the caller, which is what keeps this a 404 rather than a 403.
 ///
 /// # Errors
@@ -183,13 +173,13 @@ pub async fn get_conversation_summary(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> Result<Option<ConversationSummary>, ApiError> {
+) -> anyhow::Result<Option<ConversationSummary>> {
     let sql = format!(
         "{} WHERE c.id = ? AND c.account_id = ?",
         conversation_row_select()
     );
     let params = [SqlParam::Int(conversation_id), SqlParam::Int(account_id)];
-    let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
+    let out = load_conversation_rows(conn, account_id, sqlx::AssertSqlSafe(sql), &params).await?;
     Ok(out.into_iter().next())
 }
 
@@ -197,11 +187,11 @@ pub async fn get_conversation_summary(
 /// with themselves: a one-to-one conversation whose own identity is one of
 /// the account's identities, such as notes sent to their own number (#1094).
 /// `c` is the alias of a `conversations` row. `with:me` asks this, and
-/// [`conversation_title_sql`] names such a conversation by it.
+/// [`shown_title_sql`] names such a conversation by it.
 #[must_use]
 pub fn is_with_yourself_sql(c: &str) -> String {
     format!(
-        "(lower({c}.conversation_type) = 'individual'
+        "(lower({c}.conversation_type) = 'one-to-one'
           AND EXISTS (SELECT 1 FROM handles hy WHERE hy.id = {c}.chat_handle_id AND {}))",
         crate::db::account_profile::is_account_identity_sql("hy", &format!("{c}.account_id"))
     )
@@ -227,7 +217,7 @@ pub const ORPHANED_UNKNOWN_PERSON: &str = "Orphaned · Unknown person";
 /// single-conversation read, the message rows, `title:`, `in:` and plain
 /// text all read this one expression.
 #[must_use]
-pub fn conversation_title_sql(c: &str) -> String {
+pub fn shown_title_sql(c: &str) -> String {
     format!(
         "CASE WHEN {with_yourself} THEN COALESCE(
                   (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
@@ -243,25 +233,25 @@ pub fn conversation_title_sql(c: &str) -> String {
 }
 
 /// A SQL condition, true when conversation `c` holds orphaned messages: its
-/// type is [`message_ir::ORPHANED_CONVERSATION_TYPE`], in any case. `c` is
+/// type is [`ir::ORPHANED_CONVERSATION_TYPE`], in any case. `c` is
 /// the alias of a `conversations` row.
 #[must_use]
 pub fn is_orphaned_sql(c: &str) -> String {
     format!(
         "lower({c}.conversation_type) = '{}'",
-        message_ir::ORPHANED_CONVERSATION_TYPE
+        ir::ORPHANED_CONVERSATION_TYPE
     )
 }
 
 /// The row shape shared by the conversation list and the single-conversation
-/// read: id, type, title ([`conversation_title_sql`]), and the
+/// read: id, type, title ([`shown_title_sql`]), and the
 /// counts/timestamps computed from `messages`. Callers append their own
 /// `WHERE`, `ORDER BY`, and paging.
 fn conversation_row_select() -> String {
     format!(
         "SELECT c.id,
                 c.conversation_type,
-                {label} AS label,
+                {shown_title} AS shown_title,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
                 (SELECT MIN(m.timestamp) FROM messages m
@@ -269,7 +259,7 @@ fn conversation_row_select() -> String {
                 (SELECT MAX(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
          FROM conversations c",
-        label = conversation_title_sql("c")
+        shown_title = shown_title_sql("c")
     )
 }
 
@@ -280,30 +270,18 @@ fn conversation_row_select() -> String {
 async fn load_conversation_rows(
     conn: &mut SqliteConnection,
     account_id: i64,
-    sql: &str,
+    sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> Result<Vec<ConversationSummary>, ApiError> {
-    let rows: Vec<RawConversationRow> = sqlx::query_as_with(sql, bind_args(params))
+) -> anyhow::Result<Vec<ConversationSummary>> {
+    let rows = sqlx::query_as_with::<_, RawConversation, _>(sql, bind_args(params))
         .fetch_all(&mut *conn)
-        .await?;
-    let rows: Vec<RawConversation> = rows
-        .into_iter()
-        .map(
-            |(id, conversation_type, label, message_count, first_message_at, last_message_at)| {
-                RawConversation {
-                    id,
-                    conversation_type,
-                    label,
-                    message_count,
-                    first_message_at,
-                    last_message_at,
-                }
-            },
-        )
-        .collect();
+        .await
+        .context("read conversation rows")?;
 
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let mut participants = load_for_conversations(conn, &ids).await?;
+    let mut participants = load_for_conversations(conn, &ids)
+        .await
+        .context("read the participants of the conversations")?;
     let source_sets = load_conversation_sources(conn, &ids).await?;
     let mut tag_sets = crate::db::named_membership::names_for_items(
         crate::db::named_membership::tag_spec(),
@@ -312,7 +290,7 @@ async fn load_conversation_rows(
         &ids,
     )
     .await
-    .map_err(ApiError::Internal)?;
+    .context("read the tags of the conversations")?;
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -332,8 +310,8 @@ async fn load_conversation_rows(
             last_message_at: row.last_message_at,
             service,
             is_group,
-            label: row
-                .label
+            shown_title: row
+                .shown_title
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             tags: tag_sets.remove(&row.id).unwrap_or_default(),
@@ -364,11 +342,18 @@ pub fn display_service_label(sources: &[String]) -> String {
     "unknown".into()
 }
 
+/// One source of one conversation, for [`load_conversation_sources`].
+#[derive(sqlx::FromRow)]
+struct SourceRow {
+    conversation_id: i64,
+    source: String,
+}
+
 /// Source ids per conversation, for conversations holding messages from more than one import.
 async fn load_conversation_sources(
     conn: &mut SqliteConnection,
     conversation_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, ApiError> {
+) -> anyhow::Result<HashMap<i64, Vec<String>>> {
     fold_in_id_chunks(conn, conversation_ids, |conn, chunk| {
         Box::pin(async move {
             let placeholders = in_placeholders(1, chunk.len());
@@ -380,13 +365,20 @@ async fn load_conversation_sources(
                  GROUP BY conversation_id, source
                  ORDER BY conversation_id, source"
             );
-            let mut q = sqlx::query_as::<_, (i64, String)>(&sql);
+            let mut q = sqlx::query_as::<_, SourceRow>(sqlx::AssertSqlSafe(sql));
             for id in chunk {
                 q = q.bind(*id);
             }
-            let rows = q.fetch_all(&mut *conn).await?;
+            let rows = q
+                .fetch_all(&mut *conn)
+                .await
+                .context("read the sources of the conversations")?;
             let mut out = Vec::new();
-            for (cid, source) in rows {
+            for SourceRow {
+                conversation_id: cid,
+                source,
+            } in rows
+            {
                 if source.trim().is_empty() {
                     continue;
                 }
@@ -420,12 +412,21 @@ pub async fn list_conversation_source_stats(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> Result<Option<Vec<ConversationSource>>, ApiError> {
-    if !owns_conversation(conn, account_id, conversation_id).await? {
+) -> anyhow::Result<Option<Vec<ConversationSource>>> {
+    if !owns_conversation(conn, account_id, conversation_id)
+        .await
+        .context("check that the account holds the conversation")?
+    {
         return Ok(None);
     }
 
-    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        source: String,
+        message_count: i64,
+        unique_count: i64,
+    }
+    let rows = sqlx::query_as::<_, Row>(
         "SELECT source,
                     COUNT(*) AS message_count,
                     SUM(CASE WHEN duplicate_of IS NULL THEN 1 ELSE 0 END) AS unique_count
@@ -436,24 +437,31 @@ pub async fn list_conversation_source_stats(
     )
     .bind(conversation_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("count a conversation's messages by source")?;
 
-    let total_unique: i64 = rows.iter().map(|(_, _, u)| *u).sum();
+    let total_unique: i64 = rows.iter().map(|row| row.unique_count).sum();
     let sources = rows
         .into_iter()
-        .map(|(source, message_count, unique_count)| {
-            let percentage = if total_unique > 0 {
-                (unique_count as f64) * 100.0 / (total_unique as f64)
-            } else {
-                0.0
-            };
-            ConversationSource {
-                backup_name: source,
-                message_count: message_count.max(0) as u64,
-                unique_count: unique_count.max(0) as u64,
-                percentage: (percentage * 10.0).round() / 10.0,
-            }
-        })
+        .map(
+            |Row {
+                 source,
+                 message_count,
+                 unique_count,
+             }| {
+                let percentage = if total_unique > 0 {
+                    (unique_count as f64) * 100.0 / (total_unique as f64)
+                } else {
+                    0.0
+                };
+                ConversationSource {
+                    backup_name: source,
+                    message_count: message_count.max(0) as u64,
+                    unique_count: unique_count.max(0) as u64,
+                    percentage: (percentage * 10.0).round() / 10.0,
+                }
+            },
+        )
         .collect();
     Ok(Some(sources))
 }
@@ -468,15 +476,16 @@ pub async fn with_yourself_ids(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> anyhow::Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT c.id FROM conversations c
          WHERE c.account_id = $1 AND {}
          ORDER BY c.id",
         is_with_yourself_sql("c")
-    ))
+    )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's conversations with yourself")
 }
 
 /// The chat handle of `conversation_id`, or `None` when the account has no
@@ -490,11 +499,10 @@ pub async fn chat_handle_id(
     account_id: i64,
     conversation_id: i64,
 ) -> anyhow::Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
-        "SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2",
-    )
-    .bind(account_id)
-    .bind(conversation_id)
-    .fetch_optional(&mut *conn)
-    .await?)
+    sqlx::query_scalar("SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2")
+        .bind(account_id)
+        .bind(conversation_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("read a conversation's chat handle")
 }

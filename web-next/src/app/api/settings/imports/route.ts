@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/** Past import runs, from `GET /v1/imports`. */
+/** Past import runs, from `GET /v1/accounts/{id}/imports`. */
 export async function GET() {
   try {
     return await withAccountHandler(async () => {

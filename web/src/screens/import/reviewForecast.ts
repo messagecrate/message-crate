@@ -1,7 +1,7 @@
-import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
 import type { AttachmentMediaMode } from "../../lib/types";
 
-/** The job the Media stage is doing, in the person's words. */
+/** The job the Media Stage is doing, in the person's words. */
 export function mediaJobVerb(mode: AttachmentMediaMode): "converting" | "compressing" | null {
   if (mode === "convert") return "converting";
   if (mode === "compress") return "compressing";
@@ -24,10 +24,10 @@ export function filesOverLimit(summary: StagingSummary): AttachmentForecast[] {
     .sort(bySizeDescending);
 }
 
-export type EstimatePileKey = "likely_within" | "may_exceed" | "not_media";
+type EstimatePileKey = "likely_within" | "may_exceed" | "not_media";
 
 /** One group of files the Staging Review's estimates sort into. */
-export interface EstimatePile {
+interface EstimatePile {
   key: EstimatePileKey;
   label: string;
   /** What the pile means, shown above its files once it is opened. */
@@ -74,7 +74,7 @@ export function estimatePiles(summary: StagingSummary): EstimatePile[] {
   return piles.filter((pile) => pile.files.length > 0);
 }
 
-/** "Compression estimates" or "Conversion estimates"; null when there is no Media stage. */
+/** "Compression estimates" or "Conversion estimates"; null when there is no Media Stage. */
 export function estimatesHeading(mode: AttachmentMediaMode): string | null {
   if (mode === "compress") return "Compression estimates";
   if (mode === "convert") return "Conversion estimates";

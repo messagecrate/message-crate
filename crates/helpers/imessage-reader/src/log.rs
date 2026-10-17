@@ -21,9 +21,16 @@ pub(crate) fn emit(event: &Event) {
     let _ = out.flush();
 }
 
-/// Send one log line to the app.
+/// Send one log line to the app: something the helper did.
 pub(crate) fn emit_log(line: impl AsRef<str>) {
     emit(&Event::Log {
+        line: line.as_ref().to_string(),
+    });
+}
+
+/// Send one warning to the app: something the run went on without.
+pub(crate) fn emit_warning(line: impl AsRef<str>) {
+    emit(&Event::Warning {
         line: line.as_ref().to_string(),
     });
 }

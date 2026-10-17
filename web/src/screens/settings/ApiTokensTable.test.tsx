@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { nth } from "../../test/nth";
 import ApiTokensTable from "./ApiTokensTable";
 
 afterEach(cleanup);
@@ -12,7 +13,7 @@ describe("ApiTokensTable focus", () => {
   it("draws the focus ring on a token's row", () => {
     render(
       <ApiTokensTable
-        items={[
+        tokens={[
           {
             id: 1,
             label: "Phone backup",
@@ -31,9 +32,24 @@ describe("ApiTokensTable focus", () => {
         onRevoke={() => {}}
       />,
     );
-    const row = screen.getAllByRole("row")[1];
+    const row = nth(screen.getAllByRole("row"), 1);
     expect(row.className).toContain(
       "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
     );
+  });
+});
+
+describe("ApiTokensTable empty", () => {
+  it("says when the account has no API Token", () => {
+    render(
+      <ApiTokensTable
+        tokens={[]}
+        busy={false}
+        composing={false}
+        onRename={() => {}}
+        onRevoke={() => {}}
+      />,
+    );
+    expect(screen.getByText("No API Tokens yet")).toBeInTheDocument();
   });
 });

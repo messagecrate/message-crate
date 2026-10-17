@@ -1,4 +1,4 @@
-# message-crate-log-lines
+# log-lines
 
 The line format of Message Crate's logs, defined once for the server, which
 reads its own log back, and the desktop app, which writes each Import Run's
@@ -10,10 +10,12 @@ level padded to five characters, and its text:
 ```
 
 That is what `tracing-subscriber` writes for the server, so one viewer reads
-both logs and the level filter means the same in each. The crate holds the
-writer (`format_lines`), the parser (`parse_line`), the level and text filter
-(`LineFilter`), and the walk from a file's newest line back, a chunk at a time
-(`lines_backward`).
+both logs and the level filter means the same in each. A line never holds a
+terminal control character: each is escaped, such as ESC as `\x1b`. The
+crate holds the writer (`format_lines`, with `escape_controls` and
+`push_escaped`, which the server's log writer uses too), the parser
+(`parse_line`), the level and text filter (`LineFilter`), and the walk from a
+file's newest line back, a chunk at a time (`lines_backward`).
 
 The two sides kept their own copies of the parser and the filter before this
 crate, and nothing would have caught them drifting apart. A server test now
@@ -26,7 +28,7 @@ crates leave it off and never build utoipa.
 ## Build and test
 
 ```bash
-cargo test -p message-crate-log-lines
+cargo test -p log-lines
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
@@ -35,7 +37,7 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 The rules: `docs/architecture/server-log.md` and
 `docs/architecture/import-run-logs.md`. This crate is a library shared by the
-server, `message-crate-core` (and through it `message-crate-import`) and the
+server, `message-crate-core` (and through it `import`) and the
 desktop app. It builds no binary.
 
 ## License

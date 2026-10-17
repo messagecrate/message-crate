@@ -1,15 +1,15 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
-import type { MembershipCheckState } from "../lib/membershipChecks";
+import { useDismissable } from "../hooks/useDismissable";
+import { errorLine } from "../lib/apiErrorMessage";
+import type { MembershipCheckState } from "../lib/membership";
 import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
-import { popupShadow } from "../lib/uiStyles";
-import { useDismissable } from "../lib/useDismissable";
+import { popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
 import Checkbox from "./Checkbox";
 import { ChevronDownIcon, PeopleGroupIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
-export type GroupCheckState = MembershipCheckState;
+type GroupCheckState = MembershipCheckState;
 
 /** Padding, type size, and flex line shared by group rows and the empty message. */
 const MENU_ROW_CLASS = "flex items-center gap-2 px-3 py-1.5 text-[0.813rem] leading-5";
@@ -64,7 +64,7 @@ export default function GroupsMenu({
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   // Counts the forms the menu has shown. A create that settles after its form
-  // was closed (dismissed, cancelled, or replaced by a new one) leaves the
+  // was closed (dismissed, canceled, or replaced by a new one) leaves the
   // form on screen alone, so its result can't erase or mislabel a new name.
   const formCountRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -102,7 +102,7 @@ export default function GroupsMenu({
   );
   const listEmptyText = query.trim() ? copy.noMatchText : copy.emptyText;
   const toneClass = open ? "text-accent" : "text-muted";
-  const popoverClass = `absolute top-full left-0 mt-1 w-64 rounded-xl border border-border bg-popover ${Z_POPOVER} ${popupShadow}`;
+  const popoverClass = `absolute top-full left-0 mt-1 w-64 rounded-xl border border-border bg-popover ${Z_POPOVER} ${popupShadowClass}`;
 
   const saveNew = async () => {
     if (disabled || creating || !onCreate) return;
@@ -119,7 +119,7 @@ export default function GroupsMenu({
     } catch (err) {
       if (formCountRef.current !== formCount) return;
       setCreating(false);
-      setCreateError(apiErrorMessage(err, copy.createError));
+      setCreateError(errorLine(err, copy.createError));
       return;
     }
     if (formCountRef.current !== formCount) return;
@@ -146,7 +146,7 @@ export default function GroupsMenu({
             : `flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated hover:text-text disabled:cursor-default disabled:opacity-40 ${toneClass}`
         }
       >
-        {icon ?? <PeopleGroupIcon size={16} />}
+        {icon ?? <PeopleGroupIcon size={16} className="shrink-0" />}
         {labeled ? <span>{copy.title}</span> : null}
         {labeled ? (
           <ChevronDownIcon

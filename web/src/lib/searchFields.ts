@@ -10,10 +10,8 @@
  * the browser or must ask the server.
  */
 
-import { keys } from "./queryKeys";
-import { useRouteQuery } from "./routeQuery";
 import { dropTokens, type FieldToken, fieldTokens } from "./searchQuery";
-import { listSearchFields, type SearchFieldList } from "./serverApi";
+import type { SearchFieldList } from "./serverApi";
 import type { components } from "./serverApi.types";
 
 type Schema = components["schemas"];
@@ -30,7 +28,7 @@ export function hasFieldToken(q: string): boolean {
 }
 
 /** The field words a query carries, lower-cased and without the leading minus, in order of appearance. */
-export function fieldWords(q: string): string[] {
+function fieldWords(q: string): string[] {
   return [...new Set(fieldTokens(q).map((t) => t.word))];
 }
 
@@ -47,28 +45,6 @@ export function unsupportedFieldWords(q: string, fields: readonly SearchField[])
 /** The free-text words of a query, with every `word:value` token removed. */
 export function stripFieldTokens(q: string): string {
   return dropTokens(q, fieldTokens(q)).replace(/\s+/g, " ").trim();
-}
-
-/**
- * The words one list accepts, from the server, cached for the session. A `null`
- * list asks the server nothing and has no words.
- *
- * When the request has failed and no words were fetched before, `error` says
- * why and `fields` is empty. A caller that reads `fields` as the list's whole
- * vocabulary checks `error` first, because an empty list refuses every word.
- */
-export function useSearchFields(list: SearchList | null): {
-  fields: SearchField[];
-  loading: boolean;
-  error: Error | null;
-} {
-  const { data, isPending, error } = useRouteQuery(
-    keys.searchFields.list(list ?? "conversations"),
-    (signal) => listSearchFields(list ?? "conversations", { signal }),
-    { staleTime: Number.POSITIVE_INFINITY, enabled: list !== null },
-  );
-  // A failed refetch keeps the words already fetched, and those still hold.
-  return { fields: data ?? [], loading: isPending, error: data === undefined ? error : null };
 }
 
 /** The name a list goes by on screen. */
@@ -97,45 +73,4 @@ export function markedWords(
   return fieldTokens(query)
     .filter((t) => !here.has(t.word) && there.has(t.word))
     .map((t) => ({ ...t, worksIn: other.list }));
-}
-
-/**
- * `query` as `list` searches it: without the words only `otherList` takes
- * (#1561). `ready` is `useMarkedWords`'s. The results lists and Export both
- * read their query through this, so they leave out the same words.
- */
-export function useListQuery(
-  query: string,
-  list: SearchList,
-  otherList: SearchList,
-): { listQuery: string; marked: MarkedWord[]; ready: boolean } {
-  const { marked, ready } = useMarkedWords(query, list, otherList);
-  return { listQuery: dropTokens(query, marked), marked, ready };
-}
-
-/**
- * The words of `query` that `list` does not take and `otherList` does, which
- * the search box marks and the list leaves out of its search (#1561).
- *
- * `ready` is false while the words of either list are still being fetched
- * and the query has a `word:` token, so a list can wait rather than send a
- * word the server would refuse. When either fetch fails, nothing is marked:
- * the server answers the query as typed. A `null` list or other list marks
- * nothing and asks the server nothing.
- */
-export function useMarkedWords(
-  query: string,
-  list: SearchList | null,
-  otherList: SearchList | null,
-): { marked: MarkedWord[]; ready: boolean } {
-  const both = list !== null && otherList !== null;
-  const here = useSearchFields(both ? list : null);
-  const there = useSearchFields(both ? otherList : null);
-  if (!both || !hasFieldToken(query)) return { marked: [], ready: true };
-  if (here.error || there.error) return { marked: [], ready: true };
-  if (here.loading || there.loading) return { marked: [], ready: false };
-  return {
-    marked: markedWords(query, here.fields, { list: otherList, fields: there.fields }),
-    ready: true,
-  };
 }

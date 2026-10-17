@@ -4,7 +4,7 @@ use crate::test_support::{conversation_header, message_line};
 
 const TEST_ACCOUNT: i64 = 7;
 
-/// Import one individual conversation holding one message, `guid`, through
+/// Import one one-to-one conversation holding one message, `guid`, through
 /// the whole pipeline: staging, then promote, in the import's transaction.
 async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, guid: &str) {
     let path = dir.join(format!("{guid}.jsonl"));
@@ -13,19 +13,19 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     let message = message_line(guid, "hi").sms().sender("+15555550143");
     std::fs::write(&path, format!("{header}\n{message}\n")).unwrap();
     let assets = dir.join("assets");
-    let counts = super::super::import_jsonl_files_on_conn(
+    let counts = crate::test_support::import_for_account(
         conn,
         &[path],
-        &super::super::ImportOptions::fixed(super::super::FixedImportArgs {
+        &super::super::pipeline::ImportOptions::fixed(super::super::pipeline::FixedImportArgs {
             assets_dir: &assets,
-            asset_root: dir,
+            asset_root: Some(dir),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
-        super::super::ImportSchemaMode::Ensure,
     )
     .await
     .unwrap();
@@ -69,7 +69,7 @@ async fn a_promote_that_fails_is_an_internal_import_failure() {
 /// guid join has statistics to plan with.
 #[tokio::test]
 async fn an_import_analyzes_import_tables_before_begin() {
-    let (pool, dir) = crate::db::engine::test_pool().await;
+    let (pool, dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_one_message(&mut conn, dir.path(), "analyze-guid-1").await;
     let stat_rows: i64 = sqlx::query_scalar(
@@ -100,7 +100,7 @@ async fn promote_message_map_ignores_other_accounts() {
             &SeedConversation {
                 account_id,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "t.json",
                 messages: &[],

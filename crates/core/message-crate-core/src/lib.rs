@@ -25,31 +25,30 @@ pub use attachment_jobs::{
 };
 pub use attachments::{attachment_date_prefix, attachment_dest_name, digest_prefix};
 pub use config::{
-    AppleConfig, ExporterConfig, FormatConfig, GoSmsProConfig, ImazingConfig, MediaConfig,
-    ObfuscateConfig, OpenExtractConfig, OutputFormat, SmsBackupPlusConfig, SmsBackupRestoreConfig,
-    SourceConfig, WhatsappConfig,
+    AppleConfig, AttachmentFiles, ConvertRun, ExporterConfig, FormatConfig, GoSmsProConfig,
+    ImazingConfig, MediaConfig, ObfuscateConfig, OpenExtractConfig, OutputConfig, OutputFormat,
+    RunContext, SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
+    require_input,
 };
 pub use counter::{
     ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, CONVERSATION_FILES_PREPARING, CONVERSATIONS_OBFUSCATED,
-    CONVERSATIONS_RESUMED, Counter, DUPLICATES_DROPPED, ItemKind, NAME_ONLY_CHAT,
+    CONVERSATIONS_RESUMED, Counter, DUPLICATES_DROPPED, ItemKind, NAME_ONLY_CONVERSATION,
     NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS,
     SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, count_of, count_of_files, error_and_note_lines,
     import_error_lines, item_line, item_reason,
 };
 pub use exporters::{
-    ApplePlatform, AttachmentMedia, CONVERT_COMPRESS_FFMPEG_REQUIRED, Exporter, Form,
-    WhatsappPlatform, ensure_output_dir,
+    ApplePlatform, Exporter, Form, FormContext, WhatsappPlatform, ensure_output_dir,
 };
 pub use pipeline::{
-    CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT_NOTE, RunIssue, RunIssueKind, RunResult,
-    discover_files, emit_issue, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
-    prepare_outputs, project_conversation, unreadable_parts_note,
+    CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CONVERSATION_NOTE, RunIssue, RunIssueKind,
+    RunIssueStep, RunResult, discover_files, export_meta, file_modified_unix_ms,
+    newest_file_modified_unix_ms, prepare_outputs, project_conversation, unreadable_parts_note,
 };
 pub use process::{
-    CancelFlag, Cancelled, LogSink, check_cancel, emit_log, emit_warning, is_cancelled,
-    parallel_for_each,
+    CancelFlag, Canceled, LogSink, Sinks, check_cancel, is_canceled, parallel_for_each,
 };
-pub use progress::{ProgressEvent, ProgressSink, WriteStatus, emit_progress};
+pub use progress::{ProgressEvent, ProgressSink, WriteStatus};
 pub use run::{finish_run, run_pipeline};
 pub use run_log::{RunLogAccount, RunLogLevel, RunLogLine, format_run_log, parse_run_log_line};
 pub use scratch::{

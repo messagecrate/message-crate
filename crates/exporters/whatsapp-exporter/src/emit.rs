@@ -1,41 +1,47 @@
 //! Convert wtsexporter JSON into the shared conversation structure, then write
-//! the chosen output format via [`ExportWriter`].
+//! the chosen output format through [`convert_backup`].
 
 use crate::jid::{
     PHONE_PUNCTUATION, chat_id_from_jid, is_channel_jid, is_group_jid, is_status_jid, jid_to_e164,
     phone_id_to_e164,
 };
-use crate::parse::{
-    ChatJson, MemberJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store,
-    media_path, message_text, timestamp_ms, timestamp_secs,
+use crate::read::{
+    ChatJson, MemberJson, MessageJson, ReactionJson, group_action, is_reply, key_string,
+    load_chat_store, media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
-use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
-    project_conversation,
+use ir::{
+    Attachment, ConversationDocument, ExportMeta, IdentityType, MessageKind, Participant,
+    PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectionHooks,
+    Reaction, SortKeyUnit, Transport, VendorFields,
 };
-use message_csv::format_local_ts;
-use message_ir::{
-    ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
-};
-use message_staging::{AttachmentSource, ExportWriter};
+use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
+use message_crate_csv::format_local_ts;
 use serde_json::Map;
+use staging::{
+    AttachmentPaths, AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "whatsapp";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::Whatsapp.source_id();
 const EXPORT_TOOL: &str = "WhatsApp Chat Exporter";
 /// Pinned documented upstream version (JSON convert path; shell-out may differ).
 pub(crate) const EXPORT_TOOL_VERSION: &str = "0.13.0";
 
-/// One conversion of a wtsexporter `result.json`: what to read, where to
-/// write it, and how.
-pub(crate) struct ConvertRequest<'a> {
+/// The extra flag `ingest_chat` sets on a group event the fork gave a text,
+/// which [`WhatsappProjection`] writes as an announcement.
+const IS_ANNOUNCEMENT: &str = "is_announcement";
+/// The extra, and the `source.fields` key, holding the fork's
+/// `group_action_jid`: the id of the member a group event's text names.
+const GROUP_ACTION_JID: &str = "group_action_jid";
+
+/// Inputs for [`convert_export`]: the wtsexporter `result.json` to read,
+/// where to write it, and how.
+pub(crate) struct ConvertExportArgs<'a> {
     pub json_path: &'a Path,
     pub output: &'a Path,
-    pub transforms: ExportTransforms,
     /// Directories tried when resolving relative media paths. For a ready-made
     /// `result.json`: the backup input, when given, and the JSON's directory.
     /// Otherwise: the wtsexporter working directory and the backup input, which
@@ -45,108 +51,118 @@ pub(crate) struct ConvertRequest<'a> {
     /// so on every message as the address it was held at. `None` records no
     /// owner, which leaves the conversations counted toward no identity.
     pub owner_identity: Option<String>,
-    /// When the backup was made, in Unix milliseconds, stamped on the export
-    /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
+    /// When the backup was made, in Unix milliseconds: every message's
+    /// Backup Date ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
     pub backup_taken_at_unix_ms: Option<i64>,
-    pub output_format: OutputFormat,
-    /// Checked between chats (cooperative cancellation).
-    pub cancel: Option<&'a CancelFlag>,
-    pub resume: bool,
-    /// Where each note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
 /// then write the chosen output format.
 ///
+/// Cancellation is checked between chats as they are read and between
+/// conversations.
+///
 /// # Errors
 ///
 /// Returns an error when the JSON cannot be read, a conversation cannot be
 /// written, or the user cancels.
-pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> {
-    let ConvertRequest {
+pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport> {
+    let ConvertExportArgs {
         json_path,
         output,
-        transforms,
         media_search_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        output_format,
-        cancel,
-        resume,
-        issues,
-    } = request;
+        convert_run,
+    } = args;
     fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
-    // Load the chat store BEFORE cleaning the output directory. The JSON may live
-    // inside the output dir (e.g. wtsexporter_result.json) and cleaning
-    // deletes all *.json files.
+    // Load the chat store BEFORE the writer cleans the output directory. The
+    // JSON may live inside the output dir (e.g. wtsexporter_result.json) and
+    // cleaning deletes all *.json files.
     let store = load_chat_store(json_path)?;
-    let writer = ExportWriter::open(output, output_format, transforms, resume)?;
-    let copy_attachments = writer.copies_attachments();
-    let mut report = ExportReport::with_issues(issues.cloned());
-    let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
-    let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();
+    convert_backup(
+        output,
+        convert_run,
+        WriterSetup::default(),
+        |writer, cancel, mut report| {
+            let copy_attachments = writer.files().copies();
+            let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
+            let mut rosters: BTreeMap<String, Vec<Participant>> = BTreeMap::new();
 
-    for (jid, chat) in store {
-        message_crate_core::check_cancel(cancel)?;
-        if jid.starts_with('_') {
-            // Reserved / system keys if any.
-            continue;
-        }
-        if let Some(counter) = skipped_chat_counter(&jid) {
-            report.bump(counter, chat.messages.len() as u64);
-            continue;
-        }
-        if let Some((chat_id, convo, roster)) = ingest_chat(
-            &jid,
-            &chat,
-            owner_identity.as_deref(),
-            copy_attachments,
-            media_search_roots,
-            &mut report,
-        ) {
-            rosters.insert(chat_id.clone(), roster);
-            conversations.insert(chat_id, convo);
-        }
-    }
-
-    let hooks = WhatsappProjection {
-        rosters,
-        export: message_crate_core::export_meta(
-            EXPORT_SOURCE,
-            EXPORT_TOOL,
-            EXPORT_TOOL_VERSION,
-            owner_identity,
-            None,
-            backup_taken_at_unix_ms,
-        ),
-    };
-    let mut documents = Vec::new();
-    let mut media_sources: Vec<Option<PathBuf>> = Vec::new();
-    for (chat_id, mut convo) in conversations {
-        message_crate_core::check_cancel(cancel)?;
-        let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) else {
-            continue;
-        };
-        collect_media_sources(&convo, &mut media_sources);
-        documents.push(doc);
-    }
-
-    let mut source_iter = media_sources.into_iter();
-    writer.finish(
-        documents,
-        &mut |att| {
-            let hint = att.size_bytes;
-            match source_iter.next().flatten() {
-                Some(path) => (AttachmentSource::Path(path), hint),
-                None => (AttachmentSource::Missing, hint),
+            for (jid, chat) in store {
+                message_crate_core::check_cancel(cancel)?;
+                if jid.starts_with('_') {
+                    // Reserved / system keys if any.
+                    continue;
+                }
+                if let Some(counter) = skipped_chat_counter(&jid) {
+                    report.bump(counter, chat.messages.len() as u64);
+                    continue;
+                }
+                if let Some((chat_id, conversation, roster)) = ingest_chat(
+                    &jid,
+                    &chat,
+                    owner_identity.as_deref(),
+                    copy_attachments,
+                    media_search_roots,
+                    &mut report,
+                ) {
+                    rosters.insert(chat_id.clone(), roster);
+                    conversations.insert(chat_id, conversation);
+                }
             }
-        },
-        cancel,
-        &mut report,
-    )?;
 
-    Ok(report)
+            Ok(ReadBackup {
+                conversations: conversations.into_iter().collect(),
+                project: WhatsappDocuments {
+                    hooks: WhatsappProjection {
+                        rosters,
+                        export: message_crate_core::export_meta(
+                            EXPORT_SOURCE,
+                            EXPORT_TOOL,
+                            EXPORT_TOOL_VERSION,
+                            owner_identity,
+                            None,
+                        ),
+                        backup_taken_at_unix_ms,
+                    },
+                    media_sources: AttachmentPaths::default(),
+                },
+                report,
+            })
+        },
+    )
+}
+
+/// The projection of each conversation read, for [`convert_backup`], and
+/// the media file of each attachment it keeps.
+struct WhatsappDocuments {
+    hooks: WhatsappProjection,
+    /// The media file of each attachment of the documents projected so
+    /// far, in the order the writer asks for them.
+    media_sources: AttachmentPaths,
+}
+
+impl Project for WhatsappDocuments {
+    type Conversation = (String, PendingConversation);
+
+    fn project(
+        &mut self,
+        (chat_id, mut conversation): (String, PendingConversation),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        let document = project_conversation(&chat_id, &mut conversation, &self.hooks, report)?;
+        collect_media_sources(&conversation, &mut self.media_sources);
+        Some(document)
+    }
+
+    fn attachment_source(
+        &mut self,
+        attachment: &mut Attachment,
+    ) -> (AttachmentSource, Option<u64>) {
+        self.media_sources.next_source(attachment)
+    }
 }
 
 /// The run-summary counter for a chat that is not a conversation, or `None`
@@ -156,7 +172,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
 /// after 24 hours, and a Channel (`@newsletter`) is a one-way feed from a
 /// publisher. Neither has anyone in it to make a contact for, so neither is
 /// written, and each of its messages is counted so none is dropped silently.
-/// A reply to someone's Status is a message in the one-to-one chat with that
+/// A reply to someone's Status is a message in the one-to-one conversation with that
 /// person and is written as usual.
 fn skipped_chat_counter(jid: &str) -> Option<Counter> {
     if is_status_jid(jid) {
@@ -191,10 +207,10 @@ fn ingest_chat(
     copy_attachments: bool,
     media_search_roots: &[PathBuf],
     report: &mut ExportReport,
-) -> Option<(String, PendingConversation, Vec<IrParticipant>)> {
+) -> Option<(String, PendingConversation, Vec<Participant>)> {
     let group = is_group_jid(jid);
     let chat_id = chat_id_from_jid(jid);
-    let chat_name = chat.name.as_deref().and_then(message_ir::nonempty);
+    let chat_name = chat.name.as_deref().and_then(ir::nonempty);
     let group_title = if group { chat_name.clone() } else { None };
 
     let mut roster = Roster::new(owner);
@@ -211,8 +227,8 @@ fn ingest_chat(
     let mut pending = PendingConversation::new(chat_id.clone(), group, group_title, Vec::new());
     pending.extra.insert("whatsapp_jid".into(), jid.to_string());
 
-    for msg in chat.messages.values() {
-        let Some(ts_raw) = msg.timestamp else {
+    for message in chat.messages.values() {
+        let Some(ts_raw) = message.timestamp else {
             report.skipped_invalid_date += 1;
             continue;
         };
@@ -222,31 +238,33 @@ fn ingest_chat(
             continue;
         }
 
-        let is_from_me = msg.from_me;
-        let (sender_identity, sender_display_name) = if is_from_me {
-            (String::new(), None)
+        let is_from_me = message.from_me;
+        let sender = if is_from_me {
+            ir::Sender::default()
         } else if group {
-            let sender = Person::sender(msg);
+            let sender = Person::sender(message);
             let identity = sender
                 .identity
                 .as_ref()
-                .map(|(identity, _)| identity.clone())
-                .unwrap_or_default();
-            let name = sender.name.clone();
+                .map(|(identity, _)| identity.clone());
+            let display_name = sender.name.clone();
             roster.add(sender);
-            (identity, name)
+            ir::Sender::new(identity, display_name)
         } else {
-            (chat_id.clone(), chat_name.clone())
+            ir::Sender::new(Some(chat_id.clone()), chat_name.clone())
         };
 
-        let text = message_text(msg);
-        let (attachments, media_source) = match media_path(msg) {
+        // A group event the fork gives a text is an announcement with that
+        // text; its `data` is the backup's raw row (#2038).
+        let announcement = group_action(message);
+        let text = announcement.map_or_else(|| message_text(message), str::to_string);
+        let (attachments, media_source) = match media_path(message) {
             Some(src) => queue_media(
                 src,
                 chat.media_base.as_deref(),
                 media_search_roots,
                 copy_attachments,
-                msg,
+                message,
                 report,
             ),
             None => (Vec::new(), None),
@@ -255,29 +273,36 @@ fn ingest_chat(
         pending.messages.push(PendingMessage {
             sort_key: timestamp_ms(ts_raw),
             is_from_me,
-            sender_identity,
-            sender_display_name,
+            sender,
             text,
             attachments,
             extra: {
                 let mut e = BTreeMap::new();
-                e.insert("key_id".into(), key_id_string(msg));
+                e.insert("key_id".into(), key_id_string(message));
                 e.insert(
                     "full_key_id".into(),
-                    key_string(msg.full_key_id.as_ref()).unwrap_or_default(),
+                    key_string(message.full_key_id.as_ref()).unwrap_or_default(),
                 );
-                if is_reply(msg) {
+                if announcement.is_some() {
+                    e.insert(IS_ANNOUNCEMENT.into(), "true".into());
+                }
+                if let Some(named_member_jid) =
+                    message.group_action_jid.as_deref().and_then(ir::trimmed)
+                {
+                    e.insert(GROUP_ACTION_JID.into(), named_member_jid.to_string());
+                }
+                if is_reply(message) {
                     e.insert("is_reply".into(), "true".into());
                 }
-                if let Some(quoted) = key_string(msg.reply_key_id.as_ref()) {
+                if let Some(quoted) = key_string(message.reply_key_id.as_ref()) {
                     e.insert("reply_key_id".into(), quoted);
                 }
-                if let Some(reactions) = reactions_json(msg) {
+                if let Some(reactions) = reactions_json(message) {
                     e.insert("reactions".into(), reactions);
                 }
                 e.insert(
                     "is_sticker".into(),
-                    if msg.sticker { "true" } else { "false" }.into(),
+                    if message.sticker { "true" } else { "false" }.into(),
                 );
                 if let Some(path) = media_source {
                     e.insert("media_source".into(), path.to_string_lossy().into_owned());
@@ -292,7 +317,7 @@ fn ingest_chat(
     }
 
     // The phone numbers name an untitled group's file.
-    pending.participant_e164s = roster.numbers;
+    pending.participant_handles = roster.numbers;
     Some((chat_id, pending, roster.participants))
 }
 
@@ -304,7 +329,7 @@ struct Person {
     jid: Option<String>,
     /// What they are written as: the phone number of a phone id, or else
     /// the raw id, which the server types `other` because WhatsApp carries
-    /// no email address. The one-to-one chat with the same person writes the
+    /// no email address. The one-to-one conversation with the same person writes the
     /// same id ([`Roster::add_peer`]), so both are one identity.
     identity: Option<(String, IdentityType)>,
     name: Option<String>,
@@ -312,7 +337,7 @@ struct Person {
 
 impl Person {
     fn new(jid: Option<&str>, name: Option<String>) -> Self {
-        let jid = jid.and_then(message_ir::nonempty);
+        let jid = jid.and_then(ir::nonempty);
         let identity = jid.as_deref().map(|jid| match phone_id_to_e164(jid) {
             Some(number) => (number, IdentityType::Phone),
             None => (jid.to_string(), IdentityType::Other),
@@ -338,13 +363,13 @@ impl Person {
     /// as a number, because its digits may be an `@lid` id's. The name is
     /// the first of `sender_contact_name`, `sender` when it is a name, and
     /// `sender_push_name`.
-    fn sender(msg: &MessageJson) -> Self {
+    fn sender(message: &MessageJson) -> Self {
         Self::new(
-            msg.sender_jid.get().map(String::as_str),
+            message.sender_jid.get().map(String::as_str),
             first_name([
-                msg.sender_contact_name.get().map(String::as_str),
-                msg.sender.as_deref().filter(|sender| is_a_name(sender)),
-                msg.sender_push_name.get().map(String::as_str),
+                message.sender_contact_name.get().map(String::as_str),
+                message.sender.as_deref().filter(|sender| is_a_name(sender)),
+                message.sender_push_name.get().map(String::as_str),
             ]),
         )
     }
@@ -352,7 +377,7 @@ impl Person {
 
 /// The first of `names` that is not blank, trimmed.
 fn first_name<const N: usize>(names: [Option<&str>; N]) -> Option<String> {
-    names.into_iter().flatten().find_map(message_ir::nonempty)
+    names.into_iter().flatten().find_map(ir::nonempty)
 }
 
 /// True when wtsexporter's `sender` holds a name rather than an id or the
@@ -372,7 +397,7 @@ fn is_a_name(sender: &str) -> bool {
 /// a member or sender with the owner's number is left out.
 struct Roster<'a> {
     owner: Option<&'a str>,
-    participants: Vec<IrParticipant>,
+    participants: Vec<Participant>,
     /// The phone numbers among `participants`, in the same order.
     numbers: Vec<String>,
     /// Index into `participants` of each person already added.
@@ -430,13 +455,14 @@ impl<'a> Roster<'a> {
         {
             self.numbers.push(number.clone());
         }
-        self.participants.push(IrParticipant {
+        self.participants.push(Participant {
             identity,
             display_name: name,
+            country: None,
         });
     }
 
-    /// A one-to-one chat's one participant, named by the chat. A chat whose
+    /// A one-to-one conversation's one participant, named by its WhatsApp chat. A chat whose
     /// id is not a phone id, such as an internal `@lid` id, has its raw id,
     /// which the server types `other` because WhatsApp carries no email
     /// address (#1671).
@@ -444,9 +470,10 @@ impl<'a> Roster<'a> {
         if jid_to_e164(jid).is_some() {
             self.numbers.push(chat_id.to_string());
         }
-        self.participants.push(IrParticipant {
+        self.participants.push(Participant {
             identity: Some(chat_id.to_string()),
             display_name: name,
+            country: None,
         });
     }
 
@@ -469,7 +496,7 @@ fn queue_media(
     media_base: Option<&str>,
     media_search_roots: &[PathBuf],
     copy_attachments: bool,
-    msg: &MessageJson,
+    message: &MessageJson,
     report: &mut ExportReport,
 ) -> (Vec<PendingAttachment>, Option<PathBuf>) {
     let name = Path::new(src)
@@ -477,7 +504,7 @@ fn queue_media(
         .map(|n| n.to_string_lossy().into_owned());
     let pending = PendingAttachment {
         rel_path: String::new(),
-        content_type: msg.mime.clone().unwrap_or_default(),
+        content_type: message.mime.clone().unwrap_or_default(),
         digest_sha256: None,
         name_hint: name,
         size_bytes: None,
@@ -498,13 +525,13 @@ fn queue_media(
 }
 
 /// Collect source paths in the same order attachments will appear on documents.
-fn collect_media_sources(convo: &PendingConversation, out: &mut Vec<Option<PathBuf>>) {
-    for msg in &convo.messages {
-        if msg.attachments.is_empty() {
+fn collect_media_sources(conversation: &PendingConversation, out: &mut AttachmentPaths) {
+    for message in &conversation.messages {
+        if message.attachments.is_empty() {
             continue;
         }
-        let source = msg.extra_str("media_source").to_string();
-        for _ in &msg.attachments {
+        let source = message.extra_str("media_source").to_string();
+        for _ in &message.attachments {
             out.push((!source.is_empty()).then(|| PathBuf::from(&source)));
         }
     }
@@ -529,7 +556,7 @@ fn resolve_media_file(
     let mut candidates: Vec<PathBuf> = Vec::new();
     if hint.is_absolute() {
         candidates.push(hint.to_path_buf());
-    } else if let Some(base) = media_base.and_then(message_ir::trimmed) {
+    } else if let Some(base) = media_base.and_then(ir::trimmed) {
         let base_path = Path::new(base);
         if base_path.is_absolute() {
             candidates.push(base_path.join(hint));
@@ -554,7 +581,7 @@ fn resolve_media_file(
 /// Allowed roots for media path checks (search roots plus an absolute `media_base`).
 fn allowed_media_roots(media_base: Option<&str>, media_search_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = media_search_roots.to_vec();
-    if let Some(base) = media_base.and_then(message_ir::trimmed) {
+    if let Some(base) = media_base.and_then(ir::trimmed) {
         let base_path = Path::new(base);
         if base_path.is_absolute() {
             roots.push(base_path.to_path_buf());
@@ -576,8 +603,8 @@ fn path_within_any(path: &Path, roots: &[PathBuf]) -> bool {
 }
 
 /// WhatsApp `key_id` as a string (empty when missing).
-fn key_id_string(msg: &MessageJson) -> String {
-    match &msg.key_id {
+fn key_id_string(message: &MessageJson) -> String {
+    match &message.key_id {
         Some(serde_json::Value::String(s)) => s.clone(),
         Some(v) => v.to_string(),
         None => String::new(),
@@ -587,8 +614,8 @@ fn key_id_string(msg: &MessageJson) -> String {
 /// The message's reactions as the conversation model carries them, serialized
 /// for the `reactions` extra the projection reads back; `None` when the
 /// message has none, or when they are not known.
-fn reactions_json(msg: &MessageJson) -> Option<String> {
-    let reactions: Vec<Reaction> = msg
+fn reactions_json(message: &MessageJson) -> Option<String> {
+    let reactions: Vec<Reaction> = message
         .reaction_details
         .as_deref()?
         .iter()
@@ -606,7 +633,7 @@ fn reactions_json(msg: &MessageJson) -> Option<String> {
 /// name is not an identity. The fork leaves a withdrawn reaction out, so an
 /// entry with no emoji is malformed and is dropped.
 fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
-    let emoji = reaction.emoji.as_deref().and_then(message_ir::trimmed)?;
+    let emoji = reaction.emoji.as_deref().and_then(ir::trimmed)?;
     let reactor_identity = if reaction.from_me {
         None
     } else {
@@ -624,11 +651,13 @@ fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
     })
 }
 
-/// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
+/// WhatsApp deltas of the shared [`ir::project_pending`] projection.
 struct WhatsappProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// Each conversation's participants, by chat id.
-    rosters: BTreeMap<String, Vec<IrParticipant>>,
+    rosters: BTreeMap<String, Vec<Participant>>,
 }
 
 impl ProjectionHooks for WhatsappProjection {
@@ -636,12 +665,27 @@ impl ProjectionHooks for WhatsappProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
-        IrService::Whatsapp
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Whatsapp
     }
 
     fn sort_key_unit(&self) -> SortKeyUnit {
         SortKeyUnit::Milliseconds
+    }
+
+    /// [`MessageKind::Announcement`] for a group event with the fork's
+    /// text, which the server marks as an announcement; otherwise the
+    /// default.
+    fn message_kind(&self, message: &PendingMessage) -> MessageKind {
+        if message.extra_flag(IS_ANNOUNCEMENT) {
+            MessageKind::Announcement
+        } else {
+            ir::default_message_kind(message)
+        }
     }
 
     /// Same-millisecond rows fall back to `key_id` so output order is stable.
@@ -653,49 +697,53 @@ impl ProjectionHooks for WhatsappProjection {
 
     /// None: whether a media file was found must leave the GUID unchanged,
     /// and `key_id` already tells WhatsApp messages apart.
-    fn attachment_digests(&self, _msg: &PendingMessage) -> Vec<String> {
+    fn attachment_digests(&self, _message: &PendingMessage) -> Vec<String> {
         Vec::new()
     }
 
     /// `key_id`: it tells WhatsApp messages apart, including same-millisecond
     /// messages with identical text.
-    fn vendor_key(&self, msg: &PendingMessage) -> Option<String> {
-        message_ir::trimmed(msg.extra_str("key_id")).map(str::to_string)
+    fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
+        ir::trimmed(message.extra_str("key_id")).map(str::to_string)
     }
 
     /// `full_key_id`, the whole id a reply names in its `reply_key_id`.
     /// `key_id` is not used: on an iPhone it is a 17-character prefix that
     /// two messages can share.
-    fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
-        message_ir::trimmed(msg.extra_str("full_key_id")).map(str::to_string)
+    fn reply_key(&self, message: &PendingMessage) -> Option<String> {
+        ir::trimmed(message.extra_str("full_key_id")).map(str::to_string)
     }
 
     /// A message that quotes another, linked by `reply_key_id` to the message
     /// of the same chat whose `full_key_id` it equals. A reply from a JSON
     /// with no `reply_key_id` is still a reply, with no link.
-    fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
-        (msg.extra_str("is_reply") == "true").then(|| PendingReply {
-            quoted_key: message_ir::trimmed(msg.extra_str("reply_key_id")).map(str::to_string),
+    fn reply(&self, message: &PendingMessage) -> Option<PendingReply> {
+        (message.extra_str("is_reply") == "true").then(|| PendingReply {
+            quoted_key: ir::trimmed(message.extra_str("reply_key_id")).map(str::to_string),
         })
     }
 
     /// The reactions `ingest_chat` read from the fork's `reaction_details`,
     /// each under the reactor's WhatsApp id ([`reaction_from_json`]).
-    fn reactions(&self, msg: &PendingMessage) -> Vec<Reaction> {
-        match msg.extra.get("reactions") {
+    fn reactions(&self, message: &PendingMessage) -> Vec<Reaction> {
+        match message.extra.get("reactions") {
             Some(json) => serde_json::from_str(json).expect("reactions written by ingest_chat"),
             None => Vec::new(),
         }
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
-        IrAttachment {
+    fn attachment_to_ir(
+        &self,
+        attachment: &PendingAttachment,
+        message: &PendingMessage,
+    ) -> Attachment {
+        Attachment {
             // No path yet: the writer sets it when it stages the file.
             path: None,
-            original_name: att.name_hint.clone(),
-            mime_type: att.mime_type(),
-            digest_sha256: att.digest_sha256.clone(),
-            is_sticker: msg.extra_flag("is_sticker"),
+            original_name: attachment.name_hint.clone(),
+            mime_type: attachment.mime_type(),
+            digest_sha256: attachment.digest_sha256.clone(),
+            is_sticker: message.extra_flag("is_sticker"),
             transcription: None,
             sticker_effect: None,
             size_bytes: None,
@@ -705,19 +753,20 @@ impl ProjectionHooks for WhatsappProjection {
     }
 
     /// The participants [`ingest_chat`] gathered for the chat ([`Roster`]).
-    fn participants(&self, chat_id: &str, _convo: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(&self, chat_id: &str, _conversation: &PendingConversation) -> Vec<Participant> {
         self.rosters.get(chat_id).cloned().unwrap_or_default()
     }
 
-    fn group_title(&self, convo: &PendingConversation) -> Option<String> {
-        convo.display_name.clone()
+    fn group_title(&self, conversation: &PendingConversation) -> Option<String> {
+        conversation.display_name.clone()
     }
 
-    fn packaging_stem_suffix(&self, _convo: &PendingConversation) -> Option<String> {
+    fn packaging_stem_suffix(&self, _conversation: &PendingConversation) -> Option<String> {
         Some("__whatsapp".into())
     }
 
-    /// The chat's `jid` and the message's `key_id`: raw values the
+    /// The chat's `jid`, the message's `key_id` and, on a group event, the
+    /// `group_action_jid` of the member its text names: raw values the
     /// conversation model has no place for. A reply is not copied here,
     /// because `reply_to` records it on the message. A reply whose quoted
     /// message is not in the export keeps no quoted id: `reply_to` names
@@ -725,23 +774,34 @@ impl ProjectionHooks for WhatsappProjection {
     /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
     /// here: `reactions` records each on the message, and the fork's
     /// name-to-emoji `reactions` map is not read at all.
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
-        let whatsapp_jid = convo.extra_str("whatsapp_jid");
+        let whatsapp_jid = conversation.extra_str("whatsapp_jid");
         if !whatsapp_jid.is_empty() {
             fields.insert(
                 "jid".into(),
                 serde_json::Value::String(whatsapp_jid.to_string()),
             );
         }
-        let key_id = msg.extra_str("key_id");
+        let key_id = message.extra_str("key_id");
         if !key_id.is_empty() {
             fields.insert(
                 "key_id".into(),
                 serde_json::Value::String(key_id.to_string()),
             );
         }
-        IrSource {
+        let named_member_jid = message.extra_str(GROUP_ACTION_JID);
+        if !named_member_jid.is_empty() {
+            fields.insert(
+                GROUP_ACTION_JID.into(),
+                serde_json::Value::String(named_member_jid.to_string()),
+            );
+        }
+        VendorFields {
             android_type: None,
             fields,
         }

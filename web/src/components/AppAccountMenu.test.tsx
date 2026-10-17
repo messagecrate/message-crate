@@ -3,6 +3,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { authModule } from "../test/providers";
 import { setupUser } from "../test/user";
 import AppAccountMenu from "./AppAccountMenu";
 
@@ -11,13 +12,11 @@ const profileState = vi.hoisted(() => ({
 }));
 const authState = vi.hoisted(() => ({ logout: vi.fn(async () => {}) }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile, loading: false, error: "" }),
 }));
 
-vi.mock("../lib/auth", () => ({
-  useAuth: () => ({ accountId: 7, token: "t", isAuthenticated: true, logout: authState.logout }),
-}));
+vi.mock("../hooks/useAuth", () => authModule({ logout: authState.logout }));
 
 afterEach(() => {
   cleanup();

@@ -132,14 +132,14 @@ The importer does not read it: discovery skips Contacts exports so they are neve
 These limitations come from the exported files. The importer cannot recover information that iMazing did not include:
 
 1. Outgoing rows do not contain the owner’s number or name.
-2. Many one-to-one chats use a display name as `Chat Session` instead of a phone number.
+2. Many one-to-one conversations use a display name as `Chat Session` instead of a phone number.
 3. A silent Messages group member has no phone, because no row pairs their display name with an address.
 4. WhatsApp has no complete group roster. Participants are inferred from senders.
 5. `Message Date` values do not contain a timezone.
 6. Long directory names and chat labels can end mid-name with `-`.
 7. The CSV attachment basename can differ from the filename on disk.
 8. Contacts can omit phone columns and retain a phone only in `Notes`.
-9. Replies and reactions are free text instead of structured records. Observed reaction timestamps use the US `M/D/YYYY` format.
+9. Replies and reactions are free text instead of structured records. A reaction line reads `<Name> reacted with <emoji> on <M/D/YYYY h:mm:ss AM/PM>`, with its time in the US form.
 10. Edited and deleted details are limited to rare columns and statuses such as `Recently deleted`.
-11. Group conversations have no stable group identifier. A group's key is made from its earliest message instead (see [design](/docs/developer/formats/imazing/design/#groups)). The key changes when the oldest messages are gone from the phone, for instance under **Keep Messages: 1 year**, or when an export covers only a date range. `Message Date` holds no time zone (item 5), so it also changes when two exports write the dates in different time zones. The group then comes in as a second conversation beside the first, with a second copy of the messages both exports hold. Groups that start with the same row are merged only when they have the same session name. Only one iMazing export has been measured, so the behaviour across two exports is reasoned, not observed.
+11. Group conversations have no stable group identifier. A group's key is made from its earliest message instead (see [design](/docs/developer/formats/imazing/design/#groups)). The key changes when the oldest messages are gone from the phone, for instance under **Keep Messages: 1 year**, or when an export covers only a date range. `Message Date` holds no time zone (item 5), so it also changes when two exports write the dates in different time zones. The group then comes in as a second conversation beside the first, with a second copy of the messages both exports hold. Groups that start with the same row are merged only when they have the same session name. Only one iMazing export has been measured, so the behavior across two exports is reasoned, not observed.
 12. `Sender ID` can contain an email address for an iMessage conversation.

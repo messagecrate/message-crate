@@ -3,10 +3,10 @@ import Button from "../../components/Button";
 import { GearIcon } from "../../components/icons";
 import NavGlyphButton from "../../components/NavGlyphButton";
 import ScrollingTableCard from "../../components/ScrollingTableCard";
+import { type ManagedAccount, useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { formatDateTime } from "../../lib/formatDate";
-import { tdClass, tdMuted } from "../settings/apiTokensUtils";
-import { rowStripe, thClass, thSeparator } from "./ownerTableStyles";
-import { type ManagedAccount, useOwnerAccounts } from "./useOwnerAccounts";
+import { tdClass, tdMutedClass } from "../settings/apiTokensUtils";
+import { rowStripeClass, thClass, thSeparatorClass } from "./ownerTableStyles";
 
 /** Columns the table has, which the "no match" row spans. */
 const COLUMN_COUNT = 4;
@@ -15,6 +15,17 @@ const COLUMN_COUNT = 4;
 function statusLabel(account: ManagedAccount): string {
   if (account.is_owner) return "Owner";
   return account.disabled ? "Disabled" : "Active";
+}
+
+/**
+ * Whether the Status column marks the account as having no password, so that
+ * once it is active anyone who knows its username logs in with an empty one.
+ * A disabled account is marked too, because once enabled it logs in with an
+ * empty password. The Demo Account is left out: it has no password by design
+ * (ADR 0016).
+ */
+function loginNeedsNoPassword(account: ManagedAccount): boolean {
+  return !account.has_password && !account.is_demo;
 }
 
 /** Whether the search bar's words are in the account's username or preferred name. */
@@ -29,6 +40,8 @@ function matches(account: ManagedAccount, needle: string): boolean {
  * The accounts of this Message Crate, the owner's own first.
  *
  * A row carries a username, a preferred name, a status and the last login.
+ * The status of an account with no password says so under it, so the owner
+ * sees every account open to an empty password.
  * The gear at the left of a row, shown while the pointer is in the row, opens
  * the account's Settings, which is where the rest is: the app it connects with
  * under Profile, what it holds under Storage, and its password, status and
@@ -61,11 +74,11 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {/* The gear column has no heading; each gear is labelled with its account. */}
+              {/* The gear column has no heading; each gear is labeled with its account. */}
               <td className="w-6 py-2 pl-3" />
               <th className={thClass}>User</th>
-              <th className={`${thClass} ${thSeparator}`}>Status</th>
-              <th className={`${thClass} ${thSeparator}`}>Last login</th>
+              <th className={`${thClass} ${thSeparatorClass}`}>Status</th>
+              <th className={`${thClass} ${thSeparatorClass}`}>Last login</th>
             </tr>
           </thead>
           <tbody>
@@ -74,7 +87,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
               return (
                 <tr
                   key={account.account_id}
-                  className={`group border-t border-border ${rowStripe}`}
+                  className={`group border-t border-border ${rowStripeClass}`}
                 >
                   <td className="w-6 py-2 pl-3 align-middle">
                     <NavGlyphButton
@@ -82,7 +95,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                       onClick={() => navigate(`/owner/accounts/${account.account_id}`)}
                       className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     >
-                      <GearIcon size={15} />
+                      <GearIcon size={15} className="shrink-0" />
                     </NavGlyphButton>
                   </td>
                   <td className={`${tdClass} whitespace-nowrap`}>
@@ -91,8 +104,13 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                       <div className="text-[0.75rem] text-muted">{preferredName}</div>
                     ) : null}
                   </td>
-                  <td className={account.disabled ? tdClass : tdMuted}>{statusLabel(account)}</td>
-                  <td className={`${tdMuted} whitespace-nowrap`}>
+                  <td className={account.disabled ? tdClass : tdMutedClass}>
+                    <div>{statusLabel(account)}</div>
+                    {loginNeedsNoPassword(account) ? (
+                      <div className="text-[0.75rem] text-warn-soft-text">No password</div>
+                    ) : null}
+                  </td>
+                  <td className={`${tdMutedClass} whitespace-nowrap`}>
                     {account.last_login_at ? formatDateTime(account.last_login_at) : "Never"}
                   </td>
                 </tr>
@@ -100,7 +118,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
             })}
             {shown.length === 0 && needle ? (
               <tr className="border-t border-border">
-                <td className={tdMuted} colSpan={COLUMN_COUNT}>
+                <td className={tdMutedClass} colSpan={COLUMN_COUNT}>
                   No account matches “{filter.trim()}”.
                 </td>
               </tr>

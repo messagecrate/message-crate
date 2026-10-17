@@ -1,11 +1,15 @@
-import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import {
+  useMarkAccountStale,
+  useRouteCache,
+  useRouteMutation,
+  useRouteQuery,
+} from "../../hooks/useRouteQuery";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { parseSelectKey } from "../../lib/selectKey";
 import { getDemoAccount, replaceDemoAccount } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
@@ -20,7 +24,7 @@ const SIZE_LABEL: Record<DemoDataSize, string> = {
 };
 
 /** How often the card asks the server whether a build has ended. */
-const BUILD_POLL_MS = 1500;
+export const BUILD_POLL_MS = 1500;
 
 /**
  * Add the Demo Account, or reset it.
@@ -32,6 +36,7 @@ const BUILD_POLL_MS = 1500;
  */
 export function DemoAccountCard() {
   const cache = useRouteCache();
+  const markAccountStale = useMarkAccountStale();
   const demo = useRouteQuery(keys.demoAccount.all, (signal) => getDemoAccount({ signal }), {
     refetchInterval: (query) => (query.state.data?.status === "building" ? BUILD_POLL_MS : false),
     // A build outlasts a glance at another tab, and the page should be right
@@ -40,13 +45,12 @@ export function DemoAccountCard() {
   });
   const [size, setSize] = useState<DemoDataSize>("medium");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const build = useMutation({
+  const build = useRouteMutation({
     mutationFn: (chosen: DemoDataSize) => replaceDemoAccount({ size: chosen }),
     onSuccess: (started) => {
       cache.set(keys.demoAccount.all, started);
       setConfirmOpen(false);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 
   // When a build ends, the account list, the storage counts and the login
@@ -57,16 +61,16 @@ export function DemoAccountCard() {
   const wasBuilding = useRef(false);
   useEffect(() => {
     if (wasBuilding.current && status !== undefined && status !== "building") {
-      cache.invalidateAccount();
+      markAccountStale();
     }
     wasBuilding.current = status === "building";
-  }, [status, cache]);
+  }, [status, markAccountStale]);
 
   if (demo.isPending) return null;
   if (demo.error || !demo.data) {
     return (
       <p className="mt-4 text-[0.875rem] text-danger">
-        {apiErrorMessage(demo.error, "Could not load the Demo Account.")}
+        {errorLine(demo.error, "Could not load the Demo Account.")}
       </p>
     );
   }
@@ -130,7 +134,7 @@ export function DemoAccountCard() {
       ) : null}
       {build.error && !confirmOpen ? (
         <p className="mt-2 mb-0 text-[0.813rem] text-danger" role="alert">
-          {apiErrorMessage(build.error, "Could not start the build.")}
+          {errorLine(build.error, "Could not start the build.")}
         </p>
       ) : null}
 
@@ -140,7 +144,7 @@ export function DemoAccountCard() {
         body="This removes the Demo Account with everything visitors changed in it, and builds it again. No other account is touched."
         confirmLabel="Reset Demo Account"
         busy={build.isPending}
-        error={build.error ? apiErrorMessage(build.error, "Could not start the build.") : ""}
+        error={build.error ? errorLine(build.error, "Could not start the build.") : ""}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => build.mutate(size)}
       />

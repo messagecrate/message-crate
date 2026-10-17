@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use super::*;
-use crate::db::engine;
+use crate::db::{engine, schema};
 use crate::progress::Progress;
-use crate::test_support::MessageRow;
+use crate::test_support::{ConversationRow, MessageRow, stored_time};
 
 #[test]
 fn normalize_collapses_whitespace() {
@@ -11,7 +11,7 @@ fn normalize_collapses_whitespace() {
 }
 
 #[test]
-fn group_chat_identity_is_sorted_handles() {
+fn group_conversation_identity_is_sorted_handles() {
     let handles = vec![
         "+14075550105".to_string(),
         "+14075550104".to_string(),
@@ -70,7 +70,7 @@ fn the_content_key_is_the_message_identity_at_whole_seconds() {
         &[],
     )
     .unwrap();
-    let identity = message_ir::MessageIdentity {
+    let identity = ir::MessageIdentity {
         chat: "+14075550106",
         is_from_me: false,
         sender: Some("+14075550106"),
@@ -79,8 +79,8 @@ fn the_content_key_is_the_message_identity_at_whole_seconds() {
         attachment_digests: &[],
         vendor_key: None,
     };
-    assert_eq!(key, identity.key(message_ir::TimePrecision::Seconds));
-    assert_ne!(key, message_ir::MessageGuid::new(&identity).as_str());
+    assert_eq!(key, identity.key(ir::TimePrecision::Seconds));
+    assert_ne!(key, ir::MessageGuid::new(&identity).as_str());
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn parallel_content_keys_match_serial() {
             id: 1,
             conversation_id: 10,
             chat_id: "+14075550106".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             is_from_me: 1,
             timestamp: "2015-03-12T18:04:22.000Z".into(),
             body: Some("hi".into()),
@@ -119,10 +119,16 @@ fn parallel_content_keys_match_serial() {
     groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);
     let mut shas = HashMap::new();
     shas.insert(2, vec!["abc".into()]);
-    let parallel = hash_content_keys(&rows, &groups, &shas);
+    let inputs = ContentKeyInputs {
+        rows,
+        group_handles: groups,
+        shas_by_msg: shas,
+    };
+    let (rows, groups, shas) = (&inputs.rows, &inputs.group_handles, &inputs.shas_by_msg);
+    let parallel = hash_content_keys(&inputs);
     let serial: Vec<_> = rows
         .iter()
-        .filter_map(|row| content_key_for_row(row, &groups, &shas))
+        .filter_map(|row| content_key_for_row(row, groups, shas))
         .collect();
     // Both sides call `content_key_for_row`, so this alone only shows that the
     // parallel pass keeps its input order — worth having, and not enough. The
@@ -155,7 +161,7 @@ fn a_group_is_keyed_as_a_group_whatever_the_case_of_its_type() {
         chat_id: "chat-group".to_string(),
         conversation_type: conversation_type.to_string(),
         is_from_me: 0,
-        timestamp: "2015-03-12T18:04:23.000Z".to_string(),
+        timestamp: stored_time("2015-03-12T18:04:23.000Z").to_string(),
         body: Some("yo".to_string()),
         sender_normalized: Some("+15555550128".to_string()),
     };
@@ -193,11 +199,7 @@ const TEST_ACCOUNT_ID: i64 = 7;
 
 async fn setup_db(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'test')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(conn, TEST_ACCOUNT_ID, "test").await;
     sqlx::query(
         r"
         INSERT INTO handles (account_id, raw, normalized, handle_type, service)
@@ -215,19 +217,9 @@ async fn setup_db(conn: &mut SqliteConnection) {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        r"
-        INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
-        )
-        VALUES ($1, $2, 'individual', NULL, 't.json')
-        ",
-    )
-    .bind(TEST_ACCOUNT_ID)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow::new(TEST_ACCOUNT_ID, handle_id)
+        .insert(conn)
+        .await;
 }
 
 #[tokio::test]
@@ -238,7 +230,7 @@ async fn fill_missing_content_keys_skips_rows_that_already_have_keys() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g-fill".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Need a key"),
         sort_order: 0,
@@ -279,7 +271,7 @@ async fn fill_missing_content_keys_writes_multiple_rows_in_one_batch() {
         MessageRow {
             source: "go-sms-pro",
             guid: Some(guid.into()),
-            timestamp: "2015-03-12T18:04:22.000Z",
+            timestamp: stored_time("2015-03-12T18:04:22.000Z"),
             is_from_me: true,
             body: Some(body),
             sort_order,
@@ -322,7 +314,7 @@ async fn dedupe_cross_source_does_not_rewrite_unchanged_keys() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g-once".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Once"),
         sort_order: 0,
@@ -340,6 +332,8 @@ async fn dedupe_cross_source_does_not_rewrite_unchanged_keys() {
     assert_eq!(second.keys_filled, 0);
 }
 
+/// Two sources hold the same message at the same stored time: the exact
+/// dedupe flags the copy from the source of lower priority.
 #[tokio::test]
 async fn integration_exact_flags_cross_source() {
     let (pool, _dir) = engine::test_pool().await;
@@ -348,7 +342,7 @@ async fn integration_exact_flags_cross_source() {
     let a = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -359,7 +353,7 @@ async fn integration_exact_flags_cross_source() {
     let b = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:22+00:00",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -401,7 +395,7 @@ async fn integration_near_flags_within_window() {
     let a = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 0,
@@ -412,7 +406,7 @@ async fn integration_near_flags_within_window() {
     let b = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:24.000Z",
+        timestamp: stored_time("2015-03-12T18:04:24.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 1,
@@ -448,7 +442,7 @@ async fn integration_negative_far_apart_not_flagged() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 0,
@@ -459,7 +453,7 @@ async fn integration_negative_far_apart_not_flagged() {
     MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:05:22.000Z",
+        timestamp: stored_time("2015-03-12T18:05:22.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 1,
@@ -496,7 +490,7 @@ async fn integration_priority_prefers_first_imported_source() {
     let first_imported = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Hello"),
         sort_order: 0,
@@ -507,7 +501,7 @@ async fn integration_priority_prefers_first_imported_source() {
     let second_imported = MessageRow {
         source: "go-sms-pro",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Hello"),
         sort_order: 1,
@@ -560,7 +554,7 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
         let first = MessageRow {
             source: "go-sms-pro",
             guid: Some("g1".into()),
-            timestamp: "2015-03-12T18:04:22.000Z",
+            timestamp: stored_time("2015-03-12T18:04:22.000Z"),
             is_from_me: false,
             body: Some("On my way"),
             sort_order: 0,
@@ -571,7 +565,7 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
         let second = MessageRow {
             source: "sms-backup-plus",
             guid: Some("g2".into()),
-            timestamp: second_timestamp,
+            timestamp: stored_time(second_timestamp),
             is_from_me: false,
             body: Some("On my way"),
             sort_order: 1,
@@ -627,7 +621,7 @@ async fn two_near_messages_from_one_source_are_both_kept() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("ok"),
         sort_order: 0,
@@ -638,7 +632,7 @@ async fn two_near_messages_from_one_source_are_both_kept() {
     let second = MessageRow {
         source: "go-sms-pro",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:23.000Z",
+        timestamp: stored_time("2015-03-12T18:04:23.000Z"),
         is_from_me: true,
         body: Some("ok"),
         sort_order: 1,
@@ -685,7 +679,7 @@ async fn identical_rows_from_one_source_are_both_kept() {
             MessageRow {
                 source: "go-sms-pro",
                 guid: Some(guid.into()),
-                timestamp: "2015-03-12T18:04:22.000Z",
+                timestamp: stored_time("2015-03-12T18:04:22.000Z"),
                 is_from_me: true,
                 body: Some("ok"),
                 sort_order: 0,
@@ -712,12 +706,12 @@ async fn sms_backup_plus_row(
     conn: &mut SqliteConnection,
     guid: &str,
     timestamp: &'static str,
-    precision: message_ir::TimePrecision,
+    precision: ir::TimePrecision,
 ) -> i64 {
     MessageRow {
         source: "sms-backup-plus",
         guid: Some(guid.into()),
-        timestamp,
+        timestamp: stored_time(timestamp),
         time_precision: precision,
         is_from_me: false,
         body: Some("On my way"),
@@ -740,14 +734,14 @@ async fn a_whole_second_message_is_the_duplicate_of_its_millisecond_twin_in_one_
         &mut conn,
         "g-whole",
         "2015-03-12T18:04:22.000Z",
-        message_ir::TimePrecision::Seconds,
+        ir::TimePrecision::Seconds,
     )
     .await;
     let exact = sms_backup_plus_row(
         &mut conn,
         "g-exact",
         "2015-03-12T18:04:22.250Z",
-        message_ir::TimePrecision::Milliseconds,
+        ir::TimePrecision::Milliseconds,
     )
     .await;
 
@@ -774,21 +768,21 @@ async fn a_millisecond_time_ending_in_000_is_not_whole_seconds() {
         &mut conn,
         "g-000",
         "2015-03-12T18:04:22.000Z",
-        message_ir::TimePrecision::Milliseconds,
+        ir::TimePrecision::Milliseconds,
     )
     .await;
     let later = sms_backup_plus_row(
         &mut conn,
         "g-250",
         "2015-03-12T18:04:22.250Z",
-        message_ir::TimePrecision::Milliseconds,
+        ir::TimePrecision::Milliseconds,
     )
     .await;
     let whole = sms_backup_plus_row(
         &mut conn,
         "g-whole",
         "2015-03-12T18:04:22.000Z",
-        message_ir::TimePrecision::Seconds,
+        ir::TimePrecision::Seconds,
     )
     .await;
 
@@ -819,7 +813,7 @@ async fn two_whole_second_messages_from_one_source_are_both_kept() {
                 &mut conn,
                 guid,
                 "2015-03-12T18:04:22.000Z",
-                message_ir::TimePrecision::Seconds,
+                ir::TimePrecision::Seconds,
             )
             .await,
         );
@@ -852,7 +846,7 @@ async fn an_exact_duplicate_across_three_sources_keeps_one() {
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp: "2015-03-12T18:04:22.000Z",
+                timestamp: stored_time("2015-03-12T18:04:22.000Z"),
                 is_from_me: true,
                 body: Some("Running late"),
                 sort_order: 0,
@@ -902,7 +896,7 @@ async fn a_near_duplicate_across_three_sources_keeps_one() {
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp,
+                timestamp: stored_time(timestamp),
                 is_from_me: true,
                 body: Some("Running late"),
                 sort_order: 0,
@@ -1022,7 +1016,7 @@ async fn the_same_words_from_two_group_members_are_never_near_duplicates() {
     let from_ann = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         sender_handle_id: Some(ann),
         body: Some("happy birthday!"),
@@ -1033,7 +1027,7 @@ async fn the_same_words_from_two_group_members_are_never_near_duplicates() {
     let from_bo = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:23.000Z",
+        timestamp: stored_time("2015-03-12T18:04:23.000Z"),
         is_from_me: false,
         sender_handle_id: Some(bo),
         body: Some("happy birthday!"),
@@ -1064,7 +1058,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
     let first = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -1075,7 +1069,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
     let second = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -1086,10 +1080,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
 
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES (8, 'another')")
-        .execute(&mut *other)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut other, 8, "another").await;
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
     let stats = crate::db::write_tx::commit_during(
         other,
@@ -1110,8 +1101,8 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
 // ---------------------------------------------------------------------------
 // Several conversations, handles, senders and attachments.
 //
-// Most tests above use the one 1:1 conversation `setup_db` makes and two or
-// three messages. The ones below build what a real database holds: 1:1 and group conversations, the same group
+// Most tests above use the single one-to-one conversation `setup_db` makes and two or
+// three messages. The ones below build what a real database holds: one-to-one and group conversations, the same group
 // under two chat identifiers (two exporters naming one group differently),
 // incoming group messages with a sender, and attachments.
 // ---------------------------------------------------------------------------
@@ -1146,21 +1137,12 @@ async fn handle(conn: &mut SqliteConnection, normalized: &str) -> i64 {
 /// A conversation of the test account whose chat handle is `chat`.
 async fn conversation(conn: &mut SqliteConnection, chat: &str, kind: &str) -> i64 {
     let chat_handle = handle(conn, chat).await;
-    sqlx::query_scalar(
-        r"
-        INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
-        )
-        VALUES ($1, $2, $3, NULL, 't.json')
-        RETURNING id
-        ",
-    )
-    .bind(TEST_ACCOUNT_ID)
-    .bind(chat_handle)
-    .bind(kind)
-    .fetch_one(&mut *conn)
+    ConversationRow {
+        conversation_type: kind,
+        ..ConversationRow::new(TEST_ACCOUNT_ID, chat_handle)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 async fn add_participant(conn: &mut SqliteConnection, conversation_id: i64, normalized: &str) {
@@ -1186,11 +1168,7 @@ async fn add_attachment(conn: &mut SqliteConnection, message_id: i64, sha: &str)
 
 async fn setup_account(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'test')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(conn, TEST_ACCOUNT_ID, "test").await;
 }
 
 async fn duplicate_of(conn: &mut SqliteConnection, id: i64) -> Option<i64> {
@@ -1225,7 +1203,7 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     let first = MessageRow {
         source: "imessage",
         guid: Some("a-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("look"),
@@ -1242,7 +1220,7 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     let twin = MessageRow {
         source: "sms-backup-plus",
         guid: Some("b-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("look"),
@@ -1282,7 +1260,7 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     let first = MessageRow {
         source: "imessage",
         guid: Some("a-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("dinner at 7?"),
@@ -1300,7 +1278,7 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     let twin = MessageRow {
         source: "sms-backup-plus",
         guid: Some("b-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("dinner at 7?"),
@@ -1342,7 +1320,7 @@ async fn the_holders_own_address_does_not_change_a_groups_content_key() {
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp: "2015-03-12T18:04:22.000Z",
+                timestamp: stored_time("2015-03-12T18:04:22.000Z"),
                 is_from_me: true,
                 sender_handle_id: None,
                 body: Some("dinner at 7?"),
@@ -1369,12 +1347,12 @@ async fn received_notes_to_yourself(
     later_timestamp: &str,
 ) -> (i64, i64) {
     setup_account(conn).await;
-    let notes = conversation(conn, "+15555550199", "individual").await;
+    let notes = conversation(conn, "+15555550199", "one-to-one").await;
     let holder = handle(conn, "+15555550199").await;
     let before_link = MessageRow {
         source: "imazing",
         guid: Some("a-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         sender_handle_id: Some(holder),
         body: Some("buy milk"),
@@ -1386,7 +1364,7 @@ async fn received_notes_to_yourself(
     let after_link = MessageRow {
         source: "imessage",
         guid: Some("b-1".into()),
-        timestamp: later_timestamp,
+        timestamp: stored_time(later_timestamp),
         is_from_me: false,
         sender_handle_id: None,
         body: Some("buy milk"),
@@ -1446,7 +1424,7 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
         let (pool, _dir) = engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         setup_account(&mut conn).await;
-        let peer = conversation(&mut conn, "+14075550106", "individual").await;
+        let peer = conversation(&mut conn, "+14075550106", "one-to-one").await;
         let mut ids = Vec::new();
         // An exact twin (same second) and a near-time twin (one second apart).
         for (source, guid, timestamp, body) in [
@@ -1469,7 +1447,7 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
                 MessageRow {
                     source,
                     guid: Some(guid.into()),
-                    timestamp,
+                    timestamp: stored_time(timestamp),
                     is_from_me: true,
                     sender_handle_id: None,
                     body: Some(body),
@@ -1484,13 +1462,15 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
             .unwrap();
         assert_eq!((stats.exact_flagged, stats.near_flagged), (1, 1));
 
-        sqlx::query(&format!("CREATE TEMP TABLE {broken_table} (id BIGINT)"))
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE TEMP TABLE {broken_table} (id BIGINT)"
+        )))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
         let result = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log).await;
         assert!(result.is_err(), "{broken_table}: the pass should fail");
-        sqlx::query(&format!("DROP TABLE {broken_table}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {broken_table}")))
             .execute(&mut *conn)
             .await
             .unwrap();
@@ -1553,7 +1533,7 @@ struct GenChat {
     senders: Vec<i64>,
 }
 
-/// Build a database from `seed`: two 1:1 chats, one group under two chat
+/// Build a database from `seed`: two one-to-one conversations, one group under two chat
 /// identifiers, one smaller group. Each logical message is written by one
 /// to three sources (a source may write it twice), and each copy is an exact
 /// twin, a near-time twin (inside the window or one second past it), or a
@@ -1569,7 +1549,7 @@ async fn generate_database(conn: &mut SqliteConnection, seed: u64) -> Vec<i64> {
     let mut chats = Vec::new();
     for (i, peer) in GEN_PEOPLE.iter().take(2).enumerate() {
         chats.push(GenChat {
-            conversations: vec![conversation(conn, peer, "individual").await],
+            conversations: vec![conversation(conn, peer, "one-to-one").await],
             senders: vec![people[i]],
         });
     }
@@ -1629,7 +1609,7 @@ async fn generate_database(conn: &mut SqliteConnection, seed: u64) -> Vec<i64> {
             let id = MessageRow {
                 source,
                 guid: Some(format!("g-{guid}")),
-                timestamp: &timestamp,
+                timestamp: timestamp.clone(),
                 is_from_me: from_me,
                 sender_handle_id: sender,
                 body: Some(&copy_body),
@@ -1701,18 +1681,18 @@ async fn load_gen_rows(conn: &mut SqliteConnection) -> HashMap<i64, GenRow> {
     .fetch_all(&mut *conn)
     .await
     .unwrap();
-    let atts: Vec<(i64, String)> =
+    let attachment_digests: Vec<(i64, String)> =
         sqlx::query_as("SELECT message_id, sha256 FROM attachments ORDER BY message_id, sha256")
             .fetch_all(&mut *conn)
             .await
             .unwrap();
     let mut shas: HashMap<i64, Vec<String>> = HashMap::new();
-    for (id, sha) in atts {
+    for (id, sha) in attachment_digests {
         shas.entry(id).or_default().push(sha);
     }
     raw.into_iter()
         .map(
-            |(id, conversation_id, source, is_from_me, sender, ts, body, key, dup)| {
+            |(id, conversation_id, source, is_from_me, sender, rfc3339, body, key, dup)| {
                 let row = GenRow {
                     conversation_id,
                     source,
@@ -1722,7 +1702,7 @@ async fn load_gen_rows(conn: &mut SqliteConnection) -> HashMap<i64, GenRow> {
                     } else {
                         sender
                     },
-                    secs: parse_rfc3339_utc_secs(&ts).unwrap(),
+                    secs: parse_rfc3339_utc_secs(&rfc3339).unwrap(),
                     body: normalize_body(body.as_deref()),
                     attachments: shas.remove(&id).unwrap_or_default().join(","),
                     content_key: key,
@@ -1773,14 +1753,11 @@ fn survivor(rows: &HashMap<i64, GenRow>, id: i64, ctx: &str) -> i64 {
 async fn assert_dedupe_invariants(conn: &mut SqliteConnection, ctx: &str) {
     let rows = load_gen_rows(conn).await;
 
-    let expected: HashMap<i64, String> =
-        ContentKeyInputs::load(conn, TEST_ACCOUNT_ID, KeyScope::All)
-            .await
-            .unwrap()
-            .expect("the database has messages")
-            .hash()
-            .into_iter()
-            .collect();
+    let inputs = db::content_key_inputs(conn, TEST_ACCOUNT_ID, KeyScope::All)
+        .await
+        .unwrap()
+        .expect("the database has messages");
+    let expected: HashMap<i64, String> = hash_content_keys(&inputs).into_iter().collect();
     for (id, row) in &rows {
         assert_eq!(
             row.content_key.as_deref(),
@@ -1950,7 +1927,7 @@ async fn insert_ok_rows(
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp,
+                timestamp: stored_time(timestamp),
                 is_from_me: from_me,
                 body: Some("ok"),
                 sort_order,
@@ -2057,12 +2034,12 @@ async fn copy(
     conn: &mut SqliteConnection,
     source: &str,
     timestamp: &'static str,
-    precision: message_ir::TimePrecision,
+    precision: ir::TimePrecision,
     import_id: i64,
 ) -> i64 {
     MessageRow {
         source,
-        timestamp,
+        timestamp: stored_time(timestamp),
         time_precision: precision,
         body: Some("On my way"),
         import_id: Some(import_id),
@@ -2084,7 +2061,7 @@ async fn more_of_run(conn: &mut SqliteConnection, source: &str, import_id: i64, 
         let body = format!("{source} filler {i}");
         MessageRow {
             source,
-            timestamp,
+            timestamp: stored_time(timestamp),
             body: Some(&body),
             import_id: Some(import_id),
             ..MessageRow::new(TEST_ACCOUNT_ID, 1)
@@ -2094,8 +2071,8 @@ async fn more_of_run(conn: &mut SqliteConnection, source: &str, import_id: i64, 
     }
 }
 
-const SECONDS: message_ir::TimePrecision = message_ir::TimePrecision::Seconds;
-const MILLISECONDS: message_ir::TimePrecision = message_ir::TimePrecision::Milliseconds;
+const SECONDS: ir::TimePrecision = ir::TimePrecision::Seconds;
+const MILLISECONDS: ir::TimePrecision = ir::TimePrecision::Milliseconds;
 
 /// The copy with more attachments is shown, though the other is timed to
 /// the millisecond, came from the larger Import Run and from the source

@@ -1,7 +1,7 @@
 //! Full export pipeline (wtsexporter, then JSON convert); the desktop app calls
 //! it in process.
 
-use crate::emit::{ConvertRequest, convert_json};
+use crate::emit::{ConvertExportArgs, convert_export};
 use crate::ios_backup::{decrypt_if_encrypted, extract_bytes};
 use crate::owner::{owner_from_backup, owner_from_form};
 use crate::wtsexporter::{
@@ -10,25 +10,28 @@ use crate::wtsexporter::{
 };
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
-    ExportTransforms, ExporterConfig, RunResult, ScratchDir, SourceConfig, WHATSAPP_DIRECTORY,
-    WhatsappPlatform as CorePlatform, prepare_outputs,
+    ConvertRun, OutputConfig, RunContext, RunResult, ScratchDir, WHATSAPP_DIRECTORY,
+    WhatsappConfig, WhatsappPlatform as CorePlatform, prepare_outputs,
 };
-use message_staging::{Disk, check_headroom};
+use staging::{Disk, check_headroom};
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 
 /// Resolve JSON (via wtsexporter or `WhatsappConfig::json`), then convert.
 ///
 /// # Errors
 ///
-/// Returns an error when the source is not WhatsApp, the output directory is or
-/// holds what the run reads, wtsexporter cannot run, conversion fails, media
-/// processing fails for every candidate file, or the user cancels.
-pub fn run(config: &ExporterConfig) -> Result<RunResult> {
-    let SourceConfig::Whatsapp(source) = &config.source else {
-        bail!("whatsapp-exporter requires SourceConfig::Whatsapp");
-    };
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
+/// Returns an error when the output directory is or holds what the run
+/// reads, wtsexporter cannot run, conversion fails, media processing fails
+/// for every candidate file, or the user cancels.
+pub fn run(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &WhatsappConfig,
+) -> Result<RunResult> {
+    message_crate_core::check_cancel(&context.cancel)?;
     let mut messages = Vec::new();
 
     let platform = match source.platform {
@@ -36,12 +39,12 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         Some(CorePlatform::Ios) => Some(Platform::Ios),
         None => None,
     };
-    let input = config.primary_input().map(|p| p.to_path_buf());
+    let input = inputs.first().cloned();
 
     // The output is cleaned before it is written, so one that is or holds
     // what this run reads is refused first: the backup (the working directory
     // when none is named and wtsexporter runs) and a ready-made JSON.
-    let mut read_paths = config.inputs.clone();
+    let mut read_paths = inputs.to_vec();
     match &source.json {
         Some(json) => read_paths.push(json.clone()),
         None if input.is_none() => {
@@ -49,7 +52,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         }
         None => {}
     }
-    prepare_outputs(&read_paths, &config.output)?;
+    prepare_outputs(&read_paths, &output.directory)?;
 
     // The number typed on the form, under the server's handle key. Android's
     // only source; iPhone's fallback when the backup carries no owner key.
@@ -66,7 +69,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         backup_taken_at_unix_ms,
         work,
     } = if let Some(json) = &source.json {
-        // Allowed roots are only the backup input and the JSON parent — never
+        // Allowed roots are only the backup input and the JSON parent, never
         // the process CWD, which would let crafted paths copy arbitrary files.
         let mut media_roots = Vec::new();
         if let Some(path) = &input {
@@ -95,14 +98,14 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             None => env::current_dir().context("resolve current working directory")?,
         };
 
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let bin = resolve_wtsexporter()?;
-        let work = mark_output_and_make_work_directory(config)?;
+        message_crate_core::check_cancel(&context.cancel)?;
+        let bin = resolve_wtsexporter(output.media.tools.tools_dir())?;
+        let work = mark_output_and_make_work_directory(context, output)?;
         let json_out = work.path().join("result.json");
 
         // Cooperative only: cancel is checked before and after the external process.
         // Killing wtsexporter mid-run is not implemented.
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
+        message_crate_core::check_cancel(&context.cancel)?;
         let mut args = WtsexporterArgs {
             platform,
             input: input.clone(),
@@ -112,7 +115,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             wa: source.wa.clone(),
             media: source.media.clone(),
             db: source.db.clone(),
-            business: source.business,
+            is_business_app: source.is_business_app,
         };
         // Read before an encrypted backup's files are decrypted, which points
         // `args` at the decrypted copy, dated the moment it was made.
@@ -123,7 +126,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         // From a backup that is not encrypted, wtsexporter extracts them into
         // the work directory itself, so that disk is checked for room first.
         if platform == Platform::Ios {
-            if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)? {
+            if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), context)? {
                 args.read_decrypted(decrypted);
             } else if extracts_ios_backup(&args)?
                 && let Some(bytes) = extract_bytes(source)?
@@ -131,16 +134,16 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
                 check_headroom(work.path(), bytes, Disk::Scratch)?;
             }
         }
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let log = run_wtsexporter(&bin, &args, &json_out, config.log.as_ref())?;
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
+        message_crate_core::check_cancel(&context.cancel)?;
+        let log = run_wtsexporter(&bin, &args, &json_out, &context.log)?;
+        message_crate_core::check_cancel(&context.cancel)?;
 
         if !log.trim().is_empty() {
             let trimmed = log.trim_end_matches('\n');
             messages.push(trimmed.to_string());
         }
 
-        let kept = config.output.join("wtsexporter_result.json");
+        let kept = output.directory.join("wtsexporter_result.json");
         fs::copy(&json_out, &kept).with_context(|| format!("copy JSON to {}", kept.display()))?;
 
         // Work directory (wtsexporter extract) + backup input. The backup input is the
@@ -154,7 +157,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             // dir, preferences plist included; a backup someone extracted by
             // hand has it under the input directory. The form's number covers a
             // backup that carries no owner key (the Business app, a moved key).
-            Platform::Ios => match owner_from_backup(&media_roots, &mut messages).or(form_owner) {
+            Platform::Ios => match owner_from_backup(&media_roots, &context.log).or(form_owner) {
                 Some(owner) => owner,
                 None => bail!(
                     "the backup does not contain your WhatsApp phone number; \
@@ -182,25 +185,20 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         bail!("JSON not found: {}", json_path.display());
     }
 
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
-    let transforms = ExportTransforms::from_config(config);
-    let needs_media_tools = transforms.needs_media_tools();
-    let report = convert_json(ConvertRequest {
+    message_crate_core::check_cancel(&context.cancel)?;
+    let convert_run = ConvertRun::new(context, output);
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
-        output: &config.output,
-        transforms,
+        output: &output.directory,
         media_search_roots: &media_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        output_format: config.output_format,
-        cancel: config.cancel.as_ref(),
-        resume: config.resume,
-        issues: config.issues.as_ref(),
+        convert_run,
     })?;
     // The work directory goes once the conversion has copied the media.
     drop(work);
 
-    let mut result = message_crate_core::finish_run(config, &report, needs_media_tools)?;
+    let mut result = message_crate_core::finish_run(output, &report);
     messages.append(&mut result.messages);
     result.messages = messages;
     Ok(result)
@@ -273,18 +271,23 @@ pub(crate) fn backup_taken_at_unix_ms(args: &WtsexporterArgs) -> Option<i64> {
 ///
 /// Returns an error when the output cannot be read or marked, holds files and
 /// no sentinel, or the work directory cannot be made.
-fn mark_output_and_make_work_directory(config: &ExporterConfig) -> Result<ScratchDir> {
-    if !config.resume {
-        message_ir_format::mark_export_directory(&config.output)?;
+fn mark_output_and_make_work_directory(
+    context: &RunContext,
+    output: &OutputConfig,
+) -> Result<ScratchDir> {
+    if !output.resume {
+        ir_format::mark_export_directory(&output.directory)?;
     }
-    ScratchDir::create(&config.scratch_dir.join(WHATSAPP_DIRECTORY))
+    ScratchDir::create(&context.scratch_dir.join(WHATSAPP_DIRECTORY))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::wtsexporter::WtsexporterArgs;
-    use message_crate_core::testutil::jsonl_run_config;
-    use message_crate_core::{ExporterConfig, SourceConfig, WhatsappConfig};
+    use message_crate_core::{
+        WhatsappConfig,
+        testutil::{TestRun, jsonl_test_run},
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -315,16 +318,16 @@ mod tests {
             // A directory above the backup named as the input.
             (vec![backup.as_path()], tmp.path().to_path_buf()),
         ] {
-            let config = jsonl_run_config(
+            let config = jsonl_test_run(
                 &inputs,
                 &output,
-                SourceConfig::Whatsapp(WhatsappConfig {
+                WhatsappConfig {
                     json: Some(json.clone()),
                     ..WhatsappConfig::default()
-                }),
+                },
             );
             let before = entries(&output);
-            let err = crate::run(&config).unwrap_err().to_string();
+            let err = config.run(crate::run).unwrap_err().to_string();
             assert!(
                 err.contains("must not be the same as, or contain, the input"),
                 "{}: {err}",
@@ -341,19 +344,15 @@ mod tests {
     }
 
     /// An empty output directory `out` in a new temporary directory, and a
-    /// WhatsApp run's config that writes into it, with its Scratch Directory
-    /// at `scratch` beside it.
-    fn empty_whatsapp_output() -> (tempfile::TempDir, PathBuf, ExporterConfig) {
+    /// WhatsApp run that writes into it, with its Scratch Directory at
+    /// `scratch` beside it.
+    fn empty_whatsapp_output() -> (tempfile::TempDir, PathBuf, TestRun<WhatsappConfig>) {
         let tmp = tempfile::tempdir().unwrap();
         let output = tmp.path().join("out");
         fs::create_dir_all(&output).unwrap();
-        let mut config = jsonl_run_config(
-            &[],
-            &output,
-            SourceConfig::Whatsapp(WhatsappConfig::default()),
-        );
-        config.scratch_dir = tmp.path().join("scratch");
-        (tmp, output, config)
+        let mut test_run = jsonl_test_run(&[], &output, WhatsappConfig::default());
+        test_run.context.scratch_dir = tmp.path().join("scratch");
+        (tmp, output, test_run)
     }
 
     /// The work directory, which holds WhatsApp's data in the clear, is made
@@ -364,21 +363,23 @@ mod tests {
     /// run lets go of it (#1651).
     #[test]
     fn the_work_directory_is_made_under_the_scratch_directory_not_the_output() {
-        let (_tmp, output, config) = empty_whatsapp_output();
+        let (_tmp, output, test_run) = empty_whatsapp_output();
 
-        let work = super::mark_output_and_make_work_directory(&config).unwrap();
+        let work = super::mark_output_and_make_work_directory(&test_run.context, &test_run.output)
+            .unwrap();
 
-        let root = config
+        let root = test_run
+            .context
             .scratch_dir
             .join(message_crate_core::WHATSAPP_DIRECTORY);
         assert_eq!(work.path().parent(), Some(root.as_path()));
         assert_eq!(
             entries(&output),
-            [message_ir_format::EXPORT_SENTINEL.to_string()],
+            [ir_format::EXPORT_SENTINEL.to_string()],
             "only the mark is in the output"
         );
         fs::write(output.join("wtsexporter_result.json"), "{}").unwrap();
-        message_ir_format::clean_previous_ir_output(&output).unwrap();
+        ir_format::clean_previous_ir_output(&output).unwrap();
 
         let path = work.path().to_path_buf();
         drop(work);
@@ -389,11 +390,12 @@ mod tests {
     /// wtsexporter run that fails afterwards has not deleted it.
     #[test]
     fn making_the_work_directory_keeps_an_earlier_export() {
-        let (_tmp, output, config) = empty_whatsapp_output();
-        message_ir_format::mark_export_directory(&output).unwrap();
+        let (_tmp, output, test_run) = empty_whatsapp_output();
+        ir_format::mark_export_directory(&output).unwrap();
         fs::write(output.join("earlier.jsonl"), "{}").unwrap();
 
-        let _work = super::mark_output_and_make_work_directory(&config).unwrap();
+        let _work = super::mark_output_and_make_work_directory(&test_run.context, &test_run.output)
+            .unwrap();
 
         assert!(output.join("earlier.jsonl").is_file());
     }
@@ -409,7 +411,7 @@ mod tests {
             wa: None,
             media: None,
             db: None,
-            business: false,
+            is_business_app: false,
         }
     }
 

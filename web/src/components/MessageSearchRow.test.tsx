@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../lib/types";
 import { attachment, message as baseMessage, participant } from "../test/apiShapes";
+import { nth } from "../test/nth";
 import { inTimeZone } from "../test/timeZone";
 import MessageSearchRow from "./MessageSearchRow";
 
@@ -26,7 +27,7 @@ function message(over: Partial<Message> = {}): Message {
       conversation_type: "group",
       is_group: true,
       group_title: "Family",
-      label: "Family",
+      shown_title: "Family",
       participants: [
         participant({ name: "Alice", identity: "+15555550100" }),
         participant({ name: "Bob", identity: "+15555550120" }),
@@ -80,6 +81,17 @@ describe("MessageSearchRow", () => {
     expect(screen.getByTitle("2 attachments")).toHaveTextContent("📎 2");
   });
 
+  it("writes a large attachment count with a separator", () => {
+    renderRow(
+      message({
+        attachments: Array.from({ length: 1234 }, (_, i) =>
+          attachment({ original_name: `${i}.jpg` }),
+        ),
+      }),
+    );
+    expect(screen.getByTitle("1,234 attachments")).toHaveTextContent("📎 1,234");
+  });
+
   it("shows no sender for a received message that names none", () => {
     renderRow(message({ sender: null }));
     const row = screen.getByRole("button");
@@ -103,7 +115,7 @@ describe("MessageSearchRow", () => {
     expect(row).not.toHaveTextContent("Unsent");
   });
 
-  it('shows "Unsent" in place of the text of an Unsent message, in the muted colour', () => {
+  it('shows "Unsent" in place of the text of an Unsent message, in the muted color', () => {
     renderRow(
       message({
         deletion: "unsent",
@@ -295,10 +307,12 @@ describe("MessageSearchRow", () => {
     const lines = screen.getAllByText(/^Earlier version:/);
     expect(lines).toHaveLength(2);
     expect(lines[0]).toHaveTextContent("Earlier version: foo again");
-    expect(lines[1].textContent).toMatch(/^Earlier version: …/);
-    expect(lines[1].textContent).not.toContain("foo");
-    expect(lines[1].textContent).toMatch(/ bar$/);
-    expect([...lines[1].querySelectorAll("strong")].map((b) => b.textContent)).toEqual(["bar"]);
+    expect(nth(lines, 1).textContent).toMatch(/^Earlier version: …/);
+    expect(nth(lines, 1).textContent).not.toContain("foo");
+    expect(nth(lines, 1).textContent).toMatch(/ bar$/);
+    expect([...nth(lines, 1).querySelectorAll("strong")].map((b) => b.textContent)).toEqual([
+      "bar",
+    ]);
   });
 
   it("quotes no older version for a searched word the final text already shows", () => {

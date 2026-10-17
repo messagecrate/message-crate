@@ -8,8 +8,15 @@
 //! `-version` are never written; Gmail's `X-GM-THRID` and `X-Gmail-Labels`
 //! belong to Gmail, not the app, and are never written either.
 
+use crate::flat_eml::Datatype;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use ir::{
+    ConversationDocument, ConversationType, Direction, IdentityType, Message, MessageKind, trimmed,
+};
+use ir_format::{
+    MergedArchive, filename_stem, give_each_document_its_own_file, load_attachment_bytes,
+};
 use mail::{attachment_part, eml_file_name, text_body_part};
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address;
@@ -17,14 +24,9 @@ use mail_builder::headers::date::Date;
 use mail_builder::headers::text::Text;
 use mail_builder::mime::MimePart;
 use message_crate_core::{ATTACHMENTS_MISSING, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
-use message_ir::{
-    ConversationDocument, IdentityType, IrConversationType, IrDirection, IrMessage, IrMessageKind,
-    give_each_document_its_own_file, trimmed,
-};
-use message_ir_format::{MergedArchive, load_attachment_bytes};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::flat_eml::UNKNOWN_EMAIL_DOMAIN;
 
@@ -33,7 +35,7 @@ use crate::flat_eml::UNKNOWN_EMAIL_DOMAIN;
 const DOMAIN: &str = "sms-backup-plus.local";
 
 /// Writes the SMS and MMS of every conversation as SMS Backup+ mail. Hand it
-/// to [`message_ir_format::FormatSink::with_archive`] for
+/// to [`ir_format::FormatSink::with_archive`] for
 /// [`message_crate_core::OutputFormat::SmsBackupPlus`].
 #[derive(Debug, Clone, Copy)]
 pub struct SmsBackupPlusArchive {
@@ -54,51 +56,42 @@ impl SmsBackupPlusArchive {
 
 impl MergedArchive for SmsBackupPlusArchive {
     /// Write one directory per conversation that has an SMS or MMS, and count
-    /// every other message in `report`. Returns `output_dir`.
+    /// every other message in `report`.
     fn write(
         &self,
         output_dir: &Path,
         documents: &[ConversationDocument],
         report: &mut ExportReport,
-    ) -> Result<PathBuf> {
+    ) -> Result<()> {
         fs::create_dir_all(output_dir)
             .with_context(|| format!("create {}", output_dir.display()))?;
-        let mut kept = Vec::with_capacity(documents.len());
-        for doc in documents {
-            let messages: Vec<IrMessage> = doc
+        let directories = conversation_directories(documents)?;
+        for (document, directory) in documents.iter().zip(directories) {
+            let messages: Vec<Message> = document
                 .messages
                 .iter()
                 .filter(|message| message.is_sms_or_mms())
                 .cloned()
                 .collect();
-            let left_out = doc.messages.len() - messages.len();
+            let left_out = document.messages.len() - messages.len();
             if left_out > 0 {
                 report.bump(NOT_SMS_OR_MMS_LEFT_OUT, left_out as u64);
             }
-            if messages.is_empty() {
+            let Some(directory) = directory else {
                 continue;
-            }
-            kept.push(ConversationDocument {
-                schema_version: doc.schema_version,
-                export: doc.export.clone(),
-                conversation: doc.conversation.clone(),
-                messages,
-                packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
-            });
+            };
+            let kept = with_messages(document, messages);
+            self.write_conversation(output_dir, &directory, &kept, report)?;
         }
-        let mut docs: Vec<&mut ConversationDocument> = kept.iter_mut().collect();
-        give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
-        for doc in &kept {
-            self.write_conversation(output_dir, doc, report)?;
-        }
-        Ok(output_dir.to_path_buf())
+        Ok(())
     }
 
-    /// None: the archive writes only directories of `.eml` files, and the
-    /// next clean of the output directory removes every such directory as it
-    /// does the EML format's (`message_ir_format::clean_previous_ir_output`).
-    fn file_names(&self) -> Vec<String> {
-        Vec::new()
+    /// The directory of every conversation [`write`](Self::write) writes.
+    fn outputs(&self, documents: &[ConversationDocument]) -> Result<Vec<String>> {
+        Ok(conversation_directories(documents)?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn format_name(&self) -> &'static str {
@@ -106,20 +99,61 @@ impl MergedArchive for SmsBackupPlusArchive {
     }
 }
 
+/// For each of `documents`, in order, the name of the directory the archive
+/// writes it into, or `None` for a document with no SMS or MMS, which the
+/// archive leaves out. The names are told apart as the EML archive tells its
+/// own apart, so no two conversations share a directory. Only the
+/// conversations are copied, never their messages.
+///
+/// # Errors
+///
+/// Returns an error when two conversations would still share a directory.
+fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Option<String>>> {
+    let mut written: Vec<(usize, ConversationDocument)> = documents
+        .iter()
+        .enumerate()
+        .filter(|(_, document)| document.messages.iter().any(Message::is_sms_or_mms))
+        .map(|(index, document)| (index, with_messages(document, Vec::new())))
+        .collect();
+    let mut written_documents: Vec<&mut ConversationDocument> =
+        written.iter_mut().map(|(_, document)| document).collect();
+    give_each_document_its_own_file(&mut written_documents).map_err(anyhow::Error::msg)?;
+    let mut directories = vec![None; documents.len()];
+    for (index, document) in written {
+        directories[index] = Some(filename_stem(&document));
+    }
+    Ok(directories)
+}
+
+/// `document` with `messages` in place of its own. The directory names and the
+/// mail are both made from copies built here, so they come from the same
+/// conversation.
+fn with_messages(document: &ConversationDocument, messages: Vec<Message>) -> ConversationDocument {
+    ConversationDocument {
+        schema_version: document.schema_version,
+        export: document.export.clone(),
+        conversation: document.conversation.clone(),
+        messages,
+        packaging_stem_suffix: document.packaging_stem_suffix.clone(),
+    }
+}
+
 impl SmsBackupPlusArchive {
-    /// One directory of `.eml` files, named and ordered as the EML archive
+    /// Write the messages of `document` into the directory `directory` of
+    /// `output_dir`, one `.eml` each, named and ordered as the EML archive
     /// names and orders its own.
     fn write_conversation(
         &self,
         output_dir: &Path,
-        doc: &ConversationDocument,
+        directory: &str,
+        document: &ConversationDocument,
         report: &mut ExportReport,
     ) -> Result<()> {
-        let directory = output_dir.join(doc.filename_stem());
+        let directory = output_dir.join(directory);
         fs::create_dir_all(&directory)
             .with_context(|| format!("create {}", directory.display()))?;
-        let conversation = Conversation::of(doc);
-        let mut ordered: Vec<&IrMessage> = doc.messages.iter().collect();
+        let conversation = Conversation::of(document);
+        let mut ordered: Vec<&Message> = document.messages.iter().collect();
         ordered.sort_by(|a, b| {
             a.timestamp_unix_ms
                 .cmp(&b.timestamp_unix_ms)
@@ -139,7 +173,7 @@ impl SmsBackupPlusArchive {
     fn build_mail(
         &self,
         conversation: &Conversation<'_>,
-        message: &IrMessage,
+        message: &Message,
         output_dir: &Path,
         report: &mut ExportReport,
     ) -> Result<Vec<u8>> {
@@ -176,12 +210,20 @@ impl SmsBackupPlusArchive {
             attachments.push(attachment_part(mime, name, &bytes));
         }
         // An SMS that carries a file can only be told as an MMS.
-        let is_mms = message.message_kind == IrMessageKind::Mms || !attachments.is_empty();
+        let is_mms = message.message_kind == MessageKind::Mms || !attachments.is_empty();
         let android_type = match (is_mms, message.direction) {
-            (false, IrDirection::Incoming) => "1",
-            (false, IrDirection::Outgoing) => "2",
-            (true, IrDirection::Incoming) => "132",
-            (true, IrDirection::Outgoing) => "128",
+            (false, Direction::Incoming) => "1",
+            (false, Direction::Outgoing) => "2",
+            (true, Direction::Incoming) => "132",
+            (true, Direction::Outgoing) => "128",
+        };
+        // SMS Backup+ copies Android's `date`: milliseconds for an SMS, and
+        // seconds for an MMS, so an MMS goes out to the second.
+        let datatype = if is_mms { Datatype::Mms } else { Datatype::Sms };
+        let smssync_date = if datatype.dates_in_seconds() {
+            message.timestamp_unix_ms.div_euclid(1000)
+        } else {
+            message.timestamp_unix_ms
         };
         let (from, to) = conversation.envelope(message);
         let builder = MessageBuilder::new()
@@ -193,13 +235,10 @@ impl SmsBackupPlusArchive {
             .references(format!("{}@{DOMAIN}", conversation.thread))
             .header(
                 "X-smssync-datatype",
-                Text::new(if is_mms { "MMS" } else { "SMS" }),
+                Text::new(datatype.name().unwrap_or_default()),
             )
             .header("X-smssync-address", Text::new(conversation.address()))
-            .header(
-                "X-smssync-date",
-                Text::new(message.timestamp_unix_ms.to_string()),
-            )
+            .header("X-smssync-date", Text::new(smssync_date.to_string()))
             .header("X-smssync-type", Text::new(android_type))
             .header(
                 "X-smssync-backup-time",
@@ -223,7 +262,7 @@ impl SmsBackupPlusArchive {
 
 /// What every mail of one conversation shares.
 struct Conversation<'a> {
-    doc: &'a ConversationDocument,
+    document: &'a ConversationDocument,
     /// The other people's handles, the owner's left out. For a conversation
     /// keyed by a name, the name.
     peers: Vec<&'a str>,
@@ -236,14 +275,14 @@ struct Conversation<'a> {
 }
 
 impl<'a> Conversation<'a> {
-    fn of(doc: &'a ConversationDocument) -> Self {
-        let owner = doc
+    fn of(document: &'a ConversationDocument) -> Self {
+        let owner = document
             .export
             .owner_identity
             .as_deref()
             .and_then(trimmed)
             .map(handle_key);
-        let mut peers: Vec<&str> = doc
+        let mut peers: Vec<&str> = document
             .conversation
             .participants
             .iter()
@@ -258,16 +297,18 @@ impl<'a> Conversation<'a> {
         // instead of making `nameless:` a person's address (#1591).
         let mut name_only = false;
         if peers.is_empty()
-            && let Some(id) = trimmed(&doc.conversation.chat_identifier)
-                .filter(|id| *id != message_ir::NAMELESS_CHAT_ID)
+            && let Some(id) = trimmed(&document.conversation.chat_identifier)
+                .filter(|id| *id != ir::NAMELESS_CHAT_ID)
         {
-            let name = message_ir::name_of_chat_id(id);
+            let name = ir::name_of_chat_id(id);
             name_only = name.is_some();
             peers.push(name.unwrap_or(id));
         }
-        let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
+        let digest = hex::encode(Sha256::digest(
+            document.conversation.chat_identifier.as_bytes(),
+        ));
         Self {
-            doc,
+            document,
             peers,
             name_only,
             thread: digest[..32].to_string(),
@@ -275,7 +316,7 @@ impl<'a> Conversation<'a> {
     }
 
     fn is_group(&self) -> bool {
-        self.doc.conversation.conversation_type == IrConversationType::Group
+        self.document.conversation.conversation_type == ConversationType::Group
     }
 
     /// `X-smssync-address`: the peer, or a group's peers joined by `~` as
@@ -292,7 +333,7 @@ impl<'a> Conversation<'a> {
 
     /// The display name the roster gives `handle`, if any.
     fn display_name(&self, handle: &str) -> Option<&'a str> {
-        self.doc
+        self.document
             .conversation
             .participants
             .iter()
@@ -304,9 +345,10 @@ impl<'a> Conversation<'a> {
     /// Who a received message is from: its sender, or for a one-to-one
     /// message, which can only be from its one peer, that peer. `None` for a
     /// group message whose sender is unknown.
-    fn sender_of<'m>(&'m self, message: &'m IrMessage) -> Option<&'m str> {
+    fn sender_of<'m>(&'m self, message: &'m Message) -> Option<&'m str> {
         message
-            .sender_identity
+            .sender
+            .identity
             .as_deref()
             .and_then(trimmed)
             .or_else(|| {
@@ -326,27 +368,28 @@ impl<'a> Conversation<'a> {
     /// the importer never takes as a name, or plain `SMS` when no member has
     /// a number. The importer knows the mail by `X-smssync-type`, not by
     /// its subject.
-    fn subject(&self, message: &IrMessage) -> String {
+    fn subject(&self, message: &Message) -> String {
         let sender = self.sender_of(message);
         let named = match message.direction {
             // The mail of a conversation keyed by a name has no address, so
             // the importer keys it by the subject's name: every mail of it
             // names the conversation's name, whoever the source said wrote.
             _ if self.name_only => self.peers.first().map(|name| (*name).to_string()),
-            IrDirection::Incoming => sender.map(|handle| {
+            Direction::Incoming => sender.map(|handle| {
                 message
-                    .sender_display_name
+                    .sender
+                    .display_name
                     .as_deref()
                     .and_then(trimmed)
                     .or_else(|| self.display_name(handle))
                     .unwrap_or(handle)
                     .to_string()
             }),
-            IrDirection::Outgoing if !self.is_group() => self
+            Direction::Outgoing if !self.is_group() => self
                 .peers
                 .first()
                 .map(|peer| self.display_name(peer).unwrap_or(peer).to_string()),
-            IrDirection::Outgoing => None,
+            Direction::Outgoing => None,
         };
         let unnamed = || {
             self.peers.iter().find_map(|peer| {
@@ -363,15 +406,21 @@ impl<'a> Conversation<'a> {
 
     /// `From` and `To`: the sender to the owner for an incoming message,
     /// the owner to the peers for an outgoing one.
-    fn envelope(&self, message: &IrMessage) -> (Address<'static>, Address<'static>) {
+    fn envelope(&self, message: &Message) -> (Address<'static>, Address<'static>) {
         let owner_identity = message
             .owner_identity
             .as_deref()
             .and_then(trimmed)
-            .or_else(|| self.doc.export.owner_identity.as_deref().and_then(trimmed))
+            .or_else(|| {
+                self.document
+                    .export
+                    .owner_identity
+                    .as_deref()
+                    .and_then(trimmed)
+            })
             .unwrap_or("me");
         let owner_name = self
-            .doc
+            .document
             .export
             .owner_display_name
             .as_deref()
@@ -379,18 +428,19 @@ impl<'a> Conversation<'a> {
             .unwrap_or("Me");
         let owner = address(owner_identity, Some(owner_name));
         match message.direction {
-            IrDirection::Incoming => {
+            Direction::Incoming => {
                 // A group message whose sender is unknown keeps it unknown: an
                 // address no peer has, which the importer reads as no sender.
                 let sender = self.sender_of(message).unwrap_or("unknown");
                 let name = message
-                    .sender_display_name
+                    .sender
+                    .display_name
                     .as_deref()
                     .and_then(trimmed)
                     .or_else(|| self.display_name(sender));
                 (address(sender, name), owner)
             }
-            IrDirection::Outgoing => {
+            Direction::Outgoing => {
                 let peers: Vec<Address<'static>> = self
                     .peers
                     .iter()

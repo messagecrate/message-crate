@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const seeds = {
   lightHeader: "#112233",
@@ -11,7 +11,7 @@ const seeds = {
 };
 const shareString = "#112233,#445566,#778899,#aabbcc";
 
-vi.mock("../lib/ThemeProvider", () => ({
+vi.mock("./useTheme", () => ({
   useTheme: () => ({
     mode: "light",
     setMode: vi.fn(),
@@ -25,14 +25,20 @@ vi.mock("../lib/ThemeProvider", () => ({
   }),
 }));
 
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import ThemeSettings from "./ThemeSettings";
 
 function setClipboard(value: unknown) {
   Object.defineProperty(navigator, "clipboard", { value, configurable: true });
 }
 
+beforeEach(() => {
+  startFakeClock();
+});
+
 afterEach(() => {
   cleanup();
+  stopFakeClock();
   delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
@@ -45,7 +51,8 @@ describe("ThemeSettings share theme", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "This browser can't copy from this page. Select the color codes above and copy them.",
     );
     expect(screen.getByDisplayValue(shareString)).toBeInTheDocument();
@@ -58,7 +65,8 @@ describe("ThemeSettings share theme", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
     expect(writeText).toHaveBeenCalledWith(shareString);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

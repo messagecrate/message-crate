@@ -1,9 +1,10 @@
 //! The Audit Trail: what each user did on this Message Crate, and when.
 //!
 //! The record is three tables read as one list. `audit_entries` holds
-//! everything that has no record of its own: sessions, refused logins, and the
-//! owner's and holders' changes to accounts. Import Runs and Export Runs stay
-//! in `imports` and `exports` and are not copied. [`page`] reads all three in
+//! everything that has no record of its own: sessions, refused logins, the
+//! owner's and holders' changes to accounts, and the server closing an Export
+//! Run nobody closed. Import Runs and Export Runs stay in `imports` and
+//! `exports` and are not copied. [`page`] reads all three in
 //! time order, and adds a `session_ended` entry with the reason `expired` for
 //! each session that ran out with nothing to end it, so expiry needs no write.
 //!
@@ -15,16 +16,29 @@
 //! nothing here says what a message said or which conversation it was in
 //! (`docs/adr/0008-the-owner-holds-no-messages.md`,
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+//!
+//! An entry keeps the id of the request that wrote it
+//! ([`crate::request_id::current`]), so the owner finds that request's lines
+//! in the server's log by it. An entry written outside a request, by a server
+//! command or the first start's Demo Account build, keeps none (#2276).
+//!
+//! A refused login as a username no account holds keeps the username,
+//! trimmed, only when `require_valid_username` accepts it
+//! ([`record_refused_login`]), because a person whose browser fills the
+//! wrong field types their password there. Anything else is recorded with no
+//! username. A password that is also a valid username is still kept.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqliteConnection};
 
-use message_crate_api_types::{ExportQueryList, ExportStatus};
+use api_types::{ExportQueryList, ExportStatus};
 
+use crate::credentials::require_valid_username;
 use crate::db::account_profile;
 use crate::db::address_book::LoadMode;
+use crate::db::demo_account_build::DemoDataSize;
 use crate::db::exports::ExportScopeKind;
 use crate::db::imports::ImportStatus;
 use crate::db::permissions::Permission;
@@ -34,9 +48,6 @@ use crate::db::session_tokens::{AppKind, ConnectingApp};
 /// entry belongs to no one, so without a limit anyone who can reach the
 /// server could grow the record forever.
 pub const UNKNOWN_USERNAME_RETENTION_DAYS: i64 = 90;
-
-/// The longest username kept from a refused login: the username length limit.
-const MAX_TYPED_USERNAME_CHARS: usize = 128;
 
 /// What an entry records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -71,6 +82,17 @@ pub enum AuditAction {
     RegistrationOpened,
     /// The owner stopped strangers creating accounts.
     RegistrationClosed,
+    /// The owner changed the attachment size limit; `asset_max_bytes` is the
+    /// new limit.
+    AssetLimitChanged,
+    /// The Demo Account was added where there was none: a build started, by
+    /// the owner, the `reset-demo` command, or the server's first start;
+    /// `demo_data_size` is the set of Demo Data asked for.
+    DemoAccountAdded,
+    /// The Demo Account was reset: a build started, by the owner or the
+    /// `reset-demo` command, that removes it, with all it holds, and builds it
+    /// again; `demo_data_size` is the set of Demo Data asked for.
+    DemoAccountReset,
     /// The holder made an API token.
     ApiTokenCreated,
     /// The holder deleted an API token.
@@ -79,6 +101,9 @@ pub enum AuditAction {
     AddressBookLoaded,
     /// The holder exported the address book.
     AddressBookExported,
+    /// The server closed a running Export Run as `canceled`, removing its
+    /// list of messages; `reason` says why and `export_run_id` names the run.
+    ExportRunClosed,
     /// An Import Run, read from `imports`.
     ImportRun,
     /// An Export Run, read from `exports`.
@@ -104,10 +129,14 @@ impl AuditAction {
             Self::AccountDeleted => "account_deleted",
             Self::RegistrationOpened => "registration_opened",
             Self::RegistrationClosed => "registration_closed",
+            Self::AssetLimitChanged => "asset_limit_changed",
+            Self::DemoAccountAdded => "demo_account_added",
+            Self::DemoAccountReset => "demo_account_reset",
             Self::ApiTokenCreated => "api_token_created",
             Self::ApiTokenDeleted => "api_token_deleted",
             Self::AddressBookLoaded => "address_book_loaded",
             Self::AddressBookExported => "address_book_exported",
+            Self::ExportRunClosed => "export_run_closed",
             Self::ImportRun => "import_run",
             Self::ExportRun => "export_run",
         }
@@ -127,10 +156,14 @@ pub enum AuditActor {
     /// The account's own holder: the person logged in to it, or a program
     /// holding one of its API tokens.
     Holder,
-    /// A command run on the server, such as `reset-owner-password`.
+    /// A command run on the server, such as `reset-owner-password` or
+    /// `reset-demo`.
     CommandLine,
-    /// The server on its own: building the Demo Account, removing a build
-    /// that failed, or a session running out.
+    /// The server's first start on a new database, which adds the Demo
+    /// Account before the server listens.
+    StartUp,
+    /// The server on its own: removing a Demo Account build that failed, or
+    /// a session running out.
     Server,
     /// Someone at the login card, before any login: a refused login, or a
     /// stranger creating an account.
@@ -144,6 +177,7 @@ impl AuditActor {
             Self::Owner => "owner",
             Self::Holder => "holder",
             Self::CommandLine => "command_line",
+            Self::StartUp => "start_up",
             Self::Server => "server",
             Self::Anonymous => "anonymous",
         }
@@ -154,6 +188,7 @@ impl AuditActor {
             "owner" => Self::Owner,
             "holder" => Self::Holder,
             "command_line" => Self::CommandLine,
+            "start_up" => Self::StartUp,
             "anonymous" => Self::Anonymous,
             _ => Self::Server,
         }
@@ -171,13 +206,16 @@ impl AuditActor {
     }
 }
 
-/// How a Session ended, or why a login was refused.
+/// How a Session ended, why a login was refused, or why the server closed an
+/// Export Run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditReason {
     /// `session_ended`: the holder logged out.
     LoggedOut,
     /// `session_ended`: a new login took the account's one Session.
+    /// `export_run_closed`: a new Export took the account's one running
+    /// Export Run.
     Replaced,
     /// `session_ended`: the server ended it, as `reset-owner-password` does.
     Revoked,
@@ -190,6 +228,9 @@ pub enum AuditReason {
     WrongPassword,
     /// `login_refused`: the password was right and the account is disabled.
     AccountDisabled,
+    /// `export_run_closed`: no page of the run was read for
+    /// [`crate::db::exports::IDLE_EXPORT_RUN_LIMIT`].
+    Idle,
 }
 
 impl AuditReason {
@@ -202,6 +243,7 @@ impl AuditReason {
             Self::UnknownUsername => "unknown_username",
             Self::WrongPassword => "wrong_password",
             Self::AccountDisabled => "account_disabled",
+            Self::Idle => "idle",
         }
     }
 
@@ -236,7 +278,7 @@ pub enum RunStatus {
     /// Ended without finishing.
     Failed,
     /// Ended by the person, or by the server on their behalf.
-    Cancelled,
+    Canceled,
 }
 
 impl From<ImportStatus> for RunStatus {
@@ -246,7 +288,7 @@ impl From<ImportStatus> for RunStatus {
             ImportStatus::Completed => Self::Completed,
             ImportStatus::CompletedWithIssues => Self::CompletedWithIssues,
             ImportStatus::Failed => Self::Failed,
-            ImportStatus::Cancelled => Self::Cancelled,
+            ImportStatus::Canceled => Self::Canceled,
         }
     }
 }
@@ -257,7 +299,7 @@ impl From<ExportStatus> for RunStatus {
             ExportStatus::Running => Self::Running,
             ExportStatus::Completed => Self::Completed,
             ExportStatus::Failed => Self::Failed,
-            ExportStatus::Cancelled => Self::Cancelled,
+            ExportStatus::Canceled => Self::Canceled,
         }
     }
 }
@@ -280,22 +322,22 @@ pub enum CredentialUsed {
 /// A run row's columns that record what started it, as
 /// [`CredentialUsed::run_columns`] fills them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RunCredentialColumns<'a> {
+struct RunCredentialColumns<'a> {
     /// `credential`: `session` or `api_token`.
-    pub(crate) credential: &'static str,
+    credential: &'static str,
     /// `app_kind`: the app a Session's request named.
-    pub(crate) app_kind: Option<&'a str>,
+    app_kind: Option<&'a str>,
     /// `app_build`: that app's Build.
-    pub(crate) app_build: Option<&'a str>,
+    app_build: Option<&'a str>,
     /// `api_token_label`: the token's label as it is now.
-    pub(crate) api_token_label: Option<&'a str>,
+    api_token_label: Option<&'a str>,
     /// `api_token_hint`: the token's masked hint as it is now.
-    pub(crate) api_token_hint: Option<&'a str>,
+    api_token_hint: Option<&'a str>,
 }
 
 impl CredentialUsed {
     /// The run row's columns for this credential.
-    pub(crate) fn run_columns(&self) -> RunCredentialColumns<'_> {
+    fn run_columns(&self) -> RunCredentialColumns<'_> {
         match self {
             Self::Session(app) => RunCredentialColumns {
                 credential: "session",
@@ -313,6 +355,60 @@ impl CredentialUsed {
             },
         }
     }
+}
+
+/// The run table a run's row is in: `imports` for an Import Run, `exports`
+/// for an Export Run. Both carry the same columns for what started the run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunTable {
+    /// `imports`, one row per Import Run.
+    Imports,
+    /// `exports`, one row per Export Run.
+    Exports,
+}
+
+impl RunTable {
+    /// The table's name, as SQL names it.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Imports => "imports",
+            Self::Exports => "exports",
+        }
+    }
+}
+
+/// Record what started a run on its row: a Session and the app it named, or
+/// an API token's label and hint as they are now. The Audit Trail reads these
+/// columns from both run tables ([`page`]), so the one statement that writes
+/// them is here too. `POST /v1/imports` and `POST /v1/exports` call it with
+/// their own table.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn record_run_credential(
+    conn: &mut SqliteConnection,
+    table: RunTable,
+    run_id: i64,
+    credential: &CredentialUsed,
+) -> Result<()> {
+    let columns = credential.run_columns();
+    let table = table.name();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE {table} SET credential = $1, app_kind = $2, app_build = $3,
+                api_token_label = $4, api_token_hint = $5
+         WHERE id = $6"
+    )))
+    .bind(columns.credential)
+    .bind(columns.app_kind)
+    .bind(columns.app_build)
+    .bind(columns.api_token_label)
+    .bind(columns.api_token_hint)
+    .bind(run_id)
+    .execute(&mut *conn)
+    .await
+    .context("record what started the run")?;
+    Ok(())
 }
 
 /// The counts and names an entry carries beyond who, what and when, stored as
@@ -357,6 +453,16 @@ pub struct Details {
     /// `api_token_created` and `api_token_deleted`: the token's masked hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_token_hint: Option<String>,
+    /// `asset_limit_changed`: the new attachment size limit, in bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_max_bytes: Option<u64>,
+    /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+    /// build was asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub demo_data_size: Option<DemoDataSize>,
+    /// `export_run_closed`: the Export Run the server closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_run_id: Option<i64>,
 }
 
 /// One entry of the Audit Trail as the interface hands it out: an entry of
@@ -376,11 +482,23 @@ pub struct AuditEntry {
     /// Who acted.
     pub actor: AuditActor,
     /// The account the entry is about, or `null` when it is about none, or
-    /// the account has been deleted.
+    /// the account has been deleted: `account_deleted` tells the two apart.
     pub account_id: Option<i64>,
+    /// Whether the account the entry is about has since been deleted. `false`
+    /// for an entry about no account, and for a refused login as a username
+    /// no account holds.
+    pub account_deleted: bool,
     /// The username of the account the entry is about, as it was; for a
-    /// refused login, the username as typed. Kept after the account is deleted.
+    /// refused login as a username no account holds, the username as typed,
+    /// or `null` when the text typed could not be a username. Kept after the
+    /// account is deleted.
     pub username: Option<String>,
+    /// The id of the request that wrote the entry, as its response's
+    /// `x-request-id` and the request's lines in the server's log carry it.
+    /// `null` for an entry written outside a request, by a server command or
+    /// the Demo Account build of the server's first start, and for a run and
+    /// a session that expired, which no one request wrote.
+    pub request_id: Option<String>,
     /// `session_ended`: how the Session ended. `login_refused`: why.
     pub reason: Option<AuditReason>,
     /// The app the request named, `desktop` or `website`.
@@ -430,6 +548,14 @@ pub struct AuditEntry {
     pub contacts_updated: Option<i64>,
     /// `address_book_loaded`: contacts removed.
     pub contacts_deleted: Option<i64>,
+    /// `asset_limit_changed`: the new attachment size limit, in bytes.
+    pub asset_max_bytes: Option<u64>,
+    /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+    /// build was asked for.
+    pub demo_data_size: Option<DemoDataSize>,
+    /// `export_run_closed`: the id of the Export Run the server closed, the
+    /// `id` of that run's own `export_run` entry.
+    pub export_run_id: Option<i64>,
 }
 
 impl AuditEntry {
@@ -441,6 +567,7 @@ impl AuditEntry {
         at: String,
         actor: AuditActor,
         account_id: Option<i64>,
+        account_deleted: bool,
         username: Option<String>,
     ) -> Self {
         Self {
@@ -449,7 +576,9 @@ impl AuditEntry {
             at,
             actor,
             account_id,
+            account_deleted,
             username,
+            request_id: None,
             reason: None,
             app: None,
             app_build: None,
@@ -472,6 +601,9 @@ impl AuditEntry {
             contacts_created: None,
             contacts_updated: None,
             contacts_deleted: None,
+            asset_max_bytes: None,
+            demo_data_size: None,
+            export_run_id: None,
         }
     }
 }
@@ -485,7 +617,8 @@ pub struct NewEntry<'a> {
     pub actor: AuditActor,
     /// The account it is about, or `None` when it is about no account.
     pub account_id: Option<i64>,
-    /// That account's username; for a refused login, the username as typed.
+    /// That account's username; for a refused login as a username no account
+    /// holds, the username as typed when it could be one.
     pub username: Option<&'a str>,
     /// `session_ended` and `login_refused`: how or why.
     pub reason: Option<AuditReason>,
@@ -532,23 +665,27 @@ impl<'a> NewEntry<'a> {
     }
 }
 
-/// The time an entry is stamped with, written as `imports.started_at` is, so
-/// entries and runs sort together.
-fn now_text() -> String {
-    Utc::now().to_rfc3339()
+/// The time an entry is stamped with, `now` written as `imports.started_at`
+/// is, so entries and runs sort together.
+fn at_text(now: DateTime<Utc>) -> String {
+    now.to_rfc3339()
 }
 
-/// Write one entry and return its id.
+/// Write one entry, stamped `now`, and return its id.
 ///
 /// # Errors
 ///
 /// Returns an error when the insert fails.
-pub async fn record(conn: &mut SqliteConnection, entry: &NewEntry<'_>) -> Result<i64> {
-    insert(conn, entry, None, None).await
+pub async fn record(
+    conn: &mut SqliteConnection,
+    entry: &NewEntry<'_>,
+    now: DateTime<Utc>,
+) -> Result<i64> {
+    insert(conn, entry, None, None, now).await
 }
 
-/// Write one entry about the account `account_id`, looking its username up.
-/// Nothing is written when the account does not exist.
+/// Write one entry about the account `account_id`, looking its username up,
+/// stamped `now`. Nothing is written when the account does not exist.
 ///
 /// # Errors
 ///
@@ -559,6 +696,7 @@ pub async fn record_about(
     actor: AuditActor,
     account_id: i64,
     details: Details,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let Some(username) = account_profile::username_for_account(conn, account_id).await? else {
         return Ok(());
@@ -566,9 +704,65 @@ pub async fn record_about(
     record(
         conn,
         &NewEntry::about(action, actor, (account_id, &username)).with_details(details),
+        now,
     )
     .await?;
     Ok(())
+}
+
+/// Record that `actor` is building the Demo Account with the `size` set of
+/// Demo Data, before the build removes the Demo Account it replaces: the
+/// owner's build from Owner Home, the `reset-demo` command and the build
+/// `serve` runs on a new database all record it here, so every reset is
+/// filed alike (#2977). It is stamped `now`.
+///
+/// The entry is `demo_account_reset` about the Demo Account when there is
+/// one, so it stays in that account's record once the build deletes it. It
+/// is `demo_account_added` about no account when there is none: an entry
+/// with a username and no account reads as one whose account was deleted.
+///
+/// # Errors
+///
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_demo_build(
+    conn: &mut SqliteConnection,
+    actor: AuditActor,
+    size: DemoDataSize,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let demo =
+        account_profile::username_for_account(conn, account_profile::DEMO_ACCOUNT_ID).await?;
+    let about = demo
+        .as_deref()
+        .map(|username| (account_profile::DEMO_ACCOUNT_ID, username));
+    record(conn, &demo_build_entry(actor, size, about), now).await?;
+    Ok(())
+}
+
+/// The id of the last Audit Trail entry, or 0 when there is none.
+pub async fn last_audit_entry_id(conn: &mut SqliteConnection) -> Result<i64> {
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM audit_entries")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the last Audit Trail entry")
+}
+
+/// The entry that records a build of the Demo Account by `actor` with the
+/// `size` set: `demo_account_reset` about the Demo Account `replaced`, and
+/// `demo_account_added` about no account when there was none.
+fn demo_build_entry(
+    actor: AuditActor,
+    size: DemoDataSize,
+    replaced: Option<(i64, &str)>,
+) -> NewEntry<'_> {
+    let entry = match replaced {
+        Some(account) => NewEntry::about(AuditAction::DemoAccountReset, actor, account),
+        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, actor),
+    };
+    entry.with_details(Details {
+        demo_data_size: Some(size),
+        ..Details::default()
+    })
 }
 
 async fn insert(
@@ -576,18 +770,20 @@ async fn insert(
     entry: &NewEntry<'_>,
     session_entry_id: Option<i64>,
     session_expires_at: Option<&str>,
+    now: DateTime<Utc>,
 ) -> Result<i64> {
     let details = (entry.details != Details::default())
         .then(|| serde_json::to_string(&entry.details))
         .transpose()?;
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO audit_entries (
-            at, action, actor, account_id, username, reason, app_kind, app_build,
-            session_entry_id, session_expires_at, details
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            at, request_id, action, actor, account_id, username, reason, app_kind,
+            app_build, session_entry_id, session_expires_at, details
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id",
     )
-    .bind(now_text())
+    .bind(at_text(now))
+    .bind(crate::request_id::current())
     .bind(entry.action.as_str())
     .bind(entry.actor.as_str())
     .bind(entry.account_id)
@@ -600,7 +796,7 @@ async fn insert(
     .bind(details)
     .fetch_one(&mut *conn)
     .await
-    .with_context(|| format!("record the Audit Trail entry {}", entry.action.as_str()))?;
+    .context("insert an Audit Trail entry")?;
     Ok(id)
 }
 
@@ -612,7 +808,7 @@ fn expiry_text(expires_at_unix: u64) -> String {
         .to_rfc3339()
 }
 
-/// Write the `logged_in` entry for a Session that expires at
+/// Write the `logged_in` entry, stamped `now`, for a Session that expires at
 /// `expires_at_unix`, and return its id for the session row to keep.
 ///
 /// # Errors
@@ -623,6 +819,7 @@ pub async fn record_login(
     account: (i64, &str),
     app: Option<&ConnectingApp>,
     expires_at_unix: u64,
+    now: DateTime<Utc>,
 ) -> Result<i64> {
     let entry = NewEntry {
         app,
@@ -632,14 +829,14 @@ pub async fn record_login(
             account,
         )
     };
-    insert(conn, &entry, None, Some(&expiry_text(expires_at_unix))).await
+    insert(conn, &entry, None, Some(&expiry_text(expires_at_unix)), now).await
 }
 
-/// Write the `password_set` entry for a holder changing their own password.
-/// The change renews their Session, so when `renewed` names its `logged_in`
-/// entry and new expiry, this entry links to that login and holds the
-/// expiry: entries are never edited, so the read takes the latest expiry a
-/// login's entries hold.
+/// Write the `password_set` entry, stamped `now`, for a holder changing their
+/// own password. The change renews their Session, so when `renewed` names its
+/// `logged_in` entry and new expiry, this entry links to that login and holds
+/// the expiry: entries are never edited, so the read takes the latest expiry
+/// a login's entries hold.
 ///
 /// # Errors
 ///
@@ -648,6 +845,7 @@ pub async fn record_own_password_change(
     conn: &mut SqliteConnection,
     account_id: i64,
     renewed: Option<(i64, u64)>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let Some(username) = account_profile::username_for_account(conn, account_id).await? else {
         return Ok(());
@@ -663,13 +861,39 @@ pub async fn record_own_password_change(
         &entry,
         renewed.map(|(login_entry_id, _)| login_entry_id),
         expiry.as_deref(),
+        now,
     )
     .await?;
     Ok(())
 }
 
-/// Write the `session_ended` entry for the Session whose `logged_in` entry is
-/// `login_entry_id`.
+/// Record that the Session whose `logged_in` entry is `login_entry_id` now
+/// expires at `expires_at_unix`, because it was used. Not an entry: a
+/// Session in use moves its expiry as often as once an hour, and the Audit
+/// Trail reads the latest one only to say when the Session ran out.
+///
+/// # Errors
+///
+/// Returns an error when the write fails.
+pub async fn record_session_extended(
+    conn: &mut SqliteConnection,
+    login_entry_id: i64,
+    expires_at_unix: u64,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO session_extensions (login_entry_id, expires_at) VALUES ($1, $2)
+         ON CONFLICT(login_entry_id) DO UPDATE SET expires_at = excluded.expires_at",
+    )
+    .bind(login_entry_id)
+    .bind(expiry_text(expires_at_unix))
+    .execute(&mut *conn)
+    .await
+    .context("record a Session's new expiry")?;
+    Ok(())
+}
+
+/// Write the `session_ended` entry, stamped `now`, for the Session whose
+/// `logged_in` entry is `login_entry_id`.
 ///
 /// # Errors
 ///
@@ -679,13 +903,24 @@ pub async fn record_session_end(
     login_entry_id: i64,
     reason: AuditReason,
     actor: AuditActor,
+    now: DateTime<Utc>,
 ) -> Result<()> {
-    let login: Option<(Option<i64>, Option<String>)> =
-        sqlx::query_as("SELECT account_id, username FROM audit_entries WHERE id = $1")
+    #[derive(sqlx::FromRow)]
+    struct Login {
+        account_id: Option<i64>,
+        username: Option<String>,
+    }
+    let login =
+        sqlx::query_as::<_, Login>("SELECT account_id, username FROM audit_entries WHERE id = $1")
             .bind(login_entry_id)
             .fetch_optional(&mut *conn)
-            .await?;
-    let Some((account_id, username)) = login else {
+            .await
+            .context("read the login an ending Session belongs to")?;
+    let Some(Login {
+        account_id,
+        username,
+    }) = login
+    else {
         return Ok(());
     };
     let entry = NewEntry {
@@ -697,13 +932,16 @@ pub async fn record_session_end(
         app: None,
         details: Details::default(),
     };
-    insert(conn, &entry, Some(login_entry_id), None).await?;
+    insert(conn, &entry, Some(login_entry_id), None, now).await?;
     Ok(())
 }
 
-/// Write the entry for a refused login. `account` is the account the
-/// username named, when it named one; otherwise the username is kept as
-/// typed, cut to the username length limit, and belongs to no account.
+/// Write the entry for a refused login, stamped `now`. `account` is the
+/// account the username named, when it named one. Otherwise the entry
+/// belongs to no account and keeps the username, trimmed, only when
+/// `require_valid_username` accepts it; the module comment says why. It also
+/// writes a warning to the server's log, with the account's id, the reason
+/// and the app.
 ///
 /// # Errors
 ///
@@ -714,35 +952,76 @@ pub async fn record_refused_login(
     account: Option<(i64, &str)>,
     reason: AuditReason,
     app: Option<&ConnectingApp>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
-    let typed: String = typed_username
-        .chars()
-        .take(MAX_TYPED_USERNAME_CHARS)
-        .collect();
+    // The owner's Logs panel shows what the Audit Trail shows one account at
+    // a time. The line names the account by its id, never the username
+    // typed: the log holds ids and outcomes only
+    // (`docs/architecture/server-log.md`).
+    tracing::warn!(
+        account_id = account.map(|(id, _)| id),
+        reason = reason.as_str(),
+        app = app.map(|app| app.kind.as_str()),
+        app_build = app.map(|app| app.build.as_str()),
+        "A login was refused"
+    );
+    let typed = require_valid_username(typed_username).ok();
+    let typed = typed.as_deref();
     let entry = NewEntry {
         action: AuditAction::LoginRefused,
         actor: AuditActor::Anonymous,
         account_id: account.map(|(id, _)| id),
-        username: Some(account.map_or(typed.as_str(), |(_, username)| username)),
+        username: account.map_or(typed, |(_, username)| Some(username)),
         reason: Some(reason),
         app,
         details: Details::default(),
     };
-    insert(conn, &entry, None, None).await?;
+    insert(conn, &entry, None, None, now).await?;
+    Ok(())
+}
+
+/// Write the `export_run_closed` entry, stamped `now`, for the account's
+/// Export Run `export_id`, which the server closed as `canceled` for
+/// `reason`: `replaced` when `actor` started a new Export, `idle` when no
+/// page was read for an hour. Nothing is written when the account does not
+/// exist.
+///
+/// # Errors
+///
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_export_run_closed(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    export_id: i64,
+    reason: AuditReason,
+    actor: AuditActor,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let Some(username) = account_profile::username_for_account(conn, account_id).await? else {
+        return Ok(());
+    };
+    let entry = NewEntry {
+        reason: Some(reason),
+        ..NewEntry::about(AuditAction::ExportRunClosed, actor, (account_id, &username))
+            .with_details(Details {
+                export_run_id: Some(export_id),
+                ..Details::default()
+            })
+    };
+    insert(conn, &entry, None, None, now).await?;
     Ok(())
 }
 
 /// Delete the refused logins as a username no account held that are older
-/// than [`UNKNOWN_USERNAME_RETENTION_DAYS`]. Run when a login is handled, so
-/// the record of them stays bounded with no sweeper. Nothing else in the
-/// Audit Trail is ever deleted.
+/// than [`UNKNOWN_USERNAME_RETENTION_DAYS`] at `now`. Run when a login is
+/// handled, so the record of them stays bounded with no sweeper. Nothing else
+/// in the Audit Trail is ever deleted.
 ///
 /// # Errors
 ///
 /// Returns an error when the delete fails.
-pub async fn trim_refused_logins(conn: &mut SqliteConnection) -> Result<u64> {
-    let cutoff =
-        (Utc::now() - chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS)).to_rfc3339();
+pub async fn trim_refused_logins(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<u64> {
+    let cutoff = (now - chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS)).to_rfc3339();
     let deleted = sqlx::query(
         "DELETE FROM audit_entries
          WHERE action = 'login_refused' AND reason = 'unknown_username' AND at < $1",
@@ -766,7 +1045,8 @@ pub async fn trim_refused_logins(conn: &mut SqliteConnection) -> Result<u64> {
 /// runs keep its username and lose what describes the person's messages
 /// ([`crate::db::imports::detach_from_account`],
 /// [`crate::db::exports::detach_from_account`]). The delete that follows
-/// sets `account_id` NULL on the runs and entries.
+/// sets `account_id` NULL on the runs and entries. Everything it writes is
+/// stamped `now`.
 ///
 /// # Errors
 ///
@@ -775,14 +1055,16 @@ pub async fn prepare_account_deletion(
     tx: &mut crate::db::WriteTx<'_>,
     account_id: i64,
     actor: AuditActor,
+    now: DateTime<Utc>,
 ) -> Result<bool> {
     let Some(username) = account_profile::username_for_account(tx, account_id).await? else {
         return Ok(false);
     };
-    crate::db::session_tokens::revoke_account_sessions(tx, account_id, actor).await?;
+    crate::db::session_tokens::revoke_account_sessions(tx, account_id, actor, now).await?;
     let deletion = record(
         tx,
         &NewEntry::about(AuditAction::AccountDeleted, actor, (account_id, &username)),
+        now,
     )
     .await?;
     sqlx::query("UPDATE audit_entries SET deletion_entry_id = $2 WHERE account_id = $1")
@@ -791,9 +1073,9 @@ pub async fn prepare_account_deletion(
         .execute(&mut **tx)
         .await
         .context("mark a deleted account's entries")?;
-    let now = now_text();
-    crate::db::imports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
-    crate::db::exports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
+    let at = at_text(now);
+    crate::db::imports::detach_from_account(tx, account_id, &username, deletion, &at).await?;
+    crate::db::exports::detach_from_account(tx, account_id, &username, deletion, &at).await?;
     Ok(true)
 }
 
@@ -812,12 +1094,26 @@ pub enum Scope {
 }
 
 /// When the Session a `logged_in` entry `l` opened runs out: the latest
-/// expiry among the entry and the password changes that renewed it.
+/// expiry among the entry, the password changes that renewed it, and the
+/// use that last moved it (`session_extensions`). Each is RFC 3339 UTC, so
+/// the latest is the greatest as text.
 macro_rules! session_expiry_sql {
     () => {
-        "COALESCE((SELECT MAX(r.session_expires_at) FROM audit_entries r
-                    WHERE r.session_entry_id = l.id AND r.action = 'password_set'),
-                  l.session_expires_at)"
+        "MAX(COALESCE((SELECT MAX(r.session_expires_at) FROM audit_entries r
+                        WHERE r.session_entry_id = l.id AND r.action = 'password_set'),
+                      l.session_expires_at),
+             COALESCE((SELECT x.expires_at FROM session_extensions x
+                        WHERE x.login_entry_id = l.id),
+                      l.session_expires_at))"
+    };
+}
+
+/// The `account_deleted` column of a row of `table`: whether the account the
+/// row is about has since been deleted, which its deletion marks on every
+/// such row by setting `deletion_entry_id`.
+macro_rules! account_deleted_sql {
+    ($table:literal) => {
+        concat!($table, ".deletion_entry_id IS NOT NULL AS account_deleted")
     };
 }
 
@@ -885,7 +1181,8 @@ fn sources_sql() -> String {
 }
 
 /// One page of the Audit Trail, newest first, and how many entries it holds
-/// in all.
+/// in all, read at `now`: a Session that runs out after `now` is not shown
+/// as ended.
 ///
 /// # Errors
 ///
@@ -895,8 +1192,9 @@ pub async fn page(
     scope: Scope,
     limit: usize,
     offset: usize,
+    now: DateTime<Utc>,
 ) -> Result<(Vec<AuditEntry>, u64)> {
-    let now = now_text();
+    let at = at_text(now);
     let (filter, id) = match scope {
         Scope::All => ("", None),
         Scope::Account(id) => ("WHERE account_id = $2", Some(id)),
@@ -904,24 +1202,35 @@ pub async fn page(
     };
     let sources = sources_sql();
     let count_sql = format!("SELECT COUNT(*) FROM ({sources}) {filter}");
-    let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(&now);
+    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql)).bind(&at);
     if let Some(id) = id {
         count = count.bind(id);
     }
-    let total = count.fetch_one(&mut *conn).await?;
+    let total = count
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the Audit Trail entries")?;
 
     let page_sql = format!(
         "SELECT src, id FROM ({sources}) {filter}
          ORDER BY at DESC, src DESC, id DESC LIMIT {limit} OFFSET {offset}"
     );
-    let mut rows = sqlx::query_as::<_, (String, i64)>(&page_sql).bind(&now);
+    #[derive(sqlx::FromRow)]
+    struct PageRow {
+        src: String,
+        id: i64,
+    }
+    let mut rows = sqlx::query_as::<_, PageRow>(sqlx::AssertSqlSafe(page_sql)).bind(&at);
     if let Some(id) = id {
         rows = rows.bind(id);
     }
-    let rows = rows.fetch_all(&mut *conn).await?;
+    let rows = rows
+        .fetch_all(&mut *conn)
+        .await
+        .context("read a page of the Audit Trail")?;
 
     let mut items = Vec::with_capacity(rows.len());
-    for (src, id) in rows {
+    for PageRow { src, id } in rows {
         let item = match Source::from_tag(&src)? {
             Source::Entry => load_entry(conn, id).await?,
             Source::Expiry => load_expiry(conn, id).await?,
@@ -937,7 +1246,7 @@ pub async fn page(
 
 /// A deleted account as the Audit Trail remembers it: the username its
 /// entries and runs keep, and when it was deleted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct DeletedAccount {
     /// The id of its `account_deleted` entry, which every entry and run about
     /// the account carries once it is deleted. Two accounts deleted under one
@@ -963,38 +1272,32 @@ pub async fn deleted_accounts_page(
 ) -> Result<(Vec<DeletedAccount>, u64)> {
     const DELETED: &str = "FROM audit_entries
          WHERE action = 'account_deleted' AND deletion_entry_id = id AND username IS NOT NULL";
-    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) {DELETED}"))
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) {DELETED}")))
         .fetch_one(&mut *conn)
         .await
         .context("count deleted accounts")?;
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
-        "SELECT id, username, at {DELETED}
+    let items = sqlx::query_as::<_, DeletedAccount>(sqlx::AssertSqlSafe(format!(
+        "SELECT id, username, at AS deleted_at {DELETED}
          ORDER BY username COLLATE NOCASE, at DESC, id DESC LIMIT {limit} OFFSET {offset}"
-    ))
+    )))
     .fetch_all(&mut *conn)
     .await
     .context("list deleted accounts")?;
-    let items = rows
-        .into_iter()
-        .map(|(id, username, deleted_at)| DeletedAccount {
-            id,
-            username,
-            deleted_at,
-        })
-        .collect();
     Ok((items, u64::try_from(total).unwrap_or(0)))
 }
 
 /// An entry of `audit_entries` as the interface hands it out.
 async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
-    let row = sqlx::query(
-        "SELECT id, at, action, actor, account_id, username, reason, app_kind, app_build,
-                details
-         FROM audit_entries WHERE id = $1",
-    )
+    let row = sqlx::query(concat!(
+        "SELECT id, at, request_id, action, actor, account_id, ",
+        account_deleted_sql!("audit_entries"),
+        ", username, reason, app_kind, app_build, details
+         FROM audit_entries WHERE id = $1"
+    ))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Audit Trail entry")?;
     let Some(row) = row else { return Ok(None) };
     let details: Option<String> = row.try_get("details")?;
     let details: Details = match details {
@@ -1025,12 +1328,17 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
         contacts_created: details.contacts_created,
         contacts_updated: details.contacts_updated,
         contacts_deleted: details.contacts_deleted,
+        asset_max_bytes: details.asset_max_bytes,
+        demo_data_size: details.demo_data_size,
+        export_run_id: details.export_run_id,
+        request_id: row.try_get("request_id")?,
         ..AuditEntry::new(
             row.try_get("id")?,
             action,
             row.try_get("at")?,
             AuditActor::parse(&actor),
             row.try_get("account_id")?,
+            row.try_get("account_deleted")?,
             row.try_get("username")?,
         )
     }))
@@ -1039,32 +1347,40 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
 /// The `session_ended` entry read, not stored, for a Session that ran out:
 /// its `logged_in` entry's account, at its expiry.
 async fn load_expiry(conn: &mut SqliteConnection, login_id: i64) -> Result<Option<AuditEntry>> {
-    let row: Option<(i64, String, Option<i64>, Option<String>)> = sqlx::query_as(concat!(
+    let row = sqlx::query(concat!(
         "SELECT l.id, ",
         session_expiry_sql!(),
-        ", l.account_id, l.username FROM audit_entries l WHERE l.id = $1"
+        " AS at, l.account_id, ",
+        account_deleted_sql!("l"),
+        ", l.username FROM audit_entries l WHERE l.id = $1"
     ))
     .bind(login_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    Ok(row.map(|(id, at, account_id, username)| AuditEntry {
+    .await
+    .context("read the login of an expired Session")?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(AuditEntry {
         reason: Some(AuditReason::Expired),
         ..AuditEntry::new(
-            id,
+            row.try_get("id")?,
             AuditAction::SessionEnded,
-            at,
+            row.try_get("at")?,
             AuditActor::Server,
-            account_id,
-            username,
+            row.try_get("account_id")?,
+            row.try_get("account_deleted")?,
+            row.try_get("username")?,
         )
     }))
 }
 
 /// The account a run is about, and the username to show: the account's while
 /// it exists, the one written on the run once it is deleted.
-const RUN_ACCOUNT_SQL: &str =
-    "r.account_id, COALESCE(a.username, r.username) AS username, r.credential, r.app_kind,
-     r.app_build, r.api_token_label, r.api_token_hint";
+const RUN_ACCOUNT_SQL: &str = concat!(
+    "r.account_id, ",
+    account_deleted_sql!("r"),
+    ", COALESCE(a.username, r.username) AS username, r.credential, r.app_kind,
+     r.app_build, r.api_token_label, r.api_token_hint"
+);
 
 /// Fill the fields every run has: whose it is and what started it.
 fn run_entry(row: &sqlx::sqlite::SqliteRow, action: AuditAction) -> Result<AuditEntry> {
@@ -1095,6 +1411,7 @@ fn run_entry(row: &sqlx::sqlite::SqliteRow, action: AuditAction) -> Result<Audit
             row.try_get("started_at")?,
             actor,
             row.try_get("account_id")?,
+            row.try_get("account_deleted")?,
             row.try_get("username")?,
         )
     })
@@ -1102,15 +1419,16 @@ fn run_entry(row: &sqlx::sqlite::SqliteRow, action: AuditAction) -> Result<Audit
 
 /// An Import Run as an Audit Trail entry: its source, status and counts.
 async fn load_import(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT r.id, r.started_at, r.status, r.source, r.message_count, r.attachment_count,
                 r.bytes_uploaded, {RUN_ACCOUNT_SQL}
          FROM imports r LEFT JOIN accounts a ON a.id = r.account_id
          WHERE r.id = $1"
-    ))
+    )))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Import Run for the Audit Trail")?;
     let Some(row) = row else { return Ok(None) };
     let status: String = row.try_get("status")?;
     let status = ImportStatus::parse(&status)
@@ -1128,15 +1446,16 @@ async fn load_import(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audi
 /// An Export Run as an Audit Trail entry: the kind of scope and how much it
 /// matched, never the query or the picked ids.
 async fn load_export(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT r.id, r.started_at, r.status, r.scope_kind, r.scope_list, r.message_count,
                 r.conversation_count, r.attachment_count, r.total_bytes, {RUN_ACCOUNT_SQL}
          FROM exports r LEFT JOIN accounts a ON a.id = r.account_id
          WHERE r.id = $1"
-    ))
+    )))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Export Run for the Audit Trail")?;
     let Some(row) = row else { return Ok(None) };
     let status: String = row.try_get("status")?;
     let status = ExportStatus::parse(&status)

@@ -1,31 +1,31 @@
 //! Convert a GO SMS Pro backup into the shared conversation structure
-//! ([`ConversationDocument`]) every exporter writes, then write the chosen
-//! output format via [`ExportWriter`].
+//! ([`ir::ConversationDocument`]) every exporter writes, then write the chosen
+//! output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_pdu_attachments;
-use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
+use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_file};
+use android_fields::android_vendor_fields;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
+use ir::{
+    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, Transport, VendorFields, ensure_conversation,
+};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, OutputFormat,
-    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, prepare_outputs, project_conversation,
+    ConvertRun, Counter, ExportReport, ItemKind, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
+    prepare_outputs, project_conversation,
 };
-use message_ir::{
-    ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
-    ProjectionHooks, ensure_conversation, parse_android_type,
-};
-use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
+use message_crate_csv::write_guarded_record;
 use phone::{Handle, OwnerHandleSet};
+use staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "go-sms-pro";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::GoSmsPro.source_id();
 const EXPORT_TOOL: &str = "GO SMS Pro";
 /// This crate's version, recorded as the export tool version.
 const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Cap on retained skip-detail rows; overflow is counted and reported.
-pub(crate) const MAX_SKIP_DETAILS: usize = 20;
 
 /// Messages read from PDU files.
 pub(crate) const PDU_MESSAGES: Counter = Counter::new(
@@ -105,6 +105,15 @@ pub(crate) struct SkippedEmptyPduDetail {
     pub pdu_filename: String,
 }
 
+impl SkippedCsv<1> for SkippedEmptyPduDetail {
+    const FILE_NAME: &str = "skipped_empty_pdu.csv";
+    const HEADER: [&str; 1] = ["pdu_filename"];
+
+    fn row(&self) -> [String; 1] {
+        [self.pdu_filename.clone()]
+    }
+}
+
 /// Diagnostic row for a PDU whose every address is the owner's.
 #[derive(Debug, Clone)]
 pub(crate) struct SkippedNoPartyDetail {
@@ -114,33 +123,77 @@ pub(crate) struct SkippedNoPartyDetail {
     pub is_sent: bool,
 }
 
+impl SkippedCsv<4> for SkippedNoPartyDetail {
+    const FILE_NAME: &str = "skipped_no_party.csv";
+    const HEADER: [&str; 4] = ["pdu_filename", "sender", "recipients", "is_sent"];
+
+    fn row(&self) -> [String; 4] {
+        [
+            self.pdu_filename.clone(),
+            self.sender.clone(),
+            self.recipients.clone(),
+            if self.is_sent { "1" } else { "0" }.to_owned(),
+        ]
+    }
+}
+
+impl SkippedCsv<6> for SkippedBadAddrDetail {
+    const FILE_NAME: &str = "skipped_invalid_address.csv";
+    const HEADER: [&str; 6] = [
+        "xml_file",
+        "address",
+        "contact_name",
+        "android_type",
+        "date_ms",
+        "body",
+    ];
+
+    fn row(&self) -> [String; 6] {
+        [
+            self.xml_file.clone(),
+            self.address.clone(),
+            self.contact_name.clone(),
+            self.android_type.clone(),
+            self.date_ms.clone(),
+            self.body.clone(),
+        ]
+    }
+}
+
+/// A skipped-row type and the CSV file that lists it: its name, its header, and one row per
+/// item. `N` is the column count, so the header and the row cannot differ in width.
+trait SkippedCsv<const N: usize> {
+    const FILE_NAME: &str;
+    const HEADER: [&str; N];
+
+    fn row(&self) -> [String; N];
+}
+
 /// Append parsed XML SMS rows to pending conversations.
 fn add_xml_messages(
     conversations: &mut BTreeMap<String, PendingConversation>,
-    msgs: Vec<XmlMessage>,
+    messages: Vec<XmlMessage>,
 ) {
-    for msg in msgs {
-        let chat_id = msg.other.key();
-        let convo = ensure_conversation(conversations, chat_id, false, None, Vec::new());
-        convo.messages.push(PendingMessage {
-            sort_key: msg.timestamp_secs as i64,
-            is_from_me: msg.is_from_me,
-            sender_identity: if msg.is_from_me {
-                String::new()
-            } else {
-                msg.other.into_key()
-            },
-            sender_display_name: msg.name_alias.clone(),
-            text: msg.text,
+    for message in messages {
+        let chat_id = message.other.key();
+        let conversation = ensure_conversation(conversations, chat_id, false, None, Vec::new());
+        conversation.messages.push(PendingMessage {
+            sort_key: message.timestamp_secs as i64,
+            is_from_me: message.is_from_me,
+            sender: ir::Sender::new(
+                (!message.is_from_me).then(|| message.other.into_key()),
+                message.name_alias.clone(),
+            ),
+            text: message.text,
             attachments: Vec::new(),
             extra: {
                 let mut e = BTreeMap::new();
                 e.insert("source_kind".into(), "xml".to_string());
-                e.insert("android_type".into(), msg.android_type);
-                e.insert("date_ms".into(), msg.date_ms);
-                e.insert("contact_name".into(), msg.contact_name);
+                e.insert("android_type".into(), message.android_type);
+                e.insert("date_ms".into(), message.date_ms);
+                e.insert("contact_name".into(), message.contact_name);
                 // XML rows carry no PDU diagnostics; absent keys read back empty.
-                for (k, v) in msg.xml_fields {
+                for (k, v) in message.xml_fields {
                     e.insert(format!("xml:{k}"), v);
                 }
                 e
@@ -191,8 +244,8 @@ struct PduTarget {
     chat_id: String,
     is_group: bool,
     group_title: Option<String>,
-    /// The handle keys of a group's non-owner peers; empty for an
-    /// individual chat.
+    /// The handle keys of a group's non-owner peers; empty for a
+    /// one-to-one conversation.
     peers: Vec<String>,
 }
 
@@ -214,14 +267,14 @@ fn add_pdu_message(
         report.bump(PDU_GROUP_MESSAGES, 1);
     }
     let pending = pdu_pending_message(parsed, addresses.sender, attachments);
-    let convo = ensure_conversation(
+    let conversation = ensure_conversation(
         conversations,
         &target.chat_id,
         target.is_group,
         target.group_title,
         target.peers,
     );
-    convo.messages.push(pending);
+    conversation.messages.push(pending);
 }
 
 /// The chat the PDU belongs to, from the addresses on it that are not the
@@ -256,7 +309,7 @@ fn pdu_target(
         return None;
     }
     if others.len() >= 2 {
-        let (chat_id, title) = phone::group_chat_id("chat-group-", &others);
+        let (chat_id, title) = phone::group_conversation_id("chat-group-", &others);
         Some(PduTarget {
             chat_id,
             is_group: true,
@@ -282,10 +335,9 @@ fn pdu_pending_message(
 ) -> PendingMessage {
     // The projection names the owner as the sender of every outgoing message
     // itself, so only a received PDU carries its sender here.
-    let sender_identity = match sender {
-        Some(sender) if !parsed.is_sent => sender.into_key(),
-        _ => String::new(),
-    };
+    let identity = sender
+        .filter(|_| !parsed.is_sent)
+        .map(|sender| sender.into_key());
     let mut extra = BTreeMap::new();
     extra.insert("source_kind".into(), "pdu".to_string());
     extra.insert("android_type".into(), String::new());
@@ -301,8 +353,7 @@ fn pdu_pending_message(
     PendingMessage {
         sort_key: parsed.timestamp,
         is_from_me: parsed.is_sent,
-        sender_identity,
-        sender_display_name: None,
+        sender: ir::Sender::new(identity, None),
         text: parsed.body,
         attachments,
         extra,
@@ -324,9 +375,11 @@ fn is_pdu_file(p: &Path) -> bool {
         .is_some_and(|n| (n.starts_with("I_") || n.starts_with("S_")) && n.ends_with(".pdu"))
 }
 
-/// GO SMS Pro deltas of the shared [`message_ir::pending_to_document`] projection.
+/// GO SMS Pro deltas of the shared [`ir::project_pending`] projection.
 struct GoSmsProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl ProjectionHooks for GoSmsProjection {
@@ -334,8 +387,12 @@ impl ProjectionHooks for GoSmsProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     /// Every handle is a [`Handle`] key already.
@@ -343,44 +400,38 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
-            serde_json::Value::String(msg.extra_str("source_kind").to_string()),
+            serde_json::Value::String(message.extra_str("source_kind").to_string()),
         );
-        let pdu_filename = msg.extra_str("pdu_filename");
+        let pdu_filename = message.extra_str("pdu_filename");
         if !pdu_filename.is_empty() {
             fields.insert(
                 "pdu_filename".into(),
                 serde_json::Value::String(pdu_filename.to_string()),
             );
         }
-        let pdu_fields = msg.extra_str("pdu_fields");
+        let pdu_fields = message.extra_str("pdu_fields");
         if !pdu_fields.is_empty() {
             fields.insert(
                 "pdu_fields".into(),
                 serde_json::from_str(pdu_fields).unwrap_or(serde_json::Value::Null),
             );
         }
-        for (k, v) in &msg.extra {
+        for (k, v) in &message.extra {
             if let Some(k) = k.strip_prefix("xml:") {
                 fields
                     .entry(k.to_string())
                     .or_insert_with(|| serde_json::Value::String(v.clone()));
             }
         }
-        if let Some(title) = convo.display_name.as_deref().filter(|t| !t.is_empty()) {
-            // Android group title stored as data only. Filenames do not use it.
-            fields.insert(
-                "android_group_title".into(),
-                serde_json::Value::String(title.to_string()),
-            );
-        }
-        IrSource {
-            android_type: parse_android_type(msg.extra_str("android_type")),
-            fields,
-        }
+        android_vendor_fields(conversation, message, fields)
     }
 }
 
@@ -388,24 +439,16 @@ impl ProjectionHooks for GoSmsProjection {
 pub(crate) struct ConvertExportArgs<'a> {
     pub input_dir: &'a Path,
     pub output_dir: &'a Path,
-    /// the Scratch Directory, which the run's attachment spool goes under.
-    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error and note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
-/// ([`ConversationDocument`]), then write the chosen output format.
+/// ([`ir::ConversationDocument`]), then write the chosen output format.
 ///
-/// When `cancel` is set, cooperative cancellation is checked between XML files
-/// and between PDU files. Cancelled runs return an error with message `cancelled`.
+/// Cancellation is checked between XML files, between PDU files, and
+/// between conversations. A canceled run returns
+/// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
 ///
@@ -415,13 +458,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input_dir,
         output_dir,
-        scratch_dir,
         owner_phones,
-        transforms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        convert_run,
     } = args;
     if !input_dir.is_dir() {
         bail!("input is not a directory: {}", input_dir.display());
@@ -433,72 +471,96 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         .primary_owner_handle()
         .expect("from_phones guarantees a phone owner handle");
 
-    // Clean the previous run's output, or keep it when `resume` is set.
-    let writer =
-        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(scratch_dir);
-    let mut ingest = Ingest {
-        owners: &owners,
-        spool: writer.spool(),
-        conversations: BTreeMap::new(),
-        report: ExportReport::with_issues(issues.cloned()),
-        skips: SkipDetails::default(),
-    };
-    let xml_paths = sorted_files(input_dir, &is_xml_file)?;
-    let pdu_paths = sorted_files(input_dir, &is_pdu_file)?;
-    for xml_path in &xml_paths {
-        message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_xml(xml_path);
-    }
-    for pdu_path in &pdu_paths {
-        message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_pdu(pdu_path)?;
-    }
-    // GO SMS Pro writes no date of its own, so the backup is as new as the
-    // newest file it wrote.
-    let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
-        xml_paths.iter().chain(&pdu_paths).map(PathBuf::as_path),
-    );
-    message_crate_core::check_cancel(cancel)?;
-    let Ingest {
-        conversations,
-        mut report,
-        skips,
-        ..
-    } = ingest;
-
-    let hooks = GoSmsProjection {
-        export: message_crate_core::export_meta(
-            EXPORT_SOURCE,
-            EXPORT_TOOL,
-            EXPORT_TOOL_VERSION,
-            Some(owner_identity),
-            None,
-            backup_taken_at_unix_ms,
-        ),
-    };
-    let mut documents = Vec::new();
-    for (chat_id, mut convo) in conversations {
-        if let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) {
-            documents.push(doc);
-        }
-    }
-
-    writer.finish(
-        documents,
-        &mut AttachmentSource::take_bytes,
-        cancel,
-        &mut report,
-    )?;
-
-    write_skipped_invalid_address_csv(
+    convert_backup(
         &output_dir,
-        &skips.invalid_address,
-        skips.invalid_address_more,
-    )?;
-    write_skipped_empty_pdu_csv(&output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
-    write_skipped_no_party_csv(&output_dir, &skips.no_party, skips.no_party_more)?;
+        convert_run,
+        WriterSetup {
+            spool: true,
+            archive: None,
+        },
+        |writer, cancel, report| {
+            let mut ingest = Ingest {
+                owners: &owners,
+                spool: writer.spool(),
+                conversations: BTreeMap::new(),
+                report,
+                skips: SkipDetails::default(),
+            };
+            let xml_paths = sorted_files(input_dir, &is_xml_file)?;
+            let pdu_paths = sorted_files(input_dir, &is_pdu_file)?;
+            for xml_path in &xml_paths {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_xml(xml_path);
+            }
+            for pdu_path in &pdu_paths {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_pdu(pdu_path)?;
+            }
+            // GO SMS Pro writes no date of its own, so the backup is as new
+            // as the newest file it wrote.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                xml_paths.iter().chain(&pdu_paths).map(PathBuf::as_path),
+            );
+            let Ingest {
+                conversations,
+                report,
+                skips,
+                ..
+            } = ingest;
+            Ok(ReadBackup {
+                conversations: conversations.into_iter().collect(),
+                project: GoSmsDocuments {
+                    hooks: GoSmsProjection {
+                        export: message_crate_core::export_meta(
+                            EXPORT_SOURCE,
+                            EXPORT_TOOL,
+                            EXPORT_TOOL_VERSION,
+                            Some(owner_identity),
+                            None,
+                        ),
+                        backup_taken_at_unix_ms,
+                    },
+                    output_dir: &output_dir,
+                    skips,
+                },
+                report,
+            })
+        },
+    )
+}
 
-    Ok(report)
+/// The projection of each conversation read, for [`convert_backup`], and
+/// the skipped-row CSVs it writes once the conversations are written.
+struct GoSmsDocuments<'a> {
+    hooks: GoSmsProjection,
+    output_dir: &'a Path,
+    skips: SkipDetails,
+}
+
+impl Project for GoSmsDocuments<'_> {
+    type Conversation = (String, PendingConversation);
+
+    fn project(
+        &mut self,
+        (chat_id, mut conversation): (String, PendingConversation),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        project_conversation(&chat_id, &mut conversation, &self.hooks, report)
+    }
+
+    fn after_write(self, _report: &ExportReport) -> Result<()> {
+        let Self {
+            output_dir, skips, ..
+        } = self;
+        write_skipped_csv(
+            output_dir,
+            &skips.invalid_address,
+            skips.invalid_address_more,
+        )?;
+        write_skipped_csv(output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
+        write_skipped_csv(output_dir, &skips.no_party, skips.no_party_more)?;
+        Ok(())
+    }
 }
 
 /// Every file under `dir` matching `predicate`, in path order so runs are repeatable.
@@ -527,7 +589,7 @@ impl Ingest<'_> {
     /// Add every SMS row from one backup XML. Parse failures are recorded in
     /// the report and the file is skipped.
     fn ingest_xml(&mut self, xml_path: &Path) {
-        let (msgs, stats) = match parse_xml_file(xml_path) {
+        let (messages, stats) = match parse_xml_file(xml_path) {
             Ok(parsed) => parsed,
             Err(err) => {
                 self.report.error(
@@ -554,7 +616,7 @@ impl Ingest<'_> {
                 detail,
             );
         }
-        add_xml_messages(&mut self.conversations, msgs);
+        add_xml_messages(&mut self.conversations, messages);
     }
 
     /// Add the MMS in one PDU file. A stub (the placeholder GO SMS Pro
@@ -594,12 +656,12 @@ impl Ingest<'_> {
             }
         };
         let addresses = PduAddresses::of(&parsed);
-        let atts = queue_pdu_attachments(&parsed, self.spool)?;
+        let attachments = queue_pdu_attachments(&parsed, self.spool)?;
         add_pdu_message(
             &mut self.conversations,
             parsed,
             addresses,
-            atts,
+            attachments,
             self.owners,
             &mut self.report,
             &mut self.skips,
@@ -614,99 +676,33 @@ fn remove_if_exists(path: &Path) {
     }
 }
 
-/// Write `skipped_invalid_address.csv` (or remove a stale one) listing rows dropped for an unusable address.
-fn write_skipped_invalid_address_csv(
+/// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
+/// of `details`. When `more` entries were left out, a last row says so in its final column,
+/// padded with empty columns to the header's width. Every detail row's cells go through
+/// [`message_crate_csv::written_cell`], because the addresses and text come from the backup and a
+/// spreadsheet would run one that starts with `=` as a formula.
+fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
     output_dir: &Path,
-    details: &[SkippedBadAddrDetail],
+    details: &[T],
     more: u64,
 ) -> Result<()> {
-    let path = output_dir.join("skipped_invalid_address.csv");
+    let path = output_dir.join(T::FILE_NAME);
     if details.is_empty() && more == 0 {
         remove_if_exists(&path);
         return Ok(());
     }
     let mut wtr =
         csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record([
-        "xml_file",
-        "address",
-        "contact_name",
-        "android_type",
-        "date_ms",
-        "body",
-    ])?;
+    wtr.write_record(T::HEADER)?;
     for d in details {
-        wtr.write_record([
-            d.xml_file.as_str(),
-            d.address.as_str(),
-            d.contact_name.as_str(),
-            d.android_type.as_str(),
-            d.date_ms.as_str(),
-            d.body.as_str(),
-        ])?;
+        write_guarded_record(&mut wtr, d.row())?;
     }
     if more > 0 {
-        wtr.write_record([
-            "",
-            "",
-            "",
-            "",
-            "",
-            &format!("...and {more} more entries not shown"),
-        ])?;
-    }
-    wtr.flush()?;
-    Ok(())
-}
-
-/// Write `skipped_empty_pdu.csv` (or remove a stale one) listing stub PDU files.
-fn write_skipped_empty_pdu_csv(
-    output_dir: &Path,
-    details: &[SkippedEmptyPduDetail],
-    more: u64,
-) -> Result<()> {
-    let path = output_dir.join("skipped_empty_pdu.csv");
-    if details.is_empty() && more == 0 {
-        remove_if_exists(&path);
-        return Ok(());
-    }
-    let mut wtr =
-        csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(["pdu_filename"])?;
-    for d in details {
-        wtr.write_record([d.pdu_filename.as_str()])?;
-    }
-    if more > 0 {
-        wtr.write_record([&format!("...and {more} more entries not shown")])?;
-    }
-    wtr.flush()?;
-    Ok(())
-}
-
-/// Write `skipped_no_party.csv` (or remove a stale one) listing MMS with no non-owner participant.
-fn write_skipped_no_party_csv(
-    output_dir: &Path,
-    details: &[SkippedNoPartyDetail],
-    more: u64,
-) -> Result<()> {
-    let path = output_dir.join("skipped_no_party.csv");
-    if details.is_empty() && more == 0 {
-        remove_if_exists(&path);
-        return Ok(());
-    }
-    let mut wtr =
-        csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(["pdu_filename", "sender", "recipients", "is_sent"])?;
-    for d in details {
-        wtr.write_record([
-            d.pdu_filename.as_str(),
-            d.sender.as_str(),
-            d.recipients.as_str(),
-            if d.is_sent { "1" } else { "0" },
-        ])?;
-    }
-    if more > 0 {
-        wtr.write_record(["", "", "", &format!("...and {more} more entries not shown")])?;
+        let mut row: [String; N] = std::array::from_fn(|_| String::new());
+        if let Some(last) = row.last_mut() {
+            *last = format!("...and {more} more entries not shown");
+        }
+        wtr.write_record(&row)?;
     }
     wtr.flush()?;
     Ok(())
@@ -720,7 +716,7 @@ mod tests {
     /// group is the other people, so the owner's number changes neither the
     /// chat id nor the title.
     #[test]
-    fn the_owners_number_is_not_part_of_a_group_chat_id() {
+    fn the_owners_number_is_not_part_of_a_group_conversation_id() {
         let target = |recipients: &[&str]| {
             let owners = OwnerHandleSet::from_phones(&["+15555550100".into()]).unwrap();
             let parsed = ParsedPdu {
@@ -777,9 +773,9 @@ mod tests {
             &mut skips,
         );
         assert_eq!(conversations.len(), 1);
-        let convo = conversations.values().next().unwrap();
-        assert!(convo.is_group);
-        assert!(convo.chat_id.starts_with("chat-group-"));
+        let conversation = conversations.values().next().unwrap();
+        assert!(conversation.is_group);
+        assert!(conversation.chat_id.starts_with("chat-group-"));
         assert_eq!(report.extra(PDU_GROUP_MESSAGES), 1);
     }
 
@@ -826,7 +822,7 @@ mod tests {
     }
 
     /// The messages of one conversation as the shared projection writes them.
-    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::IrMessage>, ExportReport) {
+    fn project(messages: Vec<PendingMessage>) -> (Vec<ir::Message>, ExportReport) {
         let hooks = GoSmsProjection {
             export: message_crate_core::export_meta(
                 EXPORT_SOURCE,
@@ -834,19 +830,20 @@ mod tests {
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
                 None,
-                None,
             ),
+            backup_taken_at_unix_ms: None,
         };
-        let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
-        convo.messages = messages;
+        let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
+        conversation.messages = messages;
         let mut report = ExportReport::default();
-        let doc = project_conversation("+15555550122", &mut convo, &hooks, &mut report).unwrap();
-        (doc.messages, report)
+        let document =
+            project_conversation("+15555550122", &mut conversation, &hooks, &mut report).unwrap();
+        (document.messages, report)
     }
 
     /// An XML row (milliseconds, no attachments) or a PDU row (whole
     /// seconds) with `digests` as its attachments.
-    fn test_msg(source_kind: &str, text: &str, digests: &[&str]) -> PendingMessage {
+    fn test_message(source_kind: &str, text: &str, digests: &[&str]) -> PendingMessage {
         let mut extra = BTreeMap::new();
         extra.insert("source_kind".into(), source_kind.to_string());
         if source_kind == "xml" {
@@ -855,8 +852,7 @@ mod tests {
         PendingMessage {
             sort_key: 1_609_459_200,
             is_from_me: true,
-            sender_identity: String::new(),
-            sender_display_name: None,
+            sender: ir::Sender::default(),
             text: text.into(),
             attachments: digests
                 .iter()
@@ -876,18 +872,18 @@ mod tests {
     fn xml_and_pdu_mms_rows_collapse_keeping_attachments_and_milliseconds() {
         // The same MMS appears in the XML backup (no attachments) and as a PDU
         // file with media, in either order.
-        let xml = || test_msg("xml", "hello", &[]);
-        let pdu = || test_msg("pdu", "hello", &["a1"]);
+        let xml = || test_message("xml", "hello", &[]);
+        let pdu = || test_message("pdu", "hello", &["a1"]);
         for rows in [vec![xml(), pdu()], vec![pdu(), xml()]] {
-            let (msgs, report) = project(rows);
-            assert_eq!(msgs.len(), 1);
+            let (messages, report) = project(rows);
+            assert_eq!(messages.len(), 1);
             assert_eq!(report.duplicates_dropped, 1);
-            assert_eq!(msgs[0].attachments.len(), 1);
+            assert_eq!(messages[0].attachments.len(), 1);
             assert_eq!(
-                msgs[0].source.as_ref().unwrap().fields["source_kind"],
+                messages[0].source.as_ref().unwrap().fields["source_kind"],
                 "pdu"
             );
-            assert_eq!(msgs[0].timestamp_unix_ms, 1_609_459_200_250);
+            assert_eq!(messages[0].timestamp_unix_ms, 1_609_459_200_250);
         }
     }
 
@@ -895,18 +891,21 @@ mod tests {
     fn distinct_mms_with_one_caption_in_one_second_are_both_kept() {
         // Two MMS sharing second, direction, and caption but with different
         // media are distinct messages: both rows survive.
-        let (msgs, _) = project(vec![
-            test_msg("pdu", "photo", &["a1"]),
-            test_msg("pdu", "photo", &["a2"]),
+        let (messages, _) = project(vec![
+            test_message("pdu", "photo", &["a1"]),
+            test_message("pdu", "photo", &["a2"]),
         ]);
-        assert_eq!(msgs.len(), 2);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_eq!(messages.len(), 2);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     #[test]
     fn plain_sms_duplicates_dropped() {
-        let (msgs, report) = project(vec![test_msg("xml", "hi", &[]), test_msg("xml", "hi", &[])]);
-        assert_eq!(msgs.len(), 1);
+        let (messages, report) = project(vec![
+            test_message("xml", "hi", &[]),
+            test_message("xml", "hi", &[]),
+        ]);
+        assert_eq!(messages.len(), 1);
         assert_eq!(report.duplicates_dropped, 1);
     }
 
@@ -927,12 +926,12 @@ mod tests {
             let addresses = PduAddresses::of(&parsed);
             pdu_pending_message(parsed, addresses.sender, Vec::new())
         };
-        let (msgs, _) = project(vec![pending("15555550122"), pending("15555550133")]);
+        let (messages, _) = project(vec![pending("15555550122"), pending("15555550133")]);
         assert_eq!(
-            msgs.len(),
+            messages.len(),
             2,
             "Lee's message was dropped as a duplicate of Ana's"
         );
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 }

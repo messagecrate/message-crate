@@ -26,12 +26,10 @@ struct Copy<'a> {
 /// written to `name` under `dir`.
 fn backup_file(dir: &Path, name: &str, copy: &Copy<'_>) -> PathBuf {
     let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
-    let header = match copy.backup {
-        Some(ms) => header.backup_taken_at(ms),
-        None => header,
-    };
     let line = copy.versions.iter().cloned().fold(
-        message_line("g-backup", copy.text).sender("+15555550123"),
+        message_line("g-backup", copy.text)
+            .sender("+15555550123")
+            .backup_taken_at(copy.backup),
         MessageLine::edit,
     );
     let line = match copy.deletion {
@@ -93,9 +91,9 @@ async fn version_hits(db: &Path, word: &str) -> i64 {
 /// at `db`.
 async fn fts_hits(db: &Path, table: &str, word: &str) -> i64 {
     let (_pool, mut conn) = open_verify(db).await;
-    sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM {table} WHERE {table} MATCH $1"
-    ))
+    )))
     .bind(word)
     .fetch_one(&mut *conn)
     .await
@@ -511,12 +509,13 @@ async fn the_later_backup_decides_the_duplicate_flag() {
         import_jsonl_files(&db, &files, &options).await.unwrap();
         let sms_options = ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         });
         import_jsonl_files(&db, std::slice::from_ref(&sms), &sms_options)
             .await
@@ -546,48 +545,30 @@ async fn the_import_run_says_when_its_backup_was_made() {
     let batch = |backup: Option<i64>, guid: &str| {
         let header =
             conversation_header("imessage", "+15555550123").participant("+15555550123", None);
-        let header = match backup {
-            Some(ms) => header.backup_taken_at(ms),
-            None => header,
-        };
         format!(
             "{header}\n{}\n",
-            message_line(guid, "hello").sender("+15555550123")
+            message_line(guid, "hello")
+                .sender("+15555550123")
+                .backup_taken_at(backup)
         )
     };
     let run = |body: Vec<String>| {
         let state = state.clone();
         let token = token.clone();
         async move {
-            let (_, created): (String, serde_json::Value) = post_created_json(
+            let (id, created) = crate::test_support::start_import_run(
                 &state,
-                "/v1/imports",
                 &token,
                 serde_json::json!({ "source": "imessage", "mode": "append" }),
             )
             .await;
-            let id = created["id"].as_i64().unwrap();
             assert_eq!(created["backup_taken_at"], serde_json::Value::Null);
             for body in body {
-                let (status, text) = crate::test_support::post_raw(
-                    &state,
-                    &format!("/v1/imports/{id}/batches"),
-                    &token,
-                    "application/jsonl",
-                    body,
-                )
-                .await;
-                assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+                crate::test_support::post_import_batch(&state, &token, id, body).await;
             }
             let read: serde_json::Value =
                 get_json(&state, &format!("/v1/imports/{id}"), &token).await;
-            let _: serde_json::Value = post_json(
-                &state,
-                &format!("/v1/imports/{id}/complete"),
-                &token,
-                serde_json::json!({ "status": "completed" }),
-            )
-            .await;
+            crate::test_support::complete_import_run(&state, &token, id).await;
             read["backup_taken_at"].clone()
         }
     };
@@ -609,27 +590,51 @@ async fn the_import_run_says_when_its_backup_was_made() {
 
 /// A message read back through the API carries the date of the backup that
 /// decided it, which an Export Run writes back into the conversation file.
+/// The date is each message's own: one file whose messages came from two
+/// backups, and one with no date, stores each message with its own date and
+/// the undated one with none (#1967).
 #[tokio::test]
-async fn a_message_read_back_carries_its_backup_date() {
+async fn each_message_read_back_carries_its_own_backup_date() {
     let (state, _fixture, token) = importer().await;
-    let header = conversation_header("imessage", "+15555550123")
-        .participant("+15555550123", None)
-        .backup_taken_at(LATER_BACKUP);
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+    let line = |guid: &str, at: i64, backup: Option<i64>| {
+        message_line(guid, "hello")
+            .at(at)
+            .sender("+15555550123")
+            .backup_taken_at(backup)
+    };
     import_one_batch(
         &state,
         &token,
         "imessage",
         "append",
         format!(
-            "{header}\n{}\n",
-            message_line("g-read", "hello").sender("+15555550123")
+            "{header}\n{}\n{}\n{}\n",
+            line("g-earlier", 1_426_183_462_000, Some(EARLIER_BACKUP)),
+            line("g-later", 1_426_183_463_000, Some(LATER_BACKUP)),
+            line("g-undated", 1_426_183_464_000, None),
         ),
     )
     .await;
     let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
+    let dates: std::collections::BTreeMap<String, serde_json::Value> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["guid"].as_str().unwrap().to_owned(),
+                item["backup_taken_at"].clone(),
+            )
+        })
+        .collect();
     assert_eq!(
-        page["items"][0]["backup_taken_at"],
-        serde_json::json!(LATER_BACKUP_AT)
+        dates,
+        std::collections::BTreeMap::from([
+            ("g-earlier".to_owned(), serde_json::json!(EARLIER_BACKUP_AT)),
+            ("g-later".to_owned(), serde_json::json!(LATER_BACKUP_AT)),
+            ("g-undated".to_owned(), serde_json::Value::Null),
+        ])
     );
 }
 
@@ -905,16 +910,16 @@ async fn a_message_an_undated_file_marked_is_read_back_without_a_date() {
     let batch = |backup: Option<i64>, deletion: Option<Deletion>| {
         let header =
             conversation_header("imessage", "+15555550123").participant("+15555550123", None);
-        let header = match backup {
-            Some(ms) => header.backup_taken_at(ms),
-            None => header,
-        };
-        let marked = message_line("g-marked", "taken back").sender("+15555550123");
+        let marked = message_line("g-marked", "taken back")
+            .sender("+15555550123")
+            .backup_taken_at(backup);
         let marked = match deletion {
             Some(deletion) => marked.deletion(deletion),
             None => marked,
         };
-        let plain = message_line("g-plain", "hello").sender("+15555550123");
+        let plain = message_line("g-plain", "hello")
+            .sender("+15555550123")
+            .backup_taken_at(backup);
         format!("{header}\n{marked}\n{plain}\n")
     };
     import_one_batch(

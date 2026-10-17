@@ -1,29 +1,17 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { useRevealApiToken } from "../../components/apiTokenRevealState";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { useRouteMutation, useRouteQuery } from "../../hooks/useRouteQuery";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
-import type { ApiTokenItem } from "./apiTokensUtils";
+import type { components } from "../../lib/serverApi.types";
+import { useRevealApiToken } from "./useRevealApiToken";
 
 const fetchTokens = (signal: AbortSignal) => listApiTokens({ signal });
 
 type NewToken = Parameters<typeof createApiToken>[0];
 type CreatedToken = Awaited<ReturnType<typeof createApiToken>>;
-
-/** Every token write marks the account's cache stale, and the list refetches itself. */
-function useApiTokenWrite<T, V>(
-  write: (vars: V) => Promise<T>,
-  onSuccess?: (res: T) => void,
-): UseMutationResult<T, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<T, Error, V>({
-    mutationFn: write,
-    onSuccess,
-    onSettled: () => cache.invalidateAccount(),
-  });
-}
+type ApiToken = components["schemas"]["ApiToken"];
 
 /**
  * The secret is revealed from the mutation's own `onSuccess`, which runs even
@@ -31,30 +19,30 @@ function useApiTokenWrite<T, V>(
  * to `mutate` does not, so a secret revealed from there was lost whenever the
  * person left Settings before the server answered.
  */
-export function useCreateApiToken(): UseMutationResult<CreatedToken, Error, NewToken> {
+function useCreateApiToken(): UseMutationResult<CreatedToken, Error, NewToken> {
   const reveal = useRevealApiToken();
-  return useApiTokenWrite(
-    (body: NewToken) => createApiToken(body),
-    (res) => reveal({ label: res.label, token: res.token }),
-  );
+  return useRouteMutation({
+    mutationFn: (body: NewToken) => createApiToken(body),
+    onSuccess: (res) => reveal({ label: res.label, token: res.token }),
+  });
 }
 
-export function useRenameApiToken(): UseMutationResult<
+function useRenameApiToken(): UseMutationResult<
   Awaited<ReturnType<typeof renameApiToken>>,
   Error,
   { id: number; label: string }
 > {
-  return useApiTokenWrite(({ id, label }: { id: number; label: string }) =>
-    renameApiToken(id, { label }),
-  );
+  return useRouteMutation({
+    mutationFn: ({ id, label }: { id: number; label: string }) => renameApiToken(id, { label }),
+  });
 }
 
-export function useRevokeApiToken(): UseMutationResult<
+function useRevokeApiToken(): UseMutationResult<
   Awaited<ReturnType<typeof deleteApiToken>>,
   Error,
   number
 > {
-  return useApiTokenWrite((id: number) => deleteApiToken(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteApiToken(id) });
 }
 
 /**
@@ -67,8 +55,8 @@ export function useApiTokens() {
   const [label, setLabel] = useState("");
   const [canImport, setCanImport] = useState(true);
   const [canExport, setCanExport] = useState(true);
-  const [revokeTarget, setRevokeTarget] = useState<ApiTokenItem | null>(null);
-  const [renameTarget, setRenameTarget] = useState<ApiTokenItem | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ApiToken | null>(null);
   const [renameLabel, setRenameLabel] = useState("");
 
   const {
@@ -90,7 +78,7 @@ export function useApiTokens() {
   const latest = [createToken, renameToken, revokeToken].reduce((newest, next) =>
     next.submittedAt > newest.submittedAt ? next : newest,
   );
-  const actionError = latest.error ? latest.error.message : "";
+  const actionError = latest.error ? errorLine(latest.error) : "";
 
   const resetCreate = createToken.reset;
   const resetRename = renameToken.reset;
@@ -110,9 +98,9 @@ export function useApiTokens() {
   }, [clearError]);
 
   const openRename = useCallback(
-    (item: ApiTokenItem) => {
-      setRenameTarget(item);
-      setRenameLabel(item.label);
+    (token: ApiToken) => {
+      setRenameTarget(token);
+      setRenameLabel(token.label);
       clearError();
     },
     [clearError],
@@ -161,14 +149,14 @@ export function useApiTokens() {
   };
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
-  const revoke = (item: ApiTokenItem) => {
-    revokeToken.mutate(item.id, { onSettled: () => setRevokeTarget(null) });
+  const revoke = (token: ApiToken) => {
+    revokeToken.mutate(token.id, { onSettled: () => setRevokeTarget(null) });
   };
 
   return {
-    items: data ?? [],
+    tokens: data ?? [],
     loading,
-    loadError: loadError ? apiErrorMessage(loadError, "Could not load API Tokens.") : "",
+    loadError: loadError ? errorLine(loadError, "Could not load API Tokens.") : "",
     busy,
     composing,
     setComposing,
@@ -199,7 +187,7 @@ export function useApiTokens() {
  * here, to end one that has leaked, and makes and renames none.
  */
 export function useManagedApiTokens(accountId: number) {
-  const [revokeTarget, setRevokeTarget] = useState<ApiTokenItem | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
   const {
     data,
     isPending: loading,
@@ -207,19 +195,21 @@ export function useManagedApiTokens(accountId: number) {
   } = useRouteQuery(keys.ownerAccounts.apiTokens(accountId), (signal) =>
     listApiTokens({ signal }, accountId),
   );
-  const revokeToken = useApiTokenWrite((id: number) => deleteApiToken(id, accountId));
+  const revokeToken = useRouteMutation({
+    mutationFn: (id: number) => deleteApiToken(id, accountId),
+  });
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
-  const revoke = (item: ApiTokenItem) => {
-    revokeToken.mutate(item.id, { onSettled: () => setRevokeTarget(null) });
+  const revoke = (token: ApiToken) => {
+    revokeToken.mutate(token.id, { onSettled: () => setRevokeTarget(null) });
   };
 
   return {
-    items: data ?? [],
+    tokens: data ?? [],
     loading,
-    loadError: loadError ? apiErrorMessage(loadError, "Could not load API Tokens.") : "",
+    loadError: loadError ? errorLine(loadError, "Could not load API Tokens.") : "",
     busy: revokeToken.isPending,
-    actionError: revokeToken.error ? revokeToken.error.message : "",
+    actionError: revokeToken.error ? errorLine(revokeToken.error) : "",
     revokeTarget,
     setRevokeTarget,
     revoke,

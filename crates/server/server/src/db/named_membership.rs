@@ -12,37 +12,41 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::Result as AnyResult;
-use sqlx::SqliteConnection;
+use anyhow::{Context as _, Result as AnyResult};
+use chrono::{DateTime, Utc};
+use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
 use crate::db::begin_write;
+use crate::text_caps::{MAX_COLLECTION_NAME_CHARS, required_capped_text};
 
-/// Longest allowed name for either kind of set (characters).
-pub const MAX_NAME_LEN: usize = 80;
+/// One Contact Group or Message Tag: its id and name.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
+pub struct NamedSet {
+    /// Id of the Contact Group or Message Tag, which its routes name in their
+    /// path.
+    pub id: i64,
+    /// The name as stored: trimmed, at most 80 characters, and unique among
+    /// the account's sets of this kind whatever its letter case.
+    pub name: String,
+}
 
 /// Create / rename / delete / membership failures for a named set.
 #[derive(Debug)]
 pub enum MembershipError {
     BadRequest(String),
+    /// A member id this account does not hold; carries the sentence naming it.
     NotFound(String),
-    Conflict(String),
+    /// The set itself is missing; carries its label (`"tag"` / `"group"`).
+    SetNotFound(&'static str),
+    /// Another set of the account has the name; carries the sentence naming
+    /// it.
+    NameTaken(String),
     Internal(anyhow::Error),
 }
 
-impl From<sqlx::Error> for MembershipError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Internal(e.into())
-    }
-}
-
-impl From<MembershipError> for crate::server::ApiError {
-    fn from(e: MembershipError) -> Self {
-        match e {
-            MembershipError::BadRequest(m) => Self::validation(m),
-            MembershipError::NotFound(m) => Self::NotFound(m),
-            MembershipError::Conflict(m) => Self::NameTaken(m),
-            MembershipError::Internal(e) => Self::Internal(e),
-        }
+impl From<anyhow::Error> for MembershipError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Internal(e)
     }
 }
 
@@ -51,6 +55,7 @@ type ChangeHook = for<'a> fn(
     &'a mut SqliteConnection,
     i64,
     i64,
+    DateTime<Utc>,
 ) -> Pin<Box<dyn Future<Output = AnyResult<()>> + Send + 'a>>;
 
 /// Table names, labels, reserved names, and messages for one named set.
@@ -75,8 +80,6 @@ pub struct MembershipSpec {
     pub reserved_label: &'static str,
     /// Member label used in error messages (`"conversation"` / `"contact"`).
     pub member_label: &'static str,
-    /// Longest allowed name (characters).
-    pub max_name_len: usize,
     /// Names that must not be created.
     pub reserved: &'static [&'static str],
     /// Reserved names with dedicated error messages (lowercase name, message).
@@ -84,7 +87,8 @@ pub struct MembershipSpec {
     /// A character a name may not hold, with the reason written to follow
     /// "because".
     pub refused_char: Option<(char, &'static str)>,
-    /// Extra work after a membership change (groups touch the contact row).
+    /// Extra work after a membership change, at the instant the change passes
+    /// (groups touch the contact row).
     pub on_change: Option<ChangeHook>,
 }
 
@@ -99,7 +103,6 @@ pub fn tag_spec() -> &'static MembershipSpec {
         label: "tag",
         reserved_label: "Message Tag",
         member_label: "conversation",
-        max_name_len: MAX_NAME_LEN,
         reserved: &[
             "home",
             "contacts",
@@ -140,7 +143,6 @@ pub fn group_spec() -> &'static MembershipSpec {
         label: "group",
         reserved_label: "Contact Group",
         member_label: "contact",
-        max_name_len: MAX_NAME_LEN,
         reserved: &[
             "home",
             "contacts",
@@ -190,14 +192,16 @@ pub fn group_spec() -> &'static MembershipSpec {
     &SPEC
 }
 
-/// Bump the member contact's updated-at, boxed so the spec table can hold it as a plain function pointer.
+/// Set the member contact's updated-at to `now`, boxed so the spec table can
+/// hold it as a plain function pointer.
 fn touch_member_owner<'a>(
     conn: &'a mut SqliteConnection,
     account_id: i64,
     member_id: i64,
+    now: DateTime<Utc>,
 ) -> Pin<Box<dyn Future<Output = AnyResult<()>> + Send + 'a>> {
     Box::pin(crate::db::contacts::touch_contact(
-        conn, account_id, member_id,
+        conn, account_id, member_id, now,
     ))
 }
 
@@ -212,11 +216,12 @@ async fn find_id(
         "SELECT id FROM {table} WHERE account_id = $1 AND lower(name) = lower($2)",
         table = spec.table,
     );
-    let id = sqlx::query_scalar::<_, i64>(&sql)
+    let id = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(name)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("find a named set by its name")?;
     Ok(id)
 }
 
@@ -233,11 +238,12 @@ async fn ensure_id(
         "INSERT INTO {table} (account_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
         table = spec.table
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(&name)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("insert a named set")?;
     find_id(spec, conn, account_id, &name)
         .await?
         .ok_or_else(|| {
@@ -262,19 +268,12 @@ fn reserved_error(spec: &MembershipSpec, name: &str) -> String {
     format!("\"{}\" is a reserved {}", name.trim(), spec.reserved_label)
 }
 
-/// Trim and validate a set name against the spec's length, refused-character
-/// and reserved-name rules.
+/// Trim and validate a set name: not blank and within the cap every
+/// collection name shares, then the spec's refused-character and
+/// reserved-name rules.
 fn normalize_name(spec: &MembershipSpec, name: &str) -> Result<String, MembershipError> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return Err(MembershipError::BadRequest("name required".into()));
-    }
-    if trimmed.chars().count() > spec.max_name_len {
-        return Err(MembershipError::BadRequest(format!(
-            "name must be at most {} characters",
-            spec.max_name_len
-        )));
-    }
+    let trimmed = required_capped_text("name", name, MAX_COLLECTION_NAME_CHARS)
+        .map_err(|refusal| MembershipError::BadRequest(refusal.to_string()))?;
     if let Some((refused, reason)) = spec.refused_char
         && trimmed.contains(refused)
     {
@@ -316,11 +315,12 @@ async fn member_exists(
         "SELECT id FROM {mt} WHERE id = $1 AND account_id = $2",
         mt = spec.member_table
     );
-    let found: Option<i64> = sqlx::query_scalar::<_, i64>(&sql)
+    let found: Option<i64> = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(member_id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("check that the account holds a member")?;
     Ok(found.is_some())
 }
 
@@ -337,6 +337,7 @@ pub async fn set_membership(
     member_ids: &[i64],
     name: &str,
     enable: bool,
+    now: DateTime<Utc>,
 ) -> Result<u64, MembershipError> {
     let ids = clean_ids(member_ids);
     if ids.is_empty() {
@@ -380,28 +381,28 @@ pub async fn set_membership(
     let mut changed = 0u64;
     for id in ids {
         let n = if enable {
-            let sql = insert_member_sql(spec);
-            sqlx::query(&sql)
+            sqlx::query(insert_member_sql(spec))
                 .bind(name_row_id)
                 .bind(id)
                 .bind(account_id)
                 .execute(&mut *conn)
-                .await?
+                .await
+                .context("add a member to a named set")?
                 .rows_affected()
         } else {
-            let sql = delete_member_sql(spec);
-            sqlx::query(&sql)
+            sqlx::query(delete_member_sql(spec))
                 .bind(id)
                 .bind(name_row_id)
                 .bind(account_id)
                 .execute(&mut *conn)
-                .await?
+                .await
+                .context("remove a member from a named set")?
                 .rows_affected()
         };
         if n > 0 {
             changed += 1;
             if let Some(hook) = spec.on_change {
-                hook(conn, account_id, id)
+                hook(conn, account_id, id, now)
                     .await
                     .map_err(MembershipError::Internal)?;
             }
@@ -422,98 +423,101 @@ fn sorted_ids(mut ids: Vec<i64>) -> Vec<i64> {
     ids
 }
 
-/// Sets for this account with their ids, A–Z, excluding reserved leftovers.
+/// Sets for this account, A–Z, excluding reserved leftovers.
 pub async fn list_sets(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<Vec<(i64, String)>, MembershipError> {
+) -> Result<Vec<NamedSet>, MembershipError> {
     let sql = format!(
         "SELECT id, name FROM {table} WHERE account_id = $1 ORDER BY lower(name)",
         table = spec.table
     );
-    let rows = sqlx::query_as::<_, (i64, String)>(&sql)
+    let rows = sqlx::query_as::<_, NamedSet>(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's named sets")?;
     Ok(rows
         .into_iter()
-        .filter(|(_, name)| !is_reserved(spec, name))
+        .filter(|set| !is_reserved(spec, &set.name))
         .collect())
 }
 
-/// One set by id, or `NotFound` when it is not this account's.
+/// One set by id, or `SetNotFound` when it is not this account's.
 pub async fn get_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     id: i64,
-) -> Result<(i64, String), MembershipError> {
+) -> Result<NamedSet, MembershipError> {
     let sql = format!(
         "SELECT id, name FROM {table} WHERE id = $1 AND account_id = $2",
         table = spec.table
     );
-    let row = sqlx::query_as::<_, (i64, String)>(&sql)
+    let set = sqlx::query_as::<_, NamedSet>(AssertSqlSafe(sql))
         .bind(id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| MembershipError::NotFound(format!("{} not found", spec.label)))?;
+        .await
+        .context("read a named set")?
+        .ok_or(MembershipError::SetNotFound(spec.label))?;
     // A reserved-name row can only be a leftover (create_set and rename_set
     // both refuse reserved names): list_sets never shows it, so its id must
     // not work either.
-    if is_reserved(spec, &row.1) {
-        return Err(MembershipError::NotFound(format!(
-            "{} not found",
-            spec.label
-        )));
+    if is_reserved(spec, &set.name) {
+        return Err(MembershipError::SetNotFound(spec.label));
     }
-    Ok(row)
+    Ok(set)
 }
 
-/// Create a set and answer its id and trimmed name. Fails when the name is
-/// taken (ignoring case) or reserved.
+/// Create a set and answer it, under its trimmed name. Fails when the name
+/// is taken (ignoring case) or reserved.
 pub async fn create_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     name: &str,
-) -> Result<(i64, String), MembershipError> {
+) -> Result<NamedSet, MembershipError> {
     let name = normalize_name(spec, name)?;
     // One statement checks the name and inserts the row, so a set created
     // under the name meanwhile, in any letter case, makes this a conflict.
     match crate::db::free_name::insert_if_name_free(conn, spec.table, account_id, &name, &[])
-        .await?
+        .await
+        .context("insert a named set under a free name")?
     {
-        Some(id) => Ok((id, name)),
-        None => Err(MembershipError::Conflict(format!(
+        Some(id) => Ok(NamedSet { id, name }),
+        None => Err(MembershipError::NameTaken(format!(
             "{} already exists",
             spec.label
         ))),
     }
 }
 
-/// Rename a set by id. A case-only change of its own name is allowed; another
-/// set's name (ignoring case) is a conflict.
+/// Rename a set by id and answer it under its new name. A case-only change
+/// of its own name is allowed; another set's name (ignoring case) is a
+/// conflict.
 pub async fn rename_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     id: i64,
     name: &str,
-) -> Result<String, MembershipError> {
+) -> Result<NamedSet, MembershipError> {
     let new_name = normalize_name(spec, name)?;
     // The checks and the update are one write transaction, so the name
     // cannot be taken, nor the set deleted, between them.
-    let mut tx = begin_write(conn).await?;
-    let (_, old_name) = get_set(spec, &mut tx, account_id, id).await?;
-    if old_name == new_name {
-        return Ok(new_name);
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
+    let old = get_set(spec, &mut tx, account_id, id).await?;
+    if old.name == new_name {
+        return Ok(old);
     }
     if let Some(other) = find_id(spec, &mut tx, account_id, &new_name).await?
         && other != id
     {
-        return Err(MembershipError::Conflict(format!(
+        return Err(MembershipError::NameTaken(format!(
             "{} already exists",
             spec.label
         )));
@@ -522,26 +526,32 @@ pub async fn rename_set(
         "UPDATE {table} SET name = $1 WHERE id = $2 AND account_id = $3",
         table = spec.table
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(&new_name)
         .bind(id)
         .bind(account_id)
         .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(new_name)
+        .await
+        .context("rename a named set")?;
+    tx.commit()
+        .await
+        .context("commit the named set's new name")?;
+    Ok(NamedSet { id, name: new_name })
 }
 
 /// Delete a set by id, and its memberships, in one transaction. The
-/// `on_change` hook runs once for each member, as it does when
+/// `on_change` hook runs once for each member, at `now`, as it does when
 /// `patch_members` takes a member out, because each member's sets changed.
 pub async fn delete_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     id: i64,
+    now: DateTime<Utc>,
 ) -> Result<(), MembershipError> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     get_set(spec, &mut tx, account_id, id).await?;
     let members_sql = format!(
         "DELETE FROM {mt} WHERE {nc} = $1 RETURNING {mc}",
@@ -549,27 +559,31 @@ pub async fn delete_set(
         nc = spec.name_column,
         mc = spec.member_column,
     );
-    let members = sqlx::query_scalar::<_, i64>(&members_sql)
+    let members = sqlx::query_scalar::<_, i64>(AssertSqlSafe(members_sql))
         .bind(id)
         .fetch_all(&mut *tx)
-        .await?;
+        .await
+        .context("delete the members of a named set")?;
     let sql = format!(
         "DELETE FROM {table} WHERE id = $1 AND account_id = $2",
         table = spec.table
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(id)
         .bind(account_id)
         .execute(&mut *tx)
-        .await?;
+        .await
+        .context("delete a named set")?;
     if let Some(hook) = spec.on_change {
         for member in members {
-            hook(&mut tx, account_id, member)
+            hook(&mut tx, account_id, member, now)
                 .await
                 .map_err(MembershipError::Internal)?;
         }
     }
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .context("commit the named set's deletion")?;
     Ok(())
 }
 
@@ -587,10 +601,11 @@ pub async fn list_member_ids_of(
         mt = spec.members_table,
         nc = spec.name_column,
     );
-    let rows = sqlx::query_scalar::<_, i64>(&sql)
+    let rows = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the members of a named set")?;
     Ok(rows)
 }
 
@@ -602,7 +617,7 @@ pub async fn list_member_ids_of(
 /// `removed` counts only the rows that were deleted. An id present in both
 /// `add` and `remove` nets to "removed": it is dropped from `add` so it is
 /// deleted, not inserted then deleted, and the `on_change` hook fires once
-/// for it rather than twice.
+/// for it rather than twice. The hook runs at `now`.
 pub async fn patch_members(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
@@ -610,11 +625,14 @@ pub async fn patch_members(
     id: i64,
     add: &[i64],
     remove: &[i64],
+    now: DateTime<Utc>,
 ) -> Result<(u64, u64), MembershipError> {
     // The checks and the writes are one write transaction: the set and every
     // id to add are as they were checked when the rows go in, and a failure
     // part-way leaves the set as it was.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let conn: &mut SqliteConnection = &mut tx;
     get_set(spec, conn, account_id, id).await?;
     let remove = clean_ids(remove);
@@ -650,17 +668,18 @@ pub async fn patch_members(
 
     let mut added = 0u64;
     for member in add {
-        let n = sqlx::query(&insert_sql)
+        let n = sqlx::query(insert_sql.clone())
             .bind(id)
             .bind(member)
             .bind(account_id)
             .execute(&mut *conn)
-            .await?
+            .await
+            .context("add a member to a named set")?
             .rows_affected();
         if n > 0 {
             added += 1;
             if let Some(hook) = spec.on_change {
-                hook(conn, account_id, member)
+                hook(conn, account_id, member, now)
                     .await
                     .map_err(MembershipError::Internal)?;
             }
@@ -668,23 +687,26 @@ pub async fn patch_members(
     }
     let mut removed = 0u64;
     for member in remove {
-        let n = sqlx::query(&delete_sql)
+        let n = sqlx::query(delete_sql.clone())
             .bind(member)
             .bind(id)
             .bind(account_id)
             .execute(&mut *conn)
-            .await?
+            .await
+            .context("remove a member from a named set")?
             .rows_affected();
         if n > 0 {
             removed += 1;
             if let Some(hook) = spec.on_change {
-                hook(conn, account_id, member)
+                hook(conn, account_id, member, now)
                     .await
                     .map_err(MembershipError::Internal)?;
             }
         }
     }
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .context("commit the named set's member changes")?;
     Ok((added, removed))
 }
 
@@ -706,11 +728,12 @@ pub async fn names_for_item(
         name_col = spec.name_column,
         member_col = spec.member_column,
     );
-    let rows = sqlx::query_scalar::<_, String>(&sql)
+    let rows = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(item_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the names of the sets an item is in")?;
     Ok(rows)
 }
 
@@ -722,11 +745,16 @@ pub async fn names_for_items(
     item_ids: &[i64],
 ) -> AnyResult<std::collections::HashMap<i64, Vec<String>>> {
     use crate::db::sql::{fold_in_id_chunks, in_placeholders};
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        member_id: i64,
+        name: String,
+    }
     fold_in_id_chunks(conn, item_ids, |conn, chunk| {
         Box::pin(async move {
             let placeholders = in_placeholders(2, chunk.len());
             let sql = format!(
-                "SELECT m.{member_col}, n.name
+                "SELECT m.{member_col} AS member_id, n.name
                  FROM {members} m
                  JOIN {table} n ON n.id = m.{name_col}
                  WHERE n.account_id = $1 AND m.{member_col} IN ({placeholders})
@@ -736,12 +764,18 @@ pub async fn names_for_items(
                 name_col = spec.name_column,
                 member_col = spec.member_column,
             );
-            let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(account_id);
+            let mut q = sqlx::query_as::<_, Row>(AssertSqlSafe(sql)).bind(account_id);
             for id in chunk {
                 q = q.bind(*id);
             }
-            let rows = q.fetch_all(&mut *conn).await?;
-            Ok(rows)
+            let rows = q
+                .fetch_all(&mut *conn)
+                .await
+                .context("read the names of the sets each item is in")?;
+            Ok(rows
+                .into_iter()
+                .map(|row| (row.member_id, row.name))
+                .collect())
         })
     })
     .await
@@ -749,8 +783,8 @@ pub async fn names_for_items(
 
 /// Link one member to one name row, doing nothing when the link exists or
 /// the member is not the account's. Binds: name row id, member id, account.
-fn insert_member_sql(spec: &MembershipSpec) -> String {
-    format!(
+fn insert_member_sql(spec: &MembershipSpec) -> SqlStr {
+    AssertSqlSafe(format!(
         "INSERT INTO {mt} ({mc}, {nc})
          SELECT id, $1 FROM {member_table} WHERE id = $2 AND account_id = $3
          ON CONFLICT DO NOTHING",
@@ -758,13 +792,14 @@ fn insert_member_sql(spec: &MembershipSpec) -> String {
         mc = spec.member_column,
         nc = spec.name_column,
         member_table = spec.member_table,
-    )
+    ))
+    .into_sql_str()
 }
 
 /// Unlink one member from one name row when the member is the account's.
 /// Binds: member id, name row id, account.
-fn delete_member_sql(spec: &MembershipSpec) -> String {
-    format!(
+fn delete_member_sql(spec: &MembershipSpec) -> SqlStr {
+    AssertSqlSafe(format!(
         "DELETE FROM {mt}
          WHERE {mc} = $1 AND {nc} = $2
            AND EXISTS (
@@ -776,7 +811,8 @@ fn delete_member_sql(spec: &MembershipSpec) -> String {
         mc = spec.member_column,
         nc = spec.name_column,
         member_table = spec.member_table,
-    )
+    ))
+    .into_sql_str()
 }
 
 #[cfg(test)]

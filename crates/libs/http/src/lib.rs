@@ -1,12 +1,12 @@
 //! Blocking HTTP client helpers and retry classification for the import and export
 //! crates.
 //!
-//! `message-crate-import` and `message-crate-export` both talk to the server through one
+//! `import` and `export` both talk to the server through one
 //! [`HttpSession`] (built on [`build_client`]), log in through
 //! [`auth_check`], share [`truncate`] for error snippets, and classify
 //! retryable failures through `classify_retry` / `with_retries`.
-//! [`AuthError`] and [`AuthInfo`] live here so both crates — and the desktop
-//! app through their re-exports — share one auth surface, and [`ok_json`]
+//! [`AuthError`] and [`AuthInfo`] live here so both crates (and the desktop
+//! app through their re-exports) share one auth surface, and [`ok_json`]
 //! reads every server answer, so the server's RFC 7807 problem document is
 //! understood in one place rather than in each client.
 
@@ -17,7 +17,10 @@ mod session;
 
 pub use auth_error::{AuthError, SESSION_REFUSED, session_refused};
 pub use response::{error_sentence, ok_json, read_body};
-pub use retry::{HttpError, RetryKind, classify_retry, is_session_refused, with_retries};
+pub use retry::{
+    HttpError, LAST_RETRY_WAIT, RetryKind, ServerAway, classify_retry, is_session_refused,
+    server_away, with_retries, with_retries_until,
+};
 pub use session::{HttpSession, auth_check, bearer_header, looks_like_html, trim_base_url};
 
 use anyhow::{Context, Result};
@@ -54,12 +57,10 @@ fn app_headers() -> reqwest::header::HeaderMap {
         .and_then(|build| reqwest::header::HeaderValue::from_str(build).ok());
     if let Some(build) = build {
         headers.insert(
-            message_crate_api_types::APP_HEADER,
-            reqwest::header::HeaderValue::from_static(
-                message_crate_api_types::AppKind::Desktop.as_str(),
-            ),
+            api_types::APP_HEADER,
+            reqwest::header::HeaderValue::from_static(api_types::AppKind::Desktop.as_str()),
         );
-        headers.insert(message_crate_api_types::APP_VERSION_HEADER, build);
+        headers.insert(api_types::APP_VERSION_HEADER, build);
     }
     headers
 }
@@ -67,10 +68,17 @@ fn app_headers() -> reqwest::header::HeaderMap {
 /// Idle connections kept per server host for worker threads.
 const POOL_MAX_IDLE_PER_HOST: usize = 64;
 
+/// How long an idle connection is kept for reuse: 20 seconds, under the 30
+/// seconds the server keeps one open with no request. A connection the
+/// client kept longer could be closed by the server just as the client
+/// sends a request on it, which fails the request for nothing.
+const POOL_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Build the shared blocking reqwest client.
 ///
 /// One client per `HttpSession`; the connection pool keeps
-/// `POOL_MAX_IDLE_PER_HOST` idle connections per host for the worker threads.
+/// `POOL_MAX_IDLE_PER_HOST` idle connections per host for the worker threads,
+/// each for `POOL_IDLE_LIMIT`.
 ///
 /// The client trusts the certificate authorities the operating system trusts
 /// as well as the bundled webpki roots (the workspace's reqwest features), so
@@ -83,6 +91,7 @@ const POOL_MAX_IDLE_PER_HOST: usize = 64;
 pub fn build_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+        .pool_idle_timeout(POOL_IDLE_LIMIT)
         .default_headers(app_headers())
         .build()
         .context("build HTTP client")

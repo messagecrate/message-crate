@@ -1,29 +1,52 @@
-import { useState } from "react";
-import Button from "../../components/Button";
+import { useEffect, useRef, useState } from "react";
+import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { fixedSettings } from "../../lib/account";
-import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
-import { AccountActivitySection } from "./AccountActivitySection";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { AddressBookSection } from "./AddressBookSection";
 import { IdentitiesSection } from "./IdentitiesSection";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
+import type { NameEdit } from "./useNameEdit";
+import { useSettingsAccount, useUpdateSettingsProfile } from "./useSettingsAccount";
 
 /**
  * Profile settings: display name, time zone, identities, address book.
  *
  * Given `managedAccountId`, the account is one the owner opened from
  * User Accounts. The owner sets its name, zone and identities as the holder
- * does, and reads when it last logged in and which app it connects with. The
- * address book is the account's contacts, which the owner does not reach.
+ * does. The address book is the account's contacts, which the owner does not
+ * reach.
  */
-export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: number }) {
+export function ProfileSettingsPanel({
+  managedAccountId,
+  nameEdit,
+}: {
+  managedAccountId?: number;
+  nameEdit: NameEdit;
+}) {
   const { profile, loading, error: loadError } = useSettingsAccount(managedAccountId);
   const updateProfile = useUpdateSettingsProfile(managedAccountId);
   const managed = managedAccountId !== undefined;
-  // What the person has typed and not yet saved; null shows the stored name.
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
-  const [nameError, setNameError] = useState("");
+  const { draft: nameDraft, setDraft: setNameDraft, error: nameError } = nameEdit;
   const [zoneError, setZoneError] = useState("");
+  const [zoneSaving, setZoneSaving] = useState(false);
+
+  // Leaving the field is the whole gesture, as picking a zone is: no Save
+  // button, so a typed name cannot be left behind unsaved (#2985).
+  const handleSaveName = async () => {
+    if (!profile) return;
+    await nameEdit.save(profile.preferred_name ?? null, (name) =>
+      updateProfile.mutateAsync({ preferred_name: name }),
+    );
+  };
+
+  // A tab switch removes the field without a blur, so the panel runs the
+  // last committed render's save as it goes.
+  const saveNameOnLeave = useRef(handleSaveName);
+  useEffect(() => {
+    saveNameOnLeave.current = handleSaveName;
+  });
+  useEffect(() => () => void saveNameOnLeave.current(), []);
 
   if (loadError) {
     return <div className="text-danger">Could not load profile: {loadError}</div>;
@@ -36,27 +59,18 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
   const name = nameDraft ?? profile.preferred_name ?? "";
   const fixed = fixedSettings(profile);
 
-  const handleSaveName = async () => {
-    setNameError("");
-    try {
-      await updateProfile.mutateAsync({
-        preferred_name: name.trim() || null,
-      });
-      setNameDraft(null);
-    } catch (e) {
-      setNameError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
   // Picking a zone is the whole gesture: no Save button, the server answers
   // with the profile as it now stands and every date label re-renders from it.
   const handleChangeZone = async (zone: string) => {
     if (zone === profile.time_zone) return;
     setZoneError("");
+    setZoneSaving(true);
     try {
       await updateProfile.mutateAsync({ time_zone: zone });
     } catch (e) {
-      setZoneError(e instanceof Error ? e.message : String(e));
+      setZoneError(errorLine(e));
+    } finally {
+      setZoneSaving(false);
     }
   };
 
@@ -70,17 +84,14 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
           value={name}
           readOnly={fixed.displayName}
           onChange={(e) => setNameDraft(e.target.value)}
-          className={`${inputClassName} flex-1${fixed.displayName ? " !text-muted" : ""}`}
+          onBlur={() => void handleSaveName()}
+          // Enter leaves the field, so the save runs once, from the blur. An
+          // Enter that picks an input method's candidate is not one.
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
+          }}
+          className={`${textInputClass} flex-1${fixed.displayName ? " !text-muted" : ""}`}
         />
-        {fixed.displayName ? null : (
-          <Button
-            variant="primary"
-            onClick={handleSaveName}
-            className="!px-[0.85rem] !py-[0.35rem]"
-          >
-            Save
-          </Button>
-        )}
       </div>
       {nameError && <div className="mb-6 text-[0.813rem] text-danger">{nameError}</div>}
       {!nameError && <div className="mb-6" />}
@@ -89,7 +100,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
       <TimeZoneField
         value={profile.time_zone}
         onChange={(zone) => void handleChangeZone(zone)}
-        isDisabled={fixed.timeZone || updateProfile.isPending}
+        isDisabled={fixed.timeZone || zoneSaving}
         className="mb-[0.35rem] max-w-[28rem]"
       />
       <div className="text-[0.813rem] text-muted">
@@ -105,7 +116,6 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
       {profile.is_owner ? null : (
         <>
           <IdentitiesSection profile={profile} managedAccountId={managedAccountId} />
-          {managed && <AccountActivitySection profile={profile} />}
           {!managed && !fixed.addressBook && <AddressBookSection />}
         </>
       )}

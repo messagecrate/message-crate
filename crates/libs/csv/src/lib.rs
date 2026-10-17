@@ -1,22 +1,17 @@
-//! Shared CSV helpers for writing conversation files.
-
-mod utc_offset;
-mod zone;
-
-pub use utc_offset::parse_utc_offset;
-pub use zone::Zone;
+//! Shared CSV helpers for reading and writing conversation files.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
+use std::borrow::Cow;
+use std::io::{Cursor, Write};
 use std::path::Path;
 
 /// One attachment object written into `attachments_json`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AttachmentCell {
-    /// Shared attachment metadata (serialized inline — same JSON shape as before).
+    /// Shared attachment metadata (serialized inline, same JSON shape as before).
     #[serde(flatten)]
-    pub meta: message_ir::AttachmentMeta,
+    pub meta: ir::AttachmentMeta,
     /// Sticker flag.
     #[serde(default)]
     pub is_sticker: bool,
@@ -27,7 +22,7 @@ pub struct AttachmentCell {
     pub sticker_effect: Option<String>,
 }
 
-impl From<AttachmentCell> for message_ir::IrAttachment {
+impl From<AttachmentCell> for ir::Attachment {
     fn from(cell: AttachmentCell) -> Self {
         let AttachmentCell {
             meta,
@@ -61,9 +56,9 @@ pub struct ParticipantCell {
     pub display_name: String,
 }
 
-/// Timestamp formatting (defined in `message-ir`, where the shared
+/// Timestamp formatting (defined in `ir`, where the shared
 /// projection uses it; re-exported here for existing callers).
-pub use message_ir::format_local_ts;
+pub use ir::format_local_ts;
 
 /// Serialize a value for a CSV JSON cell (`null` on failure).
 pub fn json_cell(value: &impl Serialize) -> String {
@@ -117,6 +112,63 @@ pub fn parse_bool(raw: &str) -> bool {
     )
 }
 
+/// What a spreadsheet reads as the start of a formula when a cell begins
+/// with it.
+const FORMULA_STARTS: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
+
+/// The `'` a spreadsheet reads as "this cell is text".
+const TEXT_MARK: char = '\'';
+
+/// A cell as Message Crate writes it into a CSV file: with a `'` in front
+/// when it starts with a character a spreadsheet reads as the start of a
+/// formula. Without the `'`, the spreadsheet would run the cell, or drop the
+/// `+` of a phone number. A cell that already starts with `'`s and then one
+/// of those characters gets one more `'`, so the one [`read_cell`] takes
+/// off leaves the cell as it was.
+pub fn written_cell(cell: &str) -> Cow<'_, str> {
+    if cell
+        .trim_start_matches(TEXT_MARK)
+        .starts_with(FORMULA_STARTS)
+    {
+        format!("{TEXT_MARK}{cell}").into()
+    } else {
+        cell.into()
+    }
+}
+
+/// A cell as Message Crate reads it from a CSV file: one `'` taken off when
+/// one of the characters a spreadsheet reads as a formula follows it, which
+/// undoes [`written_cell`]. A spreadsheet can keep that `'` when it saves or
+/// drop it, and both read the same, unless the cell itself started with
+/// `'`. The developer reference's "Understand CSV columns" page says why.
+pub fn read_cell(cell: &str) -> &str {
+    match cell.strip_prefix(TEXT_MARK) {
+        Some(rest)
+            if rest
+                .trim_start_matches(TEXT_MARK)
+                .starts_with(FORMULA_STARTS) =>
+        {
+            rest
+        }
+        _ => cell,
+    }
+}
+
+/// Write one CSV row with every cell as [`written_cell`] writes it.
+///
+/// # Errors
+///
+/// Returns the writer's error when the row cannot be written.
+pub fn write_guarded_record<W: Write>(
+    wtr: &mut csv::Writer<W>,
+    cells: impl IntoIterator<Item = impl AsRef<str>>,
+) -> csv::Result<()> {
+    for cell in cells {
+        wtr.write_field(written_cell(cell.as_ref()).as_bytes())?;
+    }
+    wtr.write_record(None::<&[u8]>)
+}
+
 /// Trimmed value of one CSV cell (empty string when missing).
 pub fn field(rec: &csv::StringRecord, idx: usize) -> String {
     rec.get(idx).unwrap_or("").trim().to_string()
@@ -124,7 +176,30 @@ pub fn field(rec: &csv::StringRecord, idx: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{col, field, json_cell, parse_bool};
+    use super::{col, field, json_cell, parse_bool, read_cell, write_guarded_record, written_cell};
+
+    /// Every character a spreadsheet reads as the start of a formula gets the
+    /// `'`, and the read takes exactly that `'` off again.
+    #[test]
+    fn every_formula_start_is_quoted_and_read_back() {
+        for cell in ["=1", "+1", "-1", "@a", "\ta", "\ra", "'=1", "''+1"] {
+            let written = written_cell(cell);
+            assert_eq!(written, format!("'{cell}"), "{cell:?}");
+            assert_eq!(read_cell(&written), cell, "{cell:?}");
+        }
+        for cell in ["", "Ada", "'Twas", "a=1", "15555550100", r#"[{"a":1}]"#] {
+            assert_eq!(written_cell(cell), cell, "{cell:?}");
+            assert_eq!(read_cell(cell), cell, "{cell:?}");
+        }
+    }
+
+    #[test]
+    fn write_guarded_record_quotes_every_formula_cell_of_a_row() {
+        let mut wtr = csv::Writer::from_writer(Vec::new());
+        write_guarded_record(&mut wtr, ["=1+1", "plain", "+15551234567"]).unwrap();
+        let text = String::from_utf8(wtr.into_inner().unwrap()).unwrap();
+        assert_eq!(text, "'=1+1,plain,'+15551234567\n");
+    }
 
     #[test]
     fn col_finds_a_column_by_name_and_names_a_missing_one() {

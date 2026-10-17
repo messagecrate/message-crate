@@ -23,10 +23,11 @@
 //! identities have changed.
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
-use super::ImportCounts;
 use super::contact_name::ensure_contact_for_handle;
+use super::pipeline::ImportCounts;
 use crate::db::{contacts, conversations, handles, participants};
 
 /// What an identity change is measured against: the account's
@@ -61,7 +62,7 @@ pub(crate) async fn before_identity_change(
 ///
 /// For an identity removed: each participant set aside at it comes back as
 /// it was. Each of its handles the conversations hold as a participant, a
-/// one-to-one chat handle or a received row's sender gets a contact when it
+/// one-to-one conversation's chat handle or a received row's sender gets a contact when it
 /// has none, with the import run records and groups set aside for it. Each
 /// conversation that was with yourself and is not now gets its chat handle
 /// as a participant when it has none, named as its contact is.
@@ -71,6 +72,7 @@ pub(crate) async fn before_identity_change(
 /// each contact an import made for the holder and nobody touched is deleted,
 /// unless something else refers to it
 /// ([`contacts::delete_untouched_holder_contact`]). Other participants stay.
+/// A contact it changes is stamped `now`.
 ///
 /// # Errors
 ///
@@ -78,6 +80,7 @@ pub(crate) async fn before_identity_change(
 pub(crate) async fn follow_identities(
     conn: &mut SqliteConnection,
     before: WithYourselfBefore,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let WithYourselfBefore {
         account_id,
@@ -98,8 +101,16 @@ pub(crate) async fn follow_identities(
         let contact_id = match contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
             Some(contact_id) => Some(contact_id),
             None if handles::is_met_in_conversations(conn, account_id, handle_id).await? => Some(
-                ensure_contact_for_handle(conn, account_id, None, handle_id, None, &mut counts)
-                    .await?,
+                ensure_contact_for_handle(
+                    conn,
+                    account_id,
+                    None,
+                    handle_id,
+                    None,
+                    &mut counts,
+                    now,
+                )
+                .await?,
             ),
             None => None,
         };

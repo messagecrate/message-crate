@@ -3,15 +3,14 @@ use std::path::Path;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
-use super::{StagingError, store_claimed_or_path};
+use super::{StagingError, prepare_attachments, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
-use crate::imports_api::{
-    FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-    ImportSchemaMode, import_jsonl_files_on_conn,
-};
-use crate::models::AttachmentRecord;
-use crate::test_support::{attachment, conversation_header, message_line};
-use message_ir::{IrAttachment, IrMessageKind, IrService};
+use crate::imports_api::pipeline::{FixedImportArgs, ImportCounts, ImportOptions};
+use crate::imports_api::records::AttachmentRecord;
+use crate::imports_api::{ImportError, ImportFailure};
+use crate::test_support::{attachment, conversation_header, import_for_account, message_line};
+use api_types::ImportMode;
+use ir::{Attachment, MessageKind, Transport};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -47,7 +46,7 @@ async fn import_one(
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "sms-backup-restore");
-    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+    Ok(import_for_account(conn, &[path], &opts).await?)
 }
 
 /// Append-mode options for one test import into [`TEST_ACCOUNT`] under the
@@ -56,12 +55,13 @@ async fn import_one(
 fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
     ImportOptions::fixed(FixedImportArgs {
         assets_dir: assets,
-        asset_root: root,
+        asset_root: Some(root),
         mode: ImportMode::Append,
         source,
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     })
 }
 
@@ -76,7 +76,7 @@ fn refusal(result: anyhow::Result<ImportCounts>) -> String {
     reason.trim_start_matches([':', ' ']).to_string()
 }
 
-/// An attachment record that names only a stored blob by its fingerprint,
+/// An attachment record that names only a stored Asset by its fingerprint,
 /// with `mime_type` as the export's MIME claim.
 fn claimed(sha256: &str, mime_type: Option<&str>) -> AttachmentRecord {
     AttachmentRecord {
@@ -91,12 +91,13 @@ fn claimed(sha256: &str, mime_type: Option<&str>) -> AttachmentRecord {
     }
 }
 
-/// A blob the store already holds under `image/png` is reused when an
-/// attachment claims its sha256. The export's MIME type wins over the stored
-/// one when the record has one, and the stored one stands when it does not,
-/// because the export saw the original file and the store only guessed.
+/// An Asset the store already holds under `image/png` is reused when an
+/// attachment claims its sha256, and keeps that type whatever the record
+/// declares: its bytes show no type, so the first type declared for it
+/// stays, and every row of one Asset names the type it is served under
+/// (#2804).
 #[test]
-fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
+fn a_reused_asset_keeps_the_type_it_is_stored_under() {
     let tmp = TempDir::new().unwrap();
     let export_dir = tmp.path().join("export");
     let assets_dir = tmp.path().join("assets");
@@ -109,25 +110,25 @@ fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
 
     let stored = store_claimed_or_path(
         &claimed(sha.as_str(), Some("image/jpeg")),
-        &export_dir,
+        Some(&export_dir),
         &assets_dir,
         &mut stats,
         2,
     )
     .unwrap()
-    .expect("the stored blob is reused");
+    .expect("the stored Asset is reused");
     assert_eq!(stored.sha256, sha.as_str());
-    assert_eq!(stored.mime_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(stored.mime_type.as_deref(), Some("image/png"));
 
     let stored = store_claimed_or_path(
         &claimed(sha.as_str(), None),
-        &export_dir,
+        Some(&export_dir),
         &assets_dir,
         &mut stats,
         2,
     )
     .unwrap()
-    .expect("the stored blob is reused");
+    .expect("the stored Asset is reused");
     assert_eq!(stored.mime_type.as_deref(), Some("image/png"));
     assert_eq!(stats.deduped, 2);
     assert_eq!(stats.copied, 0);
@@ -151,13 +152,13 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
     let new_sha = assets_api::Sha256::of_bytes(b"bytes the store has never seen");
 
     for sha in [&stored_sha, &new_sha] {
-        let att = AttachmentRecord {
+        let attachment = AttachmentRecord {
             path: Some("../escape.txt".to_string()),
             ..claimed(sha.as_str(), None)
         };
         let mut stats = AssetStats::default();
 
-        let err = store_claimed_or_path(&att, &export_dir, &assets_dir, &mut stats, 2)
+        let err = store_claimed_or_path(&attachment, Some(&export_dir), &assets_dir, &mut stats, 2)
             .expect_err("the path is refused");
         assert!(
             matches!(
@@ -170,8 +171,8 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
         assert_eq!(
             err.to_string(),
             format!(
-                "Line 2 of the file: {}: ../escape.txt.",
-                message_ir::UNSAFE_ATTACHMENT_PATH
+                "line 2 of the file: {}: ../escape.txt",
+                ir::UNSAFE_ATTACHMENT_PATH
             )
         );
         assert_eq!(stats.deduped, 0);
@@ -183,26 +184,21 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
 /// answers with the failure's own status rather than `500`.
 #[tokio::test]
 async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let header = one_to_one_header();
     // The path is the input under test, so the line stays written out.
-    let message = r#"{"guid":"g-escape","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}],"imessage":null,"source":null}
+    let message = r#"{"guid":"g-escape","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"imessage","message_kind":"imessage","sender":{"identity":"+15555550154","display_name":null},"subject":null,"text":"hi","attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}],"imessage":null,"source":null}
 "#;
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(&path, format!("{header}{message}")).unwrap();
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        std::slice::from_ref(&path),
-        &opts,
-        ImportSchemaMode::Ensure,
-    )
-    .await
-    .expect_err("the path is refused");
+    let err = import_for_account(&mut conn, std::slice::from_ref(&path), &opts)
+        .await
+        .expect_err("the path is refused");
 
     match err {
         ImportError::Rejected {
@@ -228,15 +224,15 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
     // A file where the store's directory should be.
     let assets_dir = tmp.path().join("assets");
     std::fs::write(&assets_dir, b"not a directory").unwrap();
-    let att = AttachmentRecord {
+    let attachment = AttachmentRecord {
         path: Some("photo.png".to_string()),
         sha256: None,
         ..claimed("", None)
     };
 
     let err = store_claimed_or_path(
-        &att,
-        &export_dir,
+        &attachment,
+        Some(&export_dir),
         &assets_dir,
         &mut AssetStats::default(),
         2,
@@ -249,26 +245,89 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
     );
 }
 
+/// A stated SHA-256 that is not one, on an attachment with no path, is
+/// refused naming the attachment by its original name, so the sender can
+/// find it (#2259).
+#[test]
+fn a_malformed_fingerprint_without_a_path_is_refused_naming_the_original_name() {
+    let tmp = TempDir::new().unwrap();
+    let attachment = AttachmentRecord {
+        original_name: Some("holiday.jpg".to_string()),
+        ..claimed("not-a-fingerprint", None)
+    };
+
+    let err = store_claimed_or_path(
+        &attachment,
+        None,
+        &tmp.path().join("assets"),
+        &mut AssetStats::default(),
+        2,
+    )
+    .expect_err("the fingerprint is refused");
+
+    assert!(
+        matches!(
+            &err,
+            StagingError::Rejected(ImportFailure::AttachmentSha256Invalid { path, line: 2, .. })
+                if path == "holiday.jpg"
+        ),
+        "{err:?}"
+    );
+}
+
+/// A conversion drops the stated fingerprint, so a malformed one is refused
+/// before it, whatever the media mode (#2259).
+#[test]
+fn a_malformed_fingerprint_is_refused_before_a_conversion() {
+    let tmp = TempDir::new().unwrap();
+    let export_dir = tmp.path().join("export");
+    std::fs::create_dir_all(&export_dir).unwrap();
+    std::fs::write(export_dir.join("photo.jpg"), b"some bytes").unwrap();
+    let attachment = AttachmentRecord {
+        path: Some("photo.jpg".to_string()),
+        ..claimed("not-a-fingerprint", Some("image/jpeg"))
+    };
+
+    for media in [media::MediaMode::Convert, media::MediaMode::Compress] {
+        let assets = tmp.path().join("assets");
+        let err = prepare_attachments(
+            &ImportOptions {
+                media,
+                ..append_opts(&assets, &export_dir, "")
+            },
+            &assets,
+            vec![attachment.clone()],
+            &mut AssetStats::default(),
+            tmp.path(),
+            2,
+        )
+        .err()
+        .expect("the fingerprint is refused");
+        assert!(
+            matches!(
+                &err,
+                StagingError::Rejected(ImportFailure::AttachmentSha256Invalid { line: 2, .. })
+            ),
+            "{media:?}: {err:?}"
+        );
+    }
+}
+
 /// A file the server cannot open is its own fault: the import returns it as
 /// internal, and a command line that prints it shows the whole chain, the
 /// file and the operating system's reason both.
 #[tokio::test]
 async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("gone.jsonl");
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        std::slice::from_ref(&path),
-        &opts,
-        ImportSchemaMode::Ensure,
-    )
-    .await
-    .expect_err("the file is not there");
+    let err = import_for_account(&mut conn, std::slice::from_ref(&path), &opts)
+        .await
+        .expect_err("the file is not there");
 
     assert!(matches!(err, ImportError::Internal(_)), "{err:?}");
     let printed = format!("{:#}", anyhow::Error::from(err));
@@ -284,7 +343,7 @@ async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
 /// not answered as a fault of the server.
 #[tokio::test]
 async fn a_directory_import_refuses_a_header_without_a_source() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let header = conversation_header("  ", "+15555550154").line();
@@ -300,14 +359,9 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
         ..append_opts(&assets, tmp.path(), "")
     };
 
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        std::slice::from_ref(&path),
-        &opts,
-        ImportSchemaMode::Ensure,
-    )
-    .await
-    .expect_err("the header has no source");
+    let err = import_for_account(&mut conn, std::slice::from_ref(&path), &opts)
+        .await
+        .expect_err("the header has no source");
 
     match err {
         ImportError::Rejected {
@@ -332,7 +386,7 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
 /// attachment as missing.
 #[tokio::test]
 async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_not_stored() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
@@ -341,7 +395,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     let header = one_to_one_header();
     let message = message_line("g-mismatch", "hi")
         .sender("+15555550154")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             digest_sha256: Some(claimed_sha.to_string()),
             ..attachment("photo.bin", "photo.bin", "application/octet-stream")
         });
@@ -349,7 +403,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts, ImportSchemaMode::Ensure)
+    let err = import_for_account(&mut conn, &[path], &opts)
         .await
         .expect_err("a mismatched file fails the import");
 
@@ -371,7 +425,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
 /// does (#1095).
 #[tokio::test]
 async fn an_orphaned_conversation_is_staged_by_its_type_not_its_file_name() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = orphaned_header()
         + &incoming("g-orphan-1", "+15555550154")
@@ -418,13 +472,13 @@ async fn an_orphaned_conversation_is_staged_by_its_type_not_its_file_name() {
 /// refuses the file before staging sees it.
 #[tokio::test]
 async fn a_file_with_messages_and_no_header_is_refused() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     for name in ["_import.jsonl", "+15555550100.jsonl"] {
         let result = import_one(&mut conn, name, &incoming("g1", "+15555550100")).await;
         assert_eq!(
             refusal(result),
-            "Line 1 of the file: a message appears before the conversation header.",
+            "line 1 of the file: a message appears before the conversation header",
             "{name}"
         );
     }
@@ -432,20 +486,20 @@ async fn a_file_with_messages_and_no_header_is_refused() {
 
 #[tokio::test]
 async fn a_file_with_neither_header_nor_messages_is_refused() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let result = import_one(&mut conn, "+15555550100.jsonl", "\n").await;
     assert_eq!(
         refusal(result),
-        "Line 1 of the file: the file has no conversation header."
+        "line 1 of the file: the file has no conversation header"
     );
 }
 
 /// An incoming WhatsApp line from `sender`.
 fn incoming_whatsapp(guid: &str, sender: &str) -> String {
     message_line(guid, "hi")
-        .service(IrService::Whatsapp)
-        .kind(IrMessageKind::Unknown)
+        .service(Transport::Whatsapp)
+        .kind(MessageKind::Unknown)
         .sender(sender)
         .line()
 }
@@ -463,8 +517,8 @@ async fn handle_types(conn: &mut SqliteConnection) -> Vec<(String, String)> {
 /// the group's key and nobody's address. Typed by its shape it was stored as
 /// an email identity (#1141).
 #[tokio::test]
-async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+async fn a_group_conversation_id_is_stored_as_other_whatever_its_shape() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "120363042@g.us")
         .group()
@@ -491,7 +545,7 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
 /// (#1141).
 #[tokio::test]
 async fn a_whatsapp_lid_chat_its_participant_and_its_sender_are_one_other_identity() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456@lid")
         .participant("123456@lid", None)
@@ -514,12 +568,47 @@ async fn a_whatsapp_lid_chat_its_participant_and_its_sender_are_one_other_identi
     assert_eq!(contacts, 1, "the one person in the chat is one contact");
 }
 
+/// A WhatsApp conversation is on WhatsApp whatever its source is named. An
+/// Export Run writes the server's source name into `export.source`, so a
+/// WhatsApp conversation stored under `wa-2024` comes back with that name.
+/// Its service came from the source name alone, so it was read as Text
+/// Message and its `@lid` participant became an email identity there
+/// (#2050).
+#[tokio::test]
+async fn a_whatsapp_conversation_is_on_whatsapp_whatever_its_source_is_named() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("wa-2024", "123456@lid")
+        .participant("123456@lid", None)
+        .line()
+        + &incoming_whatsapp("g-renamed-1", "123456@lid");
+    import_one(&mut conn, "123456@lid.jsonl", &body)
+        .await
+        .unwrap();
+
+    let handles: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT raw, service, handle_type FROM handles WHERE account_id = $1 ORDER BY raw",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        handles,
+        [(
+            "123456@lid".to_string(),
+            "whatsapp".to_string(),
+            "other".to_string()
+        )]
+    );
+}
+
 /// An incoming line from `sender` on a service the model does not know, as
 /// Apple Messages writes a message sent by satellite.
 fn incoming_unknown_service(guid: &str, sender: &str) -> String {
     message_line(guid, "hi")
-        .service(IrService::Unknown)
-        .kind(IrMessageKind::Unknown)
+        .service(Transport::Unknown)
+        .kind(MessageKind::Unknown)
         .sender(sender)
         .line()
 }
@@ -530,7 +619,7 @@ fn incoming_unknown_service(guid: &str, sender: &str) -> String {
 /// on a new contact with no name (#1144).
 #[tokio::test]
 async fn a_participants_message_on_an_unknown_service_is_from_the_participant() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "+15555550101")
         .participant("+15555550101", Some("Sam"))
@@ -562,7 +651,7 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
 /// one number became two identities that were never linked (#1432).
 #[tokio::test]
 async fn a_number_is_one_type_as_a_sender_and_as_a_participant() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000006")
         .group()
@@ -592,7 +681,7 @@ async fn a_number_is_one_type_as_a_sender_and_as_a_participant() {
 /// service but SMS, iMessage, WhatsApp and RCS (#1144).
 #[tokio::test]
 async fn a_phone_number_sender_is_phone_on_any_service() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000005")
         .group()
@@ -619,7 +708,7 @@ async fn a_phone_number_sender_is_phone_on_any_service() {
 /// (#1671).
 #[tokio::test]
 async fn a_whatsapp_participant_with_an_at_is_other() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456789012345@lid")
         .participant("123456789012345@lid", Some("Ada"))
@@ -649,25 +738,25 @@ async fn email_identities_on(conn: &mut SqliteConnection, service: &str) -> Vec<
     .unwrap()
 }
 
-/// Every place an import meets an address on WhatsApp: a one-to-one chat id
+/// Every place an import meets an address on WhatsApp: a one-to-one conversation's chat id
 /// no participant names, a participant, a sender the header does
 /// not list, a reaction's sender, and the holder's own address. Each holds an
 /// `@`, and none becomes an email identity, because WhatsApp carries none
 /// (#1671).
 #[tokio::test]
 async fn an_import_writes_no_email_identity_on_whatsapp() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let group = conversation_header("whatsapp", "120363042@g.us")
         .group()
         .participant("111111111111111@lid", None)
         .line()
         + &message_line("g-wa-1", "hi")
-            .service(IrService::Whatsapp)
-            .kind(IrMessageKind::Unknown)
+            .service(Transport::Whatsapp)
+            .kind(MessageKind::Unknown)
             .sender("15555550160@s.whatsapp.net")
             .owner_identity("15555550100@s.whatsapp.net")
-            .reaction(message_ir::Reaction {
+            .reaction(ir::Reaction {
                 part_index: 0,
                 kind: "liked".into(),
                 emoji: None,
@@ -707,7 +796,7 @@ async fn an_import_writes_no_email_identity_on_whatsapp() {
 /// no name, as #1144 did for a phone number.
 #[tokio::test]
 async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let one_to_one = conversation_header("sms-backup-restore", "alerts@example.com")
         .participant("alerts@example.com", Some("Alerts"))
@@ -763,7 +852,7 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
 /// `other`, as a schema version 12 file does, and the server ignores it.
 #[tokio::test]
 async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let header = conversation_header("sms-backup-restore", "chat1000000008")
         .group()
@@ -777,7 +866,7 @@ async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
     let body = typed_other
         + &message_line("g-react-1", "hi")
             .outgoing()
-            .reaction(message_ir::Reaction {
+            .reaction(ir::Reaction {
                 part_index: 0,
                 kind: "liked".into(),
                 emoji: None,
@@ -815,7 +904,7 @@ async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
 /// address is `email` whatever transport carried it (#1933).
 #[tokio::test]
 async fn text_message_types_a_short_code_a_sender_name_and_an_email_by_shape() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("sms-backup-restore", "chat1000000009")
         .group()
@@ -853,7 +942,7 @@ async fn text_message_types_a_short_code_a_sender_name_and_an_email_by_shape() {
 /// email identity on the phone service.
 #[tokio::test]
 async fn an_imessage_sender_with_an_email_address_is_email() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "ada@example.com").line()
         + &incoming("g-im-email-1", "ada@example.com");
@@ -864,5 +953,144 @@ async fn an_imessage_sender_with_an_email_address_is_email() {
     assert_eq!(
         email_identities_on(&mut conn, "phone").await,
         ["ada@example.com".to_string()]
+    );
+}
+
+/// Every `(raw, normalized)` the account's handles hold, sorted.
+async fn handle_keys(conn: &mut SqliteConnection) -> Vec<(String, String)> {
+    sqlx::query_as("SELECT raw, normalized FROM handles WHERE account_id = $1 ORDER BY raw")
+        .bind(TEST_ACCOUNT)
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// Apple Messages names the country it read each identity in, from
+/// `chat.db`'s `handle.country`, and the file carries it. A number written
+/// without `+` in a conversation whose file names `GB` for it is a UK
+/// number, with no country on the import form: the participant, the sender,
+/// the reactor and the one-to-one chat's id are one `+44` identity. A number
+/// the file names no country for keeps its digits (#1994).
+#[tokio::test]
+async fn a_number_is_read_in_the_country_the_file_names_for_it() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("GB")
+        .line()
+        + &message_line("g-gb-1", "hi")
+            .sender("07700 900123")
+            .sender_country("GB")
+            .line()
+        + &message_line("g-gb-2", "liked")
+            .outgoing()
+            .reaction(ir::Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("07700 900123".into()),
+                reactor_display_name: None,
+            })
+            .line();
+    import_one(&mut conn, "gb.jsonl", &body).await.unwrap();
+    let body = conversation_header("imessage", "07700 900456")
+        .participant("07700 900456", None)
+        .line()
+        + &message_line("g-none-1", "hi").sender("07700 900456").line();
+    import_one(&mut conn, "none.jsonl", &body).await.unwrap();
+
+    assert_eq!(
+        handle_keys(&mut conn).await,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "07700900456".to_string()),
+        ]
+    );
+}
+
+/// A country the file names that Message Crate does not know refuses the
+/// file, naming the code, rather than reading the number in no country.
+#[tokio::test]
+async fn a_country_nobody_knows_refuses_the_file() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("ZZ")
+        .line();
+    let reason = refusal(import_one(&mut conn, "zz.jsonl", &body).await);
+    assert!(
+        reason.contains(r#"country "ZZ" is not a country GET /v1/phone-countries lists"#),
+        "{reason}"
+    );
+}
+
+/// One address can have two `handle` rows in `chat.db`, one naming a
+/// country and one not, as an iMessage row and an SMS row for one number
+/// do. The participant, the senders and the chat id at that address are
+/// still one identity, read in the country the conversation names for it,
+/// whichever record names it.
+#[tokio::test]
+async fn an_address_is_one_identity_when_only_some_of_its_records_name_a_country() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    // The participant names GB; the sender does not.
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("GB")
+        .line()
+        + &message_line("g-p-1", "hi").sender("07700 900123").line();
+    import_one(&mut conn, "participant.jsonl", &body)
+        .await
+        .unwrap();
+    // The sender names GB; the participant does not.
+    let body = conversation_header("imessage", "07700 900456")
+        .participant("07700 900456", None)
+        .line()
+        + &message_line("g-s-1", "hi")
+            .sender("07700 900456")
+            .sender_country("GB")
+            .line();
+    import_one(&mut conn, "sender.jsonl", &body).await.unwrap();
+
+    assert_eq!(
+        handle_keys(&mut conn).await,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "+447700900456".to_string()),
+        ]
+    );
+}
+
+/// The Apple Messages exporter's output for its committed fixture
+/// `chat.db` (`imessage-ir-exporter/tests/fixtures/handle-country/`; its
+/// `a_handles_country_reaches_the_conversation_file` checks this copy), whose
+/// handle `07700 900123` names `gb` and `07700 900456` names no country,
+/// imported with no country on the import form: the first is stored as
+/// `+447700900123`, and the second keeps its digits (#1994).
+#[tokio::test]
+async fn an_apple_messages_export_of_a_gb_handle_stores_its_plus_form() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = crate::test_support::at_current_schema_version(include_str!(
+        "../../../tests/fixtures/apple-messages-handle-country.jsonl"
+    ));
+    import_one(&mut conn, "handle-country.jsonl", &body)
+        .await
+        .unwrap();
+
+    let keys: Vec<(String, String)> = handle_keys(&mut conn)
+        .await
+        .into_iter()
+        .filter(|(raw, _)| raw.starts_with("07700"))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "07700900456".to_string()),
+        ]
     );
 }

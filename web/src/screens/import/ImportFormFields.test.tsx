@@ -1,123 +1,177 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../hooks/useToolsStatus";
+import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
-import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
+import { IMPORT_SOURCES } from "../../lib/importSources";
+import {
+  ANDROID_SMS_ERR_NOT_DIRECTORY,
+  SMS_BACKUP_RESTORE_ERR_NOT_FILE,
+} from "../../lib/importSources/androidSms";
+import { PATH_MISSING } from "../../lib/pathChecks";
+import type { AttachmentChoices } from "../../lib/types";
 import {
   emptyWhatsappPathStats,
+  WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
   WHATSAPP_ERR_CRYPT_KEY,
-  WHATSAPP_ERR_DIRECTORY_IS_FILE,
   WHATSAPP_ERR_OWNER_PHONE,
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
 } from "../../lib/whatsappImport";
+import {
+  advanceTimersAndSettle,
+  settle,
+  startFakeClock,
+  stopFakeClock,
+} from "../../test/fakeTimers";
+import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
-import { SLOW_STATE_WAIT } from "../../test/waits";
-import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
-
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
+import type { ImportFormFieldsProps, ProfilePhones } from "./formSections/types";
+import ImportFormFields from "./ImportFormFields";
+import { type ImportFormState, newImportForm } from "./importForm";
 
 /** The desktop process the form asks where wtsexporter, ffmpeg and ffprobe are. */
 const desktop = vi.hoisted(() => ({
   isTauri: false,
   toolsStatus: vi.fn(),
   retry: vi.fn(),
+  lowDiskSpace: vi.fn(),
 }));
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => desktop.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/staging", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/staging")>()),
+  invokeLowDiskSpace: () => desktop.lowDiskSpace(),
+}));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/tools")>()),
   invokeToolsStatus: () => desktop.toolsStatus(),
   invokeRetryToolDownloads: () => desktop.retry(),
 }));
+
+beforeEach(() => {
+  startFakeClock();
+  desktop.lowDiskSpace.mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();
   desktop.isTauri = false;
   desktop.toolsStatus.mockReset();
   desktop.retry.mockReset();
+  desktop.lowDiskSpace.mockReset();
+  stopFakeClock();
 });
 
-const presentFile = { exists: true, isFile: true, isDirectory: false };
-const presentDir = { exists: true, isFile: false, isDirectory: true };
+const copyAttachments: AttachmentChoices = {
+  attachmentMedia: "copy",
+  maxResolution: "720p",
+  maxFps: "30",
+  minSizeMb: "20",
+};
 
-function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
-  const props: ImportFormFieldsProps = {
-    source: "imessage-ios",
-    onSourceChange: vi.fn(),
-    backupPath: "/backups/iphone",
-    onBackupPathChange: vi.fn(),
-    backupPassword: "",
-    onBackupPasswordChange: vi.fn(),
-    showBackupPassword: false,
-    onToggleBackupPassword: vi.fn(),
-    attachmentRoot: "",
-    onAttachmentRootChange: vi.fn(),
-    appleContacts: "",
-    onAppleContactsChange: vi.fn(),
-    pathStats: {
-      backup: presentDir,
+/**
+ * What a test sets: any of the form's fields, the form's other props, and
+ * the account's phones, all side by side.
+ */
+type FormOverride = Partial<Omit<ImportFormState, "seeded">> &
+  Partial<Omit<ImportFormFieldsProps, "form" | "profilePhones">> & {
+    profilePhones?: Partial<ProfilePhones>;
+  };
+
+function formProps(override: FormOverride = {}): ImportFormFieldsProps {
+  const {
+    dispatch = vi.fn(),
+    onSourceChange = vi.fn(),
+    onPathChange = vi.fn(),
+    pathStats = {
+      backup: DIRECTORY_STAT,
       attachmentRoot: null,
       appleContacts: null,
       backupEncrypted: false,
     },
-    whatsappKey: "",
-    onWhatsappKeyChange: vi.fn(),
-    showWhatsappKey: false,
-    onToggleWhatsappKey: vi.fn(),
-    whatsappWa: "",
-    onWhatsappWaChange: vi.fn(),
-    whatsappMedia: "",
-    onWhatsappMediaChange: vi.fn(),
-    whatsappDb: "",
-    onWhatsappDbChange: vi.fn(),
-    whatsappBusiness: false,
-    whatsappOwnerPhone: "",
-    onWhatsappOwnerPhoneChange: vi.fn(),
-    onWhatsappBusinessChange: vi.fn(),
-    whatsappStats: emptyWhatsappPathStats(),
-    attachmentMedia: "copy",
-    onAttachmentMediaChange: vi.fn(),
-    maxResolution: "720p",
-    onMaxResolutionChange: vi.fn(),
-    maxFps: "30",
-    onMaxFpsChange: vi.fn(),
-    minSizeMb: "20",
-    onMinSizeMbChange: vi.fn(),
-    ownerPhones: [],
-    onOwnerPhonesChange: vi.fn(),
-    ownerEmails: "",
-    onOwnerEmailsChange: vi.fn(),
-    profilePhones: [],
-    profilePhonesReady: true,
-    profilePhonesError: false,
-    showMissingAccountPhoneWarning: false,
-    formatOpen: true,
-    onToggleFormat: vi.fn(),
-    processingOpen: false,
-    onToggleProcessing: vi.fn(),
-    obfuscate: false,
-    onObfuscateChange: vi.fn(),
-    timeZone: "America/New_York",
-    onTimeZoneChange: vi.fn(),
-    phoneCountry: "",
-    phoneCountries: [],
-    onPhoneCountryChange: vi.fn(),
-    running: false,
-    onImport: vi.fn(),
-    ...override,
+    whatsappStats = emptyWhatsappPathStats(),
+    androidSmsStats = { backup: null },
+    profilePhones = {},
+    accountTimeZone = "America/New_York",
+    phoneCountries = [],
+    running = false,
+    startError = null,
+    onImport = vi.fn(),
+    ...fields
+  } = override;
+  return {
+    form: {
+      ...newImportForm("/backups/iphone"),
+      source: "imessage-ios",
+      attachments: copyAttachments,
+      ...fields,
+    },
+    dispatch,
+    onSourceChange,
+    onPathChange,
+    pathStats,
+    whatsappStats,
+    androidSmsStats,
+    profilePhones: { phones: [], ready: true, error: false, ...profilePhones },
+    accountTimeZone,
+    phoneCountries,
+    running,
+    startError,
+    onImport,
   };
-  return render(<ImportFormFields {...props} />);
 }
+
+function renderForm(override: FormOverride = {}) {
+  // An account with no phones shows a link to Settings, which needs a router.
+  return render(
+    <MemoryRouter>
+      <ImportFormFields {...formProps(override)} />
+    </MemoryRouter>,
+  );
+}
+
+describe("ImportFormFields sources", () => {
+  // The form reads everything per source from the source's descriptor, so
+  // each method of each source in the list must render its form.
+  it("renders the backup field each method's descriptor names", () => {
+    for (const source of IMPORT_SOURCES) {
+      for (const method of source.methods) {
+        renderForm({ source: method.id });
+        const label = source.backupField(method.id).label;
+        expect(screen.getByText(label), method.id).toBeTruthy();
+        cleanup();
+      }
+    }
+  });
+});
+
+describe("ImportFormFields attachments", () => {
+  // "Convert" alone is the Settings tool that rewrites an export's format, so
+  // the choices that work on photos, video and audio say "media" (#2023).
+  it("offers Copy, Convert media, Convert & Compress media and Skip, in that order", async () => {
+    const user = setupUser();
+    renderForm({ source: "sms-backup-restore" });
+    await user.click(screen.getByLabelText("Attachments"));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Copy",
+      "Convert media",
+      "Convert & Compress media",
+      "Skip",
+    ]);
+  });
+});
 
 describe("ImportFormFields iMessage methods", () => {
   it("shows one iMessage source and a Platform dropdown without jailbreak", async () => {
@@ -128,7 +182,7 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.queryByText("iPhone - iOS")).toBeNull();
     expect(screen.queryByText("iMessage - macOS")).toBeNull();
     await user.click(screen.getByLabelText("Platform"));
-    expect(await screen.findByRole("option", { name: "iPhone backup" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "iPhone backup" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Mac Messages" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Jailbroken iPhone" })).toBeNull();
   });
@@ -140,14 +194,14 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/mnt/iphone/sms.db",
       attachmentRoot: "/mnt/iphone/Library/SMS",
       pathStats: {
-        backup: presentFile,
-        attachmentRoot: presentDir,
+        backup: FILE_STAT,
+        attachmentRoot: DIRECTORY_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
     });
     await user.click(screen.getByLabelText("Platform"));
-    expect(await screen.findByRole("option", { name: "Jailbroken iPhone" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Jailbroken iPhone" })).toBeTruthy();
   });
 
   it("marks the iPhone backup directory required and encryption password optional", () => {
@@ -160,7 +214,7 @@ describe("ImportFormFields iMessage methods", () => {
   it("marks encryption password required when the backup is encrypted", () => {
     renderForm({
       pathStats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: true,
@@ -192,12 +246,42 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
   });
 
+  it("hands back every attachment choice when any one of them changes", async () => {
+    const user = setupUser();
+    const dispatch = vi.fn();
+    const compress: AttachmentChoices = { ...copyAttachments, attachmentMedia: "compress" };
+    renderForm({ attachments: compress, dispatch });
+    const setAttachments = (value: AttachmentChoices) => ({
+      type: "set",
+      field: "attachments",
+      value,
+    });
+
+    await user.click(screen.getByLabelText("Attachments"));
+    await user.click(screen.getByRole("option", { name: "Skip" }));
+    expect(dispatch).toHaveBeenLastCalledWith(
+      setAttachments({ ...compress, attachmentMedia: "skip" }),
+    );
+
+    await user.click(screen.getByLabelText("Target resolution"));
+    await user.click(screen.getByRole("option", { name: "1080" }));
+    expect(dispatch).toHaveBeenLastCalledWith(
+      setAttachments({ ...compress, maxResolution: "1080p" }),
+    );
+
+    await user.type(screen.getByLabelText("Max FPS"), "6");
+    expect(dispatch).toHaveBeenLastCalledWith(setAttachments({ ...compress, maxFps: "306" }));
+
+    await user.type(screen.getByLabelText("Minimum Video File Size (Megabytes)"), "5");
+    expect(dispatch).toHaveBeenLastCalledWith(setAttachments({ ...compress, minSizeMb: "205" }));
+  });
+
   it("shows optional attachment directory on Mac Messages", () => {
     renderForm({
       source: "imessage-macos",
       backupPath: "/Users/sam/Library/Messages/chat.db",
       pathStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -225,7 +309,7 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/mnt/iphone/sms.db",
       attachmentRoot: "",
       pathStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -242,8 +326,8 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/mnt/iphone/sms.db",
       attachmentRoot: "/mnt/iphone/Library/SMS",
       pathStats: {
-        backup: presentFile,
-        attachmentRoot: presentDir,
+        backup: FILE_STAT,
+        attachmentRoot: DIRECTORY_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
@@ -257,8 +341,8 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/tmp/chat.db",
       attachmentRoot: "/tmp/chat.db",
       pathStats: {
-        backup: presentFile,
-        attachmentRoot: presentFile,
+        backup: FILE_STAT,
+        attachmentRoot: FILE_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
@@ -274,7 +358,7 @@ describe("ImportFormFields iMessage methods", () => {
     const user = setupUser();
     renderForm({ source: "whatsapp-android", onSourceChange });
     await user.click(screen.getByLabelText("Import source"));
-    expect(await screen.findByRole("option", { name: "WhatsApp" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "WhatsApp" })).toBeTruthy();
     await user.click(screen.getByRole("option", { name: "Apple Messages" }));
     expect(onSourceChange).toHaveBeenCalledWith(IMESSAGE_SOURCE_ID);
   });
@@ -284,7 +368,7 @@ describe("ImportFormFields iMessage methods", () => {
     const user = setupUser();
     renderForm({ source: "imessage-ios", onSourceChange });
     await user.click(screen.getByLabelText("Import source"));
-    expect(await screen.findByRole("option", { name: "Apple Messages" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Apple Messages" })).toBeTruthy();
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
     expect(onSourceChange).toHaveBeenCalledWith(WHATSAPP_SOURCE_ID);
   });
@@ -295,9 +379,9 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/tmp/chat.db",
       appleContacts: "/tmp/AddressBook",
       pathStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
-        appleContacts: presentDir,
+        appleContacts: DIRECTORY_STAT,
         backupEncrypted: null,
       },
     });
@@ -312,7 +396,7 @@ describe("ImportFormFields WhatsApp methods", () => {
     renderForm({ source: "whatsapp-android" });
     expect(screen.getByLabelText("Platform")).toBeTruthy();
     await user.click(screen.getByLabelText("Platform"));
-    expect(await screen.findByRole("option", { name: "Android" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Android" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "iPhone" })).toBeTruthy();
     expect(screen.getByLabelText("Decryption key (Optional)")).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: "WhatsApp Business" })).toBeNull();
@@ -334,7 +418,7 @@ describe("ImportFormFields WhatsApp methods", () => {
       backupPath: "/tmp/wa",
       whatsappKey: "",
       whatsappStats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -351,7 +435,7 @@ describe("ImportFormFields WhatsApp methods", () => {
   // beside the other required fields and refuses an import without it.
   it("requires the owner's WhatsApp number on Android", () => {
     const stats = {
-      backup: presentDir,
+      backup: DIRECTORY_STAT,
       contactsDb: null,
       media: null,
       db: null,
@@ -391,7 +475,7 @@ describe("ImportFormFields WhatsApp methods", () => {
       backupPath: "/backups/iphone",
       whatsappOwnerPhone: "",
       whatsappStats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -415,7 +499,7 @@ describe("ImportFormFields WhatsApp methods", () => {
       source: "whatsapp-android",
       backupPath: "/tmp/msgstore.db",
       whatsappStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -424,7 +508,7 @@ describe("ImportFormFields WhatsApp methods", () => {
         backupEncrypted: null,
       },
     });
-    expect(screen.getByText(WHATSAPP_ERR_DIRECTORY_IS_FILE)).toBeTruthy();
+    expect(screen.getByText(WHATSAPP_ERR_BACKUP_NOT_DIRECTORY)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
 });
@@ -460,6 +544,12 @@ describe("ImportFormFields Import button", () => {
     expect(onImport).not.toHaveBeenCalled();
   });
 
+  it("says why the last Import could not start", () => {
+    renderForm({ startError: "Could not read your account: offline" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not read your account: offline");
+  });
+
   it("is refused with no backup chosen, which is the one thing an import needs", async () => {
     const user = setupUser();
     const onImport = vi.fn();
@@ -483,10 +573,11 @@ describe("ImportFormFields Import button", () => {
       onImport,
       source: "sms-backup-restore",
       backupPath: "/backups/sms.xml",
+      androidSmsStats: { backup: FILE_STAT },
       ownerPhones: ["+15555550100"],
       // The same number is on the account profile, so there is no mismatch to
       // acknowledge and the form is ready.
-      profilePhones: ["+15555550100"],
+      profilePhones: { phones: ["+15555550100"] },
       ownerEmails: "me@example.com",
     });
 
@@ -522,7 +613,7 @@ describe("ImportFormFields Import button", () => {
 
   it("states the picked country as the phone's country", async () => {
     const user = setupUser();
-    const onPhoneCountryChange = vi.fn();
+    const dispatch = vi.fn();
     renderForm({
       source: "sms-backup-plus",
       processingOpen: true,
@@ -530,15 +621,15 @@ describe("ImportFormFields Import button", () => {
         { code: "GB", calling_code: "44", name: "United Kingdom" },
         { code: "US", calling_code: "1", name: "United States" },
       ],
-      onPhoneCountryChange,
+      dispatch,
     });
     await user.click(screen.getByRole("button", { name: /Phone's country/ }));
-    await user.click(await screen.findByRole("option", { name: "United Kingdom (+44)" }));
-    expect(onPhoneCountryChange).toHaveBeenCalledWith("GB");
+    await user.click(screen.getByRole("option", { name: "United Kingdom (+44)" }));
+    expect(dispatch).toHaveBeenCalledWith({ type: "set", field: "phoneCountry", value: "GB" });
   });
 
   it("names each Android SMS source's own backup files in the backup placeholder", () => {
-    const placeholders = [
+    const placeholders: [string, string][] = [
       ["sms-backup-restore", "Path to an sms-*.xml backup file"],
       ["go-sms-pro", "Directory containing gosms_sys*.xml backup files"],
       ["sms-backup-plus", "Directory containing .eml files"],
@@ -553,7 +644,7 @@ describe("ImportFormFields Import button", () => {
   // An Import Run reads one backup: SMS Backup & Restore writes each as one
   // file, the other Android sources as a directory.
   it("asks for one file for SMS Backup & Restore and a directory for the others", () => {
-    const labels = [
+    const labels: [string, string][] = [
       ["sms-backup-restore", "Backup File"],
       ["go-sms-pro", "Backup Directory"],
       ["sms-backup-plus", "Backup Directory"],
@@ -581,14 +672,76 @@ describe("ImportFormFields Import button", () => {
       onImport,
       source: "sms-backup-restore",
       backupPath: "/backups/sms.xml",
+      androidSmsStats: { backup: FILE_STAT },
       ownerPhones: [],
-      profilePhones: ["+15555550100"],
+      profilePhones: { phones: ["+15555550100"] },
       ownerEmails: "me@example.com",
     });
 
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(onImport).not.toHaveBeenCalled();
+  });
+  /**
+   * SMS Backup & Restore takes one `.xml` file and the other two a directory
+   * (#2029). A path of the other kind is said under the field and keeps
+   * Import off, rather than being refused only once the run starts. A path
+   * remembered from before SMS Backup & Restore took one file is a directory.
+   */
+  const androidReady: FormOverride = {
+    ownerPhones: ["+15555550100"],
+    profilePhones: { phones: ["+15555550100"] },
+    ownerEmails: "me@example.com",
+  };
+
+  it("refuses a directory where SMS Backup & Restore needs its .xml file", () => {
+    renderForm({
+      ...androidReady,
+      source: "sms-backup-restore",
+      backupPath: "/backups/sms",
+      androidSmsStats: { backup: DIRECTORY_STAT },
+    });
+    expect(screen.getByText(SMS_BACKUP_RESTORE_ERR_NOT_FILE)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+  });
+
+  it.each(["go-sms-pro", "sms-backup-plus"])(
+    "refuses a file where %s needs the backup directory",
+    (source) => {
+      renderForm({
+        ...androidReady,
+        source,
+        backupPath: "/backups/sms.xml",
+        androidSmsStats: { backup: FILE_STAT },
+      });
+      expect(screen.getByText(ANDROID_SMS_ERR_NOT_DIRECTORY)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+    },
+  );
+
+  it("says an Android backup path that does not exist is missing", () => {
+    renderForm({
+      ...androidReady,
+      source: "sms-backup-restore",
+      backupPath: "/backups/gone.xml",
+      androidSmsStats: { backup: MISSING_STAT },
+    });
+    expect(screen.getByText(PATH_MISSING)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+  });
+
+  // The check answers a moment after the path is typed. Until it does,
+  // nothing is known about the path, so nothing is said and Import waits.
+  it("keeps Import off with nothing said until the Android backup path is checked", () => {
+    renderForm({
+      ...androidReady,
+      source: "go-sms-pro",
+      backupPath: "/backups/sms",
+      androidSmsStats: { backup: null },
+    });
+    expect(screen.queryByText(ANDROID_SMS_ERR_NOT_DIRECTORY)).toBeNull();
+    expect(screen.queryByText(PATH_MISSING)).toBeNull();
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
 });
 
@@ -601,20 +754,20 @@ describe("ImportFormFields Import button", () => {
  */
 type FormCase = {
   name: string;
-  props: Partial<ImportFormFieldsProps>;
-  fields: { label: string; empty: Partial<ImportFormFieldsProps> }[];
+  props: FormOverride;
+  fields: { label: string; empty: FormOverride }[];
 };
 
 const filledWhatsappStats = {
-  backup: presentDir,
-  contactsDb: presentFile,
-  media: presentDir,
-  db: presentFile,
+  backup: DIRECTORY_STAT,
+  contactsDb: FILE_STAT,
+  media: DIRECTORY_STAT,
+  db: FILE_STAT,
   hasMsgstoreDb: true,
   cryptName: null,
   backupEncrypted: null,
 };
-const whatsappAndroidProps: Partial<ImportFormFieldsProps> = {
+const whatsappAndroidProps: FormOverride = {
   source: "whatsapp-android",
   backupPath: "/backups/whatsapp",
   whatsappKey: "/backups/key",
@@ -632,7 +785,7 @@ const whatsappAndroidFields: FormCase["fields"] = [
   { label: "Media directory", empty: { whatsappMedia: "" } },
   { label: "Message database", empty: { whatsappDb: "" } },
 ];
-const whatsappIphoneProps: Partial<ImportFormFieldsProps> = {
+const whatsappIphoneProps: FormOverride = {
   source: "whatsapp-ios",
   backupPath: "/backups/iphone",
   backupPassword: "secret",
@@ -648,7 +801,7 @@ const whatsappIphoneFields: FormCase["fields"] = [
   { label: "WhatsApp phone number", empty: { whatsappOwnerPhone: "" } },
 ];
 const iphoneBackupStats = {
-  backup: presentDir,
+  backup: DIRECTORY_STAT,
   attachmentRoot: null,
   appleContacts: null,
   backupEncrypted: false,
@@ -657,14 +810,14 @@ const iphoneBackupFields: FormCase["fields"] = [
   { label: "iPhone Backup Directory", empty: { backupPath: "" } },
   { label: "Encryption password", empty: { backupPassword: "" } },
 ];
-const messagesDbProps: Partial<ImportFormFieldsProps> = {
+const messagesDbProps: FormOverride = {
   backupPath: "/mnt/messages.db",
   attachmentRoot: "/mnt/attachments",
   appleContacts: "/mnt/AddressBook.sqlitedb",
   pathStats: {
-    backup: presentFile,
-    attachmentRoot: presentDir,
-    appleContacts: presentFile,
+    backup: FILE_STAT,
+    attachmentRoot: DIRECTORY_STAT,
+    appleContacts: FILE_STAT,
     backupEncrypted: null,
   },
 };
@@ -673,10 +826,11 @@ const messagesDbFields: FormCase["fields"] = [
   { label: "Attachment directory", empty: { attachmentRoot: "" } },
   { label: "Apple Contacts file", empty: { appleContacts: "" } },
 ];
-const androidSmsProps: Partial<ImportFormFieldsProps> = {
+const androidSmsProps: FormOverride = {
   backupPath: "/backups/sms",
+  androidSmsStats: { backup: DIRECTORY_STAT },
   ownerPhones: ["+15555550100"],
-  profilePhones: ["+15555550100"],
+  profilePhones: { phones: ["+15555550100"] },
   ownerEmails: "me@example.com",
 };
 const androidSmsFields: FormCase["fields"] = [
@@ -742,6 +896,7 @@ const FORM_CASES: FormCase[] = [
       source: "sms-backup-restore",
       ...androidSmsProps,
       backupPath: "/backups/sms-20261009.xml",
+      androidSmsStats: { backup: FILE_STAT },
     },
     fields: [
       { label: "Backup File", empty: { backupPath: "" } },
@@ -820,22 +975,25 @@ describe("ImportFormFields required marks", () => {
   });
 });
 
+/** A program found at `path`. */
+const found = (path: string): ToolStatus => ({ state: "found", path });
+/** The desktop process's answer: every program found, less what `over` changes. */
+const status = (over: Partial<ToolsStatus>): ToolsStatus => ({
+  toolsDir: "/home/sam/message-crate/tools",
+  checking: false,
+  ffmpeg: found("/usr/bin/ffmpeg"),
+  ffprobe: found("/usr/bin/ffprobe"),
+  wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
+  ...over,
+});
+
 describe("ImportFormFields programs the import needs", () => {
-  const found = (path: string): ToolStatus => ({ state: "found", path });
-  const status = (over: Partial<ToolsStatus>): ToolsStatus => ({
-    toolsDir: "/home/sam/message-crate/tools",
-    checking: false,
-    ffmpeg: found("/usr/bin/ffmpeg"),
-    ffprobe: found("/usr/bin/ffprobe"),
-    wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
-    ...over,
-  });
-  const readyWhatsapp: Partial<ImportFormFieldsProps> = {
+  const readyWhatsapp: FormOverride = {
     source: "whatsapp-android",
     backupPath: "/tmp/wa",
     whatsappOwnerPhone: "+15555550100",
     whatsappStats: {
-      backup: presentDir,
+      backup: DIRECTORY_STAT,
       contactsDb: null,
       media: null,
       db: null,
@@ -856,9 +1014,10 @@ describe("ImportFormFields programs the import needs", () => {
       }),
     );
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "wtsexporter download failed. No connection to the download's server: dns error. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
@@ -873,11 +1032,10 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "missing" } }));
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
-        "wtsexporter not found. A WhatsApp import can't start without wtsexporter.",
-      ),
+      screen.getByText("wtsexporter not found. A WhatsApp import can't start without wtsexporter."),
     ).toBeTruthy();
     expect(importButton()).toBeDisabled();
   });
@@ -886,9 +1044,10 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "unavailable" } }));
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "wtsexporter not found, and the app has no download of it for this computer. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
@@ -905,8 +1064,9 @@ describe("ImportFormFields programs the import needs", () => {
       status({ wtsexporter: { state: "unusable", reason: "It is not executable." } }),
     );
     renderForm(readyWhatsapp);
+    await settle();
 
-    expect(await screen.findByText(/wtsexporter not used\. It is not executable\./)).toBeTruthy();
+    expect(screen.getByText(/wtsexporter not used\. It is not executable\./)).toBeTruthy();
     expect(importButton()).toBeDisabled();
   });
 
@@ -914,13 +1074,14 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(
       status({
-        wtsexporter: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+        wtsexporter: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       }),
     );
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "Downloading wtsexporter: 12 MB of 30 MB (40%). The import waits for wtsexporter.",
       ),
     ).toBeTruthy();
@@ -930,15 +1091,23 @@ describe("ImportFormFields programs the import needs", () => {
 
   it("keeps asking while the start-up check runs, and unblocks once wtsexporter arrives", async () => {
     desktop.isTauri = true;
-    // Read before the check has looked at wtsexporter: missing, and checking.
-    desktop.toolsStatus
-      .mockResolvedValueOnce(status({ checking: true, wtsexporter: { state: "missing" } }))
-      .mockResolvedValue(status({}));
+    // Every read while the form appears says the check has not looked at
+    // wtsexporter yet.
+    desktop.toolsStatus.mockResolvedValue(
+      status({ checking: true, wtsexporter: { state: "missing" } }),
+    );
     renderForm(readyWhatsapp);
 
-    expect(await screen.findByText(/wtsexporter not found/)).toBeTruthy();
+    await settle();
+    expect(screen.getByText(/wtsexporter not found/)).toBeTruthy();
     expect(importButton()).toBeDisabled();
-    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
+    // The check finds wtsexporter. Only the next poll, and no earlier read,
+    // may bring it.
+    desktop.toolsStatus.mockResolvedValue(status({}));
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
+    expect(importButton()).toBeDisabled();
+    await advanceTimersAndSettle(1);
+    expect(importButton()).toBeEnabled();
   });
 
   it("lets a WhatsApp import start once wtsexporter is found, and says nothing", async () => {
@@ -946,7 +1115,8 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.toolsStatus.mockResolvedValue(status({}));
     renderForm(readyWhatsapp);
 
-    await waitFor(() => expect(desktop.toolsStatus).toHaveBeenCalled());
+    await settle();
+    expect(desktop.toolsStatus).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(importButton()).toBeEnabled();
   });
@@ -955,13 +1125,17 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(
       status({
-        ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+        ffmpeg: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       }),
     );
-    renderForm({ ...readyWhatsapp, attachmentMedia: "convert" });
+    renderForm({
+      ...readyWhatsapp,
+      attachments: { ...copyAttachments, attachmentMedia: "convert" },
+    });
+    await settle();
 
     expect(
-      await screen.findByText("Downloading ffmpeg: 12 MB of 30 MB (40%). Media waits for ffmpeg."),
+      screen.getByText("Downloading ffmpeg: 12 MB of 30 MB (40%). Media waits for ffmpeg."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
@@ -971,11 +1145,15 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.toolsStatus.mockResolvedValue(
       status({ ffmpeg: { state: "missing" }, ffprobe: { state: "missing" } }),
     );
-    renderForm({ ...readyWhatsapp, attachmentMedia: "convert" });
+    renderForm({
+      ...readyWhatsapp,
+      attachments: { ...copyAttachments, attachmentMedia: "convert" },
+    });
+    await settle();
 
     expect(
-      await screen.findByText(
-        "ffmpeg not found. ffprobe not found. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
+      screen.getByText(
+        "ffmpeg not found. ffprobe not found. Convert media and Convert & Compress media need ffmpeg and ffprobe. Copy imports attachments as they are.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
@@ -1005,14 +1183,19 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "A check of the Tools Directory is already running. This form shows its result when it ends.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
+    expect(importButton()).toBeDisabled();
+    // The check brings wtsexporter by the next poll.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(importButton()).toBeEnabled();
   });
 
   it("the already-running line goes when this process's check ends with the program still failed", async () => {
@@ -1035,14 +1218,20 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     const line =
       "A check of the Tools Directory is already running. This form shows its result when it ends.";
-    expect(await screen.findByText(line)).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText(line)).toBeNull(), SLOW_STATE_WAIT);
+    expect(screen.getByText(line)).toBeTruthy();
+    // The second poll's answer has the check ended.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(screen.getByText(line)).toBeTruthy();
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(screen.queryByText(line)).toBeNull();
     expect(importButton()).toBeDisabled();
-  }, 10_000);
+  });
 
   it("Try again while another app's check runs says so, and asks until the program arrives", async () => {
     const user = setupUser();
@@ -1057,15 +1246,22 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "A check of the Tools Directory is already running. This form shows its result when it ends.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 5000 });
-  }, 10_000);
+    // No check of this process runs, so the form asks at the slower pace
+    // until the other app's download lands.
+    await advanceTimersAndSettle(OTHER_CHECK_POLL_MS - 1);
+    expect(importButton()).toBeDisabled();
+    await advanceTimersAndSettle(1);
+    expect(importButton()).toBeEnabled();
+  });
 
   it("Try again starts the download and follows it until the program arrives", async () => {
     const user = setupUser();
@@ -1084,15 +1280,59 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     expect(desktop.retry).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText(/Downloading wtsexporter/)).toBeTruthy();
+    expect(screen.getByText(/Downloading wtsexporter/)).toBeTruthy();
     // Asked again while it downloads, until it is found.
-    await waitFor(() => expect(screen.queryByText(/Downloading wtsexporter/)).toBeNull(), {
-      timeout: 3000,
-    });
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(screen.queryByText(/Downloading wtsexporter/)).toBeNull();
     expect(desktop.toolsStatus.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(importButton()).toBeEnabled();
+  });
+});
+
+describe("ImportFormFields low disk space", () => {
+  const lowStaging =
+    "4.2 GB is free on /home, the disk that holds the Staging Directory (/home/a/message-crate). A large backup can need more than that.";
+
+  it("says each disk the desktop process finds low, and Import stays enabled", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({}));
+    desktop.lowDiskSpace.mockResolvedValue([lowStaging]);
+    renderForm();
+    await settle();
+
+    expect(screen.getByText(lowStaging)).toBeTruthy();
+    expect(importButton()).toBeEnabled();
+  });
+
+  it("reads the disks again when the source changes", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({}));
+    const view = renderForm();
+    await settle();
+    expect(desktop.lowDiskSpace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(lowStaging)).toBeNull();
+
+    desktop.lowDiskSpace.mockResolvedValue([lowStaging]);
+    view.rerender(
+      <MemoryRouter>
+        <ImportFormFields {...formProps({ source: "sms-backup-restore" })} />
+      </MemoryRouter>,
+    );
+    await settle();
+
+    expect(desktop.lowDiskSpace).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(lowStaging)).toBeTruthy();
+  });
+
+  it("asks nothing in the browser, which has no desktop process", async () => {
+    renderForm();
+    await settle();
+
+    expect(desktop.lowDiskSpace).not.toHaveBeenCalled();
   });
 });

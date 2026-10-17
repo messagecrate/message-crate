@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nth } from "../test/nth";
 import { matchRanges, snippet } from "./messageMatch";
 
 const term = (text: string, prefix = false) => ({ text, prefix });
@@ -56,7 +57,7 @@ describe("snippet", () => {
     expect(out.text.startsWith("…")).toBe(true);
     expect(out.text).toContain("dentist called again");
     expect(out.text.length).toBeLessThan(text.length);
-    const [[a, b]] = out.ranges;
+    const [a, b] = nth(out.ranges, 0);
     expect(out.text.slice(a, b)).toBe("dentist");
     // The cut lands on a word, not inside one.
     expect(out.text[1]).not.toBe(" ");

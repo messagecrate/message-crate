@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../test/nth";
 import { inTimeZone } from "../test/timeZone";
 import { setupUser } from "../test/user";
 import IdentityTable, { type IdentityRow } from "./IdentityTable";
@@ -15,7 +16,7 @@ const rows: IdentityRow[] = [
     start_date: "2020-01-01T12:00:00Z",
     end_date: "2020-02-03T12:00:00Z",
     conversations: 2,
-    direct_messages: 12,
+    one_to_one_messages: 12,
     group_messages: 30,
     orphaned_messages: 0,
   },
@@ -25,7 +26,7 @@ const rows: IdentityRow[] = [
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: 0,
+    one_to_one_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
   },
@@ -35,7 +36,7 @@ const rows: IdentityRow[] = [
     start_date: "2021-05-05T12:00:00Z",
     end_date: "2021-05-06T12:00:00Z",
     conversations: 1,
-    direct_messages: 3,
+    one_to_one_messages: 3,
     group_messages: 0,
     orphaned_messages: 0,
   },
@@ -59,24 +60,24 @@ describe("IdentityTable", () => {
       "First heard from",
       "Last heard from",
       "Conversations",
-      "Direct messages",
+      "One-to-one messages",
       "Group messages",
       "",
     ]);
-    const [service, identity, first, , conversations] = screen.getAllByRole("columnheader");
-    expect(service.className).toContain("text-left");
-    expect(identity.className).toContain("text-left");
-    expect(first.className).toContain("text-right");
-    expect(conversations.className).toContain("text-right");
+    const columns = screen.getAllByRole("columnheader");
+    expect(nth(columns, 0).className).toContain("text-left");
+    expect(nth(columns, 1).className).toContain("text-left");
+    expect(nth(columns, 2).className).toContain("text-right");
+    expect(nth(columns, 4).className).toContain("text-right");
 
-    const row = screen.getAllByRole("row")[1];
+    const row = nth(screen.getAllByRole("row"), 1);
     const cells = within(row).getAllByRole("gridcell");
-    expect(cells[0].className).toContain("text-left");
-    expect(cells[1].className).toContain("text-right");
-    expect(cells[3].className).toContain("text-right");
-    expect(cells[1].textContent).toBe("2020-01-01");
-    expect(cells[3].textContent).toBe("2");
-    expect(cells[5].textContent).toBe("30");
+    expect(nth(cells, 0).className).toContain("text-left");
+    expect(nth(cells, 1).className).toContain("text-right");
+    expect(nth(cells, 3).className).toContain("text-right");
+    expect(nth(cells, 1).textContent).toBe("2020-01-01");
+    expect(nth(cells, 3).textContent).toBe("2");
+    expect(nth(cells, 5).textContent).toBe("30");
   });
 
   it("shows an Orphaned messages column, summed in the Summary row, when an identity has orphaned messages", () => {
@@ -94,7 +95,7 @@ describe("IdentityTable", () => {
       "First heard from",
       "Last heard from",
       "Conversations",
-      "Direct messages",
+      "One-to-one messages",
       "Group messages",
       "Orphaned messages",
       "",
@@ -103,9 +104,9 @@ describe("IdentityTable", () => {
       .getAllByRole("row")
       .find((row) => row.textContent?.includes("2021-05-05"));
     expect(whatsapp).toBeDefined();
-    expect(within(whatsapp as HTMLElement).getAllByRole("gridcell")[6].textContent).toBe("4");
+    expect(nth(within(whatsapp as HTMLElement).getAllByRole("gridcell"), 6).textContent).toBe("4");
     const summary = screen.getAllByRole("row").at(-1) as HTMLElement;
-    expect(within(summary).getAllByRole("gridcell")[6].textContent).toBe("4");
+    expect(nth(within(summary).getAllByRole("gridcell"), 6).textContent).toBe("4");
   });
 
   it("leaves the Orphaned messages column out when no identity has orphaned messages", () => {
@@ -168,7 +169,7 @@ describe("IdentityTable", () => {
     await user.click(identity);
     expect(identities()[0]).toBe("someone.with.a.long.address@example.com");
 
-    await user.click(screen.getByRole("columnheader", { name: /Direct messages/ }));
+    await user.click(screen.getByRole("columnheader", { name: /One-to-one messages/ }));
     expect(identities()[0]).toBe("someone.with.a.long.address@example.com");
     expect(identity.querySelector("[aria-hidden]")?.className).toContain("invisible");
   });
@@ -182,11 +183,11 @@ describe("IdentityTable", () => {
 
   it("shows a muted dash for a zero count or a missing date", () => {
     render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);
-    const row = screen.getAllByRole("row")[2];
+    const row = nth(screen.getAllByRole("row"), 2);
     const cells = within(row).getAllByRole("gridcell");
-    expect(cells[1].textContent).toBe("—");
-    expect(cells[3].textContent).toBe("—");
-    expect(cells[5].textContent).toBe("—");
+    expect(nth(cells, 1).textContent).toBe("—");
+    expect(nth(cells, 3).textContent).toBe("—");
+    expect(nth(cells, 5).textContent).toBe("—");
   });
 
   it("ends every row with an always visible Remove named after the identity and its service", async () => {
@@ -256,7 +257,7 @@ describe("IdentityTable", () => {
 
   it("shows dashes for every count and date while loading", () => {
     render(<IdentityTable {...dates} rows={rows} loading onRemove={() => {}} />);
-    const row = screen.getAllByRole("row")[1];
+    const row = nth(screen.getAllByRole("row"), 1);
     const cells = within(row).getAllByRole("gridcell");
     expect(cells.slice(1, 6).map((c) => c.textContent)).toEqual(["—", "—", "—", "—", "—"]);
     expect(
@@ -266,10 +267,10 @@ describe("IdentityTable", () => {
 
   it("says so instead of drawing a table when there are no identities", () => {
     render(
-      <IdentityTable {...dates} rows={[]} onRemove={() => {}} emptyText="No identities yet." />,
+      <IdentityTable {...dates} rows={[]} onRemove={() => {}} emptyText="No identities yet" />,
     );
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
-    expect(screen.getByText("No identities yet.")).toBeInTheDocument();
+    expect(screen.getByText("No identities yet")).toBeInTheDocument();
   });
 });
 
@@ -282,7 +283,7 @@ describe("IdentityTable dates", () => {
       start_date: "2025-01-01T04:00:00Z",
       end_date: "2025-01-01T04:00:00Z",
       conversations: 1,
-      direct_messages: 1,
+      one_to_one_messages: 1,
       group_messages: 0,
       orphaned_messages: 0,
     };

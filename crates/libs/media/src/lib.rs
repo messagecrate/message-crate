@@ -1,38 +1,51 @@
-//! Convert or compress attachment media under a converter export directory.
+//! Convert or compress one attachment file at a time ([`transcode_file`],
+//! [`transcode_file_as`]). The desktop app's Media Stage, which walks a run's
+//! conversations and their attachments, is `message_staging::transcode_staged`.
 //!
 //! Modes:
-//! - **Disabled** — do not copy or write attachment files (the export form's "Do not copy" choice)
-//! - **Clone** — leave exported files as-is (a no-op after export)
-//! - **Convert** — rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
-//! - **Compress** — re-encode to shrink files, with optional video settings
+//! - **Disabled**: do not copy or write attachment files (the Import form's
+//!   **Skip**)
+//! - **Clone**: leave exported files as-is, a no-op after export (**Copy**)
+//! - **Convert**: rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
+//!   (**Convert media**)
+//! - **Compress**: convert, and re-encode to shrink files, with optional video
+//!   settings (**Convert & Compress media**)
 //!
-//! Convert and compress need `ffmpeg` / `ffprobe`, both on `PATH` or both
-//! in the Tools Directory ([`set_tools_dir`]), and nowhere else.
+//! The `convert` and `compress` modes need `ffmpeg` / `ffprobe`, both on
+//! `PATH` or both in the Tools Directory, and nowhere else. The caller says
+//! where the Tools Directory is by the [`InstalledTools`] it passes in; a test
+//! passes a fake [`MediaTools`] instead (`testutil::FakeTools`).
 
 mod estimate;
+#[cfg(any(test, feature = "testutil"))]
+mod fake_tools;
 mod mime;
 mod probe;
 mod process;
+mod signature;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 mod tools;
 mod versions;
 
 pub use estimate::{SizeVerdict, classify_probed, estimate_bytes, needs_probe};
-pub use mime::{Kind, ext_for_mime, kind_for_ext, kind_for_mime, mime_for_ext};
-pub use probe::{MediaProbe, probe_media};
-pub use process::{
-    MediaReport, TranscodeOutcome, classify, collect_media_files, derivative_name,
-    derivative_name_for_missing, done_line, format_bytes, kind_of, process_attachment_files,
-    transcode_file, transcode_file_as,
+pub use mime::{
+    Kind, MEDIA_TYPE_MAX_LEN, checked_media_type, ext_for_mime, is_media_type, kind_for_ext,
+    kind_for_mime, mime_for_ext, usual_media_type,
 };
+pub use probe::MediaProbe;
+pub use process::{
+    HevcFallback, TranscodeOutcome, classify, derivative_name, derivative_name_for_missing,
+    format_bytes, kind_of, transcode_file, transcode_file_as, why_not_converted,
+};
+pub use signature::{SIGNATURE_LEN, media_type_from_bytes, media_type_in_file};
 pub use tools::{
-    FfmpegTools, ffmpeg_available, ffmpeg_on_path, ffmpeg_path, ffmpeg_tools, ffprobe_path,
-    require_ffmpeg, set_tools_dir, tool_in_dir, tools_dir,
+    DEFAULT_STALL_WAIT, FfmpegFailed, FfmpegTools, InstalledTools, KillReason, Killed, MediaTools,
+    NoTools, Reads, file_has_sha256, is_executable, tool_in_dir,
 };
 pub use versions::{
     THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,
-    preview_extension,
+    preview_extension, shown_as_is_by_type,
 };
 
 use std::fmt;
@@ -97,7 +110,7 @@ impl MediaMode {
         }
     }
 
-    /// True when the mode requires ffmpeg/ffprobe (Convert or Compress).
+    /// True when the mode requires ffmpeg/ffprobe (`convert` or `compress`).
     pub fn needs_tools(self) -> bool {
         matches!(self, Self::Convert | Self::Compress)
     }
@@ -265,19 +278,6 @@ impl Default for CompressOptions {
             skip_efficient: true,
         }
     }
-}
-
-/// Stream a file through SHA-256 in 64 KB chunks (no full read into memory).
-///
-/// Returns 64 lowercase hex digits. Thin wrapper over
-/// [`message_ir::file_sha256`], kept so media callers do not need their own
-/// `message-ir` dependency edge.
-///
-/// # Errors
-///
-/// Returns an error when the file cannot be opened or read.
-pub fn file_sha256(path: &std::path::Path) -> anyhow::Result<String> {
-    Ok(message_ir::file_sha256(path)?)
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use jsonl_journal::ServerTarget;
+use jsonl_journal::{ServerTarget, TargetedEvent};
 use serde::{Deserialize, Serialize};
 
 /// Filename of the local upload log, written next to the conversation files.
@@ -62,8 +62,7 @@ pub enum JournalEvent {
     },
 }
 
-impl JournalEvent {
-    /// The server and account this event belongs to.
+impl TargetedEvent for JournalEvent {
     fn target(&self) -> &ServerTarget {
         match self {
             Self::AssetOk { target, .. }
@@ -124,12 +123,12 @@ pub fn load(
     target: &ServerTarget,
     on_unreadable: &mut dyn FnMut(String),
 ) -> Result<JournalState> {
-    let mut state = JournalState::default();
-    let events: Vec<JournalEvent> = jsonl_journal::load_events("journal", path, &mut |i, e| {
-        on_unreadable(unreadable_line_sentence(path, i, e));
-    })?;
-    for event in events.into_iter().filter(|event| event.target() == target) {
-        match event {
+    jsonl_journal::load_for_target(
+        "journal",
+        path,
+        target,
+        &mut |line, error| on_unreadable(unreadable_line_sentence(path, line, error)),
+        |state: &mut JournalState, event| match event {
             JournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
@@ -144,9 +143,8 @@ pub fn load(
                 state.files.insert(file);
             }
             JournalEvent::Fail { .. } => {}
-        }
-    }
-    Ok(state)
+        },
+    )
 }
 
 /// Append one event as a JSON Lines row and flush it to disk.
@@ -169,37 +167,29 @@ pub fn append(path: &Path, event: &JournalEvent) -> Result<()> {
 /// Returns an error when the existing file cannot be read, the temporary file
 /// cannot be written, or the rename fails.
 pub fn compact(path: &Path, target: &ServerTarget, state: &JournalState) -> Result<()> {
-    jsonl_journal::compact_with::<JournalEvent, _>("journal", path, |mut events| {
-        // Preserve other server targets so one export directory can resume against
-        // multiple servers without wiping their skip state.
-        events.retain(|event| event.target() != target);
-        let mut assets: Vec<_> = state.assets.iter().collect();
-        assets.sort_unstable();
-        for sha in assets {
-            events.push(JournalEvent::AssetOk {
-                target: target.clone(),
-                sha256: sha.clone(),
-            });
-        }
-        let messages = messages_from_state_keys(state);
-        for batch in messages.chunks(1_000) {
-            events.push(JournalEvent::MessageBatchOk {
-                target: target.clone(),
-                source: String::new(),
-                messages: batch.to_vec(),
-            });
-        }
-        let mut files: Vec<_> = state.files.iter().collect();
-        files.sort_unstable();
-        for file in files {
-            events.push(JournalEvent::FileOk {
-                target: target.clone(),
-                source: String::new(),
-                file: file.clone(),
-            });
-        }
-        events
-    })
+    let mut events =
+        jsonl_journal::asset_ok_events(&state.assets, |sha256| JournalEvent::AssetOk {
+            target: target.clone(),
+            sha256,
+        });
+    let messages = messages_from_state_keys(state);
+    for batch in messages.chunks(1_000) {
+        events.push(JournalEvent::MessageBatchOk {
+            target: target.clone(),
+            source: String::new(),
+            messages: batch.to_vec(),
+        });
+    }
+    let mut files: Vec<_> = state.files.iter().collect();
+    files.sort_unstable();
+    for file in files {
+        events.push(JournalEvent::FileOk {
+            target: target.clone(),
+            source: String::new(),
+            file: file.clone(),
+        });
+    }
+    jsonl_journal::compact_for_target("journal", path, target, events)
 }
 
 /// The journal of one Upload: the in-memory skip sets plus the file they
@@ -214,13 +204,35 @@ pub struct RunJournal {
     state: JournalState,
     path: PathBuf,
     target: ServerTarget,
+    /// True while earlier Uploads' rows for this target are still on disk
+    /// and must go before the first batch is sent
+    /// ([`EarlierProgress::Forget`]).
+    forget_pending: bool,
+}
+
+/// What a new Upload does with the progress earlier Uploads recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EarlierProgress {
+    /// Skip what the journal says already imported.
+    Resume,
+    /// Send everything again, and leave the rows on disk (force mode). The
+    /// server still holds what they record, so a later Upload may trust them.
+    Ignore,
+    /// Send everything again, and delete this target's rows on disk (replace
+    /// mode). A replace wipes the source on the server, so the rows no longer
+    /// say what the server holds, and a later append that read them after
+    /// a failed replace would skip what the replace removed. The server
+    /// wipes the source with the first batch, so the rows are deleted just
+    /// before that batch is sent ([`RunJournal::forget_before_first_batch`]).
+    /// A replace that stops before that batch has wiped nothing, so the rows
+    /// stay.
+    Forget,
 }
 
 impl RunJournal {
-    /// Load the journal for this server target, or start empty when `fresh` is
-    /// set (force mode and replace mode both ignore earlier progress). Each
-    /// line that could not be read goes to `on_unreadable` as a sentence for the
-    /// Upload's log.
+    /// Open the journal for this server target and deal with earlier progress
+    /// as `earlier` says. Each line that could not be read goes to
+    /// `on_unreadable` as a sentence for the Upload's log.
     ///
     /// # Errors
     ///
@@ -228,19 +240,36 @@ impl RunJournal {
     pub fn open(
         path: PathBuf,
         target: ServerTarget,
-        fresh: bool,
+        earlier: EarlierProgress,
         on_unreadable: &mut dyn FnMut(String),
     ) -> Result<Self> {
-        let state = if fresh {
-            JournalState::default()
-        } else {
-            load(&path, &target, on_unreadable)?
+        let state = match earlier {
+            EarlierProgress::Resume => load(&path, &target, on_unreadable)?,
+            EarlierProgress::Ignore | EarlierProgress::Forget => JournalState::default(),
         };
         Ok(Self {
             state,
             path,
             target,
+            forget_pending: earlier == EarlierProgress::Forget,
         })
+    }
+
+    /// Delete earlier Uploads' rows for this target from disk, keeping what
+    /// this Upload recorded, if the journal was opened with
+    /// [`EarlierProgress::Forget`] and has not done so yet. Called just
+    /// before each batch is sent, because the first batch of a replace
+    /// wipes the source on the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the journal file cannot be rewritten.
+    pub fn forget_before_first_batch(&mut self) -> Result<()> {
+        if self.forget_pending {
+            compact(&self.path, &self.target, &self.state)?;
+            self.forget_pending = false;
+        }
+        Ok(())
     }
 
     /// True when this conversation file fully imported on an earlier run.
@@ -338,11 +367,17 @@ impl RunJournal {
     }
 
     /// Rewrite the journal file from the in-memory sets (see [`compact`]).
+    /// A replace that sent no batch wiped nothing, so its journal stays as
+    /// it is. Rewriting it from the in-memory sets would drop the earlier
+    /// Uploads' rows.
     ///
     /// # Errors
     ///
     /// Returns an error when the file cannot be rewritten.
     pub fn compact(&self) -> Result<()> {
+        if self.forget_pending {
+            return Ok(());
+        }
         compact(&self.path, &self.target, &self.state)
     }
 }
@@ -366,8 +401,6 @@ fn messages_from_state_keys(state: &JournalState) -> Vec<JournalMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use std::thread;
 
     /// The target most tests upload to.
     fn alice() -> ServerTarget {
@@ -461,7 +494,8 @@ mod tests {
     fn an_event_writes_its_target_as_url_and_username_keys() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        let mut journal = RunJournal::open(path.clone(), alice(), false, &mut |_| {}).unwrap();
+        let mut journal =
+            RunJournal::open(path.clone(), alice(), EarlierProgress::Resume, &mut |_| {}).unwrap();
         journal.file_ok("sms", "chat.jsonl").unwrap();
 
         let line: serde_json::Value =
@@ -506,12 +540,14 @@ mod tests {
     fn a_recorded_asset_is_skipped_after_reopening_the_journal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        let mut journal = RunJournal::open(path.clone(), alice(), false, &mut |_| {}).unwrap();
+        let mut journal =
+            RunJournal::open(path.clone(), alice(), EarlierProgress::Resume, &mut |_| {}).unwrap();
         assert!(!journal.has_asset("sha-1"));
         journal.asset_ok("sha-1").unwrap();
         drop(journal);
 
-        let reopened = RunJournal::open(path, alice(), false, &mut |_| {}).unwrap();
+        let reopened =
+            RunJournal::open(path, alice(), EarlierProgress::Resume, &mut |_| {}).unwrap();
         assert!(reopened.has_asset("sha-1"));
         assert!(!reopened.has_asset("sha-2"));
     }
@@ -577,48 +613,5 @@ mod tests {
         assert_eq!(files(&alice_a), ["alice-a.jsonl".into()].into());
         assert_eq!(files(&bob_a), ["bob-a.jsonl".into()].into());
         assert_eq!(files(&alice_b), ["alice-b.jsonl".into()].into());
-    }
-
-    #[test]
-    fn append_writes_complete_lines_under_contention() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = Arc::new(dir.path().join(JOURNAL_NAME));
-        let mut handles = Vec::new();
-        for i in 0..8 {
-            let path = Arc::clone(&path);
-            handles.push(thread::spawn(move || {
-                for j in 0..50 {
-                    let guid = format!("g-{i}-{j}");
-                    let messages: Vec<_> = (0..200)
-                        .map(|k| JournalMessage {
-                            file: format!("f{i}.jsonl"),
-                            guid: format!("{guid}-{k}"),
-                        })
-                        .collect();
-                    append(
-                        &path,
-                        &JournalEvent::MessageBatchOk {
-                            target: alice(),
-                            source: "sms".into(),
-                            messages,
-                        },
-                    )
-                    .unwrap();
-                }
-            }));
-        }
-        for h in handles {
-            h.join().unwrap();
-        }
-        let text = fs::read_to_string(&*path).unwrap();
-        let mut lines = 0usize;
-        for line in text.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            serde_json::from_str::<JournalEvent>(line).expect("torn line");
-            lines += 1;
-        }
-        assert_eq!(lines, 8 * 50);
     }
 }

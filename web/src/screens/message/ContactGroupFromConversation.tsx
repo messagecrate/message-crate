@@ -1,12 +1,14 @@
 import { useState } from "react";
 import GroupNameDialog from "../../components/GroupNameDialog";
-import { contactGroups, useContactGroupActions } from "../../lib/contactGroups";
-import { useNameCollection } from "../../lib/nameCollection";
+import { useContactGroupActions } from "../../hooks/useContactGroupActions";
+import { useNameCollection } from "../../hooks/useNameCollection";
+import { errorLine } from "../../lib/apiErrorMessage";
+import { contactGroups } from "../../lib/contactGroups";
 import type { Conversation } from "../../lib/types";
-import { useContactGroupMembers } from "./contactGroupMembers";
+import { useContactGroupMembers } from "./useContactGroupMembers";
 
 /**
- * "Make a Contact Group from these people": a group chat is a grouping the
+ * "Make a Contact Group from these people": a group conversation is a grouping the
  * person already made in real life, so it is the one place a Contact Group
  * can be created from something other than a hand-picked selection (#322).
  *
@@ -54,8 +56,8 @@ export default function ContactGroupFromConversation({
           title="Make a Contact Group from these people"
           placeholder="Contact Group name"
           confirmLabel="Create"
-          initial={conversation.label ?? ""}
-          error={actions.error?.message ?? null}
+          initial={conversation.shown_title ?? ""}
+          error={actions.error ? errorLine(actions.error) : null}
           busy={actions.pending}
           onSave={save}
           onCancel={onClose}

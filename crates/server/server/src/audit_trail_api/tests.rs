@@ -5,11 +5,12 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 
 use crate::problem::ProblemType;
-use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
-    PASSWORD, claim_as_owner, delete_status, expect_problem, get_json, get_raw, log_in,
-    login_status, patch_status, post_created_json, register_via_api, serve, test_fixture,
+    PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
+    log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve, test_fixture,
+    with_trigger_lifted,
 };
+use api_types::{APP_HEADER, APP_VERSION_HEADER};
 
 /// The items of an Audit Trail page.
 async fn trail(state: &crate::server::AppState, path: &str, token: &str) -> Vec<Value> {
@@ -33,8 +34,8 @@ async fn log_in_from(
     build: &str,
 ) -> String {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
-        .post(format!("{}/v1/session", server.base()))
+    let response = server
+        .post("/v1/session")
         .header(APP_HEADER, app)
         .header(APP_VERSION_HEADER, build)
         .json(&json!({ "username": username, "password": PASSWORD }))
@@ -184,13 +185,19 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     let state = &fixture.state;
     let owner = claim_as_owner(state, "keeper", PASSWORD).await;
     let alice = register_via_api(state, "alice", PASSWORD).await;
-    assert_eq!(
-        login_status(state, "  Nobody-Here  ", "guess").await,
-        StatusCode::UNAUTHORIZED
+    let (status, text) = log_in_raw(state, "  Nobody-Here  ", "guess").await;
+    expect_problem_for(
+        "an unknown username",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
     );
-    assert_eq!(
-        login_status(state, "alice", "guess").await,
-        StatusCode::UNAUTHORIZED
+    let (status, text) = log_in_raw(state, "alice", "guess").await;
+    expect_problem_for(
+        "a wrong password",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
     );
 
     let items = trail(state, "/v1/audit-trail", &owner.token).await;
@@ -211,14 +218,21 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     assert_eq!(own[0]["reason"], "wrong_password");
     assert!(own.iter().all(|item| item["username"] == "alice"));
 
-    // Ninety-one days on, the next login trims the stranger's refusal and
-    // keeps alice's.
-    let long_ago = (chrono::Utc::now() - chrono::Duration::days(91)).to_rfc3339();
-    sqlx::query("UPDATE audit_entries SET at = $1 WHERE action = 'login_refused'")
-        .bind(&long_ago)
-        .execute(&mut *fixture.conn().await)
-        .await
-        .unwrap();
+    // Moved back to the year 2000, far past the 90 days a refusal is kept,
+    // the next login trims the stranger's refusal and keeps alice's.
+    let long_ago = "2000-01-01T00:00:00+00:00";
+    with_trigger_lifted(
+        &mut *fixture.conn().await,
+        "audit_entries_never_edited",
+        async |conn| {
+            sqlx::query("UPDATE audit_entries SET at = $1 WHERE action = 'login_refused'")
+                .bind(long_ago)
+                .execute(conn)
+                .await
+                .unwrap();
+        },
+    )
+    .await;
     log_in(state, "alice", PASSWORD).await;
     let items = trail(state, "/v1/audit-trail", &owner.token).await;
     let refused: Vec<&Value> = items
@@ -227,28 +241,6 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
         .collect();
     assert_eq!(refused.len(), 1, "{refused:?}");
     assert_eq!(refused[0]["reason"], "wrong_password");
-}
-
-/// A rate-limited login is turned away before anything is checked, and
-/// leaves nothing in the Audit Trail.
-#[tokio::test]
-async fn a_rate_limited_login_writes_nothing() {
-    let fixture = test_fixture().await;
-    let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    for _ in 0..crate::credentials::AUTH_RATE_MAX {
-        login_status(state, "nobody", "guess").await;
-    }
-    assert_eq!(
-        login_status(state, "nobody", "guess").await,
-        StatusCode::TOO_MANY_REQUESTS
-    );
-    let items = trail(state, "/v1/audit-trail", &owner.token).await;
-    let refused = items
-        .iter()
-        .filter(|item| item["action"] == "login_refused")
-        .count();
-    assert_eq!(refused, crate::credentials::AUTH_RATE_MAX);
 }
 
 /// Deleting an account leaves its entries and runs readable under its old
@@ -326,10 +318,8 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     )
     .await;
     delete_account(state, second.account_id, &owner.token).await;
-    assert_eq!(
-        login_status(state, "alice", "guess").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(state, "alice", "guess").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
     let _third = register_via_api(state, "alice", PASSWORD).await;
 
     let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &owner.token).await;
@@ -457,20 +447,28 @@ async fn a_session_that_ran_out_reads_as_expired() {
     let state = &fixture.state;
     let owner = claim_as_owner(state, "keeper", PASSWORD).await;
     let alice = register_via_api(state, "alice", PASSWORD).await;
-    // Registered thirty-one days ago, so the Session ran out a day ago.
-    let registered = (chrono::Utc::now() - chrono::Duration::days(31)).to_rfc3339();
-    let a_day_ago = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339();
-    sqlx::query(
-        "UPDATE audit_entries SET at = $1,
-                session_expires_at = CASE WHEN action = 'logged_in' THEN $2 END
-         WHERE account_id = $3",
+    // Registered on 1 January 2000, so the Session ran out on 31 January
+    // 2000, long before any day this test runs on.
+    let registered = "2000-01-01T00:00:00+00:00";
+    let ran_out = "2000-01-31T00:00:00+00:00";
+    with_trigger_lifted(
+        &mut *fixture.conn().await,
+        "audit_entries_never_edited",
+        async |conn| {
+            sqlx::query(
+                "UPDATE audit_entries SET at = $1,
+                    session_expires_at = CASE WHEN action = 'logged_in' THEN $2 END
+             WHERE account_id = $3",
+            )
+            .bind(registered)
+            .bind(ran_out)
+            .bind(alice.account_id)
+            .execute(conn)
+            .await
+            .unwrap();
+        },
     )
-    .bind(&registered)
-    .bind(&a_day_ago)
-    .bind(alice.account_id)
-    .execute(&mut *fixture.conn().await)
-    .await
-    .unwrap();
+    .await;
 
     let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);
     let items = trail(state, &path, &owner.token).await;
@@ -479,7 +477,7 @@ async fn a_session_that_ran_out_reads_as_expired() {
         ["session_ended", "logged_in", "account_created"]
     );
     assert_eq!(items[0]["reason"], "expired");
-    assert_eq!(items[0]["at"], a_day_ago);
+    assert_eq!(items[0]["at"], ran_out);
 }
 
 /// The owner's changes to an account are each recorded once, with what
@@ -517,16 +515,64 @@ async fn the_owners_changes_to_an_account_are_recorded() {
         StatusCode::OK
     );
 
-    let items = trail(state, &format!("{account}/audit-trail"), &alice.token).await;
+    // Disabling ended Alice's Session, so the owner reads her trail.
+    let items = trail(state, &format!("{account}/audit-trail"), &owner.token).await;
     assert_eq!(
-        actions(&items[..4]),
+        actions(&items[..5]),
         [
             "messages_deleted",
             "password_set",
             "account_enabled",
+            "session_ended",
             "account_disabled"
         ]
     );
-    assert!(items[..4].iter().all(|item| item["actor"] == "owner"));
+    assert!(items[..5].iter().all(|item| item["actor"] == "owner"));
+    assert_eq!(items[3]["reason"], "revoked");
     assert_eq!(items[0]["conversations"], 0);
+}
+
+/// An entry carries the id of the request that wrote it, the one in that
+/// response's `x-request-id`, so the owner finds the request's log line by
+/// it (#2276). Two requests leave two ids.
+#[tokio::test]
+async fn an_entry_carries_the_id_of_the_request_that_wrote_it() {
+    let fixture = test_fixture().await;
+    let state = &fixture.state;
+    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let server = serve(state).await;
+    let login = server
+        .post("/v1/session")
+        .json(&json!({ "username": "alice", "password": PASSWORD }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::CREATED);
+    let login_id = login.headers()["x-request-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    let token = login.json::<Value>().await.unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let logout = server
+        .delete("/v1/session")
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    let logout_id = logout.headers()["x-request-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);
+    let items = trail(state, &path, &owner.token).await;
+    assert_eq!(actions(&items[..2]), ["session_ended", "logged_in"]);
+    assert_eq!(items[0]["request_id"], logout_id.as_str());
+    assert_eq!(items[1]["request_id"], login_id.as_str());
+    assert_ne!(login_id, logout_id);
 }

@@ -1,5 +1,5 @@
 //! Convert SMS Backup+ `.eml` trees into the shared conversation structure,
-//! then write the chosen output format via [`ExportWriter`].
+//! then write the chosen output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_attachments;
 use crate::email_numbers::{
@@ -7,25 +7,25 @@ use crate::email_numbers::{
 };
 use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
-use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
+use crate::read::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
+use android_fields::android_vendor_fields;
 use anyhow::{Result, bail};
+use ir::{
+    ConversationDocument, ConversationType, Direction, ExportMeta, PendingAttachment,
+    PendingConversation, PendingMessage, ProjectionHooks, Transport, VendorFields,
+};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, LogSink,
-    OutputFormat, RunIssue, RunIssueKind, count_of, emit_issue, emit_log, prepare_outputs,
-    project_conversation,
+    CancelFlag, Canceled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
+    RunIssueKind, RunIssueStep, count_of, prepare_outputs, project_conversation,
 };
-use message_ir::{
-    ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks, parse_android_type,
-};
-use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
+use staging::{AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "sms-backup-plus";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::SmsBackupPlus.source_id();
 const EXPORT_TOOL: &str = "SMS Backup+";
 const EXPORT_TOOL_VERSION: &str = "1.5.11";
 
@@ -111,6 +111,13 @@ pub(crate) const SKIPPED_CALL_LOG: Counter = Counter::new(
     "Skipped {n} call log entries",
 );
 
+/// WhatsApp messages SMS Backup+ backed up, skipped.
+pub(crate) const SKIPPED_WHATSAPP: Counter = Counter::new(
+    "skipped_whatsapp",
+    "Skipped 1 WhatsApp message",
+    "Skipped {n} WhatsApp messages",
+);
+
 /// Mails skipped because SMS Backup+ did not write them.
 pub(crate) const SKIPPED_NOT_SMS_BACKUP_PLUS: Counter = Counter::new(
     "skipped_not_sms_backup_plus",
@@ -151,12 +158,12 @@ fn relative_eml_path(
 /// roster must not shrink the participant list. (A roster change that yields a
 /// different `chat_key` still splits the conversation into fragments; this keeps
 /// each fragment's participant list complete within that key.)
-fn ensure_convo<'a>(
+fn ensure_conversation_merging_roster<'a>(
     map: &'a mut HashMap<String, PendingConversation>,
     chat_id: &str,
     is_group: bool,
     display_name: Option<String>,
-    participant_e164s: Vec<String>,
+    participant_handles: Vec<String>,
 ) -> &'a mut PendingConversation {
     // Avoid allocating a new String on every message for an existing chat.
     if !map.contains_key(chat_id) {
@@ -165,40 +172,42 @@ fn ensure_convo<'a>(
             PendingConversation::new(chat_id, is_group, display_name, Vec::new()),
         );
     }
-    let convo = map
+    let conversation = map
         .get_mut(chat_id)
         .expect("just inserted or already present");
-    convo.participant_e164s.extend(participant_e164s);
-    convo.participant_e164s.sort();
-    convo.participant_e164s.dedup();
-    convo
+    conversation.participant_handles.extend(participant_handles);
+    conversation.participant_handles.sort();
+    conversation.participant_handles.dedup();
+    conversation
 }
 
 /// Map a parsed EML message onto the pending message shape.
 ///
 /// The `date_ms` extra is set only when the mail carried milliseconds, so the
 /// projection knows a whole-second copy from a millisecond one.
-fn pending_from_parsed(msg: ParsedMessage, pending_atts: Vec<PendingAttachment>) -> PendingMessage {
-    let name = msg.name_alias.clone().unwrap_or_default();
+fn pending_from_parsed(
+    message: ParsedMessage,
+    pending_attachments: Vec<PendingAttachment>,
+) -> PendingMessage {
+    let name = message.name_alias.clone().unwrap_or_default();
     PendingMessage {
-        sort_key: msg.timestamp_secs as i64,
-        is_from_me: msg.is_from_me,
-        sender_identity: msg.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: msg.name_alias,
-        text: msg.text,
-        attachments: pending_atts,
+        sort_key: message.timestamp_secs as i64,
+        is_from_me: message.is_from_me,
+        sender: ir::Sender::new(message.sender.map(Handle::into_key), message.name_alias),
+        text: message.text,
+        attachments: pending_attachments,
         extra: {
             let mut e = BTreeMap::new();
-            e.insert("smssync_id".into(), msg.smssync_id.unwrap_or_default());
-            if msg.has_milliseconds {
+            e.insert("smssync_id".into(), message.smssync_id.unwrap_or_default());
+            if message.has_milliseconds {
                 e.insert(
                     "date_ms".into(),
-                    timestamp_ms(msg.timestamp_secs).to_string(),
+                    timestamp_ms(message.timestamp_secs).to_string(),
                 );
             }
             e.insert("contact_name".into(), name);
-            e.insert("android_type".into(), msg.android_type);
-            e.insert("eml_path".into(), msg.eml_path);
+            e.insert("android_type".into(), message.android_type);
+            e.insert("eml_path".into(), message.eml_path);
             e
         },
     }
@@ -208,39 +217,36 @@ fn pending_from_parsed(msg: ParsedMessage, pending_atts: Vec<PendingAttachment>)
 /// kept here and reduced to one by the shared projection.
 fn add_message(
     conversations: &mut HashMap<String, PendingConversation>,
-    msg: ParsedMessage,
-    pending_atts: Vec<PendingAttachment>,
+    message: ParsedMessage,
+    pending_attachments: Vec<PendingAttachment>,
     report: &mut ExportReport,
 ) {
-    let chat_id = chat_id_for(&msg);
+    let chat_id = chat_id_for(&message);
 
-    let peers: Vec<String> = msg
+    let peers: Vec<String> = message
         .participants
         .iter()
         .map(|p| p.key().to_string())
         .collect();
-    let convo = ensure_convo(
+    let conversation = ensure_conversation_merging_roster(
         conversations,
         &chat_id,
-        msg.is_group(),
-        msg.group_title.clone(),
+        message.is_group(),
+        message.group_title.clone(),
         peers,
     );
 
     report.bump(MESSAGES_BEFORE_DEDUPE, 1);
-    convo.messages.push(pending_from_parsed(msg, pending_atts));
+    conversation
+        .messages
+        .push(pending_from_parsed(message, pending_attachments));
 }
 
-/// True when the path has a `.eml` extension (any case).
-pub(super) fn is_eml_file(p: &Path) -> bool {
-    p.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("eml"))
-}
-
-/// SMS Backup+ deltas of the shared [`message_ir::pending_to_document`] projection.
+/// SMS Backup+ deltas of the shared [`ir::project_pending`] projection.
 struct SbpProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl ProjectionHooks for SbpProjection {
@@ -248,8 +254,12 @@ impl ProjectionHooks for SbpProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     /// Every handle is a [`Handle`] key already.
@@ -271,25 +281,19 @@ impl ProjectionHooks for SbpProjection {
             .then_with(|| a.extra_str("eml_path").cmp(b.extra_str("eml_path")))
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         for key in ["smssync_id", "eml_path"] {
-            let value = msg.extra_str(key);
+            let value = message.extra_str(key);
             if !value.is_empty() {
                 fields.insert(key.into(), serde_json::Value::String(value.to_string()));
             }
         }
-        if let Some(title) = convo.display_name.as_deref().filter(|t| !t.is_empty()) {
-            // Android group title stored as data only. Filenames do not use it.
-            fields.insert(
-                "android_group_title".into(),
-                serde_json::Value::String(title.to_string()),
-            );
-        }
-        IrSource {
-            android_type: parse_android_type(msg.extra_str("android_type")),
-            fields,
-        }
+        android_vendor_fields(conversation, message, fields)
     }
 }
 
@@ -311,15 +315,15 @@ struct Caveats {
 /// sender as a skip, the others as notes.
 fn project_and_count(
     chat_id: &str,
-    convo: &mut PendingConversation,
+    conversation: &mut PendingConversation,
     hooks: &SbpProjection,
     caveats: &Caveats,
     report: &mut ExportReport,
 ) -> Option<ConversationDocument> {
-    let doc = project_conversation(chat_id, convo, hooks, report)?;
-    let is_group = doc.conversation.conversation_type == IrConversationType::Group;
-    for msg in &doc.messages {
-        let eml_path = msg
+    let document = project_conversation(chat_id, conversation, hooks, report)?;
+    let is_group = document.conversation.conversation_type == ConversationType::Group;
+    for message in &document.messages {
+        let eml_path = message
             .source
             .as_ref()
             .and_then(|s| s.fields.get("eml_path"))
@@ -344,18 +348,19 @@ fn project_and_count(
                  nobody.",
             );
         }
-        if is_group && msg.direction == IrDirection::Incoming && msg.sender_identity.is_none() {
+        if is_group && message.direction == Direction::Incoming && message.sender.identity.is_none()
+        {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
-            emit_issue(report.issues.as_ref(), RunIssue {
+            report.issues.emit(RunIssue {
                 kind: RunIssueKind::Skip,
-                step: "parse".into(),
+                step: RunIssueStep::Parse,
                 item: format!("{eml_path} (sender)"),
                 reason: "The sender of this group message could not be read and was left out. The message itself is kept.".into(),
                 conversation: None,
             });
         }
     }
-    Some(doc)
+    Some(document)
 }
 
 const EML_PROGRESS_EVERY: u64 = 5000;
@@ -365,14 +370,14 @@ const EML_PROGRESS_EVERY: u64 = 5000;
 #[derive(Clone, Copy)]
 struct Verbose<'a> {
     enabled: bool,
-    log: Option<&'a LogSink>,
+    log: &'a LogSink,
 }
 
 impl Verbose<'_> {
     /// Write one line when verbose.
-    fn line(self, msg: impl AsRef<str>) {
+    fn line(self, message: impl AsRef<str>) {
         if self.enabled {
-            emit_log(self.log, msg);
+            self.log.emit(message);
         }
     }
 
@@ -382,30 +387,27 @@ impl Verbose<'_> {
             return;
         }
         if processed == total || processed.is_multiple_of(EML_PROGRESS_EVERY) {
-            emit_log(self.log, format!("{label}: {processed} / {total}"));
+            self.log.emit(format!("{label}: {processed} / {total}"));
         }
     }
 
-    /// List the first twenty Import Errors from the report, and how many more there were.
+    /// List the first twenty Import Errors from the report, and how many
+    /// more there were, as warnings: each is something the run went on
+    /// without.
     fn errors(self, report: &ExportReport) {
         if !self.enabled || report.errors.is_empty() {
             return;
         }
-        emit_log(
-            self.log,
-            format!(
-                "{}:",
-                count_of(report.errors.len() as u64, "Import Error", "Import Errors")
-            ),
-        );
+        self.log.warn(format!(
+            "{}:",
+            count_of(report.errors.len() as u64, "Import Error", "Import Errors")
+        ));
         for err in report.errors.iter().take(20) {
-            emit_log(self.log, format!("  {err}"));
+            self.log.warn(format!("  {err}"));
         }
         if report.errors.len() > 20 {
-            emit_log(
-                self.log,
-                format!("  … and {} more", report.errors.len() - 20),
-            );
+            self.log
+                .warn(format!("  … and {} more", report.errors.len() - 20));
         }
     }
 }
@@ -414,32 +416,23 @@ impl Verbose<'_> {
 pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub inputs: &'a [P],
     pub output_dir: &'a Path,
-    /// the Scratch Directory, which the run's attachment spool goes under.
-    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub owner_emails: &'a [String],
     /// The country of the phone the archive came from, when the import form
     /// states it: a number written without its `+` code is keyed in it.
     pub phone_country: Option<&'static phone::Country>,
     pub verbose: bool,
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    pub log: Option<&'a LogSink>,
-    /// Where each row for the Import Run's record goes as it is recorded.
-    pub issues: Option<&'a IssueSink>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
+    pub log: &'a LogSink,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert SMS Backup+ EML trees into the shared conversation structure, then
 /// write the chosen output format.
 ///
 /// Copies of one message, such as two exports of one mailbox, are reduced to
-/// one by the shared projection (`message_ir::one_copy_per_message`).
-/// When `cancel` is set, cooperative cancellation is checked during the EML walk
-/// and while merging parse results.
+/// one by the shared projection (`ir::one_copy_per_message`).
+/// Cancellation is checked during the EML walk, while merging parse
+/// results, and between conversations.
 ///
 /// # Errors
 ///
@@ -452,17 +445,12 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let ConvertExportArgs {
         inputs,
         output_dir,
-        scratch_dir,
         owner_phones,
         owner_emails,
         phone_country,
         verbose,
-        transforms,
-        output_format,
-        cancel,
         log,
-        issues,
-        resume,
+        convert_run,
     } = args;
     // Checked before the output directory is cleaned, so a refused run leaves it.
     if inputs.is_empty() {
@@ -493,77 +481,110 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
 
     let input_paths: Vec<PathBuf> = inputs.iter().map(|p| p.as_ref().to_path_buf()).collect();
     let (inputs, output_dir) = prepare_outputs(&input_paths, output_dir)?;
-    let writer =
-        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(scratch_dir);
+    convert_backup(
+        &output_dir,
+        convert_run,
+        WriterSetup {
+            spool: true,
+            archive: None,
+        },
+        |writer, cancel, report| {
+            let eml_paths = collect_eml_paths(&inputs, cancel)?;
+            verbose.line(format!(
+                "Reading {}",
+                count_of(eml_paths.len() as u64, ".eml file", ".eml files")
+            ));
+            message_crate_core::check_cancel(cancel)?;
 
-    let eml_paths = collect_eml_paths(&inputs, cancel)?;
-    verbose.line(format!(
-        "Reading {}",
-        count_of(eml_paths.len() as u64, ".eml file", ".eml files")
-    ));
-    message_crate_core::check_cancel(cancel)?;
+            let parse = ParseInputs {
+                file_inputs: inputs.iter().filter(|p| p.is_file()).cloned().collect(),
+                input_roots: inputs,
+                owner,
+            };
+            let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), report);
+            parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
+            ingest.add_members_by_number(verbose);
+            let EmlIngest {
+                conversations,
+                report,
+                caveats,
+                ..
+            } = ingest;
 
-    let parse = ParseInputs {
-        file_inputs: inputs.iter().filter(|p| p.is_file()).cloned().collect(),
-        input_roots: inputs,
-        owner,
-    };
-    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), issues);
-    parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
-    ingest.add_members_by_number(verbose);
-    let EmlIngest {
-        conversations,
-        mut report,
-        caveats,
-        ..
-    } = ingest;
+            // SMS Backup+ writes no backup date of its own, so the backup is
+            // as new as the newest mail file read.
+            let hooks = SbpProjection {
+                export: message_crate_core::export_meta(
+                    EXPORT_SOURCE,
+                    EXPORT_TOOL,
+                    EXPORT_TOOL_VERSION,
+                    Some(owner_identity),
+                    None,
+                ),
+                backup_taken_at_unix_ms: message_crate_core::newest_file_modified_unix_ms(
+                    eml_paths.iter().map(PathBuf::as_path),
+                ),
+            };
+            Ok(ReadBackup {
+                conversations: conversations.into_iter().collect(),
+                project: SbpDocuments {
+                    hooks,
+                    caveats,
+                    verbose,
+                },
+                report,
+            })
+        },
+    )
+}
 
-    // SMS Backup+ writes no backup date of its own, so the backup is as new
-    // as the newest mail file read.
-    let hooks = SbpProjection {
-        export: message_crate_core::export_meta(
-            EXPORT_SOURCE,
-            EXPORT_TOOL,
-            EXPORT_TOOL_VERSION,
-            Some(owner_identity),
-            None,
-            message_crate_core::newest_file_modified_unix_ms(
-                eml_paths.iter().map(PathBuf::as_path),
-            ),
-        ),
-    };
-    let mut documents = Vec::new();
-    for (chat_id, mut convo) in conversations {
-        message_crate_core::check_cancel(cancel)?;
-        if let Some(doc) = project_and_count(&chat_id, &mut convo, &hooks, &caveats, &mut report) {
-            documents.push(doc);
+/// The projection of each conversation read, for [`convert_backup`], with
+/// the verbose log lines around the write.
+struct SbpDocuments<'a> {
+    hooks: SbpProjection,
+    caveats: Caveats,
+    verbose: Verbose<'a>,
+}
+
+impl Project for SbpDocuments<'_> {
+    type Conversation = (String, PendingConversation);
+
+    fn project(
+        &mut self,
+        (chat_id, mut conversation): (String, PendingConversation),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        project_and_count(
+            &chat_id,
+            &mut conversation,
+            &self.hooks,
+            &self.caveats,
+            report,
+        )
+    }
+
+    fn before_write(&mut self, documents: &[ConversationDocument], writer: &ExportWriter) {
+        if !writer.use_queue() {
+            self.verbose.line(format!(
+                "Writing {}",
+                count_of(
+                    documents.len() as u64,
+                    "conversation file",
+                    "conversation files"
+                )
+            ));
         }
     }
 
-    if !writer.use_queue() {
-        verbose.line(format!(
-            "Writing {}",
-            count_of(
-                documents.len() as u64,
-                "conversation file",
-                "conversation files"
-            )
-        ));
+    fn after_write(self, report: &ExportReport) -> Result<()> {
+        self.verbose.errors(report);
+        Ok(())
     }
-    writer.finish(
-        documents,
-        &mut AttachmentSource::take_bytes,
-        cancel,
-        &mut report,
-    )?;
-
-    verbose.errors(&report);
-    Ok(report)
 }
 
 /// Read-only inputs every parallel EML parse needs.
 struct ParseInputs {
-    /// The `ExporterConfig::inputs` paths after output preparation; relative
+    /// The `inputs` paths `run` was given, after output preparation; relative
     /// EML paths are computed against these.
     input_roots: Vec<PathBuf>,
     /// The subset of `input_roots` that are single files rather than directories.
@@ -580,11 +601,11 @@ const EML_PARSE_CHUNK: usize = 256;
 ///
 /// # Errors
 ///
-/// Returns an error when the run is cancelled.
+/// Returns an error when the run is canceled.
 fn parse_all_emls(
     eml_paths: &[PathBuf],
     inputs: &ParseInputs,
-    cancel: Option<&CancelFlag>,
+    cancel: &CancelFlag,
     verbose: Verbose<'_>,
     ingest: &mut EmlIngest<'_>,
 ) -> Result<()> {
@@ -606,15 +627,11 @@ fn parse_all_emls(
     Ok(())
 }
 
-/// Parse one EML on a worker thread. Checks cancel first so a cancelled run
+/// Parse one EML on a worker thread. Checks cancel first so a canceled run
 /// stops reading files promptly.
-fn parse_eml_path(
-    eml_path: &Path,
-    inputs: &ParseInputs,
-    cancel: Option<&CancelFlag>,
-) -> ParsedEmlKind {
-    if message_crate_core::is_cancelled(cancel) {
-        return ParsedEmlKind::Cancelled;
+fn parse_eml_path(eml_path: &Path, inputs: &ParseInputs, cancel: &CancelFlag) -> ParsedEmlKind {
+    if message_crate_core::is_canceled(cancel) {
+        return ParsedEmlKind::Canceled;
     }
     let rel_path = relative_eml_path(eml_path, &inputs.input_roots, &inputs.file_inputs);
     parse_one_eml(eml_path, rel_path, &inputs.owner)
@@ -641,16 +658,12 @@ struct EmlIngest<'a> {
 
 impl<'a> EmlIngest<'a> {
     /// Empty state, pre-sized for the typical ratio of chats to EML files,
-    /// whose report sends its rows to `issues`.
-    fn new(
-        spool: Option<&'a AttachmentSpool>,
-        eml_count: usize,
-        issues: Option<&IssueSink>,
-    ) -> Self {
+    /// that counts into `report`.
+    fn new(spool: Option<&'a AttachmentSpool>, eml_count: usize, report: ExportReport) -> Self {
         Self {
             spool,
             conversations: HashMap::with_capacity((eml_count / 4).min(50_000)),
-            report: ExportReport::with_issues(issues.cloned()),
+            report,
             caveats: Caveats::default(),
             email_numbers: EmailNumbers::default(),
             by_email: Vec::new(),
@@ -665,21 +678,22 @@ impl<'a> EmlIngest<'a> {
     /// cannot be written to the spool.
     fn absorb(&mut self, outcome: ParsedEmlKind) -> Result<()> {
         match outcome {
-            ParsedEmlKind::Cancelled => bail!("cancelled"),
-            ParsedEmlKind::Flat { msg } => {
+            ParsedEmlKind::Canceled => return Err(Canceled.into()),
+            ParsedEmlKind::Flat { message } => {
                 self.report.bump(FLAT_EML, 1);
-                if msg.unreadable_parts > 0 {
+                if message.unreadable_parts > 0 {
                     self.report.caveat(
                         message_crate_core::SKIPPED_UNREADABLE_PART,
-                        msg.unreadable_parts,
-                        msg.eml_path.as_str(),
-                        message_crate_core::unreadable_parts_note(msg.unreadable_parts),
+                        message.unreadable_parts,
+                        message.eml_path.as_str(),
+                        message_crate_core::unreadable_parts_note(message.unreadable_parts),
                     );
                 }
-                self.add_parsed(*msg)?;
+                self.add_parsed(*message)?;
             }
-            ParsedEmlKind::FlatNone => self.report.bump(SKIPPED_PARSE_ERROR, 1),
+            ParsedEmlKind::FlatNoDate => self.report.skipped_invalid_date += 1,
             ParsedEmlKind::CallLog => self.report.bump(SKIPPED_CALL_LOG, 1),
+            ParsedEmlKind::WhatsApp => self.report.bump(SKIPPED_WHATSAPP, 1),
             ParsedEmlKind::NotSms => self.report.bump(SKIPPED_NOT_SMS_BACKUP_PLUS, 1),
             ParsedEmlKind::IoError { path, reason } => self.report.error(
                 ItemKind::File,
@@ -703,15 +717,15 @@ impl<'a> EmlIngest<'a> {
     /// # Errors
     ///
     /// Returns an error when an attachment cannot be written to the spool.
-    fn add_parsed(&mut self, mut msg: ParsedMessage) -> Result<()> {
-        let atts = queue_attachments(&std::mem::take(&mut msg.attachments), self.spool)?;
-        if let Some(pair) = msg.email_number.take() {
+    fn add_parsed(&mut self, mut message: ParsedMessage) -> Result<()> {
+        let attachments = queue_attachments(&std::mem::take(&mut message.attachments), self.spool)?;
+        if let Some(pair) = message.email_number.take() {
             self.email_numbers.record(pair);
         }
-        if names_a_member_by_email(&msg) {
-            self.by_email.push((msg, atts));
+        if names_a_member_by_email(&message) {
+            self.by_email.push((message, attachments));
         } else {
-            self.add_to_conversation(msg, atts);
+            self.add_to_conversation(message, attachments);
         }
         Ok(())
     }
@@ -722,9 +736,9 @@ impl<'a> EmlIngest<'a> {
     fn add_members_by_number(&mut self, verbose: Verbose<'_>) {
         let numbers = std::mem::take(&mut self.email_numbers).into_numbers();
         let mut kept = KeptByEmail::default();
-        for (mut msg, atts) in std::mem::take(&mut self.by_email) {
-            key_members_by_number(&mut msg, &numbers, &mut kept);
-            self.add_to_conversation(msg, atts);
+        for (mut message, attachments) in std::mem::take(&mut self.by_email) {
+            key_members_by_number(&mut message, &numbers, &mut kept);
+            self.add_to_conversation(message, attachments);
         }
         for (counter, addresses, what, text) in [
             (
@@ -756,24 +770,62 @@ impl<'a> EmlIngest<'a> {
     }
 
     /// Count one message and add it to its conversation.
-    fn add_to_conversation(&mut self, msg: ParsedMessage, atts: Vec<PendingAttachment>) {
-        if msg.chat_key.is_empty() {
-            self.caveats.unknown_chat.insert(msg.eml_path.clone());
+    fn add_to_conversation(&mut self, message: ParsedMessage, attachments: Vec<PendingAttachment>) {
+        if message.chat_key.is_empty() {
+            self.caveats.unknown_chat.insert(message.eml_path.clone());
         }
-        if msg.owner_not_named {
-            self.caveats.owner_not_named.insert(msg.eml_path.clone());
+        if message.owner_not_named {
+            self.caveats
+                .owner_not_named
+                .insert(message.eml_path.clone());
         }
-        add_message(&mut self.conversations, msg, atts, &mut self.report);
+        add_message(
+            &mut self.conversations,
+            message,
+            attachments,
+            &mut self.report,
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::AttachmentBlob;
-    use message_ir::{
-        ConversationMeta, ConversationStats, IrMessage, IrMessageKind, SCHEMA_VERSION,
-    };
+    use crate::types::AttachmentBytes;
+    use ir::{ConversationMeta, ConversationStats, Message, MessageKind, SCHEMA_VERSION};
+    use message_crate_core::ProgressSink;
+    use staging::AttachmentSource;
+
+    /// The verbose list of Import Errors is what the run went on without, so
+    /// every line of it is at `WARN` (#2047).
+    #[test]
+    fn the_verbose_import_errors_are_warnings() {
+        let (log, recorded) = message_crate_core::testutil::recorded_log();
+        let report = ExportReport {
+            errors: vec!["a.eml: no Date header".to_string()],
+            ..ExportReport::default()
+        };
+
+        Verbose {
+            enabled: true,
+            log: &log,
+        }
+        .errors(&report);
+
+        assert_eq!(
+            *recorded.lock().unwrap(),
+            [
+                (
+                    message_crate_core::RunLogLevel::Warn,
+                    "1 Import Error:".to_string()
+                ),
+                (
+                    message_crate_core::RunLogLevel::Warn,
+                    "  a.eml: no Date header".to_string()
+                ),
+            ]
+        );
+    }
 
     /// An EML given as an input is recorded under its own file name. An EML
     /// found in a directory input is recorded under its path inside that directory.
@@ -803,18 +855,18 @@ mod tests {
     #[test]
     fn queue_attachments_keeps_message_on_single_failure() {
         let dir = tempfile::tempdir().unwrap();
-        let att_dir = dir.path().join("attachments");
-        std::fs::create_dir_all(&att_dir).unwrap();
+        let attachments_dir = dir.path().join("attachments");
+        std::fs::create_dir_all(&attachments_dir).unwrap();
         // Empty bytes: the runner records file_missing and continues.
-        let blobs = vec![
-            AttachmentBlob {
+        let attachments = vec![
+            AttachmentBytes {
                 filename: "missing.jpg".into(),
                 original_name: None,
                 mime_type: Some("image/jpeg".into()),
                 digest_hex: "aaa".into(),
                 data: vec![],
             },
-            AttachmentBlob {
+            AttachmentBytes {
                 filename: "ok.jpg".into(),
                 original_name: None,
                 mime_type: Some("image/jpeg".into()),
@@ -823,12 +875,12 @@ mod tests {
             },
         ];
         let spool = AttachmentSpool::new(dir.path());
-        let queued = queue_attachments(&blobs, Some(&spool)).unwrap();
+        let queued = queue_attachments(&attachments, Some(&spool)).unwrap();
         assert_eq!(queued.len(), 2);
 
-        let mut atts: Vec<_> = queued.iter().map(PendingAttachment::to_ir).collect();
+        let mut ir_attachments: Vec<_> = queued.iter().map(PendingAttachment::to_ir).collect();
         let mut report = ExportReport::default();
-        let mut doc = ConversationDocument {
+        let mut document = ConversationDocument {
             schema_version: SCHEMA_VERSION,
             export: ExportMeta {
                 source: String::new(),
@@ -836,73 +888,77 @@ mod tests {
                 tool_version: String::new(),
                 owner_identity: None,
                 owner_display_name: None,
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             },
             conversation: ConversationMeta {
                 chat_identifier: "test".into(),
-                conversation_type: IrConversationType::Individual,
+                conversation_type: ConversationType::OneToOne,
                 group_title: None,
                 participants: Vec::new(),
                 stats: ConversationStats::default(),
             },
-            messages: vec![IrMessage {
+            messages: vec![Message {
                 guid: "g".into(),
                 timestamp_unix_ms: 0,
-                time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
-                service: IrService::Sms,
-                message_kind: IrMessageKind::Mms,
-                sender_identity: None,
-                sender_display_name: None,
+                time_precision: ir::TimePrecision::Milliseconds,
+                direction: Direction::Incoming,
+                service: Transport::Sms,
+                message_kind: MessageKind::Mms,
+                sender: ir::Sender::default(),
                 owner_identity: None,
                 subject: None,
                 text: "hi".into(),
-                attachments: std::mem::take(&mut atts),
+                attachments: std::mem::take(&mut ir_attachments),
                 reactions: Vec::new(),
                 deletion: None,
                 edits: Vec::new(),
                 reply_to: None,
                 imessage: None,
                 source: None,
+                backup_taken_at_unix_ms: None,
             }],
             packaging_stem_suffix: None,
         };
-        report.attachments_saved += message_staging::CountedAttachments::new(
-            doc.messages.iter_mut(),
-            message_crate_core::MediaConfig::default(),
-            message_staging::PathSources::OnDisk,
-            |att| {
+        report.attachments_saved += staging::CountedAttachments::new(
+            document.messages.iter_mut(),
+            message_crate_core::AttachmentFiles::Originals,
+            staging::PathSources::OnDisk,
+            |attachment| {
                 spool
-                    .source(att)
+                    .source(attachment)
                     .unwrap_or((AttachmentSource::Missing, None))
             },
-            None,
+            &LogSink::none(),
         )
         .stage(
-            &att_dir,
-            message_staging::load_attachment_source,
-            None,
-            None,
-            None,
+            &attachments_dir,
+            staging::load_attachment_source,
+            message_crate_core::Sinks {
+                log: &LogSink::none(),
+                progress: &ProgressSink::none(),
+                cancel: &CancelFlag::default(),
+            },
         )
         .unwrap();
         // The missing source stays on the message; the good one is staged.
-        assert_eq!(doc.messages[0].attachments.len(), 2);
+        assert_eq!(document.messages[0].attachments.len(), 2);
         assert_eq!(
-            doc.messages[0].attachments[0].missing_reason.as_deref(),
+            document.messages[0].attachments[0]
+                .missing_reason
+                .as_deref(),
             Some("file_missing")
         );
-        assert!(doc.messages[0].attachments[1].path.is_some());
+        assert!(document.messages[0].attachments[1].path.is_some());
         assert_eq!(report.attachments_saved, 1);
-        assert_eq!(std::fs::read_dir(&att_dir).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(&attachments_dir).unwrap().count(), 1);
     }
 
     /// The messages of every conversation as the shared projection writes
     /// them, with the copies of one message reduced to one.
-    fn project(parsed: Vec<ParsedMessage>) -> (Vec<IrMessage>, ExportReport) {
-        let mut ingest = EmlIngest::new(None, parsed.len(), None);
-        for msg in parsed {
-            ingest.add_parsed(msg).unwrap();
+    fn project(parsed: Vec<ParsedMessage>) -> (Vec<Message>, ExportReport) {
+        let mut ingest = EmlIngest::new(None, parsed.len(), ExportReport::default());
+        for message in parsed {
+            ingest.add_parsed(message).unwrap();
         }
         let hooks = SbpProjection {
             export: message_crate_core::export_meta(
@@ -911,19 +967,19 @@ mod tests {
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
                 None,
-                None,
             ),
+            backup_taken_at_unix_ms: None,
         };
         let mut report = ingest.report;
         let caveats = ingest.caveats;
         let mut messages = Vec::new();
         let mut conversations: Vec<_> = ingest.conversations.into_iter().collect();
         conversations.sort_by(|a, b| a.0.cmp(&b.0));
-        for (chat_id, mut convo) in conversations {
-            if let Some(doc) =
-                project_and_count(&chat_id, &mut convo, &hooks, &caveats, &mut report)
+        for (chat_id, mut conversation) in conversations {
+            if let Some(document) =
+                project_and_count(&chat_id, &mut conversation, &hooks, &caveats, &mut report)
             {
-                messages.extend(doc.messages);
+                messages.extend(document.messages);
             }
         }
         (messages, report)
@@ -933,7 +989,7 @@ mod tests {
     fn parsed(timestamp_secs: f64, has_milliseconds: bool, eml_path: &str) -> ParsedMessage {
         ParsedMessage {
             chat_key: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Handle::parse("+15555550101").into_iter().collect(),
             timestamp_secs,
@@ -952,17 +1008,28 @@ mod tests {
         }
     }
 
+    /// A worker that saw the cancel flag stops the scan with the typed
+    /// `Canceled`, so a caller tells a cancel from a failure by its type.
+    #[test]
+    fn a_canceled_parse_stops_the_scan_with_canceled() {
+        let mut ingest = EmlIngest::new(None, 1, ExportReport::default());
+        let error = ingest.absorb(ParsedEmlKind::Canceled).unwrap_err();
+        assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
+    }
+
     /// A MIME part that could not be decoded reaches the run's report by name.
     #[test]
     fn unreadable_parts_are_counted_in_the_report() {
-        let mut ingest = EmlIngest::new(None, 2, None);
+        let mut ingest = EmlIngest::new(None, 2, ExportReport::default());
         for unreadable_parts in [2, 1] {
-            let msg = ParsedMessage {
+            let message = ParsedMessage {
                 unreadable_parts,
                 ..parsed(1.0 + unreadable_parts as f64, true, "")
             };
             ingest
-                .absorb(ParsedEmlKind::Flat { msg: Box::new(msg) })
+                .absorb(ParsedEmlKind::Flat {
+                    message: Box::new(message),
+                })
                 .unwrap();
         }
         assert_eq!(
@@ -977,18 +1044,18 @@ mod tests {
     fn verify_e3_1_two_group_senders_in_one_second_are_two_messages() {
         let group = |sender: &str, timestamp_secs: f64| ParsedMessage {
             chat_key: "+15555550111_+15555550122".into(),
-            conversation_type: IrConversationType::Group,
+            conversation_type: ConversationType::Group,
             sender: Handle::parse(sender),
             text: "Happy birthday!".into(),
             ..parsed(timestamp_secs, true, "")
         };
-        let (msgs, report) = project(vec![
+        let (messages, report) = project(vec![
             group("+15555550111", 1_600_000_000.1),
             group("+15555550122", 1_600_000_000.6),
         ]);
-        assert_eq!(msgs.len(), 2);
+        assert_eq!(messages.len(), 2);
         assert_eq!(report.duplicates_dropped, 0);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     /// SMS Backup+ reads milliseconds from `X-smssync-date` and whole
@@ -1011,12 +1078,12 @@ mod tests {
     /// the same text sent twice 300 ms apart.
     #[test]
     fn two_millisecond_copies_at_different_times_are_two_messages() {
-        let (msgs, _) = project(vec![
+        let (messages, _) = project(vec![
             parsed(1_609_459_200.1, true, "a.eml"),
             parsed(1_609_459_200.4, true, "b.eml"),
         ]);
-        assert_eq!(msgs.len(), 2);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_eq!(messages.len(), 2);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     /// Between two copies the backup cannot tell apart, the one that carries
@@ -1031,9 +1098,12 @@ mod tests {
             vec![with_id.clone(), without_id.clone()],
             vec![without_id, with_id],
         ] {
-            let (msgs, _) = project(order);
-            assert_eq!(msgs.len(), 1);
-            assert_eq!(msgs[0].source.as_ref().unwrap().fields["smssync_id"], "276");
+            let (messages, _) = project(order);
+            assert_eq!(messages.len(), 1);
+            assert_eq!(
+                messages[0].source.as_ref().unwrap().fields["smssync_id"],
+                "276"
+            );
         }
     }
 }

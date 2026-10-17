@@ -1,15 +1,19 @@
-//! Stage message-ir JSONL rows into the temporary import tables.
+//! Stage JSONL conversation file rows into the temporary import tables.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use message_ir::{IdentityService, IdentityType, nonempty, trimmed};
+use ir::{IdentityService, IdentityType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
+use super::records::{
+    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord,
+    ParticipantRecord, TapbackRecord, clean_body,
+};
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::db::handles::{
-    HandleIdCache, handle_type_on, upsert_handle_row_cached, upsert_handle_row_in,
+    HandleIdCache, handle_type_on, normalize_handle, upsert_handle_row_cached, upsert_handle_row_in,
 };
 use crate::db::staging::{
     self as db_staging, BackupOrder, StagedCopy, StagingAttachment, StagingConversation,
@@ -17,17 +21,11 @@ use crate::db::staging::{
 };
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
-use crate::models::{
-    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord, TapbackRecord,
-    clean_body,
-};
 use media::MediaMode;
 
-use super::contact_name::{
-    IncomingSender, count_other_identity, ensure_contact_for_handle, is_account_identity,
-    resolve_incoming_sender_handle,
-};
-use super::{ImportCounts, ImportFailure, ImportOptions};
+use super::ImportFailure;
+use super::contact_name::ensure_contact_for_handle;
+use super::pipeline::{ImportCounts, ImportOptions};
 
 /// Why staging a file stopped: a refusal the sender can fix by changing the
 /// file, or a fault of the server.
@@ -58,7 +56,7 @@ struct PreparedAttachment {
     stored: Option<StoredAsset>,
 }
 
-/// Size on disk of a stored blob, or `None` when it is not there.
+/// Size on disk of a stored Asset's file, or `None` when it is not there.
 fn stored_size_bytes(assets_dir: &Path, assets_path: Option<&str>) -> Option<i64> {
     let rel = assets_path?;
     let meta = std::fs::metadata(assets_dir.join(rel)).ok()?;
@@ -66,57 +64,97 @@ fn stored_size_bytes(assets_dir: &Path, assets_path: Option<&str>) -> Option<i64
 }
 
 /// The file an attachment path names inside `export_dir`, refusing a path
-/// that could leave it, for the message on `line`.
-fn safe_source(export_dir: &Path, rel: &str, line: usize) -> Result<PathBuf, ImportFailure> {
-    message_ir::safe_attachment_path(export_dir, rel)
-        .map_err(|refusal| ImportFailure::UnsafeAttachmentPath { refusal, line })
+/// that could leave it, for the message on `line`. With no `export_dir`
+/// the import carries no files, so the path is checked and names none.
+fn safe_source(
+    export_dir: Option<&Path>,
+    rel: &str,
+    line: usize,
+) -> Result<Option<PathBuf>, ImportFailure> {
+    let rel = ir::safe_attachment_path(Path::new(""), rel)
+        .map_err(|refusal| ImportFailure::UnsafeAttachmentPath { refusal, line })?;
+    Ok(export_dir.map(|dir| dir.join(rel)))
 }
 
 /// Convert/compress when requested; `None` means fall through to claimed-sha / path store.
 fn try_store_converted(
-    att: &mut AttachmentRecord,
-    export_dir: &Path,
+    attachment: &mut AttachmentRecord,
+    opts: &ImportOptions<'_>,
     assets_dir: &Path,
     asset_stats: &mut AssetStats,
-    media: MediaMode,
     media_work: &Path,
     line: usize,
 ) -> Result<Option<StoredAsset>, StagingError> {
+    let (export_dir, media) = (opts.asset_root, opts.media);
     if !matches!(media, MediaMode::Convert | MediaMode::Compress) {
         return Ok(None);
     }
     // A blank path converts nothing. `store_claimed_or_path`, which runs
     // next, refuses it through `safe_source`.
-    let Some(rel) = att.path.as_deref().and_then(trimmed) else {
+    let Some(rel) = attachment.path.as_deref().and_then(trimmed) else {
         return Ok(None);
     };
-    let source = safe_source(export_dir, rel, line)?;
+    let Some(source) = safe_source(export_dir, rel, line)? else {
+        return Ok(None);
+    };
     if !source.is_file() {
         return Ok(None);
     }
-    let Some(resolved) =
-        import_media::resolve_for_store(&source, att.mime_type.as_deref(), media, media_work)
-            .map_err(StagingError::Internal)?
+    let Some(resolved) = import_media::resolve_for_store(
+        opts.media_tools,
+        &source,
+        attachment.mime_type.as_deref(),
+        media,
+        media_work,
+    )
+    .map_err(StagingError::Internal)?
     else {
         return Ok(None);
     };
+    // `stage_all_files` logs it once the import's files are staged.
+    asset_stats.hevc_fallback.record(resolved.hevc_failure);
     // Bytes may have changed; drop any claimed SHA-256 fingerprint from the export.
-    att.sha256 = None;
-    att.mime_type = resolved.mime_type.or(att.mime_type.take());
+    attachment.sha256 = None;
+    attachment.mime_type = resolved.mime_type.or(attachment.mime_type.take());
     assets_api::hash_and_store(
         &resolved.path,
         assets_dir,
-        att.mime_type.as_deref(),
+        attachment.mime_type.as_deref(),
         asset_stats,
     )
     .map_err(StagingError::Internal)
 }
 
-/// Store an attachment by the sha256 the export claims (reusing an existing blob) or by
-/// hashing its file, counting the ones whose file is missing.
+/// The SHA-256 an attachment states, if any. A stated fingerprint that is
+/// not one is the sender's to fix, naming the line and the attachment,
+/// whether or not a file is there (an HTTP batch never carries one, #2259)
+/// and whatever the media mode.
+fn stated_sha256(
+    attachment: &AttachmentRecord,
+    line: usize,
+) -> Result<Option<assets_api::Sha256>, ImportFailure> {
+    let Some(sha) = attachment.sha256.as_deref().and_then(trimmed) else {
+        return Ok(None);
+    };
+    assets_api::Sha256::parse(sha)
+        .map(Some)
+        .map_err(|_| ImportFailure::AttachmentSha256Invalid {
+            path: attachment
+                .path
+                .clone()
+                .or_else(|| attachment.original_name.clone())
+                .unwrap_or_default(),
+            stated: sha.to_string(),
+            line,
+        })
+}
+
+/// Store an attachment by the sha256 the export claims (reusing an Asset the
+/// store already holds) or by hashing its file, counting the ones whose file
+/// is missing.
 fn store_claimed_or_path(
-    att: &AttachmentRecord,
-    export_dir: &Path,
+    attachment: &AttachmentRecord,
+    export_dir: Option<&Path>,
     assets_dir: &Path,
     asset_stats: &mut AssetStats,
     line: usize,
@@ -125,45 +163,34 @@ fn store_claimed_or_path(
     // file: `attachments.path` keeps the path as sent, and an Export writes
     // the file there, so a path the check refuses is never stored. A path of
     // spaces is checked too, and refused as `.` is.
-    let safe_path = att
+    let safe_path = attachment
         .path
         .as_deref()
         .map(|rel| safe_source(export_dir, rel, line))
-        .transpose()?;
-    if let Some(sha) = att.sha256.as_deref().and_then(trimmed) {
-        let claimed = assets_api::Sha256::parse(sha);
-        if let Ok(claimed) = &claimed
-            && let Some(found) = assets_api::lookup_by_sha256(assets_dir, claimed)
-        {
+        .transpose()?
+        .flatten();
+    if let Some(claimed) = stated_sha256(attachment, line)? {
+        if let Some(found) = assets_api::lookup_by_sha256(assets_dir, &claimed) {
             asset_stats.deduped += 1;
-            return Ok(Some(StoredAsset {
-                mime_type: att.mime_type.clone().or(found.mime_type),
-                ..found
-            }));
+            // The stored bytes decide the type where they can, as when the
+            // file is stored, and the sidecar follows them. The claim is read
+            // as storing reads it: one that is not a type falls back to what
+            // the attachment's path says.
+            let declared = assets_api::resolve_mime(
+                attachment.mime_type.as_deref(),
+                Path::new(attachment.path.as_deref().unwrap_or_default()),
+            );
+            let mime_type =
+                assets_api::record_media_type(assets_dir, &claimed, declared.as_deref())
+                    .map_err(StagingError::Internal)?;
+            return Ok(Some(StoredAsset { mime_type, ..found }));
         }
         if let Some(source) = safe_path {
-            let claimed = match claimed {
-                Ok(claimed) => claimed,
-                Err(_) if !source.is_file() => {
-                    asset_stats.missing += 1;
-                    return Ok(None);
-                }
-                // A stated fingerprint that is not one: the sender's to fix,
-                // naming the line and the path as sent.
-                Err(_) => {
-                    return Err(ImportFailure::AttachmentSha256Invalid {
-                        path: att.path.clone().unwrap_or_default(),
-                        stated: sha.to_string(),
-                        line,
-                    }
-                    .into());
-                }
-            };
             return match assets_api::store_verified(
                 &source,
                 &claimed,
                 assets_dir,
-                att.mime_type.as_deref(),
+                attachment.mime_type.as_deref(),
                 false,
             ) {
                 Ok((stored, already)) => {
@@ -182,7 +209,7 @@ fn store_claimed_or_path(
                 // the sender's to fix, naming the line and the path as sent.
                 Err(AssetError::Mismatch { claimed, actual }) => {
                     Err(ImportFailure::AttachmentMismatch {
-                        path: att.path.clone().unwrap_or_default(),
+                        path: attachment.path.clone().unwrap_or_default(),
                         stated: claimed,
                         actual,
                         line,
@@ -200,7 +227,7 @@ fn store_claimed_or_path(
         return assets_api::hash_and_store(
             &source,
             assets_dir,
-            att.mime_type.as_deref(),
+            attachment.mime_type.as_deref(),
             asset_stats,
         )
         .map_err(StagingError::Internal);
@@ -211,38 +238,80 @@ fn store_claimed_or_path(
 
 /// Stage every attachment of one message into the asset store, converting first when the media mode asks for it.
 fn prepare_attachments(
-    export_dir: &Path,
+    opts: &ImportOptions<'_>,
     assets_dir: &Path,
     attachments: Vec<AttachmentRecord>,
     asset_stats: &mut AssetStats,
-    media: MediaMode,
     media_work: &Path,
     line: usize,
 ) -> Result<Vec<PreparedAttachment>, StagingError> {
-    if media == MediaMode::Disabled {
+    let export_dir = opts.asset_root;
+    if opts.media == MediaMode::Disabled {
         return Ok(Vec::new());
     }
 
     let mut prepared = Vec::with_capacity(attachments.len());
-    for mut att in attachments {
+    for mut attachment in attachments {
+        // Before a conversion, which drops the stated fingerprint.
+        stated_sha256(&attachment, line)?;
         let stored = match try_store_converted(
-            &mut att,
-            export_dir,
+            &mut attachment,
+            opts,
             assets_dir,
             asset_stats,
-            media,
             media_work,
             line,
         )? {
             Some(stored) => Some(stored),
-            None => store_claimed_or_path(&att, export_dir, assets_dir, asset_stats, line)?,
+            None => store_claimed_or_path(&attachment, export_dir, assets_dir, asset_stats, line)?,
         };
         prepared.push(PreparedAttachment {
-            record: att,
+            record: attachment,
             stored,
         });
     }
     Ok(prepared)
+}
+
+/// Count `handle_type` in `counts` when it is `Other` and this run meets the
+/// identity for the first time (`cached` is false). An identity of type
+/// `other` that is a person is a name with no address, or a sender such as
+/// `AMAZON`: something the exporter could not tie to an address, which the
+/// run's counts name.
+fn count_other_identity(handle_type: IdentityType, cached: bool, counts: &mut ImportCounts) {
+    if handle_type == IdentityType::Other && !cached {
+        counts.other_identities += 1;
+    }
+}
+
+/// What one message says about who sent it. Its own type because these three
+/// facts travel together and come from the message, while the connection,
+/// handle cache, account and counts around them belong to the import run.
+struct IncomingSender<'a> {
+    /// True when the account owner sent it, in which case there is no sender
+    /// handle to resolve.
+    is_from_me: bool,
+    /// The sender's address as the backup recorded it, or the name it gave
+    /// with no address, when it recorded either. Typed by
+    /// [`HandleValue::handle_type_on`].
+    value: Option<&'a HandleValue>,
+    /// Service the message arrived on: `phone` or `whatsapp`.
+    service: IdentityService,
+    /// The country the file names for the sender's identity, which a phone
+    /// number written without its `+` code is read in before the run's.
+    country: Option<&'static phone::Country>,
+}
+
+/// True when `address`, read as `handle_type` in `country`, is one
+/// of the account's identities: the account holder, on any service.
+fn is_account_identity(
+    identities: &HashSet<(String, IdentityType)>,
+    address: &str,
+    handle_type: IdentityType,
+    country: Option<&'static phone::Country>,
+) -> bool {
+    let normalized = normalize_handle(address, handle_type, country).key;
+    identities.contains(&(normalized, handle_type))
 }
 
 /// Per-import insert state. Message / attachment / tapback rows flush in
@@ -251,6 +320,8 @@ fn prepare_attachments(
 pub(super) struct StagingInserts {
     account_id: i64,
     import_id: Option<i64>,
+    /// The instant stamped on each contact the run changes.
+    now: chrono::DateTime<chrono::Utc>,
     handles: HandleIdCache,
     /// Handle ids of the account holder's own addresses met in this run, by
     /// address and service. Apart from `handles`, whose entries each have a
@@ -267,26 +338,90 @@ impl StagingInserts {
     /// holds when the run starts.
     /// Every phone number the run writes without its `+` code is read in
     /// `phone_country`, the country the run states, when it states one.
+    /// Each contact the run changes is stamped `now`.
     pub(super) fn new(
         account_id: i64,
         import_id: Option<i64>,
         identities: HashSet<(String, IdentityType)>,
         phone_country: Option<&'static phone::Country>,
+        now: chrono::DateTime<chrono::Utc>,
     ) -> Self {
         Self {
             account_id,
             import_id,
+            now,
             handles: HandleIdCache::in_country(phone_country),
             owners: HashMap::new(),
             identities,
         }
     }
-}
 
-/// One participant as the conversation header records it: their address, or
-/// the name the source gave in its place, and the name this backup used for
-/// them.
-type StagedParticipant = (HandleValue, Option<String>);
+    /// The `handles` row for an incoming message's sender, creating it when this
+    /// import is the first to meet that address, and the contact that owns it.
+    /// `None` for a message the account owner sent, and for one whose source
+    /// recorded no sender address. A contact it changes is stamped with the
+    /// run's instant.
+    async fn resolve_incoming_sender_handle(
+        &mut self,
+        tx: &mut SqliteConnection,
+        sender: IncomingSender<'_>,
+        counts: &mut ImportCounts,
+    ) -> Result<Option<i64>> {
+        if sender.is_from_me {
+            return Ok(None);
+        }
+        let Some(value) = sender.value else {
+            return Ok(None);
+        };
+        let Some(address) = trimmed(value.as_str()) else {
+            return Ok(None);
+        };
+        let handle_type = value.handle_type_on(sender.service);
+        let (handle_id, flagged, cached) = upsert_handle_row_cached(
+            tx,
+            &mut self.handles,
+            self.account_id,
+            address,
+            handle_type,
+            Some(sender.service.as_str()),
+            sender.country,
+        )
+        .await?;
+        if flagged {
+            counts.phones_needing_review += 1;
+        }
+        count_other_identity(handle_type, cached, counts);
+        // A sender is a person the import met, whether or not a conversation
+        // header named them: `orphaned.jsonl` names nobody, and a group header
+        // can leave out someone who wrote in it. So the sender gets a contact
+        // the same way a participant does, which also replaces a trashed one
+        // (ADR-0013). A handle already in the cache went through here, or
+        // through a participant or a one-to-one conversation, earlier in this run, and
+        // each of those gave it a contact unless it is one of the account's
+        // identities. A sender at one is the holder, who never gets a contact
+        // here (#1093); the message still records the address it came from.
+        if !cached
+            && !is_account_identity(
+                &self.identities,
+                address,
+                handle_type,
+                self.handles.country_for(sender.country),
+            )
+        {
+            ensure_contact_for_handle(
+                tx,
+                self.account_id,
+                self.import_id,
+                handle_id,
+                None,
+                counts,
+                self.now,
+            )
+            .await?;
+        }
+        Ok(Some(handle_id))
+    }
+}
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
 ///
@@ -348,7 +483,7 @@ pub(super) async fn import_file_to_staging(
                 let source = resolve_conversation_source(opts, &c)?;
                 pending = Some(StagedConversation::from_record(c, source));
             }
-            ExportRecord::Message(m) => messages.push(m),
+            ExportRecord::Message(m) => messages.push(*m),
         }
     }
 
@@ -365,33 +500,22 @@ pub(super) async fn import_file_to_staging(
 /// A conversation header as read from the file, with the source it resolved to.
 struct StagedConversation {
     chat_identifier: String,
-    /// `phone` | `whatsapp` for handle rows, when the header says.
-    header_service: Option<String>,
     conversation_type: String,
     group_title: Option<String>,
-    participants: Vec<StagedParticipant>,
+    participants: Vec<ParticipantRecord>,
     source: String,
-    /// When the backup the file was read from was made, in the form a
-    /// message's timestamp takes; `None` when the file does not say.
-    backup_taken_at: Option<String>,
 }
 
 impl StagedConversation {
     fn from_record(record: ConversationRecord, source: String) -> Self {
         Self {
             chat_identifier: record.chat_identifier,
-            header_service: record.service,
             conversation_type: record.conversation_type,
             // A title of blanks is no title, as the conversation list shows
             // it, so it never replaces a real one in a merge.
             group_title: record.group_title.filter(|t| !t.trim().is_empty()),
-            participants: record
-                .participants
-                .into_iter()
-                .map(|p| (p.handle, p.name_alias))
-                .collect(),
+            participants: record.participants,
             source,
-            backup_taken_at: record.backup_taken_at,
         }
     }
 }
@@ -451,26 +575,49 @@ impl FileStaging<'_> {
     ) -> Result<()> {
         let mut counts = ImportCounts::default();
         // The title's time: the latest message of this copy, when it has a
-        // title. Every timestamp has one fixed RFC 3339 form, so the greatest
-        // string is the latest instant.
+        // title. Every stored time has one text form, so the greatest is the
+        // latest instant.
         let group_title_at = conversation.group_title.as_ref().and_then(|_| {
             prepared_messages
                 .iter()
-                .map(|(m, _)| m.timestamp.as_str())
+                .map(|(m, _)| &m.timestamp)
                 .max()
-                .map(str::to_owned)
+                .cloned()
         });
-        let service = service_for(conversation.header_service.as_deref(), &conversation.source);
+        let service = conversation_service(prepared_messages.iter().map(|(m, _)| m));
+        let stated = StatedCountries::of(&conversation.participants, &prepared_messages);
+        // One address is one identity in a conversation, so every place it
+        // appears is read in the one country the conversation names for it:
+        // a sender record that names no country, beside a participant record
+        // that names `GB`, is the same `+44` number. A reaction names
+        // its reactor by address alone, with no country of its own.
+        for (msg, _) in &mut prepared_messages {
+            msg.sender_country = msg.sender.as_ref().and_then(|s| stated.of_handle(s));
+            for tapback in &mut msg.tapbacks {
+                tapback.sender_country = tapback
+                    .sender
+                    .as_deref()
+                    .and_then(|sender| stated.of_address(sender));
+            }
+        }
 
-        let individual = conversation
+        let one_to_one = conversation
             .conversation_type
-            .eq_ignore_ascii_case("individual");
+            .eq_ignore_ascii_case("one-to-one");
+        // A one-to-one conversation's id is its person's address, read in
+        // the country their participant or sender record names, so the chat
+        // handle is the same identity they are.
+        let chat_country = if one_to_one {
+            stated.of_address(&conversation.chat_identifier)
+        } else {
+            None
+        };
         // Conversation identity: the chat handle. A group's id is the group's
         // key and nobody's address, so it is `Other` whatever its shape (a
         // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
-        // `orphaned:` key. A one-to-one chat's id is an address, typed by the
+        // `orphaned:` key. A one-to-one conversation's id is an address, typed by the
         // service and its shape like every other (#1933).
-        let chat_handle_type = if individual {
+        let chat_handle_type = if one_to_one {
             handle_type_on(&conversation.chat_identifier, service)
         } else {
             IdentityType::Other
@@ -482,12 +629,13 @@ impl FileStaging<'_> {
             &conversation.chat_identifier,
             chat_handle_type,
             Some(service.as_str()),
+            chat_country,
         )
         .await?;
         if flagged {
             counts.phones_needing_review += 1;
         }
-        // Only a one-to-one chat's identifier is a person. A group's id, and
+        // Only a one-to-one conversation's identifier is a person. A group's id, and
         // the `orphaned:` key of a conversation of orphaned messages, name
         // the conversation, so they get a handle row and no contact; the
         // people in it get theirs as participants. The conversation's type
@@ -502,22 +650,22 @@ impl FileStaging<'_> {
         // participant record, an identity of type `other` holding the name,
         // so the key giving them a second contact would make one person two.
         //
-        // A one-to-one chat with one of the account's own identities is a
+        // A one-to-one conversation with one of the account's own identities is a
         // conversation the holder has with themselves (Apple Messages' chat
         // with the owner's number, WhatsApp's "Message yourself"). The holder
         // is never a participant and gets no contact, so the chat id gets
         // none either, and the received copy of each note has no sender
         // (#1094). Its header's participant, if any, is the holder and
         // `insert_participant` drops it.
-        let chat_is_an_address = individual
-            && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
-            && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
+        let chat_is_an_address = one_to_one
+            && ir::name_of_chat_id(&conversation.chat_identifier).is_none()
+            && conversation.chat_identifier != ir::NAMELESS_CHAT_ID;
         let with_yourself = chat_is_an_address
             && is_account_identity(
                 &self.stmts.identities,
                 &conversation.chat_identifier,
                 chat_handle_type,
-                self.stmts.handles.country(),
+                self.stmts.handles.country_for(chat_country),
             );
         if chat_is_an_address && !with_yourself {
             count_other_identity(chat_handle_type, chat_cached, &mut counts);
@@ -528,6 +676,7 @@ impl FileStaging<'_> {
                 chat_handle_id,
                 None,
                 &mut counts,
+                self.stmts.now,
             )
             .await?;
         }
@@ -538,20 +687,22 @@ impl FileStaging<'_> {
                 chat_handle_id,
                 conversation_type: &conversation.conversation_type,
                 group_title: conversation.group_title.as_deref(),
-                group_title_at: group_title_at.as_deref(),
+                group_title_at: group_title_at.as_ref(),
                 source_file: &self.source_file,
             },
         )
         .await?;
         counts.conversations = 1;
-        if let (Some(import_id), Some(backup_taken_at)) = (
-            self.stmts.import_id,
-            conversation.backup_taken_at.as_deref(),
-        ) {
+        let newest_backup = prepared_messages
+            .iter()
+            .filter_map(|(msg, _)| msg.backup_taken_at.as_ref())
+            .max();
+        if let (Some(import_id), Some(backup_taken_at)) = (self.stmts.import_id, newest_backup) {
             crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
         }
 
-        for participant in conversation.participants {
+        for mut participant in conversation.participants {
+            participant.country = stated.of_handle(&participant.handle);
             insert_participant(
                 self.tx,
                 self.stmts,
@@ -595,7 +746,6 @@ impl FileStaging<'_> {
                 StagedSource {
                     conversation_id,
                     source: &conversation.source,
-                    backup_taken_at: conversation.backup_taken_at.as_deref(),
                 },
                 self.opts.assets_dir,
                 chunk,
@@ -607,19 +757,67 @@ impl FileStaging<'_> {
     }
 }
 
-/// The service of chat and participant handles: the conversation's own hint,
-/// else WhatsApp for a WhatsApp export, else phone.
-fn service_for(header_service: Option<&str>, source: &str) -> IdentityService {
-    header_service.map_or_else(
-        || {
-            if source.eq_ignore_ascii_case("whatsapp") {
-                IdentityService::Whatsapp
-            } else {
-                IdentityService::Phone
+/// The countries one conversation's file names for its identities, by
+/// address: each participant's `country` and each sender's
+/// `sender.country`. A participant's comes first, then senders' in message
+/// order, so one address takes one country across the conversation, and
+/// every participant, sender, reactor and one-to-one chat id at that
+/// address is read in it.
+struct StatedCountries(HashMap<String, &'static phone::Country>);
+
+impl StatedCountries {
+    fn of(
+        participants: &[ParticipantRecord],
+        messages: &[(MessageRecord, Vec<PreparedAttachment>)],
+    ) -> Self {
+        let mut by_address = HashMap::new();
+        let participants = participants.iter().map(|p| (&p.handle, p.country));
+        let senders = messages.iter().filter_map(|(msg, _)| {
+            msg.sender
+                .as_ref()
+                .map(|sender| (sender, msg.sender_country))
+        });
+        for (value, country) in participants.chain(senders) {
+            if let (HandleValue::Address(address), Some(country)) = (value, country) {
+                by_address.entry(address.clone()).or_insert(country);
             }
-        },
-        IdentityService::parse,
-    )
+        }
+        Self(by_address)
+    }
+
+    /// The country named for `address`, when one is.
+    fn of_address(&self, address: &str) -> Option<&'static phone::Country> {
+        self.0.get(address).copied()
+    }
+
+    /// The country named for `handle`'s address; a name has none.
+    fn of_handle(&self, handle: &HandleValue) -> Option<&'static phone::Country> {
+        match handle {
+            HandleValue::Address(address) => self.of_address(address),
+            HandleValue::Name(_) => None,
+        }
+    }
+}
+
+/// The service of a conversation's chat and participant handles: WhatsApp
+/// when any of its messages came over WhatsApp, else Text Message. The
+/// messages say so whatever the source is named: an Export Run writes the
+/// server's source name into the file, so a WhatsApp conversation stored
+/// under another name was read as Text Message on its next import (#2050).
+/// A conversation with no messages has nothing to say it and is Text
+/// Message.
+fn conversation_service<'a>(
+    messages: impl IntoIterator<Item = &'a MessageRecord>,
+) -> IdentityService {
+    if messages.into_iter().any(|m| {
+        m.service
+            .as_deref()
+            .is_some_and(|s| IdentityService::parse(s) == IdentityService::Whatsapp)
+    }) {
+        IdentityService::Whatsapp
+    } else {
+        IdentityService::Phone
+    }
 }
 
 /// Stage every message's attachments on disk, pairing each message with what
@@ -640,11 +838,10 @@ fn prepare_message_attachments(
     let mut prepared = Vec::with_capacity(messages.len());
     for mut msg in messages {
         let attachments = prepare_attachments(
-            opts.asset_root,
+            opts,
             assets_dir,
             std::mem::take(&mut msg.attachments),
             asset_stats,
-            opts.media,
             media_work,
             msg.line,
         )?;
@@ -663,10 +860,15 @@ async fn insert_participant(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     conversation_id: i64,
-    (value, name_alias): StagedParticipant,
+    participant: ParticipantRecord,
     service: IdentityService,
     counts: &mut ImportCounts,
 ) -> Result<()> {
+    let ParticipantRecord {
+        handle: value,
+        name_alias,
+        country,
+    } = participant;
     let handle_type = value.handle_type_on(service);
     let handle = value.as_str();
     // The account holder is never a participant: a member at one of the
@@ -677,7 +879,7 @@ async fn insert_participant(
         &stmts.identities,
         handle,
         handle_type,
-        stmts.handles.country(),
+        stmts.handles.country_for(country),
     ) {
         return Ok(());
     }
@@ -688,6 +890,7 @@ async fn insert_participant(
         handle,
         handle_type,
         Some(service.as_str()),
+        country,
     )
     .await?;
     if flagged {
@@ -702,6 +905,7 @@ async fn insert_participant(
         handle_id,
         backup_name.as_deref(),
         counts,
+        stmts.now,
     )
     .await?;
     // `participants.name_alias` keeps what this backup called them in this
@@ -744,20 +948,18 @@ async fn resolve_message_rows(
             .service
             .as_deref()
             .map_or(service, IdentityService::parse);
-        let sender_handle_id = resolve_incoming_sender_handle(
-            tx,
-            &mut stmts.handles,
-            &stmts.identities,
-            stmts.account_id,
-            stmts.import_id,
-            IncomingSender {
-                is_from_me: msg.is_from_me,
-                value: msg.sender.as_ref(),
-                service: sender_service,
-            },
-            counts,
-        )
-        .await?;
+        let sender_handle_id = stmts
+            .resolve_incoming_sender_handle(
+                tx,
+                IncomingSender {
+                    is_from_me: msg.is_from_me,
+                    value: msg.sender.as_ref(),
+                    service: sender_service,
+                    country: msg.sender_country,
+                },
+                counts,
+            )
+            .await?;
         let owner_handle_id =
             resolve_owner_handle(tx, stmts, msg.owner.as_deref(), sender_service).await?;
         rows.push(PendingStagingMessage {
@@ -818,12 +1020,12 @@ struct PendingStagingMessage {
 }
 
 /// Where one conversation's message rows are staged from: its staging
-/// conversation, its source, and when its backup was made.
+/// conversation and its source. Each message's Backup Date is its own
+/// ([`MessageRecord::backup_taken_at`]).
 #[derive(Clone, Copy)]
 struct StagedSource<'a> {
     conversation_id: i64,
     source: &'a str,
-    backup_taken_at: Option<&'a str>,
 }
 
 /// Bulk-insert one chunk of message rows, then their attachments, tapbacks
@@ -841,7 +1043,7 @@ async fn flush_staging_message_chunk(
     }
     let mut by_sort = insert_message_rows(tx, stmts, staged_source, chunk).await?;
 
-    let mut att_rows = Vec::new();
+    let mut attachment_rows = Vec::new();
     let mut tap_rows = Vec::new();
     let mut version_rows = Vec::new();
     let mut copies = Vec::new();
@@ -856,7 +1058,7 @@ async fn flush_staging_message_chunk(
             continue;
         };
         counts.messages += 1;
-        att_rows.extend(
+        attachment_rows.extend(
             row.attachments
                 .iter()
                 .map(|prepared| attachment_row(message_id, prepared, assets_dir)),
@@ -872,7 +1074,7 @@ async fn flush_staging_message_chunk(
         );
     }
 
-    counts.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
+    counts.attachments += db_staging::insert_attachments(tx, &attachment_rows).await?;
     counts.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
     db_staging::insert_earlier_versions(tx, &version_rows).await?;
     for row in copies {
@@ -917,8 +1119,8 @@ async fn add_staged_copy(
         && row.attachments.is_empty()
         && row.msg.tapbacks.is_empty()
         && row.msg.deletion.is_none()
-        && staged_source.backup_taken_at.is_none()
-        && row.msg.time_precision == message_ir::TimePrecision::Seconds
+        && row.msg.backup_taken_at.is_none()
+        && row.msg.time_precision == ir::TimePrecision::Seconds
     {
         return Ok(());
     }
@@ -930,21 +1132,21 @@ async fn add_staged_copy(
     let staged = db_staging::staged_message_id(tx, key)
         .await?
         .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
-    if row.msg.time_precision == message_ir::TimePrecision::Milliseconds {
+    if row.msg.time_precision == ir::TimePrecision::Milliseconds {
         db_staging::add_staged_copy_milliseconds(tx, staged, &row.msg.timestamp).await?;
     }
     let held = db_staging::staged_text(tx, staged).await?;
     let copy = StagedCopy {
         body: row.body.as_deref(),
         versions: &row.msg.earlier_versions,
-        undated: staged_source.backup_taken_at.is_none(),
+        undated: row.msg.backup_taken_at.is_none(),
     };
     let order = if held.undated {
         BackupOrder::Undecided
     } else {
         db_staging::later_backup(
-            staged_source.backup_taken_at,
-            held.backup_taken_at.as_deref(),
+            row.msg.backup_taken_at.as_ref(),
+            held.backup_taken_at.as_ref(),
         )
     };
     match order {
@@ -955,20 +1157,25 @@ async fn add_staged_copy(
         BackupOrder::Undecided => {
             let taken = !row.msg.earlier_versions.is_empty()
                 && db_staging::take_later_staged_copy(tx, staged, &copy).await?;
-            if let (false, Some(backup)) = (taken, staged_source.backup_taken_at) {
+            if let (false, Some(backup)) = (taken, row.msg.backup_taken_at.as_ref()) {
                 db_staging::note_backed_staged_text(tx, staged, &copy, backup).await?;
             }
         }
     }
-    db_staging::add_staged_copy_mark(tx, staged, row.msg.deletion, staged_source.backup_taken_at)
-        .await?;
+    db_staging::add_staged_copy_mark(
+        tx,
+        staged,
+        row.msg.deletion,
+        row.msg.backup_taken_at.as_ref(),
+    )
+    .await?;
 
-    let att_rows: Vec<StagingAttachment> = row
+    let attachment_rows: Vec<StagingAttachment> = row
         .attachments
         .iter()
         .map(|prepared| attachment_row(staged, prepared, assets_dir))
         .collect();
-    counts.attachments += db_staging::add_copy_attachments(tx, &att_rows).await?;
+    counts.attachments += db_staging::add_copy_attachments(tx, &attachment_rows).await?;
     let mut tap_rows = Vec::with_capacity(row.msg.tapbacks.len());
     for tap in &row.msg.tapbacks {
         tap_rows.push(tapback_row(tx, stmts, counts, staged, row, tap).await?);
@@ -1012,13 +1219,13 @@ async fn insert_message_rows(
             deletion: row.msg.deletion,
             sort_order: row.sort_order,
             import_id: stmts.import_id,
-            backup_taken_at: staged_source.backup_taken_at,
+            backup_taken_at: row.msg.backup_taken_at.as_ref(),
         })
         .collect();
     db_staging::insert_messages(tx, &rows).await
 }
 
-/// The row for one of a staged message's attachments: the stored blob's
+/// The row for one of a staged message's attachments: the stored Asset's
 /// digest, path, and type when the file was stored, the record's own
 /// type and missing reason when it was not.
 fn attachment_row(
@@ -1026,29 +1233,32 @@ fn attachment_row(
     prepared: &PreparedAttachment,
     assets_dir: &Path,
 ) -> StagingAttachment {
-    let att = &prepared.record;
+    let attachment = &prepared.record;
     let (sha256, assets_path, mime_type) = match &prepared.stored {
         Some(stored) => (
             Some(stored.sha256.clone()),
             Some(stored.assets_path.clone()),
-            stored.mime_type.clone().or_else(|| att.mime_type.clone()),
+            stored
+                .mime_type
+                .clone()
+                .or_else(|| attachment.mime_type.clone()),
         ),
-        None => (None, None, att.mime_type.clone()),
+        None => (None, None, attachment.mime_type.clone()),
     };
     let size_bytes = stored_size_bytes(assets_dir, assets_path.as_deref())
-        .or_else(|| att.size_bytes.map(|n| n as i64));
+        .or_else(|| attachment.size_bytes.map(|n| n as i64));
     let missing_reason = if sha256.is_none() {
-        att.missing_reason.clone()
+        attachment.missing_reason.clone()
     } else {
         None
     };
     StagingAttachment {
         message_id,
-        path: att.path.clone(),
-        original_name: att.original_name.clone(),
+        path: attachment.path.clone(),
+        original_name: attachment.original_name.clone(),
         mime_type,
-        is_sticker: att.is_sticker as i64,
-        transcription: att.transcription.clone(),
+        is_sticker: attachment.is_sticker as i64,
+        transcription: attachment.transcription.clone(),
         sha256,
         assets_path,
         size_bytes,
@@ -1068,20 +1278,18 @@ async fn tapback_row(
 ) -> Result<StagingTapback> {
     // A reaction names its sender by address only.
     let reactor = tap.sender.clone().map(HandleValue::Address);
-    let sender_handle_id = resolve_incoming_sender_handle(
-        tx,
-        &mut stmts.handles,
-        &stmts.identities,
-        stmts.account_id,
-        stmts.import_id,
-        IncomingSender {
-            is_from_me: tap.is_from_me,
-            value: reactor.as_ref(),
-            service: row.sender_service,
-        },
-        counts,
-    )
-    .await?;
+    let sender_handle_id = stmts
+        .resolve_incoming_sender_handle(
+            tx,
+            IncomingSender {
+                is_from_me: tap.is_from_me,
+                value: reactor.as_ref(),
+                service: row.sender_service,
+                country: tap.sender_country,
+            },
+            counts,
+        )
+        .await?;
     Ok(StagingTapback {
         message_id,
         part_index: tap.part_index,
@@ -1089,6 +1297,7 @@ async fn tapback_row(
         emoji: tap.emoji.clone(),
         is_from_me: tap.is_from_me as i64,
         sender_handle_id,
+        sender_display_name: tap.sender_display_name.clone(),
     })
 }
 

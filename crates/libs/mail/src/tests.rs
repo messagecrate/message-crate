@@ -1,10 +1,10 @@
 use super::*;
 use mailparse::MailHeaderMap;
 
-fn base_sms() -> MailMessage {
+pub(crate) fn base_sms() -> MailMessage {
     MailMessage {
         chat_identifier: "+15555550101".into(),
-        conversation_type: "individual".into(),
+        conversation_type: "one-to-one".into(),
         group_title: None,
         participants: vec![Participant {
             identity: "+15555550101".into(),
@@ -15,17 +15,19 @@ fn base_sms() -> MailMessage {
         export_source: "sms-backup-restore".into(),
         export_tool: "SMS Backup & Restore".into(),
         export_tool_version: "10.26.003".into(),
-        backup_taken_at_unix_ms: None,
-        filename_suffix: None,
-        message: IrMessage {
+        exported_at_unix_ms: None,
+        message: Message {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: message_ir::IrService::Sms,
-            message_kind: message_ir::IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
+            time_precision: ir::TimePrecision::Milliseconds,
+            direction: Direction::Incoming,
+            service: ir::Transport::Sms,
+            message_kind: ir::MessageKind::Sms,
+            sender: ir::Sender {
+                identity: Some("+15555550101".into()),
+                display_name: Some("Sam".into()),
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: "hello from sms".into(),
@@ -35,25 +37,28 @@ fn base_sms() -> MailMessage {
             edits: Vec::new(),
             reply_to: None,
             imessage: None,
-            source: Some(message_ir::IrSource {
+            source: Some(ir::VendorFields {
                 android_type: Some(1),
                 fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
             }),
+            backup_taken_at_unix_ms: None,
         },
         attachments: vec![],
     }
 }
 
 /// The extension bag, creating it when the base message has none.
-fn im_mut(msg: &mut MailMessage) -> &mut message_ir::IrImessage {
-    msg.message.imessage.get_or_insert_with(Default::default)
+fn im_mut(message: &mut MailMessage) -> &mut ir::ImessageExtensions {
+    message
+        .message
+        .imessage
+        .get_or_insert_with(Default::default)
 }
 
 #[test]
-fn writes_individual_sms_text_only() {
+fn writes_one_to_one_sms_text_only() {
     let tmp = tempfile::tempdir().unwrap();
-    let dir = write_conversation(tmp.path(), &[base_sms()]).unwrap();
-    assert_eq!(dir.file_name().unwrap(), "+15555550101");
+    let dir = write_conversation(&tmp.path().join("+15555550101"), &[base_sms()]).unwrap();
 
     let mut emls: Vec<_> = fs::read_dir(&dir)
         .unwrap()
@@ -115,12 +120,12 @@ fn writes_individual_sms_text_only() {
 
 #[test]
 fn writes_group_mms_with_image_part() {
-    let mut msg = base_sms();
-    msg.chat_identifier = "chat-group1".into();
-    msg.conversation_type = "group".into();
-    msg.group_title = Some("Family".into());
-    msg.message.message_kind = message_ir::IrMessageKind::Mms;
-    msg.participants = vec![
+    let mut message = base_sms();
+    message.chat_identifier = "chat-group1".into();
+    message.conversation_type = "group".into();
+    message.group_title = Some("Family".into());
+    message.message.message_kind = ir::MessageKind::Mms;
+    message.participants = vec![
         Participant {
             identity: "+15555550101".into(),
             display_name: Some("Sam".into()),
@@ -130,9 +135,9 @@ fn writes_group_mms_with_image_part() {
             display_name: Some("Alex".into()),
         },
     ];
-    msg.attachments = vec![MailAttachment {
+    message.attachments = vec![MailAttachment {
         bytes: b"\xff\xd8\xfffakejpeg".to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("photo.jpg".into()),
             mime_type: Some("image/jpeg".into()),
@@ -146,8 +151,7 @@ fn writes_group_mms_with_image_part() {
     }];
 
     let tmp = tempfile::tempdir().unwrap();
-    let dir = write_conversation(tmp.path(), &[msg]).unwrap();
-    assert_eq!(dir.file_name().unwrap(), "Family");
+    let dir = write_conversation(&tmp.path().join("Family"), &[message]).unwrap();
 
     let eml = fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path();
     let bytes = fs::read(&eml).unwrap();
@@ -195,21 +199,21 @@ fn writes_group_mms_with_image_part() {
 
 #[test]
 fn encodes_email_handles_and_imessage_message_id() {
-    let mut msg = base_sms();
-    msg.chat_identifier = "friend@example.com".into();
-    msg.participants = vec![Participant {
+    let mut message = base_sms();
+    message.chat_identifier = "friend@example.com".into();
+    message.participants = vec![Participant {
         identity: "friend@example.com".into(),
         display_name: Some("Friend".into()),
     }];
-    msg.message.sender_identity = Some("friend@example.com".into());
-    msg.owner_identity = "me@example.com".into();
-    msg.message.service = message_ir::IrService::IMessage;
-    msg.message.message_kind = message_ir::IrMessageKind::IMessage;
-    msg.message.guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
-    msg.export_source = "imessage".into();
+    message.message.sender.identity = Some("friend@example.com".into());
+    message.owner_identity = "me@example.com".into();
+    message.message.service = ir::Transport::IMessage;
+    message.message.message_kind = ir::MessageKind::IMessage;
+    message.message.guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
+    message.export_source = "imessage".into();
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+    let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
     let bytes = fs::read(&path).unwrap();
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = mail.get_headers();
@@ -229,14 +233,14 @@ fn encodes_email_handles_and_imessage_message_id() {
 
 #[test]
 fn outgoing_uses_me_and_stable_subject() {
-    let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_identity = Some("+15555550100".into());
-    msg.message.sender_display_name = Some("Me".into());
-    msg.message.text = "body must not become subject".into();
+    let mut message = base_sms();
+    message.message.direction = Direction::Outgoing;
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("Me".into());
+    message.message.text = "body must not become subject".into();
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+    let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
     let bytes = fs::read(&path).unwrap();
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = mail.get_headers();
@@ -270,9 +274,9 @@ fn outgoing_uses_me_and_stable_subject() {
     );
 }
 
-fn subject_and_to(msg: &MailMessage) -> (String, String) {
+fn subject_and_to(message: &MailMessage) -> (String, String) {
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_message_file(&tmp.path().join("chat"), 1, msg).unwrap();
+    let path = write_message_file(&tmp.path().join("chat"), 1, message).unwrap();
     let bytes = fs::read(&path).unwrap();
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = mail.get_headers();
@@ -286,32 +290,32 @@ fn subject_and_to(msg: &MailMessage) -> (String, String) {
 /// not the peer's. With no name in the roster the peer is known by handle.
 #[test]
 fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_identity() {
-    let mut msg = base_sms();
-    msg.participants[0].display_name = None;
-    msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_identity = Some("+15555550100".into());
-    msg.message.sender_display_name = Some("Me".into());
+    let mut message = base_sms();
+    message.participants[0].display_name = None;
+    message.message.direction = Direction::Outgoing;
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("Me".into());
 
-    let (subject, to) = subject_and_to(&msg);
+    let (subject, to) = subject_and_to(&message);
     assert_eq!(subject, "Message with +15555550101");
     assert!(!to.contains("Me"), "To was {to}");
 }
 
 #[test]
 fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
-    let mut msg = base_sms();
-    msg.participants.insert(
+    let mut message = base_sms();
+    message.participants.insert(
         0,
         Participant {
             identity: "+15555550100".into(),
             display_name: Some("Owner".into()),
         },
     );
-    msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_identity = Some("+15555550100".into());
-    msg.message.sender_display_name = Some("Me".into());
+    message.message.direction = Direction::Outgoing;
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("Me".into());
 
-    let (subject, to) = subject_and_to(&msg);
+    let (subject, to) = subject_and_to(&message);
     assert_eq!(subject, "Message with Sam");
     assert!(to.contains("Sam"), "To was {to}");
 }
@@ -320,12 +324,12 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
 /// only place the other person is named.
 #[test]
 fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
-    let mut msg = base_sms();
-    msg.participants.clear();
-    msg.message.sender_identity = None;
+    let mut message = base_sms();
+    message.participants.clear();
+    message.message.sender.identity = None;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
+    let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[message]).unwrap();
     let text = fs::read_to_string(&path).unwrap();
     assert_eq!(
         text.lines().next(),
@@ -335,25 +339,25 @@ fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
 
 #[test]
 fn caller_id_owner_display_and_imessage_extension_headers() {
-    let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_identity = Some("+15555550100".into());
-    msg.message.sender_display_name = Some("+15555550100".into());
-    msg.owner_display_name = Some("+15555550100".into());
-    msg.export_source = "imessage".into();
-    msg.message.message_kind = message_ir::IrMessageKind::IMessage;
-    msg.message.reply_to = Some(message_ir::ReplyTo {
+    let mut message = base_sms();
+    message.message.direction = Direction::Outgoing;
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("+15555550100".into());
+    message.owner_display_name = Some("+15555550100".into());
+    message.export_source = "imessage".into();
+    message.message.message_kind = ir::MessageKind::IMessage;
+    message.message.reply_to = Some(ir::ReplyTo {
         guid: Some("parent-guid-1111".into()),
         part_index: Some(0),
     });
-    im_mut(&mut msg).send_effect = Some("Sent with Balloons".into());
-    msg.message.text = "hello\n\nSent with Balloons".into();
-    im_mut(&mut msg).parts =
+    im_mut(&mut message).send_effect = Some("Sent with Balloons".into());
+    message.message.text = "hello\n\nSent with Balloons".into();
+    im_mut(&mut message).parts =
         serde_json::from_str(r#"[{"index":0,"kind":"run","text":"hello"}]"#).ok();
-    im_mut(&mut msg).announcement = None;
+    im_mut(&mut message).announcement = None;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+    let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
     let bytes = fs::read(&path).unwrap();
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = mail.get_headers();
@@ -393,17 +397,17 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
 
 #[test]
 fn tapback_and_handwriting_svg_headers() {
-    let mut msg = base_sms();
-    msg.export_source = "imessage".into();
-    msg.message.message_kind = message_ir::IrMessageKind::Tapback;
-    im_mut(&mut msg).associated_guid = Some("parent-guid".into());
-    im_mut(&mut msg).associated_part = Some(0);
-    im_mut(&mut msg).tapback_kind = Some("loved".into());
-    im_mut(&mut msg).tapback_action = Some("add".into());
-    msg.message.text = "Loved a message".into();
-    msg.attachments = vec![MailAttachment {
+    let mut message = base_sms();
+    message.export_source = "imessage".into();
+    message.message.message_kind = ir::MessageKind::Tapback;
+    im_mut(&mut message).associated_guid = Some("parent-guid".into());
+    im_mut(&mut message).associated_part = Some(0);
+    im_mut(&mut message).tapback_kind = Some("loved".into());
+    im_mut(&mut message).tapback_action = Some("add".into());
+    message.message.text = "Loved a message".into();
+    message.attachments = vec![MailAttachment {
         bytes: b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("handwriting.svg".into()),
             mime_type: Some("image/svg+xml".into()),
@@ -417,7 +421,7 @@ fn tapback_and_handwriting_svg_headers() {
     }];
     // Handwriting would normally be message_kind=balloon; this only checks MIME.
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+    let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
     let bytes = fs::read(&path).unwrap();
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = mail.get_headers();
@@ -457,15 +461,19 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
     let incoming = base_sms(); // 2014-05-22 15:41:01 UTC, from +15555550101
     let mut outgoing = base_sms();
     outgoing.message.guid = "bbccddeeff00112233445566778899aa".into();
-    outgoing.message.direction = IrDirection::Outgoing;
+    outgoing.message.direction = Direction::Outgoing;
     outgoing.message.timestamp_unix_ms = 1_401_700_000_000; // 2014-06-02 09:06:40 UTC
     let mut from_email = base_sms();
     from_email.message.guid = "ccddeeff00112233445566778899aabb".into();
-    from_email.message.sender_identity = Some("sam@example.com".into());
+    from_email.message.sender.identity = Some("sam@example.com".into());
     from_email.message.timestamp_unix_ms = 1_401_700_001_000;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[incoming, outgoing, from_email]).unwrap();
+    let path = write_conversation_mbox(
+        &tmp.path().join("c.mbox"),
+        &[incoming, outgoing, from_email],
+    )
+    .unwrap();
 
     let text = fs::read_to_string(&path).unwrap();
     let from_lines: Vec<&str> = text.lines().filter(|l| l.starts_with("From ")).collect();
@@ -494,8 +502,7 @@ fn writes_conversation_mboxrd() {
     b.message.timestamp_unix_ms = 1_400_773_361_000;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[b, a]).unwrap();
-    assert_eq!(path.file_name().unwrap(), "+15555550101.mbox");
+    let path = write_conversation_mbox(&tmp.path().join("+15555550101.mbox"), &[b, a]).unwrap();
 
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("From "));
@@ -517,11 +524,11 @@ fn writes_conversation_mboxrd() {
 
 #[test]
 fn a_messages_own_owner_survives_an_mbox_round_trip() {
-    let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
-    msg.message.owner_identity = Some("me@example.com".into());
+    let mut message = base_sms();
+    message.message.direction = Direction::Outgoing;
+    message.message.owner_identity = Some("me@example.com".into());
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
+    let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[message]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(
         parsed[0].message.owner_identity.as_deref(),
@@ -534,11 +541,11 @@ fn a_messages_own_owner_survives_an_mbox_round_trip() {
 #[test]
 fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
     let card = b"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Sam\r\nEND:VCARD\r\n".to_vec();
-    let mut msg = base_sms();
-    msg.message.message_kind = message_ir::IrMessageKind::Mms;
-    msg.attachments = vec![MailAttachment {
+    let mut message = base_sms();
+    message.message.message_kind = ir::MessageKind::Mms;
+    message.attachments = vec![MailAttachment {
         bytes: card.clone(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("sam.vcf".into()),
             mime_type: Some("text/vcard".into()),
@@ -551,7 +558,7 @@ fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
         sticker_effect: None,
     }];
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
+    let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[message]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(parsed[0].attachments[0].bytes, card);
 }
@@ -597,9 +604,9 @@ fn a_mail_whose_participants_do_not_read_is_refused() {
 /// decoded `"` would break the roster's JSON. It reads back as it was written.
 #[test]
 fn a_name_that_looks_like_an_encoded_word_reads_back_as_written() {
-    let mut msg = base_sms();
-    msg.participants[0].display_name = Some("=?utf-8?Q?=22?= x".into());
-    let eml = build_eml(&msg).unwrap();
+    let mut message = base_sms();
+    message.participants[0].display_name = Some("=?utf-8?Q?=22?= x".into());
+    let eml = build_eml(&message).unwrap();
     let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
     assert_eq!(
         back.participants[0].display_name.as_deref(),
@@ -656,9 +663,9 @@ fn a_mail_that_keeps_a_reply_link_in_x_me_thread_originator_guid_is_refused() {
 /// alone, with no `In-Reply-To`, and reads back as a reply with no link.
 #[test]
 fn a_reply_with_no_link_reads_back_as_a_reply() {
-    let mut msg = base_sms();
-    msg.message.reply_to = Some(message_ir::ReplyTo::default());
-    let eml = build_eml(&msg).unwrap();
+    let mut message = base_sms();
+    message.message.reply_to = Some(ir::ReplyTo::default());
+    let eml = build_eml(&message).unwrap();
     let mail = mailparse::parse_mail(&eml).unwrap();
     let headers = mail.get_headers();
     assert_eq!(
@@ -668,10 +675,10 @@ fn a_reply_with_no_link_reads_back_as_a_reply() {
     assert_eq!(headers.get_first_value("X-ME-Reply-To-Guid"), None);
     assert_eq!(headers.get_first_value("In-Reply-To"), None);
     let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
-    assert_eq!(back.message.reply_to, Some(message_ir::ReplyTo::default()));
+    assert_eq!(back.message.reply_to, Some(ir::ReplyTo::default()));
 
-    msg.message.reply_to = None;
-    let eml = build_eml(&msg).unwrap();
+    message.message.reply_to = None;
+    let eml = build_eml(&message).unwrap();
     let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
     assert_eq!(back.message.reply_to, None, "a message that is not a reply");
 }
@@ -687,10 +694,10 @@ fn a_mail_whose_reactions_do_not_read_is_refused() {
 /// as the same mark; a message with none writes no header.
 #[test]
 fn a_deletion_mark_reads_back_as_written() {
-    for deletion in message_ir::Deletion::ALL {
-        let mut msg = base_sms();
-        msg.message.deletion = Some(deletion);
-        let eml = build_eml(&msg).unwrap();
+    for deletion in ir::Deletion::ALL {
+        let mut message = base_sms();
+        message.message.deletion = Some(deletion);
+        let eml = build_eml(&message).unwrap();
         let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
         assert_eq!(back.message.deletion, Some(deletion));
     }
@@ -753,11 +760,13 @@ fn a_mail_that_keeps_the_edit_history_in_x_me_edits_is_refused() {
 }
 
 /// Earlier versions that do not read are refused rather than read as none.
+/// A version without `text` reads: a source may record an edit and not the
+/// text it replaced (#2030). One without a part does not.
 #[test]
 fn a_mail_whose_earlier_versions_do_not_read_is_refused() {
     assert_json_header_is_refused(
         "X-ME-Earlier-Versions",
-        r#"[{"part_index":0}]"#,
+        r#"[{"text":"hello"}]"#,
         "earlier versions",
     );
 }
@@ -845,26 +854,26 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
 /// and the reply guid (`Message-ID`, `In-Reply-To`, `References`), the
 /// sender, owner and participant identities (`From`, `To` and the mbox
 /// `From_` line) and the attachment's type (its part's `Content-Type`).
-fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
+fn with_every_x_me_text(value: &str, direction: Direction) -> MailMessage {
     let text = || Some(value.to_string());
-    let mut msg = base_sms();
-    msg.message.direction = direction;
-    msg.chat_identifier = value.into();
-    msg.conversation_type = "group".into();
-    msg.group_title = text();
-    msg.participants[0].display_name = text();
-    msg.owner_display_name = text();
-    msg.export_source = value.into();
-    msg.export_tool = value.into();
-    msg.export_tool_version = value.into();
-    msg.participants[0].identity = value.into();
-    msg.owner_identity = value.into();
-    msg.message.guid = value.into();
-    msg.message.sender_identity = text();
-    msg.message.sender_display_name = text();
-    msg.message.owner_identity = text();
-    msg.message.subject = text();
-    msg.message.reactions = vec![message_ir::Reaction {
+    let mut message = base_sms();
+    message.message.direction = direction;
+    message.chat_identifier = value.into();
+    message.conversation_type = "group".into();
+    message.group_title = text();
+    message.participants[0].display_name = text();
+    message.owner_display_name = text();
+    message.export_source = value.into();
+    message.export_tool = value.into();
+    message.export_tool_version = value.into();
+    message.participants[0].identity = value.into();
+    message.owner_identity = value.into();
+    message.message.guid = value.into();
+    message.message.sender.identity = text();
+    message.message.sender.display_name = text();
+    message.message.owner_identity = text();
+    message.message.subject = text();
+    message.message.reactions = vec![ir::Reaction {
         part_index: 0,
         kind: value.into(),
         emoji: text(),
@@ -872,14 +881,14 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
         reactor_identity: text(),
         reactor_display_name: text(),
     }];
-    msg.message.edits = vec![message_ir::EarlierVersion {
+    message.message.edits = vec![ir::EarlierVersion {
         part_index: 0,
-        text: value.into(),
+        text: Some(value.into()),
         edited_at_unix_ms: None,
     }];
-    msg.message.source.as_mut().unwrap().fields =
+    message.message.source.as_mut().unwrap().fields =
         serde_json::from_value(serde_json::json!({ "note": value })).unwrap();
-    let im = im_mut(&mut msg);
+    let im = im_mut(&mut message);
     im.send_effect = text();
     im.shared_location = text();
     im.announcement = text();
@@ -888,13 +897,13 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     im.balloon_bundle_id = text();
     im.associated_guid = text();
     im.tapback_emoji = text();
-    msg.message.reply_to = Some(message_ir::ReplyTo {
+    message.message.reply_to = Some(ir::ReplyTo {
         guid: text(),
         part_index: None,
     });
-    msg.attachments = vec![MailAttachment {
+    message.attachments = vec![MailAttachment {
         bytes: b"x".to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: text(),
             mime_type: text(),
@@ -906,27 +915,27 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
         transcription: text(),
         sticker_effect: text(),
     }];
-    msg
+    message
 }
 
-/// Everything of `msg` the `X-ME-*` headers carry, as JSON, so a written
+/// Everything of `message` the `X-ME-*` headers carry, as JSON, so a written
 /// message and the one read back compare whole.
-fn x_me_values(msg: &MailMessage) -> serde_json::Value {
+fn x_me_values(message: &MailMessage) -> serde_json::Value {
     serde_json::json!({
-        "chat_identifier": msg.chat_identifier,
-        "owner_identity": msg.owner_identity,
-        "group_title": msg.group_title,
-        "participants": msg.participants,
-        "owner_display_name": msg.owner_display_name,
-        "export_source": msg.export_source,
-        "export_tool": msg.export_tool,
-        "export_tool_version": msg.export_tool_version,
-        "backup_taken_at_unix_ms": msg.backup_taken_at_unix_ms,
-        "message": msg.message,
-        "attachment_names": msg.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
-        "attachment_types": msg.attachments.iter().map(|a| &a.meta.mime_type).collect::<Vec<_>>(),
-        "transcriptions": msg.attachments.iter().map(|a| &a.transcription).collect::<Vec<_>>(),
-        "sticker_effects": msg.attachments.iter().map(|a| &a.sticker_effect).collect::<Vec<_>>(),
+        "chat_identifier": message.chat_identifier,
+        "owner_identity": message.owner_identity,
+        "group_title": message.group_title,
+        "participants": message.participants,
+        "owner_display_name": message.owner_display_name,
+        "export_source": message.export_source,
+        "export_tool": message.export_tool,
+        "export_tool_version": message.export_tool_version,
+        "exported_at_unix_ms": message.exported_at_unix_ms,
+        "message": message.message,
+        "attachment_names": message.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
+        "attachment_types": message.attachments.iter().map(|a| &a.meta.mime_type).collect::<Vec<_>>(),
+        "transcriptions": message.attachments.iter().map(|a| &a.transcription).collect::<Vec<_>>(),
+        "sticker_effects": message.attachments.iter().map(|a| &a.sticker_effect).collect::<Vec<_>>(),
     })
 }
 
@@ -938,15 +947,15 @@ fn assert_every_value_reads_back(values: &[String]) {
     let tmp = tempfile::tempdir().unwrap();
     let mut changed = Vec::new();
     for (i, value) in values.iter().enumerate() {
-        let same = [IrDirection::Outgoing, IrDirection::Incoming]
+        let same = [Direction::Outgoing, Direction::Incoming]
             .into_iter()
             .enumerate()
             .all(|(d, direction)| {
-                let msg = with_every_x_me_text(value, direction);
-                let written = x_me_values(&msg);
-                let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&msg).unwrap());
+                let message = with_every_x_me_text(value, direction);
+                let written = x_me_values(&message);
+                let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&message).unwrap());
                 let dir = tmp.path().join(format!("{i}-{d}"));
-                let mbox = write_mail_package(&dir, MailPackage::Mbox, &[msg]).unwrap();
+                let mbox = write_mail_package(&dir, "c", MailPackage::Mbox, &[message]).unwrap();
                 let from_mbox = crate::mail_messages_from_mbox(&mbox);
                 from_eml.is_ok_and(|m| x_me_values(&m) == written)
                     && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written)
@@ -1042,29 +1051,23 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
         "\r\n",
         "hello\r\n",
     );
-    let msg = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap();
-    assert_eq!(msg.conversation_type, "group");
-    assert_eq!(msg.message.timestamp_unix_ms, 1_400_773_261_000);
+    let message = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap();
+    assert_eq!(message.conversation_type, "group");
+    assert_eq!(message.message.timestamp_unix_ms, 1_400_773_261_000);
+    assert_eq!(message.message.time_precision, ir::TimePrecision::Seconds);
+    assert_eq!(message.message.direction, Direction::Outgoing);
+    assert_eq!(message.message.service, ir::Transport::IMessage);
+    assert_eq!(message.message.message_kind, ir::MessageKind::IMessage);
+    assert_eq!(message.message.source.unwrap().android_type, Some(2));
+    assert_eq!(message.message.deletion, Some(ir::Deletion::Unsent));
     assert_eq!(
-        msg.message.time_precision,
-        message_ir::TimePrecision::Seconds
-    );
-    assert_eq!(msg.message.direction, IrDirection::Outgoing);
-    assert_eq!(msg.message.service, message_ir::IrService::IMessage);
-    assert_eq!(
-        msg.message.message_kind,
-        message_ir::IrMessageKind::IMessage
-    );
-    assert_eq!(msg.message.source.unwrap().android_type, Some(2));
-    assert_eq!(msg.message.deletion, Some(message_ir::Deletion::Unsent));
-    assert_eq!(
-        msg.message.reply_to,
-        Some(message_ir::ReplyTo {
+        message.message.reply_to,
+        Some(ir::ReplyTo {
             guid: None,
             part_index: Some(3),
         })
     );
-    let im = msg.message.imessage.unwrap();
+    let im = message.message.imessage.unwrap();
     assert_eq!(
         im.read_receipt_rfc3339.as_deref(),
         Some("2014-05-22T15:41:01Z")
@@ -1074,21 +1077,26 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
     assert_eq!(im.tapback_action.as_deref(), Some("add"));
 }
 
-/// `msg` as a mail written to an EML file and to an mbox, each read back.
-fn written_and_read_back(msg: &MailMessage) -> (MailMessage, MailMessage) {
-    let from_eml = crate::mail_message_from_eml_bytes(&build_eml(msg).unwrap()).unwrap();
+/// `message` as a mail written to an EML file and to an mbox, each read back.
+fn written_and_read_back(message: &MailMessage) -> (MailMessage, MailMessage) {
+    let from_eml = crate::mail_message_from_eml_bytes(&build_eml(message).unwrap()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    let mbox =
-        write_mail_package(tmp.path(), MailPackage::Mbox, std::slice::from_ref(msg)).unwrap();
+    let mbox = write_mail_package(
+        tmp.path(),
+        "c",
+        MailPackage::Mbox,
+        std::slice::from_ref(message),
+    )
+    .unwrap();
     let mut from_mbox = crate::mail_messages_from_mbox(&mbox).unwrap();
     assert_eq!(from_mbox.len(), 1, "the mbox holds one mail");
     (from_eml, from_mbox.remove(0))
 }
 
-/// The value of header `name` in the mail `msg` is written as, checked to
+/// The value of header `name` in the mail `message` is written as, checked to
 /// be one line.
-fn standard_header(msg: &MailMessage, name: &str) -> String {
-    let eml = build_eml(msg).unwrap();
+fn standard_header(message: &MailMessage, name: &str) -> String {
+    let eml = build_eml(message).unwrap();
     let (headers, _) = mailparse::parse_headers(&eml).unwrap();
     let header = headers
         .get_first_header(name)
@@ -1102,9 +1110,9 @@ fn standard_header(msg: &MailMessage, name: &str) -> String {
     header.get_value()
 }
 
-/// The one address in header `name` of the mail `msg` is written as.
-fn header_address(msg: &MailMessage, name: &str) -> String {
-    let value = standard_header(msg, name);
+/// The one address in header `name` of the mail `message` is written as.
+fn header_address(message: &MailMessage, name: &str) -> String {
+    let value = standard_header(message, name);
     let [mailparse::MailAddr::Single(addr)] = &mailparse::addrparse(&value).unwrap()[..] else {
         panic!("{name} was {value:?}");
     };
@@ -1119,15 +1127,15 @@ fn header_address(msg: &MailMessage, name: &str) -> String {
 fn a_guid_with_a_line_break_keeps_the_mail_headers_whole() {
     let mut parent = base_sms();
     parent.message.guid = "c\r\n\r\nd".into();
-    let mut msg = base_sms();
-    msg.message.guid = "a\r\n\r\nb".into();
-    msg.message.reply_to = Some(message_ir::ReplyTo {
+    let mut message = base_sms();
+    message.message.guid = "a\r\n\r\nb".into();
+    message.message.reply_to = Some(ir::ReplyTo {
         guid: Some("c\r\n\r\nd".into()),
         part_index: None,
     });
 
-    for read in <[MailMessage; 2]>::from(written_and_read_back(&msg)) {
-        assert_eq!(x_me_values(&read), x_me_values(&msg));
+    for read in <[MailMessage; 2]>::from(written_and_read_back(&message)) {
+        assert_eq!(x_me_values(&read), x_me_values(&message));
     }
     let message_id = standard_header(&parent, "Message-ID");
     assert!(
@@ -1136,9 +1144,9 @@ fn a_guid_with_a_line_break_keeps_the_mail_headers_whole() {
             && !message_id.contains(char::is_whitespace),
         "Message-ID was {message_id:?}"
     );
-    assert_eq!(standard_header(&msg, "In-Reply-To"), message_id);
-    assert_eq!(standard_header(&msg, "References"), message_id);
-    assert_ne!(standard_header(&msg, "Message-ID"), message_id);
+    assert_eq!(standard_header(&message, "In-Reply-To"), message_id);
+    assert_eq!(standard_header(&message, "References"), message_id);
+    assert_ne!(standard_header(&message, "Message-ID"), message_id);
 }
 
 /// Two guids that differ only in characters a `Message-ID` cannot hold still
@@ -1150,9 +1158,9 @@ fn guids_that_differ_in_unsafe_characters_keep_different_message_ids() {
     ]
     .into_iter()
     .map(|guid| {
-        let mut msg = base_sms();
-        msg.message.guid = guid.into();
-        standard_header(&msg, "Message-ID")
+        let mut message = base_sms();
+        message.message.guid = guid.into();
+        standard_header(&message, "Message-ID")
     })
     .collect();
     let distinct: std::collections::BTreeSet<&String> = ids.iter().collect();
@@ -1165,10 +1173,10 @@ fn guids_that_differ_in_unsafe_characters_keep_different_message_ids() {
 #[test]
 fn identities_keep_their_own_addresses() {
     let address = |identity: &str| {
-        let mut msg = base_sms();
-        msg.message.direction = IrDirection::Outgoing;
-        msg.owner_identity = identity.into();
-        header_address(&msg, "From")
+        let mut message = base_sms();
+        message.message.direction = Direction::Outgoing;
+        message.owner_identity = identity.into();
+        header_address(&message, "From")
     };
     assert_eq!(
         address("o'brien/x@example.com"),
@@ -1190,18 +1198,18 @@ fn identities_keep_their_own_addresses() {
     );
 }
 
-/// Group chats whose identifiers differ only in characters an address
+/// Group conversations whose identifiers differ only in characters an address
 /// cannot hold still have different addresses.
 #[test]
-fn group_chats_keep_their_own_addresses() {
+fn group_conversations_keep_their_own_addresses() {
     let addresses: Vec<String> = ["chat a b", "chat a_b", "chat\r\na", "g@b=c", "g=b@c"]
         .into_iter()
         .map(|id| {
-            let mut msg = base_sms();
-            msg.conversation_type = "group".into();
-            msg.group_title = Some("Same title".into());
-            msg.chat_identifier = id.into();
-            header_address(&msg, "To")
+            let mut message = base_sms();
+            message.conversation_type = "group".into();
+            message.group_title = Some("Same title".into());
+            message.chat_identifier = id.into();
+            header_address(&message, "To")
         })
         .collect();
     let distinct: std::collections::BTreeSet<&String> = addresses.iter().collect();
@@ -1216,11 +1224,12 @@ fn group_chats_keep_their_own_addresses() {
 /// address as it was, made the mail unreadable (mailparse: "Header cannot
 /// start with a space") or broke the mbox `From_` line (#1816). Every
 /// identity now reads back exactly, from an incoming sender, the owner and a
-/// 1:1 peer, in a group and a 1:1 conversation, in both directions.
+/// peer of a one-to-one conversation, in a group and a one-to-one
+/// conversation, in both directions.
 #[test]
 fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
-    for conversation_type in ["group", "individual"] {
-        for direction in [IrDirection::Incoming, IrDirection::Outgoing] {
+    for conversation_type in ["group", "one-to-one"] {
+        for direction in [Direction::Incoming, Direction::Outgoing] {
             for (sender, owner, peer) in [
                 ("a\r\n b", "c\r\n d", "e\r\n f"),
                 (
@@ -1229,20 +1238,20 @@ fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
                     "e\r\n f@example.com",
                 ),
             ] {
-                let mut msg = base_sms();
-                msg.conversation_type = conversation_type.into();
-                msg.message.direction = direction;
-                msg.message.sender_identity = Some(sender.into());
-                msg.owner_identity = owner.into();
-                msg.participants[0].identity = peer.into();
+                let mut message = base_sms();
+                message.conversation_type = conversation_type.into();
+                message.message.direction = direction;
+                message.message.sender.identity = Some(sender.into());
+                message.owner_identity = owner.into();
+                message.participants[0].identity = peer.into();
                 let case = format!("{conversation_type} {direction:?} {sender:?}");
 
-                let (from_eml, from_mbox) = written_and_read_back(&msg);
+                let (from_eml, from_mbox) = written_and_read_back(&message);
                 for read in [&from_eml, &from_mbox] {
-                    assert_eq!(x_me_values(read), x_me_values(&msg), "{case}");
+                    assert_eq!(x_me_values(read), x_me_values(&message), "{case}");
                 }
                 for name in ["From", "To"] {
-                    let value = standard_header(&msg, name);
+                    let value = standard_header(&message, name);
                     let addrs = mailparse::addrparse(&value).unwrap();
                     let [mailparse::MailAddr::Single(addr)] = &addrs[..] else {
                         panic!("{case}: {name} was {value:?}");
@@ -1254,7 +1263,8 @@ fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
                 }
 
                 let tmp = tempfile::tempdir().unwrap();
-                let mbox = write_mail_package(tmp.path(), MailPackage::Mbox, &[msg]).unwrap();
+                let mbox =
+                    write_mail_package(tmp.path(), "c", MailPackage::Mbox, &[message]).unwrap();
                 let text = fs::read_to_string(&mbox).unwrap();
                 let envelope = text.lines().next().unwrap();
                 let fields: Vec<&str> = envelope.split(' ').collect();
@@ -1273,7 +1283,7 @@ fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
 fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
     let attachment = |mime: &str, bytes: &[u8]| MailAttachment {
         bytes: bytes.to_vec(),
-        meta: message_ir::AttachmentMeta {
+        meta: ir::AttachmentMeta {
             path: None,
             original_name: Some("a.txt".into()),
             mime_type: Some(mime.into()),
@@ -1285,8 +1295,8 @@ fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
         transcription: None,
         sticker_effect: None,
     };
-    let mut msg = base_sms();
-    msg.attachments = vec![
+    let mut message = base_sms();
+    message.attachments = vec![
         attachment("text/plain\r\n\r\nX-Injected: 1", b"first"),
         attachment("image/png", b"second"),
     ];
@@ -1297,10 +1307,10 @@ fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
             .map(|a| (a.meta.mime_type.clone(), a.bytes.clone()))
             .collect()
     };
-    for read in <[MailMessage; 2]>::from(written_and_read_back(&msg)) {
-        assert_eq!(types_and_bytes(&read), types_and_bytes(&msg));
+    for read in <[MailMessage; 2]>::from(written_and_read_back(&message)) {
+        assert_eq!(types_and_bytes(&read), types_and_bytes(&message));
     }
-    let eml = String::from_utf8(build_eml(&msg).unwrap()).unwrap();
+    let eml = String::from_utf8(build_eml(&message).unwrap()).unwrap();
     assert!(!eml.contains("\r\nX-Injected"), "{eml}");
     assert!(
         eml.contains("Content-Type: application/octet-stream"),
@@ -1375,9 +1385,9 @@ fn a_guid_with_unsafe_characters_still_names_a_portable_eml_file() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("chat");
     for guid in guids {
-        let mut msg = base_sms();
-        msg.message.guid = guid.into();
-        let path = write_message_file(&dir, 1, &msg)
+        let mut message = base_sms();
+        message.message.guid = guid.into();
+        let path = write_message_file(&dir, 1, &message)
             .unwrap_or_else(|e| panic!("guid {guid:?} did not write: {e:#}"));
         assert_eq!(path.parent(), Some(dir.as_path()), "guid {guid:?}");
         let name = path.file_name().unwrap().to_str().unwrap();
@@ -1408,9 +1418,9 @@ fn a_safe_guid_keeps_its_eml_file_name() {
         ("ab%2Fcd", "ab%2Fcd0"),
         ("日本語テキストです", "日本語テキストで"),
     ] {
-        let mut msg = base_sms();
-        msg.message.guid = guid.into();
-        let name = eml_file_name(1, &msg.message).unwrap();
+        let mut message = base_sms();
+        message.message.guid = guid.into();
+        let name = eml_file_name(1, &message.message).unwrap();
         assert!(
             name.starts_with("000001_") && name.ends_with(&format!("_{guid8}.eml")),
             "guid {guid:?} gave {name:?}"
@@ -1428,9 +1438,9 @@ fn guids_that_differ_in_unsafe_characters_keep_different_eml_file_names() {
     ]
     .into_iter()
     .map(|guid| {
-        let mut msg = base_sms();
-        msg.message.guid = guid.into();
-        let name = eml_file_name(1, &msg.message).unwrap();
+        let mut message = base_sms();
+        message.message.guid = guid.into();
+        let name = eml_file_name(1, &message.message).unwrap();
         if let Some(problem) = portable_file_name_problem(&name) {
             panic!("guid {guid:?} gave {name:?}, which {problem}");
         }
@@ -1439,4 +1449,36 @@ fn guids_that_differ_in_unsafe_characters_keep_different_eml_file_names() {
     .collect();
     let distinct: std::collections::BTreeSet<&String> = names.iter().collect();
     assert_eq!(distinct.len(), names.len(), "names were {names:?}");
+}
+
+/// The message's Backup Date and the file's Export Date each have their own
+/// header, and each reads back as written: one is never taken for the
+/// other.
+#[test]
+fn the_backup_date_and_the_export_date_read_back_from_their_own_headers() {
+    let mut message = base_sms();
+    message.message.backup_taken_at_unix_ms = Some(1_700_000_000_000);
+    message.exported_at_unix_ms = Some(1_800_000_000_000);
+    let eml = build_eml(&message).unwrap();
+    let parsed = mailparse::parse_mail(&eml).unwrap();
+    assert_eq!(
+        parsed
+            .headers
+            .get_first_value("X-ME-Backup-Taken-At-Unix-Ms")
+            .as_deref(),
+        Some("1700000000000")
+    );
+    assert_eq!(
+        parsed
+            .headers
+            .get_first_value("X-ME-Exported-At-Unix-Ms")
+            .as_deref(),
+        Some("1800000000000")
+    );
+    let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+    assert_eq!(
+        back.message.backup_taken_at_unix_ms,
+        Some(1_700_000_000_000)
+    );
+    assert_eq!(back.exported_at_unix_ms, Some(1_800_000_000_000));
 }

@@ -4,7 +4,7 @@
 //! header. Each later line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{ConversationDocument, ConversationHeader, IrMessage, check_schema_version};
+use ir::{ConversationDocument, ConversationHeader, Message, check_schema_version};
 
 /// Return the backup source name from a conversation header, or an error if the
 /// schema version or source field is unusable.
@@ -28,11 +28,10 @@ pub fn validate_header(header: &ConversationHeader) -> Result<String> {
 ///
 /// Returns an error when the header fails [`validate_header`] or cannot be
 /// serialized.
-pub fn document_header_line(doc: &ConversationDocument) -> Result<Vec<u8>> {
-    let header = ConversationHeader::from_document(doc);
+pub fn document_header_line(document: &ConversationDocument) -> Result<Vec<u8>> {
+    let header = ConversationHeader::from_document(document);
     validate_header(&header)?;
-    let mut out =
-        serde_json::to_vec(&header).context("serialize message-ir conversation header")?;
+    let mut out = serde_json::to_vec(&header).context("serialize the conversation header")?;
     out.push(b'\n');
     Ok(out)
 }
@@ -60,10 +59,10 @@ pub enum AttachmentProjection {
 ///
 /// Returns an error when the message cannot be serialized.
 pub fn message_line(
-    msg: &IrMessage,
+    message: &Message,
     projections: &[AttachmentProjection],
 ) -> Result<(Vec<u8>, String)> {
-    let mut msg = msg.clone();
+    let mut message = message.clone();
     for proj in projections {
         match proj {
             AttachmentProjection::Digested {
@@ -71,10 +70,10 @@ pub fn message_line(
                 digest,
                 size,
             } => {
-                if let Some(att) = msg.attachments.get_mut(*index) {
-                    att.digest_sha256 = Some(digest.clone());
-                    att.size_bytes = Some(*size);
-                    att.missing_reason = None;
+                if let Some(attachment) = message.attachments.get_mut(*index) {
+                    attachment.digest_sha256 = Some(digest.clone());
+                    attachment.size_bytes = Some(*size);
+                    attachment.missing_reason = None;
                 }
             }
             AttachmentProjection::Missing {
@@ -82,28 +81,17 @@ pub fn message_line(
                 reason,
                 size,
             } => {
-                if let Some(att) = msg.attachments.get_mut(*index) {
-                    att.digest_sha256 = None;
-                    att.missing_reason = Some(reason.clone());
+                if let Some(attachment) = message.attachments.get_mut(*index) {
+                    attachment.digest_sha256 = None;
+                    attachment.missing_reason = Some(reason.clone());
                     if let Some(size) = size {
-                        att.size_bytes = Some(*size);
+                        attachment.size_bytes = Some(*size);
                     }
                 }
             }
         }
     }
-    serialize_message(&msg)
-}
-
-/// One JSON Lines message row with attachments removed (text-only import).
-///
-/// # Errors
-///
-/// Returns an error when the message cannot be serialized.
-pub fn message_line_without_attachments(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
-    let mut msg = msg.clone();
-    msg.attachments.clear();
-    serialize_message(&msg)
+    serialize_message(&message)
 }
 
 /// Serialize one message and return `(line_bytes, guid)`.
@@ -114,72 +102,29 @@ pub fn message_line_without_attachments(msg: &IrMessage) -> Result<(Vec<u8>, Str
 /// # Errors
 ///
 /// Returns an error when JSON serialization fails.
-fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
-    let mut out = serde_json::to_vec(msg).context("serialize message-ir message")?;
+fn serialize_message(message: &Message) -> Result<(Vec<u8>, String)> {
+    let mut out = serde_json::to_vec(message).context("serialize a message")?;
     out.push(b'\n');
-    Ok((out, msg.guid.clone()))
+    Ok((out, message.guid.clone()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::{
-        ConversationMeta, ConversationStats, ExportMeta, IrAttachment, IrConversationType,
-        IrDirection, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
-    };
+    use ir::Attachment;
+    use ir::testutil::{sample_attachment, sample_document};
 
     #[test]
     fn serializes_ir_sms() {
-        let doc = ConversationDocument {
-            schema_version: SCHEMA_VERSION,
-            export: ExportMeta {
-                source: "sms-backup-restore".into(),
-                tool: "SMS Backup & Restore".into(),
-                tool_version: "10.26.003".into(),
-                owner_identity: Some("+15555550100".into()),
-                owner_display_name: Some("Me".into()),
-                backup_taken_at_unix_ms: None,
-            },
-            conversation: ConversationMeta {
-                chat_identifier: "+15555550101".into(),
-                conversation_type: IrConversationType::Individual,
-                group_title: None,
-                participants: vec![IrParticipant {
-                    identity: Some("+15555550101".into()),
-                    display_name: Some("Sam".into()),
-                }],
-                stats: ConversationStats::default(),
-            },
-            messages: vec![],
-            packaging_stem_suffix: None,
-        };
-        let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":13"#));
+        let mut document = sample_document("hello");
+        let message = document.messages.remove(0);
+        let header = String::from_utf8(document_header_line(&document).unwrap()).unwrap();
+        assert!(header.contains(&format!(r#""schema_version":{}"#, ir::SCHEMA_VERSION)));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
-        let msg = IrMessage {
-            guid: "g1".into(),
-            timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            owner_identity: None,
-            subject: None,
-            text: "hello".into(),
-            attachments: vec![],
-            reactions: Vec::new(),
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        };
-        let (line, guid) = message_line(&msg, &[]).unwrap();
-        assert_eq!(guid, "g1");
+        let (line, guid) = message_line(&message, &[]).unwrap();
+        assert_eq!(guid, message.guid);
         let s = String::from_utf8(line).unwrap();
         assert!(s.contains(r#""direction":"incoming""#));
         assert!(!s.contains(r#""record":"message""#));
@@ -187,39 +132,15 @@ mod tests {
 
     #[test]
     fn projects_missing_reason_and_clears_digest() {
-        let msg = IrMessage {
-            guid: "g1".into(),
-            timestamp_unix_ms: 1,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: None,
-            sender_display_name: None,
-            owner_identity: None,
-            subject: None,
-            text: "with attachment".into(),
-            attachments: vec![IrAttachment {
-                path: Some("attachments/big.bin".into()),
-                original_name: Some("big.bin".into()),
-                mime_type: Some("application/octet-stream".into()),
-                digest_sha256: Some("deadbeef".into()),
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
-                size_bytes: Some(99),
-                missing_reason: None,
-                bytes: None,
-            }],
-            reactions: Vec::new(),
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        };
+        let mut message = sample_document("with attachment").messages.remove(0);
+        message.attachments = vec![Attachment {
+            original_name: Some("big.jpg".into()),
+            digest_sha256: Some("deadbeef".into()),
+            size_bytes: Some(99),
+            ..sample_attachment()
+        }];
         let (line, _) = message_line(
-            &msg,
+            &message,
             &[AttachmentProjection::Missing {
                 index: 0,
                 reason: "too_large".into(),
@@ -227,7 +148,7 @@ mod tests {
             }],
         )
         .unwrap();
-        let parsed: IrMessage = serde_json::from_slice(&line).unwrap();
+        let parsed: Message = serde_json::from_slice(&line).unwrap();
         assert!(parsed.attachments[0].digest_sha256.is_none());
         assert_eq!(
             parsed.attachments[0].missing_reason.as_deref(),
@@ -236,7 +157,7 @@ mod tests {
         assert_eq!(parsed.attachments[0].size_bytes, Some(5_000_000));
         assert_eq!(
             parsed.attachments[0].original_name.as_deref(),
-            Some("big.bin")
+            Some("big.jpg")
         );
     }
 }

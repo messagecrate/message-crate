@@ -1,0 +1,629 @@
+/** @vitest-environment jsdom */
+
+import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { Providers } from "../test/providers";
+
+const post = vi.fn();
+const get = vi.fn();
+const getProfile = vi.fn();
+const setTokenFn = vi.fn();
+const setBaseUrl = vi.fn();
+const isTauri = vi.fn();
+const onCloseRequested = vi.fn();
+const destroy = vi.fn();
+
+let currentToken: string | null = null;
+
+let currentAccountId: number | null = null;
+
+vi.mock("./api", () => ({
+  ApiError: class ApiError extends Error {
+    readonly status: number;
+    readonly type: string | null;
+    constructor(status: number, message: string, problem: { type: string } | null = null) {
+      super(message);
+      this.status = status;
+      this.type = problem ? problem.type.slice(problem.type.lastIndexOf("/") + 1) : null;
+    }
+  },
+  setToken: (token: string | null) => {
+    currentToken = token;
+    setTokenFn(token);
+  },
+  getToken: () => currentToken,
+  setAccountId: (id: number | null) => {
+    currentAccountId = id;
+  },
+  getAccountId: () => currentAccountId,
+  setBaseUrl: (...args: unknown[]) => setBaseUrl(...args),
+}));
+
+// The server calls AuthProvider.tsx and savedLogin.ts make, faked by name. Everything else in serverApi
+// stays real, since other modules in this graph import from it.
+vi.mock("./serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./serverApi")>()),
+  logout: (...args: unknown[]) => post(...args),
+  getSession: (...args: unknown[]) => get(...args),
+  getAccountProfile: (...args: unknown[]) => getProfile(...args),
+}));
+
+vi.mock("./tauriCheck", () => ({
+  isTauri: () => isTauri(),
+}));
+
+vi.mock("./desktop/window", () => ({
+  onWindowCloseRequested: (...args: unknown[]) => onCloseRequested(...args),
+  destroyWindow: () => destroy(),
+}));
+
+beforeEach(() => {
+  startFakeClock();
+});
+
+afterEach(() => {
+  stopFakeClock();
+});
+
+const STORAGE_KEY = "message-crate-auth";
+const SERVER_ADDRESS_KEY = "message-crate-server-address";
+
+/** A saved login for `serverUrl`, with that address saved as the server address. */
+function seedSession(serverUrl = "http://127.0.0.1:8080") {
+  localStorage.setItem(SERVER_ADDRESS_KEY, serverUrl);
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      serverUrl,
+      token: "session-token",
+      accountId: 7,
+      needsOnboarding: false,
+    }),
+  );
+}
+
+describe("AuthProvider logout", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    currentToken = null;
+    post.mockReset();
+    get.mockReset();
+    setTokenFn.mockReset();
+    setBaseUrl.mockReset();
+    isTauri.mockReset();
+    onCloseRequested.mockReset();
+    destroy.mockReset();
+
+    isTauri.mockReturnValue(false);
+    get.mockResolvedValue({ preferred_name: "Sam", phones: ["+1"], emails: [] });
+    post.mockResolvedValue({ ok: true });
+    destroy.mockResolvedValue(undefined);
+  });
+
+  it("tells the server to end the session before clearing the token", async () => {
+    seedSession();
+    const order: string[] = [];
+    post.mockImplementation(async () => {
+      order.push("post");
+      return { ok: true };
+    });
+    setTokenFn.mockImplementation((token: string | null) => {
+      if (token === null) order.push("clear-token");
+    });
+
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(order.indexOf("post")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("clear-token")).toBeGreaterThan(order.indexOf("post"));
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.token).toBeNull();
+  });
+
+  it("clears the saved login when the server logout request fails", async () => {
+    seedSession();
+    post.mockRejectedValue(new Error("network down"));
+
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(setTokenFn).toHaveBeenCalledWith(null);
+    expect(result.current.isAuthenticated).toBe(false);
+  });
+
+  it("does not offer one account's recent searches to the next account", async () => {
+    seedSession();
+    getProfile.mockImplementation(async (id: number) => ({
+      id,
+      preferred_name: `Account ${id}`,
+      phones: [],
+      emails: [],
+    }));
+    const { pushRecentSearch, loadRecentSearches } = await import("./recentSearches");
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+    expect(result.current.accountId).toBe(7);
+    // Account 7 searches.
+    pushRecentSearch("message", "divorce lawyer");
+
+    await act(async () => {
+      await result.current.logout();
+    });
+    await act(async () => {
+      await result.current.login("http://127.0.0.1:8080", "other-token", 8);
+    });
+
+    expect(result.current.accountId).toBe(8);
+    // What the message search bar loads for account 8 when it opens.
+    expect(loadRecentSearches("message")).toEqual([]);
+
+    await act(async () => {
+      await result.current.logout();
+    });
+    await act(async () => {
+      await result.current.login("http://127.0.0.1:8080", "session-token", 7);
+    });
+
+    // Account 7 still has its own history.
+    expect(loadRecentSearches("message")).toEqual(["divorce lawyer"]);
+  });
+
+  it("skips the server logout request when there is no session token", async () => {
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(post).not.toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
+  });
+
+  it("keeps a login for this visit only out of localStorage, through a password change", async () => {
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.login("http://127.0.0.1:8080", "visit-token", 7, "visit");
+    });
+    expect(sessionStorage.getItem(STORAGE_KEY)).toContain("visit-token");
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    act(() => {
+      result.current.updateToken("changed-token");
+    });
+    expect(sessionStorage.getItem(STORAGE_KEY)).toContain("changed-token");
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    await act(async () => {
+      await result.current.logout();
+    });
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("registers a Tauri close handler that logs out then destroys the window", async () => {
+    isTauri.mockReturnValue(true);
+    let closeHandler: ((event: { preventDefault: () => void }) => Promise<void>) | undefined;
+    onCloseRequested.mockImplementation(async (handler) => {
+      closeHandler = handler;
+      return () => {};
+    });
+
+    seedSession();
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+
+    await settle();
+    expect(onCloseRequested).toHaveBeenCalled();
+    expect(closeHandler).toBeTypeOf("function");
+
+    const handler = closeHandler;
+    if (!handler) {
+      throw new Error("expected onCloseRequested handler");
+    }
+    const preventDefault = vi.fn();
+    await act(async () => {
+      await handler({ preventDefault });
+    });
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(destroy).toHaveBeenCalled();
+  });
+});
+
+describe("AuthProvider restoring a saved login", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    currentToken = null;
+    get.mockReset();
+    getProfile.mockReset();
+    isTauri.mockReset();
+    isTauri.mockReturnValue(false);
+    getProfile.mockResolvedValue({ preferred_name: "Sam", phones: ["+1"], emails: [] });
+  });
+
+  async function renderAuth() {
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    return renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+  }
+
+  it("keeps the saved login when the server gives no answer", async () => {
+    seedSession();
+    get.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const { result } = await renderAuth();
+
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(currentToken).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
+  });
+
+  it("keeps the saved login when something other than the server answers", async () => {
+    seedSession();
+    const { ApiError } = await import("./api");
+    get.mockRejectedValue(new ApiError(502, "Bad Gateway"));
+
+    const { result } = await renderAuth();
+
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
+  });
+
+  it("deletes the saved login when the server rejects it", async () => {
+    seedSession();
+    const { ApiError } = await import("./api");
+    get.mockRejectedValue(new ApiError(401, "Unauthorized"));
+
+    const { result } = await renderAuth();
+
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("logs in with the saved login once the server answers again", async () => {
+    seedSession();
+    get.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    get.mockResolvedValue({ account_id: 7 });
+
+    const { result } = await renderAuth();
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
+
+    act(() => {
+      result.current.retrySavedLogin("http://127.0.0.1:8080");
+    });
+
+    await settle();
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(currentToken).toBe("session-token");
+    expect(result.current.accountId).toBe(7);
+  });
+
+  it("does nothing on a retry when no login is saved", async () => {
+    const { result } = await renderAuth();
+
+    act(() => {
+      result.current.retrySavedLogin("http://127.0.0.1:8080");
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("never sends a saved login to a different server address", async () => {
+    seedSession();
+    get.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    const { result } = await renderAuth();
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
+    get.mockClear();
+
+    act(() => {
+      result.current.retrySavedLogin("http://elsewhere.example:8080");
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
+  });
+});
+
+describe("AuthProvider keeping the server address", () => {
+  const ELSEWHERE = "http://crate.example:8080";
+
+  beforeEach(() => {
+    localStorage.clear();
+    currentToken = null;
+    get.mockReset();
+    post.mockReset();
+    getProfile.mockReset();
+    isTauri.mockReset();
+    isTauri.mockReturnValue(false);
+    post.mockResolvedValue({ ok: true });
+    getProfile.mockResolvedValue({ preferred_name: "Sam", phones: ["+1"], emails: [] });
+  });
+
+  async function renderAuth() {
+    const { AuthProvider } = await import("./AuthProvider");
+    const { useAuth } = await import("../hooks/useAuth");
+    return renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+  }
+
+  /** The server address the app starts with next time. */
+  async function addressAtNextStart() {
+    const { result, unmount } = await renderAuth();
+    const address = result.current.serverUrl;
+    unmount();
+    return address;
+  }
+
+  it("remembers an address chosen before any login", async () => {
+    const { result, unmount } = await renderAuth();
+    act(() => {
+      result.current.setServer(ELSEWHERE);
+    });
+    unmount();
+
+    expect(await addressAtNextStart()).toBe(ELSEWHERE);
+  });
+
+  it("keeps the address after logout", async () => {
+    seedSession(ELSEWHERE);
+    get.mockResolvedValue({ account_id: 7 });
+    const { result, unmount } = await renderAuth();
+    await settle();
+    expect(result.current.isAuthenticated).toBe(true);
+
+    await act(async () => {
+      await result.current.logout();
+    });
+    unmount();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(await addressAtNextStart()).toBe(ELSEWHERE);
+  });
+
+  it("keeps the address when the server refuses the saved login", async () => {
+    seedSession(ELSEWHERE);
+    const { ApiError } = await import("./api");
+    get.mockRejectedValue(new ApiError(401, "Unauthorized"));
+    const { result, unmount } = await renderAuth();
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
+    unmount();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(await addressAtNextStart()).toBe(ELSEWHERE);
+  });
+
+  it("does not restore a login saved for another address", async () => {
+    seedSession(ELSEWHERE);
+    localStorage.setItem(SERVER_ADDRESS_KEY, "http://127.0.0.1:8080");
+
+    const { result } = await renderAuth();
+
+    expect(result.current.serverUrl).toBe("http://127.0.0.1:8080");
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
+  });
+});
+
+describe("AuthProvider when the server says the session has ended", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    currentToken = null;
+    get.mockReset();
+    getProfile.mockReset();
+    isTauri.mockReset();
+    isTauri.mockReturnValue(false);
+    get.mockResolvedValue({ account_id: 7 });
+    getProfile.mockResolvedValue({ preferred_name: "Sam", phones: [], emails: [] });
+  });
+
+  const wrapper = async () => {
+    const { AuthProvider } = await import("./AuthProvider");
+    return ({ children }: { children: ReactNode }) => (
+      <Providers>
+        <AuthProvider>{children}</AuthProvider>
+      </Providers>
+    );
+  };
+
+  it("logs out when a query fails with 401 Unauthorized", async () => {
+    seedSession();
+    const { ApiError } = await import("./api");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteQuery } = await import("../hooks/useRouteQuery");
+    const ended = vi.fn(async (): Promise<string[]> => {
+      throw new ApiError(401, "expired session token");
+    });
+
+    const { result } = renderHook(
+      () => {
+        const auth = useAuth();
+        useRouteQuery(["contact-groups"], ended, { enabled: auth.isAuthenticated });
+        return auth;
+      },
+      { wrapper: await wrapper() },
+    );
+
+    await settle();
+    expect(ended).toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(currentToken).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("pauses a running Upload without asking when the server has ended the session", async () => {
+    seedSession();
+    const { ApiError } = await import("./api");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteQuery } = await import("../hooks/useRouteQuery");
+    const { registerRunningUpload } = await import("./runningUpload");
+    const pause = vi.fn(async () => {});
+    const ended = registerRunningUpload(pause);
+    const refused = vi.fn(async (): Promise<string[]> => {
+      throw new ApiError(401, "expired session token");
+    });
+
+    try {
+      const { result } = renderHook(
+        () => {
+          const auth = useAuth();
+          useRouteQuery(["contact-groups"], refused, { enabled: auth.isAuthenticated });
+          return auth;
+        },
+        { wrapper: await wrapper() },
+      );
+
+      await settle();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(pause).toHaveBeenCalledTimes(1);
+      expect(document.body.textContent).not.toContain("An Upload is running");
+    } finally {
+      ended();
+    }
+  });
+
+  it("logs out when a mutation fails with 401 Unauthorized", async () => {
+    seedSession();
+    const { ApiError } = await import("./api");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteMutation } = await import("../hooks/useRouteQuery");
+
+    const { result } = renderHook(
+      () => ({
+        auth: useAuth(),
+        rename: useRouteMutation({
+          mutationFn: async (_name: string) => {
+            throw new ApiError(401, "expired session token");
+          },
+        }),
+      }),
+      { wrapper: await wrapper() },
+    );
+    await settle();
+    expect(get).toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.rename.mutateAsync("Family").catch(() => {});
+    });
+
+    await settle();
+    expect(result.current.auth.isAuthenticated).toBe(false);
+    expect(currentToken).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("stays logged in when a mistyped password is refused with 401 Unauthorized", async () => {
+    // The server answers a wrong current password with the same status as an
+    // ended session. Only the problem type tells them apart.
+    seedSession();
+    const { ApiError } = await import("./api");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteMutation } = await import("../hooks/useRouteQuery");
+
+    const { result } = renderHook(
+      () => ({
+        auth: useAuth(),
+        remove: useRouteMutation({
+          mutationFn: async (_password: string) => {
+            throw new ApiError(401, "current password is incorrect", {
+              type: "https://messagecrate.app/problems/invalid-credentials",
+              title: "Invalid credentials",
+              status: 401,
+            });
+          },
+        }),
+      }),
+      { wrapper: await wrapper() },
+    );
+    await settle();
+    expect(get).toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.remove.mutateAsync("wrong").catch(() => {});
+    });
+
+    expect(result.current.auth.isAuthenticated).toBe(true);
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
+  });
+});

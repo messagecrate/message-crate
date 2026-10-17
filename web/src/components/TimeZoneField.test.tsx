@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../test/nth";
 import { fill, setupUser } from "../test/user";
 import TimeZoneField from "./TimeZoneField";
 
@@ -39,7 +40,7 @@ describe("TimeZoneField", () => {
     expect(field().value).toBe("dallas");
     const options = within(screen.getByRole("listbox")).getAllByRole("option");
     expect(options).toHaveLength(1);
-    await user.click(options[0]);
+    await user.click(nth(options, 0));
     expect(onChange).toHaveBeenCalledWith("America/Chicago");
   });
 
@@ -49,7 +50,7 @@ describe("TimeZoneField", () => {
     const user = setupUser();
     render(<TimeZoneField value="Etc/UTC" onChange={onChange} />);
     await fill(user, field(), "knox");
-    const [first] = within(screen.getByRole("listbox")).getAllByRole("option");
+    const first = nth(within(screen.getByRole("listbox")).getAllByRole("option"), 0);
     await user.click(first);
     expect(onChange).toHaveBeenCalledWith("America/Indiana/Knox");
   });
@@ -60,7 +61,7 @@ describe("TimeZoneField", () => {
     const user = setupUser();
     render(<TimeZoneField value="Etc/UTC" onChange={onChange} />);
     await user.click(field());
-    const [first] = within(screen.getByRole("listbox")).getAllByRole("option");
+    const first = nth(within(screen.getByRole("listbox")).getAllByRole("option"), 0);
     expect(first.textContent).toMatch(/America\/Indiana\/Knox$/);
     await user.click(first);
     expect(onChange).toHaveBeenCalledWith("America/Indiana/Knox");
@@ -80,7 +81,7 @@ describe("TimeZoneField", () => {
     const user = setupUser();
     render(<TimeZoneField value="America/Chicago" onChange={onChange} />);
     await fill(user, field(), "qqqzzz");
-    expect(screen.getByText("No time zone matches.")).toBeTruthy();
+    expect(screen.getByText("No time zone matches")).toBeTruthy();
     await user.tab();
     expect(field().value).toMatch(/Central Time/);
     expect(onChange).not.toHaveBeenCalled();

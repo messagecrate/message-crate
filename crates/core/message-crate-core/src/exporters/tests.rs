@@ -1,0 +1,547 @@
+use super::*;
+
+use std::sync::LazyLock;
+
+use media::testutil::FakeTools;
+
+/// Neither ffmpeg nor ffprobe.
+static MISSING: LazyLock<Arc<dyn MediaTools>> = LazyLock::new(|| Arc::new(FakeTools::missing()));
+
+/// The context of a form validated with its Scratch Directory at `/cache`
+/// and no tools.
+fn context() -> FormContext<'static> {
+    FormContext {
+        scratch_dir: Path::new("/cache"),
+        tools: Arc::clone(&MISSING),
+    }
+}
+
+#[test]
+fn values_split_on_newline_comma_and_semicolon_but_not_spaces() {
+    let cases: &[(&str, &[&str])] = &[
+        ("", &[]),
+        ("  \n , ; ", &[]),
+        ("+15555550100", &["+15555550100"]),
+        (
+            "+15555550100\n+15555550101",
+            &["+15555550100", "+15555550101"],
+        ),
+        (
+            "+15555550100, +15555550101",
+            &["+15555550100", "+15555550101"],
+        ),
+        (
+            "+15555550100;+15555550101",
+            &["+15555550100", "+15555550101"],
+        ),
+        (
+            "+15555550100\r\n+15555550101,+15555550102 ; +15555550103",
+            &[
+                "+15555550100",
+                "+15555550101",
+                "+15555550102",
+                "+15555550103",
+            ],
+        ),
+        // A space stays inside one value: "+1 555-555-0119" is one
+        // number, typed the way the Import screen's placeholder shows it.
+        ("+1 555-555-0119", &["+1 555-555-0119"]),
+        ("+1555 +1666", &["+1555 +1666"]),
+        (
+            "+1 555-555-0119, +44 20 7946 0958",
+            &["+1 555-555-0119", "+44 20 7946 0958"],
+        ),
+        (
+            "me@example.com;; you@example.com",
+            &["me@example.com", "you@example.com"],
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(values(input), *expected, "values({input:?})");
+    }
+}
+
+#[test]
+fn imazing_passes_obfuscate() {
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        obfuscate: true,
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Imazing, context()).unwrap();
+    assert!(config.output.obfuscate.enabled);
+    assert!(matches!(config.source, SourceConfig::Imazing(_)));
+}
+
+#[test]
+fn seed_must_be_valid_hex() {
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        obfuscate_seed: "bad".into(),
+        ..Form::default()
+    };
+    assert_eq!(
+        form.to_config(Exporter::OpenExtract, context())
+            .unwrap_err(),
+        vec!["obfuscate seed must be exactly 64 hex characters, got 3".to_string()]
+    );
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        obfuscate_seed: "01234567".into(),
+        ..Form::default()
+    };
+    assert_eq!(
+        form.to_config(Exporter::OpenExtract, context())
+            .unwrap_err(),
+        vec!["obfuscate seed must be exactly 64 hex characters, got 8".to_string()]
+    );
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        obfuscate_seed: "g".repeat(64),
+        ..Form::default()
+    };
+    assert_eq!(
+        form.to_config(Exporter::OpenExtract, context())
+            .unwrap_err(),
+        vec!["obfuscate seed must contain only hex characters (0-9, a-f)".to_string()]
+    );
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        obfuscate_seed: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::OpenExtract, context()).unwrap();
+    assert!(config.output.obfuscate.enabled);
+    assert_eq!(
+        config.output.obfuscate.seed.as_deref(),
+        Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+    );
+}
+
+#[test]
+fn plus_verbose_and_owner_fields() {
+    let cwd = std::env::current_dir().unwrap().display().to_string();
+    let form = Form {
+        input: cwd,
+        output: "out".into(),
+        owner_phones: "+15555550100\n+15555550101".into(),
+        owner_emails: "me@example.com".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::SmsBackupPlus, context()).unwrap();
+    assert_eq!(config.inputs.len(), 1);
+    let SourceConfig::SmsBackupPlus(plus) = config.source else {
+        panic!("expected SmsBackupPlus");
+    };
+    assert_eq!(plus.owner_phones.len(), 2);
+    assert!(plus.verbose);
+}
+
+/// The form's phone country reaches SMS Backup+, which keys numbers by
+/// it, and a code the phone table does not hold is refused (#1676).
+#[test]
+fn plus_carries_the_phone_country_and_an_unknown_one_is_refused() {
+    let cwd = std::env::current_dir().unwrap().display().to_string();
+    let form = Form {
+        input: cwd,
+        output: "out".into(),
+        owner_phones: "+447700900100".into(),
+        owner_emails: "me@example.com".into(),
+        phone_country: " gb ".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::SmsBackupPlus, context()).unwrap();
+    let SourceConfig::SmsBackupPlus(plus) = config.source else {
+        panic!("expected SmsBackupPlus");
+    };
+    assert_eq!(plus.phone_country.map(|c| c.code), Some("GB"));
+
+    let unknown = Form {
+        phone_country: "ZZ".into(),
+        ..form
+    };
+    let errors = unknown
+        .to_config(Exporter::SmsBackupPlus, context())
+        .unwrap_err();
+    assert_eq!(
+        errors,
+        ["Phone country \"ZZ\" is not a country code Message Crate knows."]
+    );
+}
+
+#[test]
+fn plus_rejects_multiple_inputs() {
+    let cwd = std::env::current_dir().unwrap().display().to_string();
+    let form = Form {
+        input: format!("{cwd}\n{cwd}"),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        owner_emails: "me@example.com".into(),
+        ..Form::default()
+    };
+    let err = form
+        .to_config(Exporter::SmsBackupPlus, context())
+        .unwrap_err();
+    assert!(err.iter().any(|e| e.contains("single file or directory")));
+}
+
+#[test]
+fn imessage_requires_output_and_uses_caller_id() {
+    let form = Form {
+        output: String::new(),
+        ..Form::default()
+    };
+    assert_eq!(
+        form.to_config(Exporter::Imessage, context()).unwrap_err(),
+        vec!["Output directory is required.".to_string()]
+    );
+
+    let form = Form {
+        output: "out".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Imessage, context()).unwrap();
+    assert_eq!(config.output.directory, PathBuf::from("out"));
+    let SourceConfig::Apple(apple) = config.source else {
+        panic!("expected Apple");
+    };
+    assert!(apple.use_caller_id);
+    assert_eq!(apple.copy_method, "clone");
+}
+
+/// An Import Run reads one backup: SMS Backup & Restore writes each as
+/// one file, GO SMS Pro as a directory.
+#[test]
+fn sbr_refuses_a_directory_and_go_sms_pro_takes_one() {
+    let form = Form {
+        input: env!("CARGO_MANIFEST_DIR").into(),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        ..Form::default()
+    };
+    let errors = form
+        .to_config(Exporter::SmsBackupRestore, context())
+        .unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("one SMS Backup & Restore .xml file, not a directory")),
+        "{errors:?}"
+    );
+    assert!(form.to_config(Exporter::GoSmsPro, context()).is_ok());
+}
+
+#[test]
+fn sbr_passes_output_format() {
+    let form = Form {
+        input: concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").into(),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        output_format: OutputFormat::Eml,
+        ..Form::default()
+    };
+    let config = form
+        .to_config(Exporter::SmsBackupRestore, context())
+        .unwrap();
+    assert_eq!(config.output.format, OutputFormat::Eml);
+
+    let go = form.to_config(Exporter::GoSmsPro, context()).unwrap();
+    assert_eq!(go.output.format, OutputFormat::Eml);
+}
+
+#[test]
+fn imessage_passes_output_format() {
+    let form = Form {
+        output: "out".into(),
+        output_format: OutputFormat::Eml,
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Imessage, context()).unwrap();
+    assert_eq!(config.output.format, OutputFormat::Eml);
+}
+
+#[test]
+fn android_passes_media_mode() {
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        attachments: AttachmentFiles::Originals,
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::GoSmsPro, context()).unwrap();
+    assert_eq!(config.output.media.files, AttachmentFiles::Originals);
+
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        attachments: AttachmentFiles::Skip,
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::GoSmsPro, context()).unwrap();
+    assert_eq!(config.output.media.files, AttachmentFiles::Skip);
+}
+
+#[test]
+fn openextract_builds_its_own_source() {
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::OpenExtract, context()).unwrap();
+    assert!(matches!(config.source, SourceConfig::OpenExtract(_)));
+}
+
+#[test]
+fn imazing_passes_timezone_to_config() {
+    let form = Form {
+        input: std::env::current_dir().unwrap().display().to_string(),
+        output: "out".into(),
+        timezone: "UTC-05:00".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Imazing, context()).unwrap();
+    let SourceConfig::Imazing(imazing) = &config.source else {
+        panic!("expected Imazing");
+    };
+    assert_eq!(imazing.timezone.as_deref(), Some("UTC-05:00"));
+}
+
+#[test]
+fn whatsapp_passes_platform_and_media() {
+    let form = Form {
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        whatsapp_platform: WhatsappPlatform::Android,
+        whatsapp_key: "abc123".into(),
+        whatsapp_backup: "/tmp/backup".into(),
+        whatsapp_media: "/tmp/media".into(),
+        is_business_app: true,
+        attachments: AttachmentFiles::Originals,
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Whatsapp, context()).unwrap();
+    assert!(config.inputs.is_empty());
+    assert_eq!(config.output.media.files, AttachmentFiles::Originals);
+    let SourceConfig::Whatsapp(wa) = config.source else {
+        panic!("expected Whatsapp");
+    };
+    assert_eq!(wa.platform, Some(WhatsappPlatform::Android));
+    assert_eq!(wa.key.as_deref(), Some("abc123"));
+    assert_eq!(wa.backup, Some(PathBuf::from("/tmp/backup")));
+    assert_eq!(wa.media, Some(PathBuf::from("/tmp/media")));
+    assert_eq!(wa.owner_phone.as_deref(), Some("+15555550100"));
+    assert!(wa.is_business_app);
+
+    // iPhone reads the number from the backup, so the field may be empty.
+    let ios = Form {
+        output: "out".into(),
+        whatsapp_platform: WhatsappPlatform::Ios,
+        whatsapp_backup: "/tmp/ios-backup".into(),
+        ..Form::default()
+    };
+    let ios_config = ios.to_config(Exporter::Whatsapp, context()).unwrap();
+    let SourceConfig::Whatsapp(wa) = ios_config.source else {
+        panic!("expected Whatsapp");
+    };
+    assert_eq!(wa.platform, Some(WhatsappPlatform::Ios));
+    assert_eq!(wa.backup, Some(PathBuf::from("/tmp/ios-backup")));
+    assert!(wa.key.is_none());
+    assert!(wa.owner_phone.is_none());
+
+    let ios_missing = Form {
+        output: "out".into(),
+        whatsapp_platform: WhatsappPlatform::Ios,
+        ..Form::default()
+    };
+    let err = ios_missing
+        .to_config(Exporter::Whatsapp, context())
+        .unwrap_err();
+    assert!(
+        err.iter()
+            .any(|e| e.contains("Backup path is required for iOS"))
+    );
+}
+
+/// The tools the caller passes reach the run, as the Tools Directory the
+/// WhatsApp exporter finds `wtsexporter` in (#2696).
+#[test]
+fn the_tools_the_caller_passes_reach_the_run() {
+    let tools_dir = PathBuf::from("/home/someone/message-crate/tools");
+    let tools: Arc<dyn MediaTools> = Arc::new(media::InstalledTools::new(Some(tools_dir.clone())));
+    let form = Form {
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        whatsapp_platform: WhatsappPlatform::Android,
+        whatsapp_backup: "/tmp/backup".into(),
+        ..Form::default()
+    };
+
+    let config = form
+        .to_config(
+            Exporter::Whatsapp,
+            FormContext {
+                tools: Arc::clone(&tools),
+                ..context()
+            },
+        )
+        .unwrap();
+
+    assert!(Arc::ptr_eq(&config.output.media.tools, &tools));
+    assert_eq!(
+        config.output.media.tools.tools_dir(),
+        Some(tools_dir.as_path())
+    );
+}
+
+/// An Android crypt backup does not carry the account holder's number,
+/// so the form is the only source: an empty field is a validation
+/// problem, not an import that runs and records no owner.
+#[test]
+fn whatsapp_android_requires_the_owner_number() {
+    let form = Form {
+        output: "out".into(),
+        whatsapp_platform: WhatsappPlatform::Android,
+        ..Form::default()
+    };
+    let err = form.to_config(Exporter::Whatsapp, context()).unwrap_err();
+    assert!(
+        err.iter()
+            .any(|e| e == "Owner's WhatsApp number is required."),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn whatsapp_forwards_existing_input_as_search_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let form = Form {
+        input: dir.path().display().to_string(),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Whatsapp, context()).unwrap();
+    assert_eq!(config.inputs, vec![dir.path().to_path_buf()]);
+
+    let missing = Form {
+        input: "/does/not/exist-whatsapp-input".into(),
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        ..Form::default()
+    };
+    let err = missing
+        .to_config(Exporter::Whatsapp, context())
+        .unwrap_err();
+    assert!(err.iter().any(|e| e.contains("does not exist")), "{err:?}");
+}
+
+#[test]
+fn ensure_output_dir_creates_missing_path() {
+    let out = std::env::temp_dir().join(format!(
+        "message-crate-core-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    ensure_output_dir(&out).unwrap();
+    assert!(out.is_dir());
+    let _ = fs::remove_dir_all(&out);
+}
+
+#[test]
+fn imessage_with_attachments_disabled_does_not_copy_them() {
+    let form = Form {
+        output: "out".into(),
+        attachments: AttachmentFiles::Skip,
+        ..Form::default()
+    };
+    let config = form.to_config(Exporter::Imessage, context()).unwrap();
+    let SourceConfig::Apple(apple) = config.source else {
+        panic!("expected Apple");
+    };
+    assert_eq!(apple.copy_method, "disabled");
+    assert_eq!(config.output.media.files, AttachmentFiles::Skip);
+}
+
+/// Every source takes the output directory, the Scratch Directory, and the
+/// output format from the form.
+#[test]
+fn every_source_carries_the_shared_form_fields() {
+    let form = Form {
+        input: concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").into(),
+        output: "  out  ".into(),
+        owner_phones: "+15555550100".into(),
+        owner_emails: "me@example.com".into(),
+        timezone: "UTC-05:00".into(),
+        attachments: AttachmentFiles::Originals,
+        output_format: OutputFormat::Eml,
+        ..Form::default()
+    };
+    for exporter in Exporter::ALL {
+        let config = form
+            .to_config(exporter, context())
+            .unwrap_or_else(|errors| panic!("{exporter:?}: {errors:?}"));
+        assert_eq!(config.source.exporter(), exporter);
+        assert_eq!(
+            config.output.directory,
+            PathBuf::from("out"),
+            "{exporter:?}"
+        );
+        assert_eq!(
+            config.context.scratch_dir,
+            PathBuf::from("/cache"),
+            "{exporter:?}"
+        );
+        assert_eq!(config.output.format, OutputFormat::Eml, "{exporter:?}");
+        assert!(!config.output.resume, "{exporter:?}");
+    }
+}
+
+/// How many backup types there are. The variant list is written out again
+/// here on purpose: a variant added to `Exporter` stops this match compiling
+/// until it is counted, which is how the test below knows `Exporter::ALL`
+/// is complete.
+fn backup_type_count() -> usize {
+    match Exporter::default() {
+        Exporter::GoSmsPro
+        | Exporter::Imazing
+        | Exporter::Imessage
+        | Exporter::OpenExtract
+        | Exporter::SmsBackupRestore
+        | Exporter::SmsBackupPlus
+        | Exporter::Whatsapp => 7,
+    }
+}
+
+/// `Exporter::ALL` holds every backup type once: as many entries as there
+/// are variants, each at its own discriminant.
+#[test]
+fn every_backup_type_is_in_the_list_of_all() {
+    assert_eq!(Exporter::ALL.len(), backup_type_count());
+    for (index, exporter) in Exporter::ALL.into_iter().enumerate() {
+        assert_eq!(exporter as usize, index, "{exporter:?}");
+    }
+}
+
+/// Search's `source:` field accepts exactly the ids the exporters write
+/// into `export.source`, so a backup type added to the exporters and left
+/// out of search is caught here rather than refused as an unknown word in
+/// search after an import (#2102).
+#[test]
+fn search_accepts_the_source_id_of_every_backup_type() {
+    let mut written: Vec<&str> = Exporter::ALL.iter().map(|e| e.source_id()).collect();
+    let mut accepted = api_types::SOURCE_IDS.to_vec();
+    written.sort_unstable();
+    accepted.sort_unstable();
+    assert_eq!(written, accepted);
+}

@@ -4,14 +4,14 @@ import type { MessageAttachment } from "./types";
  * What an attachment is, for how a conversation shows it: a picture, a video
  * or a sound to play, or a file to download.
  */
-export type AttachmentKind = "image" | "video" | "audio" | "file";
+type AttachmentKind = "image" | "video" | "audio" | "file";
 
 /**
  * Which version opens an attachment in full (`docs/architecture/media.md`,
  * rule 2): the original, the Preview, or neither, when the original is not
  * one every browser shows and the server has not made its Preview yet.
  */
-export type FullVersion = "original" | "preview" | "none";
+type FullVersion = "original" | "preview" | "none";
 
 /** Types by a file name's extension, for an attachment the import named no type for. */
 const BY_EXTENSION: Record<string, string> = {
@@ -42,7 +42,8 @@ const BY_EXTENSION: Record<string, string> = {
 
 function extensionType(name: string | null | undefined): string | null {
   const match = /\.([A-Za-z0-9]+)$/.exec(name?.trim() ?? "");
-  return match ? (BY_EXTENSION[match[1].toLowerCase()] ?? null) : null;
+  const extension = match?.[1];
+  return extension ? (BY_EXTENSION[extension.toLowerCase()] ?? null) : null;
 }
 
 /**
@@ -52,7 +53,7 @@ function extensionType(name: string | null | undefined): string | null {
  * of the name the export gave the file, then of its path in the export.
  */
 function mediaType(attachment: MessageAttachment): string | null {
-  const declared = attachment.mime_type?.split(";")[0].trim().toLowerCase();
+  const declared = attachment.mime_type?.split(";")[0]?.trim().toLowerCase();
   if (declared) return declared;
   return extensionType(attachment.original_name) ?? extensionType(attachment.path);
 }
@@ -76,6 +77,31 @@ export function attachmentKind(attachment: MessageAttachment): AttachmentKind {
 export function fullVersion(attachment: MessageAttachment): FullVersion {
   if (attachment.shown_as_is) return "original";
   return attachment.preview_mime_type ? "preview" : "none";
+}
+
+/**
+ * What a screen says about an attachment that opens in no version because the
+ * server tried to make its Preview and could not: "No Preview could be made"
+ * and the server's `preview_not_made_reason`, what ffmpeg said about the file
+ * (`docs/architecture/media.md`, rule 4). `null` when it opens in a version,
+ * or no try has failed, as while the Preview is still to be made.
+ */
+export function noPreviewNote(attachment: MessageAttachment): string | null {
+  const reason = attachment.preview_not_made_reason;
+  if (fullVersion(attachment) !== "none" || !reason) return null;
+  return `No Preview could be made: ${reason}`;
+}
+
+/**
+ * What a screen says about an attachment whose Thumbnail the server tried to
+ * make and could not: "No Thumbnail could be made" and the server's
+ * `thumbnail_not_made_reason`, as `noPreviewNote` says for the Preview
+ * (`docs/architecture/media.md`, rule 4). `null` while no try has failed.
+ * The caller says it only where no Thumbnail is drawn.
+ */
+export function noThumbnailNote(attachment: MessageAttachment): string | null {
+  const reason = attachment.thumbnail_not_made_reason;
+  return reason ? `No Thumbnail could be made: ${reason}` : null;
 }
 
 /** The name a person knows the attachment by: the export's name, else its path's last part. */

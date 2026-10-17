@@ -42,38 +42,38 @@ function stepLabelClass(status: StepStatus): string {
 }
 
 function StepGlyph({ status, index }: { status: StepStatus; index: number }) {
-  const slot = "flex h-6 w-6 shrink-0 items-center justify-center";
+  const slotClass = "flex h-6 w-6 shrink-0 items-center justify-center";
 
   if (status === "active") {
     return (
-      <span className={slot} aria-hidden>
+      <span className={slotClass} aria-hidden>
         <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </span>
     );
   }
   if (status === "waiting") {
     return (
-      <span className={slot} aria-hidden>
+      <span className={slotClass} aria-hidden>
         <span className="h-2.5 w-2.5 rounded-full bg-accent ring-4 ring-accent/30" />
       </span>
     );
   }
   if (status === "done") {
     return (
-      <span className={`${slot} text-[1rem] font-semibold text-ok`} aria-hidden>
+      <span className={`${slotClass} text-[1rem] font-semibold text-ok`} aria-hidden>
         ✓
       </span>
     );
   }
   if (status === "error") {
     return (
-      <span className={`${slot} text-[1rem] font-semibold text-danger`} aria-hidden>
+      <span className={`${slotClass} text-[1rem] font-semibold text-danger`} aria-hidden>
         !
       </span>
     );
   }
   return (
-    <span className={`${slot} text-[0.75rem] font-semibold text-muted`} aria-hidden>
+    <span className={`${slotClass} text-[0.75rem] font-semibold text-muted`} aria-hidden>
       {index + 1}
     </span>
   );

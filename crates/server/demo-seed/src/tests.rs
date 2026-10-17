@@ -1,6 +1,5 @@
-use message_ir::{
-    ConversationDocument, ConversationHeader, IrConversationType, IrDirection, IrMessage,
-    SCHEMA_VERSION,
+use ir::{
+    ConversationDocument, ConversationHeader, ConversationType, Direction, Message, SCHEMA_VERSION,
 };
 
 use super::*;
@@ -91,7 +90,7 @@ fn read_document(path: &Path) -> ConversationDocument {
     let header: ConversationHeader = serde_json::from_str(lines.next().expect("header line"))
         .unwrap_or_else(|error| panic!("parse header of {}: {error}", path.display()));
     assert_eq!(header.schema_version, SCHEMA_VERSION, "{}", path.display());
-    let messages: Vec<IrMessage> = lines
+    let messages: Vec<Message> = lines
         .map(|line| {
             serde_json::from_str(line)
                 .unwrap_or_else(|error| panic!("parse message in {}: {error}", path.display()))
@@ -177,7 +176,7 @@ fn generate_writes_three_backups_the_config_files_and_a_readme() {
     let mut lines = book.lines();
     assert_eq!(
         lines.next(),
-        Some("contact_id,display_name,groups,service,identity_type,identity")
+        Some("contact_id,display_name,service,identity,groups")
     );
     let keys: std::collections::BTreeSet<&str> = lines
         .map(|line| line.split(',').next().expect("contact_id"))
@@ -224,7 +223,7 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
         .iter()
         .filter(|(source, doc)| {
             source == IMESSAGE_SOURCE
-                && doc.conversation.conversation_type == IrConversationType::Group
+                && doc.conversation.conversation_type == ConversationType::Group
         })
         .count();
     assert_eq!(
@@ -249,15 +248,18 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
     assert_eq!(per_source(IMESSAGE_SOURCE), 18);
     assert_eq!(per_source(SBR_SOURCE), 3);
     assert_eq!(per_source(WHATSAPP_SOURCE), 4);
-    let empty_threads = documents
+    let empty_conversations = documents
         .iter()
         .filter(|(_, doc)| doc.messages.is_empty())
         .count();
-    assert_eq!(empty_threads, 2, "one empty individual and one empty group");
+    assert_eq!(
+        empty_conversations, 2,
+        "one empty one-to-one and one empty group"
+    );
     // Replies and tapbacks are placed on a stride, so how many there are
     // says nothing a pinned number could check. What has to hold is that
     // every reply names a message written earlier in the same conversation:
-    // a reply whose target is missing is a thread the server cannot show.
+    // a reply whose target is missing points at a message the server cannot show.
     let mut replies = 0;
     let mut tapbacks = 0;
     for (source, doc) in &documents {
@@ -300,8 +302,8 @@ fn a_conversation_with_an_email_address_is_held_at_the_demo_accounts_email() {
     let mut sent_from_email = 0;
     for (source, doc) in &documents {
         let chat = &doc.conversation.chat_identifier;
-        let with_email = doc.conversation.conversation_type == IrConversationType::Individual
-            && chat.contains('@');
+        let with_email =
+            doc.conversation.conversation_type == ConversationType::OneToOne && chat.contains('@');
         let expected = if with_email {
             email_conversations += 1;
             crate::personas::OWNER_EMAIL
@@ -316,7 +318,7 @@ fn a_conversation_with_an_email_address_is_held_at_the_demo_accounts_email() {
         for message in &doc.messages {
             // No message names an owner of its own, so the header's holds.
             assert_eq!(message.owner_identity, None, "{source}/{chat}");
-            if with_email && message.direction == IrDirection::Outgoing {
+            if with_email && message.direction == Direction::Outgoing {
                 sent_from_email += 1;
             }
         }
@@ -420,12 +422,12 @@ fn generate_replaces_an_earlier_bundle_and_removes_its_backup() {
     assert!(!out.join(".previous-active").exists());
 }
 
-/// Generation whose cancel flag is set stops with [`Cancelled`], leaves the
+/// Generation whose cancel flag is set stops with [`Canceled`], leaves the
 /// earlier bundle at `out` as it was, and removes its temporary directory,
 /// so a server that stops during a Demo Account build neither waits for the
 /// whole data set nor leaves a part-written one behind (#1431).
 #[test]
-fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
+fn a_canceled_generation_stops_and_leaves_no_temporary_directory() {
     let temp = tempfile::tempdir().expect("create test directory");
     let cfg = small_config(temp.path());
     let out = Path::new(&cfg.out);
@@ -433,9 +435,9 @@ fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
     fs::write(out.join("README.md"), b"old readme").expect("write old readme");
 
     let error =
-        generate_cancellable(&cfg, &AtomicBool::new(true)).expect_err("a cancelled run fails");
+        generate_cancelable(&cfg, &AtomicBool::new(true)).expect_err("a canceled run fails");
 
-    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
     assert_eq!(
         fs::read(out.join("README.md")).expect("read README.md"),
         b"old readme",
@@ -474,14 +476,14 @@ fn prepared_conversations(parent: &Path) -> usize {
         .count()
 }
 
-/// The large data set, cancelled once its first conversation is written,
+/// The large data set, canceled once its first conversation is written,
 /// stops part-way and removes its temporary directory. The count of files
 /// it wrote is the guard: with a check at the start and in the final
-/// validation walk alone, the run would still end `Cancelled`, but only
+/// validation walk alone, the run would still end `Canceled`, but only
 /// after writing every conversation, far more than a quarter of the
 /// contacts (#1431).
 #[test]
-fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory() {
+fn a_large_generation_canceled_part_way_stops_and_leaves_no_temporary_directory() {
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
     let contacts = SeedConfig::for_size(DemoSize::Large)
@@ -510,8 +512,8 @@ fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory
         (generated, most_written)
     });
 
-    let error = generated.expect_err("a run cancelled part-way fails");
-    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    let error = generated.expect_err("a run canceled part-way fails");
+    assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
     assert!(
         most_written < contacts / 4,
         "{most_written} conversations were written after the stop"
@@ -730,6 +732,32 @@ fn restore_attempts_all_paths_after_one_restore_fails() {
     );
     assert!(error.contains("config restore failed on purpose"));
     assert!(prepared.join(".previous-active/config").exists());
+}
+
+/// When the new files are in place but the backup of the previous ones
+/// cannot be removed, the replacement succeeds and returns a warning naming
+/// the backup, for the caller to say where its warnings go (#2903).
+#[test]
+fn an_installed_replacement_returns_a_warning_when_its_backup_cannot_be_removed() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let active = temp.path().join("active");
+    let prepared = temp.path().join("prepared");
+    write_bundle_paths(&active, b"old");
+    write_bundle_paths(&prepared, b"new");
+    let backup = prepared.join(".previous-active");
+
+    let warning = replace_generated_paths_with(
+        &active,
+        &prepared,
+        |source, destination| fs::rename(source, destination).map_err(Into::into),
+        |_backup| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+    )
+    .expect("the new files are installed")
+    .expect("the failed removal is returned");
+
+    assert_bundle_paths(&active, b"new");
+    assert!(warning.contains("could not be removed"), "{warning}");
+    assert!(warning.contains(&backup.display().to_string()), "{warning}");
 }
 
 /// When the install fails and every previous path is moved back, but the
@@ -973,7 +1001,7 @@ fn every_message_of_the_medium_set_falls_between_8am_and_11pm_utc_and_not_after_
 /// message keeps nothing: no text, no attachment and no reaction.
 #[test]
 fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsent() {
-    use message_ir::{Deletion, IrService};
+    use ir::{Deletion, Transport};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
@@ -995,8 +1023,8 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
                     assert!(message.attachments.is_empty(), "{}", message.guid);
                     assert!(message.reactions.is_empty(), "{}", message.guid);
                     // Only an iMessage can be unsent, and an unsent reply would be
-                    // an empty message threaded under another.
-                    assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
+                    // an empty message replying to another.
+                    assert_eq!(message.service, Transport::IMessage, "{}", message.guid);
                     assert!(
                         message.reply_to.is_none(),
                         "{} is an Unsent reply",
@@ -1019,7 +1047,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
 /// sending, and the original was written when the message was sent.
 #[test]
 fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() {
-    use message_ir::{Deletion, IrService};
+    use ir::{Deletion, Transport};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
@@ -1036,7 +1064,7 @@ fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() 
                 n => panic!("{} has {n} earlier versions", message.guid),
             }
             assert_eq!(source, IMESSAGE_SOURCE, "{}", message.guid);
-            assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
+            assert_eq!(message.service, Transport::IMessage, "{}", message.guid);
             assert_ne!(message.deletion, Some(Deletion::Unsent), "{}", message.guid);
             let sent = message.timestamp_unix_ms;
             assert_eq!(
@@ -1046,7 +1074,13 @@ fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() 
                 message.guid
             );
             for version in &message.edits {
-                assert_ne!(version.text, message.text, "{}", message.guid);
+                assert_ne!(
+                    version.text.as_deref(),
+                    Some(message.text.as_str()),
+                    "{}",
+                    message.guid
+                );
+                assert!(version.text.is_some(), "{}", message.guid);
                 let at = version
                     .edited_at_unix_ms
                     .expect("every version has its time");
@@ -1132,7 +1166,7 @@ fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
     assert!(!is_fictional_phone("+33639981234"));
     // These numbers have a length no UK mobile number has, so no one has
     // them. They pin the length check on the drama mobile range. The number
-    // just past 07700 900999 can be dialled, so the `900` part of the prefix
+    // just past 07700 900999 can be dialed, so the `900` part of the prefix
     // has no test. The note on the `phone` crate's `mod tests` gives the
     // source.
     assert!(!is_fictional_phone("+4477009001000"));
@@ -1140,7 +1174,7 @@ fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
 }
 
 /// The Demo Account ships with every Message Crate, so a number in it that
-/// could be dialled could reach a real person and show them beside made-up
+/// could be dialed could reach a real person and show them beside made-up
 /// names and messages.
 #[test]
 fn every_phone_number_in_the_medium_and_large_sets_is_in_a_range_reserved_for_fiction() {

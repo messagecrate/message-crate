@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::ConversationRow;
 
 async fn insert_contact(conn: &mut SqliteConnection, account: i64, name: &str) -> i64 {
     sqlx::query_scalar(
@@ -22,15 +23,7 @@ async fn insert_conversation(conn: &mut SqliteConnection, account: i64, phone: &
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'seed.jsonl') RETURNING id",
-    )
-    .bind(account)
-    .bind(handle)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
+    ConversationRow::new(account, handle).insert(conn).await
 }
 
 /// Insert one row a set of `spec`'s kind can hold, answering its id.
@@ -54,7 +47,7 @@ async fn all_membership_rows(spec: &MembershipSpec, conn: &mut SqliteConnection)
         mc = spec.member_column,
         mt = spec.members_table,
     );
-    sqlx::query_scalar(&sql)
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
         .unwrap()
@@ -71,6 +64,10 @@ async fn last_modified(conn: &mut SqliteConnection, contact: i64) -> String {
 
 /// A `last_modified` no hook writes, so a change from it shows a touch.
 const OLD: &str = "2000-01-01 00:00:00";
+
+/// The `last_modified` a hook writes when the change is made at
+/// [`crate::test_support::fixed_instant`].
+const TOUCHED: &str = "2026-03-14 12:00:00";
 
 /// Set every contact of `account` to [`OLD`].
 async fn age_contacts(conn: &mut SqliteConnection, account: i64) {
@@ -135,14 +132,14 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
         .unwrap_err();
 
         assert!(
-            matches!(err, MembershipError::Conflict(_)),
+            matches!(err, MembershipError::NameTaken(_)),
             "{second}: {err:?}"
         );
         let names: Vec<String> = list_sets(tag_spec(), &mut conn, account)
             .await
             .unwrap()
             .into_iter()
-            .map(|(_, name)| name)
+            .map(|set| set.name)
             .collect();
         assert_eq!(names, ["Work"], "{second}");
     }
@@ -156,7 +153,7 @@ async fn a_contact_group_cannot_take_a_computed_groups_name() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let (family_id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id: family_id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
     for name in ["Unknown", "unknown", "UNKNOWN", "none", "None", "NONE"] {
@@ -182,6 +179,24 @@ async fn a_contact_group_cannot_take_a_computed_groups_name() {
         .unwrap();
 }
 
+// The reserved names are matched after folding ASCII letters only, the same
+// way the website folds them (`reservedKey` in `web/src/lib/nameCollection.ts`).
+// `UNKNOWN` with the Kelvin sign (U+212A) in place of `K` lower-cases to
+// `unknown` under a full Unicode fold, so this pins that both sides take it.
+#[tokio::test]
+async fn a_reserved_name_is_matched_after_folding_ascii_letters_only() {
+    let kelvin = "UN\u{212A}NOWN";
+    assert!(is_reserved(group_spec(), "UNKNOWN"));
+    assert!(!is_reserved(group_spec(), kelvin));
+    let fixture = crate::test_support::test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    let created = create_set(group_spec(), &mut conn, account, kelvin)
+        .await
+        .unwrap();
+    assert_eq!(created.name, kelvin);
+}
+
 // The search reads `tag:none`, quoted or not, as "no tag", so a Message Tag
 // stored under that name would list the untagged conversations on its page.
 #[tokio::test]
@@ -189,7 +204,7 @@ async fn a_message_tag_cannot_be_named_none() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let (holiday_id, _) = create_set(tag_spec(), &mut conn, account, "Holiday")
+    let NamedSet { id: holiday_id, .. } = create_set(tag_spec(), &mut conn, account, "Holiday")
         .await
         .unwrap();
     for name in ["none", "None", "NONE"] {
@@ -216,7 +231,7 @@ async fn names_over_max_len_rejected() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let long = "x".repeat(MAX_NAME_LEN + 1);
+    let long = "x".repeat(MAX_COLLECTION_NAME_CHARS + 1);
     let err = create_set(tag_spec(), &mut conn, account, &long)
         .await
         .unwrap_err();
@@ -224,7 +239,7 @@ async fn names_over_max_len_rejected() {
         MembershipError::BadRequest(msg) => {
             assert_eq!(
                 msg,
-                format!("name must be at most {MAX_NAME_LEN} characters")
+                format!("name: must be at most {MAX_COLLECTION_NAME_CHARS} characters")
             );
         }
         other => panic!("expected BadRequest, got {other:?}"),
@@ -248,7 +263,7 @@ async fn a_contact_group_name_cannot_hold_a_semicolon() {
         MembershipError::BadRequest(msg) => assert_eq!(msg, expected),
         other => panic!("create: expected BadRequest, got {other:?}"),
     }
-    let (work_id, _) = create_set(group_spec(), &mut conn, account, "Work")
+    let NamedSet { id: work_id, .. } = create_set(group_spec(), &mut conn, account, "Work")
         .await
         .unwrap();
     match rename_set(group_spec(), &mut conn, account, work_id, "Work; 2024")
@@ -284,7 +299,7 @@ async fn rename_set_refuses_an_empty_or_over_long_name() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
 
@@ -293,7 +308,7 @@ async fn rename_set_refuses_an_empty_or_over_long_name() {
         .unwrap_err();
     assert!(matches!(err, MembershipError::BadRequest(_)));
 
-    let long = "x".repeat(MAX_NAME_LEN + 1);
+    let long = "x".repeat(MAX_COLLECTION_NAME_CHARS + 1);
     let err = rename_set(group_spec(), &mut conn, account, id, &long)
         .await
         .unwrap_err();
@@ -309,33 +324,49 @@ async fn patch_members_touches_the_member_contact_on_add_and_on_remove() {
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let ada = insert_contact(&mut conn, account, "Ada").await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
 
     age_contacts(&mut conn, account).await;
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[ada], &[])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[ada],
+            &[],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (1, 0)
     );
-    assert_ne!(
+    assert_eq!(
         last_modified(&mut conn, ada).await,
-        OLD,
+        TOUCHED,
         "adding a contact to a group must touch the contact"
     );
 
     age_contacts(&mut conn, account).await;
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[], &[ada])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[],
+            &[ada],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
-    assert_ne!(
+    assert_eq!(
         last_modified(&mut conn, ada).await,
-        OLD,
+        TOUCHED,
         "taking a contact out of a group must touch the contact"
     );
 }
@@ -345,26 +376,38 @@ async fn create_and_list_sets_answer_ids_and_names_a_to_z() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let (work_id, work) = create_set(group_spec(), &mut conn, account, " Work ")
+    let NamedSet {
+        id: work_id,
+        name: work,
+    } = create_set(group_spec(), &mut conn, account, " Work ")
         .await
         .unwrap();
     assert_eq!(work, "Work");
-    let (family_id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id: family_id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
     assert_ne!(work_id, family_id);
     assert_eq!(
         list_sets(group_spec(), &mut conn, account).await.unwrap(),
         vec![
-            (family_id, "Family".to_string()),
-            (work_id, "Work".to_string())
+            NamedSet {
+                id: family_id,
+                name: "Family".to_string()
+            },
+            NamedSet {
+                id: work_id,
+                name: "Work".to_string()
+            },
         ]
     );
     assert_eq!(
         get_set(group_spec(), &mut conn, account, work_id)
             .await
             .unwrap(),
-        (work_id, "Work".to_string())
+        NamedSet {
+            id: work_id,
+            name: "Work".to_string()
+        }
     );
 }
 
@@ -379,7 +422,7 @@ async fn create_set_refuses_duplicates_and_reserved_names() {
     let err = create_set(group_spec(), &mut conn, account, "family")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::Conflict(_)));
+    assert!(matches!(err, MembershipError::NameTaken(_)));
     let err = create_set(group_spec(), &mut conn, account, "Trash")
         .await
         .unwrap_err();
@@ -391,26 +434,29 @@ async fn rename_set_allows_a_case_change_and_refuses_another_sets_name() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let (family_id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id: family_id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    let (work_id, _) = create_set(group_spec(), &mut conn, account, "Work")
+    let NamedSet { id: work_id, .. } = create_set(group_spec(), &mut conn, account, "Work")
         .await
         .unwrap();
     assert_eq!(
         rename_set(group_spec(), &mut conn, account, family_id, "FAMILY")
             .await
             .unwrap(),
-        "FAMILY"
+        NamedSet {
+            id: family_id,
+            name: "FAMILY".to_string()
+        }
     );
     let err = rename_set(group_spec(), &mut conn, account, work_id, "family")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::Conflict(_)));
+    assert!(matches!(err, MembershipError::NameTaken(_)));
     let err = rename_set(group_spec(), &mut conn, account, 999_999, "Anything")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::NotFound(_)));
+    assert!(matches!(err, MembershipError::SetNotFound("group")));
 }
 
 #[tokio::test]
@@ -419,15 +465,29 @@ async fn delete_set_drops_its_memberships_and_refuses_an_unknown_id() {
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let a = insert_contact(&mut conn, account, "Ada").await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    patch_members(group_spec(), &mut conn, account, id, &[a], &[])
-        .await
-        .unwrap();
-    delete_set(group_spec(), &mut conn, account, id)
-        .await
-        .unwrap();
+    patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[a],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    delete_set(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(
         list_sets(group_spec(), &mut conn, account)
             .await
@@ -440,10 +500,16 @@ async fn delete_set_drops_its_memberships_and_refuses_an_unknown_id() {
             .unwrap()
             .is_empty()
     );
-    let err = delete_set(group_spec(), &mut conn, account, id)
-        .await
-        .unwrap_err();
-    assert!(matches!(err, MembershipError::NotFound(_)));
+    let err = delete_set(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, MembershipError::SetNotFound("group")));
 }
 
 // Deleting a Contact Group changes each member's groups, so it touches each
@@ -456,21 +522,36 @@ async fn delete_set_touches_each_member_and_no_other_contact() {
     let ada = insert_contact(&mut conn, account, "Ada").await;
     let ben = insert_contact(&mut conn, account, "Ben").await;
     let cy = insert_contact(&mut conn, account, "Cy").await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    patch_members(group_spec(), &mut conn, account, id, &[ada, ben], &[])
-        .await
-        .unwrap();
+    patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[ada, ben],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     age_contacts(&mut conn, account).await;
 
-    delete_set(group_spec(), &mut conn, account, id)
-        .await
-        .unwrap();
+    delete_set(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     for (name, contact, moved) in [("Ada", ada, true), ("Ben", ben, true), ("Cy", cy, false)] {
         let after = last_modified(&mut conn, contact).await;
-        assert_eq!(after != OLD, moved, "{name}: last_modified is {after}");
+        let expected = if moved { TOUCHED } else { OLD };
+        assert_eq!(after, expected, "{name}: last_modified");
     }
 }
 
@@ -481,13 +562,21 @@ async fn patch_members_adds_and_removes_in_one_call() {
     let mut conn = fixture.conn().await;
     let a = insert_contact(&mut conn, account, "Ada").await;
     let b = insert_contact(&mut conn, account, "Ben").await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[a, b, b], &[])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[a, b, b],
+            &[],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (2, 0)
     );
     assert_eq!(
@@ -497,9 +586,17 @@ async fn patch_members_adds_and_removes_in_one_call() {
         vec![a, b]
     );
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[a], &[b])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[a],
+            &[b],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
     assert_eq!(
@@ -508,9 +605,17 @@ async fn patch_members_adds_and_removes_in_one_call() {
             .unwrap(),
         vec![a]
     );
-    let err = patch_members(group_spec(), &mut conn, account, id, &[], &[])
-        .await
-        .unwrap_err();
+    let err = patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, MembershipError::BadRequest(_)));
 }
 
@@ -526,12 +631,22 @@ async fn patch_members_with_a_foreign_member_writes_nothing() {
         let mut conn = fixture.conn().await;
         let alices = insert_member(spec, &mut conn, alice, "Ada").await;
         let bobs = insert_member(spec, &mut conn, bob, "Ben").await;
-        let (alice_set, _) = create_set(spec, &mut conn, alice, "Family").await.unwrap();
-        let (bob_set, _) = create_set(spec, &mut conn, bob, "Family").await.unwrap();
+        let NamedSet { id: alice_set, .. } =
+            create_set(spec, &mut conn, alice, "Family").await.unwrap();
+        let NamedSet { id: bob_set, .. } =
+            create_set(spec, &mut conn, bob, "Family").await.unwrap();
 
-        let err = patch_members(spec, &mut conn, alice, alice_set, &[alices, bobs], &[])
-            .await
-            .unwrap_err();
+        let err = patch_members(
+            spec,
+            &mut conn,
+            alice,
+            alice_set,
+            &[alices, bobs],
+            &[],
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap_err();
         match err {
             MembershipError::BadRequest(msg) => {
                 assert_eq!(msg, format!("{} {bobs} not found", spec.member_label));
@@ -570,13 +685,21 @@ async fn patch_members_refuses_an_id_to_add_of_zero_or_below() {
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let a = insert_contact(&mut conn, account, "Ada").await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
     for bad in [0, -1] {
-        let err = patch_members(group_spec(), &mut conn, account, id, &[bad, a], &[])
-            .await
-            .unwrap_err();
+        let err = patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[bad, a],
+            &[],
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap_err();
         assert!(
             matches!(err, MembershipError::BadRequest(ref msg) if msg == &format!("contact {bad} not found")),
             "{bad}: {err:?}"
@@ -599,18 +722,34 @@ async fn patch_members_ignores_an_unknown_id_in_remove() {
     let mut conn = fixture.conn().await;
     let a = insert_contact(&mut conn, account, "Ada").await;
     let b = insert_contact(&mut conn, account, "Ben").await;
-    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    patch_members(group_spec(), &mut conn, account, id, &[a], &[])
-        .await
-        .unwrap();
+    patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[a],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     // A contact that exists but is not a member, and an id that names no
     // row at all: both are ignored, and nothing else changes.
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[], &[b, 999_999])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[],
+            &[b, 999_999],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 0)
     );
     assert_eq!(
@@ -621,9 +760,17 @@ async fn patch_members_ignores_an_unknown_id_in_remove() {
     );
     // Mixed with a real member, only that one counts.
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[], &[a, 999_999])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[],
+            &[a, 999_999],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
     assert!(
@@ -639,19 +786,14 @@ async fn another_accounts_set_is_not_found() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let other = 102_i64;
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'bob')")
-        .bind(other)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-    let (id, _) = create_set(tag_spec(), &mut conn, other, "Holiday")
+    let other = fixture.account_with_id(102, "bob").await;
+    let NamedSet { id, .. } = create_set(tag_spec(), &mut conn, other, "Holiday")
         .await
         .unwrap();
     let err = get_set(tag_spec(), &mut conn, account, id)
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::NotFound(_)));
+    assert!(matches!(err, MembershipError::SetNotFound("tag")));
     assert!(
         list_sets(tag_spec(), &mut conn, account)
             .await
@@ -678,7 +820,7 @@ async fn get_set_does_not_find_a_reserved_name_leftover() {
     let err = get_set(group_spec(), &mut conn, account, id)
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::NotFound(_)));
+    assert!(matches!(err, MembershipError::SetNotFound("group")));
 }
 
 thread_local! {
@@ -693,6 +835,7 @@ fn record_hook<'a>(
     _conn: &'a mut SqliteConnection,
     _account_id: i64,
     member_id: i64,
+    _now: chrono::DateTime<chrono::Utc>,
 ) -> Pin<Box<dyn Future<Output = AnyResult<()>> + Send + 'a>> {
     HOOK_CALLS.with_borrow_mut(|calls| calls.push(member_id));
     Box::pin(async { Ok(()) })
@@ -713,15 +856,23 @@ async fn patch_members_an_id_in_both_add_and_remove_nets_to_removed() {
         ..*group_spec()
     };
     let a = insert_contact(&mut conn, account, "Ada").await;
-    let (id, _) = create_set(&spec, &mut conn, account, "Family")
+    let NamedSet { id, .. } = create_set(&spec, &mut conn, account, "Family")
         .await
         .unwrap();
     take_hook_calls();
 
     assert_eq!(
-        patch_members(&spec, &mut conn, account, id, &[a], &[])
-            .await
-            .unwrap(),
+        patch_members(
+            &spec,
+            &mut conn,
+            account,
+            id,
+            &[a],
+            &[],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (1, 0)
     );
     assert_eq!(take_hook_calls(), vec![a], "an add runs the hook once");
@@ -729,9 +880,17 @@ async fn patch_members_an_id_in_both_add_and_remove_nets_to_removed() {
     // Already a member: add and remove the same id nets to "removed",
     // and the change hook fires once, not twice.
     assert_eq!(
-        patch_members(&spec, &mut conn, account, id, &[a], &[a])
-            .await
-            .unwrap(),
+        patch_members(
+            &spec,
+            &mut conn,
+            account,
+            id,
+            &[a],
+            &[a],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
     assert_eq!(
@@ -750,9 +909,17 @@ async fn patch_members_an_id_in_both_add_and_remove_nets_to_removed() {
     // hook does not run.
     let b = insert_contact(&mut conn, account, "Ben").await;
     assert_eq!(
-        patch_members(&spec, &mut conn, account, id, &[b], &[b])
-            .await
-            .unwrap(),
+        patch_members(
+            &spec,
+            &mut conn,
+            account,
+            id,
+            &[b],
+            &[b],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 0)
     );
     assert_eq!(take_hook_calls(), Vec::<i64>::new(), "no change, no hook");
@@ -772,9 +939,17 @@ async fn set_membership_by_name_still_creates_and_fills_a_group() {
     let mut conn = fixture.conn().await;
     let a = insert_contact(&mut conn, account, "Ada").await;
     assert_eq!(
-        set_membership(group_spec(), &mut conn, account, &[a], "Family", true)
-            .await
-            .unwrap(),
+        set_membership(
+            group_spec(),
+            &mut conn,
+            account,
+            &[a],
+            "Family",
+            true,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         1
     );
     assert_eq!(
@@ -782,5 +957,63 @@ async fn set_membership_by_name_still_creates_and_fills_a_group() {
             .await
             .unwrap(),
         vec!["Family"]
+    );
+}
+
+/// The reserved names and their sentences of one spec, as the website reads
+/// them from `web/src/lib/reservedNames.json`.
+fn reserved_names_json(spec: &MembershipSpec) -> serde_json::Value {
+    let special: Vec<serde_json::Value> = spec
+        .special_reserved
+        .iter()
+        .map(|(name, message)| serde_json::json!({ "name": name, "message": message }))
+        .collect();
+    serde_json::json!({
+        "label": spec.reserved_label,
+        "reserved": spec.reserved,
+        "special": special,
+    })
+}
+
+/// The website refuses a reserved Message Tag or Contact Group name before it
+/// asks the server, from `web/src/lib/reservedNames.json`. That file is this
+/// test's output, so a name added to a spec here and not to the file fails
+/// the test, and the form never accepts a name the server refuses.
+#[test]
+fn the_website_reserves_the_same_names_as_the_server() {
+    // The website looks a name up by its lower-case form, as `is_reserved`
+    // does, so a name written here with a capital would never match.
+    for spec in [tag_spec(), group_spec()] {
+        let names = spec
+            .reserved
+            .iter()
+            .chain(spec.special_reserved.iter().map(|(name, _)| name));
+        for name in names {
+            assert_eq!(
+                *name,
+                name.to_ascii_lowercase(),
+                "{name:?} is not lower case"
+            );
+        }
+    }
+    let want = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "contactGroup": reserved_names_json(group_spec()),
+            "messageTag": reserved_names_json(tag_spec()),
+        }))
+        .unwrap()
+    );
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../web/src/lib/reservedNames.json");
+    if std::env::var_os("UPDATE_FIXTURES").is_some() {
+        std::fs::write(&path, &want).unwrap();
+    }
+    let have = std::fs::read_to_string(&path).unwrap_or_default();
+    assert_eq!(
+        have, want,
+        "web/src/lib/reservedNames.json is out of date with the reserved names in \
+         db/named_membership.rs.\nRegenerate with: UPDATE_FIXTURES=1 cargo test -p \
+         message-crate-server the_website_reserves_the_same_names_as_the_server"
     );
 }

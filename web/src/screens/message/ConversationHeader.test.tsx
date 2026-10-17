@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -12,11 +12,13 @@ import {
 } from "../../lib/serverApi";
 import type { Conversation } from "../../lib/types";
 import { participant } from "../../test/apiShapes";
-import { mockedAuth, Providers } from "../../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
+import { authModule, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../hooks/useAuth", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -56,11 +58,11 @@ const PROFILE = {
   storage_bytes: 0,
 };
 
-/** A group chat: the owner, two people with contacts, one nobody has a contact for. */
-function groupChat(): Conversation {
+/** A group conversation: the owner, two people with contacts, one nobody has a contact for. */
+function groupConversation(): Conversation {
   return conversation({
     is_group: true,
-    label: "Book Club",
+    shown_title: "Book Club",
     participants: [
       participant({ name: "Me", identity: "+1 (555) 010-0", contact_id: 1 }),
       participant({ name: "Ada", identity: "+15550120", contact_id: 2 }),
@@ -79,7 +81,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     last_message_at: "2024-01-01T10:00:00Z",
     service: "sms",
     is_group: false,
-    label: "Chat 42",
+    shown_title: "Chat 42",
     tags: [],
     ...overrides,
   };
@@ -129,25 +131,17 @@ function renderHeader(
 }
 
 /**
- * Open the ⋯ menu and choose an item, opening the menu again until the item
- * is there: an item that waits on a fetch appears once it lands.
+ * Open the ⋯ menu and choose an item. An item that waits on a fetch is there
+ * only once the test has settled the fetch's answer.
  */
 async function openMenuItem(user: ReturnType<typeof setupUser>, name: string) {
-  await waitFor(async () => {
-    if (!screen.queryByRole("menu")) {
-      await user.click(screen.getByRole("button", { name: "More for this conversation" }));
-    }
-    const item = screen.queryByRole("menuitem", { name });
-    if (!item) {
-      await user.keyboard("{Escape}");
-      throw new Error(`no ${name} yet`);
-    }
-  });
+  await user.click(screen.getByRole("button", { name: "More for this conversation" }));
   await user.click(screen.getByRole("menuitem", { name }));
 }
 
 describe("ConversationHeader", () => {
   beforeEach(() => {
+    startFakeClock();
     trashConversationMock.mockReset();
     getAccountProfileMock.mockReset();
     listContactGroupsMock.mockReset();
@@ -159,24 +153,30 @@ describe("ConversationHeader", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   describe("Make a Contact Group", () => {
-    it("is offered on a group chat and not on a direct conversation", async () => {
+    it("is offered on a group conversation and not on a one-to-one conversation", async () => {
       const user = setupUser();
-      renderHeader(conversation());
+      // The same people as the group conversation, so only the conversation's
+      // kind keeps the item off the menu.
+      renderHeader(conversation({ participants: groupConversation().participants }));
+      // The profile the item waits for has landed, so its absence is the screen's choice.
+      await settle();
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));
       expect(screen.queryByRole("menuitem", { name: "Make a Contact Group" })).toBeNull();
       cleanup();
 
-      renderHeader(groupChat());
+      renderHeader(groupConversation());
       // The owner's profile decides who is left out, so the item waits for it.
-      await waitFor(() => expect(getAccountProfileMock).toHaveBeenCalled());
+      await settle();
+      expect(getAccountProfileMock).toHaveBeenCalled();
       await openMenuItem(user, "Make a Contact Group");
     });
 
     it("creates the group and adds everyone but the owner and the contact-less", async () => {
-      // The server, modelled: once created, the group is in the list the
+      // The server, modeled: once created, the group is in the list the
       // members call looks the id up in.
       let groups: { id: number; name: string }[] = [];
       listContactGroupsMock.mockImplementation(async () => groups);
@@ -187,7 +187,8 @@ describe("ConversationHeader", () => {
       });
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
       const user = setupUser();
-      renderHeader(groupChat());
+      renderHeader(groupConversation());
+      await settle();
 
       await openMenuItem(user, "Make a Contact Group");
       // The chat's label is offered as the name.
@@ -196,47 +197,59 @@ describe("ConversationHeader", () => {
       await fill(user, input, "Readers");
       await user.click(screen.getByRole("button", { name: "Create" }));
 
-      await waitFor(() => {
-        expect(createContactGroupMock).toHaveBeenCalledWith({ name: "Readers" });
+      await settle();
+      expect(createContactGroupMock).toHaveBeenCalledWith({ name: "Readers" });
+      expect(updateContactGroupMembersMock).toHaveBeenCalledWith(9, {
+        add: [2, 3],
+        remove: [],
       });
-      await waitFor(() => {
-        expect(updateContactGroupMembersMock).toHaveBeenCalledWith(9, {
-          add: [2, 3],
-          remove: [],
-        });
-      });
-      expect(await screen.findByText("Added 2 people to Readers.")).toBeTruthy();
+      expect(screen.getByText("Added 2 people to Readers.")).toBeTruthy();
     });
 
     it("adds to an existing group of that name instead of creating a second one", async () => {
       listContactGroupsMock.mockResolvedValue([{ id: 4, name: "Readers" }]);
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
       const user = setupUser();
-      renderHeader(groupChat());
+      renderHeader(groupConversation());
+      await settle();
 
       await openMenuItem(user, "Make a Contact Group");
-      const input = await screen.findByDisplayValue("Book Club");
+      const input = screen.getByDisplayValue("Book Club");
       await user.clear(input);
       await fill(user, input, "readers");
       await user.click(screen.getByRole("button", { name: "Create" }));
 
-      await waitFor(() => {
-        expect(updateContactGroupMembersMock).toHaveBeenCalledWith(4, {
-          add: [2, 3],
-          remove: [],
-        });
+      await settle();
+      expect(updateContactGroupMembersMock).toHaveBeenCalledWith(4, {
+        add: [2, 3],
+        remove: [],
       });
       expect(createContactGroupMock).not.toHaveBeenCalled();
     });
   });
 
   it("says in one line who is in it, the service as the conversation list names it, and how many messages", () => {
-    renderHeader(groupChat());
+    renderHeader(groupConversation());
     expect(screen.getByRole("heading", { name: "Book Club" })).toBeInTheDocument();
     expect(screen.getByText("4 people")).toBeInTheDocument();
     // `sms` reads "Text Message", the conversation list's word, not the raw service.
     expect(screen.getByText("Text Message")).toBeInTheDocument();
     expect(screen.getByText("3 messages")).toBeInTheDocument();
+  });
+
+  it("names an untitled group after everyone in it, as the conversation list does", () => {
+    renderHeader(
+      conversation({
+        is_group: true,
+        shown_title: null,
+        participants: [
+          participant({ name: "Ann", identity: "+15550101" }),
+          participant({ name: "Bob", identity: "+15550102" }),
+          participant({ name: "Cy", identity: "+15550103" }),
+        ],
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "Ann, Bob, Cy" })).toBeInTheDocument();
   });
 
   it("offers Newest and every year, newest first, under Jump to", async () => {
@@ -271,7 +284,7 @@ describe("ConversationHeader", () => {
     await user.click(screen.getByRole("button", { name: "More for this conversation" }));
     const rows = screen.getAllByRole("menuitem", { name: "Sources" });
     expect(rows).toHaveLength(2);
-    await user.click(rows[0]);
+    await user.click(nth(rows, 0));
 
     expect(onOpenContact).toHaveBeenCalledWith("7");
   });
@@ -284,9 +297,8 @@ describe("ConversationHeader", () => {
     await openMenuItem(user, "Move to trash");
 
     expect(trashConversationMock).toHaveBeenCalledWith(42, expect.anything());
-    await waitFor(() => {
-      expect(screen.getByText("Conversations list")).toBeInTheDocument();
-    });
+    await settle();
+    expect(screen.getByText("Conversations list")).toBeInTheDocument();
   });
 
   it("shows an error and stays put when trashing fails", async () => {
@@ -295,8 +307,9 @@ describe("ConversationHeader", () => {
     renderHeader(conversation());
 
     await openMenuItem(user, "Move to trash");
+    await settle();
 
-    expect(await screen.findByText("Could not move this conversation.")).toBeInTheDocument();
+    expect(screen.getByText("Could not move this conversation.")).toBeInTheDocument();
     expect(screen.queryByText("Conversations list")).not.toBeInTheDocument();
   });
 });

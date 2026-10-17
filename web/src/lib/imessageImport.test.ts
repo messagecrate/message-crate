@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  IMESSAGE_ERR_ATTACHMENT_IS_FILE,
-  IMESSAGE_ERR_CONTACTS_IS_DIR,
-  IMESSAGE_ERR_ENCRYPTED_PASSWORD,
-  IMESSAGE_ERR_IPHONE_PATH_IS_FILE,
-  IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR,
-  IMESSAGE_ERR_MAC_PATH_IS_DIR,
-  IMESSAGE_ERR_PATH_MISSING,
+  DENIED_STAT,
+  DIRECTORY_STAT,
+  FILE_STAT,
+  MISSING_STAT,
+  NEITHER_STAT,
+} from "../test/pathStats";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED } from "./encryptedBackup";
+import {
+  IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
+  IMESSAGE_ERR_CONTACTS_NOT_FILE,
+  IMESSAGE_ERR_IPHONE_NOT_DIRECTORY,
+  IMESSAGE_ERR_JAILBREAK_NOT_FILE,
+  IMESSAGE_ERR_MAC_NOT_FILE,
   IMESSAGE_METHODS,
   imessageApplePlatform,
   imessageAttachmentRootRequired,
@@ -14,28 +20,12 @@ import {
   imessageShowsAppleContacts,
   imessageShowsAttachmentRoot,
   imessageShowsPassword,
-  imessageStatsForMethod,
   imessageVisiblePlatforms,
   isImessageMethod,
   macMessagesDbPath,
   shouldPrefillMacMessagesDb,
 } from "./imessageImport";
-
-const presentFile: { exists: true; isFile: true; isDirectory: false } = {
-  exists: true,
-  isFile: true,
-  isDirectory: false,
-};
-const presentDir: { exists: true; isFile: false; isDirectory: true } = {
-  exists: true,
-  isFile: false,
-  isDirectory: true,
-};
-const missing: { exists: false; isFile: false; isDirectory: false } = {
-  exists: false,
-  isFile: false,
-  isDirectory: false,
-};
+import { PATH_MISSING } from "./pathChecks";
 
 describe("iMessage methods", () => {
   it("lists three methods", () => {
@@ -104,7 +94,7 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -122,7 +112,7 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -139,14 +129,14 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: true,
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPassword).toBe(IMESSAGE_ERR_ENCRYPTED_PASSWORD);
+    expect(result.errors.backupPassword).toBe(ENCRYPTED_BACKUP_PASSWORD_REQUIRED);
   });
 
   it("enables an encrypted backup when the password is filled", () => {
@@ -157,7 +147,7 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "secret",
       stats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: true,
@@ -174,14 +164,14 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPath).toBe(IMESSAGE_ERR_IPHONE_PATH_IS_FILE);
+    expect(result.errors.backupPath).toBe(IMESSAGE_ERR_IPHONE_NOT_DIRECTORY);
     // The platform list hides the jailbreak method, so the error must not
     // send the person to it.
     expect(result.errors.backupPath).not.toMatch(/jailbr/i);
@@ -195,7 +185,7 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -212,14 +202,14 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
       },
     });
     expect(mac.enabled).toBe(false);
-    expect(mac.errors.backupPath).toBe(IMESSAGE_ERR_MAC_PATH_IS_DIR);
+    expect(mac.errors.backupPath).toBe(IMESSAGE_ERR_MAC_NOT_FILE);
 
     const jail = imessageCanImport({
       method: "imessage-jailbreak",
@@ -228,14 +218,39 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentDir,
-        attachmentRoot: presentDir,
+        backup: DIRECTORY_STAT,
+        attachmentRoot: DIRECTORY_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
     });
     expect(jail.enabled).toBe(false);
-    expect(jail.errors.backupPath).toBe(IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR);
+    expect(jail.errors.backupPath).toBe(IMESSAGE_ERR_JAILBREAK_NOT_FILE);
+  });
+
+  it("rejects a backup path that is neither a file nor a directory, for every method", () => {
+    const expected = {
+      "imessage-ios": IMESSAGE_ERR_IPHONE_NOT_DIRECTORY,
+      "imessage-macos": IMESSAGE_ERR_MAC_NOT_FILE,
+      "imessage-jailbreak": IMESSAGE_ERR_JAILBREAK_NOT_FILE,
+    } as const;
+    for (const method of IMESSAGE_METHODS.map((m) => m.id)) {
+      const result = imessageCanImport({
+        method,
+        backupPath: "/dev/null",
+        attachmentRoot: "",
+        appleContacts: "",
+        backupPassword: "",
+        stats: {
+          backup: NEITHER_STAT,
+          attachmentRoot: null,
+          appleContacts: null,
+          backupEncrypted: null,
+        },
+      });
+      expect(result.enabled, method).toBe(false);
+      expect(result.errors.backupPath, method).toBe(expected[method]);
+    }
   });
 
   it("treats attachment root as required only for jailbreak", () => {
@@ -252,7 +267,7 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -267,8 +282,8 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentFile,
-        attachmentRoot: presentDir,
+        backup: FILE_STAT,
+        attachmentRoot: DIRECTORY_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
@@ -284,14 +299,14 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentFile,
-        attachmentRoot: missing,
+        backup: FILE_STAT,
+        attachmentRoot: MISSING_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.attachmentRoot).toBe(IMESSAGE_ERR_PATH_MISSING);
+    expect(result.errors.attachmentRoot).toBe(PATH_MISSING);
   });
 
   it("rejects an attachment directory that is a file", () => {
@@ -302,14 +317,14 @@ describe("imessageCanImport", () => {
       appleContacts: "",
       backupPassword: "",
       stats: {
-        backup: presentFile,
-        attachmentRoot: presentFile,
+        backup: FILE_STAT,
+        attachmentRoot: FILE_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.attachmentRoot).toBe(IMESSAGE_ERR_ATTACHMENT_IS_FILE);
+    expect(result.errors.attachmentRoot).toBe(IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY);
   });
 
   it("rejects an Apple Contacts path that is a directory", () => {
@@ -320,14 +335,14 @@ describe("imessageCanImport", () => {
       appleContacts: "/tmp/AddressBook",
       backupPassword: "",
       stats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
-        appleContacts: presentDir,
+        appleContacts: DIRECTORY_STAT,
         backupEncrypted: null,
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.appleContacts).toBe(IMESSAGE_ERR_CONTACTS_IS_DIR);
+    expect(result.errors.appleContacts).toBe(IMESSAGE_ERR_CONTACTS_NOT_FILE);
   });
 
   it("still validates Apple Contacts when jailbreak attachment root is empty", () => {
@@ -338,14 +353,14 @@ describe("imessageCanImport", () => {
       appleContacts: "/tmp/AddressBook",
       backupPassword: "",
       stats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
-        appleContacts: presentDir,
+        appleContacts: DIRECTORY_STAT,
         backupEncrypted: null,
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.appleContacts).toBe(IMESSAGE_ERR_CONTACTS_IS_DIR);
+    expect(result.errors.appleContacts).toBe(IMESSAGE_ERR_CONTACTS_NOT_FILE);
   });
 
   it("disables Import while a non-empty path has not been checked yet", () => {
@@ -383,24 +398,6 @@ describe("imessageCanImport", () => {
   });
 });
 
-describe("imessageStatsForMethod", () => {
-  it("clears encryption state when leaving iPhone backup", () => {
-    expect(
-      imessageStatsForMethod("imessage-macos", {
-        backup: presentFile,
-        attachmentRoot: null,
-        appleContacts: null,
-        backupEncrypted: true,
-      }),
-    ).toEqual({
-      backup: presentFile,
-      attachmentRoot: null,
-      appleContacts: null,
-      backupEncrypted: null,
-    });
-  });
-});
-
 describe("Mac Messages pre-fill", () => {
   it("joins chat.db under the home Library directory", () => {
     expect(macMessagesDbPath("/Users/sam")).toBe("/Users/sam/Library/Messages/chat.db");
@@ -412,7 +409,7 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "macos",
         homeDir: "/Users/sam",
-        chatDbExists: true,
+        chatDb: FILE_STAT,
         rememberedPath: "",
       }),
     ).toBe("/Users/sam/Library/Messages/chat.db");
@@ -420,7 +417,7 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "linux",
         homeDir: "/home/sam",
-        chatDbExists: true,
+        chatDb: FILE_STAT,
         rememberedPath: "",
       }),
     ).toBe("");
@@ -428,7 +425,7 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "macos",
         homeDir: "/Users/sam",
-        chatDbExists: false,
+        chatDb: MISSING_STAT,
         rememberedPath: "",
       }),
     ).toBe("");
@@ -436,9 +433,20 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "macos",
         homeDir: "/Users/sam",
-        chatDbExists: true,
+        chatDb: FILE_STAT,
         rememberedPath: "/copied/chat.db",
       }),
     ).toBe("/copied/chat.db");
+  });
+
+  it("pre-fills a chat.db macOS will not let the app read, so the form can say why", () => {
+    expect(
+      shouldPrefillMacMessagesDb({
+        os: "macos",
+        homeDir: "/Users/sam",
+        chatDb: DENIED_STAT,
+        rememberedPath: "",
+      }),
+    ).toBe("/Users/sam/Library/Messages/chat.db");
   });
 });

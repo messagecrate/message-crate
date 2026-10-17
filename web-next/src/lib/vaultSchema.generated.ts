@@ -19,11 +19,17 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- IANA time zone (for example America/New_York) every message time, day and year is
     -- read in. Chosen at profile setup; a message records only the instant it arrived.
     time_zone TEXT NOT NULL DEFAULT 'UTC',
-    -- 1 = may not log in and existing sessions are refused; 0 = active.
+    -- 1 = disabled: the account may not log in, and its API tokens are
+    -- refused while it stays disabled. Disabling it ends its Session, so
+    -- enabling it again takes a new login. 0 = active.
     disabled INTEGER NOT NULL DEFAULT 0,
     -- 1 = the account holder has not set up their profile yet, so the session
     -- owes profile setup before it goes anywhere; cleared on the first save.
     must_set_up_profile INTEGER NOT NULL DEFAULT 0,
+    -- The three permissions below never decide the owner's or the Demo
+    -- Account's permissions, which come from their ids. Their rows agree with
+    -- what the server grants: the owner's holds 0 for all three, and the Demo
+    -- Account's holds 1 for export alone.
     -- 1 = may call the import endpoints.
     can_import INTEGER NOT NULL DEFAULT 1,
     -- 1 = may call the export endpoints.
@@ -121,6 +127,18 @@ CREATE TABLE IF NOT EXISTS server_settings (
     asset_max_bytes BIGINT NOT NULL DEFAULT 536870912
 );
 
+-- Which Message Crate this database is. Exactly one row, written when the
+-- database is made and never changed, so an app tells two Message Crates at
+-- one address apart, or this one from the database it replaced, whose
+-- account and Import Run ids start at the same numbers.
+CREATE TABLE IF NOT EXISTS message_crate (
+    -- Always 1: a database is one Message Crate.
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- The Message Crate's id: 32 random lowercase hexadecimal digits, answered
+    -- by GET /v1/server as \`id\`.
+    message_crate_id TEXT NOT NULL
+);
+
 -- A Demo Account build that has not finished. A build writes this row before
 -- it writes anything else and removes it after its last write, so a row found
 -- when the server starts is a build the server stopped part-way: the server
@@ -175,10 +193,12 @@ CREATE TABLE IF NOT EXISTS imports (
     tool TEXT,
     -- Import mode string recorded by the importer.
     mode TEXT NOT NULL,
-    -- 1 when cross-source dedupe runs after each batch of this run. Stated
-    -- once, when the run is created, so two batches cannot disagree.
-    dedupe INTEGER NOT NULL DEFAULT 0,
-    -- Run status (for example running, completed, failed, cancelled).
+    -- The country the run states for every phone number its files write
+    -- without a + code, as an ISO 3166-1 alpha-2 code ('GB'). NULL when the
+    -- import form named none: such a number keeps its digits and no + form
+    -- (#1676). Stated once, when the run is created.
+    phone_country TEXT,
+    -- Run status (for example running, completed, failed, canceled).
     status TEXT NOT NULL,
     -- When the import started.
     started_at TEXT NOT NULL,
@@ -239,7 +259,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_imports_active_account
 
 -- One row per Export Run: what was asked for and how much matched, never
 -- message content. Recorded permanently whether the run completed, failed
--- or was cancelled, so every read of message data by a program leaves a
+-- or was canceled, so every read of message data by a program leaves a
 -- record.
 CREATE TABLE IF NOT EXISTS exports (
     -- Surrogate primary key for this export run.
@@ -287,7 +307,7 @@ CREATE TABLE IF NOT EXISTS exports (
     scope_message_ids TEXT,
     -- Client/tool name that ran the export (optional).
     tool TEXT,
-    -- Run status: running, completed, failed, or cancelled.
+    -- Run status: running, completed, failed, or canceled.
     status TEXT NOT NULL,
     -- When the export started.
     started_at TEXT NOT NULL,
@@ -303,11 +323,22 @@ CREATE TABLE IF NOT EXISTS exports (
     total_bytes INTEGER NOT NULL,
     -- How far the run's message pages have read into its list, in places,
     -- so an abandoned run shows how far it got.
-    messages_delivered INTEGER NOT NULL DEFAULT 0
+    messages_delivered INTEGER NOT NULL DEFAULT 0,
+    -- When a page of the run's messages was last read; NULL until the first.
+    -- A running run with no page read for an hour, counted from this or
+    -- from \`started_at\` before the first, is closed as \`canceled\`.
+    last_page_read_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_exports_account_started
     ON exports(account_id, started_at DESC);
+
+-- At most one running Export Run per account. Starting an Export closes the
+-- account's running run as \`canceled\` in the same transaction, so the index
+-- never refuses a start; it holds the rule against a racing client, as
+-- \`ux_imports_active_account\` does for imports.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_exports_active_account
+    ON exports(account_id) WHERE status = 'running';
 
 -- Per-item error or skip recorded during an import run.
 CREATE TABLE IF NOT EXISTS import_issues (
@@ -371,10 +402,25 @@ CREATE TABLE IF NOT EXISTS import_contacts (
 CREATE INDEX IF NOT EXISTS ix_import_contacts_contact
     ON import_contacts(contact_id);
 
+-- An \`import_contacts\` row kept by identity while its contact is gone. When
+-- an identity is linked after an import, the contact the import made for the
+-- holder is deleted (#1662). Its record is kept here under each identity the
+-- contact held, so removing the identity again gives the contact made then
+-- the run's record back, and the row leaves this table.
+CREATE TABLE IF NOT EXISTS import_contacts_set_aside (
+    -- Import run (\`imports.id\`).
+    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+    -- An identity the deleted contact held (\`handles.id\`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    -- The reason the run's record gave (\`import_contacts.reason\`).
+    reason TEXT NOT NULL,
+    PRIMARY KEY (import_id, handle_id)
+);
+
 -- The Audit Trail: what each user did on this Message Crate, and when, for
 -- everything \`imports\` and \`exports\` do not already record. An entry is
--- written once and never changed by a route; deleting an account sets its
--- \`account_id\` NULL and keeps the entry
+-- written once and never changed, which the triggers below hold; deleting an
+-- account sets its \`account_id\` NULL and keeps the entry
 -- (docs/adr/0020-the-audit-trail-outlives-the-account.md). A password, a
 -- session token and an API token never enter it, hashed or not, and nothing
 -- here says what a message said or which conversation it was in.
@@ -383,20 +429,30 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     id INTEGER PRIMARY KEY,
     -- When it happened, RFC 3339 UTC, as \`imports.started_at\` is written.
     at TEXT NOT NULL,
+    -- The id of the request that wrote it, the UUID in that response's
+    -- \`x-request-id\` and on the request's lines in the server's log, so the
+    -- entry and the lines are found by each other. NULL for an entry written
+    -- outside a request: by a server command, or by the Demo Account build
+    -- the first start runs.
+    request_id TEXT,
     -- What happened: logged_in, session_ended, login_refused,
     -- account_created, account_disabled, account_enabled, password_set,
     -- permissions_changed, messages_deleted, conversation_deleted,
     -- trash_emptied, account_deleted, registration_opened,
-    -- registration_closed, api_token_created, api_token_deleted,
-    -- address_book_loaded or address_book_exported.
+    -- registration_closed, asset_limit_changed, demo_account_added,
+    -- demo_account_reset, api_token_created, api_token_deleted,
+    -- address_book_loaded, address_book_exported or export_run_closed.
     action TEXT NOT NULL,
     -- Who acted: owner, holder (the account's own holder), command_line
-    -- (a server command), server (the server on its own), or anonymous
-    -- (someone at the login card).
+    -- (a server command), start_up (the server's first start, which adds
+    -- the Demo Account to a new database), server (the server on its own),
+    -- or anonymous (someone at the login card).
     actor TEXT NOT NULL,
     -- The account the entry is about (\`accounts.id\`). NULL when it is about
     -- no account (a refused login for an unknown username, opening or closing
-    -- registration) or once the account is deleted.
+    -- registration, changing the attachment size limit, adding the Demo
+    -- Account, a Demo Account build by \`reset-demo\` or the first start) or
+    -- once the account is deleted.
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     -- That account's username when the entry was written; for a refused
     -- login, the username as typed, trimmed and cut to 128 characters.
@@ -407,7 +463,9 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- its username may pass to a later account.
     deletion_entry_id INTEGER REFERENCES audit_entries(id),
     -- session_ended: logged_out, replaced or revoked. login_refused:
-    -- unknown_username, wrong_password or account_disabled. NULL otherwise.
+    -- unknown_username, wrong_password or account_disabled.
+    -- export_run_closed: replaced (a new Export started) or idle (no page
+    -- read for an hour). NULL otherwise.
     reason TEXT,
     -- logged_in and login_refused: the app the request named, 'desktop' or
     -- 'website'; NULL when the request named none.
@@ -420,12 +478,15 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     session_entry_id INTEGER REFERENCES audit_entries(id),
     -- logged_in: when the session expires, RFC 3339 UTC. password_set by the
     -- holder: when the renewed session expires. A session with no
-    -- session_ended entry reads as expired from the latest of these, so
-    -- expiry needs no entry and no sweeper, and no entry is ever changed.
+    -- session_ended entry reads as expired from the latest of these and of
+    -- its \`session_extensions\` row, so expiry needs no entry and no sweeper,
+    -- and no entry is ever changed.
     session_expires_at TEXT,
     -- JSON object of the entry's counts and names: permissions added and
     -- removed, conversations and attachments deleted, an API token's label
-    -- and hint, an address book's mode and contact counts.
+    -- and hint, an address book's mode and contact counts, the new
+    -- attachment size limit, the size of Demo Data a build was asked for,
+    -- the id of the Export Run the server closed.
     details TEXT
 );
 
@@ -440,6 +501,62 @@ CREATE INDEX IF NOT EXISTS ix_audit_entries_session
 
 CREATE INDEX IF NOT EXISTS ix_audit_entries_deletion
     ON audit_entries(deletion_entry_id);
+
+-- An Audit Trail entry is never edited. The only changes allowed are the two
+-- that deleting an account makes. \`deletion_entry_id\` is set once, to the
+-- \`account_deleted\` entry about the entry's own account. \`account_id\` is set
+-- NULL by the foreign key, once the account's row is gone. Anything else, a
+-- route, a mistaken query or a statement run by hand, fails here rather than
+-- rewriting the record (docs/adr/0020-the-audit-trail-outlives-the-account.md).
+CREATE TRIGGER IF NOT EXISTS audit_entries_never_edited
+BEFORE UPDATE ON audit_entries
+WHEN NEW.id IS NOT OLD.id
+  OR (NEW.account_id IS NOT OLD.account_id
+      AND (NEW.account_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM accounts WHERE id = OLD.account_id)))
+  OR (NEW.deletion_entry_id IS NOT OLD.deletion_entry_id
+      AND (OLD.deletion_entry_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM audit_entries d
+                          WHERE d.id = NEW.deletion_entry_id
+                            AND d.action = 'account_deleted'
+                            AND d.account_id IS OLD.account_id)))
+  OR NEW.at IS NOT OLD.at
+  OR NEW.request_id IS NOT OLD.request_id
+  OR NEW.action IS NOT OLD.action
+  OR NEW.actor IS NOT OLD.actor
+  OR NEW.username IS NOT OLD.username
+  OR NEW.reason IS NOT OLD.reason
+  OR NEW.app_kind IS NOT OLD.app_kind
+  OR NEW.app_build IS NOT OLD.app_build
+  OR NEW.session_entry_id IS NOT OLD.session_entry_id
+  OR NEW.session_expires_at IS NOT OLD.session_expires_at
+  OR NEW.details IS NOT OLD.details
+BEGIN
+    SELECT RAISE(ABORT, 'an Audit Trail entry is never edited');
+END;
+
+-- An Audit Trail entry is never deleted, except a refused login as a
+-- username no account held. The server deletes those once they are 90 days
+-- old (\`trim_refused_logins\`). The age is the server's rule, so the trigger
+-- holds no clock.
+CREATE TRIGGER IF NOT EXISTS audit_entries_never_deleted
+BEFORE DELETE ON audit_entries
+WHEN NOT (OLD.action = 'login_refused' AND OLD.reason IS 'unknown_username')
+BEGIN
+    SELECT RAISE(ABORT, 'an Audit Trail entry is never deleted');
+END;
+
+-- When a Session that has been used expires, under the \`logged_in\` entry of
+-- the login that opened it. Each use moves a Session's expiry 7 days
+-- ahead, up to 30 days after the login, and an Audit Trail entry is
+-- never edited, so the latest expiry is kept here, where the Audit Trail
+-- reads it. It outlives the session row, which a new login replaces.
+CREATE TABLE IF NOT EXISTS session_extensions (
+    -- The Session's \`logged_in\` entry (\`audit_entries.id\`).
+    login_entry_id INTEGER NOT NULL PRIMARY KEY REFERENCES audit_entries(id),
+    -- When the Session expires since its last use, RFC 3339 UTC.
+    expires_at TEXT NOT NULL
+);
 `;
 
 export const MESSAGES_DDL = `-- One chat thread per account + chat handle.
@@ -448,11 +565,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY,
     -- Owning account (\`accounts.id\`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- Thread identity handle (\`handles.id\`); peer for 1:1, group chat id for groups.
+    -- Conversation identity handle (\`handles.id\`): the other person in a one-to-one conversation, the group's chat id in a group conversation.
     chat_handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
-    -- Thread shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'one-to-one' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
-    -- Group display title; NULL for 1:1 chats.
+    -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,
     -- The latest message time of the copy that gave group_title, in the form
     -- messages.timestamp holds; NULL with no title, or when that copy had no
@@ -486,6 +603,22 @@ CREATE TABLE IF NOT EXISTS participants (
 );
 
 CREATE INDEX IF NOT EXISTS ix_participants_handle_id ON participants (handle_id);
+
+-- A participant set aside because its identity became one of the account's
+-- after the import wrote it. The holder is never a participant, so linking
+-- the identity moves the row here, and removing the identity again moves it
+-- back to \`participants\` (#1662). An import while the identity is linked
+-- writes no participant for it, so the row comes back with the name it had
+-- when it was set aside.
+CREATE TABLE IF NOT EXISTS participants_set_aside (
+    -- Parent conversation (\`conversations.id\`).
+    conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    -- The identity, one of the account's (\`handles.id\`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    -- \`participants.name_alias\` as it was.
+    name_alias TEXT,
+    PRIMARY KEY (conversation_id, handle_id)
+);
 
 -- One message in a conversation.
 CREATE TABLE IF NOT EXISTS messages (
@@ -551,12 +684,24 @@ CREATE TABLE IF NOT EXISTS messages (
     duplicate_of INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     -- Import run that inserted this row (\`imports.id\`).
     import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
-    -- When the backup that gave the message its deletion mark and text was
-    -- made, in the form timestamp holds; NULL when its file did not say. A
-    -- later import's copy from a later backup replaces both; one from an
-    -- earlier backup changes neither
+    -- When the newest backup with a date that gave the message anything was
+    -- made, in the form timestamp holds; NULL when no copy's file said. A
+    -- later import's copy from a later backup replaces its mark and text;
+    -- one from an earlier backup changes neither
     -- (docs/architecture/contacts-identities-and-messages.md).
-    backup_taken_at TEXT
+    backup_taken_at TEXT,
+    -- The mark a copy from a file without a backup date gave the message,
+    -- as \`deletion\`; NULL for none. It outlasts every later copy without a
+    -- mark, dated or not, because a file without a date does not say when
+    -- the message was deleted or unsent, until a dated backup at least as
+    -- new as \`backup_taken_at\` gives the same mark (#1989).
+    undated_deletion TEXT CHECK (undated_deletion IN ('deleted_in_source_app', 'unsent')),
+    -- 1 when the text and earlier versions came from a copy from a file
+    -- without a backup date, so a later copy gives its own only when it
+    -- records a later edit, whatever its backup's date, until a dated
+    -- backup at least as new as \`backup_taken_at\` gives the same text and
+    -- earlier versions (#1989); 0 otherwise.
+    undated_body INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS ix_messages_conversation_timestamp
@@ -618,28 +763,70 @@ CREATE TABLE IF NOT EXISTS attachments (
     size_bytes INTEGER,
     -- Why bytes are absent (for example not_exported, decrypt_failed); NULL if present.
     missing_reason TEXT,
-    -- SHA-256 hex of a converted/compressed derivative used by the browser.
-    derived_sha256 TEXT,
-    -- Path under the assets store for the derivative file.
-    derived_assets_path TEXT,
-    -- MIME type of the derivative file.
-    derived_mime_type TEXT,
+    -- SHA-256 hex of the Preview: a copy of the original every browser
+    -- shows. NULL until the server has made it.
+    preview_sha256 TEXT,
+    -- Path of the Preview under the account's converted-media directory.
+    preview_assets_path TEXT,
+    -- MIME type of the Preview file.
+    preview_mime_type TEXT,
+    -- Why the server's media pass could not make the Preview the last time
+    -- it tried: what ffmpeg said about the file, with the paths it named
+    -- made relative to the account's originals directory and the pass's
+    -- work directory, or a phrase of the server's when ffmpeg did not read
+    -- the file (\`docs/architecture/media.md\` rule 4). Never written beside
+    -- a Preview that works. NULL while the row names a Preview that works,
+    -- once the original is decided to be shown as it is, and until a try has
+    -- failed.
+    preview_not_made_reason TEXT,
+    -- The kind of failure \`preview_not_made_reason\` describes, so the owner's
+    -- view of an Import Run can count the failures by kind without reading
+    -- ffmpeg's words. \`docs/architecture/media.md\` says what each kind means.
+    -- Set and cleared with the reason.
+    preview_not_made_kind TEXT CHECK (preview_not_made_kind IN (
+        'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
+        'original_missing', 'server_problem'
+    )),
     -- 1 when every browser shows the stored original as it is, so a viewer
     -- opens it and it gets no Preview (\`media::browser_shows\`,
     -- \`docs/architecture/media.md\` rule 2). The server's media pass decides
     -- it, and only an MP4 is opened to read its codec. 0 when it is not
-    -- shown as it is, and until the pass has looked at the file.
-    shown_as_is INTEGER NOT NULL DEFAULT 0 CHECK (shown_as_is IN (0, 1)),
+    -- shown as it is. NULL until the pass has decided, which the \`/v1\`
+    -- Attachment answers as not shown as it is; the pass plans an original
+    -- it cannot read from the decision recorded here, and from its type
+    -- only while there is none.
+    shown_as_is INTEGER CHECK (shown_as_is IN (0, 1)),
     -- SHA-256 hex of the Thumbnail: a small JPEG of an image, or a video's
     -- first frame. NULL until the server has made it.
     thumbnail_sha256 TEXT,
     -- Path of the Thumbnail under the account's converted-media directory.
     thumbnail_assets_path TEXT,
     -- MIME type of the Thumbnail file.
-    thumbnail_mime_type TEXT
+    thumbnail_mime_type TEXT,
+    -- Why the media pass could not make the Thumbnail the last time it
+    -- tried, as \`preview_not_made_reason\` says for the Preview.
+    thumbnail_not_made_reason TEXT,
+    -- The kind of failure \`thumbnail_not_made_reason\` describes, as
+    -- \`preview_not_made_kind\` is for the Preview.
+    thumbnail_not_made_kind TEXT CHECK (thumbnail_not_made_kind IN (
+        'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
+        'original_missing', 'server_problem'
+    )),
+    -- Import Run that last wrote this row: the one that added it, or that
+    -- gave a row stored without its file the file (\`imports.id\`). When the
+    -- run ends, the server queues the Assets of the rows it wrote, whichever
+    -- run created their message (#1946).
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    -- A reason is never recorded without its kind, nor a kind without its
+    -- reason.
+    CHECK ((preview_not_made_reason IS NULL) = (preview_not_made_kind IS NULL)),
+    CHECK ((thumbnail_not_made_reason IS NULL) = (thumbnail_not_made_kind IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS ix_attachments_sha256 ON attachments (sha256);
+CREATE INDEX IF NOT EXISTS ix_attachments_import_id
+    ON attachments (import_id)
+    WHERE import_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_attachments_message_id ON attachments (message_id);
 
 -- Assets whose Thumbnail and Preview the server still has to make. An Import
@@ -671,15 +858,20 @@ CREATE TABLE IF NOT EXISTS tapbacks (
     -- 1 = reaction from the account holder; 0 = from someone else.
     is_from_me INTEGER NOT NULL,
     -- Reactor identity (\`handles.id\`); NULL when unknown.
-    sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL
+    sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL,
+    -- The name the source gave the reactor when it gave no address for them;
+    -- NULL otherwise, and no source gives one yet. Shown, never matched: it makes
+    -- no identity and no contact.
+    sender_display_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_tapbacks_message_id ON tapbacks (message_id);
 
 -- One earlier version of one part of an edited message: the text that part
--- held before an edit replaced it. messages.body is the final version; these
--- are the versions before it. Search finds a message by any of them
--- (message_versions_fts in fts_virtual.sql).
+-- held before an edit replaced it, or only that an edit replaced it.
+-- messages.body is the final version; these are the versions before it.
+-- Search finds a message by any of them that has text (message_versions_fts
+-- in fts_virtual.sql).
 CREATE TABLE IF NOT EXISTS message_versions (
     -- Surrogate primary key; also the version's rowid in message_versions_fts.
     -- Ascending within a message in the order the source listed its versions,
@@ -689,8 +881,10 @@ CREATE TABLE IF NOT EXISTS message_versions (
     message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     -- Which part of a multi-part message this version belongs to (0 = first/only).
     part_index INTEGER NOT NULL DEFAULT 0,
-    -- The part's text in this version.
-    text TEXT NOT NULL,
+    -- The part's text in this version. NULL when the source recorded the edit
+    -- and not the text it replaced, as iMazing does; such a version has no row
+    -- in message_versions_fts.
+    text TEXT,
     -- When this version was written, to the millisecond in the form
     -- messages.timestamp holds: the send time for the original, the edit's time for
     -- a later one. NULL when the source does not record it.
@@ -722,7 +916,7 @@ CREATE TABLE IF NOT EXISTS message_tag_members (
 -- One message a running Export Run matched when it was created. The run's
 -- pages read these rows rather than its scope, so an import, a trash, or a
 -- new day between pages cannot move what the run hands over. The rows are
--- deleted when the run completes or is cancelled.
+-- deleted when the run completes or is canceled.
 CREATE TABLE IF NOT EXISTS export_messages (
     -- Export Run (\`exports.id\`).
     export_id INTEGER NOT NULL REFERENCES exports(id) ON DELETE CASCADE,
@@ -745,11 +939,11 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     id INTEGER PRIMARY KEY,
     -- Owning account (\`accounts.id\`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- Thread identity handle id (resolved into handles during staging).
+    -- Conversation identity handle id (resolved into handles during staging).
     chat_handle_id INTEGER NOT NULL,
-    -- Thread shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'one-to-one' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
-    -- Group display title; NULL for 1:1 chats.
+    -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,
     -- The latest message time of the copy that gave group_title, in the form
     -- staging_messages.timestamp holds; NULL with no title, or when that copy had no
@@ -822,11 +1016,18 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     sort_order INTEGER NOT NULL,
     -- Import run that staged this row (\`imports.id\`).
     import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
-    -- When the backup this row was read from was made, in the form timestamp
-    -- holds; NULL when its file did not say. Between two copies of one message
-    -- from one source, the copy from the later backup decides its deletion mark
-    -- and text (docs/architecture/contacts-identities-and-messages.md).
-    backup_taken_at TEXT
+    -- When the newest backup with a date this row was read from was made, in
+    -- the form timestamp holds; NULL when no copy's file said. Between two
+    -- copies of one message from one source, the copy from the later backup
+    -- decides its deletion mark and text
+    -- (docs/architecture/contacts-identities-and-messages.md).
+    backup_taken_at TEXT,
+    -- The mark a copy from a file without a backup date gave this row, as
+    -- \`messages.undated_deletion\`; NULL for none (#1989).
+    undated_deletion TEXT CHECK (undated_deletion IN ('deleted_in_source_app', 'unsent')),
+    -- 1 when the text and earlier versions came from a copy from a file
+    -- without a backup date, as \`messages.undated_body\` (#1989).
+    undated_body INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_messages_conversation_timestamp
@@ -859,12 +1060,12 @@ CREATE TABLE IF NOT EXISTS staging_attachments (
     size_bytes INTEGER,
     -- Why bytes are absent; NULL if present.
     missing_reason TEXT,
-    -- SHA-256 hex of a converted/compressed derivative.
-    derived_sha256 TEXT,
-    -- Path under the assets store for the derivative file.
-    derived_assets_path TEXT,
-    -- MIME type of the derivative file.
-    derived_mime_type TEXT
+    -- SHA-256 hex of the Preview, as \`attachments.preview_sha256\`.
+    preview_sha256 TEXT,
+    -- Path of the Preview, as \`attachments.preview_assets_path\`.
+    preview_assets_path TEXT,
+    -- MIME type of the Preview, as \`attachments.preview_mime_type\`.
+    preview_mime_type TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_attachments_sha256 ON staging_attachments (sha256);
@@ -885,7 +1086,10 @@ CREATE TABLE IF NOT EXISTS staging_tapbacks (
     -- 1 = reaction from the account holder; 0 = from someone else.
     is_from_me INTEGER NOT NULL,
     -- Reactor identity handle id; NULL when unknown.
-    sender_handle_id INTEGER
+    sender_handle_id INTEGER,
+    -- The reactor's name when the source gave no address, as
+    -- \`tapbacks.sender_display_name\`.
+    sender_display_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_tapbacks_message_id ON staging_tapbacks (message_id);
@@ -898,8 +1102,9 @@ CREATE TABLE IF NOT EXISTS staging_message_versions (
     message_id INTEGER NOT NULL REFERENCES staging_messages(id) ON DELETE CASCADE,
     -- Which part of a multi-part message this version belongs to (0 = first/only).
     part_index INTEGER NOT NULL DEFAULT 0,
-    -- The part's text in this version.
-    text TEXT NOT NULL,
+    -- The part's text in this version; NULL when the source recorded the edit
+    -- and not the text it replaced.
+    text TEXT,
     -- When this version was written, in the form staging_messages.timestamp
     -- holds; NULL when the source does not record it.
     edited_at TEXT
@@ -939,6 +1144,12 @@ CREATE TABLE IF NOT EXISTS handles (
     -- Identity string exactly as the backup/source wrote it.
     raw TEXT NOT NULL,
     -- Dedup key: E.164 when unambiguous for phones; otherwise cleaned digits/text.
+    -- A phone number carries its country inside this key: one that starts
+    -- with + names its calling code, because the number was written with its
+    -- + or without it in a country an import run or a person stated. A phone
+    -- number written without its + code, in no country anyone stated, is the
+    -- digits as typed and matches no + number until a country is picked for
+    -- it (#1676).
     normalized TEXT NOT NULL,
     -- Human-readable reason the number needs review; NULL when normalization is trusted.
     normalized_note TEXT,
@@ -1001,6 +1212,18 @@ CREATE TABLE IF NOT EXISTS contact_group_members (
     -- Group that includes the contact (\`contact_groups.id\`).
     group_id INTEGER NOT NULL REFERENCES contact_groups(id) ON DELETE CASCADE,
     PRIMARY KEY (contact_id, group_id)
+);
+
+-- An import run's Contact Group membership kept by identity while its
+-- contact is gone: the holder's import contact, deleted when an identity is
+-- linked after the import (#1662). Removing the identity again puts the
+-- contact made then back in the group, and the row leaves this table.
+CREATE TABLE IF NOT EXISTS contact_group_members_set_aside (
+    -- The import run's group (\`contact_groups.id\`).
+    group_id INTEGER NOT NULL REFERENCES contact_groups(id) ON DELETE CASCADE,
+    -- An identity the deleted contact held (\`handles.id\`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, handle_id)
 );
 
 -- Soft-delete marker for a conversation; chat rows stay until purge.
@@ -1189,10 +1412,13 @@ CREATE TRIGGER attachments_fts_au AFTER UPDATE OF original_name, transcription O
 END;
 
 -- Keep message_versions_fts in step with message_versions: one index row per
--- version, under the version's id. Deleting a message deletes its versions
--- through ON DELETE CASCADE, which fires the delete trigger for each.
+-- version that has text, under the version's id. A version with no text
+-- (one iMazing records) has nothing to find it by, so it gets no row.
+-- Deleting a message deletes its versions through ON DELETE CASCADE, which
+-- fires the delete trigger for each.
 CREATE TRIGGER message_versions_fts_ai AFTER INSERT ON message_versions BEGIN
-    INSERT INTO message_versions_fts(rowid, text) VALUES (new.id, new.text);
+    INSERT INTO message_versions_fts(rowid, text)
+    SELECT new.id, new.text WHERE new.text IS NOT NULL;
 END;
 
 CREATE TRIGGER message_versions_fts_ad AFTER DELETE ON message_versions BEGIN
@@ -1201,6 +1427,7 @@ END;
 
 CREATE TRIGGER message_versions_fts_au AFTER UPDATE OF text ON message_versions BEGIN
     DELETE FROM message_versions_fts WHERE rowid = old.id;
-    INSERT INTO message_versions_fts(rowid, text) VALUES (new.id, new.text);
+    INSERT INTO message_versions_fts(rowid, text)
+    SELECT new.id, new.text WHERE new.text IS NOT NULL;
 END;
 `;

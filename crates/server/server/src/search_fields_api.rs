@@ -10,9 +10,10 @@
 use crate::extract::{Json, Query};
 use serde::Deserialize;
 
+use crate::api_error::ApiError;
+use crate::auth::FullAccess;
 use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, page_of, page_params};
 use crate::search::{FieldDoc, ListKind, describe};
-use crate::server::{ApiError, FullAccess};
 
 /// The paging a search-field list takes.
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -95,9 +96,8 @@ pub(crate) async fn list_message_search_fields(
 
 #[cfg(test)]
 mod tests {
-    use axum::http::StatusCode;
-
-    use crate::test_support::{fixture_with_account, get_json, get_status};
+    use crate::problem::ProblemType;
+    use crate::test_support::{expect_problem, fixture_with_account, get_json, get_raw};
 
     /// The words a list's page names.
     fn words(body: &serde_json::Value) -> Vec<String> {
@@ -146,23 +146,19 @@ mod tests {
         assert!(!message_words.iter().any(|w| w == "messages"));
 
         // The list is the path now; the old parameter is refused, not obeyed.
-        assert_eq!(
-            get_status(
-                &fixture.state,
-                "/v1/search-fields/contacts?list=conversations",
-                &account.token
-            )
-            .await,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
-        assert_eq!(
-            get_status(
-                &fixture.state,
-                "/v1/search-fields/conversations",
-                "not-a-token"
-            )
-            .await,
-            StatusCode::UNAUTHORIZED
-        );
+        let (status, text) = get_raw(
+            &fixture.state,
+            "/v1/search-fields/contacts?list=conversations",
+            &account.token,
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
+        let (status, text) = get_raw(
+            &fixture.state,
+            "/v1/search-fields/conversations",
+            "not-a-token",
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::AuthenticationRequired);
     }
 }

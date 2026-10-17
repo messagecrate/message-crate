@@ -3,12 +3,12 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import LocalAuthTabs from "./LocalAuthTabs";
 
-vi.mock("../../lib/auth", () => ({
-  useAuth: () => ({ login: vi.fn(), setServer: vi.fn(), serverUrl: "" }),
-}));
+vi.mock("../../hooks/useAuth", () =>
+  authModule(() => ({ login: vi.fn(), setServer: vi.fn(), serverUrl: "" })),
+);
 
 afterEach(cleanup);
 
@@ -24,7 +24,7 @@ function renderTabs(serverState: "unclaimed" | "closed" | "open") {
 
 /**
  * The card offers what the server says is on offer. These three cases are the
- * whole of the entry screen's behaviour, and the reason the server reports one
+ * whole of the entry screen's behavior, and the reason the server reports one
  * value rather than the facts behind it: the mapping lives in one place.
  */
 describe("LocalAuthTabs", () => {

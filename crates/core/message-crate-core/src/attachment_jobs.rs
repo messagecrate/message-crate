@@ -1,12 +1,14 @@
-//! Copy, convert, or skip attachment files after parse.
+//! Copy or skip attachment files after parse. Staging copies the originals
+//! as they are; converting and compressing them is the Media Stage's work,
+//! after the Staging Review.
 
 use crate::attachments::attachment_dest_name;
-use crate::config::MediaConfig;
-use crate::process::{CancelFlag, LogSink, emit_log};
-use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
-use media::MediaMode;
-use message_ir::{ConversationDocument, IrAttachment, IrMessage};
-use sha2::{Digest, Sha256};
+use crate::config::AttachmentFiles;
+use crate::process::{Canceled, LogSink, Sinks};
+use crate::progress::{ProgressEvent, ProgressSink};
+use anyhow::Context as _;
+use file_io::sha256_hex;
+use ir::{Attachment, ConversationDocument, Message, missing_reason};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -31,7 +33,7 @@ pub struct AttachmentProgress {
 #[derive(Debug)]
 pub struct AttachmentJob<'a> {
     /// Conversation attachment to fill after the write.
-    pub attachment: &'a mut IrAttachment,
+    pub attachment: &'a mut Attachment,
     /// Message timestamp in milliseconds (used for the dest date prefix).
     pub timestamp_unix_ms: i64,
     /// Size from the backup, if known.
@@ -66,30 +68,35 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// Load, write, and optionally convert each attachment.
+/// Load and write each attachment's original file, or, when `files` is
+/// [`AttachmentFiles::Skip`], mark every attachment `not_copied` and load
+/// nothing.
 ///
 /// `load(i)` returns `Ok(None)` when the source is missing. `Ok(Some(bytes))`
 /// is the file to stage. [`LoadError::Unreadable`] is treated the same as a
-/// missing source: the attachment gets `missing_reason = "file_missing"` and
-/// the run continues rather than aborting. A write or rename of the staged
+/// missing source: the attachment's `missing_reason` is
+/// [`missing_reason::FILE_MISSING`] and the run continues rather than
+/// aborting. A write or rename of the staged
 /// file that fails is handled the same way, and its error goes to `log`.
 /// Cancel is checked before each job.
 ///
 /// # Errors
 ///
-/// Returns `"cancelled"` when the flag is set before a job starts. Returns
-/// the message of a [`LoadError::Fatal`] from `load(i)`, leaving that job and
-/// every later one untouched. Returns an I/O or convert error string when the
-/// staging directory cannot be created or the conversion cannot run.
+/// Returns [`Canceled`] when the flag is set before a job starts, so a
+/// caller tells a Cancel from a failure by its type, whatever context is
+/// added on the way out (#2077). Returns the message of a
+/// [`LoadError::Fatal`] from `load(i)`, leaving that job and every later one
+/// untouched. Returns an I/O error when the staging directory cannot be
+/// created.
 pub fn run_attachment_jobs(
     jobs: &mut [AttachmentJob<'_>],
     attachments_dir: &Path,
-    media: &MediaConfig,
+    files: AttachmentFiles,
     mut load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
     mut on_progress: impl FnMut(AttachmentProgress),
-    log: Option<&LogSink>,
-    cancel: Option<&AtomicBool>,
-) -> Result<(), String> {
+    log: &LogSink,
+    cancel: &AtomicBool,
+) -> anyhow::Result<()> {
     let total = jobs.len();
     if total == 0 {
         on_progress(AttachmentProgress {
@@ -100,9 +107,9 @@ pub fn run_attachment_jobs(
         });
         return Ok(());
     }
-    if matches!(media.mode, MediaMode::Disabled) {
+    if files == AttachmentFiles::Skip {
         for job in jobs.iter_mut() {
-            job.attachment.missing_reason = Some("not_copied".into());
+            job.attachment.missing_reason = Some(missing_reason::NOT_COPIED.into());
         }
         on_progress(AttachmentProgress {
             done: total,
@@ -117,16 +124,16 @@ pub fn run_attachment_jobs(
     let mut bytes_done = 0_u64;
 
     fs::create_dir_all(attachments_dir)
-        .map_err(|e| format!("create {}: {e}", attachments_dir.display()))?;
+        .with_context(|| format!("create {}", attachments_dir.display()))?;
 
     for (i, job) in jobs.iter_mut().enumerate() {
-        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            return Err("cancelled".into());
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Canceled.into());
         }
 
         let loaded = match load(i) {
             Ok(loaded) => loaded,
-            Err(LoadError::Fatal(message)) => return Err(message),
+            Err(LoadError::Fatal(message)) => return Err(anyhow::Error::msg(message)),
             // One unreadable source is that attachment's problem, not the
             // run's. Fall through to the missing-file handling below.
             Err(LoadError::Unreadable(_)) => None,
@@ -134,7 +141,7 @@ pub fn run_attachment_jobs(
         let bytes = match loaded {
             Some(bytes) if !bytes.is_empty() => bytes,
             _ => {
-                job.attachment.missing_reason = Some("file_missing".into());
+                job.attachment.missing_reason = Some(missing_reason::FILE_MISSING.into());
                 bytes_total = bytes_total.saturating_sub(job.size_hint.unwrap_or(0));
                 on_progress(AttachmentProgress {
                     done: i + 1,
@@ -153,17 +160,14 @@ pub fn run_attachment_jobs(
         // A write the file system refuses is that attachment's problem, as
         // an unreadable source is: mark it missing and stage the rest.
         if let Err(err) = persist_clone(job, attachments_dir, &bytes) {
-            emit_log(
-                log,
-                format!(
-                    "  attachment {} not staged: {err}",
-                    job.attachment
-                        .original_name
-                        .as_deref()
-                        .unwrap_or("(no name)")
-                ),
-            );
-            job.attachment.missing_reason = Some("file_missing".into());
+            log.warn(format!(
+                "  attachment {} not staged: {err}",
+                job.attachment
+                    .original_name
+                    .as_deref()
+                    .unwrap_or("(no name)")
+            ));
+            job.attachment.missing_reason = Some(missing_reason::FILE_MISSING.into());
             bytes_total = bytes_total.saturating_sub(bytes.len() as u64);
             on_progress(AttachmentProgress {
                 done: i + 1,
@@ -176,19 +180,6 @@ pub fn run_attachment_jobs(
         bytes_done += bytes.len() as u64;
         on_progress(AttachmentProgress {
             done: i + 1,
-            total,
-            bytes_done,
-            bytes_total,
-        });
-    }
-
-    if matches!(media.mode, MediaMode::Convert | MediaMode::Compress) {
-        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            return Err("cancelled".into());
-        }
-        apply_convert_or_compress(jobs, attachments_dir, media, log)?;
-        on_progress(AttachmentProgress {
-            done: total,
             total,
             bytes_done,
             bytes_total,
@@ -213,31 +204,34 @@ pub fn run_attachment_jobs(
 ///
 /// Each job's `size_hint` goes into the progress totals as it is. A run
 /// leaves every attachment known to have no file out of those totals from
-/// the start by giving it no hint, which `message-staging`'s
+/// the start by giving it no hint, which `staging`'s
 /// `CountedAttachments` does for every caller.
 ///
 /// # Errors
 ///
-/// Returns `"cancelled"` when the user cancels, the message of a
-/// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error string when
-/// the staging directory cannot be used.
+/// Returns [`Canceled`] when the user cancels, the message of a
+/// [`LoadError::Fatal`] from `load(i)`, or an I/O error when the staging
+/// directory cannot be used.
 pub fn stage_attachment_jobs(
     mut jobs: Vec<AttachmentJob<'_>>,
     attachments_dir: &Path,
-    media: &MediaConfig,
+    files: AttachmentFiles,
     load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
-) -> Result<u64, String> {
+    sinks: Sinks<'_>,
+) -> anyhow::Result<u64> {
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     run_attachment_jobs(
         &mut jobs,
         attachments_dir,
-        media,
+        files,
         load,
         report_attachment_progress(log, progress),
         log,
-        cancel.map(|flag| flag.as_ref()),
+        cancel,
     )?;
 
     let mut written = HashSet::new();
@@ -255,32 +249,35 @@ pub fn stage_attachment_jobs(
 /// documents.
 pub fn document_messages(
     documents: &mut [ConversationDocument],
-) -> impl Iterator<Item = &mut IrMessage> {
-    documents.iter_mut().flat_map(|doc| doc.messages.iter_mut())
+) -> impl Iterator<Item = &mut Message> {
+    documents
+        .iter_mut()
+        .flat_map(|document| document.messages.iter_mut())
 }
 
 /// The size to report for an attachment before its bytes are read: the
 /// record's own size, else the length of the bytes held in memory, else
 /// unknown (the progress total grows once the file loads).
-pub fn attachment_size_hint(att: &IrAttachment) -> Option<u64> {
-    att.size_bytes
-        .or_else(|| att.bytes.as_ref().map(|b| b.len() as u64))
+pub fn attachment_size_hint(attachment: &Attachment) -> Option<u64> {
+    attachment
+        .size_bytes
+        .or_else(|| attachment.bytes.as_ref().map(|b| b.len() as u64))
 }
 
 /// One job per attachment across `messages`, in the order given. The
 /// position in the result is the flat attachment index a `load(i)` hook
 /// receives.
 pub fn attachment_jobs<'a>(
-    messages: impl IntoIterator<Item = &'a mut IrMessage>,
+    messages: impl IntoIterator<Item = &'a mut Message>,
 ) -> Vec<AttachmentJob<'a>> {
     let mut jobs = Vec::new();
-    for msg in messages {
-        let ts = msg.timestamp_unix_ms;
-        for att in &mut msg.attachments {
-            let hint = attachment_size_hint(att);
+    for message in messages {
+        let timestamp_unix_ms = message.timestamp_unix_ms;
+        for attachment in &mut message.attachments {
+            let hint = attachment_size_hint(attachment);
             jobs.push(AttachmentJob {
-                attachment: att,
-                timestamp_unix_ms: ts,
+                attachment,
+                timestamp_unix_ms,
                 size_hint: hint,
             });
         }
@@ -292,18 +289,15 @@ pub fn attachment_jobs<'a>(
 /// of total, bytes done of total) for people, and a typed
 /// [`ProgressEvent::Attachments`] for the progress bar.
 pub fn report_attachment_progress<'a>(
-    log: Option<&'a LogSink>,
-    progress: Option<&'a ProgressSink>,
+    log: &'a LogSink,
+    progress: &'a ProgressSink,
 ) -> impl FnMut(AttachmentProgress) + 'a {
     move |counts| {
-        if emit_progress(progress, ProgressEvent::from(counts)) {
-            emit_log(
-                log,
-                format!(
-                    "  attachments {}/{} {}/{}",
-                    counts.done, counts.total, counts.bytes_done, counts.bytes_total
-                ),
-            );
+        if progress.emit(ProgressEvent::from(counts)) {
+            log.emit(format!(
+                "  attachments {}/{} {}/{}",
+                counts.done, counts.total, counts.bytes_done, counts.bytes_total
+            ));
         }
     }
 }
@@ -311,8 +305,8 @@ pub fn report_attachment_progress<'a>(
 /// Monotonic counter distinguishing concurrent temp files.
 ///
 /// The final name is content-addressed, so two workers staging identical
-/// bytes produce the same `dest` — that is fine, the second rename is a
-/// no-op overwrite of identical bytes — but they must not share a temp path
+/// bytes produce the same `dest`. That is fine, because the second rename is
+/// a no-op overwrite of identical bytes. But they must not share a temp path
 /// mid-write, or one worker's rename pulls the file out from under the
 /// other's still-open write.
 static CLONE_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -327,7 +321,7 @@ fn persist_clone(
     attachments_dir: &Path,
     bytes: &[u8],
 ) -> Result<(), String> {
-    let digest_hex = hex_sha256(bytes);
+    let digest_hex = sha256_hex(bytes);
     let ext = extension_from_name(job.attachment.original_name.as_deref());
     let secs = job.timestamp_unix_ms.div_euclid(1000);
     let name = attachment_dest_name(secs, &digest_hex, &ext);
@@ -335,7 +329,7 @@ fn persist_clone(
     let tmp = attachments_dir.join(next_clone_temp_name(&name));
     // Synced before the conversation file that names it is written, so that
     // file never vouches for an attachment a power loss left empty.
-    message_ir::write_atomic_via(&tmp, &dest, |out| Ok(out.write_all(bytes)?))
+    file_io::write_atomic_via(&tmp, &dest, |out| Ok(out.write_all(bytes)?))
         .map_err(|e| format!("{e:#}"))?;
     job.attachment.path = Some(format!("attachments/{name}"));
     job.attachment.digest_sha256 = Some(digest_hex);
@@ -344,94 +338,14 @@ fn persist_clone(
     Ok(())
 }
 
-fn apply_convert_or_compress(
-    jobs: &mut [AttachmentJob<'_>],
-    attachments_dir: &Path,
-    media: &MediaConfig,
-    log: Option<&LogSink>,
-) -> Result<(), String> {
-    let Some(output_dir) = attachments_dir.parent() else {
-        return Err("attachments directory has no parent".into());
-    };
-    let files = media::collect_media_files(attachments_dir).map_err(|e| format!("{e:#}"))?;
-    let mut emit = |line: &str| emit_log(log, line);
-    let (report, remap) = media::process_attachment_files(
-        output_dir,
-        &files,
-        media.mode,
-        &media.compress,
-        Some(&mut emit),
-    )
-    .map_err(|e| format!("{e:#}"))?;
-    apply_remap_to_jobs(jobs, &remap, output_dir);
-    for err in &report.errors {
-        mark_convert_error(jobs, err);
-    }
-    Ok(())
-}
-
-fn apply_remap_to_jobs(
-    jobs: &mut [AttachmentJob<'_>],
-    remap: &std::collections::HashMap<String, String>,
-    output_dir: &Path,
-) {
-    for job in jobs.iter_mut() {
-        let Some(path) = job.attachment.path.as_mut() else {
-            continue;
-        };
-        if let Some(new_rel) = remap.get(path.as_str()) {
-            *path = new_rel.clone();
-            if let Some(mime) = mime_for_rel(new_rel) {
-                job.attachment.mime_type = Some(mime);
-            }
-            if refresh_digest_and_size(job.attachment, output_dir).is_err() {
-                job.attachment.missing_reason = Some("file_missing".into());
-            }
-        }
-    }
-}
-
-fn mark_convert_error(jobs: &mut [AttachmentJob<'_>], err: &str) {
-    let Some((path, reason)) = err.split_once(": ") else {
-        return;
-    };
-    for job in jobs.iter_mut() {
-        let Some(rel) = job.attachment.path.as_deref() else {
-            continue;
-        };
-        let native = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
-        if path.ends_with(rel) || path.ends_with(native.as_str()) {
-            job.attachment.missing_reason = Some(format!("convert_failed: {reason}"));
-        }
-    }
-}
-
 /// MIME type inferred from a `attachments/…` relative path's extension.
 ///
-/// Thin wrapper over [`media::mime_for_ext`] — the one shared
-/// extension-to-mime table — kept because many pipeline callers hand paths
+/// Thin wrapper over [`media::mime_for_ext`] (the one shared
+/// extension-to-mime table), kept because many pipeline callers hand paths
 /// rather than extensions. `None` for unrecognized extensions.
 pub fn mime_for_rel(rel: &str) -> Option<String> {
     let ext = Path::new(rel).extension().and_then(|e| e.to_str())?;
     media::mime_for_ext(ext).map(str::to_string)
-}
-
-fn refresh_digest_and_size(attachment: &mut IrAttachment, output_dir: &Path) -> Result<(), String> {
-    let Some(rel) = attachment.path.as_deref() else {
-        return Ok(());
-    };
-    let dest = output_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let bytes = fs::read(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;
-    attachment.digest_sha256 = Some(hex_sha256(&bytes));
-    attachment.size_bytes = Some(bytes.len() as u64);
-    Ok(())
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 /// Longest extension kept on a staged file name. `pkpasses` and `keynote`

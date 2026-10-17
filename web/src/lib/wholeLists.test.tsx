@@ -9,11 +9,13 @@
  * fortieth row here exactly as it does in the app (issue #1145).
  */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mockedAuth, Providers } from "../test/providers";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useContactGroupActions } from "../hooks/useContactGroupActions";
+import { useContactGroups } from "../hooks/useContactGroups";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { Providers } from "../test/providers";
 import { apiClient } from "./api";
-import { useContactGroupActions } from "./contactGroups";
 import {
   getConversationSources,
   listAccountIdentities,
@@ -24,9 +26,8 @@ import {
   listSavedSearches,
   listSearchFields,
 } from "./serverApi";
-import { useContactGroups } from "./useContactGroups";
 
-vi.mock("./auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", async () => (await import("../test/providers")).authModule());
 
 vi.mock("./api", () => ({
   apiClient: {
@@ -59,14 +60,20 @@ const groups = Array.from({ length: 41 }, (_, i) => ({
 }));
 
 beforeEach(() => {
+  startFakeClock();
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  stopFakeClock();
 });
 
 describe("the lists read whole", () => {
   it("lists the forty-first Contact Group", async () => {
     servePages(groups);
     const { result } = renderHook(() => useContactGroups(), { wrapper: Providers });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
     expect(result.current.groups).toHaveLength(41);
     expect(result.current.groups).toContain("Group 41");
   });

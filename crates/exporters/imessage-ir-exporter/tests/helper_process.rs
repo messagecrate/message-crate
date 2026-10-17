@@ -6,6 +6,8 @@
 
 mod common;
 
+use message_crate_core::testutil::TestRun;
+use message_crate_core::{AppleConfig, CancelFlag, OutputFormat};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -16,14 +18,13 @@ use std::{
 };
 
 use chat_db_fixture::{
-    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER,
-    OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI,
-    UNSENT_GUID, write_chat_db,
+    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_IDENTIFIER, OWNER, OWNER_EMAIL,
+    PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI, UNSENT_GUID,
+    set_message_date, write_chat_db,
 };
 use common::{config, helper_binary};
-use message_crate_core::{ExporterConfig, OutputFormat};
-use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage, TimePrecision};
-use message_ir_format::{
+use ir::{ConversationDocument, Deletion, Direction, Message, TimePrecision};
+use ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_jsonl,
     read_conversation_mbox,
 };
@@ -46,7 +47,9 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    let result = imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    let result = config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     assert!(
         result
             .messages
@@ -86,15 +89,61 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     // `chat.db` records times below the second, so every message says
     // milliseconds.
     for path in &files {
-        let doc = read_conversation_jsonl(path).unwrap();
-        for msg in &doc.messages {
+        let document = read_conversation_jsonl(path).unwrap();
+        for message in &document.messages {
             assert_eq!(
-                msg.time_precision,
+                message.time_precision,
                 TimePrecision::Milliseconds,
                 "{}",
-                msg.guid
+                message.guid
             );
         }
+    }
+}
+
+/// A message whose `date` an older `chat.db` stored in seconds, and one
+/// whose date the library cannot read, so the Reader reads the raw stamp,
+/// were recorded in whole seconds and say `seconds`. Every other message
+/// says `milliseconds` (#1970).
+#[test]
+fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    // guid-3 is at 600_000_120 seconds since 2001, stored in nanoseconds.
+    set_message_date(&db_path, "guid-3", 600_000_120);
+    // Ten trillion seconds before 2001 is outside the range the library
+    // reads a date in.
+    set_message_date(&db_path, "guid-8", -10_000_000_000_000);
+    let output = dir.path().join("out");
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
+
+    let group = document_for(&output, GROUP_IDENTIFIER);
+    let seconds = message_with_guid(&group, "guid-3");
+    assert_eq!(seconds.time_precision, TimePrecision::Seconds);
+    assert_eq!(
+        seconds.timestamp_unix_ms,
+        (978_307_200 + 600_000_120) * 1000,
+        "a seconds stamp reads the same instant as a nanoseconds one"
+    );
+    let shrunk = document_for(&output, "chat200");
+    let unreadable = message_with_guid(&shrunk, "guid-8");
+    assert_eq!(unreadable.time_precision, TimePrecision::Seconds);
+    let others = jsonl_files(&output)
+        .iter()
+        .flat_map(|path| read_conversation_jsonl(path).unwrap().messages)
+        .filter(|message| message.guid != "guid-3" && message.guid != "guid-8")
+        .collect::<Vec<_>>();
+    assert!(!others.is_empty());
+    for message in others {
+        assert_eq!(
+            message.time_precision,
+            TimePrecision::Milliseconds,
+            "{}",
+            message.guid
+        );
     }
 }
 
@@ -111,13 +160,15 @@ fn every_conversation_file_says_when_the_chat_db_was_last_written() {
     set_modified_unix_ms(&db_path, TEST_BACKUP_TAKEN_AT_UNIX_MS);
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     let dates = jsonl_backup_dates(&output);
     assert_eq!(dates.len(), 7, "{dates:?}");
     assert!(
         dates
             .iter()
-            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+            .all(|d| *d == vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]),
         "{dates:?}"
     );
 }
@@ -143,16 +194,22 @@ fn document_for(output: &Path, chat_identifier: &str) -> ConversationDocument {
     jsonl_files(output)
         .iter()
         .map(|path| read_conversation_jsonl(path).unwrap())
-        .find(|doc| doc.conversation.chat_identifier == chat_identifier)
+        .find(|document| document.conversation.chat_identifier == chat_identifier)
         .unwrap_or_else(|| panic!("no exported conversation for {chat_identifier}"))
 }
 
 /// The message with `guid`, from a document.
-fn message<'a>(doc: &'a ConversationDocument, guid: &str) -> &'a IrMessage {
-    doc.messages
+fn message_with_guid<'a>(document: &'a ConversationDocument, guid: &str) -> &'a Message {
+    document
+        .messages
         .iter()
         .find(|m| m.guid == guid)
-        .unwrap_or_else(|| panic!("no message {guid} in {}", doc.conversation.chat_identifier))
+        .unwrap_or_else(|| {
+            panic!(
+                "no message {guid} in {}",
+                document.conversation.chat_identifier
+            )
+        })
 }
 
 /// The owner sends from a phone in one chat and from an email in another.
@@ -166,33 +223,35 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
     assert_eq!(phone_chat.export.owner_identity.as_deref(), Some(OWNER));
-    let nice = message(&phone_chat, "guid-2");
-    assert_eq!(nice.direction, IrDirection::Outgoing);
-    assert_eq!(nice.sender_identity.as_deref(), Some(OWNER));
+    let nice = message_with_guid(&phone_chat, "guid-2");
+    assert_eq!(nice.direction, Direction::Outgoing);
+    assert_eq!(nice.sender.identity.as_deref(), Some(OWNER));
     assert_eq!(nice.owner_identity.as_deref(), Some(OWNER));
-    let still_me = message(&phone_chat, "guid-5");
-    assert_eq!(still_me.direction, IrDirection::Outgoing);
+    let still_me = message_with_guid(&phone_chat, "guid-5");
+    assert_eq!(still_me.direction, Direction::Outgoing);
     assert_eq!(
-        still_me.sender_identity.as_deref(),
+        still_me.sender.identity.as_deref(),
         Some(OWNER),
         "a NULL caller id falls back to the conversation's owner"
     );
-    let from_the_car = message(&phone_chat, "guid-6");
-    assert_eq!(from_the_car.direction, IrDirection::Outgoing);
+    let from_the_car = message_with_guid(&phone_chat, "guid-6");
+    assert_eq!(from_the_car.direction, Direction::Outgoing);
     assert_eq!(
-        from_the_car.sender_identity.as_deref(),
+        from_the_car.sender.identity.as_deref(),
         Some(OWNER),
         "a `tel:`-prefixed caller id is the same owner address, spelled as \
          the identities list spells it (#686)"
     );
     assert_eq!(from_the_car.owner_identity.as_deref(), Some(OWNER));
-    let photo = message(&phone_chat, "guid-1");
-    assert_eq!(photo.direction, IrDirection::Incoming);
-    assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
+    let photo = message_with_guid(&phone_chat, "guid-1");
+    assert_eq!(photo.direction, Direction::Incoming);
+    assert_eq!(photo.sender.identity.as_deref(), Some(FRIEND_PHONE));
 
     let email_chat = document_for(&output, FRIEND_EMAIL);
     assert_eq!(
@@ -200,9 +259,9 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
         Some(OWNER_EMAIL),
         "the email account's chat is owned by the email, with no `E:` prefix"
     );
-    let from_mac = message(&email_chat, "guid-4");
-    assert_eq!(from_mac.direction, IrDirection::Outgoing);
-    assert_eq!(from_mac.sender_identity.as_deref(), Some(OWNER_EMAIL));
+    let from_mac = message_with_guid(&email_chat, "guid-4");
+    assert_eq!(from_mac.direction, Direction::Outgoing);
+    assert_eq!(from_mac.sender.identity.as_deref(), Some(OWNER_EMAIL));
     assert_eq!(from_mac.owner_identity.as_deref(), Some(OWNER_EMAIL));
     let roster: Vec<_> = email_chat
         .conversation
@@ -228,13 +287,15 @@ fn a_tapback_and_an_emoji_reaction_are_the_messages_reactions() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     // Read the line as written, so the test checks the file's own shape.
     let group = jsonl_files(&output)
         .into_iter()
         .map(|path| fs::read_to_string(path).unwrap())
-        .find(|text| text.contains(GROUP_CHAT_IDENTIFIER))
+        .find(|text| text.contains(GROUP_IDENTIFIER))
         .expect("the group's conversation file");
     let pizza: serde_json::Value = group
         .lines()
@@ -278,7 +339,9 @@ fn a_deleted_and_an_unsent_message_carry_their_mark_in_the_file() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     // Read the lines as written, so the test checks the file's own shape.
     let chat = jsonl_files(&output)
@@ -305,11 +368,10 @@ fn a_deleted_and_an_unsent_message_carry_their_mark_in_the_file() {
 }
 
 /// The exporter's config for `format` rather than JSON Lines.
-fn config_for(db_path: &Path, output: &Path, format: OutputFormat) -> ExporterConfig {
-    ExporterConfig {
-        output_format: format,
-        ..config(db_path, output, None)
-    }
+fn config_for(db_path: &Path, output: &Path, format: OutputFormat) -> TestRun<AppleConfig> {
+    let mut config = config(db_path, output, CancelFlag::default());
+    config.output.format = format;
+    config
 }
 
 /// The Apple-specific fields the program reads travel into the document:
@@ -321,10 +383,12 @@ fn a_message_keeps_its_apple_fields_in_the_document() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
-    let nice = message(&phone_chat, "guid-2");
+    let nice = message_with_guid(&phone_chat, "guid-2");
     let fields = nice.imessage.as_ref().expect("the row has Apple fields");
     assert_eq!(
         fields.parts,
@@ -342,8 +406,9 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    let result =
-        imessage_ir_exporter::run(&config_for(&db_path, &output, OutputFormat::Csv)).unwrap();
+    let result = config_for(&db_path, &output, OutputFormat::Csv)
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     assert!(
         result.messages.iter().any(|l| l == "  Saved 1 attachment"),
         "{:#?}",
@@ -368,16 +433,19 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     let phone_chat = read_conversation_csv(&output.join(format!("{FRIEND_PHONE}.csv"))).unwrap();
     assert_eq!(phone_chat.messages.len(), 7);
     assert_eq!(
-        message(&phone_chat, DELETED_GUID).deletion,
+        message_with_guid(&phone_chat, DELETED_GUID).deletion,
         Some(Deletion::DeletedInSourceApp),
         "the CSV keeps the mark"
     );
     assert_eq!(
-        message(&phone_chat, UNSENT_GUID).deletion,
+        message_with_guid(&phone_chat, UNSENT_GUID).deletion,
         Some(Deletion::Unsent)
     );
-    assert_eq!(message(&phone_chat, PARTLY_UNSENT_GUID).deletion, None);
-    let photo = message(&phone_chat, "guid-1");
+    assert_eq!(
+        message_with_guid(&phone_chat, PARTLY_UNSENT_GUID).deletion,
+        None
+    );
+    let photo = message_with_guid(&phone_chat, "guid-1");
     assert_eq!(photo.attachments.len(), 1);
     let path = photo.attachments[0]
         .path
@@ -396,7 +464,9 @@ fn a_mail_archive_export_embeds_the_photo() {
 
     for format in [OutputFormat::Mbox, OutputFormat::Eml] {
         let output = dir.path().join(format.as_str());
-        imessage_ir_exporter::run(&config_for(&db_path, &output, format)).unwrap();
+        config_for(&db_path, &output, format)
+            .run(imessage_ir_exporter::run)
+            .unwrap();
 
         let phone_chat = if format == OutputFormat::Mbox {
             read_conversation_mbox(&output.join(format!("{FRIEND_PHONE}.mbox"))).unwrap()
@@ -426,7 +496,9 @@ fn an_unreadable_database_is_reported_in_the_helpers_words() {
     fs::write(&db_path, b"this is not sqlite").unwrap();
     let output = dir.path().join("out");
 
-    let err = imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap_err();
+    let err = config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap_err();
     let text = format!("{err:#}");
     assert!(
         text.contains("not a database") || text.contains("file is not a database"),
@@ -435,16 +507,92 @@ fn an_unreadable_database_is_reported_in_the_helpers_words() {
 }
 
 #[test]
-fn a_second_run_reuses_the_cancelled_flag_only_when_set() {
+fn a_second_run_reuses_the_canceled_flag_only_when_set() {
     helper_binary();
     let dir = tempfile::tempdir().unwrap();
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
     let cancel = Arc::new(AtomicBool::new(false));
 
-    imessage_ir_exporter::run(&config(&db_path, &output, Some(cancel.clone()))).unwrap();
+    config(&db_path, &output, cancel.clone())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     assert_eq!(jsonl_files(&output).len(), 7);
     cancel.store(true, Ordering::Relaxed);
-    let err = imessage_ir_exporter::run(&config(&db_path, &output, Some(cancel))).unwrap_err();
-    assert_eq!(err.to_string(), "cancelled");
+    let err = config(&db_path, &output, cancel)
+        .run(imessage_ir_exporter::run)
+        .unwrap_err();
+    assert_eq!(err.to_string(), "canceled");
+}
+
+/// `chat.db`'s `handle` table names the country Messages read each number
+/// in, and the conversation file carries it for the participant and the
+/// sender, upper case, so the server can read `07700 900123` as a UK number
+/// (#1994). A handle whose `country` is NULL names none.
+///
+/// The committed fixture `tests/fixtures/handle-country/chat.db` holds two
+/// one-to-one SMS conversations, each with one incoming message: one with
+/// handle `07700 900123`, `country` `gb`, and one with handle `07700 900456`,
+/// `country` NULL.
+#[test]
+fn a_handles_country_reaches_the_conversation_file() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("chat.db");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/handle-country/chat.db"),
+        &db_path,
+    )
+    .unwrap();
+    let output = dir.path().join("out");
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
+
+    let documents: Vec<ConversationDocument> = jsonl_files(&output)
+        .iter()
+        .map(|path| read_conversation_jsonl(path).unwrap())
+        .collect();
+    let in_chat = |chat_identifier: &str| {
+        documents
+            .iter()
+            .find(|d| d.conversation.chat_identifier == chat_identifier)
+            .unwrap_or_else(|| panic!("no conversation {chat_identifier}"))
+    };
+
+    let gb = in_chat("07700 900123");
+    assert_eq!(
+        gb.conversation.participants[0].country.as_deref(),
+        Some("GB")
+    );
+    assert_eq!(gb.messages[0].sender.country.as_deref(), Some("GB"));
+
+    let none = in_chat("07700 900456");
+    assert_eq!(none.conversation.participants[0].country, None);
+    assert_eq!(none.messages[0].sender.country, None);
+
+    // The server imports this output from its own copy, and that copy must
+    // be what the exporter writes. Only each message's Backup Date, read
+    // from the fixture file's time, may differ.
+    let comparable = |text: &str| -> Vec<serde_json::Value> {
+        text.lines()
+            .map(|line| {
+                let mut value: serde_json::Value = serde_json::from_str(line).unwrap();
+                if let Some(message) = value.as_object_mut() {
+                    message.remove("backup_taken_at_unix_ms");
+                }
+                value
+            })
+            .collect()
+    };
+    let written: String = jsonl_files(&output)
+        .iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect();
+    let server_copy = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../server/server/tests/fixtures/apple-messages-handle-country.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(comparable(&written), comparable(&server_copy));
 }

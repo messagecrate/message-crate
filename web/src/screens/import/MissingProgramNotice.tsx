@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 import Button from "../../components/Button";
-import type { ToolName, ToolsStatus } from "../../lib/tauri";
-import { toolUsable } from "../../lib/tauri";
-import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
-import { accentLink } from "../../lib/uiStyles";
 import {
   OTHER_CHECK_POLL_FOR_MS,
   useRetryToolDownloads,
   useToolsStatus,
-} from "../../lib/useToolsStatus";
+} from "../../hooks/useToolsStatus";
+import { errorLine } from "../../lib/apiErrorMessage";
+import type { ToolsStatus } from "../../lib/desktop/tools";
+import { toolUsable } from "../../lib/desktop/tools";
+import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
+import type { ToolName } from "../../lib/types";
+import { accentLinkClass } from "../../lib/uiStyles";
 
-/** What a program is needed for: a WhatsApp import, or Convert and Compress. */
-export type ProgramNeed = "whatsapp" | "media";
+/**
+ * What a program is needed for: a WhatsApp import, or Convert media and
+ * Convert & Compress media.
+ */
+type ProgramNeed = "whatsapp" | "media";
 
 /** The troubleshooting section for what `need` runs. */
 function troubleshootingUrl(need: ProgramNeed): string {
@@ -25,8 +30,9 @@ function nameList(names: readonly ToolName[]): string {
 
 /**
  * What the programs mean for the import: that it can't start or that Convert
- * and Compress can't run when one can't be used (`blocked`), or else that it
- * waits for the ones still downloading (`downloading`), named.
+ * media and Convert & Compress media can't run when one can't be used
+ * (`blocked`), or else that it waits for the ones still downloading
+ * (`downloading`), named.
  */
 function consequence(
   need: ProgramNeed,
@@ -36,7 +42,7 @@ function consequence(
   if (blocked) {
     return need === "whatsapp"
       ? "A WhatsApp import can't start without wtsexporter."
-      : "Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.";
+      : "Convert media and Convert & Compress media need ffmpeg and ffprobe. Copy imports attachments as they are.";
   }
   const waits = nameList(downloading);
   return need === "whatsapp" ? `The import waits for ${waits}.` : `Media waits for ${waits}.`;
@@ -89,7 +95,7 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
           Try again
         </Button>
       ) : null}
-      <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLink}>
+      <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLinkClass}>
         Troubleshooting
       </a>
       {showAlreadyRunning ? (
@@ -100,8 +106,7 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
       ) : null}
       {retry.isError ? (
         <span role="alert" className="text-[0.813rem] text-danger">
-          The download didn't start.{" "}
-          {retry.error instanceof Error ? retry.error.message : String(retry.error)}
+          The download didn't start. {errorLine(retry.error)}
         </span>
       ) : null}
     </div>

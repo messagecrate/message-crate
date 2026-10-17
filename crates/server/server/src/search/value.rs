@@ -7,6 +7,12 @@ use chrono::{DateTime, Datelike, Days, Duration, NaiveDate, NaiveDateTime, Utc};
 /// Relative spans further back than this are refused.
 const MAX_LOOKBACK_DAYS: u64 = 3_650;
 
+/// The days one month counts for against [`MAX_LOOKBACK_DAYS`]. It is the
+/// longest month, so no `Nm` passes the limit and then reaches further back
+/// than it allows: `N * DAYS_PER_MONTH` may not exceed the limit. The span
+/// itself goes back calendar months, not this many days.
+const DAYS_PER_MONTH: u64 = 31;
+
 /// A comparison or range on an ordered scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cmp<T> {
@@ -69,7 +75,10 @@ pub(crate) enum Value {
 /// sign and five digits (`+10000-01-01T00:00:00.000Z`), and `+` sorts before
 /// every digit, so as text it would come before every stored timestamp
 /// instead of after them all.
-pub(crate) fn utc_instant(zone: chrono_tz::Tz, day: NaiveDate) -> Option<String> {
+pub(crate) fn utc_instant(
+    zone: chrono_tz::Tz,
+    day: NaiveDate,
+) -> Option<crate::models::StoredTime> {
     let midnight = day.and_hms_opt(0, 0, 0).expect("midnight is a valid time");
     let instant = first_instant_at_or_after(zone, midnight);
     (instant.year() <= 9999).then(|| crate::models::utc_timestamp_text(instant))
@@ -154,7 +163,7 @@ pub(crate) fn parse_date_span(raw: &str, today: NaiveDate) -> Option<DateSpan> {
         let days = match unit {
             'd' => u64::from(n),
             'w' => u64::from(n) * 7,
-            'm' => u64::from(n) * 31,
+            'm' => u64::from(n) * DAYS_PER_MONTH,
             _ => u64::from(n) * 365,
         };
         if days > MAX_LOOKBACK_DAYS {
@@ -397,6 +406,14 @@ mod tests {
         );
     }
 
+    /// A month counts as 31 days against the limit: 117 of them fit in
+    /// 3,650 days and 118 do not.
+    #[test]
+    fn a_month_counts_as_31_days_against_the_ten_year_limit() {
+        assert!(parse_date_span("117m", TODAY()).is_some());
+        assert!(parse_date_span("118m", TODAY()).is_none());
+    }
+
     #[test]
     fn december_ends_on_the_first_of_january() {
         assert_eq!(
@@ -476,6 +493,17 @@ mod tests {
         assert!(parse_id("#-1").is_none());
     }
 
+    /// The stored form of the whole hour `hour`:00 UTC on `year`-`month`-`day`,
+    /// made as an import makes it (`models::utc_timestamp_text`).
+    fn utc_hour(year: i32, month: u32, day: u32, hour: u32) -> Option<crate::models::StoredTime> {
+        use chrono::TimeZone;
+        Some(crate::models::utc_timestamp_text(
+            chrono::Utc
+                .with_ymd_and_hms(year, month, day, hour, 0, 0)
+                .unwrap(),
+        ))
+    }
+
     /// Pacific/Apia skipped 30 December 2011: the clock went from the end of
     /// the 29th at -10:00 straight to the 31st at +14:00. The skipped day
     /// begins where the 31st begins, so it holds no instant (#1204).
@@ -483,21 +511,18 @@ mod tests {
     fn a_skipped_day_begins_where_the_next_day_begins() {
         let zone = chrono_tz::Pacific::Apia;
         assert_eq!(
-            utc_instant(zone, d(2011, 12, 29)).as_deref(),
-            Some("2011-12-29T10:00:00.000Z")
+            utc_instant(zone, d(2011, 12, 29)),
+            utc_hour(2011, 12, 29, 10)
         );
         assert_eq!(
-            utc_instant(zone, d(2011, 12, 30)).as_deref(),
-            Some("2011-12-30T10:00:00.000Z")
+            utc_instant(zone, d(2011, 12, 30)),
+            utc_hour(2011, 12, 30, 10)
         );
         assert_eq!(
-            utc_instant(zone, d(2011, 12, 31)).as_deref(),
-            Some("2011-12-30T10:00:00.000Z")
+            utc_instant(zone, d(2011, 12, 31)),
+            utc_hour(2011, 12, 30, 10)
         );
-        assert_eq!(
-            utc_instant(zone, d(2012, 1, 1)).as_deref(),
-            Some("2011-12-31T10:00:00.000Z")
-        );
+        assert_eq!(utc_instant(zone, d(2012, 1, 1)), utc_hour(2011, 12, 31, 10));
     }
 
     /// Kwajalein skipped 21 August 1993, and Kiritimati 31 December 1994.
@@ -522,8 +547,8 @@ mod tests {
     #[test]
     fn a_midnight_in_a_one_hour_gap_starts_the_day_after_the_gap() {
         assert_eq!(
-            utc_instant(chrono_tz::America::Sao_Paulo, d(2018, 11, 4)).as_deref(),
-            Some("2018-11-04T03:00:00.000Z")
+            utc_instant(chrono_tz::America::Sao_Paulo, d(2018, 11, 4)),
+            utc_hour(2018, 11, 4, 3)
         );
     }
 }

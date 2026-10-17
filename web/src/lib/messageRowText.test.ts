@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { attachment, message as baseMessage, participant } from "../test/apiShapes";
-import { messageConversationName, messageRowText, messageSenderName } from "./messageRowText";
+import { attachment, message as baseMessage } from "../test/apiShapes";
+import { messageRowText, messageSenderName } from "./messageRowText";
 import type { Message, MessageConversation } from "./types";
 
 function conversation(over: Partial<MessageConversation> = {}): MessageConversation {
   return {
     id: 1,
     chat_identifier: "+15555550100",
-    conversation_type: "individual",
+    conversation_type: "one-to-one",
     is_group: false,
     group_title: null,
-    label: null,
+    shown_title: null,
     participants: [{ name: "Alice", identity: "+15555550100", contact_id: 4, service: "imessage" }],
     ...over,
   };
@@ -27,58 +27,6 @@ function message(over: Partial<Message> = {}): Message {
     ...over,
   });
 }
-
-describe("messageConversationName", () => {
-  it("names a one-to-one conversation after the other person", () => {
-    expect(messageConversationName(conversation())).toBe("Alice");
-  });
-
-  it("names a conversation with yourself by the title the server gives it", () => {
-    // The server titles it with the account's display name, or the address;
-    // it has no participants to fall back on.
-    expect(
-      messageConversationName(
-        conversation({ chat_identifier: "+15555550199", participants: [], label: "Sam Holder" }),
-      ),
-    ).toBe("Sam Holder");
-  });
-
-  it("names a group conversation by its title, else by everyone in it", () => {
-    const people = [
-      participant({ name: "Alice", identity: "+1" }),
-      participant({ name: "Bob", identity: "+2" }),
-    ];
-    expect(
-      messageConversationName(
-        conversation({
-          conversation_type: "group",
-          is_group: true,
-          label: " Family ",
-          participants: people,
-        }),
-      ),
-    ).toBe("Family");
-    expect(
-      messageConversationName(
-        conversation({ conversation_type: "group", is_group: true, participants: people }),
-      ),
-    ).toBe("Alice, Bob");
-  });
-
-  it("takes whether a conversation is a group from the server, never from its type", () => {
-    // The server decides `is_group` for both lists, so a type the browser
-    // does not know still names the conversation as the conversation list does.
-    const people = [
-      participant({ name: "Alice", identity: "+1" }),
-      participant({ name: "Bob", identity: "+2" }),
-    ];
-    expect(
-      messageConversationName(
-        conversation({ conversation_type: "chat", is_group: true, participants: people }),
-      ),
-    ).toBe("Alice, Bob");
-  });
-});
 
 describe("messageSenderName", () => {
   it('is "You" for a message the account sent', () => {

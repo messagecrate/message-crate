@@ -4,13 +4,13 @@
 //! desktop app's Import screen calls this crate.
 //!
 //! Module map:
-//! - [`run`] — configuration, login, and the main loop that ties the rest together.
-//! - `prepare` — read one conversation, upload its media, cut it into chunks (worker threads).
-//! - `pipeline` — batch chunks into import requests and settle each conversation's result.
-//! - `progress` — the log file and live progress callback.
-//! - `journal` — the on-disk record of what already succeeded.
-//! - `directory` — what counts as a conversation file, and where attachments live.
-//! - `report` — the summary written at the end.
+//! - `run`: configuration, login, and the main loop that ties the rest together.
+//! - `prepare`: read one conversation, upload its media, cut it into chunks (worker threads).
+//! - `pipeline`: batch chunks into import requests and settle each conversation's result.
+//! - `progress`: the log file and live progress callback.
+//! - `journal`: the on-disk record of what already succeeded.
+//! - `directory`: what counts as a conversation file, and where attachments live.
+//! - `report`: the summary written at the end.
 
 mod directory;
 mod http;
@@ -22,17 +22,17 @@ mod project;
 mod report;
 mod run;
 
-pub use directory::detect_source;
+pub use api_types::ImportMode;
 pub use journal::{JOURNAL_NAME, LOG_NAME, REPORT_NAME};
-pub use message_crate_api_types::ImportMode;
 pub use message_crate_http::AuthError;
 pub use message_crate_http::AuthInfo;
+pub use message_crate_http::ServerAway;
 pub use progress::{FileStatus, ProgressEvent, ProgressFn};
 pub use report::{
     FileResult, ImportReport, UploadProfile, format_duration_ms, format_import_summary,
 };
 pub use run::{
     DEFAULT_ASSET_MAX_BYTES, DEFAULT_ASSET_UPLOAD_WORKERS, DEFAULT_BATCH_SIZE,
-    DEFAULT_PREPARE_AHEAD, DEFAULT_PREPARE_WORKERS, ImportConfig, MAX_IMPORT_BODY_BYTES,
-    MAX_PROXY_BODY_BYTES, NO_MESSAGE_COUNT_LIMIT, authenticate, run,
+    DEFAULT_PREPARE_AHEAD, DEFAULT_PREPARE_WORKERS, ImportConfig, MAX_PROXY_BODY_BYTES,
+    NO_MESSAGE_COUNT_LIMIT, authenticate, run,
 };

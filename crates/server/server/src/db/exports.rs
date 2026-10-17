@@ -1,22 +1,41 @@
 //! Per-account Export Run records: one row per `POST /v1/exports`, holding
 //! what was asked for and how much matched, never message content; and the
 //! list of message places each run hands over, which its pages read.
+//!
+//! An account has at most one running Export Run. Starting one closes the
+//! account's running run as `canceled` ([`start_export`]), and a running run
+//! with no page read for [`IDLE_EXPORT_RUN_LIMIT`] is closed the same way
+//! ([`close_idle_runs`]), so a run its client abandoned does not keep its
+//! list of messages forever (#2080). The Audit Trail records each closure and
+//! why.
+
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, ExportStatus};
+use api_types::{ExportQueryList, ExportRun, ExportScope, ExportStatus};
+use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
-use sqlx::{Executor, Row, SqliteConnection};
+use sqlx::{Executor, Row, SqliteConnection, SqlitePool};
 
+use crate::db::audit_trail::{self, AuditActor, AuditReason};
 use crate::db::begin_write;
 
 use crate::db::conversation_messages::{
     Message, MessageSort, conversation_join_sql, load_messages_from, messages_from_sql,
 };
 use crate::db::sql::{SqlParam, bind_all};
-use crate::paging::{Direction, Page, SortKey};
-use crate::server::ApiError;
+use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
+
+/// How long a running Export Run may go with no page of its messages read
+/// before the server closes it as `canceled`. A client reads its pages one
+/// after another, so a run this quiet was abandoned: its client was killed,
+/// lost its session, or failed to close it.
+pub const IDLE_EXPORT_RUN_LIMIT: TimeDelta = TimeDelta::hours(1);
+
+/// How often the server looks for running Export Runs past
+/// [`IDLE_EXPORT_RUN_LIMIT`] ([`keep_closing_idle_runs`]).
+pub(crate) const IDLE_CHECK_EVERY: Duration = Duration::from_secs(60);
 
 /// Which of the three forms an Export Run's scope took, without what it
 /// asked for: the values `exports.scope_kind` holds.
@@ -94,48 +113,50 @@ pub struct StartExportArgs<'a> {
     pub tool: Option<&'a str>,
 }
 
-/// Column list for `exports`, in the order [`export_from_row`] reads.
+/// Column list for `exports`, each read by name in [`export_from_row`].
 const EXPORT_COLUMNS: &str = "id, scope_kind, scope_query, scope_conversation_ids, \
      scope_message_ids, tool, status, started_at, finished_at, message_count, \
      conversation_count, attachment_count, total_bytes, messages_delivered, scope_list";
 
-/// Map one `exports` row by column position.
+/// Map one `exports` row, reading each column by name.
 fn export_from_row(row: &SqliteRow) -> Result<ExportRun> {
-    let kind: String = row.try_get(1)?;
+    let kind: String = row.try_get("scope_kind")?;
     let scope = match ExportScopeKind::parse(&kind) {
         Some(ExportScopeKind::Everything) => ExportScope::Everything,
         Some(ExportScopeKind::Query) => {
-            let list: Option<String> = row.try_get(14)?;
+            let list: Option<String> = row.try_get("scope_list")?;
             ExportScope::Query {
                 list: list
                     .as_deref()
                     .and_then(ExportQueryList::parse)
                     .with_context(|| format!("exports.scope_list holds unknown value {list:?}"))?,
-                q: row.try_get::<Option<String>, _>(2)?.unwrap_or_default(),
+                q: row
+                    .try_get::<Option<String>, _>("scope_query")?
+                    .unwrap_or_default(),
             }
         }
         Some(ExportScopeKind::Selection) => ExportScope::Selection {
-            conversation_ids: id_list(row.try_get(3)?)?,
-            message_ids: id_list(row.try_get(4)?)?,
+            conversation_ids: id_list(row.try_get("scope_conversation_ids")?)?,
+            message_ids: id_list(row.try_get("scope_message_ids")?)?,
         },
         None => anyhow::bail!("exports.scope_kind holds unknown value '{kind}'"),
     };
     Ok(ExportRun {
-        id: row.try_get(0)?,
+        id: row.try_get("id")?,
         scope,
-        tool: row.try_get(5)?,
+        tool: row.try_get("tool")?,
         status: {
-            let raw: String = row.try_get(6)?;
+            let raw: String = row.try_get("status")?;
             ExportStatus::parse(&raw)
                 .ok_or_else(|| anyhow::anyhow!("exports.status holds unknown value '{raw}'"))?
         },
-        started_at: row.try_get(7)?,
-        finished_at: row.try_get(8)?,
-        message_count: row.try_get(9)?,
-        conversation_count: row.try_get(10)?,
-        attachment_count: row.try_get(11)?,
-        total_bytes: row.try_get(12)?,
-        messages_delivered: row.try_get(13)?,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+        message_count: row.try_get("message_count")?,
+        conversation_count: row.try_get("conversation_count")?,
+        attachment_count: row.try_get("attachment_count")?,
+        total_bytes: row.try_get("total_bytes")?,
+        messages_delivered: row.try_get("messages_delivered")?,
     })
 }
 
@@ -147,14 +168,40 @@ fn id_list(raw: Option<String>) -> Result<Vec<i64>> {
     }
 }
 
+/// A run [`start_export`] recorded, and the run it closed to make room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartedExport {
+    /// The new run's id.
+    pub id: i64,
+    /// The account's running run the start closed as `canceled`, if it had
+    /// one. The caller logs it once its transaction commits
+    /// ([`RunClosure::log`]).
+    pub replaced: Option<i64>,
+}
+
 /// Record a new run as `running` with zero counts and return its id. The
 /// caller lists the run's messages and then sets the counts with
-/// [`record_counts`], in the same transaction.
+/// [`record_counts`], in the same transaction. The run starts at `now`.
+///
+/// The account's running run, when it has one, is closed first as
+/// `canceled` at `now` and its list of messages deleted, and the Audit Trail
+/// records that a new Export replaced it. A start is never refused because a
+/// run is open, and a client still reading the replaced run is answered as
+/// for any run that is not running. Call it inside a write transaction, so
+/// the closure and the new run land together.
 ///
 /// # Errors
 ///
-/// Returns an error when the insert fails.
-pub async fn start_export(conn: &mut SqliteConnection, args: &StartExportArgs<'_>) -> Result<i64> {
+/// Returns an error when a statement fails.
+pub async fn start_export(
+    conn: &mut SqliteConnection,
+    args: &StartExportArgs<'_>,
+    now: DateTime<Utc>,
+) -> Result<StartedExport> {
+    let replaced = close_runs(conn, RunClosure::Replaced(args.account_id), now)
+        .await?
+        .first()
+        .map(|run| run.id);
     let (kind, list, query, conversation_ids, message_ids) = match args.scope {
         ExportScope::Everything => ("everything", None, None, None, None),
         ExportScope::Query { list, q } => {
@@ -186,10 +233,11 @@ pub async fn start_export(conn: &mut SqliteConnection, args: &StartExportArgs<'_
     .bind(conversation_ids)
     .bind(message_ids)
     .bind(args.tool)
-    .bind(Utc::now().to_rfc3339())
+    .bind(now.to_rfc3339())
     .fetch_one(&mut *conn)
-    .await?;
-    Ok(id)
+    .await
+    .context("insert an Export Run")?;
+    Ok(StartedExport { id, replaced })
 }
 
 /// Set the four counts on a run, computed from the messages it listed.
@@ -214,7 +262,8 @@ pub async fn record_counts(
     .bind(counts.total_bytes)
     .bind(export_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("set an Export Run's counts")?;
     Ok(())
 }
 
@@ -230,21 +279,198 @@ pub async fn get_export(
     account_id: i64,
     export_id: i64,
 ) -> Result<Option<ExportRun>> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {EXPORT_COLUMNS} FROM exports WHERE id = $1 AND account_id = $2"
-    ))
+    )))
     .bind(export_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Export Run")?;
     row.as_ref().map(export_from_row).transpose()
 }
 
-/// Close a running run with `status`, stamp `finished_at`, and delete the
-/// list of messages it matched at creation: a closed run hands nothing over.
-/// Returns `false` when the run was not running, which is the caller's
-/// `409`: the status check and the write are one statement, so two closers
-/// racing cannot both win.
+/// Which running runs [`close_runs`] closes, and why.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RunClosure<'a> {
+    /// The account's running run, which a new Export replaces, by the person
+    /// starting it.
+    Replaced(i64),
+    /// Every running run with no page read since this time, or none read at
+    /// all and started before it, closed by the server.
+    Idle(&'a str),
+}
+
+/// The condition, over `exports`, of a running run with no page read since
+/// `$1`, or none read at all and started before it.
+const IDLE_RUN_SQL: &str = "status = 'running' AND COALESCE(last_page_read_at, started_at) < $1";
+
+impl RunClosure<'_> {
+    /// The condition, over `exports`, of the runs it closes, with its value
+    /// as `$1`.
+    fn condition(self) -> &'static str {
+        match self {
+            Self::Replaced(_) => "account_id = $1 AND status = 'running'",
+            Self::Idle(_) => IDLE_RUN_SQL,
+        }
+    }
+
+    /// Why the Audit Trail says the run was closed.
+    fn reason(self) -> AuditReason {
+        match self {
+            Self::Replaced(_) => AuditReason::Replaced,
+            Self::Idle(_) => AuditReason::Idle,
+        }
+    }
+
+    /// Who closed a run of `account_id`: the person starting the new Export,
+    /// or the server.
+    fn actor(self, account_id: i64) -> AuditActor {
+        match self {
+            Self::Replaced(_) => AuditActor::logged_in_as(account_id),
+            Self::Idle(_) => AuditActor::Server,
+        }
+    }
+
+    /// Write the server's log line for the run `export_id` of `account_id`,
+    /// once its closure has committed.
+    pub(crate) fn log(self, export_id: i64, account_id: Option<i64>) {
+        match self {
+            Self::Replaced(_) => tracing::info!(
+                account_id,
+                export_id,
+                "A new Export Run replaced the account's running one, which was canceled"
+            ),
+            Self::Idle(_) => tracing::info!(
+                account_id,
+                export_id,
+                "No page of an Export Run was read for an hour, so it was canceled"
+            ),
+        }
+    }
+}
+
+/// An Export Run [`close_runs`] closed: its id and its account.
+#[derive(sqlx::FromRow)]
+struct ClosedRun {
+    id: i64,
+    account_id: Option<i64>,
+}
+
+/// Close the running runs `closure` names as `canceled` at `now`, delete
+/// their lists of messages, and record each closure in the Audit Trail with
+/// its reason. Returns each closed run's id and account. Call it inside a
+/// write transaction, and [`RunClosure::log`] once it commits.
+async fn close_runs(
+    conn: &mut SqliteConnection,
+    closure: RunClosure<'_>,
+    now: DateTime<Utc>,
+) -> Result<Vec<ClosedRun>> {
+    let query = sqlx::query_as::<_, ClosedRun>(sqlx::AssertSqlSafe(format!(
+        "UPDATE exports SET status = 'canceled', finished_at = $2
+         WHERE {condition}
+         RETURNING id, account_id",
+        condition = closure.condition(),
+    )));
+    let query = match closure {
+        RunClosure::Replaced(account_id) => query.bind(account_id),
+        RunClosure::Idle(cutoff) => query.bind(cutoff.to_owned()),
+    };
+    let closed = query
+        .bind(now.to_rfc3339())
+        .fetch_all(&mut *conn)
+        .await
+        .context("close running Export Runs")?;
+    for run in &closed {
+        let (export_id, account_id) = (run.id, run.account_id);
+        delete_run_messages(conn, export_id).await?;
+        // A running run always has its account: deleting the account closes
+        // its runs first.
+        let Some(account_id) = account_id else {
+            continue;
+        };
+        audit_trail::record_export_run_closed(
+            conn,
+            account_id,
+            export_id,
+            closure.reason(),
+            closure.actor(account_id),
+            now,
+        )
+        .await?;
+    }
+    Ok(closed)
+}
+
+/// Delete the list of messages a run matched at creation.
+async fn delete_run_messages(conn: &mut SqliteConnection, export_id: i64) -> Result<()> {
+    sqlx::query("DELETE FROM export_messages WHERE export_id = $1")
+        .bind(export_id)
+        .execute(&mut *conn)
+        .await
+        .context("delete an Export Run's list of messages")?;
+    Ok(())
+}
+
+/// Close every running run with no page read for [`IDLE_EXPORT_RUN_LIMIT`]
+/// at `now` as `canceled`, delete their lists of messages, and record each
+/// closure in the Audit Trail as the server's, idle. Returns the closed
+/// runs' ids. Takes the write lock only when a run is idle.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails; nothing is closed then.
+pub async fn close_idle_runs(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<Vec<i64>> {
+    let cutoff = (now - IDLE_EXPORT_RUN_LIMIT).to_rfc3339();
+    let any_idle: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT EXISTS (SELECT 1 FROM exports WHERE {IDLE_RUN_SQL})"
+    )))
+    .bind(&cutoff)
+    .fetch_one(&mut *conn)
+    .await
+    .context("look for idle Export Runs")?;
+    if !any_idle {
+        return Ok(Vec::new());
+    }
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
+    let closure = RunClosure::Idle(&cutoff);
+    let closed = close_runs(&mut tx, closure, now).await?;
+    tx.commit().await.context("commit the closed Export Runs")?;
+    for run in &closed {
+        closure.log(run.id, run.account_id);
+    }
+    Ok(closed.into_iter().map(|run| run.id).collect())
+}
+
+/// Call [`close_idle_runs`] on `pool` every [`IDLE_CHECK_EVERY`] while the
+/// server runs, the first time at once, so a run left open when the server
+/// stopped is closed too. The task ends with the process.
+pub(crate) fn keep_closing_idle_runs(pool: SqlitePool) {
+    crate::request_id::spawn_in_current_span(async move {
+        let mut ticks = tokio::time::interval(IDLE_CHECK_EVERY);
+        loop {
+            ticks.tick().await;
+            let closed = match pool.acquire().await {
+                Ok(mut conn) => close_idle_runs(&mut conn, Utc::now()).await,
+                Err(error) => Err(error.into()),
+            };
+            if let Err(error) = closed {
+                tracing::warn!(
+                    "Idle Export Runs could not be closed, so the server tries again in {} s: {error:#}",
+                    IDLE_CHECK_EVERY.as_secs()
+                );
+            }
+        }
+    });
+}
+
+/// Close a running run with `status`, stamp `finished_at` with `now`, and
+/// delete the list of messages it matched at creation: a closed run hands
+/// nothing over. Returns `false` when the run was not running, which is the
+/// caller's `409`: the status check and the write are one statement, so two
+/// closers racing cannot both win.
 ///
 /// # Errors
 ///
@@ -254,35 +480,38 @@ pub async fn finish_export(
     account_id: i64,
     export_id: i64,
     status: ExportStatus,
+    now: DateTime<Utc>,
 ) -> Result<bool> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let done = sqlx::query(
         "UPDATE exports SET status = $1, finished_at = $2
          WHERE id = $3 AND account_id = $4 AND status = 'running'",
     )
     .bind(status.as_str())
-    .bind(Utc::now().to_rfc3339())
+    .bind(now.to_rfc3339())
     .bind(export_id)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .context("close a running Export Run")?;
     if done.rows_affected() != 1 {
         return Ok(false);
     }
-    sqlx::query("DELETE FROM export_messages WHERE export_id = $1")
-        .bind(export_id)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
+    delete_run_messages(&mut tx, export_id).await?;
+    tx.commit().await.context("commit the closed Export Run")?;
     Ok(true)
 }
 
 /// Raise `messages_delivered` to `delivered` when that is higher, on a run
-/// that is still running. A page read again does not count twice, and a page
-/// read out of order does not lower the mark. Returns `false` when the run
-/// was not running, which is the caller's `409`: the page was read from a
-/// run that closed meanwhile, and the status check and the write are one
-/// statement, so a finished run's record is never changed.
+/// that is still running, and record `now` as when a page was last read, so
+/// the run is not closed as idle ([`close_idle_runs`]). A page read again
+/// does not count twice, and a page read out of order does not lower the
+/// mark. Returns `false` when the run was not running, which is the caller's
+/// `409`: the page was read from a run that closed meanwhile, and the status
+/// check and the write are one statement, so a finished run's record is
+/// never changed.
 ///
 /// # Errors
 ///
@@ -292,18 +521,22 @@ pub async fn record_delivered(
     account_id: i64,
     export_id: i64,
     delivered: i64,
+    now: DateTime<Utc>,
 ) -> Result<bool> {
     let updated = sqlx::query(
         "UPDATE exports
          SET messages_delivered = CASE
-             WHEN messages_delivered < $1 THEN $1 ELSE messages_delivered END
+             WHEN messages_delivered < $1 THEN $1 ELSE messages_delivered END,
+             last_page_read_at = $4
          WHERE id = $2 AND account_id = $3 AND status = 'running'",
     )
     .bind(delivered)
     .bind(export_id)
     .bind(account_id)
+    .bind(now.to_rfc3339())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("raise an Export Run's delivered count")?;
     Ok(updated.rows_affected() == 1)
 }
 
@@ -327,11 +560,15 @@ pub async fn list_exports_page(
         ""
     };
     let count_sql = format!("SELECT COUNT(*) FROM exports WHERE account_id = $1{status_sql}");
-    let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(account_id);
+    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql)).bind(account_id);
     if let Some(status) = status {
         count = count.bind(status);
     }
-    let total = count.fetch_one(&mut *conn).await?.max(0) as u64;
+    let total = count
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the account's Export Runs")?
+        .max(0) as u64;
 
     let direction = order
         .iter()
@@ -350,11 +587,16 @@ pub async fn list_exports_page(
          ORDER BY started_at {direction}, id {direction}
          LIMIT {limit_param} OFFSET {offset_param}"
     );
-    let mut query = sqlx::query(&sql).bind(account_id);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(account_id);
     if let Some(status) = status {
         query = query.bind(status);
     }
-    let rows = query.bind(limit).bind(offset).fetch_all(&mut *conn).await?;
+    let rows = query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&mut *conn)
+        .await
+        .context("read a page of the account's Export Runs")?;
     let items = rows
         .iter()
         .map(export_from_row)
@@ -372,7 +614,7 @@ pub async fn list_run_messages(
     conn: &mut SqliteConnection,
     export_id: i64,
     filter: &crate::search::Filter,
-) -> Result<(), sqlx::Error> {
+) -> Result<()> {
     let list_sql = format!(
         "INSERT INTO export_messages (export_id, row_order, message_id)
          SELECT ?, ROW_NUMBER() OVER (ORDER BY m.timestamp, m.sort_order, m.id), m.id
@@ -383,7 +625,10 @@ pub async fn list_run_messages(
     );
     let mut params = vec![SqlParam::Int(export_id)];
     params.extend_from_slice(filter.params());
-    (&mut *conn).execute(bind_all(&list_sql, &params)).await?;
+    (&mut *conn)
+        .execute(bind_all(sqlx::AssertSqlSafe(list_sql), &params))
+        .await
+        .context("list the messages an Export Run matches")?;
     Ok(())
 }
 
@@ -396,23 +641,21 @@ pub async fn list_run_messages(
 /// # Errors
 ///
 /// Returns an error when a statement fails.
-pub async fn export_counts(
-    conn: &mut SqliteConnection,
-    export_id: i64,
-) -> Result<ExportCounts, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT COUNT(*), COUNT(DISTINCT m.conversation_id)
+pub async fn export_counts(conn: &mut SqliteConnection, export_id: i64) -> Result<ExportCounts> {
+    let (messages, conversations): (i64, i64) = sqlx::query(
+        "SELECT COUNT(*) AS messages, COUNT(DISTINCT m.conversation_id) AS conversations
          FROM export_messages e
          JOIN messages m ON m.id = e.message_id
          WHERE e.export_id = $1",
     )
     .bind(export_id)
     .fetch_one(&mut *conn)
-    .await?;
-    let (messages, conversations): (i64, i64) = (row.try_get(0)?, row.try_get(1)?);
+    .await
+    .and_then(|row| Ok((row.try_get("messages")?, row.try_get("conversations")?)))
+    .context("count an Export Run's messages and conversations")?;
 
-    let row = sqlx::query(
-        "SELECT COUNT(*), COALESCE(SUM(sz), 0)
+    let (attachments, total_bytes): (i64, i64) = sqlx::query(
+        "SELECT COUNT(*) AS attachments, COALESCE(SUM(sz), 0) AS total_bytes
          FROM (
            SELECT MAX(a.size_bytes) AS sz
            FROM export_messages e
@@ -425,8 +668,9 @@ pub async fn export_counts(
     )
     .bind(export_id)
     .fetch_one(&mut *conn)
-    .await?;
-    let (attachments, total_bytes): (i64, i64) = (row.try_get(0)?, row.try_get(1)?);
+    .await
+    .and_then(|row| Ok((row.try_get("attachments")?, row.try_get("total_bytes")?)))
+    .context("count an Export Run's attachments and their bytes")?;
 
     Ok(ExportCounts {
         messages: messages.max(0),
@@ -443,22 +687,21 @@ pub struct ExportPageOpts {
     pub export_id: i64,
     /// How many places the run listed at creation: its `message_count`.
     pub total: u64,
-    /// Places on the page. Already validated by the handler: `1..=MAX_LIST_LIMIT`.
-    pub limit: usize,
-    /// Places to skip in the run's list.
-    pub offset: usize,
+    /// Places on the page (`limit`, already validated by the handler:
+    /// `1..=MAX_LIST_LIMIT`) and places to skip in the run's list (`offset`).
+    pub page: PageParams,
     /// The parsed `sort`; [`DEFAULT_MESSAGE_SORT`](crate::db::conversation_messages::DEFAULT_MESSAGE_SORT)
     /// when the caller has none.
     pub order: Vec<SortKey<MessageSort>>,
 }
 
 /// The first and last place (exclusive, inclusive) a page covers in a run's
-/// list of `total` places, for `offset` and `limit` read in `direction`.
-/// Newest first counts places from the end of the list.
-fn page_places(total: u64, offset: usize, limit: usize, direction: Direction) -> (i64, i64) {
+/// list of `total` places, for `page` read in `direction`. Newest first
+/// counts places from the end of the list.
+fn page_places(total: u64, page: PageParams, direction: Direction) -> (i64, i64) {
     let total = i64::try_from(total).unwrap_or(i64::MAX);
-    let offset = i64::try_from(offset).unwrap_or(i64::MAX);
-    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    let offset = i64::try_from(page.offset).unwrap_or(i64::MAX);
+    let limit = i64::try_from(page.limit).unwrap_or(i64::MAX);
     match direction {
         Direction::Asc => (offset, offset.saturating_add(limit)),
         Direction::Desc => {
@@ -482,13 +725,13 @@ fn page_places(total: u64, offset: usize, limit: usize, direction: Direction) ->
 pub async fn export_messages(
     conn: &mut SqliteConnection,
     opts: ExportPageOpts,
-) -> Result<Page<Message>, ApiError> {
+) -> anyhow::Result<Page<Message>> {
     let direction = opts
         .order
         .iter()
         .find(|k| k.key == MessageSort::Date)
         .map_or(Direction::Asc, |k| k.direction);
-    let (after, through) = page_places(opts.total, opts.offset, opts.limit, direction);
+    let (after, through) = page_places(opts.total, opts.page, direction);
     let from_sql = format!(
         "FROM export_messages e
          JOIN messages m ON m.id = e.message_id
@@ -505,52 +748,18 @@ pub async fn export_messages(
             SqlParam::Int(through),
         ],
         &format!("e.row_order {}", direction.sql()),
-        opts.limit,
+        opts.page.limit,
         0,
     )
     .await?;
 
-    Ok(Page {
-        items: messages,
-        total: opts.total,
-        limit: opts.limit,
-        offset: opts.offset,
-    })
-}
-
-/// Record what started the Export Run on its row: a Session and the app it
-/// named, or an API token's label and hint as they are now.
-///
-/// # Errors
-///
-/// Returns an error when the update fails.
-pub async fn record_credential(
-    conn: &mut SqliteConnection,
-    export_id: i64,
-    credential: &crate::db::audit_trail::CredentialUsed,
-) -> Result<()> {
-    let columns = credential.run_columns();
-    sqlx::query(
-        "UPDATE exports SET credential = $1, app_kind = $2, app_build = $3,
-                api_token_label = $4, api_token_hint = $5
-         WHERE id = $6",
-    )
-    .bind(columns.credential)
-    .bind(columns.app_kind)
-    .bind(columns.app_build)
-    .bind(columns.api_token_label)
-    .bind(columns.api_token_hint)
-    .bind(export_id)
-    .execute(&mut *conn)
-    .await
-    .with_context(|| format!("record what started export {export_id}"))?;
-    Ok(())
+    Ok(page_from_rows(messages, opts.total, opts.page))
 }
 
 /// Ready the account's Export Runs to outlive it, just before the account is
 /// deleted: each keeps `username`, what was asked for and how much matched,
 /// and is marked with `deletion_entry_id`, the account's `account_deleted`
-/// entry. A run still open is closed as `cancelled` at `now`, and its list of
+/// entry. A run still open is closed as `canceled` at `now`, and its list of
 /// messages, search text and picked ids go (ADR 0020).
 ///
 /// # Errors
@@ -564,20 +773,22 @@ pub async fn detach_from_account(
     now: &str,
 ) -> Result<()> {
     sqlx::query(
-        "UPDATE exports SET status = 'cancelled', finished_at = $2
+        "UPDATE exports SET status = 'canceled', finished_at = $2
          WHERE account_id = $1 AND status = 'running'",
     )
     .bind(account_id)
     .bind(now)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("cancel the account's running Export Runs")?;
     sqlx::query(
         "DELETE FROM export_messages
          WHERE export_id IN (SELECT id FROM exports WHERE account_id = $1)",
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the lists of messages of the account's Export Runs")?;
     sqlx::query(
         "UPDATE exports SET username = $2, deletion_entry_id = $3, scope_query = NULL,
                 scope_conversation_ids = NULL, scope_message_ids = NULL
@@ -587,6 +798,7 @@ pub async fn detach_from_account(
     .bind(username)
     .bind(deletion_entry_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("mark the account's Export Runs to outlive it")?;
     Ok(())
 }

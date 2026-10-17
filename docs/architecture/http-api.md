@@ -134,7 +134,7 @@ Two levels of nesting. The multipart upload,
 three. `/health` is the only route outside `/v1`. Path segments are
 kebab-case; every field and query parameter on the wire is snake_case.
 
-Rejected: no verbs at all. Modelling every action as a field write turns
+Rejected: no verbs at all. Modeling every action as a field write turns
 trashing into `PATCH {"trashed": true}`, and trash is the only door to
 permanent deletion, which `POST .../trash` says and a field write does not.
 
@@ -155,10 +155,10 @@ runs an action named by a verb sub-resource. `DELETE` removes. A read is a
 A read by id takes no filter. `GET /v1/conversations/{id}/messages` opens a
 conversation; searching inside one is `GET /v1/messages?q=in:#{id} …`.
 Why: opening and searching answer different questions. The read by id answers
-`404` for an id the caller does not hold and shows a conversation in the
-trash; a search answers an empty page and leaves the trash out. A filter on the
-read by id is a second search that can drift from the first, as `?year=` beside
-`date:` did.
+`404 Not Found` for an id the caller does not hold and shows a conversation in
+the trash; a search answers an empty page and leaves the trash out. A filter on
+the read by id is a second search that can drift from the first, as `?year=`
+beside `date:` did.
 
 A file the server reads is the request body, with `Content-Type` naming its
 format, and anything about how to apply it is a declared query parameter.
@@ -167,13 +167,17 @@ format, and anything about how to apply it is a declared query parameter.
 The file the server writes is answered by a `POST` named for it,
 `POST /v1/contacts/address-book`, whose body `{q, ids}` selects the contacts
 and whose answer is `text/csv` with a `Content-Disposition` filename.
+A route that reads one file and writes another does both:
+`POST /v1/contacts/vcard-address-book` takes a vCard file as a `text/vcard`
+body and `country=` as a declared query parameter, and answers the address
+book written from it, named for what it returns.
 Why: a body that is the file cannot carry a mode field, and a JSON envelope
 around a file base64-encodes it for nothing. Rejected: `?format=csv` on
 `GET /v1/contacts`, which cannot carry the checked ids and is the `fields=`
 idea in another coat; `Accept: text/csv` on the list, which makes one list
 negotiate where every other answers JSON.
 
-Behaviour that differs by caller lives inside one handler, not in two routes.
+Behavior that differs by caller lives inside one handler, not in two routes.
 `PUT /v1/accounts/{id}/password` is one route: the owner sets another
 account's password without the current one, a user account changes its own on
 its session alone, and the owner changing its own must supply the
@@ -184,20 +188,22 @@ current one, because that account reaches every other.
 - A creation answers `201 Created` with a `Location` header naming the new
   resource, whatever the method that made it: a `PUT` that stores an asset the
   database did not hold, and a claim that makes the owner's Session
-  (`Location: /v1/session`), both answer `201`. A create that takes a batch
-  answers `200 OK` with a summary of what was created, updated and skipped,
-  because no single resource was made. A Media Link is made though nothing is
-  stored: `POST /v1/assets/{sha256}/media-links` answers `201 Created` with the link's
-  own URL in `Location`, which the Session that made it can `GET`.
+  (`Location: /v1/session`), both answer `201 Created`. A create that takes a
+  batch answers `200 OK` with a summary of what was created, updated and
+  skipped, because no single resource was made. A Media Link is made though
+  nothing is stored: `POST /v1/assets/{sha256}/media-links` answers
+  `201 Created` with the link's own URL in `Location`, which the Session that
+  made it can `GET`.
 - A write with nothing to return answers `204 No Content`.
 - A write the server finishes after it answers is `202 Accepted`, with the
   resource in its body and a `status` that says the work is under way. The
   client reads the resource with `GET` until `status` changes; a second write
-  while the first is under way answers `409`. `PUT /v1/server/demo-account`
-  is the one such route: it removes the Demo Account and builds it again,
-  which takes from seconds to a minute, and answers with `status` `building`.
+  while the first is under way answers `409 Conflict`.
+  `PUT /v1/server/demo-account` is the one such route: it removes the Demo
+  Account and builds it again, which takes from seconds to a minute, and
+  answers with `status` `building`.
   Why: an answer held for a minute is lost to a closed tab or a proxy's
-  timeout while the work carries on unseen, and `200` would say the Demo
+  timeout while the work carries on unseen, and `200 OK` would say the Demo
   Account is there when it is not yet.
 - A name collision answers `409 Conflict`. So does an action on a resource in
   the wrong state: deleting before trashing, claiming a claimed Message Crate, a batch
@@ -208,9 +214,9 @@ current one, because that account reaches every other.
   the number the account's own, so it belongs to `PATCH /v1/accounts/{id}`,
   which runs the with-yourself rule and takes the number off its contact.
   `state-conflict` fits because the contact's number is in a state, held by
-  the account, that this route does not change; `422` would say the request
-  broke a rule the client could fix by rewriting it, and no body sent to this
-  route can do the merge.
+  the account, that this route does not change; `422 Unprocessable Entity`
+  would say the request broke a rule the client could fix by rewriting it, and
+  no body sent to this route can do the merge.
 - A request that would join two records into one, and so cannot be undone,
   answers `409 Conflict` with nothing changed the first time, and the client
   confirms by sending the same request again with `merge: true`. The problem
@@ -226,13 +232,43 @@ current one, because that account reaches every other.
   another request between the two could change the answer.
 - A failed credential answers `401 Unauthorized`. A refused one, including a
   token without the needed scope and a disabled account, answers
-  `403 Forbidden`.
+  `403 Forbidden`. A login is the exception: every refused login, a
+  disabled account's included, answers the same `401 Unauthorized`
+  (`invalid-credentials`).
+  Why: a disabled account's own answer would come only after the right
+  password, so a guesser would learn which guess was right, and the password
+  works again once the owner enables the account. The Audit Trail records the
+  real reason.
+- Disabling an account ends its Session, so the Session token it held
+  answers `401 Unauthorized` from then on, after the account is enabled
+  again too; only its API tokens answer `403 Forbidden` (`account-disabled`)
+  while it stays disabled. A login whose password check the disable
+  overtook opens no Session.
+  Why: an owner who learns that someone else holds the Session token can
+  shut it out and give the account back to its holder, and enabling the
+  account brings back neither the token nor the Media Links signed under it
+  (#2074).
 - A `Content-Type` that is absent or unaccepted answers
   `415 Unsupported Media Type`, on every route that takes a body. On a route
   whose body is optional, a request with no body is read as no body, and a
-  body sent without a `Content-Type` is still `415`.
+  body sent without a `Content-Type` is still `415 Unsupported Media Type`.
 - A request that cannot be read is `400 Bad Request` (`malformed-body`): JSON
-  that does not parse, or a body of the wrong type. Nothing else is `400`.
+  that does not parse, a body of the wrong type, or a body whose connection
+  broke before it arrived. Nothing else is `400 Bad Request`. A broken
+  connection is this type and not one of its own because the server has no
+  request to judge: the client that sent it has usually gone, and one that
+  is still there sends the body again, as it would after any broken
+  connection.
+- A body that the server stopped reading because it took too long is
+  `408 Request Timeout` (`body-stalled`): a body that went `[server]
+  body_stall_secs` (60) with no byte arriving, or was still arriving
+  `body_total_secs` (300) after the read started. Every body is held to
+  the limits ([Connections](#connections)). Why: the connection failed, not the data, and
+  `malformed-body` told the person their data was bad. The client is still
+  there to read the answer, so the answer says that running the import
+  again continues it. The desktop app shows it and does not send the piece
+  again by itself, as it does not for any `4xx`
+  ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
 - A request that was read and broke a rule is `422 Unprocessable Entity`,
   whether the rule was on a query parameter, a path segment or a body field: a
   field or parameter missing or blank, a value out of range, an id that names
@@ -242,7 +278,7 @@ current one, because that account reaches every other.
   parameter is one entry in `validation-failed`'s `errors`, not a problem type
   of its own. A search that does not parse keeps its own type,
   `search-query-invalid`, because the client's remedy differs (rewrite the
-  query), and answers `422` like every other.
+  query), and answers `422 Unprocessable Entity` like every other.
 - A request that was read, broke no rule, and completed answers a `2xx` even
   when it changed nothing. The status code says whether the action ran or
   failed; what the action found or changed is the body's job. An id in the
@@ -253,7 +289,28 @@ current one, because that account reaches every other.
   the caller holds stays `422 Unprocessable Entity`, because adding a row the
   caller does not hold breaks a rule rather than completing with an empty
   result.
-- `429 Too Many Requests` carries `Retry-After`.
+- A request the database was too busy to take in time answers
+  `503 Service Unavailable` (`database-busy`) with `Retry-After`: SQLite
+  answered `SQLITE_BUSY` once the busy timeout ran out, or no pool connection
+  came free within the pool's acquire timeout (sqlx's `PoolTimedOut`). Why:
+  neither is a bug in the server, and the same request succeeds once the
+  import batch or the requests holding the database finish, so the remedy is
+  to wait and send it again, not to report a fault
+  ([#2084](https://github.com/messagecrate/message-crate/issues/2084)).
+  `/health` is the exception, below ([Failures](#failures)).
+- Every `401 Unauthorized` carries `WWW-Authenticate: Bearer
+  realm="message-crate"`, whichever problem type it answers:
+  `authentication-required`, `invalid-credentials` or `media-link-invalid`.
+  When the request sent a Bearer token and the server refused it (unknown,
+  expired, or its account gone), the challenge adds `error="invalid_token"`.
+  A request that sent no token, or an `Authorization` header that is not
+  `Bearer <token>`, gets no error code. Why: RFC 9110, section 15.5.2,
+  requires the header on every `401`, and RFC 6750, section 3.1, gives the
+  error code and says a request that carried no token gets none. The
+  OpenAPI document declares Bearer schemes, so generic HTTP tooling reads
+  the challenge. The web app and the desktop app read the problem `type`
+  instead. A refused Media Link gets the plain challenge, because a Media
+  Link is not a Bearer token and the challenge names the way to send one.
 - The three routes that answer an asset's bytes, `GET /v1/assets/{sha256}`,
   `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
   answer a `Range` of one byte range
@@ -271,16 +328,16 @@ current one, because that account reaches every other.
   a time and seeks by asking for another (`docs/architecture/media.md`).
   Rejected: answering several ranges as `multipart/byteranges`. No media
   element sends several, and the whole file is a correct answer to them.
-- An unknown `/v1` path answers `404` as a problem document, and a wrong method
-  `405`, never Axum's plain text.
+- An unknown `/v1` path answers `404 Not Found` as a problem document, and a
+  wrong method `405 Method Not Allowed`, never Axum's plain text.
 
 There is no `ok` flag on any success, and none in any request: the status
 carries the meaning, and a run's outcome is its `status`.
 
-Rejected: a search query that does not parse as `400`, "the query could not be
-read". The request was read; the query is a value that broke the rules of the
-search language, which is what `422` means. One line with no exception is
-easier to hold than a line with one.
+Rejected: a search query that does not parse as `400 Bad Request`, "the query
+could not be read". The request was read; the query is a value that broke the
+rules of the search language, which is what `422 Unprocessable Entity` means.
+One line with no exception is easier to hold than a line with one.
 
 ## Lists
 
@@ -336,7 +393,7 @@ resource's own `GET` answers the collection. `GET /v1/imports` and an
 account's own `GET /v1/accounts/{id}/imports` answer each run as an
 `ImportRunSummary`, with the counts and without the issues or notes. The
 owner's `GET /v1/accounts/{id}/imports` answers each as an
-`OwnerImportRun`, which also counts them and never carries them.
+`OwnerImportRunSummary`, which also counts them and never carries them.
 `GET /v1/imports/{id}` answers the issues and the notes. Each count is
 read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
@@ -345,6 +402,15 @@ Storage carry about 800,000 issues, and one statement per row made a page of
 500 runs a thousand statements (#1559).
 Rejected: capping how many issues a run stores. It bounds the list by
 throwing away the diagnostics the run exists to keep.
+
+The attachments an Import Run wrote whose Thumbnail or Preview could not be
+made are such a collection too. The owner's
+`GET /v1/accounts/{id}/imports/{import_id}` answers an `OwnerImportRun`,
+which adds them (`not_made_attachments`) and their count by kind of failure
+(`not_made_counts`). The owner's list carries neither, not even a count.
+Why: a count would read every attachment of every run on the page, where
+the issue count reads one small table, and the owner reads the failures on
+the run's record (#2636).
 
 `limit` is at least 1 and at most 500, default 40, on every list including an
 Export Run's messages. `offset` is at most 50 000 on the browse lists. A value
@@ -426,6 +492,31 @@ Every failure answers an RFC 7807 problem document as
 `request_id`. A validation failure replaces `detail` with `errors`, a list of
 every rule that broke rather than the first.
 
+`detail`, and each entry of `errors`, is one sentence in lowercase with no
+final period, naming the thing and what is wrong with it: `asset not found`,
+`new passwords do not match`. A word always written with a capital keeps it,
+such as a header (`Content-Type must be text/csv`) or an abbreviation
+(`API token not found`). The client decides how the sentence starts and ends
+on its screen, because it may show the sentence alone or joined with others.
+The web app joins a validation failure's `errors` with `; ` into one line.
+Every screen that shows the sentence as a sentence of its own, on a line of
+its own or after another sentence that ends with a period, shows it through
+one function, `errorLine` (`web/src/lib/apiErrorMessage.ts`), which
+capitalizes its first letter. A sentence that starts with a name a capital
+would change keeps its first letter: a `search-query-invalid` refusal about
+one word starts with that word, as
+`from: is not a Contacts word; it works on Messages`, and a server refusal
+that starts with a field's snake_case name or indexed path, as
+`asset_max_bytes must be at most …` or `identities[0].address: …`, names the
+field as the API spells it. A
+sentence joined after a prefix, as `Could not load contacts: …`, is shown as
+the server wrote it.
+For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
+`internal server error (request 4f3c…)` (`problemFromBody` in
+`web/src/lib/api.ts`). Why: a `5xx` names no cause to the client, so the id is
+what a person can quote to find the failure's line in the server's log
+([The server's log, "A request's lines carry its id, spawned work included"](server-log.md#a-requests-lines-carry-its-id-spawned-work-included)).
+
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
 The code is the registry: each type is declared once in
@@ -440,14 +531,220 @@ caller who is not the owner.
 Every response, success or failure, carries an `x-request-id` header, a UUID v4
 the server makes; a request id a client sends is ignored. Problem bodies repeat
 it as `request_id`. The id joins the request's tracing span so every log line
-under a request carries it. RFC 7807's `instance` stays unused, because it is
-defined as a URI reference and a bare id is not one.
+under a request carries it, work the request spawns included
+([The server's log](server-log.md)). RFC 7807's `instance` stays unused,
+because it is defined as a URI reference and a bare id is not one.
 
 Rejected: a flat `{error}` body. It gives a client nothing to branch on except
 the sentence.
 
 Rejected: a request id on `5xx` only. A body whose members vary by status is
 the drift the one-shape rule exists to stop.
+
+A handler that panics answers the same `500 Internal Server Error` problem
+document, with its `request_id`, as any other internal failure: the
+innermost layer of the router catches the panic (`answer_panic` in
+`crates/server/server/src/middleware.rs`), so every layer outside it, CORS and
+the request's log line included, treats the answer as it treats any `500`.
+Why: an uncaught panic closed the connection with no answer, so the person
+saw a network error with no id to report
+([#2060](https://github.com/messagecrate/message-crate/issues/2060)).
+
+`/health` answers `ok` only when the server can take a database connection
+and run `SELECT 1` on it within 1.5 seconds (`HEALTH_DATABASE_LIMIT` in
+`crates/server/server/src/server.rs`). When it cannot, it fails as a `/v1`
+call fails, with a `500 Internal Server Error` problem document. Why: the web
+app's login card and the release image's Docker health check ask `/health`
+whether a server can answer, and a server whose pool is exhausted or whose
+database cannot be opened answers no `/v1` call, so `ok` from the process
+alone told them it was up while every page failed. The desktop app's watch
+on its own server asks `GET /v1/server`, which reads the database, so the two
+disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
+
+Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never waits
+on an import's write lock, and the limit stays under the time
+`message-crate-server healthcheck` gives each address it asks (4 seconds, or 2
+each when it asks both 127.0.0.1 and ::1), so a failure arrives as the
+server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
+(`imports_api/run_control.rs`) of the pool's `max_connections`
+(`db/engine.rs`), but requests that write wait on SQLite's busy timeout while
+an import holds the write lock, and enough of them can take every connection
+for that long. The check fails then, though a `/v1` read would wait for a
+connection and get one. One failure does not mark the container unhealthy,
+because Docker needs three in a row 30 seconds apart. When `/health` answers
+with an error, the login card asks once more three seconds later and shows
+Disconnected only when both fail, as the desktop app's watch on its own server
+needs two failed checks in a row (`checkServerHealthWithRetry` in
+`web/src/lib/serverHealth.ts`,
+[#2718](https://github.com/messagecrate/message-crate/issues/2718)). A pool
+taken for longer than that, up to the 15-second busy timeout, still fails both
+probes, and the card shows Disconnected until its next probe finds the server.
+That is accepted: while every connection is taken, the card's own login would
+wait as well.
+
+Rejected: `503 Service Unavailable` for `/health`. A server that cannot reach
+its own database is the `500 Internal Server Error` no page could help with.
+That holds when every connection is taken too, though a `/v1` call answers
+that with `database-busy`: `/health` is outside `/v1`, and its callers read
+only whether it answered `ok`.
+
+Every registered problem type is a `4xx` but two, `server-stopping` and
+`database-busy`, each a `503 Service Unavailable`. Each is its own type
+because the remedy, sending the same request again, is not the remedy for a
+`500 Internal Server Error`, and the request was not the client's mistake, so
+it is not a `4xx`.
+
+A request that reaches a busy database answers `database-busy`, with a
+`Retry-After` of 5 seconds, wherever in the request the database refused it:
+the error's chain is searched for sqlx's `PoolTimedOut` or a SQLite
+`SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/api_error.rs`),
+so no handler has to map it. The refusal leaves one `WARN` line naming the
+type and carrying the chain, and no `ERROR` line
+([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
+The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
+retries a `5xx`, so it retries this with no change of its own. The web app
+tries a read that failed with a `5xx` once more (`retry` in
+`web/src/lib/routeQuery.ts`). For `database-busy` it first waits the
+`retry_after` seconds the server named (`retryDelay` there). The database
+was busy because another request, such as an import batch, held the write
+lock, or because every database connection stayed in use, and either way a
+second try at once meets the same busy database. It never tries a write
+again: it shows the write's failure with its `detail`. The pool
+(`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
+batches and the sweep of unreferenced files after an Import Run
+(`asset_store::sweep_after_run`) can each hold one for a whole run. The
+background move of a Session's expiry (`auth::ExpiryMoves`, under
+[Credentials and reach](#credentials-and-reach)) holds one more for up to
+the busy timeout while an import holds the write lock. Under write-ahead
+logging the rest serve reads side by side. A request waits
+10 seconds for a connection, and a write waits SQLite's 15-second busy
+timeout for the write lock. Why: with 4 connections, two imports and a sweep
+left one for every other request, and a request waited sqlx's default 30
+seconds for it before answering `500 Internal Server Error`
+([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Each
+connection's page cache is capped at about 100 MB, half what it was, so the
+8 hold no more memory in all than the 4 did. Not more than 8, because more
+connections would raise that total, or shrink each cache further.
+
+A server told to stop closes its import slots
+(`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
+import batch still waiting for a slot is refused with `server-stopping`,
+having read none of its body, and stores nothing. A batch that holds a slot
+but is still reading its body stops reading at once and is refused the same
+way, so the stop never waits for the rest of a body that a client sends
+slowly or has stopped sending
+([#2878](https://github.com/messagecrate/message-crate/issues/2878)).
+The Upload retries it as it retries any `5xx`, waiting at least 15 seconds
+before its last try (`LAST_RETRY_WAIT` in `crates/libs/http`). If the server
+is not back by then, the Upload pauses without recording the batch's
+conversations as failed, and resuming the run sends the batch
+([#2727](https://github.com/messagecrate/message-crate/issues/2727)). A
+server that cannot be reached, or answers `502 Bad Gateway`,
+`503 Service Unavailable` or `504 Gateway Timeout`, pauses it the same way
+([#2092](https://github.com/messagecrate/message-crate/issues/2092)). A batch whose
+import has started is not refused. Why: a waiting batch used to take a slot
+once an earlier batch ended and import in full, so the stop waited for a
+whole batch more
+([#2203](https://github.com/messagecrate/message-crate/issues/2203)).
+
+The stop then waits for the requests in flight, every route alike, and for
+the stop of a Demo Account build and of the Thumbnail and Preview pass, for
+up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
+A request still running then is cut off, and the server exits after one
+`WARN` line naming each such request by its id, method and path
+(`crate::in_flight` tracks every request until its answer's body is sent).
+An import batch cut off this way is rolled back by SQLite and stores
+nothing, and the Upload, which gets no answer, pauses and sends it again
+when the run resumes. Why: an import batch can run for minutes, and
+`docker stop` killed the server after Docker's 10 seconds, so the batch was
+lost all the same, with a log that ended mid-request
+([#2122](https://github.com/messagecrate/message-crate/issues/2122)). Both
+Compose files set `stop_grace_period: 40s`, and the documented `docker run`
+commands `--stop-timeout 40`, so Docker never has to kill a server that
+keeps to its own limit. `docker_stop_waits_longer_than_the_drain` fails when
+either is no longer than the limit. Rejected: a config key for the limit,
+because Docker's stop time would have to follow every value it could be
+set to.
+
+## Connections
+
+The server holds every connection to four limits, so one slow or stuck
+client cannot hold it
+([#2100](https://github.com/messagecrate/message-crate/issues/2100),
+[#2984](https://github.com/messagecrate/message-crate/issues/2984)). A
+connection that sends no request, or sends one too slowly, is closed after
+30 seconds. At most 256 connections are open at once, and the next waits
+for one to close. A body that stops arriving, or arrives too slowly, is no
+longer read once the body time limits pass. A connection whose client reads
+none of its answer for the body stall time is closed. In detail:
+
+- A connection has 30 seconds to send a request's headers, counted from when
+  it opens or from the previous answer, and is closed when it has not
+  (`HEADER_READ_LIMIT` in `crates/server/server/src/connections.rs`). So an
+  idle connection stays open 30 seconds after its last answer. The desktop
+  app keeps an idle connection for reuse 20 seconds (`POOL_IDLE_LIMIT` in
+  `crates/libs/http`), under that, so it never sends a request on a
+  connection the server is closing.
+- At most 256 connections are open at once (`MAX_CONNECTIONS` there). The
+  next one is accepted once one of them closes, and waits with the operating
+  system until then. 256 is far above what a few browser tabs and the
+  desktop app's Upload open together, and under the 1024 open files a Linux
+  process gets by default, which the connections share with the database and
+  the upload files.
+- Every request body is held to the body time limits, `[server]
+  body_stall_secs` (60) with no byte arriving and `body_total_secs` (300)
+  for the whole body, and one that meets either answers `408 Request Timeout`
+  (`body-stalled`). An import batch, an attachment and a part of one hold
+  their bodies to the limits themselves, from when they start reading. The
+  layers hold every other body from when the request arrives
+  (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
+  clock: an import batch waits for an import slot before it reads, and a
+  clock started on arrival would count that wait against its body.
+- An answer the client takes no byte of for `[server] body_stall_secs`
+  (60) closes its connection, and the server lets go of the answer and the
+  file it reads from (`AnswerStall` in
+  `crates/server/server/src/connections.rs`). The wait counts only while a
+  write waits on the client, and starts again with every byte the client
+  takes, so a download that is still moving, however slowly, is never cut
+  off, and an answer the server is still making is not timed. The close is
+  written to the server's log at `INFO`, so the limit firing shows at the
+  default level and reads apart from a client that hung up, which is
+  written at `DEBUG`. Nothing limits
+  how long a whole answer takes to send: an export download or a large
+  attachment takes as long as the client's link needs.
+
+Why: `axum::serve` builds each connection without a timer, and hyper reads
+its own 30-second header limit only with one set, so a device that opened a
+connection and sent nothing, or sent its headers or a JSON body a byte at a
+time, held a task and a file handle for as long as it liked, and any number
+of devices could. On a home network one misbehaving device could starve a
+server that has one database file and two import slots. The header read
+limit and the connection cap are fixed in the code, not config keys,
+because no setup needs others: a working client sends its headers at once.
+Why the body limits are the upload ones rather than figures of their own:
+every other body is smaller than an import batch, so the limits a batch
+arrives inside hold it too, and one pair of figures is one to explain.
+
+Why the answer is held to the body stall time rather than a figure of its
+own: a client that reads none of an answer is as stuck as one that sends
+none of a body, and one figure for "no byte moved" is one to explain. Why
+the limit sits on the connection rather than on the answer's body: while
+the client reads nothing, the server is waiting to write and does not ask
+the body for more, so a timer in the body would never be looked at.
+
+Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
+in place of the cap on connections. A connection that never sends its
+headers is no request, so a cap on requests leaves it uncounted. Under
+HTTP/1.1 a connection carries one request at a time, so the cap on
+connections bounds the requests too. Axum's `Router::layer` would also give
+each route a cap of its own.
+
+These limits keep a slow or broken client from holding the server. They do
+not make the server safe to reach from the internet: that needs a proxy, as
+[Credentials and reach](#credentials-and-reach) says, and what the server
+itself must do there is
+a separate design
+([#2894](https://github.com/messagecrate/message-crate/issues/2894)).
 
 ## Content negotiation
 
@@ -456,12 +753,12 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+but the six that answer bytes: `GET /v1/assets/{sha256}`, which streams the
 asset's own contents, `GET` and `HEAD /v1/assets/{sha256}/preview` and
 `GET` and `HEAD /v1/assets/{sha256}/thumbnail`, which stream its Preview and
 its Thumbnail or answer the headers that stream would carry,
-`POST /v1/contacts/address-book`, which answers the address book as
-`text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
+`POST /v1/contacts/address-book` and `POST /v1/contacts/vcard-address-book`,
+which answer the address book as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
 server's log as `text/plain`. A media element probes a file with `HEAD` and an
 `Accept` such as `image/*`, so refusing that `HEAD` would refuse the probe.
 `HEAD /v1/assets/{sha256}` is checked, because it is the probe for whether an
@@ -469,6 +766,75 @@ asset is stored and answers JSON. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
+
+## Caching
+
+Every `/v1` answer carries `Cache-Control: no-store` unless its route sets a
+`Cache-Control` of its own. The rule covers every status and every answer a
+layer gives before the handler runs: a `401 Unauthorized` or `403 Forbidden`
+from the credential check, a `405 Method Not Allowed`, a `406 Not Acceptable`,
+a `413 Payload Too Large`, the `404 Not Found` of a path no route matches, and
+the answer to a CORS preflight. The only routes that set their own are the
+three asset reads, which send `private`, or `private, no-store` under a Media
+Link, once the credential is accepted (see [Credentials and
+reach](#credentials-and-reach)). Their refusals before that point take
+`no-store` from this rule. An asset read's handler reaches the account the
+read opens only through `AssetReadAccess::answer`, which sets the header on
+whatever it answers, so an asset read route added later cannot answer
+without it, and a test walks every route the document opens to a Media
+Link (#2585). Nothing outside `/v1` is marked: the website's built
+files and `/health` keep their own caching.
+Why: the answers carry a Session token (`POST /v1/session`), message text,
+contacts and attachments. RFC 9111 already keeps a compliant shared cache
+from storing an answer to a request that sent `Authorization`, and a browser
+does not cache a `POST` by default, but a browser's own cache may still write
+a `GET` answer to disk, and a proxy that does not follow the RFC may keep
+one. `no-store` says in the answer itself that nothing may keep it.
+How: `with_server_layers` in `server.rs` puts one layer,
+`no_store_unless_set` in `middleware.rs`, around the whole router, so a route
+added later is covered without remembering to. The layer sets the header only
+when the answer has none. The OpenAPI document states the rule once, in its
+description, as it does for `405 Method Not Allowed`, and the walk over every
+operation checks it (see [The reference](#the-reference)).
+
+Rejected: `private` for every answer. It still lets the browser write message
+text and a Session token to its disk cache, and the web app fetches afresh
+through its own query cache rather than the browser's.
+
+## Protective headers
+
+Every answer, the website's built files as well as `/v1`, `/health` and the
+OpenAPI UI, carries `Content-Security-Policy`, `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: no-referrer`, unless the route sets the header
+itself (#2073). The policy runs only the server's own script files, never
+inline script. It refuses plugins (`object-src 'none'`), because a plugin
+runs code the script rule does not govern. It forbids any site to frame a
+page (`frame-ancestors 'none'`), so no other site can show the login card
+inside its own page and trick a person into typing there. A `<base>` element
+may point only at the server (`base-uri 'self'`), so injected markup cannot
+send the website's relative script paths elsewhere. No form submits
+anywhere (`form-action 'none'`), because the website sends everything with
+`fetch` and an injected form could post a password to another site. Fonts
+may come only from the server or a `data:` URL (`font-src 'self' data:`), as
+in the desktop window's policy; the website loads no font from another host.
+Styles may be inline, because the website's
+components set `style` attributes. `connect-src`, `img-src` and `media-src`
+allow other hosts over `http:` and `https:`, because the login card's
+**Change server address** points the website at another server, and allow
+`blob:` and `data:`, the attachment and image URLs the website makes itself.
+The policy is `CONTENT_SECURITY_POLICY` in `middleware.rs`, and the desktop
+window's own policy in `src-tauri/tauri.conf.json` follows the same lines.
+Why: the website keeps the Session token in browser storage, and a cookie is
+not an option (see [Credentials and reach](#credentials-and-reach)), so any
+script that runs on the page can read the token and send it anywhere. The
+policy keeps such a script from running at all. No injection is known today.
+How: three `SetResponseHeaderLayer::if_not_present` layers in
+`with_server_layers` wrap the whole router, so a route added later is
+covered. The website's first-paint theme script is `web/public/theme.js`, a
+file of its own, because the policy refuses an inline one.
+Rejected: the policy on the website alone. A `/v1` answer a browser renders,
+such as a JSON body opened in a tab, is a page too, and the OpenAPI UI runs
+under the same policy without change.
 
 ## Credentials and reach
 
@@ -480,7 +846,21 @@ security scheme with its scopes, so every route says which it accepts.
   account's own permissions: `import`, `export`, `delete`. The owner's session
   carries none of those and reaches only the accounts collection, the server
   settings and the installation's storage totals, because the owner holds no
-  messages.
+  messages. It also reads the country list (`GET /v1/phone-countries`),
+  because the owner picks the country of a number on an account it manages.
+  A Session ends after 7 days unused, and after 30 days from the login
+  however much it is used. A login sets its expiry 7 days ahead. A request
+  that the Session serves moves the expiry to 7 days after the request, but
+  never past 30 days after the login, and writes it only when the move is
+  an hour or more, so a Session in use writes at most once an hour. The
+  move is written in the background, one at a time, so a request never
+  waits for the write lock an import holds. A
+  password change renews the Session for 7 days, and starts its 30 days
+  again. Why: a Session forgotten on a shared computer ends within a week,
+  while an account in daily use never sees the shorter limit, and the cap
+  bounds how long one Session token lasts however it is used. The Audit
+  Trail reads a Session's moved expiry from `session_extensions`, because
+  its own entries are never edited.
 - An **API token** is a named credential an account makes for a program, with
   the scopes the person chose from `import` and `export`, capped by the
   account's own. The cap holds on every request, when the token is made, and
@@ -489,13 +869,19 @@ security scheme with its scopes, so every route says which it accepts.
   person's act, and a leaked or faulty program must not be able to empty an
   archive. A token never signs in and never browses. It is ended by the person
   or the owner revoking it (`DELETE /v1/accounts/{id}/api-tokens/{token_id}`,
-  with a session) or by its expiry, never by the program holding it.
+  with a session) or by its expiry, never by the program holding it. The
+  owner makes no token, and a token row on the owner's account, written by
+  hand or restored with a database, answers the same `401 Unauthorized` as a
+  token the server never issued. Why: no token acts as the owner
+  (`docs/adr/0008-the-owner-holds-no-messages.md`), and the refusal sits in
+  the token lookup every route goes through, so a route that forgets to
+  refuse the owner cannot break it.
 - `GET /v1/session` answers whose credential the caller holds — the account's
   id and username — for a session or a token. Why: a program holding a token
   needs to know which account it writes to before it starts, and push and export
-  label their work with it. `DELETE /v1/session` refuses a token with `403`,
-  because a token is not a Session and a `204` would say something ended when
-  nothing did.
+  label their work with it. `DELETE /v1/session` refuses a token with
+  `403 Forbidden`, because a token is not a Session and a `204 No Content`
+  would say something ended when nothing did.
 - A **Media Link** reads one asset, its Preview and its Thumbnail, in the
   account that made it, with no `Authorization` header. A Session makes it
   with `POST /v1/assets/{sha256}/media-links`, which answers the URLs to
@@ -524,7 +910,15 @@ security scheme with its scopes, so every route says which it accepts.
   signing the same terms with the Session the account holds now, so a link
   for another asset, another account, a later expiry or an ended Session
   fails the same check. The server's log shows `media_link=[hidden]`,
-  because a credential is never logged.
+  because a credential is never logged. Every answer the three asset
+  routes give once the credential is accepted carries
+  `Cache-Control: private`, because the bytes are one account's
+  attachment, and one read with a Media Link carries `private, no-store`:
+  that request sends no `Authorization` header, so a shared cache in front
+  of the server would otherwise keep the answer under the link's URL and
+  serve it after the hour or the Session has ended. A problem such as
+  `404 Not Found` or `416 Range Not Satisfiable` carries it too, because a
+  cache may keep a `404 Not Found` and hide a Preview made later.
   Why an hour: a phone video is watched and sought in within minutes, and an
   hour leaves room for a long one; a link copied out of the page stops
   working soon after. The web app makes a new link whenever it opens an
@@ -581,10 +975,11 @@ What each reaches:
   refused whatever its scopes.
 - The Demo Account is refused with `403 Forbidden` and
   `demo-account-protected` by its id, whatever its permission row says, on
-  every route that needs the `import` scope or the `delete` permission and on
-  `POST /v1/contacts`. Its profile reports `export` and neither `import` nor
-  `delete`, from the same id. Why: it has no password, so its limits must not
-  rest on a row (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+  every route that needs the `import` scope or the `delete` permission, on
+  `POST /v1/contacts`, and on `POST /v1/accounts/{id}/api-tokens`. Its
+  profile reports `export` and neither `import` nor `delete`, from the same
+  id. Why: it has no password, so its limits must not rest on a row
+  (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
 - An account may do everything with its own messages, deleting them and
   itself included, unless the owner limits it. Deleting an account deletes
   every message it owns, so an account whose `delete` permission is off
@@ -641,7 +1036,13 @@ What each reaches:
   nothing of the backup an import read, neither the file the desktop app
   recorded (`source_fingerprint`) nor when the backup was made
   (`backup_taken_at`), because both say when and from what the account's
-  phone was backed up.
+  phone was backed up. The owner's read of one run adds the attachments it
+  wrote whose Thumbnail or Preview the media pass could not make, each by
+  its file name, type and size with why each version was not made, and their
+  count by kind of failure: an attachment's name, type and size are what
+  ADR 0008 lets the owner read, and the reason is what ffmpeg said about the
+  file or a phrase of the server's. Nothing of the message or conversation
+  the attachment belongs to comes with it (#2636).
   Why: a staging summary lists the addresses of everyone in the backup, an
   issue names its conversation's file, a note names a file or an address, and
   an export's query is a search over
@@ -676,38 +1077,192 @@ What each reaches:
   other route has a body cap fixed in the code. Why: the owner may set any
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
+- An import batch body is held to 16 MiB, the most the desktop app's Upload
+  packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the
+  one figure both sides read), and a larger one answers
+  `413 Payload Too Large`. Why 16 MiB: the server saves a batch in one write
+  transaction, and every other writer, a login included, waits 15 seconds
+  for the write lock before it answers `database-busy`. A full 16 MiB batch
+  saved in under 5 seconds in a timed release build. A 64 MiB batch held
+  the lock four times as long
+  ([#2062](https://github.com/messagecrate/message-crate/issues/2062)).
+  A batch takes its import slot before it reads its
+  body, and writes the body under the Data Directory
+  (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
+  that goes `[server] body_stall_secs` (60) with no byte arriving, or is
+  still arriving `body_total_secs` (300) after the read started, ends the
+  read with `408 Request Timeout` (`body-stalled`), which frees the slot.
+  An attachment body and a part of one are held to the same two limits,
+  though they take no slot, because each holds a connection and a file
+  while it reads, and so is every other body
+  ([Connections](#connections)). At 16 MiB, a full batch arrives inside 5 minutes at about
+  0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
+  asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
+  (`MAX_PROXY_BODY_BYTES` in `import`), so an attachment
+  arrives at the same speed a batch does. Why: the server accepted eight
+  times what its client sends, and held a batch's whole text in memory
+  beside its parsed records (#2075); every batch waiting for a slot held its
+  body on disk (#2095); and that disk was the operating system's temporary
+  directory, often small or held in memory, where nothing removed what a
+  stopped server left (#2123). Only two slots exist, so without the bounds
+  two clients that went to sleep part-way through a body, or sent a byte
+  now and then, would stop every import on the server. A 10-minute limit for
+  a whole body held a slot that long
+  ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
+- `GET /v1/server` states the two body time limits, in seconds, as
+  `body_stall_secs` and `body_total_secs`, to any client. The desktop
+  app's Upload reads them once it has logged in, and waits for the answer to
+  each batch, attachment or part for `body_total_secs` plus 5 minutes for
+  the server's wait for a slot and its save. Why: the limits are config
+  keys, and an Upload that kept its own copy, as it once kept a 10-minute
+  timeout written beside the server's, drifts from them. They are stated
+  there, not in the answer that starts an Import Run, because the desktop
+  app's web screens start the run and the Upload only posts into it, often
+  after a restart.
+- `/v1/server/settings` reports the database's journal as `journal`: the
+  journal mode SQLite runs the database in, `mode`, read when the request
+  is answered, and `wal_error`, the error SQLite gave when the server asked
+  for write-ahead logging as it started, in SQLite's words. `journal` is not
+  a setting, so it sits in an object of its own beside the settings, and
+  the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
+  a change replaces the one the screen read without losing it. Owner Home
+  says so when the mode is not `wal`, or it cannot be read and SQLite gave
+  an error, and names that error. A `wal` mode hides the notice whatever
+  `wal_error` says, because the error is from the start and the file may
+  have been switched to write-ahead logging since. `mode` is `null` when it cannot be read, and the route still
+  answers. `wal_error` is `null` when SQLite gave no error: it turned
+  write-ahead logging on, or kept another mode without one. Why:
+  in any other mode every page waits while an import writes, and a warning
+  in the server's log was the only sign of it (#2201). Neither is on
+  `GET /v1/server`, which answers anyone: that route carries only what a
+  client needs before it logs in, and how the database is stored is not
+  that (#2703). SQLite's error goes to the owner alone, as the server's log
+  does (#2691).
+- Free text a route stores has a cap of its own, stated in the field's
+  OpenAPI description: a name a person types (an account's display name, a
+  contact's name) at most 200 characters, an identity address it links at
+  most 320, an Import Error's `item` and `reason` and an Import Run note's
+  `item` and `text` at most 2,000 each, the `tool` and `device_id` a new
+  Import Run names at most 64 each, its `run_dir` at most 4,096, the
+  `PATH_MAX` of Linux, and each JSON value an Import Run stores as it is
+  created at most 65,536 bytes. The value is trimmed first, except a path,
+  whose spaces at either end are part of its name, and one over its cap is
+  `validation-failed`, never cut short. Why: the value is stored, shown on
+  every list that holds it, and written into the Audit Trail and the
+  server's log, so the 32 MiB body cap is no bound on it (#2183). An address
+  given to unlink or to find a row is not held to the cap, because it names
+  something already stored, and neither is an address book load, because a
+  file Export wrote must load back whatever an import stored.
+- A password is at most 128 characters wherever a request sends one: a new
+  account's, a login's, a new or current password on a change, and the
+  owner's on a claim. It is counted in characters, as a username is, never
+  trimmed, and has no minimum length but the owner's one character. One
+  over the cap is `validation-failed`, and the OpenAPI description and
+  `maxLength` state it. Why: people count characters, not bytes; Argon2
+  reduces a password to a fixed size before its costly work, so the cap only
+  keeps a client from sending a huge body as a password, and 128 leaves
+  room for any generated password or passphrase, over the 64 NIST SP 800-63B
+  asks a verifier to allow (#2996).
 - Each part of a multipart upload is held to the part size its upload was
   told when it started, which the upload's manifest records, and not to the
   limit as it is now. Why: an upload in progress keeps the limit it started
   with. Lowering the limit mid-upload otherwise refused every remaining part
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
+- A part's body is written to a temp file in its upload's directory as it
+  arrives, and the server holds one buffer of it at a time, as the HTTP
+  library hands the body over, never the whole part. Once all of it is in,
+  a part of exactly its size takes the part's name and the manifest
+  records it; a part of any other size is refused and its temp file
+  removed. Why: a part read whole into memory held a whole part size
+  (`[server] asset_part_size`) of the server's memory per request, and
+  nothing limited how many requests one account with the import permission
+  sent at once, so it could take the server's memory from every other
+  account (#2114). With the parts on disk, a part request costs the server
+  the memory of one buffer of the body as the HTTP library hands it over,
+  whatever the client sends. The part size no longer sets it, so the server
+  sets no limit of its own on parts in flight, and the desktop app's 64
+  uploads at once cost 64 such buffers.
+- An account may have at most 128 multipart uploads open at once. The start
+  of one more answers `409 Conflict` (`state-conflict`), with `detail`
+  naming the limit, until one of them is completed, aborted, or abandoned.
+  Why: an open upload keeps its parts on the disk every account shares, and
+  with no cap one account could leave enough of them to fill it (#2176). It
+  is `409 Conflict` and not `422 Unprocessable Entity` because the account's
+  state refuses the start, and no rewrite of the request gets past it. The
+  number is twice the uploads the desktop app runs at once, 16 attachments in
+  each of 4 conversations, so an import goes as fast as the app can send it.
+- An upload, multipart or a single-request body, is abandoned once nothing
+  has been written to it for `[server] body_stall_secs` (60) and no request
+  to it is running. A start that finds the account at the limit removes the
+  account's abandoned uploads first and counts again, and `serve` removes
+  every account's as it starts and each account's when its Import Run ends.
+  Why: an Upload the app's close or a crash stopped leaves up to 64 uploads
+  open, which nothing resumes, because the client keeps an upload's id in
+  memory only. With a day as the limit, two such stops held the account at
+  the limit, and the next Upload failed every attachment sent in parts for up
+  to a day (#2652). The stall limit is safe because a live upload never goes
+  that long between requests: the app sends each part as soon as the one
+  before it is answered. A request still running keeps its upload however
+  old its manifest is, because a part streams into a temp file of its own
+  and the manifest records it only once all of it has arrived, and a
+  completion writes no manifest. Only `serve` removes them,
+  not `process-assets` or `imports discard`: those commands may run beside
+  `serve` and cannot see its requests.
 
 The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account
 inside its signed value and is not a parameter of that kind.
 
-Rate limiting guards the three routes that take no credential and make one,
-over a 60-second window; the limit is documented in the developer reference.
-`POST /v1/session` counts per account, because it guards one account's
-password: by the account's id when the username names one, and otherwise by
-the username folded the way the lookup folds it, so no spelling of a username
-gets a count of its own. A wrong `current_password` sent to
-`PUT /v1/accounts/{id}/password` or `DELETE /v1/accounts/{id}` counts in the
-same per-account count, and past the limit those routes answer `429` without
-checking the guess: an open session must not guess faster than the login.
-`POST /v1/accounts` and `POST /v1/server/claim` count once for the
-whole server, because they guard against a flood of new accounts, and a count
-per name lets a script that tries a new name each time straight through.
+No `/v1` route answers with a redirect, and the web app refuses to follow
+one: every call it makes with the `Authorization` header passes
+`redirect: "error"` to `fetch`, so a redirect fails as a network error and
+reads as an unreachable server. Its probe of `/health` refuses one too,
+though it sends no credential, so the server status reads Disconnected
+beside a login that fails, never Connected. Why: a redirect on `/v1` can
+only come from something in front of the server, such as a misconfigured
+reverse proxy, and following it to another host could carry the Session
+token there. Current browsers drop `Authorization` on a cross-origin
+redirect, but the Fetch standard gained that rule only in November 2022
+([whatwg/fetch#1544](https://github.com/whatwg/fetch/pull/1544)), and the
+desktop app runs in whichever WebView the system has (WebKitGTK, WKWebView,
+WebView2). A visible failure is better than a token sent somewhere else. The desktop app's own Rust client drops the
+header on a change of host already.
 
-Rejected: counting registrations by the caller's address. Behind a reverse
-proxy every visitor shares one address, and believing a forwarded address
-needs a list of trusted proxies that is easy to get wrong. A self-hosted server
-takes a handful of registrations, so a server-wide count never stops a person.
+A refused credential waits a short, fixed time before the server answers. A
+refused login (`POST /v1/session`) and a wrong `current_password` sent to
+`PUT /v1/accounts/{id}/password` or `DELETE /v1/accounts/{id}` each wait
+about a second (`REFUSAL_WAIT` in `crates/server/server/src/credentials.rs`),
+then answer `401 Unauthorized` (`invalid-credentials`). Every refused login
+gets the same answer: a username nobody holds, a wrong or empty password, a
+disabled account. The request gives its database connection back before it
+waits, so refusals waiting to answer do not hold the pool. A login with the
+right password, and a right `current_password`, do not wait. Nothing counts
+attempts: no route answers `429 Too Many Requests`, and nothing locks an
+account out.
+
+Why: the wait is basic common sense, so a wrong password costs a moment
+before the next try. It is not a defense against password guessing from the
+internet. A Message Crate reachable from the internet belongs behind a proxy
+with TLS and a login of its own, and what the server itself must do there is
+a separate design (#2894).
+
+Rejected: counting attempts, per account, per username or for the whole
+server, and answering `429 Too Many Requests` past the count (#2893). A
+count per account let anyone who knew a username lock its holder out by
+sending wrong passwords. A count per username needed timing machinery so
+that it would not tell a stranger which usernames name an account, and kept
+a count for every username tried, so a script trying new names grew it
+without end (#2885).
+
+Each refused login writes a warning to the server's log with the account's id
+(none for an unknown username), the reason and the connecting app. The
+username typed and the password are never written
+([The server's log](server-log.md)).
 
 ## Runs
 
 An Import Run and an Export Run are recorded permanently, whether they
-completed, failed or were cancelled, and outlive the account that ran them, as
+completed, failed or were canceled, and outlive the account that ran them, as
 the rest of the Audit Trail does. Each run records what started it: a Session
 with the app it named, or an API token by its label and hint as they were
 then. The client closes a run: a run's
@@ -715,15 +1270,43 @@ settings are stated once on creation, never per batch or per page, and
 `complete`, `discard` (imports) and `cancel` (exports) are the only ways out.
 There is no sessionless import and no unrecorded export.
 
-A run that has finished answers `409` to `complete`, `discard`, `cancel`, a
-batch, and a change of stage; its record is never rewritten. Its outcome is
-stated once, as `status`. Why: the finished record is the history the person
-reads, and a cancelled run marked completed afterwards would lie. A program
-unsure how a run ended reads it with `GET` rather than repeating the call.
+`complete` states the outcome in its body, as `status`: `completed`,
+`completed_with_issues` or `failed` for an Import Run, and `completed` or
+`failed` for an Export Run. An Export Run's `cancel` is for a run the person
+gave up. A run an error stopped is closed with `complete` as `failed`, never
+with `cancel`. Why: the Audit Trail and the export history show `canceled` as
+the person's own choice, so a failed run recorded that way lies the same way
+a canceled run marked completed would (#2069).
 
-Rejected: a repeatable `complete`, answering `200` when the run already ended
-the same way. It makes one call safe to retry at the cost of a second rule,
-and `GET` already answers the question a retry is asking.
+A run that has finished answers `409 Conflict` to `complete`, `discard`,
+`cancel`, a batch, and a change of stage; its record is never rewritten. Its
+outcome is stated once, as `status`. Why: the finished record is the history
+the person reads, and a canceled run marked completed afterwards would lie. A
+program unsure how a run ended reads it with `GET` rather than repeating the
+call.
+
+Rejected: a repeatable `complete`, answering `200 OK` when the run already
+ended the same way. It makes one call safe to retry at the cost of a second
+rule, and `GET` already answers the question a retry is asking.
+
+A running Import Run's stage moves only to the next stage in the order a run
+passes through (`parse`, `write`, `staging_review`, `media`, `media_review`,
+`upload`), from `staging_review` straight to `upload` (the move a client makes
+when the import has no Media Stage), or to the stage it is already at. Any
+other change of stage, backwards or skipping a stage, answers
+`409 Conflict` `state-conflict` naming both stages, and the run keeps its stage
+and summary. Why: the next visit resumes a run at the stage the server holds,
+so a client that sent a wrong stage would have the run resumed at work it
+already did (#1227). Every run opens at `parse`, and `POST /v1/imports` takes
+no stage: a `stage` in its body is ignored like any other field the request
+does not name. Why: a run opened later in the order would be resumed at work
+nobody did (#2638), and a field with one valid value carries nothing
+(#2858).
+
+A running run with no stored stage is refused any change of stage with
+`500 Internal Server Error`. Why: the server never writes such a row, so there
+is no stage to check the move from, and passing it unchecked would let any
+move through (#2638).
 
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`
@@ -771,6 +1354,29 @@ between pages move the offsets, so pages skipped or repeated messages and
   client steps `offset` by `limit` until it reaches `total`, never by the
   items it got, and never stops on a short or empty page.
 
+An account has at most one running Export Run, held by a partial unique
+index on `exports(account_id) WHERE status = 'running'`, as for Import Runs.
+`POST /v1/exports` replaces the account's running run: in the transaction
+that records the new run, the running one is closed as `canceled` and its
+list deleted. A start is never refused because a run is open. The server
+also closes as `canceled` a running run with no page read for an hour,
+counted from its last page or, before the first, from its start; it looks
+once a minute, and when it starts. A page past the end of the list hands
+over nothing and still counts as a page read, so the desktop app reads one
+every ten minutes while it fetches the run's Assets, which read no page. A
+client still reading a run closed either way gets the `409 Conflict` any run
+that is not running answers, and the desktop app's Export fails with a
+sentence saying it was canceled. Each closure is an `export_run_closed` entry
+in the Audit Trail, with the reason `replaced` (by the person starting the
+new Export) or `idle` (by the server), naming the run.
+Why: every running run holds one row per message it matched, written while
+holding the database's write lock. With no limit, a program with the
+`export` scope could start runs in a loop and grow that table by the
+account's whole message count each time, and a client killed mid-Export
+left its list behind for good (#2080). Replacing rather than refusing keeps
+a person who restarts an Export from being locked out by the run their
+killed app left.
+
 ## The reference
 
 The generated reference, `docs/src/assets/openapi.json`, is produced from the
@@ -778,19 +1384,22 @@ handlers by `message-crate-server dump-openapi` and checked in; a test fails
 when the two differ, and CI checks the web app's generated types against it.
 
 An operation's error responses are built from shared parts, never written out
-by hand. The credential a route accepts brings its `401` and `403`, and a
-Media Link brings `media-link-invalid`; a request
-body brings `400`, `413`, `415` and `422`; an id in the path brings `404` and
-`422`; every `/v1` route brings `422` for a query parameter it does not
-declare; and every `/v1` route that answers JSON brings `406` for an `Accept`
-that names nothing JSON. `405` is said once, in the document's own
-description, because it answers a method no operation has. The handler adds
-only what is its own, such as `409` for a run in the wrong state, by naming
-the problem type (`crate::problem::openapi`).
-Every error response is declared as `application/problem+json`, names the
-problem types it can carry (in its description and in `x-problem-types`), and
-has a description. The first sentence of a handler's doc comment is the
-operation's summary, and the rest is its description.
+by hand. The credential a route accepts brings its `401 Unauthorized` and
+`403 Forbidden`, and a Media Link brings `media-link-invalid`; a request
+body brings `400 Bad Request`, `408 Request Timeout` (`body-stalled`),
+`413 Payload Too Large`, `415 Unsupported Media Type` and
+`422 Unprocessable Entity`; an id in the path
+brings `404 Not Found` and `422 Unprocessable Entity`; every `/v1` route brings
+`422 Unprocessable Entity` for a query parameter it does not declare; and every
+`/v1` route that answers JSON brings `406 Not Acceptable` for an `Accept` that
+names nothing JSON. `405 Method Not Allowed` is said once, in the document's
+own description, because it answers a method no operation has. The handler adds
+only what is its own, such as `409 Conflict` for a run in the wrong state, by
+naming the problem type (`crate::problem::openapi`). Every error response is
+declared as `application/problem+json`, names the problem types it can carry
+(in its description and in `x-problem-types`), and has a description. The first
+sentence of a handler's doc comment is the operation's summary, and the rest is
+its description.
 Why: every mismatch between the reference and the handlers that the September
 2026 review found was in a hand-written list.
 
@@ -815,15 +1424,17 @@ field's name to go on.
 A rule that can be checked by walking every operation in the document is
 checked that way, by one test, as `openapi/credential_matrix.rs` checks every
 route's reach: the page shape and paging parameters on every list, a
-`Location` on every `201` that the credential which made it can `GET`, a
-problem document on every failure, `401` without a credential, a refused
-unknown query parameter, `415` for a body without an accepted `Content-Type`,
-`400` for a JSON body that is not JSON, `406` exactly where the document lists
-it, a successful `GET` in a media type its document declares, every property of
-a success answer required and every one of them in what the route answers
-([Fields](#fields)), no body on a `HEAD` answer, kebab-case paths and the
-nesting depth. Why: a rule checked one
-route at a time is checked on the routes someone remembered.
+`Location` on every `201 Created` that the credential which made it can `GET`,
+a problem document on every failure, `401 Unauthorized` without a credential, a
+refused unknown query parameter, `415 Unsupported Media Type` for a body
+without an accepted `Content-Type`, `400 Bad Request` for a JSON body that is
+not JSON, `406 Not Acceptable` exactly where the document lists it, a
+successful `GET` in a media type its document declares, every property of a
+success answer required and every one of them in what the route answers
+([Fields](#fields)), no body on a `HEAD` answer, `Cache-Control: no-store` on
+every answer but those of an operation that lists its own
+([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule
+checked one route at a time is checked on the routes someone remembered.
 
 The shared failures are checked by calling each operation into them, and the
 status and problem type the server answers must be ones the document lists.
@@ -861,7 +1472,15 @@ from the name:
   list, and `ImportRunSummary` is an Import Run without its issues and
   notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
   thing as the owner reads it under another account: `OwnerImportRun` and
-  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
+  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)), and
+  `OwnerImportRunSummary` is an `OwnerImportRun` as the owner's list answers
+  it, without the attachments whose versions were not made. `NotMade` is a
+  Thumbnail or Preview the server could not make, as the owner reads it:
+  `NotMadeAttachment` is an attachment that has one, by its file name, type
+  and size and nothing of its message or conversation, because those are
+  what ADR 0008 lets the owner read of an attachment. The types it carries
+  share the prefix: `NotMadeVersion` (why one version was not made),
+  `NotMadeKind` and `NotMadeCount`.
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
   is not a thing (`CreateApiTokenRequest`, `DeleteMessagesResponse`), and
@@ -872,10 +1491,14 @@ No other endings: no `Body`, `Payload`, `Input`, `Patch`, `Item`, `Info`,
 `Message` next to `MessageResponse` would leave a reader asking whether they
 are one thing or two.
 
-A wire type whose Rust name would clash with a shared crate's type takes the
-`Api` prefix in Rust and keeps its wire name through `#[schema(as = …)]`:
+A wire type whose Rust name would clash with a shared crate's type, or with
+the `db/` struct it carries whole, takes the `Api` prefix in Rust and keeps
+its wire name through `#[schema(as = …)]`:
 `ApiIdentityService` in `db/handles.rs` is `IdentityService` on the wire,
-beside the conversation file's `message_ir::IdentityService`. Why: two types
+beside the conversation file's `ir::IdentityService`, and
+`ApiServerSettings` in `server_api.rs` is `ServerSettings` on the wire,
+carrying `db/server_settings.rs`'s `ServerSettings` and the database's
+journal. Why: two types
 under one bare name mean one or the other depending on a file's imports, and
 those two read the same word differently.
 
@@ -886,12 +1509,39 @@ about, and it is written for SQLite, the only database engine
 reason). Why no SQL in a handler: a query written into a handler gets written
 twice (the identity counts for contacts and for accounts were).
 
+A handler takes the part of the server's state it reads, never `AppState`
+whole. The database is `State<SqlitePool>`, the configuration is
+`State<Arc<Config>>`, and each other part is a sub-state that `server.rs`
+cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
+`DemoState`, `RefusalWait`, `BodyTimeLimits`, `MediaLinkKey` and
+`WalError`. The import routes take `Importer`, in
+`imports_api/run_control.rs`, which holds what running and ending an Import
+Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
+and the rest) read only the pool, so they work under any router state that
+has one. Why: a handler's signature then names everything it reads, so a
+reader sees its dependencies without reading its body. A change to the Demo
+Account build or to `Importer` does not touch a handler that never takes
+them.
+
+A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
+errors when a statement is all that can fail, and an error type in `db/` when
+the caller must tell outcomes apart (`SavedSearchError::NameTaken`,
+`MessagePageError::Invalid`); the `From` that turns each into a problem type
+is in `api_error.rs`. Why: the command line import and the Demo Account build
+call `db/` too and speak no HTTP, and the answer a route gives for an outcome
+is the handler's choice, not the storage layer's.
+
 Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
 `imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
 sequences its statements, logs them and keeps the counts, and the statements
-are in `db/staging.rs`, the module for the staging tables. Why: the point of
-the rule is that the SQL for a table is found in one place, and a stage that
-carried its own statements would be a second place for `staging_messages`.
+are in `db/staging.rs`, the module for the staging tables. The dedupe every
+Import Run runs as it ends (`dedupe.rs`) is a stage too: it hashes the content
+keys and picks the copy shown, and the statements that read and write
+`messages.content_key` and `messages.duplicate_of` for it are in
+`db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
+found in one place, and a stage that carried its own statements would be a
+second place for its table's SQL: `staging_messages` for the import stages,
+`messages` for the dedupe.
 
 A promotion statement reads a staging table and writes a production one in
 the same `INSERT ... SELECT`, and it belongs with the staging tables rather
@@ -899,6 +1549,36 @@ than the production one, because the staging tables have no reader but the
 import while the production tables have many. The messages watermark and
 count a promotion takes before it inserts live there too, for the same
 reason: nothing but a promotion reads them.
+
+A route whose answer is one `db/` read's result, as the read returns it,
+answers with the read's own struct. That struct derives `Serialize` and
+`utoipa::ToSchema`, takes its wire name by the rules above, and the handler
+hands it on unchanged: `list_saved_searches` answers
+`Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
+reads. A struct that a client crate reads too lives in
+`api-types`, and the `db/` read returns that struct:
+`ExportRun` from `db/exports.rs`, `Message` from `db/conversation_messages.rs`.
+Why: one struct cannot drift from itself, and a copy beside it would be a
+second place to change for every column.
+No client needs the storage shape hidden from it, because no client is kept
+compatible ([Versioning and change](#versioning-and-change)). A column rename
+that reaches the wire costs a rebuild and nothing more.
+
+Does a route group then never define a wire type of its own? It does, when the
+answer is not one read's result as it stands. An action's answer is a
+`VerbNounResponse`, such as `DeleteMessagesResponse`. A thing assembled from
+several reads is defined in the route group: `Account`, `Contact`, and
+`ImportRun`, which is an `ImportRunSummary` with the run's issues and notes.
+So is a thing whose fields depend on who asks: `ApiToken` carries a `null`
+`token_hint` when the owner lists another account's tokens, and
+`OwnerImportRun` leaves out what the backup held. So is a thing whose stored
+form is not its wire form: `ImportRunSummary` decodes the JSON text its row
+holds in `form_json`, `summary_json`, `source_fingerprint` and
+`source_identities` into JSON values, and answers `form_json` as `form` and
+`summary_json` as `summary`. So is a thing no table holds, such as `Asset`,
+`MediaLink` or `PhoneCountry`. A struct that repeats a `db/` struct's fields
+and is filled from it field by field is none of these, so it is not written:
+the `db/` struct goes on the wire instead.
 
 A test of a route's answer goes through the router, checks a failure with
 `expect_problem` (status, `type` and `request_id`, not only the sentence), and

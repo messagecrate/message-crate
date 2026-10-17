@@ -1,9 +1,9 @@
 import { TabList, TabPanel, Tabs } from "react-aria-components";
 import Tab from "../../components/Tab";
-import type { ServerState } from "../../lib/useServerState";
 import ClaimForm from "./ClaimForm";
 import CreateAccountForm from "./CreateAccountForm";
 import LoginForm from "./LoginForm";
+import type { ServerState } from "./useServerState";
 
 /** Login and Create Account share the strip in halves, in the card's 14px text. */
 const authTabClass = "flex-1 text-center text-[0.875rem]";

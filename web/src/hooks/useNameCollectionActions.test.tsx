@@ -1,0 +1,374 @@
+/** @vitest-environment jsdom */
+
+/**
+ * The name-based interface over id-addressed routes.
+ *
+ * Screens hold names; the server addresses a set by id. Everything about that
+ * translation — where the id comes from, what happens when the name is not
+ * there, and which lists go stale after a write — is this module's, so it is
+ * tested here at the interface with the routes faked by name.
+ */
+
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import {
+  createNameCollection,
+  type MembersChanged,
+  type NameCollectionRoutes,
+} from "../lib/nameCollection";
+import { keys } from "../lib/queryKeys";
+import { deferred } from "../test/deferred";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, testQueryClient } from "../test/providers";
+import { freshEntries, seedEntries } from "../test/staleEntries";
+import { useNameCollectionActions, useSetNamedSetMembers } from "./useNameCollectionActions";
+
+vi.mock("./useAuth", () => authModule({ accountId: 7 }));
+
+let client: QueryClient;
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+function fakeRoutes(): { [K in keyof NameCollectionRoutes]: Mock<NameCollectionRoutes[K]> } {
+  return {
+    list: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn().mockResolvedValue(undefined),
+    updateMembers: vi.fn().mockResolvedValue({ added: 0, removed: 0 }),
+  };
+}
+
+function groupsOver(routes: NameCollectionRoutes) {
+  return createNameCollection({
+    routes,
+    key: keys.contactGroups.all,
+    chips: [
+      { key: keys.contacts.lists, field: "groups", shape: "pages" },
+      { key: keys.contacts.details, field: "groups", shape: "row" },
+    ],
+    label: "group",
+    forName: (name) => `group:${name}`,
+    reserved: {
+      label: "Contact Group",
+      reserved: ["trash"],
+      special: [{ name: "trash", message: "Trash is reserved" }],
+    },
+  });
+}
+
+const KEY = ["server", 7, "contact-groups"];
+const PAGE_KEY = ["server", 7, "contacts", "list", ""];
+const DETAIL_KEY = ["server", 7, "contacts", "detail", "1"];
+
+/** A contact list page and an open contact, as the two queries would hold them. */
+function seedContacts(): void {
+  client.setQueryData(PAGE_KEY, {
+    pages: [
+      {
+        items: [
+          { id: "1", name: "Ada", groups: [] },
+          { id: "2", name: "Ben", groups: ["Work"] },
+        ],
+        total: 2,
+      },
+    ],
+    pageParams: [0],
+  });
+  client.setQueryData(DETAIL_KEY, { id: 1, name: "Ada", groups: [] });
+}
+
+/** Group chips on one row of the seeded page. */
+function pageGroups(id: string): string[] | undefined {
+  const entry = client.getQueryData<{ pages: { items: { id: string; groups: string[] }[] }[] }>(
+    PAGE_KEY,
+  );
+  return entry?.pages[0]?.items.find((row) => row.id === id)?.groups;
+}
+
+/** Group chips on the open contact. */
+function detailGroups(): string[] | undefined {
+  return client.getQueryData<{ groups: string[] }>(DETAIL_KEY)?.groups;
+}
+
+beforeEach(() => {
+  startFakeClock();
+  client = // `keepUnread`: the chip targets below are patched but never observed by a
+    // `useQuery` in this file, and with `gcTime: 0` the library's own
+    // garbage collector removes an unobserved entry on a zero-delay timer,
+    // which the `settle()` before the test reads the optimistic chip runs.
+    // A hook that does observe (rendered elsewhere) is unaffected by this
+    // either way.
+    testQueryClient({ keepUnread: true });
+});
+
+afterEach(() => {
+  stopFakeClock();
+});
+
+describe("useNameCollectionActions", () => {
+  it("renames by the id the cache holds and marks the lists that show the name stale", async () => {
+    const routes = fakeRoutes();
+    routes.update.mockResolvedValue({ id: 12, name: "Fam" });
+    seedEntries(client, 7, [keys.contacts.all]);
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.rename("Family", "Fam")).resolves.toBe("Fam");
+
+    expect(routes.update).toHaveBeenCalledWith(12, { name: "Fam" });
+    expect(routes.list).not.toHaveBeenCalled();
+    expect(freshEntries(client, 7, [keys.contactGroups.all, keys.contacts.all])).toEqual([]);
+  });
+
+  it("matches a name without regard to letter case", async () => {
+    const routes = fakeRoutes();
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await result.current.remove("family");
+    expect(routes.remove).toHaveBeenCalledWith(12);
+  });
+
+  // The server matches a set's name with its own `lower()`, which lowers each
+  // letter on its own (`lower_each_letter` in `sqlite_functions.rs`): `İ` is
+  // `i`, and a word-final `Σ` is `σ`. `toLowerCase` gives `i` plus a
+  // combining dot, and `ς`, so it would miss sets the server calls the same.
+  it("matches a name letter by letter, as the server's lower() does", async () => {
+    const routes = fakeRoutes();
+    const sets = [
+      { id: 12, name: "istanbul" },
+      { id: 13, name: "οδοσ" },
+    ];
+    client.setQueryData(KEY, sets);
+    routes.list.mockResolvedValue(sets);
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await result.current.remove("İstanbul");
+    expect(routes.remove).toHaveBeenCalledWith(12);
+    await result.current.remove("ΟΔΟΣ");
+    expect(routes.remove).toHaveBeenCalledWith(13);
+    await expect(result.current.ensure("İSTANBUL")).resolves.toBe("istanbul");
+    expect(routes.create).not.toHaveBeenCalled();
+  });
+
+  it("asks the server once when the cache does not hold the name", async () => {
+    const routes = fakeRoutes();
+    routes.list.mockResolvedValue([{ id: 7, name: "Holiday" }]);
+    routes.updateMembers.mockResolvedValue({ added: 2, removed: 0 });
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+
+    await expect(result.current.setMembers("Holiday", { add: [1, 2] })).resolves.toEqual({
+      added: 2,
+      removed: 0,
+    });
+    expect(routes.list).toHaveBeenCalledTimes(1);
+    expect(routes.updateMembers).toHaveBeenCalledWith(7, { add: [1, 2], remove: [] });
+    expect(client.getQueryData(KEY)).toEqual([{ id: 7, name: "Holiday" }]);
+  });
+
+  it("throws without a write when the server has no set of that name", async () => {
+    const routes = fakeRoutes();
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.remove("Nope")).rejects.toThrow("group not found");
+    expect(routes.list).toHaveBeenCalledTimes(1);
+    expect(routes.remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses a reserved name before asking the server", async () => {
+    const routes = fakeRoutes();
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.create("Trash")).rejects.toThrow("Trash is reserved");
+    expect(routes.create).not.toHaveBeenCalled();
+  });
+
+  // The server folds ASCII letters only (`to_ascii_lowercase` in
+  // `named_membership.rs`), so `UNKNOWN` with the Kelvin sign (U+212A) in
+  // place of `K` is a name it accepts. The form must not refuse it.
+  it("folds only ASCII letters before checking a reserved name, as the server does", async () => {
+    const routes = fakeRoutes();
+    const kelvin = "UN\u212ANOWN";
+    routes.create.mockResolvedValue({ id: 4, name: kelvin });
+    const collection = createNameCollection({
+      routes,
+      key: keys.contactGroups.all,
+      chips: [],
+      label: "group",
+      forName: (name) => `group:${name}`,
+      reserved: {
+        label: "Contact Group",
+        reserved: ["unknown"],
+        special: [{ name: "unknown", message: "Unknown is reserved" }],
+      },
+    });
+    expect(collection.isReserved("UNKNOWN")).toBe(true);
+    expect(collection.reservedError("UNKNOWN")).toBe("Unknown is reserved");
+    expect(collection.isReserved(kelvin)).toBe(false);
+    expect(collection.reservedError(kelvin)).toBe(`"${kelvin}" is a reserved Contact Group`);
+    const { result } = renderHook(() => useNameCollectionActions(collection), { wrapper });
+    await expect(result.current.create(kelvin)).resolves.toBe(kelvin);
+    expect(routes.create).toHaveBeenCalledWith({ name: kelvin });
+  });
+
+  it("answers the created name and marks its own list stale", async () => {
+    const routes = fakeRoutes();
+    routes.create.mockResolvedValue({ id: 3, name: "Work" });
+    seedEntries(client, 7, [keys.contactGroups.all]);
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.create(" Work ")).resolves.toBe("Work");
+    expect(routes.create).toHaveBeenCalledWith({ name: "Work" });
+    expect(freshEntries(client, 7, [keys.contactGroups.all])).toEqual([]);
+  });
+
+  it("reports a write in flight, so a screen needs no busy flag of its own", async () => {
+    const routes = fakeRoutes();
+    const answer = deferred<{ id: number; name: string }>();
+    routes.create.mockReturnValue(answer.promise);
+
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    expect(result.current.pending).toBe(false);
+
+    let write: Promise<string> = Promise.resolve("");
+    act(() => {
+      write = result.current.create("Work");
+    });
+    await settle();
+    expect(result.current.pending).toBe(true);
+
+    answer.resolve({ id: 3, name: "Work" });
+    await settle();
+    expect(result.current.pending).toBe(false);
+    await expect(write).resolves.toBe("Work");
+  });
+
+  it("reports the failure a write ended in", async () => {
+    const routes = fakeRoutes();
+    routes.create.mockRejectedValue(new Error("server said no"));
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.create("Work")).rejects.toThrow("server said no");
+    await settle();
+    expect(result.current.error?.message).toBe("server said no");
+  });
+
+  it("clears an earlier failure once a later write succeeds", async () => {
+    const routes = fakeRoutes();
+    routes.create.mockRejectedValue(new Error("create failed"));
+    routes.update.mockResolvedValue({ id: 12, name: "Fam" });
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.create("Work")).rejects.toThrow("create failed");
+    await settle();
+    expect(result.current.error?.message).toBe("create failed");
+
+    // The rename starts later: the hook orders writes by when each started
+    // (`submittedAt`, a `Date.now()`), and the fake clock stands still.
+    await advanceTimersAndSettle(1);
+    await expect(result.current.rename("Family", "Fam")).resolves.toBe("Fam");
+    await settle();
+    expect(result.current.error).toBeNull();
+  });
+
+  it("reports the newer of two failures, not the first one to happen", async () => {
+    const routes = fakeRoutes();
+    routes.create.mockRejectedValue(new Error("create failed"));
+    routes.update.mockRejectedValue(new Error("rename failed"));
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await expect(result.current.create("Work")).rejects.toThrow("create failed");
+    await settle();
+    expect(result.current.error?.message).toBe("create failed");
+
+    // The rename starts later, as in the test before.
+    await advanceTimersAndSettle(1);
+    await expect(result.current.rename("Family", "Fam")).rejects.toThrow("rename failed");
+    await settle();
+    expect(result.current.error?.message).toBe("rename failed");
+  });
+});
+
+describe("useSetNamedSetMembers", () => {
+  it("draws the chips on the list and the open contact before the server answers", async () => {
+    const routes = fakeRoutes();
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+    seedContacts();
+    const answer = deferred<MembersChanged>();
+    routes.updateMembers.mockReturnValue(answer.promise);
+
+    const { result } = renderHook(() => useSetNamedSetMembers(groupsOver(routes)), { wrapper });
+    let write: Promise<MembersChanged> = Promise.resolve({ added: 0, removed: 0 });
+    act(() => {
+      write = result.current.mutateAsync({ name: "Family", patch: { add: [1] } });
+    });
+
+    await settle();
+    expect(pageGroups("1")).toEqual(["Family"]);
+    expect(detailGroups()).toEqual(["Family"]);
+    expect(pageGroups("2")).toEqual(["Work"]);
+
+    answer.resolve({ added: 1, removed: 0 });
+    await write;
+    expect(routes.updateMembers).toHaveBeenCalledWith(12, { add: [1], remove: [] });
+  });
+
+  it("takes a name off the rows it was removed from", async () => {
+    const routes = fakeRoutes();
+    client.setQueryData(KEY, [{ id: 5, name: "Work" }]);
+    seedContacts();
+    const { result } = renderHook(() => useSetNamedSetMembers(groupsOver(routes)), { wrapper });
+    await result.current.mutateAsync({ name: "Work", patch: { remove: [2] } });
+    expect(pageGroups("2")).toEqual([]);
+    expect(routes.updateMembers).toHaveBeenCalledWith(5, { add: [], remove: [2] });
+  });
+
+  it("puts every row back when the server refuses", async () => {
+    const routes = fakeRoutes();
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+    seedContacts();
+    routes.updateMembers.mockRejectedValue(new Error("nope"));
+
+    const { result } = renderHook(() => useSetNamedSetMembers(groupsOver(routes)), { wrapper });
+    await expect(
+      result.current.mutateAsync({ name: "Family", patch: { add: [1] } }),
+    ).rejects.toThrow("nope");
+
+    expect(pageGroups("1")).toEqual([]);
+    expect(detailGroups()).toEqual([]);
+  });
+
+  it("marks the group list and every contact stale once it settles", async () => {
+    const routes = fakeRoutes();
+    seedEntries(client, 7, [keys.contacts.all]);
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+    const { result } = renderHook(() => useSetNamedSetMembers(groupsOver(routes)), { wrapper });
+    await result.current.mutateAsync({ name: "Family", patch: { add: [1] } });
+    expect(freshEntries(client, 7, [keys.contactGroups.all, keys.contacts.all])).toEqual([]);
+  });
+
+  it("cancels in-flight fetches before it patches, so no answer lands on top of the chip", async () => {
+    const routes = fakeRoutes();
+    client.setQueryData(KEY, [{ id: 12, name: "Family" }]);
+    seedContacts();
+    const order: string[] = [];
+    const originalCancel = client.cancelQueries.bind(client);
+    const originalSetQueriesData = client.setQueriesData.bind(client);
+    vi.spyOn(client, "cancelQueries").mockImplementation((...args) => {
+      order.push("cancel");
+      return originalCancel(...args);
+    });
+    vi.spyOn(client, "setQueriesData").mockImplementation((...args) => {
+      order.push("patch");
+      return originalSetQueriesData(...args);
+    });
+
+    const { result } = renderHook(() => useSetNamedSetMembers(groupsOver(routes)), { wrapper });
+    await result.current.mutateAsync({ name: "Family", patch: { add: [1] } });
+
+    expect(order[0]).toBe("cancel");
+    expect(order).toContain("patch");
+    expect(order.indexOf("cancel")).toBeLessThan(order.indexOf("patch"));
+  });
+});

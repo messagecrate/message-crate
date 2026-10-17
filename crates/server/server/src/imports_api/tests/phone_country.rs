@@ -5,8 +5,8 @@
 
 use super::*;
 use crate::problem::ProblemType;
-use crate::test_support::{expect_problem, patch_raw};
-use message_crate_api_types::IdentityHolder;
+use crate::test_support::{expect_problem, patch_json_raw};
+use api_types::IdentityHolder;
 
 /// One person's UK mobile, written in national form and with its `+` code.
 const NATIONAL: &str = "07700 900123";
@@ -31,31 +31,14 @@ async fn import_run(
     phone_country: Option<&str>,
     body: String,
 ) {
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    import_one_batch_requesting(
         state,
-        "/v1/imports",
         token,
         serde_json::json!({
             "source": source,
             "phone_country": phone_country,
         }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/batches"),
-        token,
-        "application/jsonl",
         body,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
     )
     .await;
 }
@@ -90,8 +73,8 @@ fn both_spellings(national: &str, full: &str) -> String {
 /// members its group lists.
 async fn conversations_and_members(state: &crate::server::AppState) -> (i64, i64) {
     let mut conn = state.db.acquire().await.unwrap();
-    let individual: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM conversations WHERE conversation_type = 'individual'",
+    let one_to_one: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM conversations WHERE conversation_type = 'one-to-one'",
     )
     .fetch_one(&mut *conn)
     .await
@@ -104,7 +87,7 @@ async fn conversations_and_members(state: &crate::server::AppState) -> (i64, i64
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    (individual, members)
+    (one_to_one, members)
 }
 
 /// The account's phone identities' keys, in order.
@@ -171,12 +154,11 @@ async fn an_unknown_phone_country_is_refused() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
         crate::test_support::register_via_api(&fixture.state, "zz", "hunter2hunter2").await;
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/imports",
         &account.token,
-        "application/json",
-        serde_json::json!({ "source": "imessage", "phone_country": "ZZ" }).to_string(),
+        serde_json::json!({ "source": "imessage", "phone_country": "ZZ" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -214,7 +196,7 @@ async fn picking_the_country_on_the_contacts_screen_merges_the_two() {
             "address": "07700900123", "country": "GB", "merge": merge,
         }})
     };
-    let (status, text) = patch_raw(state, &path, &account.token, pick(false)).await;
+    let (status, text) = patch_json_raw(state, &path, &account.token, pick(false)).await;
     let problem = expect_problem(status, &text, ProblemType::IdentityExists);
     assert!(
         problem.sentence().contains(FULL),
@@ -248,7 +230,7 @@ async fn picking_the_country_on_the_contacts_screen_merges_the_two() {
     let mut conn = state.db.acquire().await.unwrap();
     let messages: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.conversation_type = 'individual'",
+         WHERE c.conversation_type = 'one-to-one'",
     )
     .fetch_one(&mut *conn)
     .await
@@ -303,7 +285,7 @@ async fn a_short_code_has_no_country_to_pick() {
     );
     import_with_country(state, &account.token, None, body).await;
     let contact = contact_of(state, "73737").await;
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         state,
         &format!("/v1/contacts/{contact}"),
         &account.token,
@@ -443,7 +425,7 @@ async fn a_contact_s_number_joins_an_own_identity_on_my_identities_only() {
     import_with_country(state, &account.token, None, one_to_one(NATIONAL, "m1")).await;
     let contact = contact_of(state, "07700900123").await;
 
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         state,
         &format!("/v1/contacts/{contact}"),
         &account.token,

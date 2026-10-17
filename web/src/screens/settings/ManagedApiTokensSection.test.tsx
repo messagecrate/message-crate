@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mockedAuth, Providers } from "../../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { authModule, Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { ManagedApiTokensSection } from "./ManagedApiTokensSection";
 
@@ -17,13 +18,15 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   renameApiToken: vi.fn(),
 }));
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../hooks/useAuth", () => authModule());
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   apiList.mockReset();
   apiDelete.mockReset();
   // The owner's list carries no `token_hint`: the server leaves it out.
@@ -45,7 +48,8 @@ describe("ManagedApiTokensSection", () => {
   it("lists the account's tokens with no secret and no rename", async () => {
     render(<ManagedApiTokensSection accountId={12} />, { wrapper: Providers });
 
-    const row = await screen.findByRole("row", { name: /Backup script/ });
+    await settle();
+    const row = screen.getByRole("row", { name: /Backup script/ });
     expect(apiList.mock.calls[0]?.[1]).toBe(12);
     expect(within(row).getByText("Import")).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Token" })).toBeNull();
@@ -58,13 +62,13 @@ describe("ManagedApiTokensSection", () => {
     const user = setupUser();
     render(<ManagedApiTokensSection accountId={12} />, { wrapper: Providers });
 
-    await user.click(await screen.findByRole("button", { name: "Revoke API Token" }));
-    const dialog = await screen.findByRole("dialog");
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Revoke API Token" }));
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/Backup script/)).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Revoke token" }));
 
-    await waitFor(() => {
-      expect(apiDelete).toHaveBeenCalledWith(3, 12);
-    });
+    await settle();
+    expect(apiDelete).toHaveBeenCalledWith(3, 12);
   });
 });

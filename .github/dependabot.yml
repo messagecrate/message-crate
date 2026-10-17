@@ -5,18 +5,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    ignore:
-      # quick-xml cannot move. It is held at 0.39.4 by
-      # imessage-database =4.2.0 -> plist =1.9.0, so a bump here only produces
-      # a pull request that fails to build — #350 did exactly that, failing
-      # all three Rust jobs. The two advisories on that chain are ignored
-      # deliberately in deny.toml, with the same reasoning and the same exit
-      # condition.
-      #
-      # Remove this entry when imessage-database releases a version that
-      # allows a newer plist, and drop the matching deny.toml ignores at the
-      # same time.
-      - dependency-name: quick-xml
 
   # Tauri desktop app — excluded from the workspace, has its own Cargo.lock
   - package-ecosystem: cargo
@@ -27,6 +15,22 @@ updates:
   # Product web frontend
   - package-ecosystem: npm
     directory: /web
+    schedule:
+      interval: weekly
+
+  # The generator of the web app's server API types, kept out of /web
+  # because it declares a peer dependency on TypeScript 5
+  - package-ecosystem: npm
+    directory: /scripts/openapi-typescript
+    schedule:
+      interval: weekly
+
+  # The browser check of the served website (scripts/check-served-website.sh),
+  # kept out of /web so the web app carries no browser driver. The script
+  # reads the Playwright image's tag from this lockfile, so a bump here
+  # moves the browsers with it.
+  - package-ecosystem: npm
+    directory: /scripts/website-check
     schedule:
       interval: weekly
 
@@ -51,7 +55,36 @@ updates:
   # web-next/ is intentionally excluded: legacy Next.js browse UI, not in CI
   # and not served. Re-add it here if that tree is ever revived.
 
-  # CI workflows
+  # Base images of the release image (docker/Dockerfile). Each FROM is
+  # pinned by tag and digest, so this entry is what moves the digests
+  # when a publisher pushes a new image under the same tag (#2179).
+  # Dependabot does not move the digest on the Dockerfile's "# syntax="
+  # line; the comment under that line says how it is moved (#2670).
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+    ignore:
+      # The Rust minor follows rust-toolchain.toml, which is bumped by hand
+      # in its own pull request. scripts/check-docker-context.sh fails a
+      # base image on another minor.
+      - dependency-name: rust
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # A new Node.js major is a decision about the image, not a refresh of
+      # it, so only the digest under the current tag moves here. A stage is
+      # moved to the next major by hand, before its Node.js reaches end of
+      # life. The frontend build stage's node:24 reaches it on 30 April
+      # 2028. Before that day, the stage moves to whichever Node.js release
+      # is LTS then, with .nvmrc (scripts/check-docker-context.sh says why)
+      # and the docs that name the major: the Node row and First time setup
+      # in AGENTS.md, and contributing.md and docker.md under
+      # docs/src/content/docs/docs/developer/. A tag whose Node.js has ended
+      # gets no new image, so its digest stops moving.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  # CI workflows. Every uses: is pinned to a commit SHA with its tag in a
+  # trailing comment; Dependabot updates the SHA and the comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:

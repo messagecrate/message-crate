@@ -1,22 +1,21 @@
 //! Backup-type forms, dropdown labels, and validation used by the desktop app.
 //!
 //! [`Form`] is the GUI field set. [`Form::to_config`] turns it into a typed
-//! [`ExporterConfig`] after checking required paths and options.
+//! [`ExporterConfig`] after checking required paths and options, with what it
+//! needs to know beyond the form given in a [`FormContext`].
 
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use media::{MaxResolution, MediaMode};
+use media::MediaTools;
 
 use crate::config::{
-    AppleConfig, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig, ObfuscateConfig,
-    OpenExtractConfig, OutputFormat, SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig,
-    WhatsappConfig,
+    AppleConfig, AttachmentFiles, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig,
+    ObfuscateConfig, OpenExtractConfig, OutputConfig, OutputFormat, RunContext,
+    SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
 };
-
-/// Validation message when Convert or Compress is selected and ffmpeg is missing.
-pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe, both on PATH or both in the Tools Directory. Settings → System shows which can't be used and where the Tools Directory is.";
 
 /// Which backup type the user selected (iMessage, WhatsApp, SMS Backup & Restore, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -36,6 +35,37 @@ pub enum Exporter {
     SmsBackupPlus,
     /// WhatsApp backup type.
     Whatsapp,
+}
+
+impl Exporter {
+    /// Every backup type, in declaration order.
+    pub const ALL: [Self; 7] = [
+        Self::GoSmsPro,
+        Self::Imazing,
+        Self::Imessage,
+        Self::OpenExtract,
+        Self::SmsBackupRestore,
+        Self::SmsBackupPlus,
+        Self::Whatsapp,
+    ];
+
+    /// The id this backup type's exporter writes into a conversation file's
+    /// `export.source`, which the import stamps on every message it writes
+    /// and search's `source:` field matches. Each exporter writes the value
+    /// this returns, and `api_types::SOURCE_IDS`, the list
+    /// search accepts, holds every one (a test here checks it).
+    pub const fn source_id(self) -> &'static str {
+        use api_types::source_id;
+        match self {
+            Self::GoSmsPro => source_id::GO_SMS_PRO,
+            Self::Imazing => source_id::IMAZING,
+            Self::Imessage => source_id::IMESSAGE,
+            Self::OpenExtract => source_id::OPENEXTRACT,
+            Self::SmsBackupRestore => source_id::SMS_BACKUP_RESTORE,
+            Self::SmsBackupPlus => source_id::SMS_BACKUP_PLUS,
+            Self::Whatsapp => source_id::WHATSAPP,
+        }
+    }
 }
 
 /// Android vs iOS for the WhatsApp / wtsexporter bridge.
@@ -71,59 +101,6 @@ pub fn ensure_output_dir(path: &Path) -> Result<(), String> {
     })
 }
 
-/// How attachments are copied or converted when writing output files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AttachmentMedia {
-    #[default]
-    /// Copy attachments without re-encoding.
-    Clone,
-    /// Re-encode attachments to a standard format.
-    Convert,
-    /// Re-encode and compress videos (720p/1080p/4k).
-    Compress,
-    /// Do not copy attachments.
-    Disabled,
-}
-
-impl fmt::Display for AttachmentMedia {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Clone => "Copy",
-            Self::Convert => "Convert",
-            Self::Compress => "Convert & compress",
-            Self::Disabled => "Do not copy",
-        })
-    }
-}
-
-impl AttachmentMedia {
-    /// The [`MediaMode`] this export-form choice maps to.
-    pub fn media_mode(self) -> MediaMode {
-        match self {
-            Self::Clone => MediaMode::Clone,
-            Self::Convert => MediaMode::Convert,
-            Self::Compress => MediaMode::Compress,
-            Self::Disabled => MediaMode::Disabled,
-        }
-    }
-
-    /// True when convert or compress is selected (ffmpeg must be on PATH).
-    pub fn needs_ffmpeg(self) -> bool {
-        matches!(self, Self::Convert | Self::Compress)
-    }
-
-    /// Parse a media-mode wire string (`clone`, `convert`, `compress`,
-    /// `disabled`), or `None` if unknown.
-    pub fn parse(s: &str) -> Option<Self> {
-        MediaMode::parse(s).map(|mode| match mode {
-            MediaMode::Clone => Self::Clone,
-            MediaMode::Convert => Self::Convert,
-            MediaMode::Compress => Self::Compress,
-            MediaMode::Disabled => Self::Disabled,
-        })
-    }
-}
-
 /// iPhone vs Mac backup layout for iMessage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ApplePlatform {
@@ -147,7 +124,7 @@ impl fmt::Display for ApplePlatform {
 }
 
 /// GUI field set for one backup type, plus shared output and media options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Form {
     /// Primary input path (source backup file or directory).
     pub input: String,
@@ -173,8 +150,6 @@ pub struct Form {
     pub obfuscate: bool,
     /// Optional hex seed for reproducible obfuscation.
     pub obfuscate_seed: String,
-    /// Whether the advanced section of the GUI form is shown.
-    pub advanced: bool,
     /// iMessage chat database path (Apple sources).
     pub db_path: String,
     /// Apple backup attachment root directory.
@@ -186,17 +161,8 @@ pub struct Form {
     pub backup_password: String,
     /// Packaging format projected from the common message (`json` default).
     pub output_format: OutputFormat,
-    /// Attachment handling choice for the export.
-    pub attachment_media: AttachmentMedia,
-    /// Compress-only long-edge cap (720p/1080p/4k).
-    pub media_max_resolution: MaxResolution,
-    /// Compress-only max frame rate.
-    pub media_max_fps: String,
-    /// Compress-only minimum video size, as a whole number of megabytes
-    /// (e.g. `20`).
-    pub media_min_size: String,
-    /// Compress-only: skip already-efficient HEVC videos.
-    pub media_skip_efficient: bool,
+    /// Whether the export copies the original attachment files.
+    pub attachments: AttachmentFiles,
     /// iPhone vs Mac backup layout.
     pub apple_platform: ApplePlatform,
     /// Android vs iOS WhatsApp layout.
@@ -212,47 +178,24 @@ pub struct Form {
     /// WhatsApp message database path.
     pub whatsapp_db: String,
     /// Whether the backup is a WhatsApp Business backup.
-    pub whatsapp_business: bool,
+    pub is_business_app: bool,
 }
 
-impl Default for Form {
-    fn default() -> Self {
-        Self {
-            input: String::new(),
-            output: String::new(),
-            owner_phones: String::new(),
-            owner_emails: String::new(),
-            timezone: String::new(),
-            phone_country: String::new(),
-            obfuscate: false,
-            obfuscate_seed: String::new(),
-            advanced: false,
-            db_path: String::new(),
-            attachment_root: String::new(),
-            apple_contacts: String::new(),
-            backup_password: String::new(),
-            output_format: OutputFormat::default(),
-            attachment_media: AttachmentMedia::default(),
-            media_max_resolution: MaxResolution::default(),
-            media_max_fps: "30".into(),
-            media_min_size: "20".into(),
-            media_skip_efficient: true,
-            apple_platform: ApplePlatform::default(),
-            whatsapp_platform: WhatsappPlatform::default(),
-            whatsapp_key: String::new(),
-            whatsapp_backup: String::new(),
-            whatsapp_wa: String::new(),
-            whatsapp_media: String::new(),
-            whatsapp_db: String::new(),
-            whatsapp_business: false,
-        }
-    }
+/// What [`Form::to_config`] needs to know beyond the form. The caller passes
+/// it in, so validating a form reads no process-wide state.
+#[derive(Debug, Clone)]
+pub struct FormContext<'a> {
+    /// The Scratch Directory the run's scratch data goes under
+    /// ([`RunContext::scratch_dir`]).
+    pub scratch_dir: &'a Path,
+    /// The run's tools, whose Tools Directory is where the WhatsApp
+    /// exporter finds `wtsexporter` ([`MediaTools::tools_dir`]).
+    pub tools: Arc<dyn MediaTools>,
 }
 
 impl Form {
-    /// Validate the form and build a typed [`ExporterConfig`] for `exporter`,
-    /// whose scratch data goes under `scratch_dir`, the Scratch Directory
-    /// ([`ExporterConfig::scratch_dir`]).
+    /// Validate the form and build a typed [`ExporterConfig`] for `exporter`
+    /// in `ctx`.
     ///
     /// # Errors
     ///
@@ -260,24 +203,20 @@ impl Form {
     pub fn to_config(
         &self,
         exporter: Exporter,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
     ) -> Result<ExporterConfig, Vec<String>> {
         let mut errors = Vec::new();
         let obfuscate = self.validate_obfuscate(&mut errors);
         self.validate_phone_country(&mut errors);
 
         let config = match exporter {
-            Exporter::Imessage => self.to_imessage_config(obfuscate, scratch_dir, &mut errors),
-            Exporter::Whatsapp => self.to_whatsapp_config(obfuscate, scratch_dir, &mut errors),
-            Exporter::Imazing => self.to_imazing_config(obfuscate, scratch_dir, &mut errors),
-            Exporter::OpenExtract => {
-                self.to_openextract_config(obfuscate, scratch_dir, &mut errors)
-            }
-            Exporter::GoSmsPro => self.to_go_sms_pro_config(obfuscate, scratch_dir, &mut errors),
-            Exporter::SmsBackupRestore => {
-                self.to_sms_restore_config(obfuscate, scratch_dir, &mut errors)
-            }
-            Exporter::SmsBackupPlus => self.to_sms_plus_config(obfuscate, scratch_dir, &mut errors),
+            Exporter::Imessage => self.to_imessage_config(obfuscate, ctx, &mut errors),
+            Exporter::Whatsapp => self.to_whatsapp_config(obfuscate, ctx, &mut errors),
+            Exporter::Imazing => self.to_imazing_config(obfuscate, ctx, &mut errors),
+            Exporter::OpenExtract => self.to_openextract_config(obfuscate, ctx, &mut errors),
+            Exporter::GoSmsPro => self.to_go_sms_pro_config(obfuscate, ctx, &mut errors),
+            Exporter::SmsBackupRestore => self.to_sms_restore_config(obfuscate, ctx, &mut errors),
+            Exporter::SmsBackupPlus => self.to_sms_plus_config(obfuscate, ctx, &mut errors),
         };
 
         if errors.is_empty() {
@@ -306,55 +245,70 @@ impl Form {
         }
     }
 
-    /// Build an iMessage config, pushing path and ffmpeg problems onto `errors`.
+    /// The [`ExporterConfig`] every source builder ends in. The caller gives
+    /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
+    /// form's context, which names the Scratch Directory and the tools the
+    /// WhatsApp exporter uses. The output directory and output format come from
+    /// the form. A run started from the form does not resume. Its sinks drop
+    /// what they get until the caller sets its own, and nothing sets its
+    /// cancel flag ([`RunContext::new`]).
+    fn exporter_config(
+        &self,
+        inputs: Vec<PathBuf>,
+        obfuscate: ObfuscateConfig,
+        ctx: FormContext<'_>,
+        media: MediaConfig,
+        source: SourceConfig,
+    ) -> ExporterConfig {
+        ExporterConfig {
+            inputs,
+            output: OutputConfig {
+                obfuscate,
+                media: MediaConfig {
+                    tools: ctx.tools,
+                    ..media
+                },
+                ..OutputConfig::new(self.output.trim(), self.output_format)
+            },
+            context: RunContext::new(ctx.scratch_dir),
+            source,
+        }
+    }
+
+    /// Build an iMessage config, pushing path problems onto `errors`.
     fn to_imessage_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         required_text(&self.output, "Output directory", errors);
-        let obfuscate_active = self.obfuscate || !self.obfuscate_seed.trim().is_empty();
-        if !obfuscate_active && self.attachment_media.needs_ffmpeg() && !media::ffmpeg_available() {
-            errors.push(CONVERT_COMPRESS_FFMPEG_REQUIRED.into());
-        }
-        let media = self.media_config_for(
-            matches!(self.attachment_media, AttachmentMedia::Compress),
-            errors,
-        );
-        let copy_method = match self.attachment_media {
-            AttachmentMedia::Disabled => "disabled".into(),
-            _ => "clone".into(),
+        let media = self.media();
+        let copy_method = match self.attachments {
+            AttachmentFiles::Skip => "disabled".into(),
+            AttachmentFiles::Originals => "clone".into(),
         };
         let platform = match self.apple_platform {
             ApplePlatform::Auto => None,
             other => Some(other),
         };
-        let inputs = message_ir::trimmed(&self.db_path)
+        let inputs = ir::trimmed(&self.db_path)
             .map(|p| vec![PathBuf::from(p)])
             .unwrap_or_default();
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::Apple(AppleConfig {
+            SourceConfig::Apple(AppleConfig {
                 platform,
-                attachment_root: message_ir::nonempty(&self.attachment_root),
+                attachment_root: ir::nonempty(&self.attachment_root),
                 copy_method,
                 apple_contacts: non_empty_path(&self.apple_contacts),
-                backup_password: message_ir::nonempty(&self.backup_password),
+                backup_password: ir::nonempty(&self.backup_password),
                 use_caller_id: true,
             }),
-        }
+        )
     }
 
     /// Build a WhatsApp config, pushing path and key problems onto `errors`.
@@ -365,7 +319,7 @@ impl Form {
     fn to_whatsapp_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let inputs = if self.input.trim().is_empty() {
@@ -388,124 +342,93 @@ impl Form {
         if self.whatsapp_platform == WhatsappPlatform::Android && owner_phone.is_none() {
             errors.push("Owner's WhatsApp number is required.".into());
         }
-        let media = self.validate_media(errors);
-        ExporterConfig {
+        let media = self.media();
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::Whatsapp(WhatsappConfig {
+            SourceConfig::Whatsapp(WhatsappConfig {
                 platform: Some(self.whatsapp_platform),
                 json: None,
-                key: message_ir::nonempty(&self.whatsapp_key),
+                key: ir::nonempty(&self.whatsapp_key),
                 backup: non_empty_path(&self.whatsapp_backup),
                 backup_password: if self.whatsapp_platform == WhatsappPlatform::Ios {
-                    message_ir::nonempty(&self.backup_password)
+                    ir::nonempty(&self.backup_password)
                 } else {
                     None
                 },
                 wa: non_empty_path(&self.whatsapp_wa),
                 media: non_empty_path(&self.whatsapp_media),
                 db: non_empty_path(&self.whatsapp_db),
-                business: self.whatsapp_business,
+                is_business_app: self.is_business_app,
                 owner_phone,
             }),
-        }
+        )
     }
 
-    /// Build an iMazing config, pushing path and media problems onto `errors`.
+    /// Build an iMazing config, pushing path problems onto `errors`.
     fn to_imazing_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
-        let media = self.validate_media(errors);
-        let timezone = message_ir::nonempty(&self.timezone);
-        ExporterConfig {
-            inputs: input.into_iter().collect(),
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone,
+        let media = self.media();
+        self.exporter_config(
+            input.into_iter().collect(),
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::Imazing(ImazingConfig {}),
-        }
+            SourceConfig::Imazing(ImazingConfig {
+                timezone: ir::nonempty(&self.timezone),
+            }),
+        )
     }
 
     /// Build an OpenExtract config, pushing path problems onto `errors`.
     fn to_openextract_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
-        let media = self.validate_media(errors);
-        ExporterConfig {
-            inputs: input.into_iter().collect(),
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
+        let media = self.media();
+        self.exporter_config(
+            input.into_iter().collect(),
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::OpenExtract(OpenExtractConfig {}),
-        }
+            SourceConfig::OpenExtract(OpenExtractConfig {}),
+        )
     }
 
     /// Build a GO SMS Pro config from the shared Android fields.
     fn to_go_sms_pro_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::GoSmsPro(GoSmsProConfig { owner_phones }),
-        }
+            SourceConfig::GoSmsPro(GoSmsProConfig { owner_phones }),
+        )
     }
 
     /// Build an SMS Backup & Restore config from the shared Android fields.
     fn to_sms_restore_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
@@ -517,28 +440,20 @@ impl Form {
                 dir.display()
             ));
         }
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig { owner_phones }),
-        }
+            SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig { owner_phones }),
+        )
     }
 
     /// Build an SMS Backup+ config, including owner emails.
     fn to_sms_plus_config(
         &self,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
@@ -549,27 +464,18 @@ impl Form {
         if owner_emails.is_empty() {
             errors.push("At least one email address is required.".into());
         }
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            ctx,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
+            SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
                 owner_phones,
                 owner_emails,
                 phone_country: self.phone_country(),
                 verbose: true,
-                include_summary: true,
             }),
-        }
+        )
     }
 
     /// Shared Android backup fields: input path, owner phones, media.
@@ -583,20 +489,18 @@ impl Form {
         if owner_phones.is_empty() {
             errors.push("At least one phone number is required.".into());
         }
-        let media = self.validate_media(errors);
+        let media = self.media();
         (input.into_iter().collect(), media, owner_phones)
     }
 
-    /// Media options for every exporter except iMessage; compress settings are
-    /// validated only in Compress mode.
-    fn validate_media(&self, errors: &mut Vec<String>) -> MediaConfig {
-        let mode = self.attachment_media.media_mode();
-        let obfuscate_active = self.obfuscate || !self.obfuscate_seed.trim().is_empty();
-        // Obfuscate skips copy/convert, so ffmpeg is not required.
-        if !obfuscate_active && mode.needs_tools() && !media::ffmpeg_available() {
-            errors.push(CONVERT_COMPRESS_FFMPEG_REQUIRED.into());
+    /// The media options every exporter gets from the form: whether to copy
+    /// the original attachment files. The tools come from the form's context
+    /// ([`Self::exporter_config`]).
+    fn media(&self) -> MediaConfig {
+        MediaConfig {
+            files: self.attachments,
+            ..MediaConfig::default()
         }
-        self.media_config_for(matches!(mode, MediaMode::Compress), errors)
     }
 
     /// Fake-name rewrite flag and optional hex seed.
@@ -606,40 +510,6 @@ impl Form {
             enabled: self.obfuscate || seed.is_some(),
             seed,
         }
-    }
-
-    /// Attachment copy/convert/compress options; optionally check compress fields.
-    fn media_config_for(&self, validate_compress: bool, errors: &mut Vec<String>) -> MediaConfig {
-        let mode = self.attachment_media.media_mode();
-        let compress = if validate_compress || matches!(mode, MediaMode::Compress) {
-            match self.compress_options() {
-                Ok(options) => options,
-                Err(error) => {
-                    errors.push(error);
-                    media::CompressOptions::default()
-                }
-            }
-        } else {
-            media::CompressOptions::default()
-        };
-        MediaConfig { mode, compress }
-    }
-
-    /// Compress options parsed from the form; checked while the form becomes a config.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when Max FPS is empty or is not a number above 0, or
-    /// when Minimum Video File Size is empty or is not a whole number of
-    /// megabytes, in the words [`media::compress_options_from_form`] gives.
-    pub fn compress_options(&self) -> Result<media::CompressOptions, String> {
-        media::compress_options_from_form(
-            self.media_max_resolution,
-            &self.media_max_fps,
-            &self.media_min_size,
-            self.media_skip_efficient,
-        )
-        .map_err(|e| format!("{e:#}"))
     }
 }
 
@@ -689,7 +559,7 @@ fn validate_obfuscate_seed(seed: &str, errors: &mut Vec<String>) -> Option<Strin
 
 /// Non-empty trimmed lines from a multiline text field.
 fn lines(value: &str) -> Vec<&str> {
-    value.lines().filter_map(message_ir::trimmed).collect()
+    value.lines().filter_map(ir::trimmed).collect()
 }
 
 /// Non-empty trimmed values split on newlines, commas or semicolons.
@@ -699,611 +569,14 @@ fn lines(value: &str) -> Vec<&str> {
 fn values(value: &str) -> Vec<&str> {
     value
         .split(['\n', ',', ';'])
-        .filter_map(message_ir::trimmed)
+        .filter_map(ir::trimmed)
         .collect()
 }
 
 /// `Some(path)` when the string is not blank.
 fn non_empty_path(value: &str) -> Option<PathBuf> {
-    message_ir::trimmed(value).map(PathBuf::from)
+    ir::trimmed(value).map(PathBuf::from)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn values_split_on_newline_comma_and_semicolon_but_not_spaces() {
-        let cases: &[(&str, &[&str])] = &[
-            ("", &[]),
-            ("  \n , ; ", &[]),
-            ("+15555550100", &["+15555550100"]),
-            (
-                "+15555550100\n+15555550101",
-                &["+15555550100", "+15555550101"],
-            ),
-            (
-                "+15555550100, +15555550101",
-                &["+15555550100", "+15555550101"],
-            ),
-            (
-                "+15555550100;+15555550101",
-                &["+15555550100", "+15555550101"],
-            ),
-            (
-                "+15555550100\r\n+15555550101,+15555550102 ; +15555550103",
-                &[
-                    "+15555550100",
-                    "+15555550101",
-                    "+15555550102",
-                    "+15555550103",
-                ],
-            ),
-            // A space stays inside one value: "+1 555-555-0119" is one
-            // number, typed the way the Import screen's placeholder shows it.
-            ("+1 555-555-0119", &["+1 555-555-0119"]),
-            ("+1555 +1666", &["+1555 +1666"]),
-            (
-                "+1 555-555-0119, +44 20 7946 0958",
-                &["+1 555-555-0119", "+44 20 7946 0958"],
-            ),
-            (
-                "me@example.com;; you@example.com",
-                &["me@example.com", "you@example.com"],
-            ),
-        ];
-        for (input, expected) in cases {
-            assert_eq!(values(input), *expected, "values({input:?})");
-        }
-    }
-
-    #[test]
-    fn imazing_passes_obfuscate() {
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            obfuscate: true,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Imazing, Path::new("/cache"))
-            .unwrap();
-        assert!(config.obfuscate.enabled);
-        assert!(matches!(config.source, SourceConfig::Imazing(_)));
-    }
-
-    #[test]
-    fn seed_must_be_valid_hex() {
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            obfuscate_seed: "bad".into(),
-            ..Form::default()
-        };
-        assert_eq!(
-            form.to_config(Exporter::OpenExtract, Path::new("/cache"))
-                .unwrap_err(),
-            vec!["obfuscate seed must be exactly 64 hex characters, got 3".to_string()]
-        );
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            obfuscate_seed: "01234567".into(),
-            ..Form::default()
-        };
-        assert_eq!(
-            form.to_config(Exporter::OpenExtract, Path::new("/cache"))
-                .unwrap_err(),
-            vec!["obfuscate seed must be exactly 64 hex characters, got 8".to_string()]
-        );
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            obfuscate_seed: "g".repeat(64),
-            ..Form::default()
-        };
-        assert_eq!(
-            form.to_config(Exporter::OpenExtract, Path::new("/cache"))
-                .unwrap_err(),
-            vec!["obfuscate seed must contain only hex characters (0-9, a-f)".to_string()]
-        );
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            obfuscate_seed: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                .into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::OpenExtract, Path::new("/cache"))
-            .unwrap();
-        assert!(config.obfuscate.enabled);
-        assert_eq!(
-            config.obfuscate.seed.as_deref(),
-            Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
-        );
-    }
-
-    #[test]
-    fn plus_verbose_and_owner_fields() {
-        let cwd = std::env::current_dir().unwrap().display().to_string();
-        let form = Form {
-            input: cwd,
-            output: "out".into(),
-            owner_phones: "+15555550100\n+15555550101".into(),
-            owner_emails: "me@example.com".into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.inputs.len(), 1);
-        let SourceConfig::SmsBackupPlus(plus) = config.source else {
-            panic!("expected SmsBackupPlus");
-        };
-        assert_eq!(plus.owner_phones.len(), 2);
-        assert!(plus.verbose);
-        assert!(plus.include_summary);
-    }
-
-    /// The form's phone country reaches SMS Backup+, which keys numbers by
-    /// it, and a code the phone table does not hold is refused (#1676).
-    #[test]
-    fn plus_carries_the_phone_country_and_an_unknown_one_is_refused() {
-        let cwd = std::env::current_dir().unwrap().display().to_string();
-        let form = Form {
-            input: cwd,
-            output: "out".into(),
-            owner_phones: "+447700900100".into(),
-            owner_emails: "me@example.com".into(),
-            phone_country: " gb ".into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
-            .unwrap();
-        let SourceConfig::SmsBackupPlus(plus) = config.source else {
-            panic!("expected SmsBackupPlus");
-        };
-        assert_eq!(plus.phone_country.map(|c| c.code), Some("GB"));
-
-        let unknown = Form {
-            phone_country: "ZZ".into(),
-            ..form
-        };
-        let errors = unknown
-            .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
-            .unwrap_err();
-        assert_eq!(
-            errors,
-            ["Phone country \"ZZ\" is not a country code Message Crate knows."]
-        );
-    }
-
-    #[test]
-    fn plus_rejects_multiple_inputs() {
-        let cwd = std::env::current_dir().unwrap().display().to_string();
-        let form = Form {
-            input: format!("{cwd}\n{cwd}"),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            owner_emails: "me@example.com".into(),
-            ..Form::default()
-        };
-        let err = form
-            .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
-            .unwrap_err();
-        assert!(err.iter().any(|e| e.contains("single file or directory")));
-    }
-
-    #[test]
-    fn imessage_requires_output_and_uses_caller_id() {
-        let form = Form {
-            output: String::new(),
-            ..Form::default()
-        };
-        assert_eq!(
-            form.to_config(Exporter::Imessage, Path::new("/cache"))
-                .unwrap_err(),
-            vec!["Output directory is required.".to_string()]
-        );
-
-        let form = Form {
-            output: "out".into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Imessage, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.output, PathBuf::from("out"));
-        let SourceConfig::Apple(apple) = config.source else {
-            panic!("expected Apple");
-        };
-        assert!(apple.use_caller_id);
-        assert_eq!(apple.copy_method, "clone");
-    }
-
-    /// An Import Run reads one backup: SMS Backup & Restore writes each as
-    /// one file, GO SMS Pro as a directory.
-    #[test]
-    fn sbr_refuses_a_directory_and_go_sms_pro_takes_one() {
-        let form = Form {
-            input: env!("CARGO_MANIFEST_DIR").into(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            ..Form::default()
-        };
-        let errors = form
-            .to_config(Exporter::SmsBackupRestore, Path::new("/cache"))
-            .unwrap_err();
-        assert!(
-            errors
-                .iter()
-                .any(|e| e.contains("one SMS Backup & Restore .xml file, not a directory")),
-            "{errors:?}"
-        );
-        assert!(
-            form.to_config(Exporter::GoSmsPro, Path::new("/cache"))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn sbr_passes_output_format() {
-        let form = Form {
-            input: concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").into(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            output_format: OutputFormat::Eml,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::SmsBackupRestore, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.output_format, OutputFormat::Eml);
-
-        let go = form
-            .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(go.output_format, OutputFormat::Eml);
-    }
-
-    #[test]
-    fn imessage_passes_output_format() {
-        let form = Form {
-            output: "out".into(),
-            output_format: OutputFormat::Eml,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Imessage, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.output_format, OutputFormat::Eml);
-    }
-
-    #[test]
-    fn android_passes_media_mode() {
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            attachment_media: AttachmentMedia::Clone,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.media.mode, MediaMode::Clone);
-
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            attachment_media: AttachmentMedia::Disabled,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.media.mode, MediaMode::Disabled);
-    }
-
-    #[test]
-    fn openextract_builds_its_own_source() {
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::OpenExtract, Path::new("/cache"))
-            .unwrap();
-        assert!(matches!(config.source, SourceConfig::OpenExtract(_)));
-    }
-
-    #[test]
-    fn imazing_passes_timezone_to_config() {
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            timezone: "UTC-05:00".into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Imazing, Path::new("/cache"))
-            .unwrap();
-        let SourceConfig::Imazing(_) = &config.source else {
-            panic!("expected Imazing");
-        };
-        assert_eq!(config.timezone.as_deref(), Some("UTC-05:00"));
-    }
-
-    #[test]
-    fn whatsapp_passes_platform_and_media() {
-        let form = Form {
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            whatsapp_platform: WhatsappPlatform::Android,
-            whatsapp_key: "abc123".into(),
-            whatsapp_backup: "/tmp/backup".into(),
-            whatsapp_media: "/tmp/media".into(),
-            whatsapp_business: true,
-            attachment_media: AttachmentMedia::Clone,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Whatsapp, Path::new("/cache"))
-            .unwrap();
-        assert!(config.inputs.is_empty());
-        assert_eq!(config.media.mode, MediaMode::Clone);
-        let SourceConfig::Whatsapp(wa) = config.source else {
-            panic!("expected Whatsapp");
-        };
-        assert_eq!(wa.platform, Some(WhatsappPlatform::Android));
-        assert_eq!(wa.key.as_deref(), Some("abc123"));
-        assert_eq!(wa.backup, Some(PathBuf::from("/tmp/backup")));
-        assert_eq!(wa.media, Some(PathBuf::from("/tmp/media")));
-        assert_eq!(wa.owner_phone.as_deref(), Some("+15555550100"));
-        assert!(wa.business);
-
-        // iPhone reads the number from the backup, so the field may be empty.
-        let ios = Form {
-            output: "out".into(),
-            whatsapp_platform: WhatsappPlatform::Ios,
-            whatsapp_backup: "/tmp/ios-backup".into(),
-            ..Form::default()
-        };
-        let ios_config = ios
-            .to_config(Exporter::Whatsapp, Path::new("/cache"))
-            .unwrap();
-        let SourceConfig::Whatsapp(wa) = ios_config.source else {
-            panic!("expected Whatsapp");
-        };
-        assert_eq!(wa.platform, Some(WhatsappPlatform::Ios));
-        assert_eq!(wa.backup, Some(PathBuf::from("/tmp/ios-backup")));
-        assert!(wa.key.is_none());
-        assert!(wa.owner_phone.is_none());
-
-        let ios_missing = Form {
-            output: "out".into(),
-            whatsapp_platform: WhatsappPlatform::Ios,
-            ..Form::default()
-        };
-        let err = ios_missing
-            .to_config(Exporter::Whatsapp, Path::new("/cache"))
-            .unwrap_err();
-        assert!(
-            err.iter()
-                .any(|e| e.contains("Backup path is required for iOS"))
-        );
-    }
-
-    /// An Android crypt backup does not carry the account holder's number,
-    /// so the form is the only source: an empty field is a validation
-    /// problem, not an import that runs and records no owner.
-    #[test]
-    fn whatsapp_android_requires_the_owner_number() {
-        let form = Form {
-            output: "out".into(),
-            whatsapp_platform: WhatsappPlatform::Android,
-            ..Form::default()
-        };
-        let err = form
-            .to_config(Exporter::Whatsapp, Path::new("/cache"))
-            .unwrap_err();
-        assert!(
-            err.iter()
-                .any(|e| e == "Owner's WhatsApp number is required."),
-            "{err:?}"
-        );
-    }
-
-    #[test]
-    fn whatsapp_forwards_existing_input_as_search_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let form = Form {
-            input: dir.path().display().to_string(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Whatsapp, Path::new("/cache"))
-            .unwrap();
-        assert_eq!(config.inputs, vec![dir.path().to_path_buf()]);
-
-        let missing = Form {
-            input: "/does/not/exist-whatsapp-input".into(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            ..Form::default()
-        };
-        let err = missing
-            .to_config(Exporter::Whatsapp, Path::new("/cache"))
-            .unwrap_err();
-        assert!(err.iter().any(|e| e.contains("does not exist")), "{err:?}");
-    }
-
-    #[test]
-    fn ensure_output_dir_creates_missing_path() {
-        let out = std::env::temp_dir().join(format!(
-            "message-crate-core-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        ensure_output_dir(&out).unwrap();
-        assert!(out.is_dir());
-        let _ = fs::remove_dir_all(&out);
-    }
-
-    const SEED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-    #[test]
-    fn without_ffmpeg_only_unobfuscated_convert_and_compress_are_refused() {
-        // Holds the tools lock, so a test that runs the real ffmpeg waits.
-        let _hidden = media::testutil::hide_ffmpeg();
-        assert!(!media::ffmpeg_available());
-
-        let form = |attachment_media, obfuscate, seed: &str| Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            attachment_media,
-            obfuscate,
-            obfuscate_seed: seed.into(),
-            ..Form::default()
-        };
-
-        for exporter in [Exporter::Imessage, Exporter::GoSmsPro] {
-            for media in [AttachmentMedia::Convert, AttachmentMedia::Compress] {
-                let err = form(media, false, "")
-                    .to_config(exporter, Path::new("/cache"))
-                    .unwrap_err();
-                assert!(
-                    err.iter().any(|e| e.contains("ffmpeg")),
-                    "{exporter:?} {media:?}: {err:?}"
-                );
-                // Obfuscation replaces media with placeholders, so no ffmpeg.
-                form(media, true, "")
-                    .to_config(exporter, Path::new("/cache"))
-                    .unwrap_or_else(|e| panic!("{exporter:?} {media:?} obfuscated: {e:?}"));
-                form(media, false, SEED)
-                    .to_config(exporter, Path::new("/cache"))
-                    .unwrap_or_else(|e| panic!("{exporter:?} {media:?} seeded: {e:?}"));
-            }
-            for media in [AttachmentMedia::Clone, AttachmentMedia::Disabled] {
-                form(media, false, "")
-                    .to_config(exporter, Path::new("/cache"))
-                    .unwrap_or_else(|e| panic!("{exporter:?} {media:?}: {e:?}"));
-            }
-        }
-
-        let err = form(AttachmentMedia::Convert, false, "")
-            .to_config(Exporter::Imessage, Path::new("/cache"))
-            .unwrap_err();
-        assert!(
-            err.iter().any(|e| e == CONVERT_COMPRESS_FFMPEG_REQUIRED),
-            "{err:?}"
-        );
-    }
-
-    #[test]
-    fn imessage_with_attachments_disabled_does_not_copy_them() {
-        let form = Form {
-            output: "out".into(),
-            attachment_media: AttachmentMedia::Disabled,
-            ..Form::default()
-        };
-        let config = form
-            .to_config(Exporter::Imessage, Path::new("/cache"))
-            .unwrap();
-        let SourceConfig::Apple(apple) = config.source else {
-            panic!("expected Apple");
-        };
-        assert_eq!(apple.copy_method, "disabled");
-        assert_eq!(config.media.mode, MediaMode::Disabled);
-    }
-
-    #[test]
-    fn attachment_media_parses_every_wire_name() {
-        for (wire, media) in [
-            ("clone", AttachmentMedia::Clone),
-            ("convert", AttachmentMedia::Convert),
-            ("compress", AttachmentMedia::Compress),
-            ("disabled", AttachmentMedia::Disabled),
-        ] {
-            assert_eq!(AttachmentMedia::parse(wire), Some(media));
-        }
-        assert_eq!(AttachmentMedia::parse("copy-everything"), None);
-    }
-
-    #[test]
-    fn compress_options_reject_bad_values() {
-        let form = |fps: &str, min_size: &str| Form {
-            media_max_fps: fps.into(),
-            media_min_size: min_size.into(),
-            ..Form::default()
-        };
-        assert_eq!(
-            form("abc", "20").compress_options().unwrap_err(),
-            "Max FPS must be a number of frames per second above 0, such as 30, not 'abc'."
-        );
-        assert_eq!(
-            form("", "20").compress_options().unwrap_err(),
-            "Max FPS is empty. It must be a number of frames per second, such as 30."
-        );
-        assert_eq!(
-            form("30", " ").compress_options().unwrap_err(),
-            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
-        );
-        assert!(form("30", "lots").compress_options().is_err());
-        assert!(form("30", "20M").compress_options().is_err());
-    }
-
-    #[test]
-    fn compress_settings_reach_the_config() {
-        let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
-            output: "out".into(),
-            owner_phones: "+15555550100".into(),
-            attachment_media: AttachmentMedia::Compress,
-            // Obfuscated, so the test does not depend on ffmpeg being installed.
-            obfuscate: true,
-            media_max_resolution: MaxResolution::P720,
-            media_max_fps: "24".into(),
-            media_min_size: "5".into(),
-            media_skip_efficient: false,
-            ..Form::default()
-        };
-        let expected = media::CompressOptions {
-            max_resolution: MaxResolution::P720,
-            max_fps: 24.0,
-            min_size_bytes: 5 * 1024 * 1024,
-            skip_efficient: false,
-        };
-        assert_eq!(form.compress_options().unwrap(), expected);
-        for exporter in [Exporter::Imessage, Exporter::GoSmsPro] {
-            let config = form.to_config(exporter, Path::new("/cache")).unwrap();
-            assert_eq!(config.media.mode, MediaMode::Compress);
-            assert_eq!(config.media.compress, expected, "{exporter:?}");
-        }
-
-        let bad = Form {
-            media_max_fps: "abc".into(),
-            ..form
-        };
-        let err = bad
-            .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-            .unwrap_err();
-        assert_eq!(
-            err,
-            vec![
-                "Max FPS must be a number of frames per second above 0, such as 30, not 'abc'."
-                    .to_string()
-            ]
-        );
-    }
-}
+mod tests;

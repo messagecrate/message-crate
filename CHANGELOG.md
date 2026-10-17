@@ -13,14 +13,150 @@ Internal rework is mentioned only as far as it matters to you. The reasoning
 behind a decision lives in the architecture notes under `docs/adr/`, and the
 detail of any single change lives in its pull request.
 
-Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Bullets under the version still in development carry the date they landed;
-released versions carry their date on the heading.
+Version numbers follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). Bullets under the
+version still in development carry the date they landed; released versions
+carry their date on the heading.
 
 ## [0.11.0] — in development
 
 ### Features
 
+- 2026-10-16: **Open an Audit Trail entry's lines in the server's log.**
+  Each entry on Owner Home's **Audit Trail** that a request made has a
+  **View in log** link. It opens **Logs** on the server's log at every level
+  with the request's id in **Search the log**, so only that request's lines
+  show, in place of matching the entry to its lines by time. When the log
+  holds none of them, **Logs** says so. The holder's own Audit Trail in
+  Settings has no link, because a holder cannot read the server's log
+  (#3060).
+- 2026-10-16: **The desktop app keeps a log of its own.** What the desktop
+  app went on without outside an import, such as a program it downloaded
+  whose record it could not write, was written where nobody could see it.
+  It now goes to a log in the Logs Directory, which the owner reads under
+  **Logs** on Owner Home as **Desktop app** (#2185).
+- 2026-10-16: **See how much space your Import Runs take on this
+  computer.** In the desktop app, **Settings → System** says how much disk
+  space your own Import Runs take in the Staging Directory, where staged
+  photos and videos wait for upload. The Owner sees the size of the whole
+  Staging Directory under **Server Settings**. The size is measured when
+  the page opens (#3087).
+- 2026-10-15: **A phone's contacts convert to the address book.** Settings →
+  Profile → Address book has Convert a vCard file, which turns the .vcf file
+  a phone or Google Contacts exports into the address book CSV, to edit in a
+  spreadsheet and then load. Pick the country for numbers saved without +,
+  and each such number is written with its + in that country. Each card
+  becomes one new contact with its numbers and email addresses. Nothing is
+  loaded until you load the file (#916).
+- 2026-10-15: **Check that a download is the one the release built.** Each
+  release now lists a `SHA256SUMS` file beside the installers, and every
+  installer and the Docker image carry a signed record of the release run
+  that built them. The GitHub CLI checks that record. The install pages say
+  how to check a download on each system (#2096).
+- 2026-10-15: **Log in on the website for one visit only.** The login card
+  has a **Keep me logged in** box, ticked to start with. Untick it on a
+  shared or borrowed computer, and the browser forgets the Session when the
+  tab closes. A new tab asks to log in again. **Log out** still ends the
+  Session itself. The desktop app is unchanged: it logs out when its window
+  closes (#2205).
+- 2026-10-15: **A WhatsApp group event shows in the conversation.** When a
+  member joined or left a group, or someone renamed it or changed its
+  picture, the conversation now shows a line saying so, such as "Ada joined
+  the group", as it does for an Apple Messages group. An event of a kind the
+  backup does not state is imported as before, without that line (#2038).
+- 2026-10-15: **The Import form says when a disk it writes to is low.** When
+  the disk that holds the Staging Directory or the Scratch Directory has less
+  than 10 GB free, the form names the disk, the directory and the space free
+  above the Import button, so space can be freed before the run starts. The
+  import can still start (#2010).
+- 2026-10-15: **The login card says when the password would cross the
+  network unencrypted.** Opened over plain HTTP from another computer, such
+  as at `http://192.168.1.20:8080`, the login card and Create Owner now say
+  that the connection is not encrypted, so the password crosses the network
+  as typed. An address on the same computer, and any `https` address, shows
+  nothing new (#2115).
+- 2026-10-12: **Owner Home quotes SQLite's error when write-ahead logging is
+  off.** When the server could not turn write-ahead logging on as it
+  started, the notice above every Owner Home section now says what SQLite
+  answered, such as that the database is locked, rather than sending the
+  owner to the server's log for it. Only the owner learns the journal mode
+  now: the screen anyone sees before logging in no longer receives it
+  (#2691, #2703).
+- 2026-10-12: **The owner sees which attachments of an import have no
+  Thumbnail or Preview, and why.** In User Accounts, an account's Storage tab
+  opens each Import Run with a **Thumbnails and Previews** part. It counts the
+  run's attachments whose Thumbnail or Preview the server could not make, by
+  kind of failure: the conversion failed, it stopped making progress, a
+  damaged file ran past its length, a step took too long, the original file
+  is missing, or a problem on the server. Under the counts it lists each of
+  those attachments by file name, type and size, with the reason for each
+  version that was not made. The owner never sees the attachment itself, its
+  Thumbnail or its Preview. Nothing tries again on its own, and running
+  `process-assets` is still how to try again. The database format changed:
+  an existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2636).
+- 2026-10-12: **A photo or video with no Thumbnail says why.** When the
+  server tried to make the small picture a conversation shows for a photo or
+  video and could not, the conversation showed only the file's name in its
+  place. It now says "No Thumbnail could be made" under the name, with what
+  went wrong, as opening an attachment with no Preview already did. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2635, #2639).
+- 2026-10-11: **The owner's Logs panel shows refused logins.** A login
+  refused for a wrong password, an unknown username or a disabled account
+  now leaves a warning in the server's log naming the account and the
+  reason, and so does an account whose limit of attempts fills, so someone
+  guessing a password shows in the Logs panel. The username typed and the
+  password are never written.
+- 2026-10-11: **Owner Home says when the database runs without write-ahead
+  logging.** The server turns write-ahead logging on each time it starts, so
+  pages load while an import writes. When it cannot, most often because
+  another program holds the database file, every page waits for each import
+  batch instead, and the only sign was a warning in the server's log. Owner
+  Home now says so above every section, with where to read what went wrong
+  and what to do: close any other program that has the database file open,
+  then restart the server. Server Settings shows the journal mode beside
+  the version (#2201).
+- 2026-10-10: **An attachment says why it has no copy a browser can show.**
+  When the server tries to make the Preview of a photo, video or recording
+  and cannot, opening it now says **No Preview could be made** and what
+  ffmpeg said about the file, such as that the file holds data it cannot
+  read, or that the original file is missing. It used to say only that no
+  copy existed yet, as if one were still coming, and the reason was in the
+  server's log alone. The reason goes away once a later try makes the
+  Preview (#2170).
+- 2026-10-10: **User Accounts shows which accounts have no password.** In
+  Owner Home, the Status of an account that has no password now reads
+  **No password** under it. Once such an account is active, anyone who
+  reaches the server and knows its username logs in with an empty password,
+  and the list used to give no sign of which accounts those were. The Demo
+  Account has no password by design and is not marked (#2146).
+- 2026-10-10: **Docker reports whether the server answers.** The Docker image
+  asks the server every 30 seconds whether it is up. `docker ps` adds
+  `(healthy)` after `Up` while the server answers and `(unhealthy)` after
+  three missed answers in a row, where it used to show only `Up`, even for a
+  server that had stopped answering. A proxy or orchestrator in front of the
+  container can read the same state. The first five minutes after a start
+  are not counted as unhealthy, so the first start, which builds the Demo
+  Account before the server answers, does not read as a fault. The check asks
+  the server at the port it listens on, so a server that the config or
+  `serve --bind` puts on a port other than 8080 reads healthy too. A
+  container started for one command, such as
+  `docker compose run --rm server reset-demo`, reads healthy while the
+  command runs, rather than unhealthy after five minutes. So does a container
+  that runs no server at all, such as a shell (#2132, #2541, #2542).
+- 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
+  and edits.** Each reaction in an iMazing export is kept with its emoji,
+  and a sticker reaction shows as a sticker. Who gave it is not kept, your
+  own reactions included (#2045). A reply is linked to the message it
+  quotes when that message is in the same conversation of the export, and
+  stays a reply without a link otherwise. A message deleted on the phone
+  before the export is marked **Deleted in the source app**. An edited
+  message is marked **Edited**, and because iMazing keeps only the final
+  text, **Edited** opens one line, **Earlier version not in the backup**,
+  with the time of the edit; a search never finds the message by the text it
+  lost. The database format changed: an existing Message Crate is rebuilt
+  empty on first start and its messages must be imported again (#2030).
 - 2026-10-09: **A WhatsApp import brings each reaction in under the person
   who reacted.** A WhatsApp conversation from an Android phone or an iPhone
   now shows its reactions, each stored under the reactor's phone number, or
@@ -29,7 +165,6 @@ released versions carry their date on the heading.
   The copy of the reactor names and emoji that a conversation file kept
   beside each WhatsApp message (`reactions` in `source.fields`) is gone,
   because the reactions themselves are on the message (#1646).
-
 - 2026-10-08: **The Import form says when a program the import needs is
   missing, with Try again.** A WhatsApp import needs wtsexporter, and
   **Convert** and **Compress** need ffmpeg and ffprobe. When one hasn't been
@@ -41,7 +176,6 @@ released versions carry their date on the heading.
   progress line says so, such as "Waiting for the wtsexporter download: 12 MB
   of 30 MB (40%)". When that download fails, the run fails with the reason
   and names the troubleshooting section (#1053).
-
 - 2026-10-08: **The desktop app downloads ffmpeg, ffprobe and wtsexporter
   by itself.** Each time it starts, it downloads in the background whatever
   is missing from its Tools Directory, with no button and nothing to wait
@@ -54,7 +188,6 @@ released versions carry their date on the heading.
   so with no internet the old one is still used. Settings → System shows
   each download's progress, or why it failed, and a failed download is
   tried again at the next start (#1053).
-
 - 2026-10-08: **A phone number written without its country code can be given
   its country.** The import form has a **Phone's country** under
   **Processing Options (Advanced)**: every number the import writes without a
@@ -64,8 +197,8 @@ released versions carry their date on the heading.
   Identities**, with **Pick country**. Picking one gives the number its full
   form; when another identity already has that form, Message Crate says whose
   it is and asks before it merges the two, their one-to-one conversations
-  with them (#1676).
-
+  with them. The owner picks one the same way on the Profile tab of an
+  account opened from User Accounts (#1676, #2987).
 - 2026-10-08: **Owner Home's Logs shows the server's log and the Import Run
   logs on this computer.** The owner picks the server's log or, in the
   desktop app, any Import Run's log on this computer, whoever ran it. An
@@ -126,6 +259,199 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-16: **A password is at most 128 characters.** The server took a
+  password up to 1,024 bytes, which is 1,024 letters but only 256 emoji. It
+  now counts characters, as it does for a username, and takes up to 128 of
+  any kind, which leaves room for any generated password or passphrase. A
+  longer one is refused when an account is created or deleted, at login, and
+  when a password is changed, and the screen says a password is at most 128
+  characters (#2996).
+- 2026-10-16: **Message Crate spells American.** Screens and the user guide
+  now say "canceled", "grayed out", "recognized" and "labeled": a stopped
+  import reads "Import canceled", and a stopped run in the import and
+  export history reads "Canceled" (#2279).
+- 2026-10-15: **Processing attachments no longer looks for unfinished
+  files.** The server never stores an attachment as an unfinished file, so
+  the line that ends processing, and the Demo Account rebuild's report, no
+  longer count incomplete originals removed or left (#2568).
+- 2026-10-15: **A Session ends after 7 days unused.** A Session that is not
+  used for 7 days ends, and you log in again. Each use starts the 7 days
+  again, up to 30 days after the login, so an account in daily use is asked
+  to log in once a month, as before. A Session forgotten on a shared
+  computer now ends within a week. The database format changed: an
+  existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2131).
+- 2026-10-15: **The address book names services as the screen does.** Its
+  columns are now contact_id, display_name, service, identity and groups.
+  The service is Text Message, Email or WhatsApp, the names offered where an
+  identity is added, and the type column is gone: the service and the
+  identity's shape decide it, as adding an identity does. A row whose
+  service can't take its identity, such as an email address on WhatsApp, is
+  refused (#916).
+- 2026-10-15: The way the desktop app opens an Import Run on the server was
+  reworked inside, with nothing visible (#2858).
+- 2026-10-15: **The Import screen says Resume for an interrupted import.**
+  When an import stopped during Staging or Media, its button now reads
+  **Resume**, where it read **Pick up** and **Carry on**. The heading for
+  an import that stopped at a Review reads "Resume where you left off"
+  (#2856).
+- 2026-10-16: For an import that stopped before Staging began copying, the
+  Import screen's heading now reads "Your last import did not finish",
+  because its only buttons are **Start over** and **Discard this import**
+  (#2856).
+- 2026-10-15: The way the desktop app sends an import's conversations to
+  the server was reworked inside, with nothing visible (#2053).
+- 2026-10-15: **The desktop app keeps everything in one directory.** The
+  app now makes a directory named message-crate in your home directory and
+  keeps its Message Crate's data, the Staging Directory, exports, Import Run
+  logs, scratch files and the programs it downloads in it, each in a
+  directory of its own. Only your user on the computer can read it. A copy
+  of the data directory inside it is a backup. The button in
+  Settings → System, and on the login card when the app's Message Crate
+  can't start, now reads Open Message Crate directory and opens it. The
+  Staging Directory setting still moves staging anywhere else (#1998).
+- 2026-10-15: **A one-to-one conversation has one name throughout.**
+  Message files and the server now use the name one-to-one for a
+  conversation with one other person; `kind:direct` still finds them (#2286).
+- 2026-10-15: **An Audit Trail entry names the request that wrote it.**
+  Each entry now keeps the id the server gave the request that made it,
+  the same id that request's lines in the server's log carry, so an entry
+  and its lines can be found by each other rather than by time. An entry
+  written by a server command, or by the Demo Account build of a new
+  Message Crate's first start, has no id, and neither has the entry for an
+  Import Run, an Export Run or a Session that ended by expiry. The server
+  hands the id out with each entry; nothing on screen shows it yet. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2276).
+- 2026-10-15: **The Attachments choices say they convert media.** The
+  Import form's **Attachments** field now reads **Copy**, **Convert media**,
+  **Convert & Compress media** and **Skip**, and the Staging Review's button
+  reads **Convert media** or **Convert & Compress media**, where it read
+  **Compress media**. **Convert** alone stays the Settings tool that rewrites
+  an export into another format (#2023).
+- 2026-10-15: **The Docker image no longer carries Node.js.** It was built
+  on Node.js 20, which no longer gets security fixes, though the server never
+  used it, so image scanners flagged every Message Crate image. The image is
+  now built on Debian alone and checks its own health with the server
+  program. It still runs as user and group 1000, so existing data and
+  Compose files work as before (#2065).
+- 2026-10-15: **The owner's password is typed, not written on the command
+  line.** The server's `create-owner` and `reset-owner-password` commands
+  now ask for the password and don't show it as it's typed, or read it from
+  the first line of their input when it is piped in. They no longer take
+  it as `--password`, because a command line is visible to everyone signed
+  in to the computer while it runs and stays in the shell's history (#2094).
+- 2026-10-15: **An import hides its duplicates once, when it ends.** The
+  server used to hide the duplicates of the whole account after every part
+  of an import it received, so a large import into a large account went
+  over every message hundreds of times while other changes waited.
+  It now does that once, when the import finishes or is given up.
+  Duplicates the import brings stay shown until then (#2040).
+- 2026-10-12: **A wrong password now costs a short wait instead of counting
+  toward a lockout.** A refused login, and a wrong current password when
+  changing the owner's password or deleting an account, waits about a second
+  before Message Crate answers. Nothing counts the wrong tries anymore, so
+  someone who knows your username can no longer keep you from logging in by
+  sending wrong passwords, and creating an account or claiming Message Crate
+  is no longer limited to 20 tries a minute. The wait is not protection for a
+  Message Crate reachable from the internet: that needs a proxy with its own
+  login in front of it (#2893, #2894).
+- 2026-10-12: The Demo Account's username, `demo`, is fixed in the server
+  and no longer read from the Demo Data it is built from, with nothing
+  visible (#2808).
+- 2026-10-11: **The guide says what leaves the computer.** "What Message
+  Crate is" now says that Message Crate sends no telemetry, crash reports, or
+  usage data, and that the desktop app connects only to the Message Crate
+  server it uses and to GitHub, to download ffmpeg, ffprobe, and wtsexporter
+  (#2273).
+- 2026-10-11: The way the desktop app checks the paths on the Import form,
+  names an import's log, and finds the Export Directory was reworked inside,
+  with nothing visible (#2268).
+- 2026-10-11: The messages about a password, such as a wrong current
+  password or two new passwords that differ, are written the way the
+  server's other messages are, so they no longer end with a full stop.
+- 2026-10-11: The way the Demo Account's generator and the server agree on
+  what a demo bundle holds was reworked inside, with nothing visible (#2265).
+- 2026-10-11: The way an Upload and an Export remember what they already
+  did for each server and account was reworked inside, with nothing visible
+  (#2253).
+- 2026-10-11: The way the Import screen moves between the form, a running
+  import and its reviews was reworked inside, with nothing visible (#2252).
+- 2026-10-11: The way the app keeps track of the logged-in account, the
+  running desktop job and the Import Run was reworked inside, with nothing
+  visible (#2250).
+- 2026-10-11: The way Message Crate fingerprints attachments, sessions and API
+  tokens was reworked inside, with nothing visible (#2227).
+- 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
+  into the Tools Directory was reworked inside. The one change you could see:
+  on the rare computer where the app cannot set up its downloads at all,
+  Settings, and an import waiting for the download, now say the download
+  could not be started, instead of saying there is no connection to the
+  download's server (#2213).
+- 2026-10-11: The way logging out works in the app was reworked inside, with
+  nothing visible (#2214).
+- 2026-10-11: The way attachments are converted and compressed, and their
+  Thumbnails and Previews made, was reworked inside, with nothing visible
+  (#2206).
+- 2026-10-11: The Apple Messages and SMS Backup & Restore imports were
+  reworked inside, with nothing visible (#2195).
+- 2026-10-11: The way the Demo Account is built was reworked inside, with
+  nothing visible (#2197).
+- 2026-10-11: The way the server finds and hides duplicate messages was
+  reworked inside, with nothing visible (#2182).
+- 2026-10-11: **The search box remembers the contacts it offered.** After a
+  word such as `with:` or `from:`, the search box keeps the names it
+  suggested for each prefix. Typing the same prefix again within half a
+  minute shows them without asking the server. The names already shown stay
+  up while the next ones load (#2181).
+- 2026-10-11: **The Docker image is built on fixed base images.** Each
+  image the Docker image is built from is now named by its exact content,
+  not only by a name its publisher can point at a newer image, so two builds
+  of the same Message Crate start from the same images. A new image under
+  the same name now arrives as a reviewed change instead of slipping into
+  a build unseen (#2179).
+- 2026-10-10: **The Docker Compose files take away what the server does not
+  need.** The container they start keeps no Linux privileges, cannot gain
+  any, and cannot change its own files: the server writes only to the data
+  volume and to a temporary directory in memory. Nothing in Message Crate
+  changes, and a container scanner that checks for these settings now finds
+  them. This limits what someone who got into the container could do. It
+  closes no known hole (#2178).
+- 2026-10-10: The way an import passes its log, its progress and its cancel
+  around was reworked inside, with nothing visible (#2165).
+- 2026-10-10: **An import is never sent back to a stage it has passed.**
+  Message Crate now refuses to move an import that is under way back to an
+  earlier stage, so a mistake in the app can no longer make the next resume
+  start over at work already done. Nothing changes on screen (#2167).
+- 2026-10-10: The check that ffmpeg is there before an import converts or
+  compresses attachments was reworked inside, with nothing visible (#2166).
+- 2026-10-10: **An SMS Backup+ import finishes the way the other imports
+  do.** It now ends through the same steps as GO SMS Pro and the others.
+  Nothing changes on screen (#2163).
+- 2026-10-10: The Import Run and Export Run lists were reworked inside, with
+  nothing visible (#2155).
+- 2026-10-10: **SMS Backup & Restore and GO SMS Pro read a message's time
+  the same way.** Both imports now share one check of which message times
+  are readable, so they can no longer drift apart. Nothing changes on
+  screen (#2154).
+- 2026-10-10: **An Import Run keeps only the Import form choices it needs to
+  resume.** The desktop app now stores a named list of the form's
+  choices with each Import Run, rather than everything but the backup
+  password and WhatsApp key. A secret field added to the form later is
+  never kept in the database by mistake. Nothing changes on screen (#2142).
+- 2026-10-10: **Apple Messages and WhatsApp check an optional path the same
+  way.** The Import form's check of an optional path is now one check that
+  both imports use, so they can no longer drift apart. Nothing changes on
+  screen (#2141).
+- 2026-10-10: **An SMS Backup & Restore group conversation is identified
+  the way the SMS Backup+ and GO SMS Pro imports identify theirs.** The
+  three imports now share one rule, so they can no longer drift apart. Each
+  group conversation keeps the same messages, the same people and the same
+  title. Upgrading says what this means for a backup imported before
+  (#2139).
+- 2026-10-10: **The Export screen names its format menu Output format.** It
+  was Format there and Output format under Convert in Settings; both now read
+  Output format, on screen and to a screen reader.
 - 2026-10-09: **Every import hides duplicates.** An import from the desktop
   app never hid duplicates, so a message two backup apps both held, or one
   SMS Backup+ held to the second and to the millisecond, was shown twice.
@@ -136,7 +462,6 @@ released versions carry their date on the heading.
   with more attachments, then the one timed to the millisecond, then the one
   from the import that brought more messages, then the one from the backup
   app imported first (#1969).
-
 - 2026-10-09: **An SMS Backup & Restore import reads one `.xml` file.**
   The Import form's **Backup File** field takes the backup's one `.xml`
   file, where **Backup Directory** took a directory of them, because an
@@ -146,16 +471,15 @@ released versions carry their date on the heading.
   holds more than one SMS Backup & Restore file, naming each, and finds a
   backup the app wrote under any name. GO SMS Pro and SMS Backup+ still take
   a directory (#2009).
-
 - 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
   Tools Directory second.** ffmpeg and ffprobe are found among the programs
   installed on the computer, else in the app's Tools Directory, and both
   from the same place. wtsexporter is found only in the Tools Directory.
   The Message Crate the app starts looks in the same places, so the app and
   the Message Crate it starts convert with the same ffmpeg. **Settings →
-  System → Media** has nothing to type any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
-  wtsexporter, where each was found, that it is missing and where to put
-  it, or why it is not used (#1053).
+  System → Media** has nothing to type any more. It shows the Tools
+  Directory and, for ffmpeg, ffprobe and wtsexporter, where each was found,
+  that it is missing and where to put it, or why it is not used (#1053).
 - 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
   on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
@@ -202,6 +526,321 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-16: **The desktop app notices its own server stop answering on
+  any screen.** The app checked whether its own server still answered only
+  while the login card was open, so a server that hung while you browsed
+  left every screen failing with network errors. The app now checks on its
+  own every few seconds, starts a server that stopped answering again, and
+  says so in a line across the top of the page: **The server stopped
+  answering. Restarting it…** clears itself once the server answers. A
+  server that crashed gets the line too, saying **The server stopped.
+  Restarting it…**. If it cannot be started, the line says why and offers
+  **Try again** (#2695).
+- 2026-10-16: **The website no longer refuses a Contact Group or Message
+  Tag name the server accepts.** A name written with a letter that only looks
+  like a plain one, such as the Kelvin sign in place of `K` in `UNKNOWN`, was
+  refused as reserved when you created or renamed a Contact Group or Message
+  Tag on the website, though the server would have taken it. And a name
+  typed with `İ` or a capital `Σ` now finds the Contact Group or Message Tag
+  the server holds under that name, such as `istanbul` for `İstanbul`,
+  where the website used to say it was not found (#3037).
+- 2026-10-16: **The website has an icon.** The website named no icon, so
+  the browser asked for one on every page, logged an error in its console,
+  and showed a blank tab icon. The browser tab now shows the website's icon
+  (#3014).
+- 2026-10-16: **A display name the server refuses after you leave Settings
+  says so.** A display name typed on Settings → Profile, or on an account's
+  Profile in Owner Home, saves when you leave Settings for another screen.
+  When the server refused that save, the name was dropped without a word.
+  Now a line across the top of the page says "Your display name wasn't
+  saved", with the name you typed and why, and a link back to the Profile
+  it came from. It stays until you dismiss it or save a name from that
+  Profile (#2991).
+- 2026-10-16: **A group with no name reads the same everywhere.** A
+  group conversation without a title was named after everyone in it in the
+  conversation list, such as "Ann, Bob, Cy", but as "3 participants" in its
+  header and in Trash's delete dialog. The header and Trash now name it
+  after everyone in it too (#2517).
+- 2026-10-15: **Adding or removing an identity that is neither a number
+  nor an email address is now checked.** Settings confirmed an identity
+  removed by looking for it among the account's numbers and email addresses,
+  so a WhatsApp internal id such as `123456789012345@lid`, or a name such as
+  `sam`, was reported removed without being looked for, and adding one would
+  have said the server did not add it. Settings now looks in the list of
+  identities it shows (#2738).
+- 2026-10-14: **Last Login and App are on an account's Account tab.** When
+  the owner opens an account from User Accounts, when it last logged in and
+  the app it last connected with now sit under its username on **Account**,
+  rather than under its identities on **Profile**, which holds what the
+  account's holder sets about themselves (#2988).
+- 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.**
+  The `reset-demo` server command recorded its reset after deleting the old
+  Demo Account, so its entry belonged to no account and appeared only in the
+  owner's whole Audit Trail. It now records the reset first, as a reset from
+  Owner Home does, so both are read among the old Demo Account's entries
+  (#2977).
+- 2026-10-14: **A typed display name is no longer lost.** On Settings →
+  Profile, and on an account's Profile in Owner Home, the display name saves
+  when you leave the field, press Enter, or move to another tab, as the time
+  zone and identities already did. The **Save** button is gone. Before, a
+  name typed without pressing **Save** was dropped without a word, so an
+  account the owner had named could still open on Profile Setup with an
+  empty name (#2985).
+- 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
+  Profile, the identities in a contact's drawer, and the totals of checked
+  contacts head their first message count "One-to-one messages" rather than
+  "Direct messages", and removing an identity says "12 one-to-one messages"
+  rather than "12 direct messages".
+  An Import Run's summary says "Kept 3 conversations under a name alone"
+  rather than "chats", and the note on each such conversation calls it a
+  conversation (#2120, #2121).
+- 2026-10-12: **Every error on a line of its own starts with a capital.**
+  Where a screen shows why something failed as a sentence of its own, such
+  as a wrong password, a refused Contact Group name, a failed Contact Group
+  delete, the login card's **Open data directory**, a refused address book
+  row, or an Import Run's own failure in its table of issues, the sentence
+  now starts with a capital letter instead of the lowercase the server
+  writes it in. A search refusal that starts with a search word, such as
+  `from:`, still shows the word as it is typed, and a refusal that starts
+  with the name of the setting it refuses keeps that name as the server
+  spells it (#2818).
+- 2026-10-12: **Every name that is too long is refused in the same words.**
+  A Contact Group, Message Tag or Saved Search name over 80 characters, an
+  API Token label over 120 and a username over 128 now get the message
+  every other length limit gives, such as "name: must be at most 80
+  characters", in place of wordings of their own. A blank name or label is
+  refused as "name required" or "label required". An API Token label is
+  counted in characters, so a label in a script that takes several bytes a
+  letter is no longer refused short of 120 (#2665).
+- 2026-10-12: **The Demo Account's refusals read like every other error.**
+  When the Demo Account refuses something, such as setting its password or
+  deleting itself, the message is now one short sentence that names what
+  it refused, as the server's other errors are. The way to restore the
+  Demo Data is on the error's page in the developer reference (#2817).
+- 2026-10-12: **The Audit Trail records every build of the Demo Account.**
+  Resetting or adding the Demo Account with the `reset-demo` server command
+  is now recorded, with the set of Demo Data, by **Server command**, and so
+  is the Demo Account a new Message Crate adds on its first start, by
+  **Server's first start**. Before, only a build from Owner Home left an
+  entry, and the command recorded only the deletion of the old Demo Account
+  (#2686).
+- 2026-10-12: **Disabling an account logs it out.** A person still logged
+  in to an account the owner disabled was only refused while the account
+  stayed disabled, so enabling it again let them carry on without logging
+  in, and every media link opened before worked again. Disabling now logs
+  them out, and they log in again once the account is enabled.
+- 2026-10-12: **A deleted account no longer comes back.** An import or an
+  export that was already under way when its account was deleted made the
+  account again, named by a number and with no password, so anyone could log
+  in to it. The import or export is now refused, and the account stays
+  deleted.
+- 2026-10-12: **A page asked for while an import keeps the database busy
+  loads once the server is ready.** The server says how many seconds to wait
+  when its database is too busy, and the app tried again at once, met the
+  same busy database, and showed the error. It now waits the seconds the
+  server named before it asks once more. A change you save is still not sent
+  again on its own: you read why it failed and send it again (#2891).
+- 2026-10-12: **The first page downloads less.** Settings was part of the
+  code every visit downloads first, through Owner Home. It is now downloaded
+  the first time Settings is opened, from the app or from Owner Home (#2879).
+- 2026-10-11: **Logging in often no longer locks you out.** Every login
+  counted toward the limit of 20 attempts a minute for an account, the
+  successful ones too, so an account that logged in often, such as the Demo
+  Account on a shared server, could be told to wait. Only failed logins
+  count now. Twenty wrong passwords in a minute still make the account wait,
+  even with the right password, until the minute passes.
+- 2026-10-11: **A screen that fails says why instead of going blank.** A
+  screen that broke while showing itself, or whose code didn't arrive, left
+  an empty page with no message. It now shows what went wrong and a Reload
+  button, and the navigation panel stays usable, so another screen is one
+  click away. A screen that didn't arrive because a new release of Message
+  Crate replaced the app under an open tab reloads the page once by itself.
+- 2026-10-11: **A server that doesn't answer is named.** When the server
+  could not be reached, screens showed the browser's own "Failed to fetch"
+  or "Load failed". They now say that the server didn't answer, and at which
+  address.
+- 2026-10-11: **A server failure shows its request id.** When the server
+  fails on its side, the message on screen now ends with the request's id,
+  which matches the line the server wrote to its log, so the cause can be
+  found there.
+- 2026-10-11: **Deleting an account names an Import Run's directory the
+  desktop app may not read.** When a person deletes their own account in
+  the desktop app, the app deletes the directories of the account's Import
+  Runs on this computer. A directory the system would not let Message Crate
+  read, such as one macOS protects until the app has Full Disk Access, was
+  skipped without a word and could stay on disk with the deleted account's
+  messages. It is now listed once the account is deleted, with what the
+  system said. It may be on this computer, and it can be deleted by hand
+  (#2651).
+- 2026-10-11: **Settings says why a downloaded tool found in the Tools
+  Directory could not be made to run.** When the desktop app finds ffmpeg,
+  ffprobe or wtsexporter already in its Tools Directory, it marks the file
+  as a program it can run. When the computer refused that, Settings said
+  only that the tool doesn't run there, and from the next start on it no
+  longer tried. It now says the tool could not be marked as a program that
+  runs, and what the computer refused, such as a permission error. The app
+  tries again each time it starts, so fixing the permission is enough
+  (#2255).
+- 2026-10-11: **No account is created after the owner closes registration.**
+  A stranger's registration that arrived just as the owner closed
+  registration could still create an account. Whether registration is open
+  is now decided at the moment the account is written. A Message Crate with
+  registration closed also turns a stranger away at once, without first
+  working on the password they sent (#2231, #2232).
+- 2026-10-11: **A new username can no longer hold letters from other
+  scripts.** A username could hold letters from any script,
+  so `аdmin` written with a Cyrillic `а` made a second account that read
+  the same as `admin` in User Accounts, in the Audit Trail and on the login
+  card. A username now holds only the letters A to Z, digits, `_`, `-` and
+  `.`, and the message for a refused name says so. A preferred name still
+  takes a name in any script. An account made before this change keeps its
+  username and still logs in with it (#2229).
+- 2026-10-11: **Every letter and digit is equally likely in the secret of a
+  Session or an API Token.** Each secret favored the letters A to H, which
+  came up a quarter more often than the other letters and digits. Each now
+  comes up equally often. The secrets were never close to guessable, and
+  they keep the same length and form (#2220).
+- 2026-10-11: **The login screen no longer reads Disconnected for a moment
+  while an import runs.** An import can keep the server's database busy for
+  longer than its health check waits, so one check could fail though the
+  server was still answering, and the login screen read Disconnected until
+  its next check a second later. When the server answers a check with an
+  error, the login screen now checks once more three seconds later, and
+  reads Disconnected only when both fail (#2718).
+- 2026-10-11: **The Storage tab no longer says Top 100 attachments over an
+  empty list.** An account with no attachments saw "Top 100 attachments by
+  file size" above "No attachments with sizes yet". Under **Largest
+  attachments** it now shows only "No attachments with sizes yet". When
+  there are attachments, the line above the list gives how many are listed,
+  such as "Top 3 attachments by file size" (#2633).
+- 2026-10-11: **The login screen reads Disconnected when the server cannot
+  reach its database.** Before, it read Connected as long as the server was
+  running, even when every page failed because the database could not be
+  read or every connection to it was taken. Docker's health check of
+  the Message Crate container asks the same question, so a container whose
+  server cannot reach its database now reads unhealthy too (#2202).
+- 2026-10-11: **A screen stops waiting for a server that never answers.**
+  When the server takes a request and then never answers, such as a stalled
+  container, a screen now gives up after 30 seconds and says the server
+  didn't answer within that time. Before, it kept loading until the
+  browser's own limit, which can be minutes, and then tried again for as
+  long. An attachment gives up the same way when its download never starts,
+  and a large one that has started takes as long as it needs. Work that
+  takes longer on a large account, such as an import's steps, deleting
+  messages or an account for good, or loading an address book, waits up to
+  10 minutes (#2199).
+- 2026-10-11: **The Audit Trail records the attachment size limit and adding
+  or resetting the Demo Account.** When the owner changes the attachment size
+  limit in Server Settings, the Audit Trail now says so and names the new
+  limit; saving the limit it already had records nothing. Adding or resetting
+  the Demo Account is recorded too, with the set of Demo Data asked for. Before,
+  neither left an entry, though opening or closing Message Crate to new
+  accounts did (#2187).
+- 2026-10-11: **An import's notes and details have a length limit too.**
+  Each part of a note an import records may be up to 2,000 characters, the
+  name of the program that ran the import and the id of the copy of the
+  app that ran it up to 64 each, and the path of the import's directory up
+  to 4,096. Anything longer is refused with a message naming the limit,
+  where before it was kept at any length. The desktop app shortens a longer
+  note to the limit, ending it with "…", so the import still finishes
+  (#2668).
+- 2026-10-11: **A request turned away for want of a Session or API Token
+  says how to authenticate.** When the server turns a request away because
+  it is not logged in, or names a Session or API Token the server does not
+  accept, its answer now says what the server wants, in the form the HTTP
+  standards set out, and whether the one sent was the problem. A generic
+  HTTP tool or library reads that answer on its own. The website and the
+  desktop app work as before (#2230).
+- 2026-10-11: **Names, addresses and Import Errors have a length limit.**
+  A display name or a contact's name may be up to 200 characters, an
+  address up to 320, and each part of an Import Error up to 2,000. Anything
+  longer is refused with a message naming the limit, where before it was
+  kept at any length and shown in full on every list that held it. An
+  Import Error the desktop app reports, such as one carrying a converter's
+  whole error output, is shortened to the limit and ends with "…", so the
+  import still finishes (#2183).
+- 2026-10-10: **A screen the server refuses shows its error at once.**
+  When the server refused to show something, because it was not found, not
+  allowed, or asked too often, the website and the desktop app asked a second
+  time before showing the error, which held the error back a second or more
+  and, when the server had said it was being asked too often, asked once
+  more. They now show the error after the first answer, and ask again only
+  when the server could not be reached or failed on its own side (#2169).
+- 2026-10-10: **The website and the desktop app no longer follow a
+  redirect with your Session.** If a misconfigured proxy in front of the
+  server answered with a redirect to another address, the website or the
+  desktop app followed it, and a browser or system web view built before
+  the Fetch standard's November 2022 rule against this sent your Session
+  along. The server never redirects, so both now refuse any
+  redirect: the login card shows the server as **Disconnected**, which
+  points at the proxy instead of sending your Session somewhere else
+  (#2294).
+- 2026-10-10: **The Demo Account can no longer make API Tokens.** Anyone
+  who entered the Demo Account could make one, even one that never expires,
+  and walk away with a way back in that outlived the visit. Every visitor
+  shares the Demo Account, so each one also saw the tokens the others made
+  and could revoke them. Its Settings now say it makes no API Tokens, and the
+  server refuses one (#2148).
+- 2026-10-10: **No API token works on the owner's account.** The owner
+  cannot make an API token, but a token on the owner's account that got
+  there another way, such as in a restored database, used to import into
+  and export from the owner's account. The server now refuses it as if it
+  had never issued it. The owner's entry in User Accounts also used to
+  claim import, export and delete, which the owner never holds; it now
+  reports none (#2147).
+- 2026-10-10: **Logging in to a disabled account no longer tells a guesser
+  the password was right.** A disabled account's login used to say the
+  account was disabled only when the password was right. A wrong password got
+  the usual "invalid username or password". So someone guessing learned which
+  guess worked. That password works again once the owner enables the
+  account. Every refused login now gets the same answer. The
+  Audit Trail still records that the login was refused because the account
+  is disabled (#2145).
+- 2026-10-10: **A password typed into the username field no longer reaches
+  the Audit Trail.** A refused login for a username that matches no account
+  kept the typed text, with surrounding spaces trimmed and up to 128
+  characters of it, for 90 days, so a password typed into the wrong field,
+  which happens when a browser fills it in, was there for the owner
+  to read. The Audit Trail now keeps the text only when it could be a
+  username, and otherwise says the login was refused for something that is
+  not a valid username (#2135).
+- 2026-10-10: **The time zone picker and Sources end an empty-state
+  message without a full stop.** The time zone picker said "No time zone
+  matches." when nothing matched what was typed, and Sources said "No
+  source data available." for a conversation with no source data. Both now
+  end without a full stop, like the empty lists in Contacts and Trash
+  (#2469).
+- 2026-10-10: **API Tokens, Identities, Export History, Import History,
+  the largest attachments in Storage, the Audit Trail and the log viewer
+  end an empty-list message without a full stop.** They ended theirs with
+  one, where Contacts and Trash did not. "No API Tokens yet.",
+  "No identities yet.", "No exports recorded yet.", "No imports recorded
+  yet.", "No attachments with sizes yet.", "Nothing recorded yet.", "No line
+  matches the search." and "No line at this level." now end without one
+  (#2428).
+- 2026-10-10: **The contacts picked on Contacts and a message's attachments
+  in search results are counted with a separator.** The heading over the
+  picked contacts said "1234 contacts selected", and a search result's
+  attachment count read "📎 1234" with the tooltip "1234 attachments"; each
+  now writes "1,234", with the separator of the language the browser or
+  desktop app is set to (#2417).
+- 2026-10-10: **Trash writes an empty list the way Contacts does.** Trash
+  said "No contacts match this search." with a full stop where Contacts said
+  "No contacts match this search" without one. Every message Trash shows for
+  an empty list or a search that finds nothing, from "Trash is empty" to
+  "No contacts in Trash", now ends without a full stop, like the empty lists
+  in Contacts (#2415).
+- 2026-10-10: **Removing an identity from a contact writes a large count
+  with a separator.** The confirm dialog said it would unlink "1234
+  conversations"; it now writes "1,234 conversations", with the separator of
+  the language the browser or desktop app is set to (#2397).
+- 2026-10-10: **Trash, Export History and the Audit Trail write a large
+  count the way Storage does.** Trash wrote "1234 conversations" where the
+  storage screens wrote "1,234 messages". Every count in Trash, the count of
+  conversations and messages picked by hand in an Export Run's scope in
+  Export History, and the contacts changed and removed by an address book
+  load in the Audit Trail now carry the separator of the language the browser
+  or desktop app is set to (#2240).
 - 2026-10-07: **The login card names the server it is connected to.** The
   card said only **Connected**, so a person could not tell whether the desktop
   app was on its own Message Crate or on one on another computer. It now reads
@@ -223,6 +862,94 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-16: **The desktop app has the website's icon.** The desktop app
+  showed a plain blue square as its icon. It now shows the same icon as the
+  website (#3014).
+- 2026-10-15: **The app starts its own Message Crate again after it stops.**
+  When the Message Crate the desktop app started for itself stopped on its
+  own, as in a crash, the login card said it stopped and waited for you to
+  press Retry, and an Upload in progress lost its server until then. The app
+  now starts it again by itself. A Message Crate that stops four times
+  within ten minutes is not started a fifth time: the login card then says
+  so, and Retry tries again (#2089).
+- 2026-10-14: **A failed Staging, Media Stage, Export or Convert, or a
+  paused Upload, says what went wrong in a sentence.** A full disk, a file
+  Message Crate is not allowed to use, a missing file, and an ended session
+  each get a sentence of their own, and the full error goes to the log and
+  to the Import Errors row. A failure caused by a bug in Message Crate now
+  writes what the bug was into the Import Run's log, where before only the
+  sentence was kept. The Cancel button, pressed while Staging or the Media
+  Stage runs, now always pauses the run so it can resume, where before it
+  could end the run as failed (#2071, #2077, #2112).
+- 2026-10-12: **Try again on the Import form always checks the tools.**
+  Pressing **Try again** just as the desktop app started another program
+  could leave the check of ffmpeg, ffprobe and wtsexporter believing an
+  earlier check was still running, so it downloaded nothing. The earlier
+  check now lets go at once when it ends (#2944).
+- 2026-10-12: **A wtsexporter still being copied in is no longer used
+  halfway.** The desktop app took any `wtsexporter` in its Tools Directory
+  that had permission to run as ready, so a copy put there by hand from a
+  slow disk could be picked up before it was whole, and the WhatsApp import
+  then failed with an unclear error. Only the file of the pinned release
+  counts now, checked against the checksum the app carries. Anything else,
+  a copy still being written or another build, shows as not found until the
+  app's download replaces it, and a failed download says the file there
+  isn't used. Linux on ARM, which has no download, is unchanged (#2692).
+- 2026-10-11: **A wtsexporter the app's account can't run no longer shows
+  as found.** The desktop app took a `wtsexporter` in its Tools Directory as
+  ready when the file had permission to run for any account, so a copy that
+  root owns and only root may run showed as found in Settings and on the
+  Import form, and the WhatsApp import failed only once it started the
+  program. Settings and the Import form now say `wtsexporter` isn't used
+  because it is not executable by this account, and how to fix that
+  (#2793).
+- 2026-10-11: **A downloaded program that does not unpack says so.** When
+  ffmpeg or ffprobe arrived with the right checksum and then did not unpack,
+  Settings and a run waiting for it said the file could not be written to
+  the Tools Directory, which sent you looking at disk space and permissions.
+  The reason now reads "The downloaded file could not be unpacked", since the
+  file that arrived is at fault. A disk that fails while the app reads the
+  file back now reads "could not be written to or read back from the Tools
+  Directory" (#2716).
+- 2026-10-11: **The desktop app keeps trying to download ffmpeg and
+  wtsexporter when the computer is not online yet.** At start the app
+  downloads the programs missing from its Tools Directory. When it had no
+  network, such as on a laptop opened before its Wi-Fi connected, each
+  download was tried once and failed, and nothing tried again until the
+  next start or **Try again**. The app now tries again after 5, 15, 30 and
+  60 seconds, about two minutes in all, and **Settings → System** shows the
+  download as still in progress while it waits. A copy put in the Tools
+  Directory by hand during those waits ends them, and is used. A download
+  that fails for any other reason, such as a checksum that does not match,
+  is still tried once (#2200).
+- 2026-10-11: **The desktop app notices when its own Message Crate stops
+  answering.** A Message Crate the desktop app started could keep running
+  without answering, and the login card still called it ready. The app now
+  checks it while the login card is open. When two checks in a row find
+  nothing answering, the app stops it, and the login card says **Message
+  Crate stopped answering.** with **Try again**. The app does not stop the
+  server during an import, since a large import can keep the server from
+  answering in time (#2204).
+- 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
+  call its commands to its window.** Nothing changes on screen (#2177).
+- 2026-10-10: **A new SMS Backup+ export clears out every conversation
+  directory of the one before it.** An SMS Backup+ export that stopped part
+  way could leave an empty conversation directory behind, and the next
+  export into the same directory kept it. A new export into that directory
+  now removes every conversation directory an earlier SMS Backup+ export
+  wrote, empty or not (#2299).
+- 2026-10-10: **A one-to-one conversation that does not say who it was
+  with is exported under the name `unknown`.** Such a conversation was
+  exported to a file named only by its extension, such as `.json`. macOS
+  and Linux hide a file named that way. An SMS Backup+ export wrote its mail
+  loose in the export directory, and a later export into that directory
+  never removed it. Its files and its SMS Backup+ directory are now named
+  `unknown`, as an untitled group with no members is named `group_unknown`
+  (#2459).
+- 2026-10-10: **A downloaded ffmpeg is not reported as broken by
+  mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
+  runs could wrongly report it as not running. The check now tries again,
+  and a file still being written is still reported as not running (#2031).
 - 2026-10-07: **The desktop app remembers the server address.** An address
   entered under **Change server address** was saved only with the login.
   Logging out, or a login the server no longer accepted, forgot it. The next
@@ -252,6 +979,336 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **A later iMazing export keeps a second reaction with the
+  same emoji.** iMazing reactions keep only their emoji, so two people's 👍
+  on one message looked alike. When an export holding Bob's 👍 was imported
+  and a later one holding Bob's and Ana's 👍 followed, the message kept one
+  👍. A copy of a message now adds as many of these reactions as it holds
+  above what the message has, so the message shows 👍 ×2, whether the two
+  exports come in separate imports or in one. A copy with fewer removes
+  none (#3112).
+- 2026-10-16: **A file that could not be converted reads the same each
+  time.** The short reason on an attachment ffmpeg could not convert quoted
+  ffmpeg's line with a memory address in each tag, such as
+  `[libx265 @ 0x5e6836f4af00]`, which differed on every run. The reason now
+  keeps only the part's name, such as `[libx265] Error setting preset/tune
+  nonsense/(null).` The whole error, address and all, stays in the Import
+  Run's log (#3055).
+- 2026-10-16: **Cancel stops a WhatsApp import while it decrypts an
+  encrypted iPhone backup.** Cancel waited for Message Crate to finish
+  decrypting WhatsApp's files, which takes a long time when the backup holds
+  a lot of WhatsApp media. It now stops the decrypt at once (#3034).
+- 2026-10-16: **A WhatsApp import counts its media before it copies them.**
+  The disk space check before an import, and the bytes on the progress bar,
+  left out every WhatsApp photo, video and voice message, so a large media
+  directory could fill the disk instead of being refused first. Each media
+  file is now counted by its size on disk (#3057).
+- 2026-10-16: **An unreadable WhatsApp preferences file is a warning in the
+  run log.** When the iPhone backup's WhatsApp preferences file could not be
+  read, the run log said so at `INFO`, so the Logs panel's **Warn** filter
+  did not find it. It is now written at `WARN` (#3070).
+- 2026-10-16: **The Resume panel writes Media Stage as the rest of the app
+  does.** When an Import Run stopped during the Media Stage, the panel that
+  offers to resume it wrote "Media stage" (#3125).
+- 2026-10-16: **A closed Import Run's directory no longer stays on disk.**
+  When a discard reached the server only after the app had read the run as
+  still running, the run's directory, staged photos and videos included,
+  stayed in the Staging Directory with nothing to delete it. Opening Import
+  now deletes the directory of each of your Import Runs on this computer
+  that Message Crate reports as completed, failed or canceled, and the run's
+  log says so. A running run keeps its directory, and so does every run when
+  Message Crate does not answer (#2822).
+- 2026-10-15: **An Apple Messages import stops when its identity check
+  cannot run.** Before an import, Message Crate reads which addresses the
+  backup's phone sent from and compares them with your profile. When the
+  backup could not be read, such as with a wrong backup password, or your
+  account could not be read, the import went on without the check and
+  recorded the backup as one with no addresses. The import now stops on the
+  form with the reason, and no run is started (#2174).
+- 2026-10-15: **A batch the Upload stopped waiting for no longer holds up
+  its next try.** When the Upload gave up on a batch, such as after its
+  ten-minute wait, the server deleted the batch's file but kept the batch
+  in line behind the account's running import. When its turn came it
+  failed on the missing file, and the Upload's next try of the same batch
+  waited behind it. A batch whose Upload stopped waiting before its import
+  started is now dropped at once. One already importing still finishes,
+  with its file intact (#2090).
+- 2026-10-15: **What an import went on without is a warning in its log.**
+  An attachment that could not be read or decrypted, a contacts database
+  that could not be read, a message left out, and each record a backup's
+  reader skipped were written to the Import Run's log as ordinary lines, so
+  the level filter in the Logs panel did not find them under Warn. They are
+  now written at the warning level (#2047).
+- 2026-10-15: **A WhatsApp conversation stays on WhatsApp when its file is
+  imported again.** A message file written by Export names the source the
+  messages were stored under, and an import put a WhatsApp conversation on
+  WhatsApp only when that source was called `whatsapp`. Under any other
+  name it became a Text Message conversation, and a WhatsApp id such as
+  `123456@lid` became an email address there. An import now takes the
+  service from the messages themselves (#2050).
+- 2026-10-15: **An SMS Backup+ import skips the WhatsApp messages in it.**
+  From 2013 to 2015, SMS Backup+ also backed up WhatsApp messages. An
+  import read each one as a text message to or from its number, and could
+  show a message you received as one you sent. They are now skipped and
+  counted, as call log entries already were, and the summary says how
+  many, such as "Skipped 12 WhatsApp messages" (#2912).
+- 2026-10-15: **A damaged SMS Backup & Restore file is refused whole.** A
+  backup file cut off or damaged partway was imported up to the damage, and
+  only when its owner's phone number was given; without one, it was refused
+  with a message about the phone number, so Settings → Convert could not
+  read it at all. Now an import and Convert both refuse such a file with the
+  same message: the file is not valid XML, where, and why. Nothing is
+  imported from it, so a person fetches a good copy rather than import half
+  a backup without noticing. A single message that cannot be kept in a good
+  file is still skipped and counted, and the rest comes in (#2028).
+- 2026-10-15: **The Import form checks an Android backup path's kind.**
+  SMS Backup & Restore takes one `.xml` file, and GO SMS Pro and SMS
+  Backup+ take a directory. A path of the other kind, or one that does not
+  exist, is now named under the field and keeps **Import** off, rather than
+  being refused only once the import starts. A directory remembered from an
+  import before SMS Backup & Restore took one file is the usual case
+  (#2029).
+- 2026-10-15: **Cancel stops an Apple Messages import that has gone
+  quiet.** Cancel took effect only when the Apple Messages reader
+  (imessage-reader) next reported something, so during a long silent step,
+  such as decrypting a large encrypted backup, the import kept going, and a
+  reader stuck on a backup whose disk went away ran until the app closed.
+  Cancel now stops the reader at once, whatever it is doing (#2085).
+- 2026-10-15: **A conversation that crashes its preparation no longer hangs
+  the Upload.** When preparing one conversation for an Upload crashed, the
+  Upload waited for it forever and pausing it could not halt it. That
+  conversation is now reported as failed, with the crash's message, and the
+  Upload goes on to the rest (#2087).
+- 2026-10-15: **Other users of the computer can no longer read a staged
+  Import Run.** Each Import Run's directory in the Staging Directory, which
+  holds the conversations and attachments it staged until the run ends, could
+  be read by every other user of the same computer on macOS and Linux. It is
+  now made so that only you can open it. The Staging Directory itself keeps
+  the permissions it has (#2969).
+- 2026-10-15: **A joined MP3 converts again.** An MP3 made by joining
+  recordings back to back keeps the first recording's header, which states
+  only that recording's length. When the whole file played more than twice
+  that, its conversion was stopped as looping on a damaged file and the
+  attachment was recorded as one that could not be converted. Only a video
+  conversion is now stopped for running past twice its length. An audio
+  conversion is stopped when it makes no progress, or after twenty times
+  the file's length, at least 10 minutes and at most 6 hours. One that runs
+  past the length its header states gets at least an hour (#2909).
+- 2026-10-15: **A file that could not be converted names the cause.** The
+  short reason on an attachment ffmpeg could not convert was the last line
+  ffmpeg wrote, which can follow from the cause rather than name it, such as
+  "Nothing was written into output file" after an encoder that would not
+  open. The reason is now the last line that names a cause, such as why the
+  encoder would not open or that the disk is full (#2959).
+- 2026-10-12: **A wrong iPhone backup password names the field to fix.** A
+  password that does not open an encrypted iPhone backup is now refused with
+  "The Encryption password is incorrect.", in the same words as the other
+  two backup password messages, rather than "The iOS backup password was
+  incorrect." (#2917).
+- 2026-10-12: **An Upload pauses when the server stops or drops out.** When
+  the server was told to stop during an Upload, or could not be reached for
+  more than about four seconds, such as while Wi-Fi reconnected, the Upload
+  recorded every conversation it then tried to send as failed, and its
+  report listed failures that were nobody's fault. The Upload now waits at
+  least 15 seconds before its last try, and if the server is still away it
+  pauses, records no failure, and says in its log whether the server was
+  stopping, too busy, or out of reach. Pausing the Upload no longer waits
+  for those tries to run out. Resuming the Import Run sends what the
+  Upload did not (#2727, #2092).
+- 2026-10-12: **A file that could not be converted says why in one short
+  line.** An attachment ffmpeg could not convert read differently depending
+  on which step converted it: one showed the last line ffmpeg wrote, the
+  other every line, and either could hold full file paths. Both now show the
+  last line, with the files ffmpeg was given written as `<input>` and
+  `<output>`. The whole error stays in the Import Run's log (#2801).
+- 2026-10-12: **The server's log says why videos were compressed as H.264.**
+  When ffmpeg could not compress a video as HEVC during an import the server
+  converts, the warning in the server's log now carries ffmpeg's reason, as
+  the Import Run's log already did, with every file it names left out
+  (#2802).
+- 2026-10-12: **Two stopped Uploads no longer block large attachments for a
+  day.** When the desktop app was closed or stopped during an Upload, the
+  large attachments it was sending in parts stayed open on the server for a
+  day. Two such stops reached the 128 the server allows at once, and the
+  next Upload failed every large attachment, with nothing saying to wait. An
+  upload nothing has arrived for in a minute, or the time `body_stall_secs`
+  sets, is now given up, and when an Upload reaches the limit the server
+  removes the account's given-up uploads first and goes on (#2652).
+- 2026-10-12: **A refused Import Run names every problem at once.** When
+  the server refuses to start or finish an Import Run, it now lists every
+  problem it found, rather than only the first, so fixing one no longer
+  leads straight to the next (#2868).
+- 2026-10-12: **A refused import reads as one line.** The reason the server
+  gives for refusing part of an import, such as a message with no guid or a
+  file from another schema version, no longer starts with a capital or ends
+  with a period, so the line the app shows for the file reads as one
+  sentence. Convert words a file from another schema version the same way
+  (#2815).
+- 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**
+  SMS Backup+ records a text message's time in milliseconds and an MMS's in
+  seconds, but the import guessed the unit from the size of the number and
+  took a date far past any calendar as it was. It now reads each date in its
+  message's unit, by the same rule as the SMS Backup & Restore and GO SMS Pro
+  imports. A date it cannot read takes the time the mail carries to the
+  second, and a mail with no readable time counts as a message with an
+  invalid date (#2603).
+- 2026-10-12: **An import's connection that stalls is no longer reported as
+  bad data.** When the connection stopped delivering part of an import, the
+  server answered as though the file were damaged. It now says the
+  connection stopped, that nothing is wrong with the messages, and that
+  running the import again continues it. The server gives up on a part
+  after a minute with nothing arriving, as before, or after 5 minutes in
+  all, down from 10, so a stalled import holds up other imports for less
+  time. The owner can change both times in the server's config file with
+  `body_stall_secs` and `body_total_secs`, and the desktop app waits as
+  long as the server it imports into says. The same limits hold for
+  attachments, which now go up in parts of 16 MiB, down from 64 MiB, so a
+  large photo or video arrives in time on the same slow connection a part of
+  an import does (#2897).
+- 2026-10-12: **Logging in while someone else imports no longer waits as
+  long.** The desktop app now sends an import in parts of at most 16 MiB,
+  down from 64 MiB, so the server saves each part in a quarter of the time
+  and other changes, a login among them, wait for it less (#2062).
+- 2026-10-12: **Stopping the server no longer waits for an import part
+  still arriving.** A part that was still arriving when the server was told
+  to stop held up the stop until it had all arrived, up to 10 minutes on a
+  slow connection. The server now stops reading it at once and stores none
+  of it, and running the import again sends it (#2878).
+- 2026-10-11: **An import no longer fills the server's temporary space or
+  memory.** The server wrote each import batch it received to the operating
+  system's temporary directory. That directory is often small or held in
+  memory, and is not the Docker volume or the Data Directory set aside for
+  Message Crate, so a large import could fail there while the Data
+  Directory had room. Batches waiting for their turn were each written out
+  ahead of time. The server also accepted batches eight times larger than
+  the desktop app sends, and held each one's whole text in memory. A batch
+  is now written to the Data Directory, only once its turn comes, and read
+  a line at a time. A batch larger than the desktop app ever sends is
+  refused, and whatever a stopped server left behind is removed when it
+  starts again (#2075, #2095, #2123).
+- 2026-10-11: **A message date with a leading + or leading zeros counts as
+  unreadable.** Android writes a message's date in SMS Backup & Restore and
+  GO SMS Pro backups as plain digits. A date such as `+1400773261000` or
+  `0001400773261000` can only come from a file that was edited or damaged,
+  and it was read as a real date. Such a message is now skipped and counted
+  with the other messages whose date could not be read (#2602).
+- 2026-10-11: **The Import Run's log says why videos were compressed as H.264.**
+  When ffmpeg could not compress a video as HEVC, most often because it was
+  built without the HEVC encoder, the import compressed it as H.264 instead
+  and said nothing, so videos came out larger than expected with no reason
+  given. The Import Run's log now carries ffmpeg's reason as a warning,
+  once per import, and an import the server converts says in the server's
+  log that it happened. When H.264 fails as well, what is reported for the
+  video names both failures (#2256).
+- 2026-10-11: **A path the desktop app may not read says what to check on
+  your operating system.** The Import form, and the list of Import Run
+  directories left after an account is deleted, told people on Windows and
+  Linux to give Message Crate Full Disk Access, which is a Mac setting. The
+  message now names Full Disk Access only on a Mac. On Windows it says to
+  check that your Windows user may read the path, on the Security tab of its
+  Properties. On Linux it says to check that your Linux user may read it
+  (#2650).
+- 2026-10-11: **Canceling an import at a Review deletes its files when
+  the connection drops after Message Crate took the cancel.** The desktop
+  app kept the import's staged files as if the cancel had failed, but no
+  import was left to resume or discard, so the files stayed on disk with
+  nothing that would ever delete them. The app now asks Message Crate
+  whether the import is still running, and deletes the files when it is
+  not (#2807).
+- 2026-10-11: **An attachment's file name in an Upload never picks up a
+  file the server already holds.** An Upload sends each attachment's file
+  first and names it by its fingerprint. The server also looked up the file
+  name the message gave inside the account's own stored files, so a name
+  that matched a half-received file or one of the server's own notes beside
+  a stored file was saved as a new attachment. The server now finds an
+  attachment by its fingerprint alone. An attachment whose fingerprint is
+  not a real one now stops the Upload at that message and names the
+  attachment, where it used to be counted as missing (#2259).
+- 2026-10-11: **Discarding an import keeps its files when Message Crate
+  does not take the discard.** When you discarded an import, or canceled
+  one at a Review, and the server refused or could not be reached, the
+  desktop app deleted the import's staged files anyway, while Message Crate
+  still held the import as running. It could then be neither resumed nor
+  discarded cleanly. The files now go only once Message Crate has taken the
+  discard. Otherwise the import is offered again with what went wrong, and
+  **Discard this import** tries again (#2669).
+- 2026-10-11: **A server told to stop during an Upload stops sooner.** A
+  batch of messages that was still waiting for its turn used to start once
+  an earlier batch ended and run in full before the server stopped. The
+  server now turns it away at once, without storing any of it, and the
+  Upload tries it again. If the server is not back in time, the Upload
+  pauses, and resuming it sends the batch. The server's log no longer
+  reports the turned-away batch as an internal error either (#2203).
+- 2026-10-11: **Messages about the backup password read as plain
+  sentences.** An encrypted iPhone backup with no password is now refused
+  with "The backup is encrypted. Fill in the Encryption password.", and a
+  password given with a backup that has none with "This backup is not
+  encrypted. Clear the Encryption password." The server's message when it
+  finds no accounts to process attachments for, and its report line on
+  phone numbers that need review, no longer join two clauses with a dash
+  either (#2189).
+- 2026-10-10: **An attachment an import could not save is named in the
+  Import Run's log.** It used to be written where no log of Message Crate
+  showed it (#2165).
+- 2026-10-10: **The Import form tells a path it may not read from one that
+  is not there.** A backup path the desktop app is not allowed to read, such
+  as a directory macOS protects until the app has Full Disk Access, used to be
+  reported as "This path does not exist.", which sent people looking for a
+  different path when the fix was a permission. The form now says Message
+  Crate isn't allowed to read the path, gives the reason the system gave, and
+  says that on a Mac, Full Disk Access lets it read the path. On a Mac
+  without Full Disk Access, Apple Messages on this Mac now fills in the
+  Messages database anyway, so that message shows at once. When the app
+  could not check a path at all, the form says so rather than calling it
+  missing. A stopped Import Run whose directory or backup the app may not
+  read is no longer offered for discarding as if it were gone or changed
+  (#2173).
+- 2026-10-10: **Converting or compressing attachments no longer follows a
+  symlink.** When the Media Stage of an Import Run converts or compresses
+  attachments, a symlink among the staged attachments used to be followed:
+  the files of a linked directory elsewhere were converted and replaced
+  where they lay, and a link back to a directory above it made the Media
+  Stage repeat its walk until it failed. A symlink there is now skipped, so a
+  linked directory is no longer converted, and only the attachments that
+  are really in the Import Run's directory change (#2262).
+- 2026-10-10: **The Import form refuses a socket, a device file or a pipe
+  in any of its path fields.** An Apple Messages or WhatsApp backup path,
+  an Apple Messages attachments directory, an Apple Contacts database, or a
+  WhatsApp database, contacts database or media directory that named a path
+  that is neither a file nor a directory passed the form's check, and the
+  import failed only after it had started. The form now gives the field's
+  own message for such a path, the same one it gives for a file where a
+  directory is needed or the reverse (#2539, #2562).
+- 2026-10-10: **A large attachment no longer fails to import because the
+  server said another request held its upload.** The desktop app sends a
+  large attachment to the server in parts, and the server could refuse a
+  part with "another request to this upload holds its lock" when nothing
+  else was sending to that upload, and the import of that attachment
+  failed. A part is now refused this way only while another request to the
+  same upload is still running (#2510).
+- 2026-10-10: **An SMS Backup & Restore import says "drafts or messages
+  never sent" for what it skips.** It said "drafts or unsent messages",
+  but Unsent is the mark on a message its sender pulled back after sending
+  it, and those messages are kept. The count is of drafts and of messages
+  the phone left in the outbox, failed to send, or queued (#2461).
+- 2026-10-09: **Apple Messages from an older Mac or iPhone keep their times
+  in whole seconds.** A Messages database from before macOS 10.13 and iOS 11
+  stores each message's time in whole seconds, and the import said those
+  times had milliseconds. It now says they are whole seconds, as it does for
+  a message whose date the database holds in a form that could only be read
+  to the second. A message also held with milliseconds by another backup of
+  the same phone is then shown once (#1970).
+- 2026-10-09: **Apple Messages from a newer Mac or iPhone keep their
+  milliseconds.** Every Apple Messages time was cut to the second, though
+  the Messages database holds it to the nanosecond. A message now shows
+  its time with its milliseconds, as WhatsApp messages do (#1970).
+- 2026-10-09: **A photo a later import fills in gets its Thumbnail.** When a
+  backup was imported again and now held a photo or video that was missing
+  the first time, the import gave the stored message its file but never
+  queued it, so it got no Thumbnail or Preview, and the viewer did not open
+  it, until `process-assets` was run by hand. The server now makes the
+  Thumbnails and Previews of every attachment an import adds or fills in,
+  whichever import first brought the message (#1946).
 - 2026-10-09: **A file without a backup date imported beside a dated one
   gives the same result in any order.** When one import held a dated backup
   and a message file that says nothing about when its backup was made, such
@@ -319,7 +1376,6 @@ released versions carry their date on the heading.
   list was also left behind when a read stopped on an error. It now goes into
   the read's own directory under the Scratch Directory, which is deleted when
   the read ends (#788).
-
 - 2026-10-07: **A message an import edits is no longer hidden behind a copy
   of its old text.** When an import set not to hide duplicates gave a stored
   message the text of a later edit, or added an attachment to it, the message
@@ -330,7 +1386,6 @@ released versions carry their date on the heading.
   whatever its own setting. The messages it adds stay as they came. A stored
   message that only imports with dedupe off brought stays as it came too,
   even when a later import changes its text.
-
 - 2026-10-05: **A WhatsApp import from Android that fills the disk holding
   the Scratch Directory stops with the free-space sentence.** The encrypted
   WhatsApp backup is decrypted into the Scratch Directory, and its decrypted
@@ -343,7 +1398,6 @@ released versions carry their date on the heading.
   deleted with the rest of the run's working files, as it was before. The
   WhatsApp guide says the decrypted database can run to several GB and where
   it is written.
-
 - 2026-10-05: **A resumed Staging no longer leaves behind an Error it put
   right.** When an iPhone import stopped after an attachment could not be
   decrypted, for example on a full disk, and the resumed Staging then wrote
@@ -352,7 +1406,6 @@ released versions carry their date on the heading.
   until its conversation is written, and goes when a resumed Staging writes
   the conversation again. An Error about a conversation written before the
   stop stays, because the resumed Staging does not read it again.
-
 - 2026-10-05: **An import no longer stores a WhatsApp id as an email
   address.** A WhatsApp file that named a person by an internal id such as
   `123456789012345@lid` and gave it no type stored that id as an email
@@ -361,7 +1414,6 @@ released versions carry their date on the heading.
   chat, its members, the senders, the reactions and your own address. An
   email address on Text Message is still an email address, because iMessage
   reaches one.
-
 - 2026-10-07: **Messages you sent to Ada that an Apple Messages backup kept
   in no conversation sit with the ones she sent.** Such messages sat apart
   from Ada's, in "Unknown recipient", mixed with everyone else's, though the
@@ -373,15 +1425,135 @@ released versions carry their date on the heading.
   finds both kinds, and the word "orphaned" now finds them by their titles
   too.
 
+#### Exporting and converting
+
+- 2026-10-15: **An Export left open no longer stays open for good.** An
+  account now has one Export open at a time: starting an Export cancels the
+  one still open, and the server cancels an Export nobody has read from for
+  an hour, such as one whose desktop app was closed part-way. Before, each
+  such Export kept a list of every message it covered on the server, and a
+  program could start them without end. An Export canceled this way stops
+  and says it was canceled, and the Audit Trail records why (#2080).
+- 2026-10-15: **An Export keeps the date of the backup each message came
+  from.** A conversation imported from two backups of a phone was exported
+  with no backup date at all, and a message that had none left its whole
+  conversation without one, so importing the export into another Message
+  Crate treated every message as if its backup had no date. Each message
+  now carries its own backup date in the file, an import elsewhere keeps
+  it, and a message without one leaves the others dated. Every exported
+  file also says when it was written (#1967).
+- 2026-10-12: **Cancel stops an Export at once while the server is away.**
+  When the server stopped answering during an Export, the Export kept trying
+  each failed request up to three more times after you pressed **Cancel**,
+  waiting 15 seconds before the last try, before it noticed. It now stops
+  trying as soon as you press **Cancel**, as an Upload already did on
+  **Pause**, and the Export Run is recorded as canceled rather than failed
+  (#2111).
+- 2026-10-12: **A CSV export opens in a spreadsheet without running a
+  message as a formula.** A message, name or address that started with `=`,
+  `+`, `-` or `@` was written as it was, so Excel or LibreOffice Calc read
+  it as a formula, and a sender could place one such as `=HYPERLINK(...)` in
+  the export of whoever received it. Such a cell now starts with a `'`,
+  which the spreadsheet reads as text, and a phone number keeps its `+`.
+  Importing or converting the CSV again takes the `'` off, so every message
+  comes back as it was. The lists of skipped messages a GO SMS Pro import
+  writes follow the same rule (#2118).
+- 2026-10-12: **Converting an SMS Backup & Restore backup logs its
+  attachments and moves the progress bar.** While a Convert of a backup
+  copied its attachments, the log said nothing about one it could not find
+  or copy, and the progress bar stood still until the copying was done. The
+  log now names each such attachment once, and the progress bar follows the
+  copying (#2644).
+- 2026-10-12: **An export to SMS Backup+ mail writes an MMS's time in
+  seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
+  import now reads it that way, so an MMS exported to SMS Backup+ mail goes
+  out to the second (#2603).
+- 2026-10-12: **An export's conversation files mark each attachment it
+  could not fetch.** The export's log named the attachment, but the
+  conversation file still pointed at a file that was not there with nothing
+  saying why, so importing or converting that export later reported a plain
+  missing file. The conversation file now marks the attachment as not
+  fetched, an import of that export keeps the mark, and the conversation
+  shows the attachment as not fetched by the export (#2899).
+- 2026-10-11: **One missing attachment no longer throws away a whole
+  export.** When the desktop app could not fetch one attachment, for
+  instance because its file was gone from the server, the export stopped
+  with the attachments on disk and none of the conversations. Every
+  conversation is now written, the export's log names each attachment it
+  could not fetch, and its last line says how many are missing (#2070).
+- 2026-10-11: **An export that fails is recorded as failed.** An export
+  that stopped on an error showed in the Audit Trail and the export history
+  as canceled, as if you had stopped it. It now shows as failed, and only
+  an export you cancel shows as canceled (#2069).
+
 #### Browsing and search
 
+- 2026-10-16: **WhatsApp, Instagram and SMS messages show their
+  reactions.** Only Apple Messages and Discord messages drew the reactions
+  left on them. A WhatsApp, Instagram or SMS message, and an iMazing message
+  drawn as SMS, now shows each reaction with its count under the message,
+  and pointing at it names who reacted (#3054).
+- 2026-10-16: **An announcement reads as an event of the conversation.** A
+  group renamed, or a member added or removed, was drawn in a bubble with a
+  sender's name, as if someone had sent it. The conversation now shows it as
+  a centered line of small, muted text with its time, in its place among the
+  messages, with any attachments and reactions under it. Find still finds its
+  text. In a group, the next message names its sender again (#3050).
+- 2026-10-15: **A screen reader hears which Contact Group, Message Tag or
+  Saved Search is open.** The left panel's row for the open Contact Group,
+  Unknown, No Contact Group, Message Tag, No Message Tag or Saved Search is
+  now announced as the current page, as the Messages, Contacts, Trash,
+  Import and Export rows already were. A Contact Group or Message Tag opened
+  from an address that spells its name in another case is now highlighted
+  too (#2590).
+- 2026-10-12: **A refused search is one sentence.** A search the lists
+  cannot run is now refused in one sentence, such as "from: is not a
+  Contacts word; it works on Messages", rather than two. The list starts it
+  with a capital, unless it starts with the search word you typed, which is
+  shown as you typed it (#2816).
+- 2026-10-11: **An attachment's type comes from its contents, not only
+  from what the import called it.** A video an export called a plain file
+  showed as a download and never got a thumbnail or a copy a browser can
+  play, and the type the first import gave a file stayed its type for good,
+  even when it was wrong. The server now reads the start of each stored
+  file: a video, photo or recording is treated as what it is, whatever it
+  was called, gets its thumbnail and, where a browser needs one, its
+  playable copy, and is downloaded under its real type. A file type an
+  import gave in a broken form is no longer kept: the file's name decides
+  its type instead, and with nothing to go on it downloads as plain bytes
+  rather than with no type at all. An attachment whose file has
+  gone missing keeps what the server last decided about it.
+- 2026-10-11: **An attachment is opened as it is only when its contents
+  match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3
+  was opened in the browser as one without anyone checking, so a file
+  named wrongly the first time, such as a PNG called a JPEG or a text file
+  called a photo, was handed to the browser as something it was not, for
+  good. The server now reads the first bytes of such a file, and one that
+  is not what it was called gets a Preview instead (#2257).
+- 2026-10-11: **Search finds a conversation by the name it is listed
+  under.** A one-to-one conversation whose backup recorded only the
+  address is listed under the name of the Contact that address is on, but
+  searching that name on the Conversations list found nothing; only the
+  address found it. Searching the name now finds it (#2737).
+- 2026-10-11: **A Saved Search no list could ever run is not saved.** A
+  search longer than 2,048 bytes, with a parenthesis or quote that never
+  closes, with more than 32 words, or too many parts or levels of nesting is
+  refused on every list, but a Saved Search holding one was saved anyway,
+  and the mistake showed only when it was selected. **Save** now refuses it
+  with the same message the search box gives. A word that works on some
+  lists and not others is still saved as typed (#2184).
+- 2026-10-10: **The left panel highlights Contacts on a Contact Group page.**
+  A Contact Group page, **No Contact Group** and **Unknown** list contacts,
+  but the left panel highlighted no Browse row on them, where a Message Tag
+  page highlights Messages. Each now highlights Contacts. A screen reader
+  also hears which row of Messages, Contacts, Trash, Import and Export is the
+  current page (#2480).
 - 2026-10-09: **The left panel's rows are one size, and its sections one gap
   apart.** A named Contact Group, Saved Search, or Message Tag was drawn
   smaller than the rows around it, such as **Unknown** and **No Contact
   Group**, and the space above Saved Searches and above Message Tags differed
   from the space above the other sections. Every row is now the same size,
   and each section sits the same distance below the one above it.
-
 - 2026-10-07: **A hit found by an earlier version says so in the Messages
   list.** A search finds a message when one of its earlier versions holds a
   searched word, but the row showed only the final text, so a word only an
@@ -394,7 +1566,6 @@ released versions carry their date on the heading.
   row quotes the newest matched earlier version, and, for each searched word
   that neither that version nor the final text shows, the newest matched
   version that holds the word (#1785).
-
 - 2026-10-07: **A contact's and an identity's counts include orphaned
   messages.** Since orphaned messages got conversations of their own, the
   counts that split a person's conversations and messages into direct and
@@ -403,7 +1574,6 @@ released versions carry their date on the heading.
   identities on Profile now count orphaned conversations and messages as a
   third figure, and the three add up to the total. The orphaned figure
   shows only when it is not zero.
-
 - 2026-10-05: **A search no longer finds an Unsent message by the text it
   hides.** An Unsent message reads "Unsent" and nothing else, but when an
   earlier import stored it with its text, a search for a word of that text,
@@ -412,7 +1582,6 @@ released versions carry their date on the heading.
   the same. A search now finds a message by what it shows: `unsent:yes`,
   `from:`, the conversation and the date still find an Unsent message, and a
   message Deleted in the source app is still found by its text.
-
 - 2026-10-05: **A message keeps the milliseconds of its time.** Message
   Crate kept a message's time to the whole second and dropped the
   milliseconds that WhatsApp, Apple Messages and SMS Backup & Restore
@@ -425,6 +1594,50 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-16: **A vCard name in another character set converts as written.**
+  Convert a vCard file reads a name in the character set the card names,
+  such as Shift_JIS from a Japanese Android phone, or Windows-1252, whose €
+  came out as a stray control character. A card in a character set Message
+  Crate can't read is refused, naming the card and the character set,
+  rather than converted with its name garbled (#3101).
+- 2026-10-16: **Add a WhatsApp internal id or a sender name as an
+  identity.** **Add identity**, in Settings and on a contact, and **Your
+  Accounts** at setup refused anything but a phone number on **Text
+  Message** and **WhatsApp**, so a WhatsApp internal id such as
+  `123456789012345@lid` or a sender name such as `AMAZON`, which an import
+  adds and Settings can remove, could not be added by hand. Both services now
+  take any value, as the server does. **Email** still asks for an email
+  address (#3090).
+- 2026-10-16: **An Edit address book load erases what it removed from the
+  database's files.** An **Edit** load deletes for good the identities its
+  file no longer lists that nothing else uses, but left them readable in the
+  write-ahead log beside the database, so a copy of the files made right
+  after the load still held them. The server now clears the log after an
+  Edit load, as it does after any other delete for good (#2981).
+- 2026-10-15: **A number from an Apple Messages backup keeps the country
+  the phone read it in.** A number written without its country code, such
+  as `07700 900123`, was stored with its country unknown, though the backup
+  records that Messages read it as a UK number. An Apple Messages import now
+  reads that country from the backup, so the number is stored as
+  `+447700900123` without picking a country on the import form, and is the
+  same person as the same number written in full. A number the backup names
+  no country for is stored as before (#1994).
+- 2026-10-11: **A WhatsApp internal id can be added to a contact or to your
+  account by hand.** WhatsApp names some people by an internal id such as
+  `123456789012345@lid` rather than a phone number. Adding one by hand was
+  refused as an email address, which WhatsApp does not carry, though an
+  import stores the same id without trouble. An address with an `@` added
+  on WhatsApp is now stored as WhatsApp's own kind of identity, as an import
+  stores it, and one added on Text Message is still an email address
+  (#2709).
+- 2026-10-11: **An address book load refuses an identity its service cannot
+  hold.** A row that put an email address on WhatsApp, or a username on
+  either service, was stored as an identity that reaches nobody. The load now
+  refuses it, naming the row, the service and the kind of identity (#2212).
+- 2026-10-10: **Contacts calls a search that finds nothing a search.** When
+  the text in **Search contacts** matched no contact, the list said "No
+  contacts match this filter". It now says "No contacts match this search"
+  (#2290).
 - 2026-10-09: **A person who reacts to a message is the same contact as when
   they write.** An import could take a person in a conversation's list and
   the same person reacting to a message for two identities, and put the
@@ -434,7 +1647,6 @@ released versions carry their date on the heading.
   from the service and the address, for the people in a conversation, the
   senders of its messages and the people who react alike, and no longer reads
   it from the exported file (#1933, #1959).
-
 - 2026-10-08: **Adding or removing an identity updates the conversations with
   yourself already imported.** Notes imported before your number was added as an
   identity still listed you among the conversation's people. They also kept you
@@ -449,65 +1661,469 @@ released versions carry their date on the heading.
   conversation that is no longer with yourself gets its person back, with a
   contact. Messages are not changed (#1662).
 
+#### The server
+
+- 2026-10-16: **A download nobody reads no longer holds the server.** A
+  client that stopped reading an answer part-way, such as a browser tab that
+  hung mid-download, kept its connection, and the export file or attachment
+  it was reading, for as long as the operating system kept the connection.
+  The server now closes the connection once the client has taken none of the
+  answer for `body_stall_secs` (60 seconds unless the config file sets
+  another). A download that is still moving, however slowly, is never cut
+  off (#2984).
+- 2026-10-16: **Making Previews and Thumbnails reads only an account's own
+  attachments.** When the server makes Previews and Thumbnails, it passes
+  over an Asset whose stored location points outside the account's
+  attachments in the Data Directory. It says so in its log, with the
+  account, the Asset and its stored location, and `process-assets` ends by
+  counting such Assets as a failure. Before, it read the file at that
+  location and made a Preview or Thumbnail of it (#2866).
+- 2026-10-16: **A download cut off by an error shows in the server's log.**
+  When an attachment or a log file failed partway through its download, such
+  as on a disk error, the server's log showed only the download's start,
+  as a success, so the Logs panel read it as a download that worked. The
+  failure now leaves an error line naming what went wrong, with the
+  request's id (#2870).
+- 2026-10-15: **A failed request's log line names the database step that
+  failed.** When a request fails because of a database problem, its line in
+  the server's log now says which database step failed, such as `read the
+  account's Saved Searches`, before the database's own message. Before, only
+  the message pages of a conversation, the conversation list and contacts
+  said so; the other requests gave the database's message alone (#2667).
+- 2026-10-15: **The website tells the browser to run only its own
+  scripts.** The website the server serves, and every answer from the
+  server, now carry a Content Security Policy and two related headers, as
+  the desktop app's window already did. A script slipped into a page can no
+  longer run there and read your login, and no other site can show the
+  login card inside its own page (#2073).
+- 2026-10-15: **A server command from another version no longer empties
+  the database under a running server.** A command such as `import` from a
+  build with a different database format rebuilt the database empty while
+  a server was serving it, and the server went on showing the empty
+  database until it restarted. The command now stops, names the database
+  and asks for the server to be stopped first (#2920).
+- 2026-10-14: **The Compose files publish the server to this computer
+  only.** Both Compose files published port 8080 on every network the
+  computer is on, unlike the `docker run` command in Run Message Crate
+  with Docker. Any device on that network could reach a new Message Crate
+  over plain HTTP, and claim it as owner before its installer did. Both
+  now publish it on `127.0.0.1`, and Run on another machine says how to
+  open it to the network (#2063).
+- 2026-10-14: **A Demo Data backup left behind is in the server's log.**
+  When the server writes new Demo Data, it removes its backup of the files
+  they replace. When that removal failed, the warning went only to the
+  terminal the server was started from, never to the server's log or the
+  **Logs** panel in Owner Home. It now goes there, and the `reset-demo`
+  command still prints it (#2903).
+- 2026-10-14: **The guide's `docker run` commands limit the container as
+  the Compose files do.** A server started with the user guide's commands
+  kept every special permission a container has by default. A program
+  inside the container could gain more, and could write to the container's
+  own files. Every `docker run` command in the guide that starts the server
+  now takes those permissions away and refuses to give more. It also makes
+  the container's own files read-only, apart from a directory for temporary
+  files. That limits what a program that breaks into the container can do
+  there (#2655).
+- 2026-10-14: **The guide asks for a proxy with its own sign-in before the
+  internet.** "Run on another machine" asked only for a reverse proxy with
+  TLS in front of a server reached from the internet. TLS encrypts the
+  traffic but lets anyone reach the login and the Demo Account. The guide
+  now asks for a proxy that adds its own authentication as well, and says
+  the account login keeps accounts apart but is not built to stand alone on
+  the internet (#2104).
+- 2026-10-12: **A slow or stuck device can no longer hold the server.** A
+  device that connected and sent nothing, sent its request a byte at a time,
+  or stopped part-way through sending one could hold its connection for
+  good, and any number of such connections could pile up. The server now
+  closes a connection that sends no request for 30 seconds, holds at most
+  256 open at once, and stops reading any request that stalls or runs past
+  the time limits `body_stall_secs` and `body_total_secs` set, not only an
+  upload. This guards against a misbehaving device on your network. It does
+  not make the server safe to put on the internet (#2100).
+- 2026-10-12: **Deleting for good erases the text from the database's
+  files.** Deleting a conversation or a contact from Trash, emptying Trash,
+  deleting all of an account's messages, and deleting an account left the
+  deleted text readable in the database file, its search index, and the
+  write-ahead log beside it, so anyone who copied the files later could
+  still read it. Now the server writes over it, writes the search index
+  again without it, and clears the log. Each delete takes up to about a
+  second longer on a Message Crate of 636,000 messages. Attachment files,
+  backups and exports made earlier, the copy kept before a database
+  rebuild, and the backups the messages were imported from still hold what
+  they held; the Trash page of the user guide says what covers them
+  (#2108).
+- 2026-10-12: **An attachment sent in parts no longer fills the server's
+  memory.** The server held each part of a large attachment in memory until
+  all of it had arrived, up to 16 MiB a part, and nothing limited how many
+  parts one account sent at once, so one account could use up the memory of
+  a server it shared with others. Each part now goes to disk as it arrives,
+  and the server holds only a small piece of it at a time. The desktop app
+  still sends as many attachments at once as before (#2114).
+- 2026-10-12: **A stopping server waits at most 30 seconds, and Docker
+  gives it 40.** A server told to stop waited as long as the longest
+  request still running, and an import could take minutes, so `docker stop`
+  killed it after Docker's 10 seconds with no line in the log saying why.
+  The server now waits up to 30 seconds for the work in progress, then
+  stops and names in its log each request it stopped without. An import
+  cut off this way stores nothing, and the Upload sends it again. Both
+  Compose files and every `docker run` command in the guide now give the
+  server 40 seconds to stop, and `docker stop -t 40` stops one started
+  before this release the same way (#2122).
+- 2026-10-12: **Other people who log in to the same computer can no longer
+  read your messages.** The database, the directory with every account's
+  attachments, and the server's log were readable by every user of the
+  computer, so anyone with their own login on it could read every account's
+  messages without a password. Now only the user Message Crate runs as can
+  read them, whether the server runs on its own, in Docker or in the desktop
+  app, and the desktop app keeps its import logs the same way. An existing
+  Message Crate is closed off the next time it starts. On Windows, the files
+  take the access of the directory they are in, which for the desktop app
+  is your own user directory (#2097).
+- 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
+  held.** When a server finds a database from a release with another
+  database layout, it still rebuilds it empty, but it first writes a copy of
+  the database beside it, named after the database with "before-rebuild"
+  and a number, and the log line names the copy. Running the earlier release
+  on that copy brings everything back. If the copy can't be written, as on a
+  full disk, the server leaves the database as it is and does not start.
+  Resetting the Demo Account from the command line refuses such a database
+  until the server has opened it once (#2068).
+- 2026-10-12: **A request can no longer empty the database.** Every
+  request from a logged-in account checked the database layout, and a
+  database another server or command had changed was rebuilt empty from
+  inside that request, while the server was serving it. The layout is now
+  checked once, when the server opens the database (#2064).
+- 2026-10-12: **A hung video conversion is given up on within about 2
+  minutes, and a slow computer is no longer cut off on long videos.** A
+  conversion was stopped only after many times the video's length, so a
+  hung 5-second clip held up Thumbnails and Previews for 10 minutes, while
+  a long video on a slow computer, such as a small NAS converting iPhone
+  video, could still be cut off before it finished. A conversion now runs as
+  long as it keeps moving through the file. It is stopped once it hasn't
+  moved for 2 minutes, or once it goes past twice the file's length, as a
+  damaged file does when it loops. A server's config file can change the
+  wait with `transcode_stall_secs`. Reading a file's details, making a
+  Thumbnail and the check that finds ffmpeg are stopped after 15 seconds,
+  and an ffmpeg or ffprobe that never answers that check is passed over
+  rather than holding every lookup. The reason an attachment gives says
+  which happened: no progress, past twice its length, or a step that took
+  too long. When an Import Run compresses a video, HEVC that fails, or
+  hangs before converting anything, still falls back to H.264. A video that
+  stalls partway or loops isn't tried again with H.264, and canceling
+  stops the conversion at once as canceled, not as a file that failed
+  (#2898, #2883).
+- 2026-10-11: **The server's log holds what it was missing.** A request
+  that broke the server in an unexpected way closed the connection with no
+  answer and left nothing in the log. It now gets the same "internal server
+  error" answer, with a request id, as any other failure, and the log names
+  what broke and the place in the code it happened. The same holds for any
+  other part of the server that breaks this way. The lines a starting server
+  writes, and the reason it stops or will not start, are now in the log as
+  well, so the Logs panel shows them, and so is every step of adding or
+  rebuilding the Demo Account. A server whose desktop app has crashed no
+  longer fails every request while it waits to stop. A request with a very
+  long address now leaves at most the first 2,048 bytes of it in the log, so
+  nobody can fill the log with a few long requests and push older lines out
+  (#2060, #2086, #2079, #2018, #2088).
+- 2026-10-11: **A busy server says it is busy, and stays busy less often.**
+  While two imports ran, every other page and action shared what was left of
+  the server's database connections, and one that waited too long failed as
+  "internal server error", with an error in the server's log. The server now
+  keeps more connections free beside the imports, and a request that still
+  finds the database busy says so and to try again in a few seconds. An
+  import's upload sends it again by itself, and the server's log notes it as
+  a warning rather than an error (#2084, #2124).
+- 2026-10-11: **Logins under made-up usernames are limited.** Each username
+  that names no account had its own limit, so a script trying a new name
+  each time was never slowed, kept the server busy checking passwords, and
+  filled the Audit Trail with refused logins. Past 120 such logins a minute
+  in all, the server now turns them away without checking them or recording
+  them, and the answer still doesn't say whether a username exists.
+- 2026-10-11: **No single attachment or error stops Thumbnails and Previews
+  for good.** The server makes Thumbnails and Previews one attachment at a
+  time, and three things could stop that work for every account. A file
+  ffmpeg never finished converting, such as a damaged video, held it
+  forever, and again at every start. ffmpeg is now stopped once it runs far
+  longer than the file plays, at least 10 minutes and at most 6 hours, or
+  an hour when the file does not say how long it plays. The attachment
+  then says that ffmpeg did not finish in time. A fault in the server's own
+  code ended the work until a restart, and a moment when the database was
+  busy ended it until the next import. Both are now written to the server's
+  log, and the work starts again 5 seconds later, waiting twice as long
+  after each failure in a row, up to 5 minutes. ffmpeg and ffprobe now also
+  open only files on this computer, never a network address named inside an
+  attachment (#2059, #2072, #2091).
+- 2026-10-11: **Two uploads of one attachment at the same moment both
+  succeed.** The server named an upload's temporary file from the clock
+  alone, so two uploads of the same file that started in one clock tick
+  wrote into one temporary file and both failed. Each upload now gets a
+  name of its own (#2260).
+- 2026-10-11: **Starting an upload no longer slows as unfinished uploads
+  pile up.** Each attachment upload used to look through every upload the
+  account had left unfinished, which slowed an import of many attachments.
+  Uploads left unfinished for a day are now removed when an import ends and
+  when the server starts instead (#2261).
+- 2026-10-11: **The server's log names a damaged Preview or Thumbnail
+  location.** When the server makes or checks Previews and Thumbnails, it
+  passes over one whose stored location points outside its directory, and
+  now says so in its log with the account and the attachment. When the
+  copies of one attachment name different Previews, the server always
+  shows the same one and logs both (#2806).
+- 2026-10-11: **The server's log says each failure once.** A request the
+  server failed on wrote two error lines to its log, and the second said
+  nothing the first did not. It now writes one, with the whole
+  cause. A database error's message used to appear twice in that line, and
+  now appears once. A successful health check and a file of the website no
+  longer write a line at the default level, because the web app checks the
+  server's health every 30 seconds in each open tab and those lines buried
+  the requests that did something. A failed health check, a file the
+  website doesn't have, and every other request still write theirs
+  (#2254, #2675, #2274).
+- 2026-10-11: **The server warns when every website may call it.** A `*` in
+  the server's list of websites allowed to call it lets a page on any
+  website, opened by anyone on the network, reach the server through their
+  browser: to try logins, to register while registration is open, and to
+  claim a server nobody owns yet. Until now the server started with it and
+  wrote nothing about it. It now writes a warning to its log as it starts,
+  naming the setting and the command-line option that can add it, whether
+  it runs in Docker or the desktop app starts it (#2218).
+- 2026-10-11: **The server trusts a database file less.** The server opens
+  only a database it made, but it knows one only by a number in the file,
+  which anyone can copy. A tampered file that carries that number, such as
+  a restored backup someone else handled, could hold views or triggers that
+  call any function the database engine has while the server reads it. Such
+  views and triggers can now call only functions that change nothing
+  outside the query, and the server refuses to edit the database's list of
+  tables and indexes directly (#2249).
+- 2026-10-11: **The server will not publish its own data as the website.**
+  The server shows everything in its website directory to anyone who can
+  reach it, without a login. A config that put the Data Directory or the
+  database inside that directory, or the website directory inside the Data
+  Directory, used to start and serve every message and attachment that way.
+  The server now refuses to start and names both directories, even when a
+  link or a `..` in a path hides the overlap (#2175).
+- 2026-10-11: **Every line the server's log writes for a request names
+  that request.** A warning written while the server removed files, hashed
+  an import's messages, or did other work it runs apart from the request
+  that asked for it, left out the request's id, so it could not be matched
+  to the request or to the error a person was shown. It now carries the id
+  like every other line of the request (#2186).
+- 2026-10-11: **A database failure while reading a conversation or a search's
+  messages says what the server was reading.** The error in the server's
+  log used to give only the database's own message, such as that a table
+  was missing, so a request that reads messages, their attachments, their
+  reactions and their earlier versions gave no way to tell which read
+  failed. The error now starts with what was being read, such as "read the
+  attachments of a page of messages". The values the read was given, such as
+  the words of a search, are never written (#2172).
+- 2026-10-11: **The server's log says why it refused a request.** A wrong
+  password, a request that did not log in or whose Session ended, a request
+  without the right to what it asked for, and a client that asked too often
+  now each leave a warning in the server's log naming which of those it was,
+  so Owner Home's Logs shows them at its opening filter. Before, they were
+  in the log only as a status number, shown only when the Logs panel showed
+  everything, and a person guessing passwords left nothing among the
+  warnings. Every other refused request also names its reason now, shown
+  when the Logs panel shows everything. What the person typed is never
+  written to the log (#2168).
+- 2026-10-10: **One account can no longer fill the server's disk with
+  unfinished uploads.** A large attachment is sent in parts, and the parts
+  of an upload that was never finished stayed on disk for a day. Nothing
+  limited how many such uploads one account could have open, so one account
+  could leave enough of them to fill the disk that every account on the
+  server shares. An account may now have 128 uploads in progress at once.
+  The next is refused until one of them is completed, is stopped by the
+  program that sent it, or has sat untouched for a day (#2176).
+- 2026-10-10: **An attachment the server cannot read is written to its
+  log.** Before it skips an upload because an attachment is already
+  stored, the server reads the stored copy to check it. When that read
+  failed, for example on a failing disk or after a permission change, the
+  server asked for the attachment again and said nothing about why. The
+  attachment is still sent again, and the server's log now names the file
+  it could not read and the error (#2171).
+- 2026-10-10: **A request too large for the server reads the same
+  everywhere.** When the server refuses a request for being over its size
+  limit, the message now always reads "the request body is too large". It
+  used to read three ways depending on what was sent: "request body too
+  large" for an attachment, an import or an address book sent without a
+  stated size, "a part of this upload is at most" a number of bytes for a
+  part of a large attachment, and a technical sentence from the web
+  framework for some other requests (#2283).
+- 2026-10-10: **The server's log and the desktop app's Import Run logs no
+  longer act on a terminal that shows them.** A file name in a backup or a
+  tool's output can carry a terminal control character, such as the escape
+  that clears the screen. Both logs wrote it as it was, so opening the file
+  with `cat`, `less -r` or `tail` could clear the screen or rewrite what it
+  showed. Both now write each control character escaped, such as `\x1b`,
+  and the **Logs** panel and a run's row in Settings → Storage show it the
+  same way (#2275).
+- 2026-10-10: **A caching proxy no longer keeps a photo or video after its
+  link has run out.** When a page shows an attachment, the server hands it a
+  link that works for an hour, or until you log out. A caching proxy in front
+  of the server could keep the attachment and hand it out again under that
+  link after the hour or the logout. The server now tells every cache and
+  browser not to store an attachment read through such a link, and tells
+  shared caches not to keep any attachment at all (#2149).
+- 2026-10-10: **No cache keeps your messages or your Session.** The server
+  now tells every browser and proxy not to store what it answers: logging in,
+  which hands out your Session, and every page of messages, contacts and
+  settings.
+  A browser could otherwise write those answers to its own cache on disk,
+  and a proxy that ignores the usual rules could keep them and hand them out
+  again. The website's own files are cached as before (#2295).
+- 2026-10-10: **The guide to moving a Message Crate says to encrypt the
+  copy.** The copy of the Docker volume that the guide makes holds every
+  account's messages and attachments unencrypted, and the guide sent it on
+  by USB drive, network share or `scp` without saying that it was
+  unencrypted. It now encrypts the copy with `age` or `gpg` before it leaves
+  the old computer, deletes every copy once the new computer's Message Crate
+  is checked, and says the computer that runs the server should use
+  full-disk encryption, such as FileVault, BitLocker or LUKS (#2161).
+- 2026-10-10: **The Docker image no longer lets pages on port 5173 call its
+  server.** The image's settings allowed web pages from port 5173 on the
+  viewer's computer, the port a Message Crate developer's tools use, to call
+  the server. Nothing in a release uses that port, so the only effect was
+  that any page served on it could call a Message Crate in Docker, though it
+  still needed a login to read anything. The image now allows only the
+  desktop app and the website the server serves itself, as a Message Crate
+  started by the desktop app does (#2144).
+
 ### Upgrading
 
-- The **ffmpeg directory** field in Settings → System is gone, and the
-  `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no longer
-  read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
-  or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
-  found, and a WhatsApp import no longer finds wtsexporter on `PATH`. The
-  desktop app downloads all three into its Tools Directory when it starts,
-  ffmpeg and ffprobe only when they aren't installed on `PATH`, so nothing
-  needs doing. Without a connection, Troubleshooting in the user
+- 2026-10-16: A conversation file written by an earlier build is refused
+  when you import it. Read the backup again with this build to write a file
+  the import takes (#3094).
+- 2026-10-16: A program that reads Import Runs, Export Runs or the Audit
+  Trail from your Message Crate and looks for the status "cancelled" must
+  look for "canceled" instead, the spelling the screens use (#2279).
+- 2026-10-15: An address book exported by an earlier build is refused when
+  you load it, because its columns changed. Export it again from the
+  Contacts screen and make the edits in the new file (#916).
+- 2026-10-15: The desktop app starts a new Message Crate in message-crate
+  in your home directory, and no longer reads the data, exports and logs it
+  kept in the operating system's app-data directory. This release rebuilds
+  every Message Crate empty anyway (#2286), so the messages are imported
+  again either way. Exports and Import Run logs worth keeping can be copied
+  from exports and logs in the app-data directory into the directories of
+  the same names in message-crate. The app-data directory is
+  `~/.local/share/app.messagecrate.desktop` on Linux,
+  `~/Library/Application Support/app.messagecrate.desktop` on macOS and
+  `%APPDATA%\app.messagecrate.desktop` on Windows. Its data, data-dev,
+  exports, logs and scratch directories can then be deleted (#1998).
+- 2026-10-15: Message files exported by an earlier build are refused when
+  you import or convert them. Export the backup again with this build. An
+  existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2286, #1967).
+- 2026-10-15: A script that runs `create-owner` or
+  `reset-owner-password` with `--password` must write the password to the
+  command's input instead, for example
+  `printf '%s\n' "$PASSWORD" | message-crate-server reset-owner-password`.
+  With `docker exec`, add `-it` to type it when asked (#2094).
+- 2026-10-14: A Compose file saved from the repository before this
+  release keeps publishing the server on every network the computer is
+  on, because pulling a new image does not change the file. To keep the
+  server on this computer only, change its `ports:` line to
+  `"127.0.0.1:8080:8080"` and run `docker compose up -d`. A file saved from
+  this release on publishes it on this computer only, and Run on another
+  machine says how to open it to the network (#2063).
+- 2026-10-14: A Message Crate started with `docker run` before this release
+  keeps every default container permission. Stop it with
+  `docker stop -t 40 message-crate`, remove it with
+  `docker rm message-crate`, and start it again with the `docker run`
+  command in the user guide, which keeps the messages in the same volume
+  (#2655).
+- 2026-10-12: Text deleted for good before this release can still be in
+  the database file's free space and in its search index. The first delete
+  for good after the update writes the search index again without those
+  words, and the Trash page of the user guide gives the command that
+  erases both with the server stopped (#2108).
+- 2026-10-12: A Message Crate started with `docker run` before this release
+  keeps Docker's 10 seconds to stop, which can cut off an import. Stop it
+  with `docker stop -t 40 message-crate`, and start it again with the
+  `docker run` command in the user guide, which now carries
+  `--stop-timeout 40`. The Compose files set the 40 seconds themselves
+  (#2122).
+- 2026-10-12: The server now makes its data directory and its database
+  file readable by its own user alone each time it opens the database. A
+  backup job or another program that read either as a different user,
+  through its group, can no longer read it; run it as the user the server
+  runs as, or as root.
+- 2026-10-08: The **ffmpeg directory** field in Settings → System is gone,
+  and the `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no
+  longer read. ffmpeg and ffprobe beside the app, in a `lib/` directory
+  beside it, or in the directory the field or `MESSAGE_CRATE_BIN` named are
+  no longer found, and a WhatsApp import no longer finds wtsexporter on
+  `PATH`. The desktop app downloads all three into its Tools Directory when
+  it starts, ffmpeg and ffprobe only when they aren't installed on `PATH`,
+  so nothing needs doing. Without a connection, Troubleshooting in the user
   guide says which files to put there by hand. If you start the server with
   a script, it takes `serve --tools-dir <directory>` for the same purpose
   (#1053).
-- A WhatsApp `result.json` that a `wtsexporter` from before this release
-  wrote is refused, because it records no group members and no sender's
-  name beside their number. The desktop app replaces an older `wtsexporter`
-  in its Tools Directory with Message Crate's own on its next start with an
-  internet connection, except on Linux on ARM, where it has no download of
-  its own and Troubleshooting in the user guide says how to install
-  wtsexporter by hand. Run the WhatsApp import again from the backup rather
-  than from an old `result.json` (#1092).
-- A phone number written without its country code is no longer read as a
-  US number. Import a US phone's backup with **Phone's country** set to the
-  United States, or pick the country of each such number on the Contacts
-  screen. If you have a program that creates Import Runs through the HTTP
-  API, it states the country in `phone_country` (#1676).
-- The database format changed. **An existing Message Crate is rebuilt empty
-  on first start and its messages must be imported again.**
-- A desktop app that was pointed at a Message Crate on another computer
-  opens on this computer's own once after upgrading, because the address is
-  now saved apart from the login. Enter the address again under **Change
-  server address** and log in. From then on the app keeps it.
-- Message files exported before replies moved onto the message itself are
-  refused when you import or convert them, rather than read with their
-  replies taken for plain messages. This holds for JSON, JSONL, CSV, EML and
-  mbox exports, and for an Import Run an earlier build left paused. Export
-  the backup again with this build, then import or convert the new files;
-  discard a paused run and start the import again.
-- If you have a program that reads messages from the HTTP API, it must read
-  a reply from `reply_to`, which names the quoted message's `guid` and part,
-  in place of `is_reply`, `thread_originator_guid` and
+- 2026-10-09: A WhatsApp `result.json` that a `wtsexporter` from before this
+  release wrote is refused, because it records no group members and no
+  sender's name beside their number. The desktop app replaces an older
+  `wtsexporter` in its Tools Directory with Message Crate's own on its next
+  start with an internet connection, except on Linux on ARM, where it has no
+  download of its own and Troubleshooting in the user guide says how to
+  install wtsexporter by hand. Run the WhatsApp import again from the backup
+  rather than from an old `result.json` (#1092).
+- 2026-10-08: A phone number written without its country code is no longer
+  read as a US number. Import a US phone's backup with **Phone's country**
+  set to the United States, or pick the country of each such number on the
+  Contacts screen. If you have a program that creates Import Runs through
+  the HTTP API, it states the country in `phone_country` (#1676).
+- 2026-10-05: The database format changed. **An existing Message Crate is
+  rebuilt empty on first start and its messages must be imported again.**
+- 2026-10-08: A desktop app that was pointed at a Message Crate on another
+  computer opens on this computer's own once after upgrading, because the
+  address is now saved apart from the login. Enter the address again under
+  **Change server address** and log in. From then on the app keeps it.
+- 2026-10-05: Message files exported before replies moved onto the message
+  itself are refused when you import or convert them, rather than read with
+  their replies taken for plain messages. This holds for JSON, JSONL, CSV,
+  EML and mbox exports, and for an Import Run an earlier build left paused.
+  Export the backup again with this build, then import or convert the new
+  files; discard a paused run and start the import again.
+- 2026-10-05: If you have a program that reads messages from the HTTP API,
+  it must read a reply from `reply_to`, which names the quoted message's
+  `guid` and part, in place of `is_reply`, `thread_originator_guid` and
   `thread_originator_part`, and a message's reply count from `reply_count`
   in place of `num_replies`.
-- A Saved Search that uses `deleted:yes` finds fewer messages than before:
-  it leaves unsent messages out. Add `or unsent:yes` to it to find both.
-- If you have a program that reads messages from the HTTP API, a message's
-  `timestamp` and an earlier version's `edited_at` now carry three digits of
-  milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
-- Message files exported before they said when their backup was made are
-  refused when you import or convert them. Export the backup again with
-  this build. A program that reads the HTTP API finds the backup's date in
-  a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
-- Message files exported before each message said whether its time has
-  milliseconds are refused when you import or convert them. Export the
-  backup again with this build. A program that reads the HTTP API finds it
-  in a message's `time_precision`, `seconds` or `milliseconds`.
-- Message files exported before Message Crate worked out each address's kind
-  itself are refused when you import or convert them. Export the backup
-  again with this build.
+- 2026-10-05: A Saved Search that uses `deleted:yes` finds fewer messages
+  than before: it leaves unsent messages out. Add `or unsent:yes` to it to
+  find both.
+- 2026-10-06: If you have a program that reads messages from the HTTP API,
+  a message's `timestamp` and an earlier version's `edited_at` now carry
+  three digits of milliseconds, such as `2015-03-12T18:04:22.250Z`, where
+  they had none.
+- 2026-10-06: Message files exported before they said when their backup was
+  made are refused when you import or convert them. Export the backup again
+  with this build. A program that reads the HTTP API finds the backup's date
+  in a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
+- 2026-10-06: Message files exported before each message said whether its
+  time has milliseconds are refused when you import or convert them. Export
+  the backup again with this build. A program that reads the HTTP API finds
+  it in a message's `time_precision`, `seconds` or `milliseconds`.
+- 2026-10-09: Message files exported before Message Crate worked out each
+  address's kind itself are refused when you import or convert them. Export
+  the backup again with this build.
+- 2026-10-10: An SMS Backup & Restore backup imported before this release
+  and imported again afterwards makes a second copy of each group
+  conversation, beside the one the first import made. To keep one of each,
+  delete the older copy, or start from an empty Message Crate before
+  importing again (#2139).
+- 2026-10-10: If you have a program that reads conversations or messages
+  from the HTTP API, it must read the title a conversation is shown by from
+  `shown_title` in place of `label`, on the conversation list and on a
+  message's `conversation`, and the export's title of a largest
+  attachment's conversation in an account's storage from `group_title` in
+  place of `conversation_title` (#2198).
+- 2026-10-11: A Docker Compose file saved from this release starts only the
+  image of this release or a later one. An older image fails to start under
+  it, because it wrote a file outside the data volume at every start. Pin
+  `bitrealm/message-crate` to this release or `latest`, and run
+  `docker compose pull` before `docker compose up -d`, because Compose does
+  not fetch a `latest` it already has (#2178).
 
 ## [0.10.1] - 2026-10-05
 
@@ -769,7 +2385,7 @@ released versions carry their date on the heading.
   output directory is chosen. A directory can still be chosen for either.
   The JSON Lines an export converts from now wait in that directory instead
   of the Staging Directory, and are deleted when it finishes, leaving only
-  the result; a failed or cancelled export deletes its directory, and one
+  the result; a failed or canceled export deletes its directory, and one
   the app did not see to its end is deleted the next time it starts.
 - **Screens, the user guide and the glossary say "directory"
   everywhere they said "folder".**
@@ -844,7 +2460,7 @@ released versions carry their date on the heading.
   everything again, which made the resume slower and the Duplicate counts
   higher.
 - **The server refuses a configuration file it doesn't
-  understand.** A section or key the server does not use, a misspelt one
+  understand.** A section or key the server does not use, a misspelled one
   included, stops it at startup with the name and section of each, instead
   of being ignored.
 - **A paused Upload is not finished.** Pressing the
@@ -869,7 +2485,7 @@ released versions carry their date on the heading.
   an Import Run's job runs, and the reverse, and the screen says why. Before,
   the two jobs mixed up each other's progress, and one Cancel stopped both.
 - **Every phone number in Demo Data is one reserved for
-  fiction.** No Demo Data number can be dialled or belong to a real person.
+  fiction.** No Demo Data number can be dialed or belong to a real person.
   Demo Data messages also fall in the daytime, between 08:00 and 23:00,
   where most of them used to fall overnight.
 - **Convert reads JSON Lines files only when they end in
@@ -1033,7 +2649,7 @@ released versions carry their date on the heading.
   when it does not.
 - **An Import Run whose session has ended logs you out and
   waits for you.** When your session ended while an import waited at a
-  review, and you then approved it, cancelled it, or resumed an Upload, the
+  review, and you then approved it, canceled it, or resumed an Upload, the
   import was marked failed with an error about recording its progress, and
   you stayed on screens the server no longer answered. It now logs you out
   and records no error. The import stays where it was, and Import offers it
@@ -1171,7 +2787,7 @@ released versions carry their date on the heading.
   stops with the space it needs while it reads the backup, not after.
 - **A discarded import keeps its errors, and an import keeps its
   converted files when they cannot be read back.** Discarding an import,
-  or cancelling it at a Review, recorded it with no errors, though it had
+  or canceling it at a Review, recorded it with no errors, though it had
   some. It now keeps the errors it had recorded, including the
   conversations a paused Upload could not send. When Media finished but
   its files could not be read back afterwards, the import ended as failed
@@ -1419,7 +3035,7 @@ released versions carry their date on the heading.
   number by US rules, so `+6595550100` became a US number and a UK number
   matched nobody. An email address became a phone number made of its
   digits, and a message from a sender name such as `AMAZON` was dropped. Your
-  own number written without its country code is now recognised as yours,
+  own number written without its country code is now recognized as yours,
   so a received picture message is no longer filed as a group with you in
   it.
 - **SMS Backup & Restore messages read back as written.** Line
@@ -1445,9 +3061,9 @@ released versions carry their date on the heading.
 - **An attachment too large after conversion says so in every
   conversation.** When two conversations shared one attachment that came
   out of Media over the size limit, the second recorded it as missing
-  instead of too large. Opening the link to an Import Run's directory not made yet
-  says nothing is there yet, instead of calling it outside the Staging
-  Directory when that directory is reached through a link.
+  instead of too large. Opening the link to an Import Run's directory not
+  made yet says nothing is there yet, instead of calling it outside the
+  Staging Directory when that directory is reached through a link.
 - **An Apple Messages reaction belongs to the person who made
   it.** Your heart on a friend's message was stored as theirs, and theirs on
   yours as yours. Each reaction also became an extra message of its own, and
@@ -1658,7 +3274,7 @@ released versions carry their date on the heading.
   because another job was running. **Convert** now stays disabled from the
   start of an Import Run or an export to its end, and **Export** waits
   through an Import Run's Reviews too. Both are enabled again as soon as the
-  run finishes, fails, is paused, or is cancelled or discarded. A Review holds
+  run finishes, fails, is paused, or is canceled or discarded. A Review holds
   them back only for the account that started the run, so another account
   logged in on the same desktop app can still export and convert; the
   Review's approve button then waits for that job to end.
@@ -1688,7 +3304,7 @@ released versions carry their date on the heading.
 - **An obfuscated export no longer records the real size of each
   photo or file.** Obfuscate replaces every attachment with a placeholder,
   but the attachment kept the size of the real file, which can be enough
-  to recognise it. An obfuscated attachment now carries no size.
+  to recognize it. An obfuscated attachment now carries no size.
 - **Convert keeps the previous output when an Android XML backup
   can't be read.** Converting a broken `smses.xml` into a directory an earlier
   conversion wrote removed that conversion's files before the backup was
@@ -1714,11 +3330,11 @@ released versions carry their date on the heading.
   attachment keeps its size and the reason it is missing, and a text or HTML
   attachment comes back with its own bytes instead of the next attachment's.
 - **An export stays inside its directory.** An attachment is never
-  written outside the output directory, whatever path it was stored under. An
-  export, or Convert, whose output directory is the backup or a directory above it
-  is refused before anything is written. An obfuscated export that can't
-  remove a real attachment fails and names the file, instead of reporting
-  success with the file still there.
+  written outside the output directory, whatever path it was stored under.
+  An export, or Convert, whose output directory is the backup or a directory
+  above it is refused before anything is written. An obfuscated export that
+  can't remove a real attachment fails and names the file, instead of
+  reporting success with the file still there.
 - **Exported attachments are checked.** A download that answers
   with something other than the attachment, such as a sign-in page from a
   proxy, is refused, instead of being saved as the attachment and skipped
@@ -1850,7 +3466,7 @@ released versions carry their date on the heading.
   the number's name, when an Address Book load or you had made it rather
   than an earlier import. An import now fills in any contact's missing name.
   It still never changes a name a contact already has.
-- **A misspelt service no longer puts an identity on Text
+- **A misspelled service no longer puts an identity on Text
   Message.** Adding, swapping or removing a contact's identity, or one of your
   own, takes Text Message or WhatsApp and nothing else. Any other service used
   to be read as Text Message without a word, so a WhatsApp number with a typo
@@ -2029,7 +3645,7 @@ released versions carry their date on the heading.
   The keyboard focus ring on buttons, the contact drawer's close button,
   the date field's calendar buttons and the import form's section headings
   had a thin white line between the button and the ring. The gap now shows
-  the colour behind the button, in every theme.
+  the color behind the button, in every theme.
 - **The focus ring in an import's results and the contact
   drawer sits 1 pixel from the edge.** The sections of an import's results
   and the conversation counts in the contact drawer drew their keyboard
@@ -2045,7 +3661,7 @@ released versions carry their date on the heading.
   the same as a focused table row, where it showed a 1-pixel one.
 - **A Settings tab that can't be opened yet shows the not-allowed
   pointer.** While the owner adds an account, Profile, Storage and Audit
-  Trail are greyed out until the account exists, but the pointer over them
+  Trail are grayed out until the account exists, but the pointer over them
   was the plain arrow. It is now the not-allowed pointer every other control
   that is turned off shows.
 - **The panel resize grips move by exactly 8 pixels.** Each
@@ -2122,7 +3738,7 @@ released versions carry their date on the heading.
 - **Permissions and passwords hold.** An account the Owner does
   not allow to delete can no longer delete itself, and with it every
   message; Settings says to ask the Owner. Password guesses count per
-  account however the username is capitalised, and wrong current passwords
+  account however the username is capitalized, and wrong current passwords
   on a password change or account deletion count too. The username `demo`
   stays the Demo Account's after it is deleted, so it can always be added
   back. A deleted account's number is never given to a new one.
@@ -2179,7 +3795,7 @@ released versions carry their date on the heading.
   the next Delete all messages with no import running, or with the account.
 - **The Sources panel dims the screen the way every other dialog
   does.** The shade behind it now follows the light or the dark theme instead
-  of one fixed grey.
+  of one fixed gray.
 
 #### The server
 
@@ -2403,7 +4019,7 @@ released versions carry their date on the heading.
   afterwards, while everything else goes on.
 - **Checking on an attachment upload no longer reads the whole
   file again.** When the file being uploaded was already stored, asking
-  how far the upload had got, sending one of its parts or cancelling it
+  how far the upload had got, sending one of its parts or canceling it
   read and checked every byte of the stored file first, and threw the
   answer away. For a large video that was the whole file on every check.
   Those steps now read only the upload's own record.
@@ -2439,7 +4055,7 @@ released versions carry their date on the heading.
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete
   the line, because the server refuses to start with it. Set the limit under
   Owner Home → Server Settings instead. Any other key the server does not
-  use, a misspelt one included, now stops it at startup too.
+  use, a misspelled one included, now stops it at startup too.
 - `DEMO_DATA` is no longer read, because every new Message Crate starts with
   the Demo Account. The `admin` owner Demo Data used to create is gone:
   create the Owner on the login card, and delete the Demo Account from
@@ -2577,8 +4193,8 @@ of, and a search that reads the same everywhere.
   `0.9.0+343fe0d8`, so two dev builds can be told apart. When an app and its
   vault come from different releases, the app says so in a line under the
   header, "This vault is 0.10.0. This app is 0.9.0.", and the owner sees it
-  marked on that account's Profile. Nothing is blocked: the vault serves every app
-  whatever its version.
+  marked on that account's Profile. Nothing is blocked: the vault serves
+  every app whatever its version.
 - **User Accounts shows when each account last logged in.** A
   Last login column next to Status, in your own time zone, or "Never" for
   an account nobody has logged in to yet. Logging in, claiming the vault and
@@ -2633,9 +4249,9 @@ of, and a search that reads the same everywhere.
   deleted. If you forget its password, `create-owner` and
   `reset-owner-password` on the server put you back in.
 - **New accounts are closed by default.** A vault admits nobody the
-  owner has not admitted, until the owner turns on public registration. An account
-  the owner creates has to replace the owner's password the first time it
-  logs in, so the owner never keeps knowing it.
+  owner has not admitted, until the owner turns on public registration. An
+  account the owner creates has to replace the owner's password the first
+  time it logs in, so the owner never keeps knowing it.
 - **Permanent delete, from the trash only.** Deleting a trashed
   conversation removes it, its messages, and any attachment no other message
   still uses. Deleting a trashed contact does what a phone does: the name and
@@ -2798,7 +4414,8 @@ of, and a search that reads the same everywhere.
   contact, name, group memberships and handles included, and makes a new
   contact from the backup, the way a first import would. The forecast of new
   contacts shown before an import counts them. To keep someone out for good,
-  delete them from Trash. Why: `docs/adr/0013-an-import-replaces-a-trashed-contact.md`.
+  delete them from Trash. Why:
+  `docs/adr/0013-an-import-replaces-a-trashed-contact.md`.
 - **An Import Run says what it did to each contact.** The run
   records, as it goes, whether it created a contact, created one in place of
   a trashed contact, named one that had no name, or added a handle to one,
@@ -2834,9 +4451,9 @@ of, and a search that reads the same everywhere.
   by a wording change. An encrypted iPhone backup now narrates its setup steps
   instead of sitting on "Reading backup…".
 - The desktop app reads Apple Messages through a small separate
-  program shipped beside it, because the library it uses carries a licence that
+  program shipped beside it, because the library it uses carries a license that
   cannot be combined with the app's. Nothing changes on screen.
-- Release builds of the server and the desktop app are optimised
+- Release builds of the server and the desktop app are optimized
   and stripped, so they are smaller and faster.
 - **One search language.** The search box, saved searches and the
   export filter are compiled by the same code, so a query means the same thing
@@ -2887,7 +4504,7 @@ of, and a search that reads the same everywhere.
 
 ### Features
 
-- A grey, green or red light beside the server address on the login screen,
+- A gray, green or red light beside the server address on the login screen,
   so you can see whether the vault is reachable before trying to connect.
 - Settings → System applies changes to the import staging folder and the ffmpeg
   folder immediately, with no Save button, and reports whether ffmpeg was found.
@@ -2919,7 +4536,7 @@ of, and a search that reads the same everywhere.
 - The sidebar section previously called Thread Tags is now **Message Tags**.
 - Internal rework across the server, the libraries, the exporters and the
   command-line tools, with no change to what any of them produce. One
-  behavioural difference: a KnugiHK binary placed in a custom tools folder is
+  behavioral difference: a KnugiHK binary placed in a custom tools folder is
   no longer found by WhatsApp Android export.
 
 ## [0.7.3] - 2026-08-13
@@ -3052,7 +4669,7 @@ browse, rather than a set of tools that write files.
 
 ### Design
 
-- The documentation site was rebuilt as end-user guides organised by the kind
+- The documentation site was rebuilt as end-user guides organized by the kind
   of message you are exporting, rather than by internal structure.
 
 ## [0.1.0] - 2026-07-18

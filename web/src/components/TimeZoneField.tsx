@@ -12,10 +12,11 @@ import {
 } from "react-aria-components";
 import { browserTimeZone } from "../lib/timeZone";
 import { choiceForZone, searchTimeZones } from "../lib/timeZoneChoices";
-import { popupShadow } from "../lib/uiStyles";
+import { popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
-import { selectItemClassName, selectSectionHeaderClassName } from "./Select";
-import { textInputClassName } from "./TextField";
+import { SelectChevronIcon } from "./icons";
+import { selectItemClassName, selectSectionHeaderClass } from "./Select";
+import { textInputClass } from "./TextField";
 
 /** The key of the row that repeats this browser's zone above the full list. */
 const BROWSER_ROW = "browser-zone";
@@ -87,7 +88,7 @@ export default function TimeZoneField({
       {label && <Label className="mb-1 block text-[0.875rem] font-medium text-text">{label}</Label>}
       <div className="relative">
         <Input
-          className={`${textInputClassName} pr-9`}
+          className={`${textInputClass} pr-9`}
           placeholder="Search by city, country or zone"
           // Typing replaces the picked row's label. Focus comes back to the
           // field each time the rows change, and by then it holds a search.
@@ -96,31 +97,22 @@ export default function TimeZoneField({
           }}
         />
         <Button className="absolute inset-y-0 right-0 flex w-9 items-center justify-center border-0 bg-transparent text-muted outline-none">
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-            <path
-              d="M2.5 3.5 5 6l2.5-2.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <SelectChevronIcon size={10} />
         </Button>
       </div>
       <Popover
         data-mc-overlay=""
-        className={`box-border w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadow}`}
+        className={`box-border w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadowClass}`}
       >
         <ListBox
           className="max-h-72 overflow-auto outline-none"
           renderEmptyState={() => (
-            <div className="px-2 py-1 text-[0.875rem] text-muted">No time zone matches.</div>
+            <div className="px-2 py-1 text-[0.875rem] text-muted">No time zone matches</div>
           )}
         >
           {!query && (
             <ListBoxSection>
-              <Header className={selectSectionHeaderClassName}>This browser</Header>
+              <Header className={selectSectionHeaderClass}>This browser</Header>
               <ListBoxItem
                 id={BROWSER_ROW}
                 textValue={browser.label}
@@ -133,7 +125,7 @@ export default function TimeZoneField({
           {/* An empty section still counts as content, and would hide the empty state. */}
           {rows.length > 0 && (
             <ListBoxSection>
-              {!query && <Header className={selectSectionHeaderClassName}>All time zones</Header>}
+              {!query && <Header className={selectSectionHeaderClass}>All time zones</Header>}
               {rows.map((c) => (
                 <ListBoxItem
                   key={c.id}

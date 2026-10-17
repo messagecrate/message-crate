@@ -1,137 +1,37 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
-import PasswordField from "../../components/PasswordField";
 import PathPicker from "../../components/PathPicker";
-import PhoneTokenField, { type PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
-import { phoneCountryItems } from "../../components/phoneCountryItems";
+import PhoneCountrySelect from "../../components/PhoneCountrySelect";
+import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
+import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
-import {
-  backupField,
-  isAndroidSmsSource,
-  needsOwnerEmails,
-  splitEmails,
-} from "../../lib/androidSmsSources";
-import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
-import { EXPORT_SOURCES, IMAZING_SOURCE_ID } from "../../lib/exportSources";
-import {
-  IMESSAGE_SOURCE_ID,
-  type ImessagePathStats,
-  imessageAttachmentRootRequired,
-  imessageCanImport,
-  imessageShowsAppleContacts,
-  imessageShowsAttachmentRoot,
-  imessageShowsPassword,
-  imessageVisiblePlatforms,
-  isImessageMethod,
-} from "../../lib/imessageImport";
-import { showsAttachmentOptions } from "../../lib/importSource";
+import { useDesktopJob } from "../../hooks/useDesktopJob";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
+import { toolUsable } from "../../lib/desktop/tools";
+import { desktopJobRunningText } from "../../lib/desktopJob";
+import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
 import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
-import { toolUsable } from "../../lib/tauri";
-import type { AttachmentMediaMode } from "../../lib/types";
-import { accentLink } from "../../lib/uiStyles";
-import { useToolsStatus } from "../../lib/useToolsStatus";
-import {
-  isWhatsappMethod,
-  WHATSAPP_METHODS,
-  WHATSAPP_SOURCE_ID,
-  type WhatsappPathStats,
-  whatsappCanImport,
-  whatsappCryptRequired,
-  whatsappOwnerPhoneRequired,
-  whatsappShowsBusiness,
-  whatsappShowsContactsDb,
-  whatsappShowsDb,
-  whatsappShowsKey,
-  whatsappShowsMedia,
-  whatsappShowsPassword,
-} from "../../lib/whatsappImport";
+import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
+import { IMPORT_FORM_SECTIONS } from "./formSections";
+import { FieldStatus } from "./formSections/FieldStatus";
+import type { ImportFormFieldsProps, OwnerPhoneEntry } from "./formSections/types";
+import { WhatsappFallbackPhoneField } from "./formSections/WhatsappFormSection";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,
-  fieldStyle,
-  hintStyle,
+  hintClass,
   RESOLUTION_OPTIONS,
   StackedField,
-  sectionGap,
+  sectionGapClass,
 } from "./ImportFormUi";
+import { formTimeZone } from "./importForm";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
-
-export type ImportFormFieldsProps = {
-  source: string;
-  onSourceChange: (source: string) => void;
-  backupPath: string;
-  onBackupPathChange: (path: string) => void;
-  backupPassword: string;
-  onBackupPasswordChange: (value: string) => void;
-  showBackupPassword: boolean;
-  onToggleBackupPassword: () => void;
-  attachmentRoot: string;
-  onAttachmentRootChange: (path: string) => void;
-  appleContacts: string;
-  onAppleContactsChange: (path: string) => void;
-  pathStats: ImessagePathStats;
-  whatsappKey: string;
-  onWhatsappKeyChange: (value: string) => void;
-  showWhatsappKey: boolean;
-  onToggleWhatsappKey: () => void;
-  whatsappWa: string;
-  onWhatsappWaChange: (path: string) => void;
-  whatsappMedia: string;
-  onWhatsappMediaChange: (path: string) => void;
-  whatsappDb: string;
-  onWhatsappDbChange: (path: string) => void;
-  whatsappBusiness: boolean;
-  onWhatsappBusinessChange: (value: boolean) => void;
-  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
-  whatsappOwnerPhone: string;
-  onWhatsappOwnerPhoneChange: (value: string) => void;
-  whatsappStats: WhatsappPathStats;
-  attachmentMedia: AttachmentMediaMode;
-  onAttachmentMediaChange: (mode: AttachmentMediaMode) => void;
-  maxResolution: string;
-  onMaxResolutionChange: (value: string) => void;
-  maxFps: string;
-  onMaxFpsChange: (value: string) => void;
-  minSizeMb: string;
-  onMinSizeMbChange: (value: string) => void;
-  ownerPhones: string[];
-  onOwnerPhonesChange: (phones: string[]) => void;
-  /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
-  ownerEmails: string;
-  onOwnerEmailsChange: (value: string) => void;
-  /** The account's phones for SBR mismatch checks (empty until loaded). */
-  profilePhones: string[];
-  profilePhonesReady: boolean;
-  /** True when the profile request failed (fail open on the mismatch check). */
-  profilePhonesError: boolean;
-  showMissingAccountPhoneWarning: boolean;
-  formatOpen: boolean;
-  onToggleFormat: () => void;
-  processingOpen: boolean;
-  onToggleProcessing: () => void;
-  obfuscate: boolean;
-  onObfuscateChange: (value: boolean) => void;
-  /** The IANA zone iMazing dates are read in; shown only for that source. */
-  timeZone: string;
-  onTimeZoneChange: (zone: string) => void;
-  /** The phone's country as an ISO code, or empty for none; every source has it. */
-  phoneCountry: string;
-  /** The countries to offer, from `GET /v1/phone-countries`; empty until loaded. */
-  phoneCountries: readonly PhoneCountryChoice[];
-  onPhoneCountryChange: (code: string) => void;
-  running: boolean;
-  /** Optional flushed owner phones (SBR commits draft before import). */
-  onImport: (ownerPhones?: string[]) => void;
-};
-
-/** The choice that states no country for the phone. */
-const NO_PHONE_COUNTRY = "none";
+import { useLowDiskSpace } from "./useLowDiskSpace";
 
 /**
  * The country of the phone the backup came from. A backup writes many numbers
@@ -152,61 +52,20 @@ function PhoneCountryField({
 }) {
   return (
     <StackedField label="Phone's country" optional>
-      <Select
-        selectedKey={value || NO_PHONE_COUNTRY}
-        onSelectionChange={(k) => {
-          if (typeof k === "string") onChange(k === NO_PHONE_COUNTRY ? "" : k);
-        }}
-        aria-label="Phone's country"
+      <PhoneCountrySelect
+        value={value}
+        countries={countries}
+        onChange={onChange}
+        label="Phone's country"
         triggerClassName="!bg-bg"
-      >
-        {[
-          <ListBoxItem
-            key={NO_PHONE_COUNTRY}
-            id={NO_PHONE_COUNTRY}
-            textValue="Not stated"
-            className={selectItemClassName}
-          >
-            Not stated
-          </ListBoxItem>,
-          ...phoneCountryItems(countries),
-        ]}
-      </Select>
-      <p className={hintStyle}>
+      />
+      <p className={hintClass}>
         Numbers written without a country code are read as numbers in this country. Leave it unset
         when the backup holds numbers from more than one country written that way.
       </p>
     </StackedField>
   );
 }
-
-const SQLITE_DB_FILTERS = [{ name: "SQLite database", extensions: ["db"] }];
-const WHATSAPP_CONTACTS_FILTERS = [{ name: "SQLite database", extensions: ["db", "sqlite"] }];
-const APPLE_CONTACTS_FILTERS = [{ name: "Apple AddressBook", extensions: ["abcddb", "sqlitedb"] }];
-
-const WHATSAPP_DIRECTORY_HINT_ANDROID =
-  "Directory that contains msgstore.db or msgstore.db.crypt12 / crypt14 / crypt15.";
-const WHATSAPP_DIRECTORY_HINT_IPHONE = "Path to the root of a device backup";
-const WHATSAPP_KEY_HINT =
-  "Key file or crypt15 hex. Needed when the directory has an encrypted backup and no msgstore.db.";
-const WHATSAPP_CONTACTS_HINT_ANDROID = "Leave empty if wa.db is in the backup directory.";
-const WHATSAPP_CONTACTS_HINT_IPHONE = "Leave empty if ContactsV2.sqlite is in the backup.";
-const WHATSAPP_MEDIA_HINT =
-  "Leave empty if the WhatsApp media directory is in the backup directory.";
-const WHATSAPP_DB_HINT = "Leave empty if msgstore.db is in the backup directory.";
-const WHATSAPP_OWNER_PHONE_LABEL = "WhatsApp phone number";
-const WHATSAPP_OWNER_PHONE_HINT_ANDROID =
-  "Pre-filled from your profile. The number your WhatsApp account is registered to.";
-const WHATSAPP_OWNER_PHONE_HINT_IPHONE =
-  "Fallback, used when the backup does not contain your phone number.";
-
-const ATTACHMENT_DIRECTORY_HINT_MAC =
-  "Leave empty if Attachments and StickerCache are next to chat.db. Set this only when those directories live somewhere else.";
-const ATTACHMENT_DIRECTORY_HINT_JAILBREAK = "Directory that contains Attachments and StickerCache.";
-const APPLE_CONTACTS_HINT_MAC =
-  "Default: use the local AddressBook. Pick AddressBook-v22.abcddb or AddressBook.sqlitedb only if that file is not in the usual Contacts location.";
-const APPLE_CONTACTS_HINT_JAILBREAK =
-  "AddressBook-v22.abcddb or AddressBook.sqlitedb. A local Mac AddressBook scan will not find a phone copy.";
 
 const attachmentHelp: Record<AttachmentMediaMode, string> = {
   copy: "Copy all files as is",
@@ -215,34 +74,20 @@ const attachmentHelp: Record<AttachmentMediaMode, string> = {
   skip: "Do not copy files",
 };
 
-function FieldStatus({ message }: { message: string | undefined }) {
-  if (!message) return null;
-  return (
-    <p className={hintStyle} role="status">
-      {message}
-    </p>
-  );
-}
-
 function AttachmentFields(props: {
-  attachmentMedia: AttachmentMediaMode;
-  onAttachmentMediaChange: (mode: AttachmentMediaMode) => void;
+  attachments: AttachmentChoices;
+  onAttachmentsChange: (attachments: AttachmentChoices) => void;
   showCompress: boolean;
-  maxResolution: string;
-  onMaxResolutionChange: (value: string) => void;
-  maxFps: string;
-  onMaxFpsChange: (value: string) => void;
-  minSizeMb: string;
-  onMinSizeMbChange: (value: string) => void;
 }) {
+  const { attachments, onAttachmentsChange } = props;
   return (
     <>
       <StackedField label="Attachments">
         <Select
-          selectedKey={props.attachmentMedia}
+          selectedKey={attachments.attachmentMedia}
           onSelectionChange={(k) => {
             const mode = parseSelectKey(k, ["copy", "convert", "compress", "skip"] as const);
-            if (mode) props.onAttachmentMediaChange(mode);
+            if (mode) onAttachmentsChange({ ...attachments, attachmentMedia: mode });
           }}
           aria-label="Attachments"
           triggerClassName="!bg-bg"
@@ -253,15 +98,17 @@ function AttachmentFields(props: {
             </ListBoxItem>
           ))}
         </Select>
-        <p className={hintStyle}>{attachmentHelp[props.attachmentMedia]}</p>
+        <p className={hintClass}>{attachmentHelp[attachments.attachmentMedia]}</p>
       </StackedField>
 
       {props.showCompress && (
         <div className="mb-[1.1rem] ml-4">
           <StackedField label="Target resolution">
             <Select
-              selectedKey={props.maxResolution}
-              onSelectionChange={(k) => props.onMaxResolutionChange(String(k))}
+              selectedKey={attachments.maxResolution}
+              onSelectionChange={(k) =>
+                onAttachmentsChange({ ...attachments, maxResolution: String(k) })
+              }
               aria-label="Target resolution"
               triggerClassName="!bg-bg"
             >
@@ -271,7 +118,7 @@ function AttachmentFields(props: {
                 </ListBoxItem>
               ))}
             </Select>
-            <p className={hintStyle}>Maximum video resolution; videos are not upscaled.</p>
+            <p className={hintClass}>Maximum video resolution; videos are not upscaled.</p>
           </StackedField>
           {/* The desktop app's refusals name Max FPS and Minimum Video File Size by
               these labels (media::compress_options_from_form in crates/libs/media), so
@@ -279,22 +126,22 @@ function AttachmentFields(props: {
           <StackedField label="Max FPS">
             <input
               type="text"
-              value={props.maxFps}
-              onChange={(e) => props.onMaxFpsChange(e.target.value)}
-              className={fieldStyle}
+              value={attachments.maxFps}
+              onChange={(e) => onAttachmentsChange({ ...attachments, maxFps: e.target.value })}
+              className={textInputClass}
             />
-            <p className={hintStyle}>
+            <p className={hintClass}>
               Maximum video frame rate; a video with a lower frame rate keeps it.
             </p>
           </StackedField>
           <StackedField label="Minimum Video File Size (Megabytes)">
             <input
               type="text"
-              value={props.minSizeMb}
-              onChange={(e) => props.onMinSizeMbChange(e.target.value)}
-              className={fieldStyle}
+              value={attachments.minSizeMb}
+              onChange={(e) => onAttachmentsChange({ ...attachments, minSizeMb: e.target.value })}
+              className={textInputClass}
             />
-            <p className={hintStyle}>Only re-encode videos above this size.</p>
+            <p className={hintClass}>Only re-encode videos above this size.</p>
           </StackedField>
         </div>
       )}
@@ -303,87 +150,65 @@ function AttachmentFields(props: {
 }
 
 export default function ImportFormFields(props: ImportFormFieldsProps) {
-  const isIos = props.source === "imessage-ios";
-  const isImazing = props.source === IMAZING_SOURCE_ID;
-  const isAndroidSms = isAndroidSmsSource(props.source);
-  const androidBackup = isAndroidSms ? backupField(props.source) : null;
-  const wantsEmails = needsOwnerEmails(props.source);
-  const imessageMethod = isImessageMethod(props.source) ? props.source : null;
-  const whatsappMethod = isWhatsappMethod(props.source) ? props.source : null;
-  const whatsappFallbackPhone =
-    whatsappMethod !== null && !whatsappOwnerPhoneRequired(whatsappMethod);
-  const imessageReadiness = imessageMethod
-    ? imessageCanImport({
-        method: imessageMethod,
-        backupPath: props.backupPath,
-        attachmentRoot: props.attachmentRoot,
-        appleContacts: props.appleContacts,
-        backupPassword: props.backupPassword,
-        stats: props.pathStats,
-      })
-    : null;
-  const whatsappReadiness = whatsappMethod
-    ? whatsappCanImport({
-        method: whatsappMethod,
-        backupPath: props.backupPath,
-        key: props.whatsappKey,
-        backupPassword: props.backupPassword,
-        contactsDb: props.whatsappWa,
-        media: props.whatsappMedia,
-        db: props.whatsappDb,
-        ownerPhone: props.whatsappOwnerPhone,
-        stats: props.whatsappStats,
-      })
-    : null;
-  const imessageErrors = imessageReadiness?.errors ?? {};
-  const whatsappErrors = whatsappReadiness?.errors ?? {};
-  const whatsappKeyRequired = whatsappMethod
-    ? whatsappCryptRequired(props.whatsappStats.hasMsgstoreDb, props.whatsappStats.cryptName)
-    : false;
-  const showCompress = showsAttachmentOptions(props.source) && props.attachmentMedia === "compress";
+  const { form, dispatch, profilePhones } = props;
+  // Every per-source rule below is read from the selected source's descriptor.
+  const source = importSourceFor(form.source);
+  const asksOwnerPhones = source.asksOwnerPhones;
+  const backup = source.backupField(form.source);
+  const processingOptions = source.processingOptions(form.source);
+  const FormSection = IMPORT_FORM_SECTIONS[source.id];
+
   const phoneFieldRef = useRef<PhoneTokenFieldHandle>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const [mismatchAck, setMismatchAck] = useState(false);
   const phoneDraftPending = phoneDraft.trim().length > 0;
   const phonesForMatch = phoneDraftPending
-    ? [...props.ownerPhones, phoneDraft.trim()]
-    : props.ownerPhones;
-  const phonesMismatch =
-    isAndroidSms &&
-    ownerPhonesNeedMismatchAck(phonesForMatch, props.profilePhones, {
-      ready: props.profilePhonesReady,
-      fetchFailed: props.profilePhonesError,
+    ? [...form.ownerPhones, phoneDraft.trim()]
+    : form.ownerPhones;
+  // True when none of `phones` is on the profile, as the form and the
+  // Import button both judge it.
+  const mismatchFor = (phones: string[]) =>
+    ownerPhonesNeedMismatchAck(phones, profilePhones.phones, {
+      ready: profilePhones.ready,
+      fetchFailed: profilePhones.error,
     });
+  const phonesMismatch = asksOwnerPhones && mismatchFor(phonesForMatch);
 
   useEffect(() => {
     if (!phonesMismatch) setMismatchAck(false);
   }, [phonesMismatch]);
 
   useEffect(() => {
-    if (!isAndroidSms) {
+    if (!asksOwnerPhones) {
       setPhoneDraft("");
       setMismatchAck(false);
     }
-  }, [isAndroidSms]);
+  }, [asksOwnerPhones]);
 
-  // The fields a source without a readiness check of its own (Android SMS, iMazing,
-  // OpenExtract) needs. The asterisks and `canImport` both read this, so a
-  // field cannot be needed and unmarked.
-  const required = {
-    backupPath: true,
-    ownerPhones: isAndroidSms,
-    ownerEmails: wantsEmails,
+  const ownerPhoneEntry: OwnerPhoneEntry = {
+    fieldRef: phoneFieldRef,
+    onDraftChange: setPhoneDraft,
+    draftPending: phoneDraftPending,
+    phonesForMatch,
+    mismatch: phonesMismatch,
+    mismatchAck,
+    onMismatchAckChange: setMismatchAck,
   };
-  const filled = {
-    backupPath: Boolean(props.backupPath),
-    ownerPhones: props.ownerPhones.length > 0 || phoneDraftPending,
-    ownerEmails: splitEmails(props.ownerEmails).length > 0,
+  // What the source's readiness reads: the form's fields, its path checks,
+  // and whether the account's phones have been read.
+  const readinessInput = {
+    ...form,
+    pathStats: props.pathStats,
+    whatsappStats: props.whatsappStats,
+    androidSmsStats: props.androidSmsStats,
+    profilePhonesReady: profilePhones.ready,
   };
-  const hasOwnerEmail = !required.ownerEmails || filled.ownerEmails;
-  const requiredFilled =
-    (!required.backupPath || filled.backupPath) &&
-    (!required.ownerPhones || filled.ownerPhones) &&
-    hasOwnerEmail;
+  // The asterisks and the Import button both read the source's readiness,
+  // so a field cannot be needed and unmarked.
+  const readiness = source.readiness({ ...readinessInput, ownerPhoneEntry });
+
+  const showCompress =
+    source.showsAttachmentOptions && form.attachments.attachmentMedia === "compress";
 
   // The desktop runs one job at a time, so an Export or a Convert that
   // is running would make it refuse the Import Run's first job.
@@ -391,42 +216,52 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const blockedBy = runningJob !== null && runningJob !== "Import Run" ? runningJob : null;
 
   // A WhatsApp import runs wtsexporter and can't start without it; one still
-  // downloading is waited for. Convert and Compress run ffmpeg and ffprobe
-  // after Staging, so a missing one is said here and blocks nothing yet.
+  // downloading is waited for. Convert media and Convert & Compress media run
+  // ffmpeg and ffprobe after Staging, so a missing one is said here and blocks
+  // nothing yet.
   const tools = useToolsStatus().data ?? null;
   const wtsexporterBlocked =
-    whatsappMethod !== null && tools !== null && !toolUsable(tools.wtsexporter);
+    source.needsWtsexporter && tools !== null && !toolUsable(tools.wtsexporter);
   const mediaRunsFfmpeg =
-    showsAttachmentOptions(props.source) && mediaJobVerb(props.attachmentMedia) !== null;
+    source.showsAttachmentOptions && mediaJobVerb(form.attachments.attachmentMedia) !== null;
+
+  // A disk the desktop process finds low is said before the run starts; it blocks nothing.
+  const lowDiskSpace = useLowDiskSpace(form.source);
 
   const canImport =
-    blockedBy === null &&
-    !wtsexporterBlocked &&
-    (imessageReadiness
-      ? imessageReadiness.enabled && !props.running
-      : whatsappReadiness
-        ? whatsappReadiness.enabled && !props.running
-        : requiredFilled &&
-          !props.running &&
-          (!isAndroidSms || props.profilePhonesReady) &&
-          (!phonesMismatch || mismatchAck));
+    blockedBy === null && !wtsexporterBlocked && readiness.enabled && !props.running;
 
   function handleImport(): void {
-    if (isAndroidSms) {
-      if (!props.profilePhonesReady) return;
-      const phones = phoneFieldRef.current?.flush() ?? props.ownerPhones;
-      if (phones.length === 0) return;
-      if (!hasOwnerEmail) return;
-      const mismatch = ownerPhonesNeedMismatchAck(phones, props.profilePhones, {
-        ready: props.profilePhonesReady,
-        fetchFailed: props.profilePhonesError,
-      });
-      if (mismatch && !mismatchAck) return;
-      props.onImport(phones);
+    if (!asksOwnerPhones) {
+      props.onImport();
       return;
     }
-    props.onImport();
+    // Commit the number being typed, then ask the source again with the
+    // committed list, which is what the run gets.
+    const phones = phoneFieldRef.current?.flush() ?? form.ownerPhones;
+    const committed: OwnerPhoneEntry = {
+      ...ownerPhoneEntry,
+      draftPending: false,
+      phonesForMatch: phones,
+      mismatch: mismatchFor(phones),
+    };
+    const ready = source.readiness({
+      ...readinessInput,
+      ownerPhones: phones,
+      ownerPhoneEntry: committed,
+    });
+    if (ready.enabled) props.onImport(phones);
   }
+
+  const attachmentFields = (
+    <AttachmentFields
+      attachments={form.attachments}
+      onAttachmentsChange={(attachments) =>
+        dispatch({ type: "set", field: "attachments", value: attachments })
+      }
+      showCompress={showCompress}
+    />
+  );
 
   return (
     <>
@@ -435,26 +270,20 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
       <CollapsibleSection
         title="Import Messages"
-        open={props.formatOpen}
-        onToggle={props.onToggleFormat}
+        open={form.formatOpen}
+        onToggle={() => dispatch({ type: "toggle", field: "formatOpen" })}
       >
-        <div className={sectionGap}>
+        <div className={sectionGapClass}>
           <Select
-            selectedKey={
-              imessageMethod
-                ? IMESSAGE_SOURCE_ID
-                : whatsappMethod
-                  ? WHATSAPP_SOURCE_ID
-                  : props.source
-            }
+            selectedKey={source.id}
             onSelectionChange={(k) => {
               const key = String(k);
-              props.onSourceChange(key);
+              if (importSourceById(key)) props.onSourceChange(key);
             }}
             aria-label="Import source"
             triggerClassName="!bg-bg"
           >
-            {EXPORT_SOURCES.map((s) => (
+            {IMPORT_SOURCES.map((s) => (
               <ListBoxItem key={s.id} id={s.id} className={selectItemClassName}>
                 {s.label}
               </ListBoxItem>
@@ -462,36 +291,18 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           </Select>
         </div>
 
-        {imessageMethod ? (
+        {source.methods.length > 1 ? (
           <StackedField label="Platform">
             <Select
-              selectedKey={props.source}
+              selectedKey={form.source}
               onSelectionChange={(k) => {
                 const key = String(k);
-                if (isImessageMethod(key)) props.onSourceChange(key);
+                if (source.methods.some((m) => m.id === key)) props.onSourceChange(key);
               }}
               aria-label="Platform"
               triggerClassName="!bg-bg"
             >
-              {imessageVisiblePlatforms(imessageMethod).map((m) => (
-                <ListBoxItem key={m.id} id={m.id} className={selectItemClassName}>
-                  {m.label}
-                </ListBoxItem>
-              ))}
-            </Select>
-          </StackedField>
-        ) : whatsappMethod ? (
-          <StackedField label="Platform">
-            <Select
-              selectedKey={props.source}
-              onSelectionChange={(k) => {
-                const key = String(k);
-                if (isWhatsappMethod(key)) props.onSourceChange(key);
-              }}
-              aria-label="Platform"
-              triggerClassName="!bg-bg"
-            >
-              {WHATSAPP_METHODS.map((m) => (
+              {source.visibleMethods(form.source).map((m) => (
                 <ListBoxItem key={m.id} id={m.id} className={selectItemClassName}>
                   {m.label}
                 </ListBoxItem>
@@ -500,348 +311,59 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           </StackedField>
         ) : null}
 
-        {imessageMethod ? (
-          <>
-            {imessageMethod === "imessage-ios" ? (
-              <StackedField label="iPhone Backup Directory" required>
-                <PathPicker
-                  value={props.backupPath}
-                  onChange={props.onBackupPathChange}
-                  directory
-                  placeholder="Path to the root of a device backup"
-                />
-                <FieldStatus message={imessageErrors.backupPath} />
-              </StackedField>
-            ) : (
-              <StackedField label="Messages database" required>
-                <PathPicker
-                  value={props.backupPath}
-                  onChange={props.onBackupPathChange}
-                  placeholder={
-                    imessageMethod === "imessage-macos" ? "Path to chat.db" : "Path to sms.db"
-                  }
-                  filters={SQLITE_DB_FILTERS}
-                />
-                <FieldStatus message={imessageErrors.backupPath} />
-              </StackedField>
-            )}
+        <StackedField label={backup.label} required>
+          <PathPicker
+            value={form.backupPath}
+            onChange={(path) => props.onPathChange("backupPath", path)}
+            directory={backup.directory}
+            filters={backup.filters}
+            placeholder={backup.placeholder}
+          />
+          {backup.hint ? <p className={hintClass}>{backup.hint}</p> : null}
+          <FieldStatus message={readiness.errors.backupPath} />
+        </StackedField>
 
-            {imessageShowsPassword(imessageMethod) ? (
-              <StackedField
-                label="Encryption password"
-                required={props.pathStats.backupEncrypted === true}
-                optional={props.pathStats.backupEncrypted !== true}
-              >
-                <PasswordField
-                  aria-label={
-                    props.pathStats.backupEncrypted === true
-                      ? "Encryption password"
-                      : "Encryption password (Optional)"
-                  }
-                  value={props.backupPassword}
-                  onChange={props.onBackupPasswordChange}
-                  autoComplete="new-password"
-                  showPassword={props.showBackupPassword}
-                  onToggle={props.onToggleBackupPassword}
-                />
-                <FieldStatus message={imessageErrors.backupPassword} />
-              </StackedField>
-            ) : null}
-
-            {imessageShowsAttachmentRoot(imessageMethod) ? (
-              <StackedField
-                label="Attachment directory"
-                required={imessageAttachmentRootRequired(imessageMethod)}
-                optional={!imessageAttachmentRootRequired(imessageMethod)}
-              >
-                <PathPicker
-                  value={props.attachmentRoot}
-                  onChange={props.onAttachmentRootChange}
-                  directory
-                />
-                <p className={hintStyle}>
-                  {imessageMethod === "imessage-macos"
-                    ? ATTACHMENT_DIRECTORY_HINT_MAC
-                    : ATTACHMENT_DIRECTORY_HINT_JAILBREAK}
-                </p>
-                <FieldStatus message={imessageErrors.attachmentRoot} />
-              </StackedField>
-            ) : null}
-
-            {imessageShowsAppleContacts(imessageMethod) ? (
-              <StackedField label="Apple Contacts file" optional>
-                <PathPicker
-                  value={props.appleContacts}
-                  onChange={props.onAppleContactsChange}
-                  filters={APPLE_CONTACTS_FILTERS}
-                />
-                <p className={hintStyle}>
-                  {imessageMethod === "imessage-macos"
-                    ? APPLE_CONTACTS_HINT_MAC
-                    : APPLE_CONTACTS_HINT_JAILBREAK}
-                </p>
-                <FieldStatus message={imessageErrors.appleContacts} />
-              </StackedField>
-            ) : null}
-
-            <AttachmentFields
-              attachmentMedia={props.attachmentMedia}
-              onAttachmentMediaChange={props.onAttachmentMediaChange}
-              showCompress={showCompress}
-              maxResolution={props.maxResolution}
-              onMaxResolutionChange={props.onMaxResolutionChange}
-              maxFps={props.maxFps}
-              onMaxFpsChange={props.onMaxFpsChange}
-              minSizeMb={props.minSizeMb}
-              onMinSizeMbChange={props.onMinSizeMbChange}
-            />
-          </>
-        ) : whatsappMethod ? (
-          <>
-            <StackedField label="Backup directory" required>
-              <PathPicker value={props.backupPath} onChange={props.onBackupPathChange} directory />
-              <p className={hintStyle}>
-                {whatsappMethod === "whatsapp-ios"
-                  ? WHATSAPP_DIRECTORY_HINT_IPHONE
-                  : WHATSAPP_DIRECTORY_HINT_ANDROID}
-              </p>
-              <FieldStatus message={whatsappErrors.backupPath} />
-            </StackedField>
-
-            {whatsappShowsKey(whatsappMethod) ? (
-              <StackedField
-                label="Decryption key"
-                required={whatsappKeyRequired}
-                optional={!whatsappKeyRequired}
-              >
-                <PasswordField
-                  aria-label={whatsappKeyRequired ? "Decryption key" : "Decryption key (Optional)"}
-                  value={props.whatsappKey}
-                  onChange={props.onWhatsappKeyChange}
-                  autoComplete="new-password"
-                  showPassword={props.showWhatsappKey}
-                  onToggle={props.onToggleWhatsappKey}
-                />
-                <p className={hintStyle}>{WHATSAPP_KEY_HINT}</p>
-                <FieldStatus message={whatsappErrors.key} />
-              </StackedField>
-            ) : null}
-
-            {whatsappShowsPassword(whatsappMethod) ? (
-              <StackedField
-                label="Encryption password"
-                required={props.whatsappStats.backupEncrypted === true}
-                optional={props.whatsappStats.backupEncrypted !== true}
-              >
-                <PasswordField
-                  aria-label={
-                    props.whatsappStats.backupEncrypted === true
-                      ? "Encryption password"
-                      : "Encryption password (Optional)"
-                  }
-                  value={props.backupPassword}
-                  onChange={props.onBackupPasswordChange}
-                  autoComplete="new-password"
-                  showPassword={props.showBackupPassword}
-                  onToggle={props.onToggleBackupPassword}
-                />
-                <FieldStatus message={whatsappErrors.backupPassword} />
-              </StackedField>
-            ) : null}
-
-            {whatsappOwnerPhoneRequired(whatsappMethod) ? (
-              <StackedField label={WHATSAPP_OWNER_PHONE_LABEL} required>
-                <input
-                  type="text"
-                  inputMode="tel"
-                  aria-label={WHATSAPP_OWNER_PHONE_LABEL}
-                  value={props.whatsappOwnerPhone}
-                  onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
-                  placeholder="+1 555 555 0100"
-                  className={fieldStyle}
-                />
-                <p className={hintStyle}>{WHATSAPP_OWNER_PHONE_HINT_ANDROID}</p>
-                <FieldStatus message={whatsappErrors.ownerPhone} />
-              </StackedField>
-            ) : null}
-
-            {whatsappShowsContactsDb(whatsappMethod) ? (
-              <StackedField label="Contacts database" optional>
-                <PathPicker
-                  value={props.whatsappWa}
-                  onChange={props.onWhatsappWaChange}
-                  filters={WHATSAPP_CONTACTS_FILTERS}
-                />
-                <p className={hintStyle}>
-                  {whatsappMethod === "whatsapp-ios"
-                    ? WHATSAPP_CONTACTS_HINT_IPHONE
-                    : WHATSAPP_CONTACTS_HINT_ANDROID}
-                </p>
-                <FieldStatus message={whatsappErrors.contactsDb} />
-              </StackedField>
-            ) : null}
-
-            {whatsappShowsMedia(whatsappMethod) ? (
-              <StackedField label="Media directory" optional>
-                <PathPicker
-                  value={props.whatsappMedia}
-                  onChange={props.onWhatsappMediaChange}
-                  directory
-                />
-                <p className={hintStyle}>{WHATSAPP_MEDIA_HINT}</p>
-                <FieldStatus message={whatsappErrors.media} />
-              </StackedField>
-            ) : null}
-
-            {whatsappShowsDb(whatsappMethod) ? (
-              <StackedField label="Message database" optional>
-                <PathPicker
-                  value={props.whatsappDb}
-                  onChange={props.onWhatsappDbChange}
-                  filters={SQLITE_DB_FILTERS}
-                />
-                <p className={hintStyle}>{WHATSAPP_DB_HINT}</p>
-                <FieldStatus message={whatsappErrors.db} />
-              </StackedField>
-            ) : null}
-
-            {whatsappShowsBusiness(whatsappMethod) ? (
-              <Checkbox
-                labelClassName="mb-[1.1rem] flex text-[0.875rem]"
-                checked={props.whatsappBusiness}
-                onChange={props.onWhatsappBusinessChange}
-              >
-                WhatsApp Business
-              </Checkbox>
-            ) : null}
-
-            <AttachmentFields
-              attachmentMedia={props.attachmentMedia}
-              onAttachmentMediaChange={props.onAttachmentMediaChange}
-              showCompress={showCompress}
-              maxResolution={props.maxResolution}
-              onMaxResolutionChange={props.onMaxResolutionChange}
-              maxFps={props.maxFps}
-              onMaxFpsChange={props.onMaxFpsChange}
-              minSizeMb={props.minSizeMb}
-              onMinSizeMbChange={props.onMinSizeMbChange}
-            />
-          </>
-        ) : androidBackup ? (
-          <>
-            <StackedField label={androidBackup.label} required={required.backupPath}>
-              <PathPicker
-                value={props.backupPath}
-                onChange={props.onBackupPathChange}
-                directory={androidBackup.directory}
-                filters={androidBackup.filters}
-                placeholder={androidBackup.placeholder}
-              />
-              <p className={hintStyle}>{androidBackup.hint}</p>
-            </StackedField>
-
-            <AttachmentFields
-              attachmentMedia={props.attachmentMedia}
-              onAttachmentMediaChange={props.onAttachmentMediaChange}
-              showCompress={showCompress}
-              maxResolution={props.maxResolution}
-              onMaxResolutionChange={props.onMaxResolutionChange}
-              maxFps={props.maxFps}
-              onMaxFpsChange={props.onMaxFpsChange}
-              minSizeMb={props.minSizeMb}
-              onMinSizeMbChange={props.onMinSizeMbChange}
-            />
-
-            <StackedField label="Backup Device Phone Numbers" required={required.ownerPhones}>
-              <PhoneTokenField
-                ref={phoneFieldRef}
-                value={props.ownerPhones}
-                onChange={props.onOwnerPhonesChange}
-                onDraftChange={setPhoneDraft}
-                aria-label="Backup Device Phone Numbers"
-              />
-              <p className={hintStyle}>
-                Pre-filled from your profile. Add numbers from other SIMs, if needed.
-              </p>
-              {props.showMissingAccountPhoneWarning ? (
-                <div
-                  role="status"
-                  className="mt-2 rounded-lg border border-warn-soft-border bg-warn-soft-bg px-3 py-2 text-[0.8125rem] text-warn-soft-text"
-                >
-                  Your user profile is missing a phone number. Add one in{" "}
-                  <Link to="/settings?tab=profile" className={`${accentLink} text-[0.8125rem]`}>
-                    Settings → Profile
-                  </Link>{" "}
-                  so import can tell which messages you sent.
-                </div>
-              ) : null}
-              {phonesMismatch && !mismatchAck && phonesForMatch.length > 0 ? (
-                <div
-                  role="status"
-                  className="mt-2 rounded-lg border border-warn-soft-border bg-warn-soft-bg px-3 py-2 text-[0.8125rem] text-warn-soft-text"
-                >
-                  I understand none of the entered phone numbers match my profile and that imported
-                  messages will not be linked to my account.
-                </div>
-              ) : null}
-              <Checkbox
-                labelClassName="mt-2 flex items-start text-[0.8125rem]"
-                className="mt-0.5 shrink-0"
-                checked={mismatchAck}
-                onChange={setMismatchAck}
-              >
-                <span>Allow import from phone numbers not on my profile.</span>
-              </Checkbox>
-            </StackedField>
-
-            {wantsEmails ? (
-              <StackedField label="Backup Device Email Addresses" required={required.ownerEmails}>
-                <input
-                  type="text"
-                  inputMode="email"
-                  aria-label="Backup Device Email Addresses"
-                  value={props.ownerEmails}
-                  onChange={(e) => props.onOwnerEmailsChange(e.target.value)}
-                  placeholder="you@example.com"
-                  className={fieldStyle}
-                />
-                <p className={hintStyle}>
-                  Pre-filled from your profile. The Gmail or IMAP account SMS Backup+ synced to;
-                  separate several with commas.
-                </p>
-              </StackedField>
-            ) : null}
-          </>
-        ) : (
-          <StackedField label="Backup path" required={required.backupPath}>
-            <PathPicker value={props.backupPath} onChange={props.onBackupPathChange} directory />
-          </StackedField>
-        )}
+        {FormSection ? (
+          <FormSection
+            form={form}
+            dispatch={dispatch}
+            onPathChange={props.onPathChange}
+            pathStats={props.pathStats}
+            whatsappStats={props.whatsappStats}
+            showMissingAccountPhoneWarning={
+              profilePhones.ready && !profilePhones.error && profilePhones.phones.length === 0
+            }
+            descriptor={source}
+            ownerPhoneEntry={ownerPhoneEntry}
+            errors={readiness.errors}
+            attachmentFields={attachmentFields}
+          />
+        ) : null}
       </CollapsibleSection>
 
       <CollapsibleSection
         title="Processing Options (Advanced)"
-        open={props.processingOpen}
-        onToggle={props.onToggleProcessing}
+        open={form.processingOpen}
+        onToggle={() => dispatch({ type: "toggle", field: "processingOpen" })}
       >
         <div className="mb-2 flex flex-col items-start gap-3">
-          {isIos || isAndroidSms ? (
+          {processingOptions.includes("obfuscate") ? (
             <Checkbox
               labelClassName="text-[0.875rem]"
-              checked={props.obfuscate}
-              onChange={props.onObfuscateChange}
+              checked={form.obfuscate}
+              onChange={(value) => dispatch({ type: "set", field: "obfuscate", value })}
             >
               Obfuscate - All message data is anonymized.
             </Checkbox>
           ) : null}
-          {isImazing ? (
+          {processingOptions.includes("timeZone") ? (
             <div className="w-full max-w-[28rem]">
               <TimeZoneField
                 label="Time zone of the messages"
-                value={props.timeZone}
-                onChange={props.onTimeZoneChange}
+                value={formTimeZone(form, props.accountTimeZone)}
+                onChange={(zone) => dispatch({ type: "set", field: "timeZone", value: zone })}
               />
-              <p className={hintStyle}>
+              <p className={hintClass}>
                 Pre-filled from your profile. iMazing writes each message time without a zone, so
                 pick the one the phone was in.
               </p>
@@ -849,23 +371,15 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           ) : null}
         </div>
         <PhoneCountryField
-          value={props.phoneCountry}
+          value={form.phoneCountry}
           countries={props.phoneCountries}
-          onChange={props.onPhoneCountryChange}
+          onChange={(code) => dispatch({ type: "set", field: "phoneCountry", value: code })}
         />
-        {whatsappFallbackPhone ? (
-          <StackedField label={WHATSAPP_OWNER_PHONE_LABEL} optional>
-            <input
-              type="text"
-              inputMode="tel"
-              aria-label={`${WHATSAPP_OWNER_PHONE_LABEL} (Optional)`}
-              value={props.whatsappOwnerPhone}
-              onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
-              placeholder="+1 555 555 0100"
-              className={fieldStyle}
-            />
-            <p className={hintStyle}>{WHATSAPP_OWNER_PHONE_HINT_IPHONE}</p>
-          </StackedField>
+        {processingOptions.includes("whatsappFallbackPhone") ? (
+          <WhatsappFallbackPhoneField
+            value={form.whatsappOwnerPhone}
+            onChange={(value) => dispatch({ type: "set", field: "whatsappOwnerPhone", value })}
+          />
         ) : null}
       </CollapsibleSection>
 
@@ -875,11 +389,23 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         </p>
       ) : null}
 
-      {tools && whatsappMethod !== null ? (
+      {tools && source.needsWtsexporter ? (
         <MissingProgramNotice programs={["wtsexporter"]} status={tools} need="whatsapp" />
       ) : null}
       {tools && mediaRunsFfmpeg ? (
         <MissingProgramNotice programs={["ffmpeg", "ffprobe"]} status={tools} need="media" />
+      ) : null}
+
+      {lowDiskSpace.map((line) => (
+        <p key={line} role="status" className="mt-2 mb-0 text-[0.813rem] text-muted">
+          {line}
+        </p>
+      ))}
+
+      {props.startError ? (
+        <p role="alert" className="mt-2 mb-0 text-[0.813rem] text-danger">
+          {props.startError}
+        </p>
       ) : null}
 
       <div className="mt-2 flex gap-3">

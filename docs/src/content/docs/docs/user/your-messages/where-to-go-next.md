@@ -18,7 +18,7 @@ What follows depends on what else there is to bring in.
 
 ## Using what is there
 
-- [Browse](/docs/user/features/messages/browse/) describes the conversation list and the thread view.
+- [Browse](/docs/user/features/messages/browse/) describes the conversation list and the open conversation.
 - [Search](/docs/user/features/messages/search/) lists every search word.
 - [Contacts](/docs/user/features/contacts/contacts/) covers naming people and grouping them.
 - [Attachments and media](/docs/user/features/messages/attachments-and-media/) covers converting photos and video so every browser shows them.
@@ -47,5 +47,5 @@ A Message Crate in Docker starts empty of real messages: the backups are importe
 - [Update](/docs/user/features/owner/update/) moves the Message Crate to a new version.
 - [Troubleshooting](/docs/user/features/owner/troubleshooting/) lists the common failures.
 
-The messages live in the app-data directory, which **Settings → System → Open data directory** opens.
-A copy of that directory, made while the app is closed, is the backup of the Message Crate.
+The messages live in `data` in the Message Crate Directory, which **Settings → System → Open Message Crate directory** opens.
+A copy of `data`, made while the app is closed, is the backup of the Message Crate.

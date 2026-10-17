@@ -10,11 +10,14 @@
 //! anything is decrypted.
 
 use anyhow::{Result, bail};
+use imessage_reader_protocol::{
+    ENCRYPTED_BACKUP_PASSWORD_REQUIRED, UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+};
 use ios_backup::{
     DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
 };
-use message_crate_core::{ExporterConfig, WhatsappConfig};
-use message_staging::{Disk, check_headroom};
+use message_crate_core::{RunContext, Sinks, WhatsappConfig};
+use staging::{Disk, check_headroom};
 use std::path::{Path, PathBuf};
 
 /// The app-group domain WhatsApp keeps its data under in an iPhone backup.
@@ -74,7 +77,7 @@ pub(crate) fn extract_bytes(source: &WhatsappConfig) -> Result<Option<u64>> {
 
 /// The app-group domain `source` names.
 fn domain(source: &WhatsappConfig) -> &'static str {
-    if source.business {
+    if source.is_business_app {
         BUSINESS_DOMAIN
     } else {
         DOMAIN
@@ -94,10 +97,12 @@ fn domain(source: &WhatsappConfig) -> &'static str {
 pub(crate) fn decrypt_if_encrypted(
     source: &WhatsappConfig,
     work: &Path,
-    config: &ExporterConfig,
+    context: &RunContext,
 ) -> Result<Option<DecryptedWhatsapp>> {
     decrypt_with(source, work, |backup, password, domain| {
-        config.emit_log("The iPhone backup is encrypted; decrypting WhatsApp's files...");
+        context
+            .log
+            .emit("The iPhone backup is encrypted; decrypting WhatsApp's files...");
         decrypt_ios_backup_domain(
             backup,
             password,
@@ -106,8 +111,11 @@ pub(crate) fn decrypt_if_encrypted(
             // The decrypted files go under the Scratch Directory, so its
             // disk is checked for room before the first one is written.
             |bytes| check_headroom(work, bytes, Disk::Scratch),
-            config.log.clone(),
-            config.progress.clone(),
+            Sinks {
+                log: &context.log,
+                progress: &context.progress,
+                cancel: &context.cancel,
+            },
         )
     })
 }
@@ -124,10 +132,8 @@ fn decrypt_with(
     };
     let password = source.backup_password.as_deref();
     match (ios_backup_encrypted_flag(backup), password) {
-        (Some(true), None) => bail!("The backup is encrypted — fill Encryption password."),
-        (Some(false), Some(_)) => {
-            bail!("This backup is not encrypted. Clear Encryption password.")
-        }
+        (Some(true), None) => bail!(ENCRYPTED_BACKUP_PASSWORD_REQUIRED),
+        (Some(false), Some(_)) => bail!(UNENCRYPTED_BACKUP_CLEAR_PASSWORD),
         (Some(true), Some(password)) => {
             let domain = domain(source);
             decrypt(backup, password, domain)?;
@@ -136,12 +142,12 @@ fn decrypt_with(
             if !database.is_file() {
                 bail!(
                     "{} is not in this iPhone backup. {}",
-                    if source.business {
+                    if source.is_business_app {
                         "WhatsApp Business"
                     } else {
                         "WhatsApp"
                     },
-                    if source.business {
+                    if source.is_business_app {
                         "If the phone has WhatsApp, clear WhatsApp Business."
                     } else {
                         "If the phone has WhatsApp Business, tick WhatsApp Business."
@@ -161,7 +167,10 @@ fn decrypt_with(
 
 #[cfg(test)]
 mod tests {
-    use super::{BUSINESS_DOMAIN, DOMAIN, DecryptedWhatsapp, decrypt_with, extract_bytes};
+    use super::{
+        BUSINESS_DOMAIN, DOMAIN, DecryptedWhatsapp, ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
+        UNENCRYPTED_BACKUP_CLEAR_PASSWORD, decrypt_with, extract_bytes,
+    };
     use ios_backup::DecryptedDomain;
     use message_crate_core::WhatsappConfig;
     use std::fs;
@@ -208,10 +217,7 @@ mod tests {
         let backup = backup(true);
         let work = tempdir().unwrap();
         let err = decrypt_with(&source(backup.path(), None), work.path(), never).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "The backup is encrypted — fill Encryption password."
-        );
+        assert_eq!(err.to_string(), ENCRYPTED_BACKUP_PASSWORD_REQUIRED);
     }
 
     #[test]
@@ -220,10 +226,7 @@ mod tests {
         let work = tempdir().unwrap();
         let err =
             decrypt_with(&source(backup.path(), Some("secret")), work.path(), never).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "This backup is not encrypted. Clear Encryption password."
-        );
+        assert_eq!(err.to_string(), UNENCRYPTED_BACKUP_CLEAR_PASSWORD);
     }
 
     /// The password and the app's own domain go to the decryption, and the
@@ -232,9 +235,9 @@ mod tests {
     fn an_encrypted_backup_is_decrypted_into_the_work_directory() {
         let backup = backup(true);
         let work = tempdir().unwrap();
-        for (business, expected_domain) in [(false, DOMAIN), (true, BUSINESS_DOMAIN)] {
+        for (is_business_app, expected_domain) in [(false, DOMAIN), (true, BUSINESS_DOMAIN)] {
             let source = WhatsappConfig {
-                business,
+                is_business_app,
                 ..source(backup.path(), Some("secret"))
             };
             let found = decrypt_with(&source, work.path(), |from, password, domain| {
@@ -318,7 +321,7 @@ mod tests {
             Some(30 * 2 + 5 * 2 + 2 * 2 + 700)
         );
         let business = WhatsappConfig {
-            business: true,
+            is_business_app: true,
             ..personal
         };
         assert_eq!(extract_bytes(&business).unwrap(), Some(40 * 2));

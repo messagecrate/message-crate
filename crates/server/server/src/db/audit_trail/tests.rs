@@ -1,21 +1,51 @@
 use super::*;
-use crate::test_support::test_fixture;
+use crate::test_support::{test_fixture, with_trigger_lifted};
 
-/// A refused login keeps the username as typed, cut to the username length
-/// limit, so a stranger cannot write an entry of any length.
+/// A refused login as a username nobody holds keeps the text typed only when
+/// it could be a username. Anything else, such as a password typed into the
+/// username field, is recorded with no username, so it never enters the trail.
+/// The text kept is the text checked: surrounding whitespace is not kept.
 #[tokio::test]
-async fn a_refused_username_is_cut_to_the_username_limit() {
+async fn a_refused_login_keeps_the_typed_text_only_when_it_could_be_a_username() {
     let fixture = test_fixture().await;
     let mut conn = fixture.conn().await;
-    let typed = "x".repeat(MAX_TYPED_USERNAME_CHARS + 50);
-    record_refused_login(&mut conn, &typed, None, AuditReason::UnknownUsername, None)
+    for typed in [
+        "hunter2!Secret",
+        "two words",
+        &"x".repeat(129),
+        "nobody.here_2",
+        " padded.name ",
+    ] {
+        record_refused_login(
+            &mut conn,
+            typed,
+            None,
+            AuditReason::UnknownUsername,
+            None,
+            crate::test_support::fixed_instant(),
+        )
         .await
         .unwrap();
-    let (items, total) = page(&mut conn, Scope::All, 10, 0).await.unwrap();
-    assert_eq!(total, 1);
+    }
+    let (items, total) = page(
+        &mut conn,
+        Scope::All,
+        10,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(total, 5);
+    let kept: Vec<Option<&str>> = items.iter().rev().map(|i| i.username.as_deref()).collect();
     assert_eq!(
-        items[0].username.as_deref().map(str::len),
-        Some(MAX_TYPED_USERNAME_CHARS)
+        kept,
+        [None, None, None, Some("nobody.here_2"), Some("padded.name")]
+    );
+    assert!(
+        items
+            .iter()
+            .all(|i| i.reason == Some(AuditReason::UnknownUsername))
     );
 }
 
@@ -55,9 +85,14 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
     .await
     .unwrap();
 
-    account_profile::delete_account(&mut conn, account, AuditActor::Owner)
-        .await
-        .unwrap();
+    account_profile::delete_account(
+        &mut conn,
+        account,
+        AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     let row: (
         Option<i64>,
@@ -79,7 +114,7 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
         (
             None,
             Some("alice".into()),
-            "cancelled".into(),
+            "canceled".into(),
             12,
             None,
             None
@@ -105,21 +140,41 @@ async fn a_renewed_session_does_not_read_as_expired() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let stale = "2000-01-01T00:00:00+00:00";
-    sqlx::query("UPDATE audit_entries SET session_expires_at = $1")
-        .bind(stale)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-    crate::credentials::change_password_on_conn(&mut conn, account, None)
-        .await
-        .unwrap();
-    let (items, _) = page(&mut conn, Scope::Account(account), 10, 0)
-        .await
-        .unwrap();
+    with_trigger_lifted(&mut conn, "audit_entries_never_edited", async |conn| {
+        sqlx::query("UPDATE audit_entries SET session_expires_at = $1")
+            .bind(stale)
+            .execute(conn)
+            .await
+            .unwrap();
+    })
+    .await;
+    crate::credentials::change_password_on_conn(
+        &mut conn,
+        account,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let (items, _) = page(
+        &mut conn,
+        Scope::Account(account),
+        10,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let actions: Vec<AuditAction> = items.iter().map(|item| item.action).collect();
     assert_eq!(actions, [AuditAction::PasswordSet, AuditAction::LoggedIn]);
     let login_expiry: String = sqlx::query_scalar(
@@ -131,6 +186,42 @@ async fn a_renewed_session_does_not_read_as_expired() {
     assert_eq!(login_expiry, stale, "the logged_in entry is never edited");
 }
 
+/// A Session that a use moved reads as live until the moved expiry, and as
+/// expired at it: not at the expiry its `logged_in` entry was written with.
+#[tokio::test]
+async fn a_used_session_reads_as_expired_at_its_moved_expiry() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    let login = crate::test_support::fixed_instant();
+    let token = crate::db::session_tokens::open_session(&mut conn, account, "alice", None, login)
+        .await
+        .unwrap();
+    let used = login + chrono::Duration::days(3);
+    crate::db::session_tokens::use_session_at(&mut conn, &token, used)
+        .await
+        .unwrap()
+        .unwrap();
+    let moved = used + chrono::Duration::days(7);
+
+    let ended_by = async |conn: &mut SqliteConnection, now| {
+        let (items, _) = page(conn, Scope::Account(account), 10, 0, now)
+            .await
+            .unwrap();
+        items
+            .into_iter()
+            .filter(|item| item.action == AuditAction::SessionEnded)
+            .map(|item| (item.reason.unwrap(), item.at))
+            .collect::<Vec<_>>()
+    };
+    let past_first_expiry = login + chrono::Duration::days(8);
+    assert_eq!(ended_by(&mut conn, past_first_expiry).await, []);
+    assert_eq!(
+        ended_by(&mut conn, moved).await,
+        [(AuditReason::Expired, moved.to_rfc3339())]
+    );
+}
+
 /// Let the account's Session run out: its row stays, as it does until its
 /// token is presented again, and its login reads as expired.
 async fn expire_session(conn: &mut SqliteConnection) {
@@ -138,18 +229,29 @@ async fn expire_session(conn: &mut SqliteConnection) {
         .execute(&mut *conn)
         .await
         .unwrap();
-    sqlx::query(
-        "UPDATE audit_entries SET session_expires_at = '2000-01-01T00:00:00+00:00'
-         WHERE action = 'logged_in'",
-    )
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    with_trigger_lifted(conn, "audit_entries_never_edited", async |conn| {
+        sqlx::query(
+            "UPDATE audit_entries SET session_expires_at = '2000-01-01T00:00:00+00:00'
+             WHERE action = 'logged_in'",
+        )
+        .execute(conn)
+        .await
+        .unwrap();
+    })
+    .await;
 }
 
 /// How each Session ended, oldest login first: `None` for one still live.
 async fn session_ends(conn: &mut SqliteConnection, account: i64) -> Vec<(AuditReason, String)> {
-    let (items, _) = page(conn, Scope::Account(account), 50, 0).await.unwrap();
+    let (items, _) = page(
+        conn,
+        Scope::Account(account),
+        50,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let mut ends: Vec<(AuditReason, String)> = items
         .into_iter()
         .filter(|item| item.action == AuditAction::SessionEnded)
@@ -166,13 +268,25 @@ async fn a_login_after_a_session_expired_does_not_replace_it() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     expire_session(&mut conn).await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         session_ends(&mut conn, account).await,
         [(
@@ -190,14 +304,25 @@ async fn revoking_leaves_an_expired_session_ended_at_its_expiry() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     expire_session(&mut conn).await;
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    crate::db::session_tokens::revoke_account_sessions(&mut tx, account, AuditActor::CommandLine)
-        .await
-        .unwrap();
+    crate::db::session_tokens::revoke_account_sessions(
+        &mut tx,
+        account,
+        AuditActor::CommandLine,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(
         session_ends(&mut conn, account).await,
@@ -216,17 +341,405 @@ async fn deleting_an_account_ends_its_live_session() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
-    account_profile::delete_account(&mut conn, account, AuditActor::Owner)
-        .await
-        .unwrap();
-    let (items, _) = page(&mut conn, Scope::All, 50, 0).await.unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    account_profile::delete_account(
+        &mut conn,
+        account,
+        AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let (items, _) = page(
+        &mut conn,
+        Scope::All,
+        50,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let ended: Vec<(Option<AuditReason>, AuditActor)> = items
         .iter()
         .filter(|item| item.action == AuditAction::SessionEnded)
         .map(|item| (item.reason, item.actor))
         .collect();
     assert_eq!(ended, [(Some(AuditReason::Revoked), AuditActor::Owner)]);
+}
+
+/// An entry says its account has been deleted from the account's deletion,
+/// from every source: an entry, a Session that ran out, an Import Run and an
+/// Export Run. An entry about no account says no even when it carries a
+/// username, as does a refused login as a username nobody holds, and the
+/// entries of an account that still exists.
+#[tokio::test]
+async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
+    let fixture = test_fixture().await;
+    let alice = fixture.account("alice").await;
+    let bob = fixture.account("bob").await;
+    let mut conn = fixture.conn().await;
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        alice,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    expire_session(&mut conn).await;
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        bob,
+        "bob",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO imports (account_id, source, mode, status, started_at)
+         VALUES ($1, 'imessage', 'append', 'completed', '2026-10-01T00:00:00+00:00')",
+    )
+    .bind(alice)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    crate::db::exports::start_export(
+        &mut conn,
+        &crate::db::exports::StartExportArgs {
+            account_id: alice,
+            scope: &api_types::ExportScope::Everything,
+            tool: None,
+        },
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    record(
+        &mut conn,
+        &NewEntry {
+            username: Some("carol"),
+            ..NewEntry::about_no_account(AuditAction::RegistrationOpened, AuditActor::Owner)
+        },
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    record_refused_login(
+        &mut conn,
+        "nobody",
+        None,
+        AuditReason::UnknownUsername,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+
+    account_profile::delete_account(
+        &mut conn,
+        alice,
+        AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+
+    let (items, _) = page(
+        &mut conn,
+        Scope::All,
+        50,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let deleted: Vec<AuditAction> = items
+        .iter()
+        .filter(|item| item.account_deleted)
+        .map(|item| item.action)
+        .collect();
+    let alices: Vec<AuditAction> = items
+        .iter()
+        .filter(|item| item.username.as_deref() == Some("alice"))
+        .map(|item| item.action)
+        .collect();
+    assert_eq!(deleted, alices, "every entry about alice, and no other");
+    for action in [
+        AuditAction::LoggedIn,
+        AuditAction::SessionEnded,
+        AuditAction::ImportRun,
+        AuditAction::ExportRun,
+        AuditAction::AccountDeleted,
+    ] {
+        assert!(deleted.contains(&action), "{action:?} reads as deleted");
+    }
+}
+
+/// What started a run, as one run table's row records it.
+type RecordedCredential = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+async fn recorded_credential(
+    conn: &mut SqliteConnection,
+    table: RunTable,
+    run_id: i64,
+) -> RecordedCredential {
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT credential, app_kind, app_build, api_token_label, api_token_hint
+         FROM {} WHERE id = $1",
+        table.name()
+    )))
+    .bind(run_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// Each run table records what started its own run: an Import Run and an
+/// Export Run with the same id each keep the credential recorded for it.
+#[tokio::test]
+async fn each_run_table_records_its_own_runs_credential() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    let import_id: i64 = sqlx::query_scalar(
+        "INSERT INTO imports (account_id, source, mode, status, started_at)
+         VALUES ($1, 'imessage', 'append', 'running', '2026-10-01T00:00:00+00:00')
+         RETURNING id",
+    )
+    .bind(account)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    let export_id = crate::db::exports::start_export(
+        &mut conn,
+        &crate::db::exports::StartExportArgs {
+            account_id: account,
+            scope: &api_types::ExportScope::Everything,
+            tool: None,
+        },
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap()
+    .id;
+    assert_eq!(import_id, export_id, "the test needs one id in both tables");
+
+    let session = CredentialUsed::Session(Some(ConnectingApp {
+        kind: AppKind::Desktop,
+        build: "0.10.0+aaaa1111".to_string(),
+    }));
+    let token = CredentialUsed::ApiToken {
+        label: "nightly backup".to_string(),
+        hint: "mc-api-Sd..mE".to_string(),
+    };
+    record_run_credential(&mut conn, RunTable::Imports, import_id, &session)
+        .await
+        .unwrap();
+    record_run_credential(&mut conn, RunTable::Exports, export_id, &token)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        recorded_credential(&mut conn, RunTable::Imports, import_id).await,
+        (
+            "session".to_string(),
+            Some("desktop".to_string()),
+            Some("0.10.0+aaaa1111".to_string()),
+            None,
+            None
+        )
+    );
+    assert_eq!(
+        recorded_credential(&mut conn, RunTable::Exports, export_id).await,
+        (
+            "api_token".to_string(),
+            None,
+            None,
+            Some("nightly backup".to_string()),
+            Some("mc-api-Sd..mE".to_string())
+        )
+    );
+}
+
+/// The schema refuses a statement that edits or deletes an Audit Trail
+/// entry, whoever runs it, and still lets through the two writes the server
+/// makes: deleting an account, which unlinks its entries, and the 90-day trim
+/// of refused logins as a username nobody held (ADR 0020, #2277).
+#[tokio::test]
+async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let other = fixture.account("bob").await;
+    let mut conn = fixture.conn().await;
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    record_refused_login(
+        &mut conn,
+        "alice",
+        Some((account, "alice")),
+        AuditReason::WrongPassword,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+
+    let move_to_other = format!("UPDATE audit_entries SET account_id = {other}");
+    assert_refused(
+        &mut conn,
+        &[
+            "UPDATE audit_entries SET action = 'account_created' WHERE action = 'logged_in'",
+            "UPDATE audit_entries SET at = '2000-01-01T00:00:00+00:00'",
+            "UPDATE audit_entries SET details = '{}'",
+            &move_to_other,
+            "UPDATE audit_entries SET account_id = NULL",
+            "UPDATE audit_entries SET deletion_entry_id = id",
+            "DELETE FROM audit_entries WHERE action = 'logged_in'",
+            "DELETE FROM audit_entries WHERE action = 'login_refused'",
+        ],
+    )
+    .await;
+    assert_eq!(count_entries(&mut conn).await, 2);
+
+    assert!(
+        account_profile::delete_account(
+            &mut conn,
+            account,
+            AuditActor::Owner,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
+    );
+    let unlinked: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_entries
+         WHERE account_id IS NULL AND deletion_entry_id IS NOT NULL",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    let total = count_entries(&mut conn).await;
+    assert_eq!(unlinked, total, "every entry about alice is kept, unlinked");
+    // Once set, an entry's deletion_entry_id and NULL account_id stay.
+    assert_refused(
+        &mut conn,
+        &[
+            "UPDATE audit_entries SET deletion_entry_id = NULL",
+            "UPDATE audit_entries SET deletion_entry_id = deletion_entry_id + 1",
+            &move_to_other,
+        ],
+    )
+    .await;
+
+    sqlx::query(
+        "INSERT INTO audit_entries (at, action, actor, username, reason)
+         VALUES ('2000-01-01T00:00:00+00:00', 'login_refused', 'anonymous',
+                 'nobody', 'unknown_username')",
+    )
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        trim_refused_logins(&mut conn, crate::test_support::fixed_instant())
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(count_entries(&mut conn).await, total);
+}
+
+/// An entry is stamped with the instant it is given, and the trim of refused
+/// logins for unknown usernames measures its window back from the instant it
+/// is given: an entry older than the window goes, a younger one stays.
+#[tokio::test]
+async fn refused_logins_are_stamped_and_trimmed_at_the_instant_given() {
+    let fixture = test_fixture().await;
+    let mut conn = fixture.conn().await;
+    let now = crate::test_support::fixed_instant();
+    let window = chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS);
+    let outside = now - window - chrono::Duration::hours(1);
+    let inside = now - window + chrono::Duration::hours(1);
+    for at in [outside, inside] {
+        record_refused_login(
+            &mut conn,
+            "nobody",
+            None,
+            AuditReason::UnknownUsername,
+            None,
+            at,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(trim_refused_logins(&mut conn, now).await.unwrap(), 1);
+    let kept: Vec<String> = sqlx::query_scalar("SELECT at FROM audit_entries")
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(kept, [inside.to_rfc3339()]);
+}
+
+/// Run each of `statements`, and check the schema refuses every one.
+async fn assert_refused(conn: &mut SqliteConnection, statements: &[&str]) {
+    for statement in statements {
+        let error = sqlx::query(sqlx::AssertSqlSafe(*statement))
+            .execute(&mut *conn)
+            .await
+            .expect_err(statement)
+            .to_string();
+        assert!(error.contains("an Audit Trail entry is never"), "{error}");
+    }
+}
+
+/// How many Audit Trail entries there are.
+async fn count_entries(conn: &mut SqliteConnection) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_entries")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// An entry written outside a request, as a server command and the first
+/// start's Demo Account build write theirs, has no request id (#2276).
+#[tokio::test]
+async fn an_entry_written_outside_a_request_has_no_request_id() {
+    let fixture = test_fixture().await;
+    let mut conn = fixture.conn().await;
+    let now = crate::test_support::fixed_instant();
+    record_demo_build(
+        &mut conn,
+        AuditActor::CommandLine,
+        DemoDataSize::Medium,
+        now,
+    )
+    .await
+    .unwrap();
+    let (items, _) = page(&mut conn, Scope::All, 10, 0, now).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].action, AuditAction::DemoAccountAdded);
+    assert_eq!(items[0].request_id, None);
 }

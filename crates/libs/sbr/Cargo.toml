@@ -6,16 +6,16 @@ description = "SMS Backup & Restore (SyncTech) XML codec"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
-message-ir = { workspace = true }
+android-fields = { path = "../android-fields" }
+ir = { workspace = true }
 mms-parts = { path = "../mms-parts" }
 anyhow = { workspace = true }
+file-io = { workspace = true }
 base64 = "0.23.1"
-hex = { workspace = true }
-html-escape = "0.2.14"
+html-escape = "0.3.0"
 phone = { path = "../phone" }
 quick-xml = { workspace = true }
 serde = { workspace = true }
-sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

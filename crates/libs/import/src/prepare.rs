@@ -7,8 +7,9 @@
 //! worker needs is read-only and lives in [`PrepareContext`]; the only shared
 //! mutable state is the journal behind a mutex.
 
-use message_crate_api_types::ImportMode;
+use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -17,9 +18,9 @@ use std::thread::Scope;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use message_crate_core::{check_cancel, parallel_for_each};
-use message_ir::{ConversationDocument, ConversationHeader, IrAttachment, IrMessage};
-use message_ir_format::read_conversation_jsonl_with_lines;
+use ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
+use ir_format::read_conversation_jsonl_with_lines;
+use message_crate_core::parallel_for_each;
 
 use crate::directory::{attachment_label, resolve_attachment};
 use crate::http::{Asset, AssetUpload};
@@ -27,7 +28,8 @@ use crate::journal::{JournalMessage, RunJournal};
 use crate::progress::AttachmentSkip;
 use crate::project::{self, AttachmentProjection};
 use crate::report::{AssetTotals, UploadProfile, elapsed_ms};
-use crate::run::{ImportConfig, MAX_IMPORT_BODY_BYTES, Session};
+use crate::run::{ImportConfig, Session};
+use api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// Journal state shared by every prepare worker and the import pipeline.
 ///
@@ -134,8 +136,6 @@ impl<'a> PrepareContext<'a> {
             batch_size,
             digests: DigestResolver {
                 cache: Mutex::new(HashMap::new()),
-                verify_digests: cfg.verify_digests,
-                trust_export: cfg.trust_export,
             },
             claim_ended: Condvar::new(),
             probe_existing: AtomicBool::new(false),
@@ -143,16 +143,21 @@ impl<'a> PrepareContext<'a> {
         }
     }
 
-    /// Lock the shared journal (panics only if another thread panicked while holding it).
+    /// Lock the shared journal.
+    ///
+    /// A prepare that panicked while holding the lock leaves it poisoned. The
+    /// lock is read as it is then, so the rest of the Upload goes on, and the
+    /// worker reports that conversation as failed.
     pub(crate) fn lock_journal(&self) -> MutexGuard<'_, SharedJournal> {
-        self.journal.lock().expect("journal mutex poisoned")
+        self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// True when the journal says this conversation file already fully imported.
+    /// True when the journal says this conversation file already fully
+    /// imported. A replace or forced Upload opens the journal without its
+    /// earlier progress ([`crate::journal::EarlierProgress`]), so it skips
+    /// nothing an earlier Upload sent.
     pub(crate) fn already_imported(&self, name: &str) -> bool {
-        self.cfg.mode == ImportMode::Append
-            && !self.cfg.force
-            && self.lock_journal().journal.has_file(name)
+        self.lock_journal().journal.has_file(name)
     }
 }
 
@@ -205,20 +210,16 @@ pub(crate) fn prepare_file(
 ) -> Result<PreparedFile> {
     let total_started = Instant::now();
     let read_started = Instant::now();
-    let (doc, message_lines) = read_conversation_jsonl_with_lines(path)?;
+    let (document, message_lines) = read_conversation_jsonl_with_lines(path)?;
     let mut profile = UploadProfile {
         read_ms: elapsed_ms(read_started),
         ..UploadProfile::default()
     };
-    let header = ConversationHeader::from_document(&doc);
+    let header = ConversationHeader::from_document(&document);
     let source = project::validate_header(&header)?;
 
     let scan_started = Instant::now();
-    let scan = if ctx.cfg.skip_attachments {
-        AttachmentScan::text_only(&doc.messages)
-    } else {
-        scan_attachments(ctx, name, &doc.messages)?
-    };
+    let scan = scan_attachments(ctx, name, &document.messages)?;
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
@@ -228,20 +229,18 @@ pub(crate) fn prepare_file(
         skipped: scan.skipped,
         ..AssetTotals::default()
     };
-    if !ctx.cfg.skip_attachments {
-        let upload_started = Instant::now();
-        let uploaded = upload_assets(ctx, name, &scan.unique)?;
-        profile.asset_upload_ms = elapsed_ms(upload_started);
-        profile.asset_bytes = uploaded.bytes;
-        assets.add(AssetTotals {
-            uploaded: uploaded.uploaded,
-            skipped: uploaded.skipped,
-            bytes: uploaded.bytes,
-        });
-        log_lines.extend(uploaded.log_lines);
-    }
+    let upload_started = Instant::now();
+    let uploaded = upload_assets(ctx, name, &scan.unique)?;
+    profile.asset_upload_ms = elapsed_ms(upload_started);
+    profile.asset_bytes = uploaded.bytes;
+    assets.add(AssetTotals {
+        uploaded: uploaded.uploaded,
+        skipped: uploaded.skipped,
+        bytes: uploaded.bytes,
+    });
+    log_lines.extend(uploaded.log_lines);
 
-    let chunks = build_import_chunks(ctx, name, &doc, &message_lines, &scan.projections)?;
+    let chunks = build_import_chunks(ctx, name, &document, &message_lines, &scan.projections)?;
     Ok(PreparedFile {
         source,
         chunks,
@@ -271,32 +270,15 @@ struct AttachmentScan {
     warnings: Vec<String>,
 }
 
-impl AttachmentScan {
-    /// The scan for a text-only Upload: count every attachment as skipped,
-    /// upload nothing, and reference nothing from the import lines.
-    fn text_only(messages: &[IrMessage]) -> Self {
-        let count = messages.iter().map(|m| m.attachments.len() as u64).sum();
-        Self {
-            projections: messages.iter().map(|_| Vec::new()).collect(),
-            unique: BTreeMap::new(),
-            count,
-            skipped: count,
-            skips: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-}
-
 /// Walk every attachment, decide whether it can be uploaded, and fingerprint the ones that can.
 ///
 /// # Errors
 ///
-/// Returns an error for an unsafe attachment path, an unreadable file, or a
-/// digest mismatch when `verify_digests` is on.
+/// Returns an error for an unsafe attachment path or an unreadable file.
 fn scan_attachments(
     ctx: &PrepareContext<'_>,
     name: &str,
-    messages: &[IrMessage],
+    messages: &[Message],
 ) -> Result<AttachmentScan> {
     let mut scan = AttachmentScan {
         projections: Vec::with_capacity(messages.len()),
@@ -306,11 +288,13 @@ fn scan_attachments(
         skips: Vec::new(),
         warnings: Vec::new(),
     };
-    for msg in messages {
-        let mut projections = Vec::with_capacity(msg.attachments.len());
-        for (index, att) in msg.attachments.iter().enumerate() {
+    for message in messages {
+        let mut projections = Vec::with_capacity(message.attachments.len());
+        for (index, attachment) in message.attachments.iter().enumerate() {
             scan.count += 1;
-            projections.push(scan_one_attachment(ctx, name, att, index, &mut scan)?);
+            projections.push(scan_one_attachment(
+                ctx, name, attachment, index, &mut scan,
+            )?);
         }
         scan.projections.push(projections);
     }
@@ -322,35 +306,38 @@ fn scan_attachments(
 ///
 /// # Errors
 ///
-/// Returns an error for an unsafe path, an unreadable file, or a digest
-/// mismatch when `verify_digests` is on.
+/// Returns an error for an unsafe path or an unreadable file.
 fn scan_one_attachment(
     ctx: &PrepareContext<'_>,
     name: &str,
-    att: &IrAttachment,
+    attachment: &Attachment,
     index: usize,
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {
-    let Some(rel) = att.path.as_deref().and_then(message_ir::trimmed) else {
-        // No path means the bytes were never staged. "Do not copy" exports
-        // look like this, and the reason the exporter set ("not_copied")
+    let Some(rel) = attachment.path.as_deref().and_then(ir::trimmed) else {
+        // No path means the bytes were never staged. Exports made with Skip
+        // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
         // Keep the metadata so the thread still shows the file was there.
         scan.skipped += 1;
-        if att.missing_reason.is_none() {
+        if attachment.missing_reason.is_none() {
             // An exporter dropped the path without saying why. That is a
             // defect, so it earns an Import Errors row; a deliberate skip
             // does not.
             scan.skips.push(AttachmentSkip {
                 conversation: name.to_string(),
-                item: format!("{name}:{}", attachment_label(att, index)),
+                item: format!("{name}:{}", attachment_label(attachment, index)),
                 reason: "attachment has no file path in the export".into(),
             });
         }
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: att.missing_reason.as_deref().unwrap_or("no_path").into(),
-            size: att.size_bytes,
+            reason: attachment
+                .missing_reason
+                .as_deref()
+                .unwrap_or(missing_reason::NO_PATH)
+                .into(),
+            size: attachment.size_bytes,
         });
     };
     let Some(abs) = resolve_attachment(ctx.input, rel)? else {
@@ -360,10 +347,17 @@ fn scan_one_attachment(
             item: format!("{name}:{rel}"),
             reason: "attachment file not found on disk".into(),
         });
+        // A reason the conversation file already gives, such as the
+        // `not_fetched` of an Export that could not fetch the file, says more
+        // than a plain missing file, so it is kept.
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: "file_missing".into(),
-            size: att.size_bytes,
+            reason: attachment
+                .missing_reason
+                .as_deref()
+                .unwrap_or(missing_reason::FILE_MISSING)
+                .into(),
+            size: attachment.size_bytes,
         });
     };
     let file_len = std::fs::metadata(&abs)
@@ -377,25 +371,30 @@ fn scan_one_attachment(
             reason: format!(
                 "attachment is {} bytes ({} MiB), over the configured asset max of {} MiB",
                 file_len,
-                file_len / message_ir::MIB,
-                ctx.cfg.asset_max_bytes / message_ir::MIB
+                file_len / ir::MIB,
+                ctx.cfg.asset_max_bytes / ir::MIB
             ),
         });
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: "too_large".into(),
+            reason: missing_reason::TOO_LARGE.into(),
             size: Some(file_len),
         });
     }
-    let claimed = att.digest_sha256.as_deref().and_then(message_ir::trimmed);
-    let digest = ctx
-        .digests
-        .resolve(&abs, claimed, att.size_bytes, name, rel, &mut |warning| {
+    let claimed = attachment.digest_sha256.as_deref().and_then(ir::trimmed);
+    let digest = ctx.digests.resolve(
+        &abs,
+        claimed,
+        attachment.size_bytes,
+        name,
+        rel,
+        &mut |warning| {
             scan.warnings.push(warning);
-        })?;
+        },
+    )?;
     scan.unique
         .entry(digest.clone())
-        .or_insert_with(|| (rel.to_string(), att.mime_type.clone()));
+        .or_insert_with(|| (rel.to_string(), attachment.mime_type.clone()));
     Ok(AttachmentProjection::Digested {
         index,
         digest,
@@ -411,39 +410,36 @@ fn scan_one_attachment(
 ///
 /// # Errors
 ///
-/// Returns an error when a message cannot be encoded, a single message alone
-/// exceeds the chunk limit, or the run is cancelled.
+/// Returns an error when a message cannot be encoded, a single message with
+/// the conversation header exceeds the chunk limit, or the run is canceled.
 fn build_import_chunks(
     ctx: &PrepareContext<'_>,
     name: &str,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     message_lines: &[usize],
     projections: &[Vec<AttachmentProjection>],
 ) -> Result<Vec<ImportChunk>> {
     let mut builder = ChunkBuilder::new(
-        project::document_header_line(doc)?,
+        project::document_header_line(document)?,
         ctx.batch_size,
-        MAX_IMPORT_BODY_BYTES,
+        MAX_IMPORT_BATCH_BYTES,
     );
-    for (i, msg) in doc.messages.iter().enumerate() {
-        check_cancel(ctx.cfg.cancel.as_ref())?;
-        let (line, guid) = if ctx.cfg.skip_attachments {
-            project::message_line_without_attachments(msg)?
-        } else {
-            // Rewrite attachment fields to uploaded digests or missing placeholders.
-            project::message_line(msg, &projections[i])?
-        };
+    for (i, message) in document.messages.iter().enumerate() {
+        ctx.session.check_stop()?;
+        // Rewrite attachment fields to uploaded digests or missing placeholders.
+        let (line, guid) = project::message_line(message, &projections[i])?;
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
             // Already imported this message id on a previous successful Upload.
             continue;
         }
-        // A single message larger than the chunk limit cannot be split further.
-        if line.len() > MAX_IMPORT_BODY_BYTES {
+        // A message that does not fit one chunk with the header cannot be
+        // split further, and the server refuses a larger body.
+        if !builder.fits_alone(&line) {
             bail!(
-                "{name}: message {guid} encodes to {} bytes alone, which exceeds the \
-                 {} MiB import chunk limit — cannot upload through Cloudflare safely",
+                "{name}: message {guid} encodes to {} bytes, which with its conversation \
+                 header exceeds the {} MiB import batch limit",
                 line.len(),
-                MAX_IMPORT_BODY_BYTES as u64 / message_ir::MIB
+                MAX_IMPORT_BATCH_BYTES as u64 / ir::MIB
             );
         }
         builder.push(
@@ -487,6 +483,12 @@ impl ChunkBuilder {
         }
     }
 
+    /// Whether `line` fits a chunk of its own, beside the header every chunk
+    /// starts with. One that does not can never be sent.
+    fn fits_alone(&self, line: &[u8]) -> bool {
+        self.header_line.len() + line.len() <= self.max_body_bytes
+    }
+
     /// Add one encoded message, from line `file_line` of the staged file,
     /// starting a new chunk first when this one is full.
     fn push(&mut self, line: &[u8], message: JournalMessage, file_line: usize) {
@@ -523,29 +525,22 @@ impl ChunkBuilder {
 /// per-run cache, or a fresh hash of the bytes on disk.
 struct DigestResolver {
     cache: DigestCache,
-    verify_digests: bool,
-    trust_export: bool,
 }
 
 impl DigestResolver {
     /// Resolve the SHA-256 fingerprint for an attachment file.
     ///
-    /// The default is to hash every file from disk, compare against any JSON
-    /// Lines claim, and warn on mismatch (using the actual disk hash). Two
-    /// flags alter this:
-    ///
-    /// * `trust_export` — skip the hash when the JSON Lines `size_bytes`
-    ///   matches the file size on disk (a cheap proxy for "file unchanged
-    ///   since export").
-    /// * `verify_digests` — hash from disk and **fail** on mismatch.
+    /// The export wrote each attachment's SHA-256 and size, so a claim whose
+    /// size matches the file on disk is taken as it is, without hashing the
+    /// file. Any other file is hashed from disk; when the hash differs from
+    /// the claim, the Upload warns and uses the hash of the bytes.
     ///
     /// The server is the final verifier on upload; a stale fingerprint
     /// is self-correcting (the server rejects mismatches).
     ///
     /// # Errors
     ///
-    /// Returns an error when the file cannot be hashed, or when
-    /// `verify_digests` is on and the on-disk hash does not match the claim.
+    /// Returns an error when the file cannot be read or hashed.
     fn resolve(
         &self,
         abs: &Path,
@@ -555,8 +550,9 @@ impl DigestResolver {
         rel: &str,
         warn: &mut dyn FnMut(String),
     ) -> Result<String> {
-        // Fast path: another conversation already hashed this absolute path
-        // during this run. Always trust the cache — it was computed from disk.
+        // Fast path: another conversation already resolved this absolute path
+        // during this run, to the export's recorded SHA-256 or a hash of the
+        // file.
         if let Some(digest) = self.cached(abs) {
             return Ok(digest);
         }
@@ -576,9 +572,7 @@ impl DigestResolver {
             .with_context(|| format!("{name}: stat {rel}"))?
             .len();
 
-        if self.trust_export
-            && !self.verify_digests
-            && let (Some(claimed_digest), Some(claimed_size)) = (claimed.as_deref(), claimed_size)
+        if let (Some(claimed_digest), Some(claimed_size)) = (claimed.as_deref(), claimed_size)
             && claimed_size == disk_size
         {
             self.remember(abs, claimed_digest);
@@ -586,25 +580,24 @@ impl DigestResolver {
         }
 
         let disk_digest =
-            message_ir::file_sha256(abs).with_context(|| format!("{name}: hash {rel}"))?;
+            file_io::file_sha256(abs).with_context(|| format!("{name}: hash {rel}"))?;
         if let Some(claimed_digest) = claimed.as_deref()
             && claimed_digest != disk_digest
         {
-            let mut msg = format!(
+            let mut message = format!(
                 "{name}: attachment {rel} hashes to {disk_digest}, \
                  not the {claimed_digest} its conversation file records"
             );
             if let Some(cs) = claimed_size
                 && cs != disk_size
             {
-                msg.push_str(&format!(
+                message.push_str(&format!(
                     ". Its size changed from {cs} to {disk_size} bytes"
                 ));
             }
-            if self.verify_digests {
-                bail!("{msg}");
-            }
-            warn(format!("{msg}. The Upload names it Asset {disk_digest}"));
+            warn(format!(
+                "{message}. The Upload names it Asset {disk_digest}"
+            ));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)
@@ -614,7 +607,7 @@ impl DigestResolver {
     fn cached(&self, abs: &Path) -> Option<String> {
         self.cache
             .lock()
-            .expect("digest cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .get(abs)
             .cloned()
     }
@@ -623,7 +616,7 @@ impl DigestResolver {
     fn remember(&self, abs: &Path, digest: &str) {
         self.cache
             .lock()
-            .expect("digest cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(abs.to_path_buf(), digest.to_string());
     }
 }
@@ -667,7 +660,7 @@ struct AssetUploadStats {
 /// # Errors
 ///
 /// Returns an error when a file is missing, when HEAD/PUT fails after
-/// retries, when a worker panics, or when the run is cancelled.
+/// retries, when a worker panics, or when the run is canceled.
 fn upload_assets(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -705,12 +698,12 @@ fn upload_claimed(
     preflight_existing_asset(ctx, &first.digest)?;
 
     // Work-stealing style: workers pull the next job index from a shared counter.
-    let results = parallel_for_each(
-        jobs,
-        ctx.cfg.asset_upload_workers,
-        ctx.cfg.cancel.as_ref(),
-        |job| upload_one_asset(ctx, job).map_err(|error| format!("{error:#}")),
-    );
+    let results = parallel_for_each(jobs, ctx.cfg.asset_upload_workers, &ctx.cfg.cancel, |job| {
+        // The pool checks only the caller's flag, so a refused session is
+        // checked here before each upload.
+        ctx.session.check_stop()?;
+        upload_one_asset(ctx, job)
+    });
 
     // Apply journal updates in a stable order after all workers finish.
     for (job, result) in jobs.iter().zip(results) {
@@ -728,7 +721,7 @@ fn upload_claimed(
             }
             // The caller drops `claims`, which gives up the rest, so a retry
             // or a waiting conversation is not stuck forever.
-            Err(error) => bail!("{name}: {error}"),
+            Err(error) => return Err(error.context(name.to_owned())),
         }
     }
     Ok(())
@@ -741,7 +734,7 @@ fn upload_claimed(
 /// # Errors
 ///
 /// Returns an error when a claimed file is missing or unreadable, or when
-/// the run is cancelled. Dropping `claims` gives up what was claimed.
+/// the run is canceled. Dropping `claims` gives up what was claimed.
 fn claim_upload_jobs<'u>(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -753,7 +746,7 @@ fn claim_upload_jobs<'u>(
     let mut jobs = Vec::with_capacity(pending.len());
     let mut busy = Vec::new();
     for &digest in pending {
-        check_cancel(ctx.cfg.cancel.as_ref())?;
+        ctx.session.check_stop()?;
         match claims.claim(digest) {
             AssetClaim::Claimed => {}
             AssetClaim::OnServer => {
@@ -783,15 +776,15 @@ fn claim_upload_jobs<'u>(
 ///
 /// # Errors
 ///
-/// Returns an error when the run is cancelled while waiting.
+/// Returns an error when the run is canceled while waiting.
 fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> {
     let mut journal = ctx.lock_journal();
     while digests.iter().any(|digest| journal.asset_in_flight(digest)) {
-        check_cancel(ctx.cfg.cancel.as_ref())?;
+        ctx.session.check_stop()?;
         journal = ctx
             .claim_ended
             .wait_timeout(journal, CLAIM_WAIT_POLL)
-            .expect("journal mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .0;
     }
     Ok(())
@@ -800,7 +793,7 @@ fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> 
 /// The sha256 claims one conversation holds and has not yet settled.
 ///
 /// Dropping it gives up every claim still held and wakes the workers waiting
-/// on them, so a conversation that fails or is cancelled never leaves
+/// on them, so a conversation that fails or is canceled never leaves
 /// another one waiting on a file nobody is uploading.
 struct AssetClaims<'c, 'a> {
     ctx: &'c PrepareContext<'a>,
@@ -890,7 +883,10 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
     if ctx.probe_existing.load(Ordering::Relaxed) {
         return Ok(());
     }
-    let mut done = ctx.preflight_done.lock().expect("preflight mutex poisoned");
+    let mut done = ctx
+        .preflight_done
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     if ctx.probe_existing.load(Ordering::Relaxed) || *done {
         return Ok(());
     }
@@ -981,12 +977,36 @@ impl PrepareQueue {
         workers: usize,
         capacity: usize,
     ) -> Self {
+        Self::start_with(
+            scope,
+            workers,
+            capacity,
+            move |path, name| match prepare_file(ctx, path, name) {
+                Ok(prepared) => PrepareOutcome::Prepared(prepared),
+                Err(_) if ctx.session.check_stop().is_err() => PrepareOutcome::Stopped,
+                Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
+            },
+        )
+    }
+
+    /// Spawn `workers` threads inside `scope` that run `prepare` on each job.
+    fn start_with<'scope, 'env, F>(
+        scope: &'scope Scope<'scope, 'env>,
+        workers: usize,
+        capacity: usize,
+        prepare: F,
+    ) -> Self
+    where
+        F: Fn(&Path, &str) -> PrepareOutcome + Send + Sync + 'scope,
+    {
         let (job_tx, job_rx) = mpsc::sync_channel::<Option<PrepareJob>>(capacity);
         let (result_tx, result_rx) = mpsc::channel::<PrepareResult>();
         let job_rx = Arc::new(Mutex::new(job_rx));
+        let prepare = Arc::new(prepare);
         for _ in 0..workers {
             let result_tx = result_tx.clone();
             let job_rx = Arc::clone(&job_rx);
+            let prepare = Arc::clone(&prepare);
             scope.spawn(move || {
                 loop {
                     let job = {
@@ -996,13 +1016,19 @@ impl PrepareQueue {
                     let Some(job) = job else {
                         break;
                     };
-                    let outcome = match prepare_file(ctx, &job.path, &job.name) {
-                        Ok(prepared) => PrepareOutcome::Prepared(prepared),
-                        Err(_) if check_cancel(ctx.cfg.cancel.as_ref()).is_err() => {
-                            PrepareOutcome::Stopped
-                        }
-                        Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
-                    };
+                    // A panic still answers the job, as a failed conversation:
+                    // the import loop waits for every index in order, and the
+                    // other workers keep the result channel open, so a job
+                    // without an answer would hang the Upload.
+                    let outcome =
+                        panic::catch_unwind(AssertUnwindSafe(|| prepare(&job.path, &job.name)))
+                            .unwrap_or_else(|payload| {
+                                PrepareOutcome::Failed(format!(
+                                    "preparing {} panicked: {}",
+                                    job.name,
+                                    panic_message(payload.as_ref())
+                                ))
+                            });
                     let _ = result_tx.send(PrepareResult {
                         idx: job.idx,
                         name: job.name,
@@ -1068,7 +1094,8 @@ impl PrepareQueue {
     ///
     /// # Errors
     ///
-    /// Returns an error when every worker has exited (a worker panicked).
+    /// Returns an error when every worker has exited, which a panic in a
+    /// prepare never causes: the worker answers that job as failed.
     pub(crate) fn wait_one(&mut self) -> Result<()> {
         let result = self
             .result_rx
@@ -1079,13 +1106,18 @@ impl PrepareQueue {
         Ok(())
     }
 
+    /// Tell every worker to exit once it has finished the jobs already sent.
+    fn close_jobs(&self) {
+        for _ in 0..self.workers {
+            let _ = self.job_tx.send(None);
+        }
+    }
+
     /// Tell every worker to exit and collect whatever they were still finishing.
     ///
     /// Their asset stats still count even if the import loop aborted.
     pub(crate) fn shutdown(self) -> Vec<PrepareResult> {
-        for _ in 0..self.workers {
-            let _ = self.job_tx.send(None);
-        }
+        self.close_jobs();
         let mut leftovers: Vec<PrepareResult> = self.ready.into_values().collect();
         while let Ok(result) = self.result_rx.recv() {
             leftovers.push(result);
@@ -1094,17 +1126,23 @@ impl PrepareQueue {
     }
 }
 
+/// The text a panic was raised with, or a placeholder when it carried none.
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("no message")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::run::NO_MESSAGE_COUNT_LIMIT;
-    use sha2::{Digest, Sha256};
 
-    fn resolver(trust_export: bool) -> DigestResolver {
+    fn resolver() -> DigestResolver {
         DigestResolver {
             cache: Mutex::new(HashMap::new()),
-            verify_digests: false,
-            trust_export,
         }
     }
 
@@ -1125,16 +1163,18 @@ mod tests {
         assert!(normalize_digest_sha256(&format!("../{}", "a".repeat(61))).is_none());
     }
 
+    /// The export's SHA-256 is taken as it is when its size matches the file,
+    /// and the file is hashed, with a warning, when the size differs.
     #[test]
-    fn trust_export_skips_hash_when_size_matches() {
+    fn the_export_digest_is_taken_when_its_size_matches() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pic.bin");
         std::fs::write(&path, b"hello").unwrap();
         let claimed = "a".repeat(64);
-        let expected_disk = hex::encode(Sha256::digest(b"hello"));
+        let expected_disk = file_io::sha256_hex(b"hello");
 
         let mut warnings = Vec::new();
-        let trusted = resolver(true)
+        let trusted = resolver()
             .resolve(
                 &path,
                 Some(&claimed),
@@ -1151,21 +1191,7 @@ mod tests {
         assert!(warnings.is_empty());
 
         let mut warnings = Vec::new();
-        let disk = resolver(false)
-            .resolve(
-                &path,
-                Some(&claimed),
-                Some(5),
-                "chat.jsonl",
-                "attachments/pic.bin",
-                &mut |m| warnings.push(m),
-            )
-            .unwrap();
-        assert_eq!(disk, expected_disk);
-        assert_eq!(warnings.len(), 1);
-
-        let mut warnings = Vec::new();
-        let size_mismatch = resolver(true)
+        let size_mismatch = resolver()
             .resolve(
                 &path,
                 Some(&claimed),
@@ -1177,7 +1203,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             size_mismatch, expected_disk,
-            "trust_export must still hash when size_bytes does not match the file"
+            "a file whose size differs from size_bytes is hashed"
         );
         assert_eq!(warnings.len(), 1);
     }
@@ -1185,7 +1211,7 @@ mod tests {
     #[test]
     fn chunk_builder_splits_on_count() {
         let header = b"{\"h\":1}\n".to_vec();
-        let mut builder = ChunkBuilder::new(header.clone(), 2, MAX_IMPORT_BODY_BYTES);
+        let mut builder = ChunkBuilder::new(header.clone(), 2, MAX_IMPORT_BATCH_BYTES);
         for i in 0..5 {
             builder.push(
                 b"{}\n",
@@ -1203,6 +1229,52 @@ mod tests {
         // Every chunk repeats the header, so each starts again at line 1.
         let lines: Vec<&[usize]> = chunks.iter().map(|c| c.file_lines.as_slice()).collect();
         assert_eq!(lines, [&[1, 2, 3][..], &[1, 4, 5], &[1, 6]]);
+    }
+
+    /// The Upload packs at most 16 MiB into one batch, the most the server
+    /// reads from one, so the write transaction the server saves a batch in
+    /// stays short (#2062): sixteen 1 MiB messages beside a header go out as
+    /// two batches, the first holding fifteen.
+    #[test]
+    fn chunks_split_at_16_mib() {
+        assert_eq!(MAX_IMPORT_BATCH_BYTES, 16 * 1024 * 1024);
+        let header = b"{\"h\":1}\n".to_vec();
+        let mut builder = ChunkBuilder::new(header, NO_MESSAGE_COUNT_LIMIT, MAX_IMPORT_BATCH_BYTES);
+        let mut message = vec![b'x'; 1024 * 1024 - 1];
+        message.push(b'\n');
+        for i in 0..16 {
+            builder.push(
+                &message,
+                JournalMessage {
+                    file: "c.jsonl".into(),
+                    guid: format!("g{i}"),
+                },
+                i + 2,
+            );
+        }
+
+        let chunks = builder.finish();
+
+        let counts: Vec<usize> = chunks.iter().map(|c| c.messages.len()).collect();
+        assert_eq!(counts, [15, 1]);
+        assert!(
+            chunks
+                .iter()
+                .all(|c| c.body.len() <= MAX_IMPORT_BATCH_BYTES)
+        );
+    }
+
+    /// A message fits a chunk only when it fits beside the header the chunk
+    /// repeats. A message under the limit alone, but over it with the header,
+    /// used to go out as a body over the limit, which the server refuses.
+    #[test]
+    fn a_message_fits_only_when_it_fits_beside_the_header() {
+        let header = b"{\"h\":100}\n".to_vec();
+        assert_eq!(header.len(), 10);
+        let builder = ChunkBuilder::new(header, NO_MESSAGE_COUNT_LIMIT, 32);
+
+        assert!(builder.fits_alone(&[b'x'; 22]));
+        assert!(!builder.fits_alone(&[b'x'; 23]));
     }
 
     /// A conversation too big for one request is cut into chunks that each
@@ -1237,5 +1309,54 @@ mod tests {
             .flat_map(|c| c.messages.iter().map(|m| m.guid.as_str()))
             .collect();
         assert_eq!(guids, vec!["g0", "g1", "g2", "g3", "g4"]);
+    }
+
+    /// A prepare that panics on one conversation still hands back a result
+    /// for it, as a failure, so the Upload goes on. Without one, the import
+    /// loop waited for that result forever while the other workers held the
+    /// channel open (#2087).
+    ///
+    /// The workers are told to exit once they finish the jobs, so a missing
+    /// result shows as `wait_one` failing on a closed channel rather than as
+    /// a hang. The results are then taken in file order through `wait_one`,
+    /// as the import loop takes them, with the panicking file first.
+    #[test]
+    fn a_panicking_prepare_reports_that_conversation_as_failed() {
+        let names = ["a.jsonl", "b.jsonl", "c.jsonl"];
+        let outcomes = std::thread::scope(|scope| {
+            let mut queue = PrepareQueue::start_with(scope, 3, names.len(), |_path, name| {
+                assert_ne!(name, "a.jsonl", "prepare blew up");
+                PrepareOutcome::Skipped
+            });
+            for (idx, name) in names.into_iter().enumerate() {
+                queue.submit(idx, PathBuf::from(name), name.to_owned());
+            }
+            queue.close_jobs();
+            let mut outcomes = Vec::new();
+            for idx in 0..names.len() {
+                while !queue.is_ready(idx) {
+                    queue
+                        .wait_one()
+                        .expect("every job gets a result before the workers exit");
+                }
+                let result = queue.take(idx).unwrap();
+                outcomes.push(match result.outcome {
+                    PrepareOutcome::Skipped => "skipped".to_owned(),
+                    PrepareOutcome::Failed(error) => error,
+                    _ => "other".to_owned(),
+                });
+            }
+            assert!(queue.is_idle());
+            queue.shutdown();
+            outcomes
+        });
+
+        assert!(
+            outcomes[0].starts_with("preparing a.jsonl panicked: ")
+                && outcomes[0].contains("prepare blew up"),
+            "{:?}",
+            outcomes[0]
+        );
+        assert_eq!(outcomes[1..], ["skipped", "skipped"]);
     }
 }

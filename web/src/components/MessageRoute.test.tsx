@@ -1,23 +1,24 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
 import { getConversation, listConversationMessages, trashConversation } from "../lib/serverApi";
 import type { Conversation, Message } from "../lib/types";
 import { message as baseMessage } from "../test/apiShapes";
-import { mockedAuth, Providers } from "../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
 import MessageRoute from "./MessageRoute";
 import { RightToolbarProvider } from "./RightToolbarContext";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
-  // The sidebar list `MessageRoute` renders alongside the thread.
+  // The sidebar list `MessageRoute` renders alongside the conversation.
   listConversations: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 40, offset: 0 }),
   listContactGroups: vi.fn().mockResolvedValue([]),
   listMessageTags: vi.fn().mockResolvedValue([]),
@@ -77,6 +78,7 @@ class StubResizeObserver {
 }
 
 beforeEach(() => {
+  startFakeClock();
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   getConversationMock.mockReset();
   listConversationMessagesMock.mockReset();
@@ -85,11 +87,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   cleanup();
+  stopFakeClock();
 });
 
-function conv(id: number, label: string): Conversation {
+function conv(id: number, shownTitle: string): Conversation {
   return {
     id,
     participants: [],
@@ -98,7 +100,7 @@ function conv(id: number, label: string): Conversation {
     last_message_at: "2024-01-01T10:00:00Z",
     service: "sms",
     is_group: false,
-    label,
+    shown_title: shownTitle,
     tags: [],
   };
 }
@@ -112,10 +114,10 @@ function message(id: number, conversationId: number): Message {
     conversation: {
       id: conversationId,
       chat_identifier: "+1",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [],
     },
   });
@@ -149,7 +151,7 @@ function renderAt(path: string, state?: unknown) {
 
   /**
    * Opens conversation 8 as a click on its row in the list column does: the row
-   * rides along as `location.state`, so the thread pane never shows "Loading".
+   * rides along as `location.state`, so the conversation pane never shows "Loading".
    */
   function OpenEight() {
     const navigate = useNavigate();
@@ -182,12 +184,13 @@ function renderAt(path: string, state?: unknown) {
 }
 
 describe("MessageRoute", () => {
-  it("renders the thread for a conversation id in the URL", async () => {
+  it("renders the conversation for its id in the URL", async () => {
     getConversationMock.mockResolvedValue(conv(5, "Chat 5"));
 
     renderAt("/messages/5");
+    await settle();
 
-    expect(await screen.findByText("Chat 5")).toBeInTheDocument();
+    expect(screen.getByText("Chat 5")).toBeInTheDocument();
     expect(getConversationMock).toHaveBeenCalledWith(5, expect.anything());
   });
 
@@ -195,8 +198,9 @@ describe("MessageRoute", () => {
     getConversationMock.mockRejectedValue(new Error("Conversation not found."));
 
     renderAt("/messages/9");
+    await settle();
 
-    expect(await screen.findByText("Conversation not found.")).toBeInTheDocument();
+    expect(screen.getByText("Conversation not found.")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Back to conversations" });
     expect(link).toHaveAttribute("href", "/");
   });
@@ -204,14 +208,14 @@ describe("MessageRoute", () => {
   it("renders the empty pane and does not fetch when there is no conversation id", async () => {
     renderAt("/messages");
 
-    expect(await screen.findByText("Select a conversation to view messages")).toBeInTheDocument();
+    expect(screen.getByText("Select a conversation to view messages")).toBeInTheDocument();
     expect(getConversationMock).not.toHaveBeenCalled();
   });
 
   it("does not fetch a non-numeric id and renders the not-found state", async () => {
     renderAt("/messages/abc");
 
-    expect(await screen.findByText("Conversation not found.")).toBeInTheDocument();
+    expect(screen.getByText("Conversation not found.")).toBeInTheDocument();
     expect(getConversationMock).not.toHaveBeenCalled();
   });
 
@@ -226,14 +230,16 @@ describe("MessageRoute", () => {
     );
 
     renderAt("/messages/7", { conversation: stale });
+    await settle();
 
     // The placeholder from location.state paints before the fetch settles.
-    expect(await screen.findByText("Stale Name")).toBeInTheDocument();
+    expect(screen.getByText("Stale Name")).toBeInTheDocument();
     expect(getConversationMock).toHaveBeenCalledWith(7, expect.anything());
 
     resolveFetch(fresh);
+    await settle();
 
-    expect(await screen.findByText("Fresh Name")).toBeInTheDocument();
+    expect(screen.getByText("Fresh Name")).toBeInTheDocument();
     expect(screen.queryByText("Stale Name")).not.toBeInTheDocument();
   });
 
@@ -243,13 +249,16 @@ describe("MessageRoute", () => {
     const user = setupUser();
 
     renderAt("/messages/7");
-    await screen.findByText("Chat 7");
+    await settle();
+    expect(screen.getByText("Chat 7")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "More for this conversation" }));
     await user.click(screen.getByRole("menuitem", { name: "Move to trash" }));
-    await screen.findByText("Trash refused.");
+    await settle();
+    expect(screen.getByText("Trash refused.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "open 8" }));
-    await screen.findByText("Chat 8");
+    await settle();
+    expect(screen.getByText("Chat 8")).toBeInTheDocument();
     expect(screen.queryByText("Trash refused.")).not.toBeInTheDocument();
   });
 
@@ -264,21 +273,23 @@ describe("MessageRoute", () => {
     const user = setupUser();
 
     renderAt("/messages/7");
-    await screen.findByText("Chat 7");
+    await settle();
+    expect(screen.getByText("Chat 7")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "More for this conversation" }));
     await user.click(screen.getByRole("menuitem", { name: "Move to trash" }));
-    await waitFor(() => expect(trashConversationMock).toHaveBeenCalledWith(7, expect.anything()));
+    await settle();
+    expect(trashConversationMock).toHaveBeenCalledWith(7, expect.anything());
 
     await user.click(screen.getByRole("button", { name: "open 8" }));
-    await screen.findByText("Chat 8");
+    await settle();
+    expect(screen.getByText("Chat 8")).toBeInTheDocument();
     // Conversation 8 has nothing pending, so its Move to trash is live.
     await user.click(screen.getByRole("button", { name: "More for this conversation" }));
     expect(screen.getByRole("menuitem", { name: "Move to trash" })).not.toBeDisabled();
     await user.keyboard("{Escape}");
 
     finishTrash();
-    await waitFor(() => expect(trashConversationMock.mock.results[0]?.type).toBe("return"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
     expect(screen.getByText("Chat 8")).toBeInTheDocument();
     expect(screen.queryByText("Conversations list")).not.toBeInTheDocument();
   });
@@ -295,7 +306,8 @@ describe("MessageRoute", () => {
 
     renderAt(`/messages/5${search}`);
     // A search with a `word:` waits for the lists' words.
-    expect((await screen.findByTestId("list-query")).textContent).toBe(query);
+    await settle();
+    expect(screen.getByTestId("list-query").textContent).toBe(query);
 
     await user.click(screen.getByRole("button", { name: "Second result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
@@ -322,14 +334,13 @@ describe("MessageRoute", () => {
         "/messages/6?q=photo&view=messages&sort=-date&at=77",
       );
       expect(screen.getByTestId("message-list-selected").textContent).toBe("77");
-      await screen.findByText("Chat 6");
+      await settle();
+      expect(screen.getByText("Chat 6")).toBeInTheDocument();
       // The panel reads the messages around the result, not the newest ones.
-      await waitFor(() =>
-        expect(listConversationMessagesMock).toHaveBeenCalledWith(
-          6,
-          expect.objectContaining({ around: 77 }),
-          expect.anything(),
-        ),
+      expect(listConversationMessagesMock).toHaveBeenCalledWith(
+        6,
+        expect.objectContaining({ around: 77 }),
+        expect.anything(),
       );
     });
 
@@ -349,7 +360,8 @@ describe("MessageRoute", () => {
       expect(screen.getByTestId("location").textContent).toBe(
         "/messages/6?q=dog&view=messages&at=78&matched=0",
       );
-      expect(await screen.findByText("Matched an earlier version")).toBeInTheDocument();
+      await settle();
+      expect(screen.getByText("Matched an earlier version")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Edited" })).toHaveAttribute(
         "aria-expanded",
         "true",
@@ -370,8 +382,9 @@ describe("MessageRoute", () => {
       });
 
       renderAt("/messages/6?q=picture&view=messages&at=78");
+      await settle();
 
-      expect(await screen.findByRole("button", { name: "Edited" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "Edited" })).toHaveAttribute(
         "aria-expanded",
         "false",
       );
@@ -383,9 +396,8 @@ describe("MessageRoute", () => {
       getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
       renderAt("/messages/5?q=ada&tag=Holiday&view=messages");
       // A search with a `word:` waits for the lists' words.
-      expect((await screen.findByTestId("message-list-query")).textContent).toBe(
-        "tag:Holiday (ada)",
-      );
+      await settle();
+      expect(screen.getByTestId("message-list-query").textContent).toBe("tag:Holiday (ada)");
     });
 
     // #1562: the tag is not a typed search, so with nothing typed the Messages
@@ -393,7 +405,8 @@ describe("MessageRoute", () => {
     it("asks for a search in a conversation opened from a tag page with nothing typed", async () => {
       getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
       renderAt("/messages/5?tag=Holiday&view=messages");
-      expect((await screen.findByTestId("message-list-query")).textContent).toBe("");
+      await settle();
+      expect(screen.getByTestId("message-list-query").textContent).toBe("");
     });
 
     it("keeps a tag page's tag apart from the search when a result is opened", async () => {
@@ -401,7 +414,8 @@ describe("MessageRoute", () => {
       const user = setupUser();
 
       renderAt("/messages/5?q=ada&tag=Holiday&view=messages");
-      await user.click(await screen.findByRole("button", { name: "Message result" }));
+      await settle();
+      await user.click(screen.getByRole("button", { name: "Message result" }));
 
       expect(screen.getByTestId("location").textContent).toBe(
         "/messages/6?q=ada&tag=Holiday&view=messages&at=77",

@@ -1,5 +1,5 @@
 [package]
-name = "message-crate-log-lines"
+name = "log-lines"
 version = "0.1.0"
 edition = "2024"
 description = "The line format of Message Crate's logs: how a line is written, read back, and paged newest first"

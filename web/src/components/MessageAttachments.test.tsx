@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CANNOT_PLAY_HERE, NO_PLAYABLE_COPY, STOPPED } from "../hooks/useStreamedMedia";
 import { saveFile } from "../lib/saveFile";
 import { createMediaLink, fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { Message, MessageAttachment } from "../lib/types";
 import { attachment, message as baseMessage, participant } from "../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { installIntersectionObserver, scrollNear } from "../test/intersectionObserver";
 import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
@@ -27,6 +28,7 @@ const LINK = {
 };
 
 beforeEach(() => {
+  startFakeClock();
   installIntersectionObserver();
   vi.mocked(fetchAssetObjectUrl).mockImplementation(
     async (sha, options) => `blob:${options?.version ?? "original"}-${sha}`,
@@ -36,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 function message(attachments: MessageAttachment[]): Message {
@@ -46,10 +49,10 @@ function message(attachments: MessageAttachment[]): Message {
     conversation: {
       id: 1,
       chat_identifier: "x",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [participant({ identity: "+1555", name: "Ada" })],
     },
   });
@@ -93,12 +96,13 @@ describe("a photo in the conversation", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
 
     scrollNear(container);
+    await settle();
 
-    expect(await screen.findByRole("img", { name: "cat.jpg" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: "cat.jpg" })).toHaveAttribute(
       "src",
       "blob:thumbnail-aaa",
     );
-    expect(await screen.findByRole("img", { name: "IMG_0001.heic" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: "IMG_0001.heic" })).toHaveAttribute(
       "src",
       "blob:thumbnail-bbb",
     );
@@ -118,6 +122,46 @@ describe("a photo in the conversation", () => {
     expect(screen.getByRole("button", { name: "Open cat.jpg" })).toHaveTextContent("cat.jpg");
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it("says why the server could not make its Thumbnail, beside its file name", () => {
+    const reason = "Error opening input file aa/aaa.jpg.";
+    const { container } = renderWithProviders(
+      <MessageAttachments
+        message={message([
+          { ...photo, thumbnail_mime_type: null, thumbnail_not_made_reason: reason },
+        ])}
+      />,
+    );
+    scrollNear(container);
+
+    const tile = screen.getByRole("button", { name: "Open cat.jpg" });
+    expect(tile).toHaveTextContent("cat.jpg");
+    expect(tile).toHaveTextContent(`No Thumbnail could be made: ${reason}`);
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it("says why there is no Thumbnail once a damaged one fails to load, and not before", async () => {
+    // A row can still name a Thumbnail whose file the pass found damaged.
+    const reason = "Invalid data found when processing input";
+    let fail: (error: Error) => void = () => {};
+    vi.mocked(fetchAssetObjectUrl).mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    const { container } = renderWithProviders(
+      <MessageAttachments message={message([{ ...photo, thumbnail_not_made_reason: reason }])} />,
+    );
+    scrollNear(container);
+    await settle();
+    expect(screen.queryByText(`No Thumbnail could be made: ${reason}`)).not.toBeInTheDocument();
+
+    fail(new Error("404"));
+    await settle();
+
+    expect(screen.getByText(`No Thumbnail could be made: ${reason}`)).toBeInTheDocument();
   });
 
   it("opens the viewer when pressed", async () => {
@@ -146,8 +190,9 @@ describe("downloading an attachment", () => {
     renderWithProviders(<MessageAttachments message={message([heic])} />);
 
     await user.click(screen.getByRole("button", { name: "Download IMG_0001.heic" }));
+    await settle();
 
-    await waitFor(() => expect(saveFile).toHaveBeenCalledWith("IMG_0001.heic", original));
+    expect(saveFile).toHaveBeenCalledWith("IMG_0001.heic", original);
     expect(fetchAsset).toHaveBeenCalledWith("bbb", { version: "original" });
   });
 
@@ -163,8 +208,9 @@ describe("downloading an attachment", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Download lease.pdf" }));
+    await settle();
 
-    await waitFor(() => expect(fetchAsset).toHaveBeenCalledWith("fff", { version: "original" }));
+    expect(fetchAsset).toHaveBeenCalledWith("fff", { version: "original" });
   });
 
   it("says so when the download fails", async () => {
@@ -179,8 +225,9 @@ describe("downloading an attachment", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Download lease.pdf" }));
+    await settle();
 
-    expect(await screen.findByText("Download failed")).toBeInTheDocument();
+    expect(screen.getByText("Download failed")).toBeInTheDocument();
     expect(saveFile).not.toHaveBeenCalled();
   });
 });
@@ -204,8 +251,9 @@ describe("a video in the conversation", () => {
     const user = setupUser();
     const { container } = renderWithProviders(<MessageAttachments message={message([mov])} />);
     scrollNear(container);
+    await settle();
 
-    expect(await screen.findByRole("img", { name: "clip.mov" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: "clip.mov" })).toHaveAttribute(
       "src",
       "blob:thumbnail-ccc",
     );
@@ -214,8 +262,9 @@ describe("a video in the conversation", () => {
     expect(fetches()).toEqual([{ sha256: "ccc", version: "thumbnail" }]);
 
     await user.click(screen.getByRole("button", { name: "Play clip.mov" }));
+    await settle();
 
-    const video = await screen.findByLabelText("clip.mov", { selector: "video" });
+    const video = screen.getByLabelText("clip.mov", { selector: "video" });
     expect(createMediaLink).toHaveBeenCalledWith("ccc");
     expect(video).toHaveAttribute("src", LINK.preview_url);
     // Streamed by the element itself, never downloaded whole first.
@@ -239,8 +288,9 @@ describe("a video in the conversation", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Play clip.mp4" }));
+    await settle();
 
-    const video = await screen.findByLabelText("clip.mp4", { selector: "video" });
+    const video = screen.getByLabelText("clip.mp4", { selector: "video" });
     expect(video).toHaveAttribute("src", LINK.url);
   });
 
@@ -257,12 +307,14 @@ describe("a video in the conversation", () => {
     const user = setupUser();
     renderWithProviders(<MessageAttachments message={message([mov])} />);
     await user.click(screen.getByRole("button", { name: "Play clip.mov" }));
-    failVideo(await screen.findByLabelText("clip.mov", { selector: "video" }), 2);
+    await settle();
+    failVideo(screen.getByLabelText("clip.mov", { selector: "video" }), 2);
 
     expect(screen.getByText(STOPPED)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Play clip.mov" }));
+    await settle();
 
-    expect(await screen.findByLabelText("clip.mov", { selector: "video" })).toBeInTheDocument();
+    expect(screen.getByLabelText("clip.mov", { selector: "video" })).toBeInTheDocument();
     expect(createMediaLink).toHaveBeenCalledTimes(2);
   });
 
@@ -281,11 +333,28 @@ describe("a video in the conversation", () => {
       />,
     );
     await user.click(screen.getByRole("button", { name: "Play damaged.mp4" }));
-    failVideo(await screen.findByLabelText("damaged.mp4", { selector: "video" }), 4);
+    await settle();
+    failVideo(screen.getByLabelText("damaged.mp4", { selector: "video" }), 4);
 
     expect(screen.getByText(CANNOT_PLAY_HERE)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play damaged.mp4" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download damaged.mp4" })).toBeInTheDocument();
+  });
+
+  it("says why the server could not make its Thumbnail, and still offers play", () => {
+    const reason = "Error opening input file cc/ccc.mov.";
+    const { container } = renderWithProviders(
+      <MessageAttachments
+        message={message([
+          { ...mov, thumbnail_mime_type: null, thumbnail_not_made_reason: reason },
+        ])}
+      />,
+    );
+    scrollNear(container);
+
+    expect(screen.getByText(`No Thumbnail could be made: ${reason}`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play clip.mov" })).toBeInTheDocument();
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
   });
 
   it("says a HEVC MP4 with no Preview yet cannot be played, and never streams the original", () => {
@@ -321,6 +390,20 @@ describe("a video in the conversation", () => {
     expect(screen.getByRole("button", { name: "Download clip.mov" })).toBeInTheDocument();
   });
 
+  it("says why the server could not make a HEVC video's Preview, and offers the download", () => {
+    const reason = "Error opening input file dd/ddd.mov.";
+    renderWithProviders(
+      <MessageAttachments
+        message={message([{ ...mov, preview_mime_type: null, preview_not_made_reason: reason }])}
+      />,
+    );
+
+    expect(screen.getByText(`No Preview could be made: ${reason}`)).toBeInTheDocument();
+    expect(screen.queryByText(NO_PLAYABLE_COPY)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play clip.mov" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download clip.mov" })).toBeInTheDocument();
+  });
+
   it("shows a file chip when no file was stored, as a photo with no digest does", () => {
     renderWithProviders(
       <MessageAttachments
@@ -351,8 +434,9 @@ describe("a recording in the conversation", () => {
     expect(createMediaLink).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Play voice.amr" }));
+    await settle();
 
-    const audio = await screen.findByLabelText("voice.amr", { selector: "audio" });
+    const audio = screen.getByLabelText("voice.amr", { selector: "audio" });
     expect(createMediaLink).toHaveBeenCalledWith("eee");
     expect(audio).toHaveAttribute("src", LINK.preview_url);
     expect(fetchAssetObjectUrl).not.toHaveBeenCalled();

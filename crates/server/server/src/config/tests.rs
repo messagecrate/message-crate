@@ -1,4 +1,5 @@
 use super::*;
+use media::MediaTools as _;
 
 /// A config file at `<dir>/config/server.toml` holding `text`.
 fn config_file(dir: &Path, text: &str) -> PathBuf {
@@ -9,24 +10,36 @@ fn config_file(dir: &Path, text: &str) -> PathBuf {
     path
 }
 
+/// A `[paths] db` naming `db`, an absolute path. `/srv/...` is not
+/// absolute on Windows, which wants a drive, so the tests use the temporary
+/// directory's own path. A TOML literal string (single quotes) keeps a
+/// Windows path's backslashes as they are; in double quotes they would be
+/// escapes.
+fn db_config(db: &Path) -> String {
+    format!("[paths]\ndb = '{}'\n", db.display())
+}
+
 #[test]
 fn without_db_the_database_is_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
+    let db = dir.path().join("srv/messagecrate.db");
+    let path = config_file(dir.path(), &db_config(&db));
 
     let cfg = Config::load_with_db(&path, None).unwrap();
 
-    assert_eq!(cfg.paths.db, PathBuf::from("/srv/messagecrate.db"));
+    assert_eq!(cfg.paths.db, db);
 }
 
 #[test]
 fn db_replaces_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
+    let db = dir.path().join("srv/messagecrate.db");
+    let path = config_file(dir.path(), &db_config(&db));
+    let other = dir.path().join("elsewhere/other.db");
 
-    let cfg = Config::load_with_db(&path, Some(PathBuf::from("/elsewhere/other.db"))).unwrap();
+    let cfg = Config::load_with_db(&path, Some(other.clone())).unwrap();
 
-    assert_eq!(cfg.paths.db, PathBuf::from("/elsewhere/other.db"));
+    assert_eq!(cfg.paths.db, other);
 }
 
 /// S7-12: `--db data/messagecrate.db` names the file `[paths] db =
@@ -109,9 +122,62 @@ fn a_config_with_no_settings_loads_the_documented_defaults() {
     );
     let server = cfg.require_server().unwrap();
     assert_eq!(server.bind, "127.0.0.1:8080");
-    assert_eq!(server.asset_part_size, 67_108_864);
+    assert_eq!(server.asset_part_size, 16_777_216);
+    assert_eq!(server.body_stall_secs, 60);
+    assert_eq!(server.body_total_secs, 300);
     assert!(!server.openapi_ui);
     assert!(server.cors_origins.is_empty());
+    assert_eq!(server.transcode_stall_secs, 120);
+}
+
+/// `[server] transcode_stall_secs` sets how long a conversion may go
+/// without progress before ffmpeg is stopped; a file with no `[server]`
+/// section, and a server started with `--data-dir`, use the default
+/// (#2898).
+#[test]
+fn transcode_stall_secs_sets_the_no_progress_wait() {
+    let cfg = load_text(
+        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\ntranscode_stall_secs = 600\n",
+    )
+    .unwrap();
+    assert_eq!(
+        cfg.transcode_stall_wait(),
+        std::time::Duration::from_secs(600)
+    );
+
+    let no_server = load_text("[paths]\ndb = \"data/messagecrate.db\"\n").unwrap();
+    assert_eq!(no_server.transcode_stall_wait(), media::DEFAULT_STALL_WAIT);
+    let data_dir = Config::for_data_dir(Path::new("data"));
+    assert_eq!(data_dir.transcode_stall_wait(), media::DEFAULT_STALL_WAIT);
+}
+
+/// The tools the server runs are built from its configuration: the Tools
+/// Directory `serve --tools-dir` names and `transcode_stall_secs`, with no
+/// state anywhere else in the process (#2696).
+#[test]
+fn the_media_tools_come_from_the_configuration() {
+    let mut cfg =
+        load_text("[paths]\ndb = \"data/messagecrate.db\"\n[server]\ntranscode_stall_secs = 600\n")
+            .unwrap();
+    let tools = cfg.media_tools();
+    assert_eq!(tools.tools_dir(), None);
+    assert_eq!(tools.stall_wait(), std::time::Duration::from_secs(600));
+
+    cfg.server.as_mut().unwrap().tools_dir = Some(PathBuf::from("/app/tools"));
+    assert_eq!(cfg.media_tools().tools_dir(), Some(Path::new("/app/tools")));
+}
+
+/// A wait of zero would stop every conversion at once, so it is refused,
+/// naming the key.
+#[test]
+fn a_transcode_stall_secs_of_zero_is_refused_naming_the_key() {
+    let err =
+        load_text("[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\ntranscode_stall_secs = 0\n")
+            .unwrap_err();
+    let text = format!("{err:#}");
+
+    assert!(text.contains("[server] transcode_stall_secs"), "{text}");
+    assert!(text.contains("greater than 0"), "{text}");
 }
 
 /// Write `text` as `config/config.toml` under a fresh directory and load it.
@@ -140,8 +206,38 @@ fn a_config_that_still_sets_asset_max_bytes_is_refused_and_told_where_the_limit_
     assert!(text.contains("Server Settings screen"), "{text}");
 }
 
+/// The body time limits the file sets are the ones the server holds.
+#[test]
+fn a_config_sets_the_body_time_limits() {
+    let cfg = load_text(
+        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nbody_stall_secs = 7\nbody_total_secs = 45\n",
+    )
+    .unwrap();
+
+    let server = cfg.require_server().unwrap();
+    assert_eq!(server.body_stall_secs, 7);
+    assert_eq!(server.body_total_secs, 45);
+}
+
+/// A limit of 0 would refuse every upload at once, so the server refuses
+/// the file, naming the key.
+#[test]
+fn a_body_time_limit_of_zero_is_refused_naming_the_key() {
+    for key in ["body_stall_secs", "body_total_secs"] {
+        let cfg = load_text(&format!(
+            "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\n{key} = 0\n"
+        ))
+        .unwrap();
+
+        let text = format!("{:#}", cfg.require_server().unwrap_err());
+
+        assert!(text.contains(&format!("[server] {key}")), "{text}");
+        assert!(text.contains("greater than 0"), "{text}");
+    }
+}
+
 /// A key the server does not use is refused wherever it sits, by its name
-/// and its section: a misspelt key otherwise loads as the default.
+/// and its section: a misspelled key otherwise loads as the default.
 #[test]
 fn a_config_with_an_unknown_key_is_refused_naming_the_key_and_its_section() {
     for (section, config) in [
@@ -197,7 +293,7 @@ fn a_config_with_an_unknown_section_is_refused_naming_it() {
 
 /// `[database]` named the connection URL while the server ran on Postgres
 /// too. It is an unknown section now, so a config that still has it is
-/// refused by name and never read as if the URL were honoured.
+/// refused by name and never read as if the URL were honored.
 #[test]
 fn a_config_with_the_removed_database_section_is_refused_naming_it() {
     let text = format!(
@@ -356,8 +452,10 @@ fn example_cors_origins_uncomments_to_a_complete_array() {
     }
 }
 
+/// The Docker image's config names no CORS origin. The comment in
+/// `config/config.docker.toml` says why (#2144).
 #[test]
-fn docker_config_includes_packaged_desktop_origins() {
+fn docker_config_names_no_cors_origins() {
     let docker = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../config/config.docker.toml"
@@ -368,10 +466,294 @@ fn docker_config_includes_packaged_desktop_origins() {
         .as_ref()
         .expect("[server] in docker config")
         .cors_origins;
-    for origin in PACKAGED_ORIGINS {
-        assert!(
-            origins.iter().any(|item| item == origin),
-            "missing {origin} in {origins:?}"
-        );
+    assert!(origins.is_empty(), "config.docker.toml names {origins:?}");
+}
+
+/// The config a file in `dir` with `text` loads to, for the layout checks.
+fn load_in(dir: &Path, text: &str) -> Config {
+    Config::load(&config_file(dir, text)).unwrap()
+}
+
+/// The text of [`Config::require_static_dir_apart`]'s refusal, or a panic
+/// when it accepts.
+fn refusal(cfg: &Config) -> String {
+    match cfg.require_static_dir_apart() {
+        Ok(()) => panic!("the layout was accepted"),
+        Err(err) => format!("{err:#}"),
     }
+}
+
+/// #2175: everything under the website directory is served without a login,
+/// so a Data Directory inside it would publish the database.
+#[test]
+fn a_data_directory_inside_the_website_directory_is_refused_naming_both() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"elsewhere/messagecrate.db\"\ndata_dir = \"static/data\"\n[server]\n",
+    );
+
+    let text = refusal(&cfg);
+
+    assert!(
+        text.contains(&cfg.paths.data_dir.display().to_string()),
+        "{text}"
+    );
+    let static_dir = &cfg.server.as_ref().unwrap().static_dir;
+    assert!(text.contains(&static_dir.display().to_string()), "{text}");
+}
+
+#[test]
+fn a_database_inside_the_website_directory_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"static/messagecrate.db\"\n[server]\n",
+    );
+
+    assert!(refusal(&cfg).contains("messagecrate.db"));
+}
+
+#[test]
+fn a_website_directory_inside_the_data_directory_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\nstatic_dir = \"data/static\"\n",
+    );
+
+    refusal(&cfg);
+}
+
+#[test]
+fn one_directory_for_the_website_and_the_data_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"site/messagecrate.db\"\ndata_dir = \"site\"\n[server]\nstatic_dir = \"site\"\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `static/../static/data` is `static/data`, though the text does not start
+/// with `static`.
+#[test]
+fn a_parent_step_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"messagecrate.db\"\ndata_dir = \"other/../static/data\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("static/data"), dir.path().join("data")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `website` only shares its first letters with `web`: it is beside it, not
+/// inside it.
+#[test]
+fn a_sibling_whose_name_starts_with_the_other_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"website/messagecrate.db\"\ndata_dir = \"website\"\n[server]\nstatic_dir = \"web\"\n",
+    );
+
+    cfg.require_static_dir_apart().unwrap();
+}
+
+/// The default layout, the Docker image's and the repository's: `static`
+/// and `data` side by side.
+#[test]
+fn the_default_layout_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    cfg.require_static_dir_apart().unwrap();
+}
+
+/// The desktop app's layout: `serve --data-dir` with the website shipped in
+/// the app's own resources.
+#[test]
+fn the_desktop_app_layout_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config::for_data_dir(&dir.path().join("app-data/data")).with_serve_overrides(
+        dir.path(),
+        ServeFlags {
+            static_dir: Some(dir.path().join("resources/static")),
+            ..ServeFlags::default()
+        },
+    );
+
+    cfg.require_static_dir_apart().unwrap();
+}
+
+/// A link whose target is not there yet still decides where SQLite creates
+/// the database, so it is followed like any other.
+#[cfg(unix)]
+#[test]
+fn a_dangling_symlink_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    fs::create_dir_all(dir.path().join("data")).unwrap();
+    std::os::unix::fs::symlink(
+        "../static/messagecrate.db",
+        dir.path().join("data/messagecrate.db"),
+    )
+    .unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// When a link hides the nesting, the refusal says where the path really
+/// is, or the two paths it names would not look nested.
+#[cfg(unix)]
+#[test]
+fn the_refusal_names_where_a_link_leads() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("static/data"), dir.path().join("data")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    let real = dir.path().canonicalize().unwrap().join("static/data");
+    let text = refusal(&cfg);
+    assert!(text.contains(&real.display().to_string()), "{text}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_loop_is_refused_rather_than_followed_for_ever() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink("loop", dir.path().join("loop")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"loop/messagecrate.db\"\ndata_dir = \"loop\"\n[server]\n",
+    );
+
+    let text = refusal(&cfg);
+    assert!(
+        text.contains(&format!("more than {MAX_SYMLINKS} symlinks")),
+        "{text}"
+    );
+}
+
+/// What `cmd /C <line>` prints, after asserting it succeeded. `line` is
+/// passed as written, not quoted again, so a quoted path in it reaches
+/// `cmd` as one argument. `line` must not start with a quote, or `cmd`
+/// strips the first and last quote of it.
+#[cfg(windows)]
+fn cmd(line: &str) -> String {
+    use std::os::windows::process::CommandExt;
+    let output = std::process::Command::new("cmd")
+        .raw_arg(format!("/C {line}"))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "cmd /C {line}: {output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+/// Makes `link` a directory junction to `target`. A junction needs no
+/// privilege, where a directory symlink on Windows does.
+#[cfg(windows)]
+fn junction(link: &Path, target: &Path) {
+    cmd(&format!(
+        "mklink /J \"{}\" \"{}\"",
+        link.display(),
+        target.display()
+    ));
+}
+
+/// A junction's target comes back verbatim (`\\?\C:\...`), unlike every
+/// other path, so the check canonicalizes before it compares.
+#[cfg(windows)]
+#[test]
+fn a_junction_cannot_hide_the_nesting_and_the_refusal_names_where_it_leads() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    junction(&dir.path().join("data"), &dir.path().join("static\\data"));
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    let real = dir.path().canonicalize().unwrap().join("static\\data");
+    let text = refusal(&cfg);
+    assert!(text.contains(&real.display().to_string()), "{text}");
+}
+
+/// A junction to a directory not made yet still decides where the database
+/// is created, so it is followed like any other.
+#[cfg(windows)]
+#[test]
+fn a_dangling_junction_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    junction(&dir.path().join("data"), &dir.path().join("static\\data"));
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `path` with every component as its 8.3 short name, as `cmd` reports it.
+#[cfg(windows)]
+fn short_name(path: &Path) -> PathBuf {
+    let printed = cmd(&format!("for %I in (\"{}\") do @echo %~sI", path.display()));
+    PathBuf::from(printed.trim())
+}
+
+/// `WEBSIT~1` is another name for `websitedirectory`, so a Data Directory
+/// named through the long name is inside a website directory named through
+/// the short one.
+#[cfg(windows)]
+#[test]
+fn a_short_name_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    let website = dir.path().join("websitedirectory");
+    fs::create_dir_all(website.join("data")).unwrap();
+    let short = short_name(&website);
+    assert_ne!(
+        short.file_name(),
+        website.file_name(),
+        "8.3 short names are off on the volume holding {}",
+        website.display()
+    );
+    let cfg = load_in(
+        dir.path(),
+        &format!(
+            "[paths]\ndb = \"elsewhere/messagecrate.db\"\ndata_dir = \"websitedirectory/data\"\n\
+             [server]\nstatic_dir = '{}'\n",
+            short.display()
+        ),
+    );
+
+    refusal(&cfg);
 }

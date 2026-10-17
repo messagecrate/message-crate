@@ -1,13 +1,15 @@
 use super::*;
 use crate::db::contacts::read::DEFAULT_CONTACT_SORT;
-use crate::paging::{DEFAULT_LIST_LIMIT, parse_sort};
+use crate::paging::{FIRST_PAGE, PageParams, parse_sort};
 use edit::ContactEditError;
-use message_ir::IdentityType;
+use ir::IdentityType;
 
 use crate::db::account_profile;
+use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, post_json, post_status,
-    register_via_api, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
+    expect_problem_response, fixture_with_account, get_raw, get_status, post_json, post_json_raw,
+    post_status, register_via_api, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -208,30 +210,30 @@ async fn a_refused_contact_edit_answers_422_with_the_persons_sentence() {
     drop(conn);
 
     // Taking an identity that is already another contact’s.
-    let (status, sentence) = crate::test_support::patch_failure(
+    let sentence = crate::test_support::patch_failure(
         &fixture.state,
         &format!("/v1/contacts/{first}"),
         &account.token,
         serde_json::json!({ "add_identity": { "address": "+15555550135" } }),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(sentence, "identity already linked to another contact");
 
     // No edit named at all.
-    let status = crate::test_support::patch_status(
+    crate::test_support::patch_failure(
         &fixture.state,
         &format!("/v1/contacts/{first}"),
         &account.token,
         serde_json::json!({}),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 /// A contact edit takes `phone` or `whatsapp` as a service and refuses any
 /// other word, naming the two. Every other word was read as `phone`, so a
-/// misspelt `whatsap` put the identity on Text Message without a word (#1630).
+/// misspelled `whatsap` put the identity on Text Message without a word (#1630).
 #[tokio::test]
 async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
@@ -258,7 +260,8 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
             }),
         ] {
             let (status, text) =
-                crate::test_support::patch_raw(&fixture.state, &path, &account.token, body).await;
+                crate::test_support::patch_json_raw(&fixture.state, &path, &account.token, body)
+                    .await;
             let problem = crate::test_support::expect_problem(
                 status,
                 &text,
@@ -289,6 +292,66 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
     assert_eq!(identities, [("+15555550100", "phone")], "{detail}");
 }
 
+/// A contact's name is at most 200 characters and an identity address it
+/// takes at most 320, and an edit over either is refused with nothing
+/// changed. Both were stored at any length a JSON body could carry (#2183).
+#[tokio::test]
+async fn a_contact_edit_over_the_name_or_address_cap_is_refused_and_changes_nothing() {
+    let (fixture, account) = contacts_fixture_with_handles(&[]).await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    let ada =
+        insert_contact_with_handle(&mut conn, account.account_id, "Ada", "+15555550100").await;
+    drop(conn);
+    let path = format!("/v1/contacts/{ada}");
+    let long_address = format!("{}@example.com", "a".repeat(309));
+    assert_eq!(long_address.chars().count(), 321);
+
+    for (body, field) in [
+        (serde_json::json!({ "name": "n".repeat(201) }), "name"),
+        (
+            serde_json::json!({ "add_identity": { "address": long_address } }),
+            "add_identity.address",
+        ),
+        (
+            serde_json::json!({
+                "update_identity": { "previous_address": "+15555550100", "address": long_address }
+            }),
+            "update_identity.address",
+        ),
+    ] {
+        let sentence = crate::test_support::patch_failure(
+            &fixture.state,
+            &path,
+            &account.token,
+            body,
+            ProblemType::ValidationFailed,
+        )
+        .await;
+        assert!(sentence.starts_with(&format!("{field}: ")), "{sentence}");
+    }
+
+    let detail: serde_json::Value =
+        crate::test_support::get_json(&fixture.state, &path, &account.token).await;
+    assert_eq!(detail["name"], "Ada", "{detail}");
+    let addresses: Vec<&str> = detail["identities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["address"].as_str().unwrap())
+        .collect();
+    assert_eq!(addresses, ["+15555550100"], "{detail}");
+
+    // At the cap, both are taken.
+    let at_cap: serde_json::Value = crate::test_support::patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({ "name": format!(" {} ", "n".repeat(200)) }),
+    )
+    .await;
+    assert_eq!(at_cap["name"], "n".repeat(200), "{at_cap}");
+}
+
 /// A contact deleted after the edit found it: the rename updated no row and
 /// answered `500` with "contact missing after mutate". The edit is one write
 /// transaction, so it finds the contact gone and answers `404`.
@@ -305,17 +368,17 @@ async fn renaming_a_contact_deleted_meanwhile_answers_not_found() {
         .execute(&mut *other)
         .await
         .unwrap();
-    let (status, _) = crate::db::write_tx::commit_during(
+    crate::db::write_tx::commit_during(
         other,
         crate::test_support::patch_failure(
             &fixture.state,
             &format!("/v1/contacts/{ada}"),
             &account.token,
             serde_json::json!({ "name": "Ada Lovelace" }),
+            ProblemType::NotFound,
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -326,16 +389,16 @@ async fn replacing_an_identity_with_an_empty_address_is_refused_and_keeps_the_ol
         insert_contact_with_handle(&mut conn, account.account_id, "Ada", "+15555550100").await;
     drop(conn);
 
-    let (status, sentence) = crate::test_support::patch_failure(
+    let sentence = crate::test_support::patch_failure(
         &fixture.state,
         &format!("/v1/contacts/{ada}"),
         &account.token,
         serde_json::json!({
             "update_identity": { "previous_address": "+15555550100", "address": "  " }
         }),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(sentence, "previous_address and address must not be empty");
 
     let detail: serde_json::Value = crate::test_support::get_json(
@@ -359,14 +422,14 @@ async fn contact_match_rejects_an_oversized_batch() {
     let identifiers: Vec<String> = (0..MAX_MATCH_IDENTIFIERS + 1)
         .map(|i| format!("+1555{i:06}"))
         .collect();
-    let status = post_status(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/contacts/unmatched-identities",
         &account.token,
         serde_json::json!({ "identifiers": identifiers }),
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
 #[tokio::test]
@@ -406,8 +469,7 @@ async fn list_contacts_uses_preferred_name_and_handle_ids() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -465,8 +527,7 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "sam",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -479,8 +540,7 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "identity:5555550135",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -493,8 +553,10 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        2,
-        0,
+        PageParams {
+            limit: 2,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -508,8 +570,10 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        2,
-        2,
+        PageParams {
+            limit: 2,
+            offset: 2,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -550,17 +614,13 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
 
-    // Direct conversation with 2 messages.
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'd.jsonl')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    // One-to-one conversation with 2 messages.
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, peer)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -569,12 +629,12 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    for (body, ts) in [
+    for (body, rfc3339) in [
         ("hi", "2024-06-01T12:00:00.000Z"),
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: ts,
+            timestamp: stored_time(rfc3339),
             sender_handle_id: Some(peer),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -584,7 +644,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     }
     // A reply of yours: not a message Sam sent, so not in `total_messages`.
     MessageRow {
-        timestamp: "2024-06-01T14:00:00.000Z",
+        timestamp: stored_time("2024-06-01T14:00:00.000Z"),
         is_from_me: true,
         body: Some("back at you"),
         ..MessageRow::new(account, 1)
@@ -593,7 +653,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await;
 
     // Group conversation that includes Sam, with 1 message.
-    let group_chat = account_profile::link_account_handle(
+    let group_handle = account_profile::link_account_handle(
         &mut conn,
         account,
         "chat-sam-group",
@@ -601,16 +661,12 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (2, $1, $2, 'group', 'Sam Group', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::group(account, group_handle, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (2, $1, 'Sam')",
@@ -620,7 +676,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         sender_handle_id: Some(peer),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -637,18 +693,14 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (9, $1, $2, 'individual', 'other.jsonl')",
-    )
-    .bind(account)
-    .bind(other)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(9),
+        ..ConversationRow::new(account, other)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
-        timestamp: "2024-08-01T12:00:00.000Z",
+        timestamp: stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("nope"),
         ..MessageRow::new(account, 9)
     }
@@ -660,7 +712,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
         .unwrap()
         .expect("contact exists");
     assert_eq!(detail.name, "Sam");
-    assert_eq!(detail.direct_conversations, 1);
+    assert_eq!(detail.one_to_one_conversations, 1);
     assert_eq!(detail.group_conversations, 1);
     assert_eq!(detail.total_messages, 3);
     assert_eq!(detail.identities.len(), 1);
@@ -673,7 +725,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     assert_eq!(detail.identities[0].conversations, 2);
     // The identity table counts what Sam sent from the identity, as
     // `total_messages` does: your reply is not Sam's (#913).
-    assert_eq!(detail.identities[0].direct_messages, 2);
+    assert_eq!(detail.identities[0].one_to_one_messages, 2);
     assert_eq!(detail.identities[0].group_messages, 1);
     assert_eq!(
         detail.identities[0].start_date.as_deref(),
@@ -716,16 +768,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'd.jsonl')",
-    )
-    .bind(account)
-    .bind(sam_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, sam_handle)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -734,12 +782,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    for (body, ts) in [
+    for (body, rfc3339) in [
         ("hi", "2024-06-01T12:00:00.000Z"),
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: ts,
+            timestamp: stored_time(rfc3339),
             sender_handle_id: Some(sam_handle),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -747,7 +795,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
         .insert(&mut conn)
         .await;
     }
-    let group_chat = account_profile::link_account_handle(
+    let group_handle = account_profile::link_account_handle(
         &mut conn,
         account,
         "chat-sam-group",
@@ -755,16 +803,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (2, $1, $2, 'group', 'Sam Group', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::group(account, group_handle, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (2, $1, 'Sam')",
@@ -774,7 +818,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         sender_handle_id: Some(sam_handle),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -807,16 +851,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (3, $1, $2, 'individual', 'pat.jsonl')",
-    )
-    .bind(account)
-    .bind(pat_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(3),
+        ..ConversationRow::new(account, pat_handle)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (3, $1, 'Pat')",
@@ -826,7 +866,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-05-01T09:00:00.000Z",
+        timestamp: stored_time("2024-05-01T09:00:00.000Z"),
         sender_handle_id: Some(pat_handle),
         body: Some("hey"),
         ..MessageRow::new(account, 3)
@@ -841,9 +881,9 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
 
     assert_eq!(summaries[0].id, sam_id);
     assert_eq!(summaries[0].name, "Sam");
-    assert_eq!(summaries[0].individual_conversations, 1);
+    assert_eq!(summaries[0].one_to_one_conversations, 1);
     assert_eq!(summaries[0].group_conversations, 1);
-    assert_eq!(summaries[0].individual_message_count, 2);
+    assert_eq!(summaries[0].one_to_one_message_count, 2);
     assert_eq!(summaries[0].group_message_count, 1);
     assert_eq!(
         summaries[0].start_date.as_deref(),
@@ -856,9 +896,9 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
 
     assert_eq!(summaries[1].id, pat_id);
     assert_eq!(summaries[1].name, "Pat");
-    assert_eq!(summaries[1].individual_conversations, 1);
+    assert_eq!(summaries[1].one_to_one_conversations, 1);
     assert_eq!(summaries[1].group_conversations, 0);
-    assert_eq!(summaries[1].individual_message_count, 1);
+    assert_eq!(summaries[1].one_to_one_message_count, 1);
     assert_eq!(summaries[1].group_message_count, 0);
     assert_eq!(
         summaries[1].start_date.as_deref(),
@@ -906,7 +946,7 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
         .unwrap();
         handles.push(handle);
     }
-    let (group_chat, _) = crate::db::handles::upsert_handle_row(
+    let (group_handle, _) = crate::db::handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-sam-group",
@@ -915,16 +955,12 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (1, $1, $2, 'group', 'Sam Group', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::group(account, group_handle, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     for handle in &handles {
         sqlx::query(
             "INSERT INTO participants (conversation_id, handle_id, name_alias)
@@ -944,14 +980,14 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
     for identity in &detail.identities {
         assert_eq!(identity.conversations, 1, "{}", identity.address);
     }
-    assert_eq!(detail.direct_conversations, 0);
+    assert_eq!(detail.one_to_one_conversations, 0);
     assert_eq!(detail.group_conversations, 1);
 
     let summaries = get_contact_summaries(&mut conn, account, &[contact_id])
         .await
         .unwrap();
     assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].individual_conversations, 0);
+    assert_eq!(summaries[0].one_to_one_conversations, 0);
     assert_eq!(summaries[0].group_conversations, 1);
 }
 
@@ -965,18 +1001,13 @@ async fn insert_conversation(
     participants: &[i64],
     trashed: bool,
 ) {
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, $3, $4, 'c.jsonl')",
-    )
-    .bind(id)
-    .bind(account)
-    .bind(chat_handle)
-    .bind(kind)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(id),
+        conversation_type: kind,
+        ..ConversationRow::new(account, chat_handle)
+    }
+    .insert(conn)
+    .await;
     for handle in participants {
         sqlx::query(
             "INSERT INTO participants (conversation_id, handle_id, name_alias)
@@ -1012,9 +1043,9 @@ async fn insert_held_message(
     owner: i64,
     sender: Option<i64>,
 ) {
-    let ts = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
+    let rfc3339 = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
     MessageRow {
-        timestamp: &ts,
+        timestamp: stored_time(&rfc3339),
         is_from_me: sender.is_none(),
         owner_handle_id: Some(owner),
         sender_handle_id: sender,
@@ -1026,7 +1057,7 @@ async fn insert_held_message(
     .await;
 }
 
-/// Jane sent 40 of the 100 messages in her direct conversation with the
+/// Jane sent 40 of the 100 messages in her one-to-one conversation with the
 /// account holder and 10 of the 60 in a group with Bob. Her identity row and
 /// her selection summary both read 40 direct and 10 group, with her own
 /// first and last message as the dates: the holder's replies and Bob's
@@ -1081,7 +1112,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    let (group_chat, _) = handles::upsert_handle_row(
+    let (group_handle, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-jane-bob",
@@ -1097,7 +1128,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         &mut conn,
         account,
         1,
-        "individual",
+        "one-to-one",
         jane_phone,
         &[jane_phone],
         false,
@@ -1114,7 +1145,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         account,
         2,
         "group",
-        group_chat,
+        group_handle,
         &[jane_phone, jane_email, bob_phone],
         false,
     )
@@ -1170,13 +1201,16 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     };
     assert_eq!(phone.address, "+15555550100");
     assert_eq!(phone.conversations, 2, "the trashed group is left out");
-    assert_eq!(phone.direct_messages, 40);
+    assert_eq!(phone.one_to_one_messages, 40);
     assert_eq!(phone.group_messages, 10);
-    assert_eq!(phone.start_date.as_deref(), Some("2024-01-01T00:01:00Z"));
-    assert_eq!(phone.end_date.as_deref(), Some("2024-02-01T00:55:00Z"));
+    assert_eq!(
+        phone.start_date.as_deref(),
+        Some("2024-01-01T00:01:00.000Z")
+    );
+    assert_eq!(phone.end_date.as_deref(), Some("2024-02-01T00:55:00.000Z"));
     assert_eq!(email.address, "jane@example.com");
     assert_eq!(email.conversations, 1, "it takes part in the group");
-    assert_eq!(email.direct_messages, 0);
+    assert_eq!(email.one_to_one_messages, 0);
     assert_eq!(email.group_messages, 0);
     assert_eq!(email.start_date, None);
     assert_eq!(email.end_date, None);
@@ -1188,20 +1222,20 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         panic!("two summaries: {summaries:?}");
     };
     assert_eq!(jane_summary.id, jane);
-    assert_eq!(jane_summary.individual_conversations, 1);
+    assert_eq!(jane_summary.one_to_one_conversations, 1);
     assert_eq!(jane_summary.group_conversations, 1);
-    assert_eq!(jane_summary.individual_message_count, 40);
+    assert_eq!(jane_summary.one_to_one_message_count, 40);
     assert_eq!(jane_summary.group_message_count, 10);
     assert_eq!(
         jane_summary.start_date.as_deref(),
-        Some("2024-01-01T00:01:00Z")
+        Some("2024-01-01T00:01:00.000Z")
     );
     assert_eq!(
         jane_summary.end_date.as_deref(),
-        Some("2024-02-01T00:55:00Z")
+        Some("2024-02-01T00:55:00.000Z")
     );
     assert_eq!(bob_summary.id, bob);
-    assert_eq!(bob_summary.individual_message_count, 0);
+    assert_eq!(bob_summary.one_to_one_message_count, 0);
     assert_eq!(bob_summary.group_message_count, 30);
 
     // The holder's identity counts every message held at it, sent or
@@ -1214,10 +1248,10 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         .find(|identity| identity.address == "+15555550128")
         .expect("the holder's identity");
     assert_eq!(held.conversations, 2);
-    assert_eq!(held.direct_messages, 100);
+    assert_eq!(held.one_to_one_messages, 100);
     assert_eq!(held.group_messages, 60);
-    assert_eq!(held.start_date.as_deref(), Some("2024-01-01T00:00:00Z"));
-    assert_eq!(held.end_date.as_deref(), Some("2024-02-01T00:59:00Z"));
+    assert_eq!(held.start_date.as_deref(), Some("2024-01-01T00:00:00.000Z"));
+    assert_eq!(held.end_date.as_deref(), Some("2024-02-01T00:59:00.000Z"));
 }
 
 /// Ada is in one one-to-one conversation, one group, and one conversation of
@@ -1263,7 +1297,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    let (group_chat, _) = handles::upsert_handle_row(
+    let (group_handle, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-ada-group",
@@ -1275,7 +1309,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     let (orphaned_chat, _) = handles::upsert_handle_row(
         &mut conn,
         account,
-        &message_ir::orphaned_chat_id(Some("+15555550123")),
+        &ir::orphaned_chat_id(Some("+15555550123")),
         IdentityType::Other,
         None,
     )
@@ -1283,8 +1317,8 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     .unwrap();
 
     for (id, kind, chat, day) in [
-        (1, "individual", ada_phone, "2024-01-01"),
-        (2, "group", group_chat, "2024-02-01"),
+        (1, "one-to-one", ada_phone, "2024-01-01"),
+        (2, "group", group_handle, "2024-02-01"),
         (3, "orphaned", orphaned_chat, "2024-03-01"),
     ] {
         insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
@@ -1297,7 +1331,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
         .expect("Ada exists");
     assert_eq!(
         (
-            detail.direct_conversations,
+            detail.one_to_one_conversations,
             detail.group_conversations,
             detail.orphaned_conversations
         ),
@@ -1310,7 +1344,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     assert_eq!(phone.conversations, 3);
     assert_eq!(
         (
-            phone.direct_messages,
+            phone.one_to_one_messages,
             phone.group_messages,
             phone.orphaned_messages
         ),
@@ -1325,7 +1359,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     };
     assert_eq!(
         (
-            summary.individual_conversations,
+            summary.one_to_one_conversations,
             summary.group_conversations,
             summary.orphaned_conversations
         ),
@@ -1333,7 +1367,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     );
     assert_eq!(
         (
-            summary.individual_message_count,
+            summary.one_to_one_message_count,
             summary.group_message_count,
             summary.orphaned_message_count
         ),
@@ -1367,7 +1401,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     )
     .await
     .unwrap();
-    let (group_chat, _) = handles::upsert_handle_row(
+    let (group_handle, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-ada-group",
@@ -1379,7 +1413,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     let (orphaned_chat, _) = handles::upsert_handle_row(
         &mut conn,
         account,
-        &message_ir::orphaned_chat_id(None),
+        &ir::orphaned_chat_id(None),
         IdentityType::Other,
         None,
     )
@@ -1389,7 +1423,10 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     // holder's first. The holder's three orphaned messages sit in the
     // conversation of orphaned messages that has no sender's address in its
     // key and no participant (#1776).
-    for (id, kind, chat, count) in [(1, "individual", ada_phone, 1), (2, "group", group_chat, 2)] {
+    for (id, kind, chat, count) in [
+        (1, "one-to-one", ada_phone, 1),
+        (2, "group", group_handle, 2),
+    ] {
         insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
         for minute in 0..count {
             let sender = (minute > 0).then_some(ada_phone);
@@ -1411,7 +1448,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     assert_eq!(held.conversations, 3);
     assert_eq!(
         (
-            held.direct_messages,
+            held.one_to_one_messages,
             held.group_messages,
             held.orphaned_messages
         ),
@@ -1577,13 +1614,14 @@ async fn handle_type_and_service(
         .unwrap()
 }
 
-/// An identity added by hand is typed by its address alone, whatever service
-/// the request names: a number is a phone number on any service, an address
-/// with `@` is an email address, and anything else is `other`. Typed by the
-/// service, `ada@example.com` under `imessage` was stored as a phone number
-/// (#1432); `imessage` is no longer a service a request can name (#1630).
+/// An identity added by hand takes its type from its address within what its
+/// service carries: a number is a phone number on any service, an address
+/// with `@` on Text Message is an email address, and anything else is
+/// `other`. Typed by the service alone, `ada@example.com` under `imessage`
+/// was stored as a phone number (#1432); `imessage` is no longer a service a
+/// request can name (#1630).
 #[tokio::test]
-async fn a_handle_takes_its_type_from_its_address_not_the_service() {
+async fn a_handle_takes_its_type_from_its_service_and_address() {
     let fixture = test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
@@ -1609,37 +1647,62 @@ async fn a_handle_takes_its_type_from_its_address_not_the_service() {
     }
 }
 
-/// An email address cannot be a WhatsApp identity, so adding one under
-/// `whatsapp` is refused with the reason rather than stored as an identity
-/// WhatsApp cannot carry.
+/// An identity typed into a contact is typed by its service and then its
+/// address, as an import types it: an `@` address on WhatsApp, such as the
+/// internal id `123456789012345@lid`, is `other`, and one on Text Message is
+/// an email address. That holds for an address added and for one swapped in
+/// for a number, which stays on the number's service. Typed by its shape
+/// alone, the WhatsApp id was an email address, which WhatsApp carries none
+/// of, so the edit was refused (#2709).
 #[tokio::test]
-async fn an_email_address_is_not_added_on_whatsapp() {
-    let fixture = test_fixture().await;
-    let account = fixture.account_with_id(101, "alice").await;
-    let mut conn = fixture.conn().await;
-    let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
+async fn a_contact_edit_types_a_new_at_address_by_its_service() {
+    let (fixture, account) = contacts_fixture_with_handles(&[]).await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    let sam =
+        insert_contact_with_handle(&mut conn, account.account_id, "Sam", "+15555550100").await;
+    drop(conn);
+    let path = format!("/v1/contacts/{sam}");
 
-    let refusal = mutate_committed(
-        &mut conn,
-        account,
-        contact_id,
-        &UpdateContactRequest {
-            name: None,
-            add_identity: Some(AddContactIdentityRequest {
-                address: "ann@example.com".into(),
-                service: Some(ApiIdentityService::Whatsapp),
-            }),
-            update_identity: None,
-            remove_identity: None,
-            set_identity_country: None,
-        },
-    )
-    .await;
+    for body in [
+        serde_json::json!({
+            "add_identity": { "address": "123456789012345@lid", "service": "whatsapp" }
+        }),
+        serde_json::json!({
+            "add_identity": { "address": "sam@example.com", "service": "phone" }
+        }),
+        serde_json::json!({
+            "add_identity": { "address": "+15555550170", "service": "whatsapp" }
+        }),
+        serde_json::json!({
+            "update_identity": {
+                "previous_address": "+15555550170",
+                "address": "222222222222222@lid"
+            }
+        }),
+        serde_json::json!({
+            "update_identity": {
+                "previous_address": "+15555550100",
+                "address": "sam.lee@example.com"
+            }
+        }),
+    ] {
+        let _: serde_json::Value =
+            crate::test_support::patch_json(&fixture.state, &path, &account.token, body).await;
+    }
 
-    assert!(
-        matches!(&refusal, Err(ContactEditError::Refused(m)) if m == "ann@example.com is an email address, and WhatsApp carries no email addresses"),
-        "{refusal:?}"
-    );
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    for (address, expected) in [
+        ("123456789012345@lid", ("other", "whatsapp")),
+        ("sam@example.com", ("email", "phone")),
+        ("222222222222222@lid", ("other", "whatsapp")),
+        ("sam.lee@example.com", ("email", "phone")),
+    ] {
+        assert_eq!(
+            handle_type_and_service(&mut conn, account.account_id, address).await,
+            (expected.0.to_string(), Some(expected.1.to_string())),
+            "{address}"
+        );
+    }
 }
 
 /// A WhatsApp internal id the import stored as `other` is linked as that row
@@ -1904,26 +1967,27 @@ async fn replacing_an_identity_under_another_service_moves_it_there() {
 }
 
 /// With no service named the new identity stays on the old one's service,
-/// and WhatsApp carries no email address, so the edit is refused with the
-/// reason and the contact keeps its number. It used to store an email
-/// identity on WhatsApp (#1411).
+/// and an `@` address on WhatsApp is `other`, so a WhatsApp number swapped
+/// for one is an `other` identity on WhatsApp. It used to store an email
+/// identity on WhatsApp (#1411), and then refused the swap (#2709).
 #[tokio::test]
-async fn replacing_a_whatsapp_number_with_an_email_address_is_refused() {
+async fn replacing_a_whatsapp_number_with_an_at_address_keeps_it_on_whatsapp_as_other() {
     let fixture = test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let contact_id = contact_on_whatsapp(&mut conn, account).await;
 
     let answer =
-        try_replace_identity(&mut conn, account, contact_id, "ann@example.com", None).await;
+        try_replace_identity(&mut conn, account, contact_id, "123456789012345@lid", None).await;
 
-    assert!(
-        matches!(&answer, Err(ContactEditError::Refused(m)) if m == "ann@example.com is an email address, and WhatsApp carries no email addresses"),
-        "{answer:?}"
-    );
+    assert!(matches!(answer, Ok(true)), "{answer:?}");
     assert_eq!(
         contact_identities(&mut conn, account, contact_id).await,
-        [("+15555550100".to_string(), "whatsapp".to_string())]
+        [("123456789012345@lid".to_string(), "whatsapp".to_string())]
+    );
+    assert_eq!(
+        handle_type_and_service(&mut conn, account, "123456789012345@lid").await,
+        ("other".to_string(), Some("whatsapp".to_string()))
     );
 }
 
@@ -2018,8 +2082,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2027,6 +2090,8 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
     assert_eq!(page.items[0].last_modified, detail.last_modified);
 
     const OLD: &str = "2000-01-01 00:00:00";
+    // `mutate_committed` edits at `fixed_instant`, written as this.
+    const TOUCHED: &str = "2026-03-14 12:00:00";
     set_contact_last_modified(&mut conn, account, contact_id, OLD).await;
     assert!(
         mutate_committed(
@@ -2045,7 +2110,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         .unwrap()
     );
     let after_rename = contact_last_modified(&mut conn, account, contact_id).await;
-    assert_ne!(after_rename, OLD);
+    assert_eq!(after_rename, TOUCHED);
 
     set_contact_last_modified(&mut conn, account, contact_id, OLD).await;
     assert!(
@@ -2068,7 +2133,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         .unwrap()
     );
     let after_add = contact_last_modified(&mut conn, account, contact_id).await;
-    assert_ne!(after_add, OLD);
+    assert_eq!(after_add, TOUCHED);
 
     // Re-adding the same handle is a no-op and must not bump.
     set_contact_last_modified(&mut conn, account, contact_id, OLD).await;
@@ -2116,9 +2181,9 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         .await
         .unwrap()
     );
-    assert_ne!(
+    assert_eq!(
         contact_last_modified(&mut conn, account, contact_id).await,
-        OLD
+        TOUCHED
     );
 }
 
@@ -2153,7 +2218,7 @@ async fn insert_contact_with_handle(
     contact_id
 }
 
-async fn insert_direct_conversation(
+async fn insert_one_to_one_conversation(
     conn: &mut SqliteConnection,
     account: i64,
     conversation_id: i64,
@@ -2175,17 +2240,12 @@ async fn insert_direct_conversation(
             .await
             .unwrap(),
     };
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, $3, 'individual', 't.jsonl')",
-    )
-    .bind(conversation_id)
-    .bind(account)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(conversation_id),
+        ..ConversationRow::new(account, handle_id)
+    }
+    .insert(conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES ($1, $2, NULL)",
@@ -2196,11 +2256,11 @@ async fn insert_direct_conversation(
     .await
     .unwrap();
     // Received messages, so the peer is their sender, as an import records.
-    for (i, ts) in timestamps.iter().enumerate() {
+    for (i, rfc3339) in timestamps.iter().enumerate() {
         MessageRow {
             source: service,
             service: Some(service),
-            timestamp: ts,
+            timestamp: stored_time(rfc3339),
             sender_handle_id: Some(handle_id),
             sort_order: i as i64,
             body: Some("hi"),
@@ -2218,7 +2278,7 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
     let mut conn = fixture.conn().await;
     insert_contact_with_handle(&mut conn, account, "Messaged", "+15555550100").await;
     insert_contact_with_handle(&mut conn, account, "Silent", "+15555550135").await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         1,
@@ -2233,8 +2293,7 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
         account,
         "messages:>0",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2247,8 +2306,7 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
         account,
         "messages:0",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2257,14 +2315,14 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
     assert_eq!(never.items[0].name, "Silent");
 }
 
-/// One message in `conversation_id` at `ts`, with `phone`'s handle as its
+/// One message in `conversation_id` at `rfc3339`, with `phone`'s handle as its
 /// sender handle; `is_from_me` marks it as the owner's own.
 async fn insert_message_from(
     conn: &mut SqliteConnection,
     account: i64,
     conversation_id: i64,
     phone: &str,
-    ts: &str,
+    rfc3339: &str,
     is_from_me: bool,
 ) {
     let handle_id: i64 = sqlx::query_scalar(
@@ -2277,7 +2335,7 @@ async fn insert_message_from(
     .unwrap();
     MessageRow {
         service: Some("imessage"),
-        timestamp: ts,
+        timestamp: stored_time(rfc3339),
         is_from_me,
         sender_handle_id: Some(handle_id),
         body: Some("hi"),
@@ -2303,9 +2361,9 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     account_profile::link_account_handle(&mut conn, account, "+15555550128", IdentityType::Phone)
         .await
         .unwrap();
-    insert_direct_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
-    insert_direct_conversation(&mut conn, account, 2, "+15555550135", "imessage", &[]).await;
-    insert_direct_conversation(&mut conn, account, 3, "+15555550143", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 2, "+15555550135", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 3, "+15555550143", "imessage", &[]).await;
     insert_message_from(
         &mut conn,
         account,
@@ -2353,7 +2411,7 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
         true,
     )
     .await;
-    // Older wrote again this year, in a group chat now in the trash: the
+    // Older wrote again this year, in a group conversation now in the trash: the
     // column leaves the trash out, as `last-message:` does (#725).
     let binned_chat = account_profile::link_account_handle(
         &mut conn,
@@ -2363,16 +2421,12 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (4, $1, $2, 'group', 'Binned', 'b.jsonl')",
-    )
-    .bind(account)
-    .bind(binned_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(4),
+        ..ConversationRow::group(account, binned_chat, "Binned")
+    }
+    .insert(&mut conn)
+    .await;
     insert_message_from(
         &mut conn,
         account,
@@ -2394,11 +2448,11 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
         [
             (
                 "Recent".to_string(),
-                Some("2024-06-01T00:00:00Z".to_string())
+                Some("2024-06-01T00:00:00.000Z".to_string())
             ),
             (
                 "Older".to_string(),
-                Some("2024-03-01T00:00:00Z".to_string())
+                Some("2024-03-01T00:00:00.000Z".to_string())
             ),
             ("Silent".to_string(), None),
         ]
@@ -2424,8 +2478,7 @@ async fn names_and_last_heard(
         account,
         "",
         &parse_sort(Some(sort), &CONTACT_SORT_KEYS, &DEFAULT_CONTACT_SORT).unwrap(),
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2454,7 +2507,7 @@ async fn contacts_route_accepts_last_heard_and_refuses_other_keys() {
         &account.token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    expect_problem(status, &body, ProblemType::ValidationFailed);
     assert!(body.contains("name, last_heard"), "{body}");
 }
 
@@ -2476,8 +2529,7 @@ async fn list_contacts_filters_no_handle() {
         account,
         "identity:none",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2495,7 +2547,7 @@ async fn list_contacts_filters_service_or() {
     insert_contact_with_handle(&mut conn, account, "IMsg", "+15555550100").await;
     insert_contact_with_handle(&mut conn, account, "Sms", "+15555550135").await;
     insert_contact_with_handle(&mut conn, account, "Wa", "+15555550143").await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         1,
@@ -2504,7 +2556,7 @@ async fn list_contacts_filters_service_or() {
         &["2024-06-01T12:00:00Z"],
     )
     .await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         2,
@@ -2513,7 +2565,7 @@ async fn list_contacts_filters_service_or() {
         &["2024-06-01T12:00:00Z"],
     )
     .await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         3,
@@ -2528,8 +2580,7 @@ async fn list_contacts_filters_service_or() {
         account,
         "service:imessage,sms",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2541,7 +2592,7 @@ async fn list_contacts_filters_service_or() {
 }
 
 /// The header every address book starts with.
-const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,groups,service,identity_type,identity";
+const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,service,identity,groups";
 
 /// `POST /v1/contacts` with a `text/csv` body.
 async fn load_address_book(
@@ -2569,8 +2620,8 @@ async fn get_address_book(
     accept: Option<&str>,
 ) -> (StatusCode, String, String, String) {
     let server = crate::test_support::serve(&fixture.state).await;
-    let mut request = reqwest::Client::new()
-        .post(format!("{}/v1/contacts/address-book", server.base()))
+    let mut request = server
+        .post("/v1/contacts/address-book")
         .bearer_auth(&account.token)
         .json(&body);
     if let Some(accept) = accept {
@@ -2600,9 +2651,9 @@ async fn an_address_book_loads_and_a_bad_one_is_a_422_naming_each_row() {
     let (fixture, account) = fixture_with_account().await;
     let bad = format!(
         "{ADDRESS_BOOK_HEADER}\n\
-         a,Dana,,phone,phone,+15555550100\n\
-         b,Eli,,carrier pigeon,phone,+15555550101\n\
-         c,Flo,,phone,email,flo.example.com\n"
+         a,Dana,Text Message,+15555550100,\n\
+         b,Eli,carrier pigeon,+15555550101,\n\
+         c,Flo,Email,flo.example.com,\n"
     );
     let (status, text) = load_address_book(&fixture, &account, "", bad).await;
     let problem = crate::test_support::expect_problem(
@@ -2620,8 +2671,8 @@ async fn an_address_book_loads_and_a_bad_one_is_a_422_naming_each_row() {
 
     let good = format!(
         "{ADDRESS_BOOK_HEADER}\n\
-         a,Dana,Family,phone,phone,+15555550100\n\
-         a,Dana,Family,phone,email,dana@example.com\n"
+         a,Dana,Text Message,+15555550100,Family\n\
+         a,Dana,Email,dana@example.com,Family\n"
     );
     let (status, text) = load_address_book(&fixture, &account, "", good).await;
     assert_eq!(status, StatusCode::OK, "{text}");
@@ -2651,7 +2702,7 @@ async fn the_mode_parameter_picks_append_or_edit() {
         crate::test_support::get_json(&fixture.state, "/v1/contacts", &account.token).await;
     let id = page["items"][0]["id"].as_i64().unwrap();
     // The contact stays in the file with a different identity.
-    let file = format!("{ADDRESS_BOOK_HEADER}\n{id},Contact 0,,phone,email,zero@example.com\n");
+    let file = format!("{ADDRESS_BOOK_HEADER}\n{id},Contact 0,Email,zero@example.com,\n");
 
     for query in ["", "?mode=append"] {
         let (status, text) = load_address_book(&fixture, &account, query, file.clone()).await;
@@ -2666,7 +2717,7 @@ async fn the_mode_parameter_picks_append_or_edit() {
     assert_eq!(body["contacts_updated"], 1, "{text}");
 
     let (status, text) = load_address_book(&fixture, &account, "?mode=replace", file).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{text}");
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
 /// The file is the body and `text/csv` is its only format. A vCard, which
@@ -2694,7 +2745,7 @@ async fn an_address_book_that_is_not_text_csv_is_a_415() {
         "/v1/contacts",
         &account.token,
         "text/csv; charset=utf-8",
-        format!("{ADDRESS_BOOK_HEADER}\n,Dana,,phone,phone,+15555550100\n"),
+        format!("{ADDRESS_BOOK_HEADER}\n,Dana,Text Message,+15555550100,\n"),
     )
     .await;
     assert_eq!(
@@ -2708,7 +2759,7 @@ async fn an_address_book_that_is_not_text_csv_is_a_415() {
 /// to make up the size.
 fn address_book_of(len: usize) -> String {
     let head = format!("{ADDRESS_BOOK_HEADER}\n,");
-    let tail = ",,phone,phone,+15555550100\n";
+    let tail = ",Text Message,+15555550100,\n";
     let padding = len
         .checked_sub(head.len() + tail.len())
         .expect("len holds the fixed part of the file");
@@ -2718,10 +2769,10 @@ fn address_book_of(len: usize) -> String {
 }
 
 /// The size cap is on the file as sent: a book of exactly
-/// `MAX_ADDRESS_BOOK_BYTES` loads, and one byte more answers `413` with
-/// `read_body_limited`'s sentence, which proves the route's own cap answered
-/// and not the app-wide body limit layer (whose sentence is "the request
-/// body is too large") or Axum's 2 MiB extractor default.
+/// `MAX_ADDRESS_BOOK_BYTES` loads, and one byte more answers `413`. Only the
+/// route's own cap can refuse that body: the app-wide body limit layer's
+/// 512 MiB cap is far above it, and the route reads the body itself rather
+/// than through the JSON extractor.
 #[tokio::test]
 async fn an_address_book_at_the_size_cap_loads_and_one_byte_over_is_a_413() {
     use address_book::MAX_ADDRESS_BOOK_BYTES;
@@ -2752,8 +2803,8 @@ async fn an_address_book_at_the_size_cap_loads_and_one_byte_over_is_a_413() {
     );
     assert_eq!(
         problem.detail.as_deref(),
-        Some("request body too large"),
-        "the sentence must be the route's own: {text}"
+        Some("the request body is too large"),
+        "{text}"
     );
 }
 
@@ -2777,11 +2828,11 @@ async fn the_address_book_export_answers_a_csv_attachment() {
         assert_eq!(lines[0], ADDRESS_BOOK_HEADER);
         assert_eq!(lines.len(), 3, "{text}");
         assert!(
-            lines[1].ends_with(",Contact 0,,phone,phone,'+15555550100"),
+            lines[1].ends_with(",Contact 0,Text Message,'+15555550100,"),
             "{text}"
         );
         assert!(
-            lines[2].ends_with(",Contact 1,,phone,phone,'+15555550101"),
+            lines[2].ends_with(",Contact 1,Text Message,'+15555550101,"),
             "{text}"
         );
     }
@@ -2922,8 +2973,7 @@ async fn unknown_group_collects_contacts_missing_a_name_or_an_identity() {
         account,
         "group:unknown",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2952,8 +3002,7 @@ async fn unknown_group_collects_contacts_missing_a_name_or_an_identity() {
         account,
         "group:unknown",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -2976,6 +3025,7 @@ async fn list_contacts_filters_by_group_and_no_group() {
         &[family],
         "Family",
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2985,8 +3035,7 @@ async fn list_contacts_filters_by_group_and_no_group() {
         account,
         "group:Family",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -3000,8 +3049,7 @@ async fn list_contacts_filters_by_group_and_no_group() {
         account,
         r#"group:"Family""#,
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -3013,8 +3061,7 @@ async fn list_contacts_filters_by_group_and_no_group() {
         account,
         "group:none",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        FIRST_PAGE,
         crate::search::tests::clock(),
     )
     .await
@@ -3066,10 +3113,10 @@ async fn contact_list_takes_the_search_language() {
 #[tokio::test]
 async fn contact_list_refuses_a_word_from_another_list() {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
-    let status =
-        crate::test_support::get_status(&fixture.state, "/v1/contacts?q=from:me", &account.token)
+    let (status, text) =
+        crate::test_support::get_raw(&fixture.state, "/v1/contacts?q=from:me", &account.token)
             .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    expect_problem(status, &text, ProblemType::SearchQueryInvalid);
 }
 
 #[test]
@@ -3105,9 +3152,9 @@ async fn the_contact_list_is_a_page_and_summaries_are_items() {
     assert!(page["items"].is_array());
     assert!(page.get("contacts").is_none());
 
-    let status =
-        crate::test_support::get_status(&state, "/v1/contacts?limit=501", &user.token).await;
-    assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    let (status, text) =
+        crate::test_support::get_raw(&state, "/v1/contacts?limit=501", &user.token).await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 
     let summaries: serde_json::Value = crate::test_support::post_json(
         &state,
@@ -3127,12 +3174,11 @@ async fn the_contact_list_is_a_page_and_summaries_are_items() {
 #[tokio::test]
 async fn summaries_of_no_contacts_are_refused() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/contacts/summaries",
         &user.token,
-        "application/json",
-        r#"{"ids":[]}"#,
+        serde_json::json!({ "ids": [] }),
     )
     .await;
     crate::test_support::expect_problem(
@@ -3140,12 +3186,11 @@ async fn summaries_of_no_contacts_are_refused() {
         &text,
         crate::problem::ProblemType::ValidationFailed,
     );
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/contacts/summaries",
         &user.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     crate::test_support::expect_problem(
@@ -3187,7 +3232,7 @@ async fn trashed_contact_row_count(conn: &mut SqliteConnection, account_id: i64,
 async fn trashed_contact_fixture() -> (TestFixture, RegisteredAccount, i64) {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
     let mut conn = fixture.conn().await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account.account_id,
         1,
@@ -3253,7 +3298,7 @@ async fn contact_delete_makes_it_unknown_and_leaves_its_conversations_alone() {
     .await;
     assert_eq!(detail["name"], "", "{detail}");
     assert_eq!(detail["unknown"], true, "{detail}");
-    assert_eq!(detail["direct_conversations"], 1, "{detail}");
+    assert_eq!(detail["one_to_one_conversations"], 1, "{detail}");
     assert_eq!(detail["total_messages"], 2, "{detail}");
     let conversations: serde_json::Value = crate::test_support::get_json(
         &fixture.state,
@@ -3284,7 +3329,7 @@ async fn contact_delete_refuses_a_contact_that_is_not_in_the_trash() {
         &account.token,
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    expect_problem(status, &body, ProblemType::StateConflict);
     assert!(body.contains("not in the trash"), "{body}");
     let mut conn = fixture.conn().await;
     assert_eq!(
@@ -3300,22 +3345,18 @@ async fn contact_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_contact_fixture().await;
     let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let status =
-        crate::test_support::delete_status(&fixture.state, "/v1/contacts/999999", &alice.token)
-            .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, text) =
+        crate::test_support::delete_raw(&fixture.state, "/v1/contacts/999999", &alice.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 
-    let status = crate::test_support::delete_status(
+    // Bob must not learn the id exists.
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/contacts/{alices}"),
         &bob.token,
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::NOT_FOUND,
-        "Bob must not learn the id exists"
-    );
+    expect_problem(status, &text, ProblemType::NotFound);
     let mut conn = fixture.conn().await;
     assert_eq!(
         contact_name_and_origin(&mut conn, alices).await.0,
@@ -3329,13 +3370,13 @@ async fn contact_delete_needs_the_delete_permission() {
     let (fixture, account, id) = trashed_contact_fixture().await;
     fixture.turn_off_delete(account.account_id).await;
 
-    let status = crate::test_support::delete_status(
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/contacts/{id}"),
         &account.token,
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::InsufficientScope);
     let mut conn = fixture.conn().await;
     assert_eq!(contact_name_and_origin(&mut conn, id).await.0, "Contact 0");
 }
@@ -3460,28 +3501,28 @@ async fn contact_restore_twice_is_204_with_marker_gone() {
 async fn contact_trash_404s_for_an_unknown_id() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/contacts/999999/trash",
         &account.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
 async fn contact_restore_404s_for_an_unknown_id() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/contacts/999999/restore",
         &account.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -3495,14 +3536,14 @@ async fn contact_trash_404s_for_another_accounts_contact() {
 
     // Bob trashing Alice's contact id must 404, not 403 — a 403 would
     // confirm the id exists in someone else's account.
-    let status = crate::test_support::post_status(
+    let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/contacts/{alice_contact_id}/trash"),
         &bob.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = fixture.state.db.acquire().await.unwrap();
     assert_eq!(
@@ -3529,14 +3570,14 @@ async fn contact_restore_404s_for_another_accounts_contact() {
 
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/contacts/{alice_contact_id}/restore"),
         &bob.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = fixture.state.db.acquire().await.unwrap();
     assert_eq!(
@@ -3556,16 +3597,19 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
     let q = format!("groups:{values}");
     assert!(q.len() <= 2048, "{}", q.len());
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = reqwest::Client::new()
-        .get(format!("{}/v1/contacts", server.base()))
+    let response = server
+        .get("/v1/contacts")
         .query(&[("q", q.as_str())])
         .bearer_auth(&user.token)
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["detail"], "The search has too many parts.", "{body}");
+    let problem = expect_problem_response(response, ProblemType::SearchQueryInvalid).await;
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("the search has too many parts"),
+        "{problem:?}"
+    );
 }
 
 /// The Demo Account holds Demo Data every visitor shares (ADR 0016). A load
@@ -3588,7 +3632,7 @@ async fn an_address_book_load_on_the_demo_account_is_refused() {
     };
 
     // Edit with the identity cells blank would delete the Unknown for good.
-    let edit = format!("{ADDRESS_BOOK_HEADER}\n{contact_id},,,,,\n");
+    let edit = format!("{ADDRESS_BOOK_HEADER}\n{contact_id},,,,\n");
     let (status, text) = load_address_book(&fixture, &visitor, "?mode=edit", edit).await;
     crate::test_support::expect_problem(
         status,
@@ -3596,7 +3640,7 @@ async fn an_address_book_load_on_the_demo_account_is_refused() {
         crate::problem::ProblemType::DemoAccountProtected,
     );
     // Append would store a new person, by name and number.
-    let append = format!("{ADDRESS_BOOK_HEADER}\na,Real Person,,phone,phone,+15555550199\n");
+    let append = format!("{ADDRESS_BOOK_HEADER}\na,Real Person,Text Message,+15555550199,\n");
     let (status, text) = load_address_book(&fixture, &visitor, "", append).await;
     crate::test_support::expect_problem(
         status,
@@ -3639,7 +3683,7 @@ async fn an_address_book_load_needs_no_import_export_or_delete_permission() {
         .await
         .unwrap();
     }
-    let append = format!("{ADDRESS_BOOK_HEADER}\na,Ada Lovelace,,phone,phone,+15555550142\n");
+    let append = format!("{ADDRESS_BOOK_HEADER}\na,Ada Lovelace,Text Message,+15555550142,\n");
     let (status, text) = load_address_book(&fixture, &account, "", append).await;
     assert_eq!(status, StatusCode::OK, "{text}");
 }
@@ -3800,7 +3844,156 @@ async fn mutate_committed(
     body: &UpdateContactRequest,
 ) -> Result<bool, ContactEditError> {
     let mut tx = crate::db::begin_write(conn).await?;
-    let changed = mutate_contact(&mut tx, account_id, contact_id, body).await?;
+    let changed = mutate_contact(
+        &mut tx,
+        account_id,
+        contact_id,
+        body,
+        crate::test_support::fixed_instant(),
+    )
+    .await?;
     tx.commit().await?;
     Ok(changed)
+}
+
+/// `POST /v1/contacts/vcard-address-book` with the vCard `body` and the query
+/// `query`: the status, the `Content-Type`, the `Content-Disposition`, and
+/// the body.
+async fn get_vcard_address_book(
+    fixture: &TestFixture,
+    account: &RegisteredAccount,
+    query: &str,
+    body: &str,
+    accept: Option<&str>,
+) -> (StatusCode, String, String, String) {
+    let server = crate::test_support::serve(&fixture.state).await;
+    let mut request = server
+        .post(&format!("/v1/contacts/vcard-address-book{query}"))
+        .bearer_auth(&account.token)
+        .header(reqwest::header::CONTENT_TYPE, "text/vcard; charset=utf-8")
+        .body(body.to_string());
+    if let Some(accept) = accept {
+        request = request.header(reqwest::header::ACCEPT, accept);
+    }
+    let response = request.send().await.unwrap();
+    let status = response.status();
+    let header = |name: reqwest::header::HeaderName| {
+        response
+            .headers()
+            .get(name)
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default()
+    };
+    let content_type = header(reqwest::header::CONTENT_TYPE);
+    let disposition = header(reqwest::header::CONTENT_DISPOSITION);
+    // Read the body before `server` drops and aborts the task.
+    let text = response.text().await.unwrap();
+    (status, content_type, disposition, text)
+}
+
+/// A vCard file converts to an address book attachment the person edits and
+/// loads, and nothing goes into the account: the conversion stores nothing.
+/// The answer is a file, so an `Accept` of `text/csv` is answered.
+#[tokio::test]
+async fn a_vcard_file_converts_to_an_address_book_attachment_and_stores_nothing() {
+    let (fixture, account) = fixture_with_account().await;
+    let cards = "BEGIN:VCARD\nVERSION:3.0\nFN:Dana\nTEL;TYPE=CELL:(555) 555-0100\n\
+                 EMAIL:dana@example.com\nEND:VCARD\n";
+    for accept in [None, Some("text/csv")] {
+        let (status, content_type, disposition, text) =
+            get_vcard_address_book(&fixture, &account, "?country=US", cards, accept).await;
+        assert_eq!(status, StatusCode::OK, "{accept:?}: {text}");
+        assert_eq!(content_type, "text/csv; charset=utf-8");
+        assert_eq!(disposition, "attachment; filename=\"address-book.csv\"");
+        assert_eq!(
+            text,
+            format!(
+                "{ADDRESS_BOOK_HEADER}\n\
+                 card1,Dana,Text Message,'+15555550100,\n\
+                 card1,Dana,Email,dana@example.com,\n"
+            )
+        );
+    }
+    let page: serde_json::Value =
+        crate::test_support::get_json(&fixture.state, "/v1/contacts", &account.token).await;
+    assert_eq!(page["total"], 0, "the conversion stored a contact");
+}
+
+/// A country the server does not list, and a file with no card in it, are
+/// the caller's to fix.
+#[tokio::test]
+async fn a_vcard_conversion_refuses_an_unknown_country_and_a_file_with_no_card() {
+    let (fixture, account) = fixture_with_account().await;
+    let card = "BEGIN:VCARD\nFN:Dana\nTEL:5555550100\nEND:VCARD\n";
+    let (status, _, _, text) =
+        get_vcard_address_book(&fixture, &account, "?country=Narnia", card, None).await;
+    let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors.unwrap(),
+        ["country \"Narnia\" is not a country GET /v1/phone-countries lists"]
+    );
+
+    let (status, _, _, text) =
+        get_vcard_address_book(&fixture, &account, "", "Name,Phone\nDana,555\n", None).await;
+    let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors.unwrap(),
+        ["the file holds no vCard: it has no BEGIN:VCARD line"]
+    );
+}
+
+/// A card that writes a name in a charset the server cannot read is
+/// refused, naming the card and the charset, rather than converted with the
+/// name garbled.
+#[tokio::test]
+async fn a_vcard_conversion_refuses_a_name_in_a_charset_it_cannot_read() {
+    let (fixture, account) = fixture_with_account().await;
+    let cards = "BEGIN:VCARD\nFN:Dana\nTEL:5555550100\nEND:VCARD\n\
+                 BEGIN:VCARD\nVERSION:2.1\n\
+                 FN;CHARSET=X-MADE-UP;ENCODING=QUOTED-PRINTABLE:=82=A0\n\
+                 TEL:5555550101\nEND:VCARD\n";
+    let (status, _, _, text) = get_vcard_address_book(&fixture, &account, "", cards, None).await;
+    let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors.unwrap(),
+        [
+            "card 2 writes its FN in the character set \"X-MADE-UP\", which Message Crate cannot read"
+        ]
+    );
+}
+
+/// `/v1/contacts/{id}` takes an `i64`, and three literal routes sit beside
+/// it: `summaries`, `unmatched-identities`, and `address-book`. This test
+/// covers the first two. Each is a `POST`, and editing a contact is a
+/// `PATCH`, so if the `{id}` route ever swallowed one of them the request
+/// would come back 405 (no `POST` on `/v1/contacts/{id}`) instead of
+/// reaching its own handler. Each assertion below distinguishes
+/// "matched my route and rejected my body" from "matched the wrong route".
+#[tokio::test]
+async fn literal_contact_routes_are_not_captured_by_the_id_route() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let user = register_via_api(&state, "contact-routes", "hunter2hunter2").await;
+
+    assert_eq!(
+        get_status(&state, "/v1/contacts", &user.token).await,
+        StatusCode::OK
+    );
+
+    // A real id still reaches the detail handler: an unknown contact is its
+    // 404, not a 400 from a failed `i64` path parse.
+    let (status, text) = get_raw(&state, "/v1/contacts/999999", &user.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+
+    for path in [
+        "/v1/contacts/summaries",
+        "/v1/contacts/unmatched-identities",
+    ] {
+        let status = post_status(&state, path, &user.token, serde_json::json!({})).await;
+        assert_ne!(
+            status,
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{path} was captured by /v1/contacts/{{id}}"
+        );
+    }
 }

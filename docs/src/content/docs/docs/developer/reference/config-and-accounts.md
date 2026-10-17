@@ -28,10 +28,11 @@ cors_origins = [
 
 - A relative path resolves against the directory above the config file's directory: the repository root for `config/config.toml`. The rule holds for every path in the file (`db`, `data_dir`, `static_dir`) and for the flags that replace one of them (`--db`, `--static-dir`), so `--db data/messagecrate.db` names the same file as `db = "data/messagecrate.db"` whatever directory the command runs in. `serve --data-dir` reads no config file, so there `--data-dir` and `--static-dir` resolve against the directory the server is started in.
 - `assets_dir` and `assets_converted_dir` are each one directory name, not a path: an account's originals are in `data_dir/<account_id>/<assets_dir>` and its Previews in `data_dir/<account_id>/<assets_converted_dir>`. The server refuses a value that is absolute, contains a `/`, `\` or `:`, starts with `.` (`.` and `..` included), ends in `.` or a space, or is empty, with an error naming the key, and refuses the two keys being the same name in any letter case. Why: an absolute path, or a Windows drive such as `C:assets`, would put every account's attachments in one directory; a separator or `..` would reach outside the account's own; the server keeps `.removing` beside the attachments and deletes what is in it; Windows drops a trailing `.` or space, and macOS and Windows ignore letter case by default, so `assets.` or `Assets` could be another key's directory; and originals and Previews are cleaned up under different rules, so they need a directory each.
+- Only the operating-system user the server runs as can read `data_dir` and `db`. Every command that opens the database makes `data_dir` with mode `0700` and takes group and other access off one that already has it, and makes the database file, its `-wal` and `-shm` files, and the copy kept before a schema rebuild `0600`. The directory that holds `db` is made `0700` when the server makes it, and is otherwise left as it is. A directory another user owns cannot be changed: the server writes a warning in its log and goes on. Why: the database and `data_dir` hold every account's messages and attachments, which another user of the same computer could otherwise read without a password. Windows has no such modes: there the directories and files take the access of the directory they are made in.
 - `[server]` is required for `serve`.
 - `reset-demo` rebuilds the Demo Account in the database `db` names and never writes the config file.
 - `cors_origins` lists origins allowed on top of the three the packaged desktop app runs from (`tauri://localhost`, `http://tauri.localhost`, `https://tauri.localhost`), which the server allows whether or not you name them. The website the server serves is same-origin and needs no entry either, so an empty list is the right setting for most installs. Add the Vite origins (`http://localhost:5173`, `http://127.0.0.1:5173`) when running the dev UI against this server.
-- `static_dir` is the directory holding the built website, served at `/`. It defaults to `static`.
+- `static_dir` is the directory holding the built website, served at `/`. It defaults to `static`. Everything in it is served to anyone who can reach the server, without a login, so `serve` refuses to start when `data_dir` or `db` is inside it, or it is inside `data_dir`. The paths are compared after every symlink and `..` is resolved.
 - `serve` runs without a config file when given `--data-dir <directory>`: the database is `messagecrate.db` in that directory, the accounts' files sit beside it, and every `[server]` key has its default. `--bind` and `--static-dir` override `bind` and `static_dir`, with or without a config file. The desktop app starts the server this way, and passes `--tools-dir` with its Tools Directory, where ffmpeg and ffprobe are looked for when they are not on `PATH`. The config file has no key for it, because a server started by hand finds ffmpeg on `PATH` or makes no Previews or Thumbnails.
 - Source names are **not** listed in TOML — each import registers its own
   source slug for that account in the database. The files on disk carry no
@@ -47,18 +48,48 @@ Only `serve`, `create-database` and `reset-demo` make a new database, at a path 
 Every other command (`import`, `imports discard`, `dedupe-cross-source`, `process-assets`, `create-owner`, `reset-owner-password`) stops with an error naming the path when no database is there, so a mistyped `--db` creates nothing.
 
 A Message Crate database stamped with another Schema Fingerprint is still rebuilt empty on open, as after any schema change.
+Before the rebuild drops its tables, the server copies it with `VACUUM INTO` to `<database>.before-rebuild-<old fingerprint>` beside it, and refuses to rebuild when the copy fails.
+`reset-demo` refuses a database at another fingerprint before it takes a snapshot, because the snapshot would be rebuilt and its copy kept in the reset's work directory, which is deleted.
+`serve` keeps the copy beside the database and rebuilds it, and a reset can follow.
+The schema is made sure of only when the pool opens and when `reset-demo` builds a database, never by a request, so a request never rebuilds a database the server is serving.
+Every other command refuses to rebuild a database while a server or `reset-demo` has it open, naming the database and saying to stop the server, because the server would go on answering from the empty database until it restarted.
+The command takes the database's operation lock (`<database>.operation.lock`, the lock `serve` and `reset-demo` hold) for the rebuild, and a database at this build's fingerprint opens beside a running server as before.
 
-### Server asset limits
+### Video and audio conversions
 
-`[server]` also accepts one optional upload setting:
+`[server]` also accepts one optional conversion setting:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `asset_part_size` | `67108864` (64 MiB) | Largest chunk of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups. The chunk size a client is told is this or the attachment size limit, whichever is smaller. |
+| `transcode_stall_secs` | `120` (2 minutes) | How many seconds a video or audio conversion may go without moving forward in the file before ffmpeg is stopped. Must be greater than 0; a file that sets 0 is refused with an error naming the key. |
+
+A conversion that keeps moving runs as long as it needs, so a long video on a slow computer is never cut off for its length.
+One that stops moving for this many seconds is stopped, and so is a video conversion that runs past twice the file's length, as looping on a damaged file.
+An audio conversion has a time limit instead: twenty times the file's length, at least 10 minutes and at most 6 hours, or an hour when its length isn't known.
+A conversion that passes the length the file states is given at least that hour.
+Reading a file's details, reading the one frame of a Thumbnail or of an image's Preview, and the check that finds ffmpeg have a fixed limit of 15 seconds that no key changes, because each takes well under a second on a working file.
+`serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
+Why the rules: `docs/architecture/media.md`.
+
+### Server upload and body limits
+
+`[server]` also accepts three optional settings for uploads and request bodies:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `body_total_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
+| `body_stall_secs` | `60` | Seconds a request body may go with no byte arriving before the server stops reading it. Every body is held to it. A client that takes no byte of an answer for this long has its connection closed; a download that is still moving is never cut off. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
+| `body_total_secs` | `300` (5 minutes) | Seconds a whole request body may take to arrive before the server stops reading it: from the start of the read for an upload, and from when the request arrives for any other body. Every body is held to it, as to `body_stall_secs`. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
+
+The server refuses a config file that sets either time to 0, naming the key.
+A body that meets either limit is refused with `408 Request Timeout` and the [`body-stalled`](/docs/developer/reference/errors/body-stalled/) problem type, and none of it is stored. Sending the request again can succeed, and for an upload, running the import again continues it.
+Why: an import batch holds one of the server's two import slots while it arrives, so a client that stops sending part-way, such as a laptop that goes to sleep, must not hold it for long.
+`GET /v1/server` states both limits as `body_stall_secs` and `body_total_secs`, and the desktop app's Upload waits for each upload's answer as long as the server says it may take, plus 5 minutes for the server to save it.
+A server started with `--data-dir`, as the desktop app starts its own, uses the defaults.
 
 The server refuses a config file that carries a section or key it does not use.
 Every command that loads the file, `serve` included, stops with an error that names each unknown key and its section, for example ``[server] has a key the server does not use: `bnd` ``.
-Why: a misspelt key would otherwise load as its default, and a removed key would sit in the file looking as though it still held.
+Why: a misspelled key would otherwise load as its default, and a removed key would sit in the file looking as though it still held.
 
 The attachment size limit is not a config key, and a file that still sets `[server] asset_max_bytes` is refused with a message saying where the limit is set now.
 It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload.
@@ -74,15 +105,41 @@ The server refuses only a limit of zero, or one above 9223372036854775807, with 
 
 No other request body is held to the attachment size limit.
 Each part of a multipart upload is held to the part size the upload was given when it started.
-Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, and 512 MiB for an import batch or any other body.
+Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 16 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
 Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
 A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
 
+### Connection limits
+
+The server holds every connection to two limits fixed in the server, with no config key:
+
+- A connection has 30 seconds to send a request's headers, counted from when it opens or from its previous answer, and the server closes it when it has not. So a connection with no request in it stays open 30 seconds.
+- At most 256 connections are open at once. The next one is accepted once one of them closes.
+
+A working client sends its headers at once and opens far fewer connections, so neither limit is one a setup needs to change.
+With the two body limits above, they keep one slow or broken client from holding the server: one that connects and sends nothing, sends its request a byte at a time, or stops part-way through a body.
+They do not make the server safe to reach from the internet.
+Nothing limits how long an answer takes to send, so an export download or a large attachment takes as long as the link needs.
+Why the rules: "Connections" in `docs/architecture/http-api.md` in the repository.
+
+### Stopping the server
+
+`serve` stops on Ctrl-C, on SIGTERM (what `docker stop` and a service manager send), and, under `--exit-with-parent`, once the process it names is gone.
+It stops taking connections, refuses an import batch that has not started its import, and a Demo Account build not yet started, with [`server-stopping`](/docs/developer/reference/errors/server-stopping/), and waits up to 30 seconds for the requests in flight and for a running Demo Account build and Thumbnail and Preview pass to stop.
+The 30 seconds are fixed in the server, not a config key, because Docker's stop time has to be longer than them, and the Compose files and the documented `docker run` commands set that time to 40 seconds (`stop_grace_period: 40s`, `--stop-timeout 40`).
+A server run any other way, such as under a service manager, needs at least that long between SIGTERM and a kill too.
+
+Work still running after the 30 seconds is cut off, and the server exits.
+The log then holds one `WARN` line saying how many requests the server stopped without, and one `WARN` line for each, with its request id, method, path and how long it had run.
+A Demo Account build cut off this way is removed at the next start.
+An import batch cut off this way is rolled back by SQLite, so it stores nothing, and the desktop app's Upload pauses and sends it again when it resumes.
+The desktop app kills the server it started when it closes, without this wait, because the only work it can cut off is the app's own Upload.
+
 ### Logging
 
-The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency, an `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.
+The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency (at `DEBUG` for a successful `GET /health` or file of the website), one `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.
 
-`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in its app-data directory. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/server-log.md` in the repository.
+`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in `~/message-crate/data`. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/server-log.md` in the repository.
 
 ## Per-account asset files
 
@@ -104,21 +161,31 @@ always account `1` and the demo account `2`; every other account takes an id
 from `100` up.
 
 - Web login uses username + password (Argon2id hash in `accounts.password_hash`).
+  A username is 1 to 128 characters: letters A to Z in either case, digits,
+  `_`, `-` or `.`.
+  The login matches it without regard to the case of its letters.
+  Letters from other scripts are refused, because a name such as `аdmin`
+  with a Cyrillic `а` would look the same as `admin` while naming another
+  account. The preferred name carries a name in any script.
+  An account created before 0.11.0 keeps a username with letters from
+  another script, and logs in with it.
+  Those letters must be typed in the case they were stored in, because the
+  login folds the case of A to Z only.
   An account may have no password (`password_hash` NULL); an empty password is
   accepted only for those accounts.
-- Guesses at one account's password are rate-limited to 20 per 60 seconds:
-  every login as the account, under any spelling of its username, and every
-  wrong current password sent to change the owner's password or to delete the
-  account.
-  Creating an account and claiming Message Crate are each limited to 20 attempts
-  per 60 seconds across the whole server, whatever the username.
+- A refused login waits about a second before the server answers, and so
+  does a wrong current password sent to change the owner's password or to
+  delete an account. Nothing counts the attempts, so wrong passwords never lock
+  an account out. The wait is not protection for a Message Crate reachable
+  from the internet: put it behind a proxy with TLS and a login of its own.
 - Each account can create named **API tokens** for programs that call the HTTP API
   (stored hashed; shown once when created). GUI sessions use a separate rotating
   token.
 - Four columns on `accounts` govern what a logged-in session may do, each
-  enforced by a guard in `server.rs` rather than left as decoration:
-  - `disabled` — may not log in; an existing session or API token for a
-    disabled account stops working immediately.
+  enforced by a guard in `auth.rs` rather than left as decoration:
+  - `disabled` — may not log in; the owner disabling the account ends its
+    session, so enabling it again needs a new login, and an existing API
+    token for a disabled account stops working immediately.
   - `can_import`, `can_export`, `can_delete` — may call the import endpoints,
     the export endpoints, and the endpoints that destroy message data,
     respectively. New accounts default to all three. A named API token

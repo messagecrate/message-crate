@@ -32,7 +32,7 @@ const REL_VIDEO: &str = "attachments/placeholder.mp4";
 const REL_OTHER: &str = "attachments/placeholder.bin";
 
 /// The three files an obfuscated export ships in place of its real media,
-/// as (path under the output directory, bytes). `message-ir-format` writes
+/// as (path under the output directory, bytes). `ir-format` writes
 /// them, since it owns the output directory and the check that an export
 /// wrote it.
 pub const PLACEHOLDER_FILES: [(&str, &[u8]); 3] = [
@@ -327,7 +327,7 @@ fn shape_preserving_filler(raw: &str, digest: &[u8; 32], digest_offset: usize) -
         } else {
             // Non-ASCII alphabetic (CJK, Cyrillic, accented Latin, Arabic,
             // etc.), emoji, symbols, combining marks, zero-width characters,
-            // and anything else — replace with a deterministic ASCII letter
+            // and anything else: replace with a deterministic ASCII letter
             // so nothing identifiable leaks through.
             let b = digest[i % digest.len()];
             i += 1;
@@ -511,11 +511,12 @@ pub fn resolve_obfuscator_with_log(
         let mut seed = [0u8; OBFUSCATE_SEED_BYTES];
         rand::rng().fill_bytes(&mut seed);
         let hex_key = hex::encode(seed);
-        let msg = format!("obfuscate-seed: {hex_key}  (save to reproduce; not written to output)");
+        let message =
+            format!("obfuscate-seed: {hex_key}  (save to reproduce; not written to output)");
         match log {
-            Some(emit) => emit(&msg),
+            Some(emit) => emit(&message),
             None => {
-                let _ = writeln!(std::io::stderr(), "{msg}");
+                let _ = writeln!(std::io::stderr(), "{message}");
             }
         }
         key_from_seed_bytes(&seed)

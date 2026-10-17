@@ -24,14 +24,14 @@ pub struct Counter {
 
 impl Counter {
     /// A counter named `key`. `one` is the whole line for a count of 1, such
-    /// as `Skipped 1 draft or unsent message`. `many` is the line for any
+    /// as `Skipped 1 draft or message never sent`. `many` is the line for any
     /// other count, with `{n}` where the count goes, such as
-    /// `Skipped {n} drafts or unsent messages`.
+    /// `Skipped {n} drafts or messages never sent`.
     pub const fn new(key: &'static str, one: &'static str, many: &'static str) -> Self {
         Self { key, one, many }
     }
 
-    /// The counter's key, such as `skipped_draft_or_outbox`.
+    /// The counter's key, such as `skipped_never_sent`.
     pub const fn key(self) -> &'static str {
         self.key
     }
@@ -148,13 +148,13 @@ pub const NOTIFICATIONS: Counter = Counter::new(
     "Kept {n} notifications as received messages",
 );
 
-/// Chats that name their person with no phone number or email address, each
+/// Conversations that name their person with no phone number or email address, each
 /// kept under the name alone and sent as a
-/// [`crate::NAME_ONLY_CHAT_NOTE`].
-pub const NAME_ONLY_CHAT: Counter = Counter::new(
-    "name_only_chat",
-    "Kept 1 chat under a name alone, with no phone number or email address",
-    "Kept {n} chats under a name alone, with no phone number or email address",
+/// [`crate::NAME_ONLY_CONVERSATION_NOTE`].
+pub const NAME_ONLY_CONVERSATION: Counter = Counter::new(
+    "name_only_conversation",
+    "Kept 1 conversation under a name alone, with no phone number or email address",
+    "Kept {n} conversations under a name alone, with no phone number or email address",
 );
 
 /// Parts left out of kept messages because they could not be read, each
@@ -375,7 +375,7 @@ mod tests {
             ATTACHMENTS_SAVED,
             CONVERSATIONS_OBFUSCATED,
             NOTIFICATIONS,
-            NAME_ONLY_CHAT,
+            NAME_ONLY_CONVERSATION,
             SKIPPED_UNREADABLE_PART,
             NOT_SMS_OR_MMS_LEFT_OUT,
             ATTACHMENTS_MISSING,

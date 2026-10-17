@@ -9,11 +9,12 @@ import {
   SelectValue,
 } from "react-aria-components";
 
-import { popupShadow } from "../lib/uiStyles";
+import { popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
+import { SelectChevronIcon } from "./icons";
 
 /** Default control, or the denser one the filter panels use. */
-export type SelectSize = "md" | "sm";
+type SelectSize = "md" | "sm";
 
 const TRIGGER_SIZE: Record<SelectSize, string> = {
   md: "rounded-xl px-3 py-2.5 text-[0.875rem]",
@@ -50,7 +51,7 @@ export function selectItemClassName(
 }
 
 /** The heading of a section in a Select's or a ComboBox's list. */
-export const selectSectionHeaderClassName =
+export const selectSectionHeaderClass =
   "px-2 pt-1.5 pb-1 text-[0.688rem] font-semibold uppercase tracking-[0.05em] text-muted";
 
 /**
@@ -83,26 +84,11 @@ export default function Select<T extends object>({
         className={`box-border flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden border border-border bg-bg font-normal text-text outline-none focus:border-accent ${TRIGGER_SIZE[size]} ${triggerClassName ?? ""}`}
       >
         <SelectValue className={`min-w-0 truncate ${valueClassName ?? ""}`} />
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          aria-hidden="true"
-          className="shrink-0 text-muted"
-        >
-          <path
-            d="M2.5 3.5 5 6l2.5-2.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <SelectChevronIcon size={10} className="shrink-0 text-muted" />
       </Button>
       <Popover
         data-mc-overlay=""
-        className={`box-border w-[var(--trigger-width)] max-w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadow} ${popoverClassName ?? ""}`}
+        className={`box-border w-[var(--trigger-width)] max-w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadowClass} ${popoverClassName ?? ""}`}
       >
         <ListBox className="max-h-72 overflow-auto outline-none">{children}</ListBox>
       </Popover>

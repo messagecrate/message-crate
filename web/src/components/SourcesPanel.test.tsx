@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, renderWithProviders } from "../test/providers";
 import SourcesPanel from "./SourcesPanel";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 const getSources = vi.fn();
 
@@ -13,10 +14,19 @@ vi.mock("../lib/serverApi", () => ({
   getConversationSources: (...args: unknown[]) => getSources(...args),
 }));
 
+function renderPanel() {
+  renderWithProviders(<SourcesPanel conversationId={1} onClose={() => {}} />);
+}
+
 describe("SourcesPanel", () => {
+  beforeEach(() => {
+    startFakeClock();
+  });
+
   afterEach(() => {
     cleanup();
     getSources.mockReset();
+    stopFakeClock();
   });
 
   it("puts each share of unique messages beside the unique count it was computed from", async () => {
@@ -26,16 +36,19 @@ describe("SourcesPanel", () => {
       { backup_name: "phone-a", message_count: 2, unique_count: 2, percentage: 66.7 },
       { backup_name: "phone-b", message_count: 2, unique_count: 1, percentage: 33.3 },
     ]);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPanel();
 
-    render(
-      <QueryClientProvider client={client}>
-        <SourcesPanel conversationId={1} onClose={() => {}} />
-      </QueryClientProvider>,
-    );
-
-    expect(await screen.findByText("2 unique (66.7% of unique messages)")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("2 unique (66.7% of unique messages)")).toBeTruthy();
     expect(screen.getByText("1 unique (33.3% of unique messages)")).toBeTruthy();
     expect(screen.getAllByText("2 messages")).toHaveLength(2);
+  });
+
+  it("says there is no source data, without a full stop, when the conversation has none", async () => {
+    getSources.mockResolvedValue([]);
+    renderPanel();
+
+    await settle();
+    expect(screen.getByText("No source data available")).toBeTruthy();
   });
 });

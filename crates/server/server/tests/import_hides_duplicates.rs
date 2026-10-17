@@ -1,34 +1,21 @@
 //! An Upload through the import library, as the desktop app sends one, has
 //! its duplicates hidden: nothing in the library or the Import Run turns the
-//! dedupe on, because every batch runs it (#1969).
+//! dedupe on, because the end of every Import Run runs it (#1969, #2040).
 //!
 //! It runs the server binary and the library's own `run`, so the Import Run
-//! is created and filled the way the desktop app's is.
+//! is started, filled and completed the way the desktop app's is.
 
 mod common;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use common::claim::claimed_with_account;
 use common::lines::{conversation_header, message_line};
+use common::upload::upload;
 use common::{empty_message_crate, listen, serve};
 
 /// 2015-03-12T18:04:22Z.
 const SECOND: i64 = 1_426_183_462_000;
-
-/// POST `body` to `path` and answer the JSON the server sends back.
-async fn post(base: &str, path: &str, token: Option<&str>, body: Value) -> Value {
-    let mut request = reqwest::Client::new()
-        .post(format!("{base}{path}"))
-        .json(&body);
-    if let Some(token) = token {
-        request = request.bearer_auth(token);
-    }
-    let response = request.send().await.unwrap();
-    let status = response.status();
-    let text = response.text().await.unwrap();
-    assert!(status.is_success(), "{path}: {status} {text}");
-    serde_json::from_str(&text).unwrap()
-}
 
 /// An SMS Backup+ backup that holds one message twice, once timed to the
 /// second and once to the millisecond, is shown once, with its
@@ -40,37 +27,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
     let (_server, address) = listen(&mut serve(&data_dir, &static_dir));
     let base = format!("http://{address}");
 
-    let claimed = post(
-        &base,
-        "/v1/server/claim",
-        None,
-        json!({ "username": "keeper", "password": "Owner-Pw-7q2Lx9Vb" }),
-    )
-    .await;
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let response = reqwest::Client::new()
-        .patch(format!("{base}/v1/server/settings"))
-        .bearer_auth(&owner)
-        .json(&json!({ "public_registration": true }))
-        .send()
-        .await
-        .unwrap();
-    assert!(response.status().is_success());
-    post(
-        &base,
-        "/v1/accounts",
-        None,
-        json!({ "username": "alice", "password": "Alice-Pw-3kN8wZr4" }),
-    )
-    .await;
-    let session = post(
-        &base,
-        "/v1/session",
-        None,
-        json!({ "username": "alice", "password": "Alice-Pw-3kN8wZr4" }),
-    )
-    .await;
-    let token = session["token"].as_str().unwrap().to_string();
+    let token = claimed_with_account(&base).await.alice_token;
 
     let input = root.path().join("export");
     std::fs::create_dir_all(&input).unwrap();
@@ -91,36 +48,9 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
     )
     .unwrap();
 
-    let config = message_crate_import::ImportConfig {
-        input,
-        base_url: base.clone(),
-        token: token.clone(),
-        mode: message_crate_import::ImportMode::Append,
-        force: false,
-        skip_attachments: false,
-        verify_digests: false,
-        trust_export: false,
-        max_retries: 0,
-        batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
-        asset_upload_workers: message_crate_import::DEFAULT_ASSET_UPLOAD_WORKERS,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: 5 * 1024 * 1024,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
-        report_path: None,
-        log_path: None,
-        journal_path: None,
-        cancel: None,
-        import_id: None,
-        phone_country: None,
-    };
-    let report = tokio::task::spawn_blocking(move || message_crate_import::run(&config, None))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(report.messages_failed, 0, "{report:?}");
+    upload(&base, &token, "sms-backup-plus", input).await;
 
-    let page: Value = reqwest::Client::new()
+    let page: Value = common::client::http_client()
         .get(format!("{base}/v1/messages"))
         .bearer_auth(&token)
         .send()

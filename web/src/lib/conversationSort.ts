@@ -1,4 +1,4 @@
-import type { SortOrder } from "../components/SortMenu";
+import { isSortOrder, type SortOrder } from "./sortOrder";
 import { readPref, writePref } from "./storage";
 
 /**
@@ -17,7 +17,7 @@ export interface ConversationSortState {
 }
 
 /** Newest activity first — what the list showed before it was configurable. */
-export const DEFAULT_CONVERSATION_SORT = {
+const DEFAULT_CONVERSATION_SORT = {
   sort: "date",
   order: "desc",
 } as const satisfies ConversationSortState;
@@ -26,10 +26,6 @@ const STORAGE_KEY = "conversationSort:v1";
 
 function isSort(value: unknown): value is ConversationSort {
   return value === "date" || value === "messages";
-}
-
-function isOrder(value: unknown): value is SortOrder {
-  return value === "asc" || value === "desc";
 }
 
 export function loadConversationSort(): ConversationSortState {
@@ -43,7 +39,7 @@ export function loadConversationSort(): ConversationSortState {
     const rec = parsed as Record<string, unknown>;
     return {
       sort: isSort(rec.sort) ? rec.sort : DEFAULT_CONVERSATION_SORT.sort,
-      order: isOrder(rec.order) ? rec.order : DEFAULT_CONVERSATION_SORT.order,
+      order: isSortOrder(rec.order) ? rec.order : DEFAULT_CONVERSATION_SORT.order,
     };
   } catch {
     return { ...DEFAULT_CONVERSATION_SORT };

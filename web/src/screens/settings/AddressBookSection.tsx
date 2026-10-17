@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import { Label, Radio, RadioGroup } from "react-aria-components";
 import Button from "../../components/Button";
+import { useRouteMutation } from "../../hooks/useRouteQuery";
 import { ApiError } from "../../lib/api";
-import { useRouteCache } from "../../lib/routeQuery";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { type AddressBookLoadMode, loadAddressBook } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
-import { focusOutline } from "../../lib/uiStyles";
+import { focusOutlineClass } from "../../lib/uiStyles";
+import { ConvertVcardFile } from "./ConvertVcardFile";
 import { sectionTitleClass } from "./profileStyles";
 
 /** Largest file the server accepts, mirrored here so the refusal is immediate. */
@@ -46,14 +48,15 @@ const COUNTS: ReadonlyArray<{
 function refusalLines(err: unknown): string[] {
   if (err instanceof ApiError) {
     const errors = err.errors.map((e) => e.trim()).filter(Boolean);
-    if (errors.length > 0) return errors;
+    if (errors.length > 0) return errors.map((line) => errorLine(line));
   }
-  return [err instanceof Error && err.message ? err.message : "Could not load that address book."];
+  return [errorLine(err, "Could not load that address book.")];
 }
 
 /**
  * Load an address book: the CSV that Export on the Contacts screen writes,
- * edited in a spreadsheet and put back.
+ * edited in a spreadsheet and put back. A vCard file converts to the same
+ * CSV here, for editing before a load.
  *
  * Contacts arrive with message imports, so this is not where they come from.
  * It is how a person names, regroups, and corrects many of them at once. A
@@ -61,7 +64,12 @@ function refusalLines(err: unknown): string[] {
  * is refused whole, with each row and its reason listed.
  */
 export function AddressBookSection() {
-  const cache = useRouteCache();
+  // A load renames contacts and moves identities, so the account's screens
+  // fetch again once it settles.
+  const loadBook = useRouteMutation({
+    mutationFn: ({ content, mode }: { content: string; mode: AddressBookLoadMode }) =>
+      loadAddressBook(content, mode),
+  });
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<AddressBookLoadMode>("append");
   const [busy, setBusy] = useState(false);
@@ -82,9 +90,7 @@ export function AddressBookSection() {
         return;
       }
       const content = await file.text();
-      setCounts(await loadAddressBook(content, mode));
-      // A load renames contacts and moves identities.
-      cache.invalidateAccount();
+      setCounts(await loadBook.mutateAsync({ content, mode }));
     } catch (err) {
       setErrors(refusalLines(err));
     } finally {
@@ -123,7 +129,7 @@ export function AddressBookSection() {
                   aria-hidden
                   className={`mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border ${
                     isSelected ? "border-accent" : "border-border"
-                  } ${isFocusVisible ? focusOutline : ""}`}
+                  } ${isFocusVisible ? focusOutlineClass : ""}`}
                 >
                   {isSelected ? <span className="size-2 rounded-full bg-accent" /> : null}
                 </span>
@@ -190,6 +196,7 @@ export function AddressBookSection() {
           </ul>
         </div>
       ) : null}
+      <ConvertVcardFile />
     </section>
   );
 }

@@ -1,12 +1,13 @@
 import { useState } from "react";
+import { useWindowWidth } from "../hooks/useWindowWidth";
 import type { SearchScope } from "../lib/recentSearches";
 import { otherResultsView } from "../lib/resultsView";
 import type { SearchList } from "../lib/searchFields";
-import { useWindowWidth } from "../lib/useWindowWidth";
 import { Z_APP_HEADER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import AppAccountMenu from "./AppAccountMenu";
 import { loadWidth } from "./columnResize";
+import LocalServerNotice from "./LocalServerNotice";
 import {
   LEFT_PANEL_DEFAULT_WIDTH,
   LEFT_PANEL_MAX_WIDTH,
@@ -15,11 +16,12 @@ import {
   LEFT_PANEL_WIDTH_VAR,
   leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
+import NameRefusalNotice from "./NameRefusalNotice";
 import SearchBar from "./SearchBar";
 import VersionNotice from "./VersionNotice";
 
 /** Which list the header search runs against. */
-export type HeaderSearchTarget = "accounts" | "contacts" | "conversations" | "messages" | "trash";
+type HeaderSearchTarget = "accounts" | "contacts" | "conversations" | "messages" | "trash";
 
 /**
  * Every target uses the same bar; only the wording, the recents bucket, the
@@ -153,6 +155,12 @@ export default function AppHeader({
         </div>
       </header>
       <VersionNotice />
+      {/* Here, in the frame of the message shell and of Owner Home alike, so
+          it outlives the Settings screen a refused name was typed on. */}
+      <NameRefusalNotice />
+      {/* Here too, so whatever screen is open says that the desktop app's
+          own server stopped, rather than failing with network errors. */}
+      <LocalServerNotice />
     </>
   );
 }

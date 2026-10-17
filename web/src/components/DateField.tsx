@@ -18,29 +18,9 @@ import {
   Popover,
 } from "react-aria-components";
 
-import { focusRing, popupShadow } from "../lib/uiStyles";
+import { focusRingClass, popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
-
-function CalendarIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path d="M16 2v4" />
-      <path d="M8 2v4" />
-      <path d="M3 10h18" />
-    </svg>
-  );
-}
+import { CalendarIcon } from "./icons";
 
 /**
  * Date field backed by React Aria's DatePicker + Calendar. Parent value is an
@@ -91,28 +71,28 @@ export default function DateField({
           </DateInput>
           <Button
             aria-label={`Pick ${pickLabel}`}
-            className={`ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted hover:text-accent ${focusRing}`}
+            className={`ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted hover:text-accent ${focusRingClass}`}
           >
-            <CalendarIcon />
+            <CalendarIcon size={15} />
           </Button>
         </Group>
         <Popover
           data-mc-overlay=""
-          className={`rounded-md border border-border bg-popover p-2 outline-none ${Z_POPOVER} ${popupShadow}`}
+          className={`rounded-md border border-border bg-popover p-2 outline-none ${Z_POPOVER} ${popupShadowClass}`}
         >
           <Dialog className="outline-none">
             <Calendar className="outline-none">
               <div className="flex items-center justify-between pb-2">
                 <Button
                   slot="previous"
-                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRing}`}
+                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRingClass}`}
                 >
                   ‹
                 </Button>
                 <CalendarHeading className="text-[0.875rem] font-medium text-text" />
                 <Button
                   slot="next"
-                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRing}`}
+                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRingClass}`}
                 >
                   ›
                 </Button>

@@ -1,30 +1,29 @@
 //! Read SMS Backup & Restore XML into [`ConversationDocument`] values.
 
 use anyhow::{Result, bail};
-use media::{CompressOptions, MediaMode};
+
+use ir::{
+    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
+    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
+    prepare_conversation, project_pending,
+};
 use message_crate_core::{
-    CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
+    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
     SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
-    check_cancel, document_messages, import_error_lines, is_cancelled, item_line,
+    Sinks, check_cancel, document_messages, import_error_lines, item_line,
 };
-use message_csv::format_local_ts;
-use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
-    IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
-    MessageCopy, MessageGuid, MessageIdentity, SCHEMA_VERSION, TimePrecision, one_copy_per_message,
-    owner_sender,
-};
-use message_staging::{
-    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
-};
+use message_crate_csv::format_local_ts;
 use phone::{Handle, OwnerHandleSet};
 use sbr::{
-    AttachmentBlob, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
+    AttachmentBytes, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
+};
+use staging::{
+    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-const EXPORT_SOURCE: &str = "sms-backup-restore";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::SmsBackupRestore.source_id();
 const EXPORT_TOOL: &str = "SMS Backup & Restore";
 const EXPORT_TOOL_VERSION: &str = "10.26.003";
 
@@ -48,7 +47,7 @@ pub struct ReadReport {
     /// SMS dropped for an unknown `type`.
     pub skipped_unknown_type: u64,
     /// Draft/outbox/failed/queued messages dropped.
-    pub skipped_draft_or_outbox: u64,
+    pub skipped_never_sent: u64,
     /// MMS dropped with no participants.
     pub skipped_empty_participants: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
@@ -155,7 +154,7 @@ impl ReadReport {
             (MMS_SEEN, self.mms_seen),
             (SKIPPED_UNKNOWN_ADDRESS, self.skipped_unknown_address),
             (SKIPPED_UNKNOWN_TYPE, self.skipped_unknown_type),
-            (SKIPPED_DRAFT_OR_OUTBOX, self.skipped_draft_or_outbox),
+            (SKIPPED_NEVER_SENT, self.skipped_never_sent),
             (SKIPPED_EMPTY_PARTICIPANTS, self.skipped_empty_participants),
             (SKIPPED_UNREADABLE_PART, self.skipped_unreadable_part()),
             (
@@ -165,17 +164,52 @@ impl ReadReport {
         ]
     }
 
+    /// `Self::leveled_lines` without their levels: what Convert's log
+    /// gives, and an import's summary gives in the same words.
+    pub fn log_lines(&self) -> Vec<String> {
+        self.leveled_lines()
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect()
+    }
+
+    /// Write `Self::leveled_lines` to `log`, each at its level.
+    pub fn write_log(&self, log: &LogSink) {
+        for (level, line) in self.leveled_lines() {
+            match level {
+                RunLogLevel::Info => log.emit(line),
+                RunLogLevel::Warn | RunLogLevel::Error => log.warn(line),
+            }
+        }
+    }
+
     /// One log line for each count the read reports, leaving out the ones
     /// it found none of, then a sentence for every error under the Import
     /// Errors heading, so a person can tell what did not come across. Each
     /// line has the words an import's summary gives the same count or
-    /// error.
-    pub fn log_lines(&self) -> Vec<String> {
+    /// error. A count of what was read, or of repeated copies dropped,
+    /// whose message is kept once, is at `INFO`; a count of what the run
+    /// went on without, and every line under the Import Errors heading, at
+    /// `WARN`.
+    fn leveled_lines(&self) -> Vec<(RunLogLevel, String)> {
+        /// The counts of what the run kept.
+        const KEPT: [Counter; 3] = [SMS_SEEN, MMS_SEEN, DUPLICATES_DROPPED];
         self.counts()
             .into_iter()
             .filter(|(_, count)| *count > 0)
-            .map(|(counter, count)| counter.line(count))
-            .chain(import_error_lines(&self.errors))
+            .map(|(counter, count)| {
+                let level = if KEPT.iter().any(|kept| kept.key() == counter.key()) {
+                    RunLogLevel::Info
+                } else {
+                    RunLogLevel::Warn
+                };
+                (level, counter.line(count))
+            })
+            .chain(
+                import_error_lines(&self.errors)
+                    .into_iter()
+                    .map(|line| (RunLogLevel::Warn, line)),
+            )
             .collect()
     }
 }
@@ -187,10 +221,10 @@ pub(crate) const SMS_SEEN: Counter = Counter::new("sms_seen", "Read 1 SMS", "Rea
 pub(crate) const MMS_SEEN: Counter = Counter::new("mms_seen", "Read 1 MMS", "Read {n} MMS");
 
 /// Drafts and outbox, failed and queued messages skipped.
-pub(crate) const SKIPPED_DRAFT_OR_OUTBOX: Counter = Counter::new(
-    "skipped_draft_or_outbox",
-    "Skipped 1 draft or unsent message",
-    "Skipped {n} drafts or unsent messages",
+pub(crate) const SKIPPED_NEVER_SENT: Counter = Counter::new(
+    "skipped_never_sent",
+    "Skipped 1 draft or message never sent",
+    "Skipped {n} drafts or messages never sent",
 );
 
 /// MMS skipped because they name no participant.
@@ -219,53 +253,50 @@ pub struct ReadOptions<'a> {
     /// parsed, so no payload stays in memory; `None` when the run does not
     /// copy attachments, and then no payload is kept at all.
     pub spool: Option<&'a AttachmentSpool>,
-    /// How to write attachment files after parse.
-    pub media: MediaMode,
-    /// Image/video compress settings used when `media` converts or compresses.
-    pub compress: CompressOptions,
-    /// Human-readable notes and warnings while reading.
-    pub log: Option<&'a LogSink>,
-    /// Typed progress events while staging attachments.
-    pub progress: Option<&'a ProgressSink>,
-    /// Cancellation flag checked between records.
-    pub cancel: Option<&'a CancelFlag>,
+    /// Whether attachment files are staged after parse.
+    pub files: AttachmentFiles,
+    /// Where the read writes its notes and warnings and the staging sends
+    /// its progress, and the cancel flag checked between records.
+    pub sinks: Sinks<'a>,
 }
 
+/// What one message carries beside its [`PendingMessage`]: the fields
+/// only SMS Backup & Restore has, its time as the XML gives it, and what the
+/// read left out of it. A message's `row` extra names its entry.
 #[derive(Debug, Clone)]
-struct PendingAttachment {
-    original_name: Option<String>,
-    mime_type: Option<String>,
-    digest: String,
-    size_bytes: u64,
-}
-
-#[derive(Debug, Clone)]
-struct PendingMessage {
-    sort_key: f64,
-    is_from_me: bool,
-    /// The sender's handle key, for an incoming message.
-    sender: Option<String>,
-    sender_display_name: Option<String>,
-    text: String,
-    subject: String,
-    attachments: Vec<PendingAttachment>,
-    message_kind: &'static str,
-    date_ms: String,
+struct MessageRow {
+    /// Unix seconds, as the parser read them from the `date` attribute.
+    timestamp_secs: f64,
+    /// SMS or MMS.
+    message_kind: MessageKind,
+    /// The subject, when the message has one.
+    subject: Option<String>,
+    /// The `contact_name` attribute as the file writes it.
     contact_name: String,
-    android_type: String,
+    /// The `type` (SMS) or `msg_box` (MMS) attribute, when it is a number.
+    android_type: Option<i32>,
+    /// The vendor fields, written back as the message's `source`.
     source_fields: serde_json::Map<String, serde_json::Value>,
     /// What the read left out of the message.
     left_out: LeftOutCounts,
 }
 
-#[derive(Debug, Default)]
-struct PendingConversation {
+/// The messages the read has collected for one conversation, before
+/// [`to_document`].
+#[derive(Debug)]
+struct ConversationInProgress {
     kind: ConversationKind,
-    group_title: Option<String>,
-    /// Each participant's handle key.
-    participants: Vec<String>,
-    messages: Vec<PendingMessage>,
+    /// The conversation as the shared projection reads it: each
+    /// participant's handle key in `participant_handles`, the group title in
+    /// `display_name`.
+    pending: PendingConversation,
+    /// Each message's [`MessageRow`], in the order the read added them.
+    rows: Vec<MessageRow>,
 }
+
+/// The `extra` key of a [`PendingMessage`] that holds its index in
+/// [`ConversationInProgress::rows`].
+const ROW: &str = "row";
 
 /// The backup file to read: SMS Backup & Restore writes each backup as one
 /// `.xml` file, and an Import Run reads one backup.
@@ -289,32 +320,35 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
     report.skipped_invalid_date += stats.skipped_invalid_date;
     report.skipped_unknown_address += stats.skipped_unknown_address;
     report.skipped_unknown_type += stats.skipped_unknown_type;
-    report.skipped_draft_or_outbox += stats.skipped_draft_or_outbox;
+    report.skipped_never_sent += stats.skipped_never_sent;
     report.skipped_empty_participants += stats.skipped_empty_participants;
 }
 
-/// Pending attachments for a message's decoded parts, each payload written
-/// to the spool when there is one. The record, and the decoded bytes with
-/// it, are dropped once this returns.
+/// The queued attachments for a message's decoded parts, each payload
+/// written to the spool when there is one. The record, and the decoded
+/// bytes with it, are dropped once this returns.
 ///
 /// # Errors
 ///
 /// Returns an error when a payload cannot be written to the spool.
 fn queue_attachments(
-    blobs: &[AttachmentBlob],
+    attachments: &[AttachmentBytes],
     spool: Option<&AttachmentSpool>,
 ) -> Result<Vec<PendingAttachment>> {
-    blobs
+    attachments
         .iter()
-        .map(|blob| {
+        .map(|attachment| {
             if let Some(spool) = spool {
-                spool.put(&blob.data)?;
+                spool.put(&attachment.data)?;
             }
+            // Neither a path nor the bytes: whoever stages the attachment
+            // reads the payload from the spool by its digest.
             Ok(PendingAttachment {
-                original_name: blob.original_name.clone(),
-                mime_type: blob.mime_type.clone(),
-                digest: blob.digest_hex.clone(),
-                size_bytes: blob.data.len() as u64,
+                rel_path: String::new(),
+                content_type: attachment.mime_type.clone().unwrap_or_default(),
+                digest_sha256: Some(attachment.digest_hex.clone()),
+                name_hint: attachment.original_name.clone(),
+                size_bytes: Some(attachment.data.len() as u64),
             })
         })
         .collect()
@@ -329,25 +363,22 @@ pub fn spooled_attachments<'a>(
     documents: &'a mut [ConversationDocument],
     options: &ReadOptions<'_>,
 ) -> CountedAttachments<'a> {
-    let mode = if options.spool.is_some() {
-        options.media
+    let files = if options.spool.is_some() {
+        options.files
     } else {
-        MediaMode::Disabled
+        AttachmentFiles::Skip
     };
     CountedAttachments::new(
         document_messages(documents),
-        MediaConfig {
-            mode,
-            compress: options.compress.clone(),
-        },
+        files,
         PathSources::OnDisk,
-        |att| {
+        |attachment| {
             options
                 .spool
-                .and_then(|spool| spool.source(att))
+                .and_then(|spool| spool.source(attachment))
                 .unwrap_or((AttachmentSource::Missing, None))
         },
-        options.log,
+        options.sinks.log,
     )
 }
 
@@ -359,21 +390,17 @@ pub fn spooled_attachments<'a>(
 /// # Errors
 ///
 /// Returns an error when an attachment cannot be staged or the run is
-/// cancelled.
+/// canceled.
 pub fn stage_read_attachments(
     documents: &mut [ConversationDocument],
     options: &ReadOptions<'_>,
 ) -> Result<()> {
     let attachments_dir = options.attachments_dir.unwrap_or_else(|| Path::new(""));
-    spooled_attachments(documents, options)
-        .stage(
-            attachments_dir,
-            load_attachment_source,
-            options.log,
-            options.progress,
-            options.cancel,
-        )
-        .map_err(anyhow::Error::msg)?;
+    spooled_attachments(documents, options).stage(
+        attachments_dir,
+        load_attachment_source,
+        options.sinks,
+    )?;
     Ok(())
 }
 
@@ -381,311 +408,251 @@ pub fn stage_read_attachments(
 fn chat_id(record: &Record) -> String {
     match record.conversation_kind {
         ConversationKind::Group => format!("chat-{}", record.chat_key),
-        ConversationKind::Individual => record.chat_key.clone(),
+        ConversationKind::OneToOne => record.chat_key.clone(),
     }
 }
 
 /// Append a parsed SMS or MMS to its conversation, creating the
 /// conversation on first sight.
 fn add_record(
-    conversations: &mut BTreeMap<String, PendingConversation>,
+    conversations: &mut BTreeMap<String, ConversationInProgress>,
     record: Record,
     attachments: Vec<PendingAttachment>,
 ) -> Result<()> {
     let id = chat_id(&record);
-    let peers = record
-        .participants
-        .iter()
-        .map(|(h, _)| h.key().to_string())
-        .collect();
-    let conversation = conversations
-        .entry(id)
-        .or_insert_with(|| PendingConversation {
+    let conversation = conversations.entry(id).or_insert_with_key(|id| {
+        let peers = record
+            .participants
+            .iter()
+            .map(|(h, _)| h.key().to_string())
+            .collect();
+        ConversationInProgress {
             kind: record.conversation_kind,
-            group_title: record.group_title.clone(),
-            participants: peers,
-            messages: Vec::new(),
-        });
-    let sender = record.sender.map(Handle::into_key);
+            pending: PendingConversation::new(
+                id.as_str(),
+                record.conversation_kind == ConversationKind::Group,
+                record.group_title.clone(),
+                peers,
+            ),
+            rows: Vec::new(),
+        }
+    });
     let source_fields = serde_json::to_value(&record.source_fields)?
         .as_object()
         .cloned()
         .unwrap_or_default();
-    conversation.messages.push(PendingMessage {
-        sort_key: record.timestamp_secs,
-        is_from_me: record.is_from_me,
-        sender,
-        sender_display_name: record.sender_display_name,
-        text: record.text,
-        subject: record.subject,
-        attachments,
-        message_kind: record.message_kind,
-        date_ms: record.date_ms,
+    let extra = BTreeMap::from([
+        (ROW.to_string(), conversation.rows.len().to_string()),
+        // Read by the shared `ir::message_time`.
+        ("date_ms".to_string(), record.date_ms),
+    ]);
+    conversation.rows.push(MessageRow {
+        timestamp_secs: record.timestamp_secs,
+        message_kind: MessageKind::parse(record.message_kind),
+        subject: (!record.subject.is_empty()).then_some(record.subject),
         contact_name: record.contact_name,
-        android_type: record.android_type,
+        android_type: record.android_type.trim().parse().ok(),
         source_fields,
         left_out: LeftOutCounts {
             unreadable_parts: record.unreadable_parts,
             dropped_character_references: record.dropped_character_references,
         },
     });
+    conversation.pending.messages.push(PendingMessage {
+        // Whole seconds, for the shared check that the time can be
+        // represented; the order is the parser's own seconds
+        // (`SbrProjection::message_order`) and the time the `date_ms`
+        // extra (`ir::message_time`).
+        sort_key: record.timestamp_secs as i64,
+        is_from_me: record.is_from_me,
+        sender: ir::Sender::new(
+            record.sender.map(Handle::into_key),
+            record.sender_display_name,
+        ),
+        text: record.text,
+        attachments,
+        extra,
+    });
     Ok(())
 }
 
-impl PendingMessage {
-    /// The UTC instant in milliseconds and how finely the XML recorded it:
-    /// the `date` attribute's milliseconds, else the sort key's whole second.
-    fn time(&self) -> (i64, TimePrecision) {
-        match self.date_ms.trim().parse::<i64>() {
-            Ok(ms) => (ms, TimePrecision::Milliseconds),
-            Err(_) => (
-                (self.sort_key as i64).saturating_mul(1000),
-                TimePrecision::Seconds,
-            ),
-        }
-    }
-
-    /// Digests of the attachments, for the message's identity.
-    fn attachment_digests(&self) -> Vec<String> {
-        self.attachments.iter().map(|a| a.digest.clone()).collect()
-    }
+/// SMS Backup & Restore deltas of the shared [`project_pending`] projection,
+/// for one conversation.
+struct SbrProjection<'a> {
+    export: &'a ExportMeta,
+    /// When the file was made: every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
+    kind: ConversationKind,
+    rows: &'a [MessageRow],
 }
 
-/// Sort by time and keep one copy of each message
-/// ([`one_copy_per_message`]), each with the time it keeps. Returns how many
-/// copies it dropped.
-fn dedupe(messages: &mut Vec<PendingMessage>) -> u64 {
-    messages.sort_by(|a, b| a.sort_key.total_cmp(&b.sort_key));
-    let prepared: Vec<_> = messages
-        .iter()
-        .map(|m| (m.time(), m.attachment_digests()))
-        .collect();
-    let copies: Vec<MessageCopy<'_>> = messages
-        .iter()
-        .zip(&prepared)
-        .map(|(m, ((ms, precision), digests))| MessageCopy {
-            is_from_me: m.is_from_me,
-            sender: m.sender.as_deref(),
-            timestamp_unix_ms: *ms,
-            precision: *precision,
-            text: &m.text,
-            attachment_digests: digests,
-            vendor_key: None,
-        })
-        .collect();
-    let kept = one_copy_per_message(&copies);
-    let before = messages.len();
-    let mut kept = kept.into_iter();
-    messages.retain_mut(|m| match kept.next().flatten() {
-        Some((ms, precision)) => {
-            // A whole-second copy that keeps a millisecond copy's time keeps
-            // its precision too, even when that time ends in `.000`.
-            if m.time() != (ms, precision) {
-                m.date_ms = ms.to_string();
-            }
-            true
-        }
-        None => false,
-    });
-    (before - messages.len()) as u64
-}
+impl SbrProjection<'_> {
+    /// The [`MessageRow`] of one of the conversation's messages.
+    fn row(&self, message: &PendingMessage) -> &MessageRow {
+        let index: usize = message
+            .extra_str(ROW)
+            .parse()
+            .expect("every message the read adds names its row");
+        &self.rows[index]
+    }
 
-/// Display names seen per sender handle across the conversation.
-fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String> {
-    let mut names = HashMap::new();
-    for message in &conversation.messages {
-        if let (Some(sender), Some(name)) = (
-            &message.sender,
-            message
-                .sender_display_name
+    /// Display names seen per sender handle across the conversation.
+    fn names_by_handle(&self, conversation: &PendingConversation) -> HashMap<String, String> {
+        let mut names = HashMap::new();
+        for message in &conversation.messages {
+            if let Some((identity, name)) = message
+                .sender
+                .identity
                 .as_deref()
-                .and_then(message_ir::trimmed),
-        ) {
-            names
-                .entry(sender.clone())
-                .or_insert_with(|| name.to_string());
-        }
-        if let Some(name) = sbr::contact_name(&message.contact_name, conversation.kind) {
-            for peer in &conversation.participants {
+                .zip(message.sender.display_name.as_deref().and_then(ir::trimmed))
+            {
                 names
-                    .entry(peer.clone())
+                    .entry(identity.to_string())
                     .or_insert_with(|| name.to_string());
             }
+            if let Some(name) = sbr::contact_name(&self.row(message).contact_name, self.kind) {
+                for peer in &conversation.participant_handles {
+                    names
+                        .entry(peer.clone())
+                        .or_insert_with(|| name.to_string());
+                }
+            }
         }
+        names
     }
-    names
 }
 
-/// Project one pending conversation into a document and fold its counts into the report.
+impl ProjectionHooks for SbrProjection<'_> {
+    fn export(&self) -> ExportMeta {
+        self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
+    }
+
+    fn vendor_fields(
+        &self,
+        _conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
+        let row = self.row(message);
+        VendorFields {
+            android_type: row.android_type,
+            fields: row.source_fields.clone(),
+        }
+    }
+
+    fn subject(&self, message: &PendingMessage) -> Option<String> {
+        self.row(message).subject.clone()
+    }
+
+    fn message_kind(&self, message: &PendingMessage) -> MessageKind {
+        self.row(message).message_kind
+    }
+
+    fn message_order(&self, a: &PendingMessage, b: &PendingMessage) -> std::cmp::Ordering {
+        self.row(a)
+            .timestamp_secs
+            .total_cmp(&self.row(b).timestamp_secs)
+    }
+
+    fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
+        let names = self.names_by_handle(conversation);
+        conversation
+            .participant_handles
+            .iter()
+            .map(|handle| Participant {
+                identity: Some(handle.clone()),
+                display_name: names.get(handle).cloned(),
+                country: None,
+            })
+            .collect()
+    }
+
+    fn group_title(&self, conversation: &PendingConversation) -> Option<String> {
+        conversation.display_name.clone()
+    }
+}
+
+/// Project one conversation in progress into a document whose messages
+/// carry the file's Backup Date `backup_taken_at_unix_ms`, or `None` when no
+/// message has a time that can be represented, and fold its counts into the
+/// report.
 fn to_document(
-    id: &str,
     file_path: &str,
-    conversation: &PendingConversation,
-    owner_identity: Option<&str>,
+    conversation: ConversationInProgress,
+    export: &ExportMeta,
     backup_taken_at_unix_ms: Option<i64>,
     report: &mut ReadReport,
-) -> ConversationDocument {
-    let export = ExportMeta {
-        source: EXPORT_SOURCE.into(),
-        tool: EXPORT_TOOL.into(),
-        tool_version: EXPORT_TOOL_VERSION.into(),
-        owner_identity: owner_identity.map(str::to_string),
-        owner_display_name: None,
-        backup_taken_at_unix_ms,
-    };
-    let owner = owner_sender(&export);
-    let messages = conversation
-        .messages
-        .iter()
-        .map(|message| {
-            if message.is_from_me {
-                report.sent += 1;
-            } else {
-                report.received += 1;
-            }
-            // Named only now that dedupe has run, because a repeated copy
-            // dropped there can change which time the message keeps.
-            if !message.left_out.is_empty() {
-                report.left_out.push(LeftOut {
-                    file: file_path.to_string(),
-                    message: describe(message, conversation),
-                    counts: message.left_out,
-                });
-            }
-            ir_message(id, message, &owner)
-        })
-        .collect();
-    let mut document = ConversationDocument {
-        schema_version: SCHEMA_VERSION,
+) -> Option<ConversationDocument> {
+    let ConversationInProgress {
+        kind,
+        mut pending,
+        rows,
+    } = conversation;
+    let hooks = SbrProjection {
         export,
-        conversation: ConversationMeta {
-            chat_identifier: id.into(),
-            conversation_type: match conversation.kind {
-                ConversationKind::Individual => IrConversationType::Individual,
-                ConversationKind::Group => IrConversationType::Group,
-            },
-            group_title: conversation.group_title.clone(),
-            participants: ir_participants(conversation),
-            stats: ConversationStats::default(),
-        },
-        messages,
-        packaging_stem_suffix: None,
+        backup_taken_at_unix_ms,
+        kind,
+        rows: &rows,
     };
+    let (keep, skipped) =
+        prepare_conversation(&mut pending, |a, b| hooks.message_order(a, b), |secs| secs);
+    report.skipped_invalid_date += skipped;
+    if !keep {
+        return None;
+    }
+    let Projection {
+        mut document,
+        tally,
+        kept,
+    } = project_pending(&pending.chat_id, &pending, &hooks);
+    report.sent += tally.sent;
+    report.received += tally.received;
+    report.duplicates_dropped += tally.duplicates;
+    // Named only now that the dedupe step has run, because a repeated copy
+    // dropped there can change which time the message keeps.
+    for (message, index) in document.messages.iter().zip(kept) {
+        let row = hooks.row(&pending.messages[index]);
+        if !row.left_out.is_empty() {
+            report.left_out.push(LeftOut {
+                file: file_path.to_string(),
+                message: describe(message, &row.source_fields, &pending),
+                counts: row.left_out,
+            });
+        }
+    }
     document.finalize_stats();
-    document
+    Some(document)
 }
 
 /// A message as a person can find it in its file: `message of <UTC time>
 /// with <address>`, the `address` attribute as the file writes it, so a
 /// search of the file finds it. An MMS with no `address` attribute names
 /// every identity in its conversation instead.
-fn describe(message: &PendingMessage, conversation: &PendingConversation) -> String {
-    let (ms, _) = message.time();
+fn describe(
+    message: &Message,
+    source_fields: &serde_json::Map<String, serde_json::Value>,
+    conversation: &PendingConversation,
+) -> String {
+    let ms = message.timestamp_unix_ms;
     let time =
         format_local_ts(ms.div_euclid(1000)).map_or_else(|| ms.to_string(), |(_, utc, _)| utc);
-    let address = message
-        .source_fields
+    let address = source_fields
         .get("attrs")
         .and_then(|attrs| attrs.get("address"))
         .and_then(serde_json::Value::as_str)
         .filter(|address| !address.trim().is_empty());
     let with = address.map_or_else(
-        || {
-            let identities: Vec<&str> = conversation
-                .participants
-                .iter()
-                .map(String::as_str)
-                .collect();
-            identities.join(", ")
-        },
+        || conversation.participant_handles.join(", "),
         str::to_string,
     );
     format!("message of {time} with {with}")
-}
-
-/// The IR message for one pending message. `owner` (handle, display name)
-/// stands in as the sender of anything sent from this phone; the timestamp
-/// is the record's own milliseconds when it parses, else the sort key.
-fn ir_message(
-    chat_id: &str,
-    message: &PendingMessage,
-    owner: &(Option<String>, Option<String>),
-) -> IrMessage {
-    let (timestamp_unix_ms, time_precision) = message.time();
-    let digests = message.attachment_digests();
-    let (sender_identity, sender_display_name) = if message.is_from_me {
-        owner.clone()
-    } else {
-        (message.sender.clone(), message.sender_display_name.clone())
-    };
-    IrMessage {
-        guid: MessageGuid::new(&MessageIdentity {
-            chat: chat_id,
-            is_from_me: message.is_from_me,
-            sender: message.sender.as_deref(),
-            timestamp_unix_ms,
-            text: &message.text,
-            attachment_digests: &digests,
-            vendor_key: None,
-        })
-        .into_string(),
-        timestamp_unix_ms,
-        time_precision,
-        direction: if message.is_from_me {
-            IrDirection::Outgoing
-        } else {
-            IrDirection::Incoming
-        },
-        service: IrService::Sms,
-        message_kind: IrMessageKind::parse(message.message_kind),
-        sender_identity,
-        sender_display_name,
-        owner_identity: None,
-        subject: (!message.subject.is_empty()).then(|| message.subject.clone()),
-        text: message.text.clone(),
-        attachments: message.attachments.iter().map(ir_attachment).collect(),
-        reactions: Vec::new(),
-        deletion: None,
-        edits: Vec::new(),
-        reply_to: None,
-        imessage: None,
-        source: IrSource {
-            android_type: message.android_type.trim().parse().ok(),
-            fields: message.source_fields.clone(),
-        }
-        .into_option(),
-    }
-}
-
-/// The IR attachment for one pending attachment. Neither a path nor the
-/// bytes: whoever stages it reads the payload from the spool by its digest.
-fn ir_attachment(a: &PendingAttachment) -> IrAttachment {
-    IrAttachment {
-        path: None,
-        original_name: a.original_name.clone(),
-        mime_type: a.mime_type.clone(),
-        digest_sha256: (!a.digest.is_empty()).then(|| a.digest.clone()),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: Some(a.size_bytes),
-        missing_reason: None,
-        bytes: None,
-    }
-}
-
-/// Every participant with the kind of address it is, named when the XML
-/// named it.
-fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
-    let names = names_by_handle(conversation);
-    conversation
-        .participants
-        .iter()
-        .map(|handle| IrParticipant {
-            identity: Some(handle.clone()),
-            display_name: names.get(handle).cloned(),
-        })
-        .collect()
 }
 
 /// Parse one SMS Backup & Restore XML file into conversation documents.
@@ -697,8 +664,12 @@ fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
 ///
 /// # Errors
 ///
-/// Returns an error when `input` is not a file, owner phones cannot be
-/// inferred, or a payload cannot be written to the spool.
+/// Returns an error when `input` is not a file, is not valid XML, or a
+/// payload cannot be written to the spool, and
+/// [`Canceled`](message_crate_core::Canceled) when the run
+/// is canceled. A file that is not valid XML is refused whole, in the
+/// owner-phone pass and the message pass alike; a message that cannot be
+/// kept in a valid file is counted and the read goes on.
 pub fn read_backup(
     input: &Path,
     options: ReadOptions<'_>,
@@ -706,12 +677,7 @@ pub fn read_backup(
     require_backup_file(input)?;
     let mut owner_phones = options.owner_phones.to_vec();
     if owner_phones.is_empty() {
-        owner_phones = infer_owner_phones(input).map_err(|error| {
-            anyhow::anyhow!(
-                "could not infer owner phones from {} ({error:#}), and none were supplied",
-                input.display()
-            )
-        })?;
+        owner_phones = infer_owner_phones(input)?;
         owner_phones.sort();
         owner_phones.dedup();
     }
@@ -727,16 +693,15 @@ pub fn read_backup(
     let mut report = ReadReport::default();
     let mut conversations = BTreeMap::new();
     let file_path = input.display().to_string();
-    check_cancel(options.cancel)?;
+    check_cancel(options.sinks.cancel)?;
     // Each record's attachment payloads go to the spool as the record is
-    // parsed; staging waits until every conversation is built. Messages
-    // that parse before an XML error are kept, and so are the counts.
+    // parsed; staging waits until every conversation is built.
     let mut stats = ParseStats::default();
     // A spool that cannot be written stops the read rather than counting
     // as an error in the file.
     let mut spool_error = None;
     let parse_result = parse_file_with(input, owners.as_ref(), &mut stats, |record| {
-        check_cancel(options.cancel)?;
+        check_cancel(options.sinks.cancel)?;
         let attachments = match queue_attachments(&record.attachments, options.spool) {
             Ok(attachments) => attachments,
             Err(error) => {
@@ -764,35 +729,30 @@ pub fn read_backup(
     if let Some(error) = spool_error {
         return Err(error);
     }
-    if let Err(error) = parse_result {
-        if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
-            return Err(error);
-        }
-        report.errors.push(ReadError::new(input, &error));
-    }
-    check_cancel(options.cancel)?;
+    // A file that is not valid XML is refused whole, and so is a parse a
+    // cancel stopped (#2028).
+    parse_result?;
+    check_cancel(options.sinks.cancel)?;
+    let export = ExportMeta {
+        source: EXPORT_SOURCE.into(),
+        tool: EXPORT_TOOL.into(),
+        tool_version: EXPORT_TOOL_VERSION.into(),
+        owner_identity,
+        owner_display_name: None,
+        exported_at_unix_ms: None,
+    };
     let mut documents = Vec::new();
-    for (id, mut conversation) in conversations {
-        report.duplicates_dropped += dedupe(&mut conversation.messages);
-        conversation.messages.retain(|message| {
-            let valid = format_local_ts(message.sort_key as i64).is_some();
-            if !valid {
-                report.skipped_invalid_date += 1;
-            }
-            valid
-        });
-        if conversation.messages.is_empty() {
-            continue;
-        }
-        documents.push(to_document(
-            &id,
+    for conversation in conversations.into_values() {
+        if let Some(document) = to_document(
             &file_path,
-            &conversation,
-            owner_identity.as_deref(),
+            conversation,
+            &export,
             backup_taken_at_unix_ms,
             &mut report,
-        ));
-        report.conversations += 1;
+        ) {
+            documents.push(document);
+            report.conversations += 1;
+        }
     }
     Ok((documents, report))
 }

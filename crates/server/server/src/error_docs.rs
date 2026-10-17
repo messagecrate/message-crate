@@ -8,7 +8,7 @@
 //! drift test below fails the build before that can happen.
 //!
 //! This sits beside [`crate::cli_docs`], which does the same job for the CLI
-//! reference, and [`crate::openapi::write_openapi`] for the OpenAPI document.
+//! reference, and `crate::openapi::write_openapi` for the OpenAPI document.
 
 use std::path::Path;
 
@@ -132,19 +132,6 @@ mod tests {
         for kind in ProblemType::ALL {
             assert!(index.contains(&format!("[`{}`]", kind.slug())));
         }
-    }
-
-    #[test]
-    fn the_rate_limited_page_states_the_limit_and_the_window() {
-        let page = type_page(ProblemType::RateLimited);
-        assert!(page.contains(&format!(
-            "more than {} attempts",
-            crate::credentials::AUTH_RATE_MAX
-        )));
-        assert!(page.contains(&format!(
-            "inside {} seconds",
-            crate::credentials::AUTH_RATE_WINDOW.as_secs()
-        )));
     }
 
     #[test]

@@ -28,6 +28,19 @@ pub enum Progress {
 }
 
 impl Progress {
+    /// Say which step the work starts, the line the steps' own lines are
+    /// indented under on standard output.
+    pub fn heading(self, line: impl fmt::Display) {
+        match self {
+            Self::Print => {
+                let mut out = io::stdout().lock();
+                let _ = writeln!(out, "{line}");
+                let _ = out.flush();
+            }
+            Self::Log => tracing::info!("{line}"),
+        }
+    }
+
     /// Say how far the work has got.
     pub fn say(self, line: impl fmt::Display) {
         match self {

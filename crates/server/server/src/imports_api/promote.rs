@@ -98,9 +98,11 @@ const PROMOTE_INDEX_DROP_MIN_STAGING: i64 = 5_000;
 impl Promote<'_> {
     /// Every phase, in order: the source wipe in replace mode, then each
     /// table, the search index, and the content keys the new messages lack.
-    /// The caller runs the full dedupe after the commit, which puts every
-    /// duplicate flag right, those of the stored messages whose content this
-    /// promotion changed included (#1805, #1969).
+    /// The full dedupe runs later, once the whole import is in: at the end
+    /// of the Import Run for an Upload (#2040), and after the last run for
+    /// the server's `import` command and the Demo Account build. It puts
+    /// every duplicate flag right, those of the stored messages whose
+    /// content this promotion changed included (#1805, #1969).
     async fn run(&mut self, wipe_sources: &[String]) -> Result<()> {
         if self.mode == ImportMode::Replace {
             self.wipe_sources(wipe_sources).await?;
@@ -314,7 +316,11 @@ impl Promote<'_> {
     /// staging-to-production id map. Nothing staged means nothing inserted.
     async fn insert_messages(&mut self, total: i64) -> Result<HashMap<i64, i64>> {
         let bounds = staging::staged_message_id_bounds(self.tx, self.account_id).await?;
-        let (Some(min_id), Some(max_id)) = bounds else {
+        let staging::StagedIdBounds {
+            low: Some(min_id),
+            high: Some(max_id),
+        } = bounds
+        else {
             self.stats.messages = 0;
             self.stats.messages_appended = 0;
             self.stats.messages_deduped = 0;
@@ -427,7 +433,6 @@ impl Promote<'_> {
     /// the existing messages that gained an attachment.
     async fn promote_attachments(&mut self) -> Result<i64> {
         let phase = self.begin("Writing the import's attachments…");
-        let attachments_before = staging::max_attachment_id(self.tx).await?;
         let promoted = staging::promote_attachments(self.tx).await?;
         self.stats.attachments = promoted.inserted;
         self.done(
@@ -446,7 +451,7 @@ impl Promote<'_> {
                 ),
             ),
         );
-        Ok(attachments_before)
+        Ok(promoted.attachments_before)
     }
 
     /// Insert the staged tapbacks under their production messages.

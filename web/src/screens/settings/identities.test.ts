@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Identity, messagesPhrase } from "./identities";
 
-function identity(direct: number, group: number, orphaned: number): Identity {
+function identity(oneToOne: number, group: number, orphaned: number): Identity {
   return {
     address: "+15555550100",
     service: "phone",
@@ -9,7 +9,7 @@ function identity(direct: number, group: number, orphaned: number): Identity {
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: direct,
+    one_to_one_messages: oneToOne,
     group_messages: group,
     orphaned_messages: orphaned,
   };
@@ -18,12 +18,14 @@ function identity(direct: number, group: number, orphaned: number): Identity {
 describe("messagesPhrase", () => {
   it("names all three kinds with commas and a final and", () => {
     expect(messagesPhrase(identity(1200, 30, 1))).toBe(
-      `${(1200).toLocaleString()} direct messages, 30 group messages and 1 orphaned message`,
+      `${(1200).toLocaleString()} one-to-one messages, 30 group messages and 1 orphaned message`,
     );
   });
 
   it("joins two kinds with and, leaving out the one with none", () => {
-    expect(messagesPhrase(identity(12, 0, 4))).toBe("12 direct messages and 4 orphaned messages");
+    expect(messagesPhrase(identity(12, 0, 4))).toBe(
+      "12 one-to-one messages and 4 orphaned messages",
+    );
   });
 
   it("names a single kind on its own", () => {

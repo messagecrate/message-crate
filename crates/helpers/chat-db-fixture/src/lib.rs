@@ -36,12 +36,13 @@ pub const OWNER: &str = "+15555550106";
 /// it with Apple's `E:` prefix (`E:owner@example.com`).
 pub const OWNER_EMAIL: &str = "owner@example.com";
 
-/// The first contact's number: the other side of the direct chat and a member
-/// of the group chat.
+/// The first contact's number: the other side of the one-to-one conversation
+/// and a member of the group conversation.
 pub const FRIEND_PHONE: &str = "+15555550107";
 
-/// The second contact's address: a member of the group chat, and the other
-/// side of the direct chat the owner runs from the email account.
+/// The second contact's address: a member of the group conversation, and the
+/// other side of the one-to-one conversation the owner runs from the email
+/// account.
 pub const FRIEND_EMAIL: &str = "friend@example.com";
 
 /// The first contact's email address. Apple links it to [`FRIEND_PHONE`]
@@ -49,14 +50,14 @@ pub const FRIEND_EMAIL: &str = "friend@example.com";
 /// does for two addresses on one contact card.
 pub const FRIEND_PHONE_EMAIL: &str = "sam@example.com";
 
-/// The group chat's identifier.
-pub const GROUP_CHAT_IDENTIFIER: &str = "chat100";
+/// The group conversation's identifier.
+pub const GROUP_IDENTIFIER: &str = "chat100";
 
-/// The identifier of the group chat nobody named, which every member but
-/// [`FRIEND_EMAIL`] has left.
+/// The identifier of the group conversation nobody named, which every member
+/// but [`FRIEND_EMAIL`] has left.
 pub const SHRUNK_GROUP_IDENTIFIER: &str = "chat200";
 
-/// The name the group chat was given.
+/// The name the group conversation was given.
 pub const GROUP_TITLE: &str = "Weekend plans";
 
 /// The guid of the message two people react to. Apple's guids are 36
@@ -111,16 +112,17 @@ pub fn apple_nanos(seconds_since_2001: i64) -> i64 {
 /// - handle 4: [`OWNER`], the owner's own number, which Apple lists among a
 ///   group's members
 ///
-/// `chat.style` is Apple's: 45 for a one-to-one chat, 43 for a group.
+/// `chat.style` is Apple's: 45 for the `chat` row of a one-to-one
+/// conversation, 43 for a group's.
 ///
-/// - chat 1: direct with [`FRIEND_PHONE`], `account_login` `P:` + [`OWNER`]
+/// - chat 1: one-to-one with [`FRIEND_PHONE`], `account_login` `P:` + [`OWNER`]
 /// - chat 2: the group [`GROUP_TITLE`], both friends and the owner's own
 ///   handle, the same account
-/// - chat 3: direct with [`FRIEND_EMAIL`], `account_login` `E:` +
+/// - chat 3: one-to-one with [`FRIEND_EMAIL`], `account_login` `E:` +
 ///   [`OWNER_EMAIL`]
 /// - chat 4: the unnamed group [`SHRUNK_GROUP_IDENTIFIER`], with
 ///   [`FRIEND_EMAIL`] the one member left
-/// - chat 5: direct with [`FRIEND_PHONE_EMAIL`], with no
+/// - chat 5: one-to-one with [`FRIEND_PHONE_EMAIL`], with no
 ///   `chat_handle_join` rows
 /// - chat 6: the owner's chat with the owner's own number [`OWNER`], whose
 ///   one member is the owner's handle
@@ -199,7 +201,7 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
         INSERT INTO handle VALUES (3, '{friend_phone_email}', 'person-sam', 'iMessage');
         INSERT INTO handle VALUES (4, '{owner}', NULL, 'iMessage');
         INSERT INTO chat VALUES (1, '{friend_phone}', 'iMessage', NULL, 'P:{owner}', 45);
-        INSERT INTO chat VALUES (2, '{group_chat}', 'iMessage', '{group_title}', 'P:{owner}', 43);
+        INSERT INTO chat VALUES (2, '{group}', 'iMessage', '{group_title}', 'P:{owner}', 43);
         INSERT INTO chat VALUES (3, '{friend_email}', 'iMessage', NULL, 'E:{owner_email}', 45);
         INSERT INTO chat VALUES (4, '{shrunk_group}', 'iMessage', NULL, 'P:{owner}', 43);
         INSERT INTO chat VALUES (5, '{friend_phone_email}', 'iMessage', NULL, 'P:{owner}', 45);
@@ -256,7 +258,7 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
         shrunk_group = SHRUNK_GROUP_IDENTIFIER,
         owner = OWNER,
         owner_email = OWNER_EMAIL,
-        group_chat = GROUP_CHAT_IDENTIFIER,
+        group = GROUP_IDENTIFIER,
         group_title = GROUP_TITLE,
         d1 = apple_nanos(600_000_000),
         d1_read = apple_nanos(600_000_060),
@@ -294,6 +296,24 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
     .expect("fill chat.db");
     drop(db);
     db_path
+}
+
+/// Set the `date` of the message `guid` in the `chat.db` at `db_path` to
+/// `date`, as it is stored: nanoseconds since 2001 from macOS 10.13 and iOS
+/// 11 on, seconds in an older database.
+///
+/// # Panics
+///
+/// Panics when the database cannot be written or holds no such message.
+pub fn set_message_date(db_path: &Path, guid: &str, date: i64) {
+    let db = Connection::open(db_path).expect("open chat.db");
+    let changed = db
+        .execute(
+            "UPDATE message SET date = ?1 WHERE guid = ?2",
+            rusqlite::params![date, guid],
+        )
+        .expect("set the message date");
+    assert_eq!(changed, 1, "chat.db holds one message {guid}");
 }
 
 /// A `message_summary_info` property list, as XML, for a message of `parts`

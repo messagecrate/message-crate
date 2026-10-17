@@ -78,6 +78,17 @@ Versions, dates, counts, sizes, paths, command names. `MAME version 0.191,
 released Oct 24, 2017`, not "a recent version". "Three tests fail: `test_auth`,
 `test_retry`, `test_paging`", not "several tests are failing".
 
+## American spelling
+
+Message Crate spells American: canceled, labeled, behavior, recognize, honor,
+color, favorite. The rule holds in prose, product copy, comments,
+identifiers, and the values the server stores and sends, such as the
+`canceled` run status. A name that belongs to a library or a standard keeps
+its own spelling, whichever it is: tokio's `cancelled()`, GitHub's
+`cancelled` run conclusion. Text that Message Crate did not write keeps
+its spelling too, because changing it would misquote it: vendored code and
+skills, test fixtures taken from real exports, and quoted books.
+
 ## HTTP status codes carry their name
 
 A status code is written as the number and its reason phrase together: `400 Bad
@@ -111,7 +122,7 @@ A glossary at the bottom arrives too late to prevent the misreading.
 
 ## Uncertainty is stated once
 
-An unknown is named plainly and then set aside. Neighbouring sentences are not
+An unknown is named plainly and then set aside. Neighboring sentences are not
 hedged to cover it:
 
 > How the sections are delimited is not yet established. What matters here is

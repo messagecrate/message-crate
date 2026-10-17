@@ -1,5 +1,7 @@
 use super::*;
 use crate::export_dir;
+#[cfg(unix)]
+use message_crate_core::testutil::{DirectoryProbe, with_directory_mode};
 
 /// The committed bytes of the image placeholder.
 fn placeholder_jpg() -> &'static [u8] {
@@ -68,9 +70,9 @@ fn a_real_attachment_that_cannot_be_removed_fails_the_pass_and_names_the_file() 
     let photo = attachments.join("IMG_0001.jpg");
     fs::write(&photo, b"real photo bytes").expect("write");
 
-    let Some(result) =
-        crate::with_directory_mode(&attachments, 0o555, || materialize_placeholders(dir.path()))
-    else {
+    let Some(result) = with_directory_mode(&attachments, 0o555, DirectoryProbe::Write, || {
+        materialize_placeholders(dir.path())
+    }) else {
         return;
     };
 
@@ -97,9 +99,9 @@ fn a_file_in_a_subdirectory_that_cannot_be_removed_is_the_one_the_error_names() 
     let photo = sub.join("photo.jpg");
     fs::write(&photo, b"real photo bytes").expect("write");
 
-    let Some(result) =
-        crate::with_directory_mode(&sub, 0o555, || materialize_placeholders(dir.path()))
-    else {
+    let Some(result) = with_directory_mode(&sub, 0o555, DirectoryProbe::Write, || {
+        materialize_placeholders(dir.path())
+    }) else {
         return;
     };
 
@@ -189,14 +191,14 @@ fn a_symlink_named_like_a_placeholder_is_replaced_by_a_real_placeholder() {
 #[test]
 fn placeholders_refuse_a_directory_without_the_sentinel_and_remove_nothing() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let att = tmp.path().join("attachments");
-    fs::create_dir_all(att.join("2024")).expect("write");
-    fs::write(att.join("photo.jpg"), b"mine").expect("write");
-    fs::write(att.join("2024/video.mp4"), b"mine").expect("write");
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(attachments_dir.join("2024")).expect("write");
+    fs::write(attachments_dir.join("photo.jpg"), b"mine").expect("write");
+    fs::write(attachments_dir.join("2024/video.mp4"), b"mine").expect("write");
 
     assert!(materialize_placeholders(tmp.path()).is_err());
 
-    assert!(att.join("photo.jpg").is_file());
-    assert!(att.join("2024/video.mp4").is_file());
-    assert!(!att.join("placeholder.jpg").exists());
+    assert!(attachments_dir.join("photo.jpg").is_file());
+    assert!(attachments_dir.join("2024/video.mp4").is_file());
+    assert!(!attachments_dir.join("placeholder.jpg").exists());
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { countOf } from "../../lib/plural";
 import { formatHandleDate } from "./contactDrawerTypes";
 
 export function handleDateCell(iso: string | null | undefined, zone: string): string {
@@ -15,11 +16,11 @@ export type RemoveIdentityTarget = {
 
 export function removeIdentityConfirmBody(target: RemoveIdentityTarget): ReactNode {
   const { address, serviceLabel, conversationCount } = target;
-  const emphasize = "font-medium text-accent";
+  const emphasisClass = "font-medium text-accent";
   const serviceId = (
     <>
-      <span className={emphasize}>{serviceLabel}</span>{" "}
-      <span className={`${emphasize} break-all`}>{address}</span>
+      <span className={emphasisClass}>{serviceLabel}</span>{" "}
+      <span className={`${emphasisClass} break-all`}>{address}</span>
     </>
   );
   if (conversationCount <= 0) {
@@ -29,11 +30,10 @@ export function removeIdentityConfirmBody(target: RemoveIdentityTarget): ReactNo
       </p>
     );
   }
-  const word = conversationCount === 1 ? "conversation" : "conversations";
   return (
     <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
-      Removing {serviceId} will unlink {conversationCount} {word} from this contact. Unlinked data
-      will not be deleted.
+      Removing {serviceId} will unlink {countOf(conversationCount, "conversation")} from this
+      contact. Unlinked data will not be deleted.
     </p>
   );
 }

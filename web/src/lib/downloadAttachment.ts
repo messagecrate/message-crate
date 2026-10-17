@@ -1,8 +1,8 @@
 import { attachmentName } from "./attachmentMedia";
+import { invokeSaveDownload } from "./desktop/fs";
 import { saveFile } from "./saveFile";
 import { createMediaLink, fetchAsset } from "./serverApi";
-import { invokeSaveDownload } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 import type { MessageAttachment } from "./types";
 
 /**

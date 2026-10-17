@@ -1,18 +1,28 @@
 name: Nightly
 
-# Once a night, the release Dockerfile is built from main. "Docker image
-# builds" in ci.yml runs only on a pull request that changes the Dockerfile,
-# a Cargo manifest or the lockfile, so a change anywhere else that breaks
-# the image was not built until a release tag. This run builds it and never
+# Once a night, the release Dockerfile is built from main. No pull request
+# builds the image, so this is where a change that breaks it shows before a
+# release tag, whose docker job in ci.yml builds it again, without starting
+# it, before it pushes.
+# This run builds it, starts it with docker/compose.release.yml, and never
 # publishes it: publishing stays with a v* tag in ci.yml.
+#
+# It also loads the website the image serves in a headless browser, logs in
+# to the Demo Account, searches and opens a conversation (#2217). The web
+# app's tests mock the server and the server's tests never load the website,
+# so this is the only run of the two together.
+#
+# It also checks, on GitHub's Windows on ARM runner, that the x64 ffmpeg and
+# ffprobe the desktop app downloads there run under emulation (#2370).
 #
 # It is a report, not a gate: it has no pull_request trigger and nothing
 # here is in the ruleset's required list, so it lives outside ci.yml, whose
 # every job the ruleset on main requires. A failed night opens an issue
-# labelled bug instead. Why: docs/adr/0007-ci-is-the-only-gate.md.
+# labeled bug instead. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
 # No job installs a package: the build happens inside the Dockerfile's own
-# stages.
+# stages, the browser runs inside the Playwright image, and the ffmpeg check
+# downloads only the files the app pins.
 
 on:
   schedule:
@@ -24,7 +34,7 @@ on:
   # Started by hand, the build runs whether or not main changed.
   workflow_dispatch:
 
-# One run at a time. A second run waits for the first rather than cancelling
+# One run at a time. A second run waits for the first rather than canceling
 # it, so a night's verdict is never lost to a manual run.
 concurrency:
   group: ${{ github.workflow }}
@@ -42,7 +52,7 @@ jobs:
   # scheduled run late or drops one: nothing is built twice and no commit
   # falls between two windows.
   #
-  # A cancelled run does not count as the previous run, because it may have
+  # A canceled run does not count as the previous run, because it may have
   # stopped before the build. With no previous run, or when the lookup
   # fails, the build runs: building once too often costs minutes, and
   # skipping wrongly hides a broken image.
@@ -90,8 +100,7 @@ jobs:
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # ── The release Dockerfile builds ─────────────────────────────────────
-  # The same steps as "Docker image builds" in ci.yml; keep the two alike.
+  # ── The release Dockerfile builds and starts ──────────────────────────
   # push: false, and no Docker Hub login: nothing is published.
   docker-build:
     name: Nightly Docker image build
@@ -100,28 +109,68 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ./docker/Dockerfile
           push: false
+          load: true
+          tags: message-crate-server:check
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # A change to the server that makes it write outside /app/data at start
+      # builds and then fails to start under the Compose files' read-only
+      # root filesystem. No pull request starts the image, so this run is
+      # where such a change shows.
+      # --website then uses the website it serves in a headless browser: a
+      # static/ bundle that fails to load, a console error, or a 5xx from the
+      # server fails the step.
+      - name: Start the release Compose stack and use its website as the Demo Account
+        run: ./scripts/check-docker-compose.sh --website message-crate-server:check
+
+  # ── The ffmpeg the app downloads runs on Windows on ARM ───────────────
+  # The desktop app gives Windows on ARM the Windows x64 ffmpeg and ffprobe
+  # (src-tauri/src/tool_downloads/pins.rs), which Windows runs under
+  # emulation. The script downloads exactly those files, checks their pinned
+  # SHA-256 as the app does, asks ffprobe about a committed video and
+  # converts it with ffmpeg the way the Media Stage does, to H.264 and HEVC.
+  windows-arm-ffmpeg:
+    name: ffmpeg on Windows on ARM
+    needs: changed
+    if: needs.changed.outputs.build == 'true'
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # A runner label that pointed at an x64 machine would pass the check
+      # without checking anything.
+      - name: The runner is Windows on ARM
+        run: |
+          echo "RUNNER_OS=$RUNNER_OS RUNNER_ARCH=$RUNNER_ARCH"
+          [ "$RUNNER_OS" = Windows ] && [ "$RUNNER_ARCH" = ARM64 ]
+
+      - name: Download the pinned ffmpeg and ffprobe, probe a video and convert it
+        run: ./scripts/check-windows-arm-ffmpeg.sh crates/server/server/tests/fixtures/media/hevc.mov
 
   # ── A failed night opens an issue ─────────────────────────────────────
   # One open issue holds every failed night: the first failure opens it and
   # each later one adds a comment, until somebody closes it. A job that
-  # timed out ends as cancelled, so that counts as failed too; a run that a
-  # person cancelled does not.
+  # timed out ends with GitHub's result `cancelled`, so that counts as failed
+  # too; a run that a person canceled does not.
   report:
     name: Report a failed night
-    needs: [changed, docker-build]
+    needs: [changed, docker-build, windows-arm-ffmpeg]
     if: ${{ !cancelled() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -137,6 +186,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           CHANGED_RESULT: ${{ needs.changed.result }}
           BUILD_RESULT: ${{ needs.docker-build.result }}
+          FFMPEG_RESULT: ${{ needs.windows-arm-ffmpeg.result }}
         run: |
           title="Nightly run failed"
 
@@ -146,6 +196,9 @@ jobs:
           esac
           case "$BUILD_RESULT" in
             failure|cancelled) failed="${failed}- \"Nightly Docker image build\" ($BUILD_RESULT)"$'\n' ;;
+          esac
+          case "$FFMPEG_RESULT" in
+            failure|cancelled) failed="${failed}- \"ffmpeg on Windows on ARM\" ($FFMPEG_RESULT)"$'\n' ;;
           esac
 
           body=$(printf '%s\n\n%s\n%s\n%s\n' \

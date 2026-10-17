@@ -1,0 +1,343 @@
+//! Load KnugiHK WhatsApp-Chat-Exporter single-file JSON (`ChatCollection.to_dict`).
+
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+
+/// Top-level JSON: map of JID → chat.
+pub(crate) type ChatStoreFile = BTreeMap<String, ChatJson>;
+
+/// One conversation in a wtsexporter `result.json`: its name, its messages
+/// and, on a group conversation, its members.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ChatJson {
+    /// The conversation's name: the title of a group conversation, the other
+    /// person's name on a one-to-one conversation. `None` when the backup has
+    /// none.
+    pub name: Option<String>,
+    /// Prefix for relative media `data` paths (iOS often `AppDomainGroup-…/`).
+    #[serde(default)]
+    pub media_base: Option<String>,
+    /// The conversation's messages, keyed as wtsexporter writes them.
+    #[serde(default)]
+    pub messages: BTreeMap<String, MessageJson>,
+    /// On a group, one entry per person the backup has a member row for,
+    /// the owner of the phone included where the backup has one. `null`
+    /// on any other conversation, and on a group whose member table was absent or
+    /// unreadable. An empty list means the table was read and holds no row
+    /// for the group.
+    #[serde(default)]
+    pub members: ForkField<Vec<MemberJson>>,
+}
+
+/// One entry of a group's `members`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct MemberJson {
+    /// As [`MessageJson::sender_jid`].
+    #[serde(default)]
+    pub jid: Option<String>,
+    /// As [`MessageJson::sender_lid`]. `jid` is the id the member is
+    /// written under.
+    #[serde(default)]
+    #[expect(dead_code, reason = "read and not written: `jid` names the member")]
+    pub lid: Option<String>,
+    /// The name the owner gave the member in the address book.
+    #[serde(default)]
+    pub contact_name: Option<String>,
+    /// The name the member typed into their own WhatsApp profile.
+    #[serde(default)]
+    pub push_name: Option<String>,
+    /// Whether the member was in the group when the backup was made.
+    #[serde(default)]
+    #[expect(
+        dead_code,
+        reason = "read and not written: the conversation model has no place for it"
+    )]
+    pub active: bool,
+    /// Whether the member was an admin of the group.
+    #[serde(default)]
+    #[expect(
+        dead_code,
+        reason = "read and not written: the conversation model has no place for it"
+    )]
+    pub admin: bool,
+}
+
+/// A field only Message Crate's fork of WhatsApp Chat Exporter writes, told
+/// apart from one it wrote as `null`. Upstream's JSON lacks the field, and
+/// [`load_chat_store`] refuses such a file rather than read it the old way.
+#[derive(Debug, Clone, Default)]
+pub(crate) enum ForkField<T> {
+    /// The JSON has no such field.
+    #[default]
+    Absent,
+    /// The field's value, `None` for `null`.
+    Present(Option<T>),
+}
+
+impl<T> ForkField<T> {
+    /// The value, when the field is there and not `null`.
+    pub fn get(&self) -> Option<&T> {
+        match self {
+            Self::Present(value) => value.as_ref(),
+            Self::Absent => None,
+        }
+    }
+
+    fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for ForkField<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Option::<T>::deserialize(deserializer).map(Self::Present)
+    }
+}
+
+/// One message of a chat in a wtsexporter `result.json`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct MessageJson {
+    /// `true` when the owner of the phone sent the message.
+    #[serde(default)]
+    pub from_me: bool,
+    /// Unix seconds or milliseconds. Either is normalized to milliseconds
+    /// (`timestamp_ms`) when the conversation is written.
+    pub timestamp: Option<f64>,
+    /// The message text, or the media file's path when `media` is `true`.
+    pub data: Option<Value>,
+    /// The sender as wtsexporter names them: a name, or digits that may be an
+    /// internal id. Read only when it is a name.
+    pub sender: Option<String>,
+    /// `false`, `true` (the path is in `data`), or a media path string.
+    #[serde(default)]
+    pub media: Value,
+    /// The media file's MIME type.
+    pub mime: Option<String>,
+    /// The caption on a media message.
+    pub caption: Option<String>,
+    /// `true` when the message is a sticker.
+    #[serde(default)]
+    pub sticker: bool,
+    /// The message's id in the backup, shortened on an iPhone: see
+    /// [`Self::full_key_id`].
+    pub key_id: Option<Value>,
+    /// The whole id the backup stores for the message. On an iPhone
+    /// `key_id` is its first 17 characters; on Android the two are equal.
+    /// `null` for a message from WhatsApp's own text export. Absent from a
+    /// JSON that upstream WhatsApp Chat Exporter wrote: only Message Crate's
+    /// fork, `messagecrate/WhatsApp-Chat-Exporter`, writes it, from commit
+    /// 96e6b80 on its `main`.
+    #[serde(default)]
+    pub full_key_id: Option<Value>,
+    /// What the message quotes, when it is a reply: the quoted message's
+    /// `key_id` as wtsexporter writes it.
+    pub reply: Option<Value>,
+    /// The whole id of the quoted message, as its `full_key_id`, on a quoted
+    /// reply; `null` when the message is not a reply. Absent where
+    /// [`Self::full_key_id`] is.
+    #[serde(default)]
+    pub reply_key_id: Option<Value>,
+    /// The reactions that stand on the message, one entry each: `[]` when
+    /// the backup's reaction source was read and the message has none,
+    /// `null` when it is not known (the source table is absent, the record
+    /// does not decode, or the message comes from an older export or from
+    /// WhatsApp's own text export). A withdrawn reaction is already left
+    /// out. Absent from a JSON that upstream WhatsApp Chat Exporter wrote:
+    /// only the fork writes it, from release `0.13.0-mc.2`. The fork's
+    /// `reactions`, a map from the reactor's display name to the emoji on
+    /// Android and always empty on an iPhone, is not read: a name is not an
+    /// identity.
+    #[serde(default)]
+    pub reaction_details: Option<Vec<ReactionJson>>,
+    /// The sender's phone id (`…@s.whatsapp.net`) whenever the backup can
+    /// supply one, else their `@lid` id. `null` unless the message is a
+    /// received group message, and on one whose backup names no sender.
+    #[serde(default)]
+    pub sender_jid: ForkField<String>,
+    /// The sender's `@lid` id, when the backup stores the sender under one.
+    /// Only its presence is checked: an `@lid` id is not a phone number.
+    #[serde(default)]
+    pub sender_lid: ForkField<String>,
+    /// The name the owner gave the sender in the address book.
+    #[serde(default)]
+    pub sender_contact_name: ForkField<String>,
+    /// The name the sender typed into their own WhatsApp profile.
+    #[serde(default)]
+    pub sender_push_name: ForkField<String>,
+    /// On a group event (a member joined or left, the group was renamed or
+    /// its picture changed), the fork's text of it, such as "Ada joined the
+    /// group". `null` on every other message, and on an event of a kind the
+    /// backup does not state, because the fork guesses none. Absent from a
+    /// JSON that upstream WhatsApp Chat Exporter wrote: only the fork writes
+    /// it, from release `0.13.0-mc.2`.
+    #[serde(default)]
+    pub group_action: Option<String>,
+    /// The id of the member [`Self::group_action`] names, resolved as
+    /// [`Self::sender_jid`] is. `null` where `group_action` is, when the
+    /// owner of the phone acted, and when the text names no member.
+    #[serde(default)]
+    pub group_action_jid: Option<String>,
+}
+
+impl MessageJson {
+    /// True when the message lacks a sender field the fork writes on every
+    /// message.
+    fn lacks_fork_sender_fields(&self) -> bool {
+        self.sender_jid.is_absent()
+            || self.sender_lid.is_absent()
+            || self.sender_contact_name.is_absent()
+            || self.sender_push_name.is_absent()
+    }
+}
+
+/// One reaction as the fork writes it in `reaction_details`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ReactionJson {
+    /// The reaction, a non-empty string.
+    pub emoji: Option<String>,
+    /// `true` when the owner of the phone reacted.
+    #[serde(default)]
+    pub from_me: bool,
+    /// The reactor's id by the fork's `sender_jid` rule: the phone id
+    /// (`…@s.whatsapp.net`), resolved from an `@lid` id where the backup
+    /// maps it, else the `@lid` id itself. `null` on the owner's reactions,
+    /// and on a group reaction whose reactor the backup does not name. The
+    /// fork's `lid`, the `@lid` id the reactor is stored under, is not read:
+    /// `jid` already holds it when there is no phone behind it, and a
+    /// reaction's `lid` is not needed to tell the fork's JSON from
+    /// upstream's, which [`MessageJson::lacks_fork_sender_fields`] does from
+    /// `sender_lid`.
+    pub jid: Option<String>,
+}
+
+/// Load a wtsexporter `result.json` (one JSON object: JID → chat).
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be read or parsed, or when it lacks
+/// the sender ids, names and group members that only Message Crate's fork of
+/// WhatsApp Chat Exporter writes. Upstream's JSON is refused rather than read
+/// without them, because it gives a group message's sender as a name or as
+/// digits that may be an internal id, never both.
+pub(crate) fn load_chat_store(path: &Path) -> Result<ChatStoreFile> {
+    let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let store: ChatStoreFile =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    let lacks_fork_fields =
+        store
+            .iter()
+            .filter(|(jid, _)| !jid.starts_with('_'))
+            .any(|(_, chat)| {
+                chat.members.is_absent()
+                    || chat
+                        .messages
+                        .values()
+                        .any(MessageJson::lacks_fork_sender_fields)
+            });
+    if lacks_fork_fields {
+        bail!(
+            "{} has no sender ids, names or group members, so Message Crate's fork of \
+             WhatsApp Chat Exporter did not write it. Export the backup again with \
+             wtsexporter from the messagecrate/WhatsApp-Chat-Exporter release 0.13.0-mc.2 \
+             or later.",
+            path.display()
+        );
+    }
+    Ok(store)
+}
+
+/// True when the message's `media` field is the boolean `true`.
+fn has_media_flag(message: &MessageJson) -> bool {
+    matches!(&message.media, Value::Bool(true))
+}
+
+/// True for the text wtsexporter writes when a media file was not in the backup.
+fn is_missing_media_placeholder(s: &str) -> bool {
+    s.eq_ignore_ascii_case("The media is missing")
+}
+
+/// Body text from `data` (string) or caption.
+///
+/// When `media` is true, wtsexporter stores the file path in `data`, so only
+/// `caption` (if any) is treated as message text.
+pub(crate) fn message_text(message: &MessageJson) -> String {
+    if has_media_flag(message) {
+        return message.caption.clone().unwrap_or_default();
+    }
+    let body = match &message.data {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        Some(Value::Bool(b)) => b.to_string(),
+        _ => String::new(),
+    };
+    if body.is_empty() {
+        message.caption.clone().unwrap_or_default()
+    } else if let Some(cap) = message.caption.as_deref().filter(|c| !c.is_empty()) {
+        if body.contains(cap) {
+            body
+        } else {
+            format!("{body}\n{cap}")
+        }
+    } else {
+        body
+    }
+}
+
+/// A key field as a string: `None` when it is absent, `null` or blank.
+pub(crate) fn key_string(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(s) => ir::trimmed(s).map(str::to_string),
+        Value::Null => None,
+        other => Some(other.to_string()),
+    }
+}
+
+/// True when the message quotes another: it names the quoted message by
+/// `reply` or by `reply_key_id`.
+pub(crate) fn is_reply(message: &MessageJson) -> bool {
+    key_string(message.reply.as_ref()).is_some()
+        || key_string(message.reply_key_id.as_ref()).is_some()
+}
+
+/// The fork's text of a group event, or `None` when the message is not
+/// one or the backup does not state what the event was.
+pub(crate) fn group_action(message: &MessageJson) -> Option<&str> {
+    message.group_action.as_deref().and_then(ir::trimmed)
+}
+
+/// Path hint for an attachment.
+///
+/// Upstream sets `media: true` and puts the path in `data` (Android/iOS). Older
+/// or alternate dumps may put a path string directly in `media`.
+pub(crate) fn media_path(message: &MessageJson) -> Option<&str> {
+    match &message.media {
+        Value::String(s) if !s.is_empty() && !is_missing_media_placeholder(s) => Some(s.as_str()),
+        Value::Bool(true) => match &message.data {
+            Some(Value::String(s)) if !s.is_empty() && !is_missing_media_placeholder(s) => {
+                Some(s.as_str())
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Normalize wtsexporter timestamp to Unix milliseconds. wtsexporter writes
+/// seconds or milliseconds; a value past 9 999 999 999 is taken as
+/// milliseconds.
+pub(crate) fn timestamp_ms(secs_or_ms: f64) -> i64 {
+    if secs_or_ms > 9_999_999_999.0 {
+        secs_or_ms as i64
+    } else {
+        (secs_or_ms * 1000.0) as i64
+    }
+}
+
+/// Normalize wtsexporter timestamp to Unix seconds.
+pub(crate) fn timestamp_secs(secs_or_ms: f64) -> i64 {
+    timestamp_ms(secs_or_ms) / 1000
+}

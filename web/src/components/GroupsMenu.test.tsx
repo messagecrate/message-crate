@@ -1,14 +1,20 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
 import { CONTACT_GROUP_MENU_COPY, MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { fill, setupUser } from "../test/user";
 import GroupsMenu from "./GroupsMenu";
 
+beforeEach(() => {
+  startFakeClock();
+});
+
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 const GROUPS = ["College", "Family", "Work"] as const;
@@ -86,7 +92,7 @@ describe("GroupsMenu", () => {
     expect(screen.queryByText("Family")).toBeNull();
   });
 
-  it("shows the server's refusal of a new name and keeps the typed name", async () => {
+  it("shows the server's refusal of a new name, as a sentence, and keeps the typed name", async () => {
     const user = setupUser();
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
@@ -98,8 +104,13 @@ describe("GroupsMenu", () => {
     await fill(user, screen.getByPlaceholderText("Contact Group name"), "Work; 2024");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
+    await settle();
     expect(onCreate).toHaveBeenCalledWith("Work; 2024");
-    expect(await screen.findByText(refusal)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Name can\'t hold ";", because the address book separates Contact Group names with it',
+      ),
+    ).toBeTruthy();
     expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
   });
 
@@ -113,7 +124,8 @@ describe("GroupsMenu", () => {
     await user.type(screen.getByPlaceholderText("Contact Group name"), "Friends{Enter}");
 
     expect(onCreate).toHaveBeenCalledWith("Friends");
-    expect(await screen.findByRole("searchbox", { name: "Search Contact Groups…" })).toBeTruthy();
+    await settle();
+    expect(screen.getByRole("searchbox", { name: "Search Contact Groups…" })).toBeTruthy();
     expect(screen.queryByPlaceholderText("Contact Group name")).toBeNull();
   });
 

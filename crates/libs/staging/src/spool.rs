@@ -21,9 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
+use ir::Attachment;
 use message_crate_core::{ATTACHMENT_SPOOL_DIRECTORY, ScratchDir};
-use message_ir::IrAttachment;
-use sha2::{Digest, Sha256};
 
 use crate::headroom::{Disk, check_headroom};
 use crate::write_queue::AttachmentSource;
@@ -98,7 +97,7 @@ impl AttachmentSpool {
     /// Returns an error when the spool's directory cannot be made, its disk
     /// has no room for the payload, or the payload file cannot be written.
     pub fn put(&self, bytes: &[u8]) -> Result<String> {
-        let digest = hex::encode(Sha256::digest(bytes));
+        let digest = file_io::sha256_hex(bytes);
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.sizes.contains_key(&digest) {
             return Ok(digest);
@@ -139,13 +138,13 @@ impl AttachmentSpool {
         state.sizes.get(digest).copied()
     }
 
-    /// Where `att`'s bytes come from when its digest was spooled: the
+    /// Where `attachment`'s bytes come from when its digest was spooled: the
     /// spooled file, with the payload's size for the progress totals.
     /// `None` for an attachment the spool does not hold.
-    pub fn source(&self, att: &IrAttachment) -> Option<(AttachmentSource, Option<u64>)> {
-        let digest = att.digest_sha256.as_deref()?;
+    pub fn source(&self, attachment: &Attachment) -> Option<(AttachmentSource, Option<u64>)> {
+        let digest = attachment.digest_sha256.as_deref()?;
         let path = self.path(digest)?;
-        let size = att.size_bytes.or_else(|| self.size(digest));
+        let size = attachment.size_bytes.or_else(|| self.size(digest));
         Some((AttachmentSource::Path(path), size))
     }
 }
@@ -153,6 +152,7 @@ impl AttachmentSpool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ir::testutil::sample_attachment;
     use message_crate_core::testutil::names_in;
 
     #[test]
@@ -208,22 +208,14 @@ mod tests {
         let cache = tempfile::tempdir().unwrap();
         let spool = AttachmentSpool::new(cache.path());
         let digest = spool.put(b"photo").unwrap();
-        let mut att = IrAttachment {
-            path: None,
-            original_name: Some("photo.jpg".into()),
-            mime_type: Some("image/jpeg".into()),
+        let mut attachment = Attachment {
             digest_sha256: Some(digest.clone()),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
-            bytes: None,
+            ..sample_attachment()
         };
-        let (source, size) = spool.source(&att).unwrap();
+        let (source, size) = spool.source(&attachment).unwrap();
         assert!(matches!(source, AttachmentSource::Path(p) if p == spool.path(&digest).unwrap()));
         assert_eq!(size, Some(5));
-        att.digest_sha256 = Some("0000".into());
-        assert!(spool.source(&att).is_none(), "not spooled");
+        attachment.digest_sha256 = Some("0000".into());
+        assert!(spool.source(&attachment).is_none(), "not spooled");
     }
 }

@@ -4,11 +4,11 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     id INTEGER PRIMARY KEY,
     -- Owning account (`accounts.id`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- Thread identity handle id (resolved into handles during staging).
+    -- Conversation identity handle id (resolved into handles during staging).
     chat_handle_id INTEGER NOT NULL,
-    -- Thread shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'one-to-one' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
-    -- Group display title; NULL for 1:1 chats.
+    -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,
     -- The latest message time of the copy that gave group_title, in the form
     -- staging_messages.timestamp holds; NULL with no title, or when that copy had no
@@ -125,12 +125,12 @@ CREATE TABLE IF NOT EXISTS staging_attachments (
     size_bytes INTEGER,
     -- Why bytes are absent; NULL if present.
     missing_reason TEXT,
-    -- SHA-256 hex of a converted/compressed derivative.
-    derived_sha256 TEXT,
-    -- Path under the assets store for the derivative file.
-    derived_assets_path TEXT,
-    -- MIME type of the derivative file.
-    derived_mime_type TEXT
+    -- SHA-256 hex of the Preview, as `attachments.preview_sha256`.
+    preview_sha256 TEXT,
+    -- Path of the Preview, as `attachments.preview_assets_path`.
+    preview_assets_path TEXT,
+    -- MIME type of the Preview, as `attachments.preview_mime_type`.
+    preview_mime_type TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_attachments_sha256 ON staging_attachments (sha256);
@@ -151,7 +151,10 @@ CREATE TABLE IF NOT EXISTS staging_tapbacks (
     -- 1 = reaction from the account holder; 0 = from someone else.
     is_from_me INTEGER NOT NULL,
     -- Reactor identity handle id; NULL when unknown.
-    sender_handle_id INTEGER
+    sender_handle_id INTEGER,
+    -- The reactor's name when the source gave no address, as
+    -- `tapbacks.sender_display_name`.
+    sender_display_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_tapbacks_message_id ON staging_tapbacks (message_id);
@@ -164,8 +167,9 @@ CREATE TABLE IF NOT EXISTS staging_message_versions (
     message_id INTEGER NOT NULL REFERENCES staging_messages(id) ON DELETE CASCADE,
     -- Which part of a multi-part message this version belongs to (0 = first/only).
     part_index INTEGER NOT NULL DEFAULT 0,
-    -- The part's text in this version.
-    text TEXT NOT NULL,
+    -- The part's text in this version; NULL when the source recorded the edit
+    -- and not the text it replaced.
+    text TEXT,
     -- When this version was written, in the form staging_messages.timestamp
     -- holds; NULL when the source does not record it.
     edited_at TEXT

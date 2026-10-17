@@ -3,8 +3,8 @@
 use crate::assets::extract_body;
 use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
+use ir::{ConversationType, IdentityType};
 use mailparse::{MailHeaderMap, ParsedMail};
-use message_ir::{IdentityType, IrConversationType};
 use phone::{Country, Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -24,11 +24,68 @@ const SENT_TYPES: &[&str] = &["2", "128", "4", "135", "6", "5"];
 /// Android SMS/MMS type codes for inbox / received messages.
 const RECEIVED_TYPES: &[&str] = &["1", "132", "130"];
 
+/// What `X-smssync-datatype` says a mail holds. SMS Backup+ writes the name
+/// in capitals and reads it back without regard to case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Datatype {
+    Sms,
+    Mms,
+    CallLog,
+    /// A WhatsApp message, which SMS Backup+ backed up from 2013 to 2015
+    /// (commits `e77c56d` and `24b549e`).
+    WhatsApp,
+    /// No header: a mail from a version older than it, which SMS Backup+
+    /// added in November 2010 (commit `33f87f2`).
+    Missing,
+    /// A name SMS Backup+ never writes.
+    Other,
+}
+
+/// Each datatype SMS Backup+ writes, with the name it writes for it.
+const DATATYPE_NAMES: [(Datatype, &str); 4] = [
+    (Datatype::Sms, "SMS"),
+    (Datatype::Mms, "MMS"),
+    (Datatype::CallLog, "CALLLOG"),
+    (Datatype::WhatsApp, "WHATSAPP"),
+];
+
+impl Datatype {
+    /// The datatype a header value names.
+    pub(crate) fn from_header(value: &str) -> Self {
+        DATATYPE_NAMES
+            .into_iter()
+            .find(|(_, name)| value.eq_ignore_ascii_case(name))
+            .map_or(
+                if value.is_empty() {
+                    Self::Missing
+                } else {
+                    Self::Other
+                },
+                |(datatype, _)| datatype,
+            )
+    }
+
+    /// The name SMS Backup+ writes in the header, or `None` for a mail
+    /// without one or with a name it never writes.
+    pub(crate) fn name(self) -> Option<&'static str> {
+        DATATYPE_NAMES
+            .into_iter()
+            .find(|(datatype, _)| *datatype == self)
+            .map(|(_, name)| name)
+    }
+
+    /// True when SMS Backup+ writes the date of a mail of this datatype in
+    /// seconds, as Android stores an MMS's, rather than milliseconds.
+    pub(crate) fn dates_in_seconds(self) -> bool {
+        self == Self::Mms
+    }
+}
+
 /// Cached headers read once per EML (avoids repeated `get_first_value` + alloc).
 #[derive(Debug, Clone)]
 pub(crate) struct MailHeaders {
-    /// `SMS`, `MMS` or `CALLLOG`; SMS Backup+ writes it on every mail.
-    pub smssync_datatype: String,
+    /// SMS Backup+ writes it on every mail since November 2010.
+    pub smssync_datatype: Datatype,
     pub smssync_type: String,
     pub smssync_address: String,
     pub smssync_date: String,
@@ -51,7 +108,7 @@ impl MailHeaders {
                 .to_string()
         }
         Self {
-            smssync_datatype: one(mail, "X-smssync-datatype"),
+            smssync_datatype: Datatype::from_header(&one(mail, "X-smssync-datatype")),
             smssync_type: one(mail, "X-smssync-type"),
             smssync_address: one(mail, "X-smssync-address"),
             smssync_date: one(mail, "X-smssync-date"),
@@ -68,7 +125,20 @@ impl MailHeaders {
     /// Such a mail carries `X-smssync-type` too, holding the call's type, so
     /// only `X-smssync-datatype` tells a call from a text message.
     pub(crate) fn is_call_log(&self) -> bool {
-        self.smssync_datatype.eq_ignore_ascii_case("CALLLOG")
+        self.smssync_datatype == Datatype::CallLog
+    }
+
+    /// True for a WhatsApp message SMS Backup+ backed up, which Message
+    /// Crate skips (#2912).
+    ///
+    /// Such a mail carries `X-smssync-type` too, holding WhatsApp's own
+    /// status number rather than an Android message type, so only
+    /// `X-smssync-datatype` tells it from a text message. It is not read as
+    /// WhatsApp either: SMS Backup+ removed the feature after two years
+    /// because it did not work for most people, it never covered group
+    /// chats, and its status number gives no direction.
+    pub(crate) fn is_whatsapp(&self) -> bool {
+        self.smssync_datatype == Datatype::WhatsApp
     }
 }
 
@@ -342,30 +412,64 @@ pub(crate) fn names_a_group(members: &[Handle]) -> bool {
 /// A group's key and title from its members' keys.
 pub(crate) fn group_key(members: &[Handle]) -> (String, String) {
     let keys: Vec<String> = members.iter().map(|a| a.key().to_string()).collect();
-    phone::group_chat_id("group-", &keys)
+    phone::group_conversation_id("group-", &keys)
 }
 
-/// Unix seconds from the SMS Backup+ date header (milliseconds or seconds), else the `Date` header,
-/// and whether the time carries milliseconds.
+/// Unix seconds from `X-smssync-date`, else from the `Date` header, and
+/// whether the time carries milliseconds. An `X-smssync-date` that cannot be
+/// read in its unit leaves the time to `Date`, which SMS Backup+ writes on
+/// every mail from the same moment, to the second.
 fn timestamp_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
-    let raw = &headers.smssync_date;
-    if !raw.is_empty() && raw.chars().all(|c| c.is_ascii_digit()) {
-        let value: i64 = raw.parse().ok()?;
-        // Android uses epoch ms (~1e12 today). Seconds stay ~1e9 until year 5138.
-        // Threshold 1e11 catches pre-2001 ms timestamps that the old 1e12 cutoff missed.
-        return Some(if value >= 100_000_000_000 {
-            (value as f64 / 1000.0, true)
-        } else {
-            (value as f64, false)
-        });
-    }
+    let date_header_secs = date_header_seconds(headers);
+    smssync_date_seconds(headers, date_header_secs).or(date_header_secs.map(|secs| (secs, false)))
+}
+
+/// Unix seconds from the `Date` header, whole seconds only.
+fn date_header_seconds(headers: &MailHeaders) -> Option<f64> {
     if headers.date.is_empty() {
         return None;
     }
     // mailparse does not parse Date headers; try chrono RFC2822.
     chrono::DateTime::parse_from_rfc2822(&headers.date)
         .ok()
-        .map(|d| (d.timestamp() as f64, false))
+        .map(|d| d.timestamp() as f64)
+}
+
+/// Unix seconds from `X-smssync-date`, read in the unit its
+/// `X-smssync-datatype` gives, and whether the time carries milliseconds.
+/// `date_header_secs` is the time in the `Date` header, if it has one.
+///
+/// SMS Backup+ copies the date straight from Android's database, where an
+/// SMS's and a call's `date` are milliseconds and an MMS's is seconds
+/// (`setSmsHeaders`, `setMmsHeaders` and `setCallLogHeaders` in
+/// <https://github.com/jberkel/sms-backup-plus/blob/fd33c3209c80598632d0323237fc86fa4ffea710/app/src/main/java/sms/backup/plus/mail/HeaderGenerator.java#L64-L88>).
+/// A WhatsApp message's date is milliseconds too (`messageFromMapWhatsApp`,
+/// commit `e77c56d`). A datatype SMS Backup+ never writes names no unit, so
+/// its date is not read.
+///
+/// A mail with no datatype comes from a version older than the header, and
+/// may be an SMS or, in the month before the header, an MMS, so its date is
+/// read in the unit that agrees with `Date`, which SMS Backup+ wrote from
+/// the same date to the second. With no `Date` to compare, it is read in
+/// milliseconds, the unit of nearly every such mail.
+fn smssync_date_seconds(
+    headers: &MailHeaders,
+    date_header_secs: Option<f64>,
+) -> Option<(f64, bool)> {
+    let date = headers.smssync_date.as_str();
+    let in_millis = || android_fields::unix_secs_from_date_ms(date).map(|time| (time, true));
+    let in_secs = || android_fields::unix_secs_from_date_secs(date).map(|time| (time, false));
+    match headers.smssync_datatype {
+        Datatype::Missing => match date_header_secs {
+            None => in_millis(),
+            Some(sent_at) => in_millis()
+                .filter(|(time, _)| time.floor() == sent_at)
+                .or_else(|| in_secs().filter(|(time, _)| *time == sent_at)),
+        },
+        Datatype::Other => None,
+        datatype if datatype.dates_in_seconds() => in_secs(),
+        Datatype::Sms | Datatype::Mms | Datatype::CallLog | Datatype::WhatsApp => in_millis(),
+    }
 }
 
 /// True for a message the owner sent: by `X-smssync-type`, else when `From`
@@ -381,10 +485,10 @@ fn is_sent(headers: &MailHeaders, owner: &Owner) -> bool {
     owner.is_owner_email(addr_spec(&headers.from))
 }
 
-/// True when the EML is one SMS Backup+ message rather than unrelated mail
-/// or a call from the call log.
+/// True when the EML is one SMS Backup+ message rather than unrelated mail,
+/// a call from the call log, or a WhatsApp message.
 fn is_single_sms_eml(headers: &MailHeaders) -> bool {
-    if headers.is_call_log() {
+    if headers.is_call_log() || headers.is_whatsapp() {
         return false;
     }
     if !headers.smssync_type.is_empty() {
@@ -477,7 +581,7 @@ struct FlatAddresses {
 /// Where a flat EML lands and who sent it.
 struct FlatConversation {
     chat_key: String,
-    conversation_type: IrConversationType,
+    conversation_type: ConversationType,
     group_title: Option<String>,
     participants: Vec<Handle>,
     sender: Option<Handle>,
@@ -532,7 +636,7 @@ impl FlatAddresses {
     }
 
     /// A group when two or more other participants are named, else the
-    /// one-to-one chat with the peer. With no peer the chat key is empty:
+    /// one-to-one conversation with the peer. With no peer the chat key is empty:
     /// `chat_id_for` then keys the conversation by the subject's name, or
     /// as the conversation that names nobody.
     fn conversation(&self, headers: &MailHeaders, sent: bool) -> FlatConversation {
@@ -540,7 +644,7 @@ impl FlatAddresses {
             let (chat_key, title) = group_key(&self.non_owner);
             return FlatConversation {
                 chat_key,
-                conversation_type: IrConversationType::Group,
+                conversation_type: ConversationType::Group,
                 group_title: Some(title),
                 participants: self.non_owner.clone(),
                 sender: if sent {
@@ -558,7 +662,7 @@ impl FlatAddresses {
                 .as_ref()
                 .map(|p| p.key().to_string())
                 .unwrap_or_default(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: peer.iter().cloned().collect(),
             sender: peer.filter(|_| !sent && self.peer_is_sender(headers)),

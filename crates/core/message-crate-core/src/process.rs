@@ -5,19 +5,26 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::progress::ProgressSink;
+
 /// Shared cancel flag for cooperative in-process jobs.
+/// `CancelFlag::default()` is a flag nobody sets, for a run that cannot be
+/// canceled.
 pub type CancelFlag = Arc<AtomicBool>;
 
 /// A callback that receives one line of text at a time.
 type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Callback for mid-run progress / warning lines. The desktop app sets one and
-/// streams the lines to its log panel; `None` sends them to stderr.
+/// streams the lines to its log panel. A caller with nowhere to show the
+/// lines passes [`LogSink::none`]: a library never decides on its own to
+/// print a run's lines.
 ///
-/// A line is something the run did. A warning is the output of a step that
-/// failed. The desktop app writes a warning into the Import Run's log at
-/// warning level (`docs/architecture/import-run-logs.md`). A sink with no
-/// warning callback takes a warning as a line.
+/// A line is something the run did. A warning is something the run went on
+/// without, such as an attachment it could not read or a record it skipped
+/// (`docs/architecture/import-run-logs.md`). The desktop app writes a line
+/// into the Import Run's log at `INFO` and a warning at `WARN`. A sink with
+/// no warning callback takes a warning as a line.
 #[derive(Clone)]
 pub struct LogSink {
     line: LineCallback,
@@ -36,6 +43,11 @@ impl LogSink {
         }
     }
 
+    /// A sink that drops every line and warning.
+    pub fn none() -> Self {
+        Self::new(|_| {})
+    }
+
     /// The same sink, with `f` receiving each warning.
     #[must_use]
     pub fn with_warnings<F>(mut self, f: F) -> Self
@@ -47,17 +59,24 @@ impl LogSink {
     }
 
     /// Send one log line to the callback.
-    pub fn emit(&self, line: &str) {
-        (self.line)(line);
+    pub fn emit(&self, line: impl AsRef<str>) {
+        (self.line)(line.as_ref());
     }
 
     /// Send one warning to the warning callback, or to the line callback
     /// when the sink has none.
-    pub fn warn(&self, text: &str) {
+    pub fn warn(&self, text: impl AsRef<str>) {
+        let text = text.as_ref();
         match &self.warning {
             Some(warning) => warning(text),
             None => (self.line)(text),
         }
+    }
+}
+
+impl Default for LogSink {
+    fn default() -> Self {
+        Self::none()
     }
 }
 
@@ -67,49 +86,49 @@ impl fmt::Debug for LogSink {
     }
 }
 
-/// Send a log line to `sink` when set. Otherwise print to stderr.
-pub fn emit_log(sink: Option<&LogSink>, line: impl AsRef<str>) {
-    let line = line.as_ref();
-    match sink {
-        Some(sink) => sink.emit(line),
-        None => eprintln!("{line}"),
-    }
-}
-
-/// Send a warning to `sink` when set ([`LogSink::warn`]). Otherwise print to
-/// stderr.
-pub fn emit_warning(sink: Option<&LogSink>, text: impl AsRef<str>) {
-    let text = text.as_ref();
-    match sink {
-        Some(sink) => sink.warn(text),
-        None => eprintln!("{text}"),
-    }
-}
-
 /// Whether cancel has been requested.
-pub fn is_cancelled(cancel: Option<&CancelFlag>) -> bool {
-    cancel.is_some_and(|flag| flag.load(Ordering::Relaxed))
+pub fn is_canceled(cancel: &CancelFlag) -> bool {
+    cancel.load(Ordering::Relaxed)
 }
 
 /// Error returned by [`check_cancel`] when cancel was requested.
 ///
-/// Displays as `cancelled`, so callers at a `String` edge can use
-/// `.map_err(|e| e.to_string())` and `anyhow` callers can use `?`.
+/// A Cancel is told from a failure by this type, never by its text: the
+/// desktop app looks for it in the error's chain (`DesktopJobErrorEvent` in
+/// `src-tauri/src/commands/events.rs`), so any context added on the way out
+/// keeps it (#2077). Carry it with `?` into an `anyhow::Error` rather than
+/// turning it into a string, which loses the type. It displays as `canceled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("cancelled")]
-pub struct Cancelled;
+#[error("canceled")]
+pub struct Canceled;
 
-/// Return `Err(Cancelled)` if cancel was requested.
+/// Return `Err(Canceled)` if cancel was requested.
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the flag is set.
-pub fn check_cancel(cancel: Option<&CancelFlag>) -> Result<(), Cancelled> {
-    if is_cancelled(cancel) {
-        Err(Cancelled)
+/// Returns [`Canceled`] when the flag is set.
+pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Canceled> {
+    if is_canceled(cancel) {
+        Err(Canceled)
     } else {
         Ok(())
     }
+}
+
+/// Where a step of a run reports and what stops it: the log, the progress
+/// events, and the cancel flag. Every staging step takes the three together,
+/// such as the write queue's drains, [`crate::stage_attachment_jobs`], and
+/// the format sink's write. A caller with no log, no progress bar or no cancel passes
+/// [`LogSink::none`], [`ProgressSink::none`] or a `CancelFlag::default()`.
+#[derive(Debug, Clone, Copy)]
+pub struct Sinks<'a> {
+    /// Where the step writes its log lines.
+    pub log: &'a LogSink,
+    /// Where the step sends its progress events.
+    pub progress: &'a ProgressSink,
+    /// Set to stop the step. The step then fails with [`Canceled`] in its
+    /// error chain (#2077).
+    pub cancel: &'a CancelFlag,
 }
 
 /// Run `f` over `jobs` on up to `workers` scoped threads and return one result
@@ -117,17 +136,19 @@ pub fn check_cancel(cancel: Option<&CancelFlag>) -> Result<(), Cancelled> {
 ///
 /// Workers pull the next job index from a shared counter (work stealing).
 /// Cancel is checked before each job; once cancel is requested, every job not
-/// yet started records `Err("cancelled")` instead of running `f`.
-pub fn parallel_for_each<J, T, F>(
+/// yet started records [`Canceled`] (converted into `E`) instead of running
+/// `f`.
+pub fn parallel_for_each<J, T, E, F>(
     jobs: &[J],
     workers: usize,
-    cancel: Option<&CancelFlag>,
+    cancel: &CancelFlag,
     f: F,
-) -> Vec<Result<T, String>>
+) -> Vec<Result<T, E>>
 where
     J: Sync,
     T: Send,
-    F: Fn(&J) -> Result<T, String> + Sync,
+    E: From<Canceled> + Send,
+    F: Fn(&J) -> Result<T, E> + Sync,
 {
     if jobs.is_empty() {
         return Vec::new();
@@ -137,7 +158,7 @@ where
     let results = Mutex::new(
         std::iter::repeat_with(|| None)
             .take(jobs.len())
-            .collect::<Vec<Option<Result<T, String>>>>(),
+            .collect::<Vec<Option<Result<T, E>>>>(),
     );
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
@@ -149,7 +170,7 @@ where
                     }
                     let result = match check_cancel(cancel) {
                         Ok(()) => f(&jobs[index]),
-                        Err(cancelled) => Err(cancelled.to_string()),
+                        Err(canceled) => Err(canceled.into()),
                     };
                     results.lock().expect("parallel job mutex poisoned")[index] = Some(result);
                 }
@@ -168,18 +189,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cancelled_displays_as_cancelled() {
+    fn canceled_displays_as_canceled() {
         let flag: CancelFlag = Arc::new(AtomicBool::new(true));
-        let err = check_cancel(Some(&flag)).unwrap_err();
-        assert_eq!(err.to_string(), "cancelled");
+        let err = check_cancel(&flag).unwrap_err();
+        assert_eq!(err.to_string(), "canceled");
     }
 
     #[test]
     fn parallel_for_each_keeps_job_order() {
         let jobs: Vec<usize> = (0..20).collect();
-        let results = parallel_for_each(&jobs, 4, None, |job| {
+        let results = parallel_for_each(&jobs, 4, &CancelFlag::default(), |job| {
             if job % 7 == 3 {
-                Err(format!("bad {job}"))
+                Err(anyhow::anyhow!("bad {job}"))
             } else {
                 Ok(job * 2)
             }
@@ -188,7 +209,7 @@ mod tests {
         for (job, result) in jobs.iter().zip(&results) {
             match result {
                 Ok(doubled) => assert_eq!(*doubled, job * 2),
-                Err(message) => assert_eq!(message, &format!("bad {job}")),
+                Err(error) => assert_eq!(error.to_string(), format!("bad {job}")),
             }
         }
     }
@@ -197,22 +218,15 @@ mod tests {
     fn parallel_for_each_reports_cancel_without_running_jobs() {
         let flag: CancelFlag = Arc::new(AtomicBool::new(true));
         let jobs = [1u8, 2, 3];
-        let results = parallel_for_each(&jobs, 2, Some(&flag), |_| Ok::<_, String>(()));
-        assert!(
-            results
-                .iter()
-                .all(|r| r.as_ref().err().map(String::as_str) == Some("cancelled"))
-        );
+        let results = parallel_for_each(&jobs, 2, &flag, |_| Ok::<_, anyhow::Error>(()));
+        assert!(results.iter().all(|r| {
+            r.as_ref()
+                .is_err_and(|error| error.downcast_ref::<Canceled>().is_some())
+        }));
     }
 
     #[test]
-    fn emit_log_uses_sink_when_set() {
-        let lines = Arc::new(Mutex::new(Vec::new()));
-        let lines_clone = Arc::clone(&lines);
-        let sink = LogSink::new(move |line| {
-            lines_clone.lock().unwrap().push(line.to_string());
-        });
-        emit_log(Some(&sink), "hello");
-        assert_eq!(lines.lock().unwrap().as_slice(), ["hello"]);
+    fn default_cancel_flag_is_not_set() {
+        assert_eq!(check_cancel(&CancelFlag::default()), Ok(()));
     }
 }

@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { authModule } from "../test/providers";
 import { setupUser } from "../test/user";
 import { AuthGuard } from "./AuthGuard";
 
@@ -17,7 +18,7 @@ const profileState = vi.hoisted(() => ({
 const retry = vi.hoisted(() => vi.fn());
 const authState = vi.hoisted(() => ({ isAuthenticated: true }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({
     profile: profileState.profile,
     loading: profileState.loading,
@@ -26,9 +27,7 @@ vi.mock("../lib/useAccountProfile", () => ({
   }),
 }));
 
-vi.mock("../lib/auth", () => ({
-  useAuth: () => authState,
-}));
+vi.mock("../hooks/useAuth", () => authModule(() => authState));
 
 afterEach(() => {
   cleanup();

@@ -7,25 +7,29 @@ import ListRangePill, {
   RangePillSpacer,
 } from "../components/ListRangePill";
 import TagsMenu from "../components/TagsMenu";
-import { useSetRightToolbar } from "../components/useRightToolbar";
 import VirtualList, { type VisibleRange } from "../components/VirtualList";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { useDebouncedQuery } from "../hooks/useDebouncedQuery";
+import { useMessageTags } from "../hooks/useMessageTags";
+import { useResetOnChange } from "../hooks/useResetOnChange";
+import { useSetRightToolbar } from "../hooks/useRightToolbar";
+import { useRoutePagedList } from "../hooks/useRouteQuery";
+import { useSelectAll } from "../hooks/useSelectAll";
+import { errorLine } from "../lib/apiErrorMessage";
 import {
   type ConversationSortState,
   loadConversationSort,
   saveConversationSort,
 } from "../lib/conversationSort";
 import { formatVisibleRange } from "../lib/listPaging";
-import { checksFromMembers } from "../lib/membershipChecks";
-import { useMessageTagActions, useSetMessageTagMembers } from "../lib/messageTags";
+import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { keys } from "../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
+import type { PagedFetchPage } from "../lib/routeQuery";
 import { listConversations } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
-import { useDebouncedQuery } from "../lib/useDebouncedQuery";
-import { useMessageTags } from "../lib/useMessageTags";
-import { useResetOnChange } from "../lib/useResetOnChange";
-import { useSelectAll } from "../lib/useSelectAll";
+import {
+  useMessageTagActions,
+  useSetMessageTagMembers,
+} from "./conversations/useMessageTagActions";
 
 export default function ConversationList({
   selectedId,
@@ -129,6 +133,15 @@ export default function ConversationList({
     [targetConversations, setTagMembers.mutateAsync],
   );
 
+  const clearAllMembership = useCallback(
+    () =>
+      clearAllMembers(
+        targetConversations.map((c) => c.tags ?? []),
+        (name) => applyMembership(name, false),
+      ),
+    [targetConversations, applyMembership],
+  );
+
   useEffect(() => {
     setRightToolbar(
       <TagsMenu
@@ -143,15 +156,7 @@ export default function ConversationList({
           await applyMembership(await tagActions.ensure(name), true);
         }}
         onClearAll={() => {
-          const names = new Set<string>();
-          for (const c of targetConversations) {
-            for (const t of c.tags ?? []) names.add(t);
-          }
-          void (async () => {
-            for (const name of names) {
-              await applyMembership(name, false);
-            }
-          })();
+          void clearAllMembership();
         }}
       />,
     );
@@ -159,6 +164,7 @@ export default function ConversationList({
   }, [
     allTags,
     applyMembership,
+    clearAllMembership,
     setRightToolbar,
     tagChecks,
     targetConversations,
@@ -183,7 +189,7 @@ export default function ConversationList({
   if (error && conversations.length === 0) {
     return (
       <div className="p-4 text-[0.813rem] text-danger">
-        {apiErrorMessage(error, "Could not load conversations.")}
+        {errorLine(error, "Could not load conversations.")}
       </div>
     );
   }

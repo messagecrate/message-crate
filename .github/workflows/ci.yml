@@ -27,12 +27,12 @@ on:
 
 # The group a run joins, by event:
 #   pull_request       CI-refs/pull/<N>/merge  a new push cancels the run before it
-#   push to main       CI-refs/heads/main      never cancelled while it runs
-#   push of a v* tag   CI-refs/tags/v<x.y.z>   never cancelled while it runs
-#   workflow_dispatch  CI-dispatch-<run id>    a group of its own, never cancelled
+#   push to main       CI-refs/heads/main      never canceled while it runs
+#   push of a v* tag   CI-refs/tags/v<x.y.z>   never canceled while it runs
+#   workflow_dispatch  CI-dispatch-<run id>    a group of its own, never canceled
 # A new push to a pull request cancels its previous run, so queued Rust jobs
 # do not sit until the 6-hour default timeout on a branch nobody is waiting for
-# any more. A push run is not cancelled while it runs, because its verdict is
+# any more. A push run is not canceled while it runs, because its verdict is
 # the one that counts. GitHub keeps one waiting run per group, though, so a
 # merge to main while one run works and another waits cancels the one that
 # waits. A manual run gets a group of its own for that reason, so no push run
@@ -42,9 +42,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Every job reads the repository and nothing else. The one job that writes,
-# github-release, asks for contents: write on its own. The Docker image goes
-# to Docker Hub with its own secret, not to GitHub Packages, so no job needs
+# Jobs read the repository by default. A job that needs more, such as
+# github-release (contents: write) or docker (attestations), asks for it in
+# its own permissions block, which says why. The Docker image goes to Docker
+# Hub with its own secret, not to GitHub Packages, so no job needs
 # packages: write.
 permissions:
   contents: read
@@ -67,9 +68,10 @@ jobs:
       rust: ${{ steps.classify.outputs.rust }}
       web: ${{ steps.classify.outputs.web }}
       docs: ${{ steps.classify.outputs.docs }}
-      docker: ${{ steps.classify.outputs.docker }}
+      server_config: ${{ steps.classify.outputs.server_config }}
+      local_server: ${{ steps.classify.outputs.local_server }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -85,34 +87,46 @@ jobs:
               git fetch --quiet origin "$BASE"
               range="origin/$BASE...HEAD" ;;
             *)
-              printf 'rust=true\nweb=true\ndocs=true\ndocker=true\n' >> "$GITHUB_OUTPUT"
+              printf 'rust=true\nweb=true\ndocs=true\nserver_config=true\nlocal_server=true\n' >> "$GITHUB_OUTPUT"
               exit 0 ;;
           esac
-          rust=false web=false docs=false docker=false
+          rust=false web=false docs=false server_config=false local_server=false
           while IFS= read -r f; do
             case "$f" in
               # The committed OpenAPI document feeds the web app's generated
-              # types, and the script that checks them runs in the web job,
-              # so a change to either must run that job.
+              # types, and the script that checks them and the generator's
+              # own tree run in the web job, so a change to any of them must
+              # run that job.
               docs/src/assets/openapi.json) docs=true; web=true ;;
-              scripts/check-generated-api-types.sh) web=true ;;
+              scripts/check-generated-api-types.sh|scripts/check-biome-restricted-imports.mjs|scripts/openapi-typescript/*) web=true ;;
               docs/*) docs=true ;;
+              # src-tauri's tests write the desktop events fixture and the
+              # web job's tests read it, so a change to it runs both.
+              tests/fixtures/desktop-events/*) rust=true; web=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path
-              # The image is built from the Dockerfile, the Cargo manifests
-              # and lockfile it copies, and the toolchain pin. A change to one
-              # of them is how the image stops building while the Rust jobs
-              # stay green.
-              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml) rust=true; docker=true ;;
-              crates/*/Cargo.toml|vendor/*/Cargo.toml) rust=true; docker=true ;;
-              .github/workflows/*) rust=true; web=true; docs=true; docker=true ;;
+              # The server's config, whose website and Data Directory check
+              # has Windows-only cases the windows-config job tests.
+              crates/server/server/src/config.rs|crates/server/server/src/config/*) rust=true; server_config=true ;;
+              # The desktop app's own server, whose Job Object on Windows the
+              # windows-local-server job tests.
+              src-tauri/src/local_server.rs|src-tauri/src/local_server/*) rust=true; local_server=true ;;
+              # The Node.js major the web and docs jobs install. The
+              # docker-context job, which runs on every change, checks the
+              # Dockerfile's frontend stage against it.
+              .nvmrc) web=true; docs=true ;;
+              .github/workflows/*) rust=true; web=true; docs=true; server_config=true; local_server=true ;;
               .github/*|.cursor/*|.gitignore|LICENSE*) ;;
+              # The secret scan runs on every pull request whatever it
+              # changes, so its config and script trigger nothing else.
+              .gitleaks.toml|scripts/check-secrets.sh) ;;
               *.md) ;;
               *) rust=true ;;               # crates, src-tauri, vendor, schema,
             esac                            # scripts — Rust CI
           done < <(git diff --name-only "$range")
-          printf 'rust=%s\nweb=%s\ndocs=%s\ndocker=%s\n' "$rust" "$web" "$docs" "$docker" >> "$GITHUB_OUTPUT"
-          echo "rust=$rust web=$web docs=$docs docker=$docker"
+          printf 'rust=%s\nweb=%s\ndocs=%s\nserver_config=%s\nlocal_server=%s\n' \
+            "$rust" "$web" "$docs" "$server_config" "$local_server" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust web=$web docs=$docs server_config=$server_config local_server=$local_server"
 
   # ── Rust: rustfmt ─────────────────────────────────────────────────────
   fmt:
@@ -122,29 +136,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check formatting
         run: |
           cargo fmt --all -- --check
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
-  # ── Rust: Clippy on the workspace ─────────────────────────────────────
-  # src-tauri Clippy lives in check-tauri, which already installs the
+  # ── Rust: Clippy and rustdoc on the workspace ─────────────────────────
+  # Rustdoc fails on any warning, so a broken intra-doc link, or one to an
+  # item that no longer exists, never merges (#3096). Private items are
+  # documented too, so their links are checked as well. It shares this job's
+  # system packages and cache rather than paying for its own. src-tauri's
+  # Clippy and rustdoc live in check-tauri, which already installs the
   # webkit/gtk system packages its build needs.
   clippy:
     name: Clippy (workspace)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install system dependencies
         run: ./scripts/ci-apt-install.sh libfontconfig1-dev libxkbcommon-dev
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -157,6 +175,11 @@ jobs:
       - name: Clippy workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Rustdoc workspace
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --document-private-items
+
   # ── Rust: build + test ────────────────────────────────────────────────
   # ffmpeg is installed because the transcode, media, reexport and demo-seed
   # tests need it. With CI set they fail without it (media::testutil), so a
@@ -168,12 +191,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install system dependencies
         run: ./scripts/ci-apt-install.sh libfontconfig1-dev libxkbcommon-dev ffmpeg
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -202,7 +225,7 @@ jobs:
     # no cache compiles the server as well as the app.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Tauri build dependencies
         run: |
@@ -217,7 +240,7 @@ jobs:
             libjavascriptcoregtk-4.1-dev \
             libsoup-3.0-dev
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -233,8 +256,79 @@ jobs:
       - name: Clippy src-tauri
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
+      - name: Rustdoc src-tauri
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
+
       - name: Test src-tauri
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # ── Server config: its tests on Windows ───────────────────────────────
+  # The check that keeps the website directory and the Data Directory apart
+  # (Config::require_static_dir_apart) has cases only Windows has: a
+  # junction's target comes back verbatim (\\?\C:\...) and a short name
+  # (WEBSIT~1) stands for a long one. Every other job runs on Linux, so
+  # this runs the config tests on Windows. On a pull request it runs only
+  # when the config code or a workflow changes: a Windows build is not worth
+  # its time on one that cannot change these paths. A push to main, a tag
+  # and a manual run have no base to diff, so there it runs like every other
+  # job, and a release waits for it (#2683).
+  windows-config:
+    name: Server config tests (Windows)
+    needs: changes
+    if: needs.changes.outputs.server_config == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-server-config-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-server-config-
+
+      - name: Test the server config
+        run: cargo test -p message-crate-server --lib "config::tests::"
+
+  # ── Desktop app: its own server's tests on Windows ────────────────────
+  # Closing the desktop app ends the server it started and every process
+  # that server started, such as ffmpeg converting a video. On Windows the
+  # server runs in a Job Object that kills them all
+  # (src-tauri/src/local_server/process_tree.rs), and check-tauri runs on
+  # Linux, where the process-group code runs instead. This runs the
+  # local-server tests on Windows, the Job Object ones among them (#1962).
+  # On a pull request it runs only when the local-server code or a workflow
+  # changes, like windows-config; a push to main, a tag and a manual run
+  # have no base to diff, so there it always runs, and a release waits for it.
+  windows-local-server:
+    name: Desktop local server tests (Windows)
+    needs: changes
+    if: needs.changes.outputs.local_server == 'true'
+    runs-on: windows-latest
+    # The build script also builds the server and the Apple Messages Reader
+    # the app ships, so a run with no cache compiles all three.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-local-server-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-local-server-
+
+      - name: Test the desktop app's local server
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib "local_server::"
 
   # ── Web: lint, generated types, type-check + bundle, tests ────────────
   # `npm run build` is typecheck (both tsconfigs) plus the Vite bundle, so
@@ -246,12 +340,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -260,6 +354,20 @@ jobs:
 
       - name: Lint and format-check
         run: cd web && npx biome ci .
+
+      # Biome reports a plugin that fails to run only as an info, so the
+      # timed-wait rule for test files could stop working without failing the
+      # step above. Its canary turns that into a failure (web/src/test/README.md).
+      - name: The timed-wait rule still catches every form
+        run: cd web && npx biome lint --error-on-warnings src/test/noTimedWaitsInTests.canary.ts
+
+      # The same for the rule that refuses a mock of Tauri's packages outside
+      # web/src/lib/desktop/ (web/biome-plugins/noTauriMocksOutsideDesktop.grit).
+      - name: The Tauri-mock rule still catches every form
+        run: cd web && npx biome lint --error-on-warnings src/test/noTauriMocksOutsideDesktop.canary.ts
+
+      - name: Biome's restricted-import lists agree
+        run: node scripts/check-biome-restricted-imports.mjs
 
       - name: Generated server API types match the OpenAPI document
         run: ./scripts/check-generated-api-types.sh
@@ -273,9 +381,9 @@ jobs:
   # ── Docs: Astro check + build ─────────────────────────────────────────
   # The site build without rustdoc or the HTTP API catalog: both are copied
   # into public/, which `astro check` never reads and the link checker
-  # excludes, so neither can change whether the site builds. cargo doc
-  # failures are compile failures the test job already catches. The full
-  # build with both, and the deploy, stay in docs.yml on the release tag.
+  # excludes, so neither can change whether the site builds. A rustdoc
+  # warning fails the clippy job and check-tauri. The full build with both,
+  # and the deploy, stay in docs.yml on the release tag.
   docs:
     name: Check and build (docs)
     needs: changes
@@ -283,12 +391,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
@@ -311,66 +419,83 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check license metadata agrees on the Fair Core License
         run: ./scripts/check-license.sh
 
-  # ── Always: release Dockerfile copies [patch.crates-io] path crates ──
+  # ── Always: release Dockerfile's build context and pinned base images ──
   docker-context:
-    name: Docker rust-builder context
+    name: Docker build context
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Check Docker rust-builder copies patched crates
+      - name: Check the Dockerfile's build context and base image pins
         run: ./scripts/check-docker-context.sh
 
-  # ── docker: the release Dockerfile builds ─────────────────────────────
-  # The image used to be built for the first time on the release tag, so a
-  # pull request that broke docker/Dockerfile merged green and the tag
-  # failed. This job builds it without pushing whenever the Dockerfile, a
-  # Cargo manifest or the lockfile changes. Pull requests only: the docker
-  # job below builds and pushes the same image on a tag or a manual run with
-  # push_docker_image, and nightly.yml builds it from main.
-  docker-build:
-    name: Docker image builds
+  # ── Pull requests: secret scan ────────────────────────────────────────
+  # gitleaks reads every commit the pull request adds, with its default rules
+  # plus .gitleaks.toml's rule for Message Crate's own tokens, which GitHub's
+  # push protection does not know. Pull requests only: a push to main or a tag
+  # carries commits a pull request already scanned. The binary is pinned by
+  # version and by the SHA-256 of its release archive, so a moved release
+  # cannot change what runs here. Findings print redacted, because this
+  # repository's CI logs are public.
+  secrets:
+    name: Secret scan (gitleaks)
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.docker == 'true'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build
-        uses: docker/build-push-action@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          context: .
-          file: ./docker/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -sSfL -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Scan the pull request's commits
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch --quiet origin "$BASE"
+          ./scripts/check-secrets.sh "origin/$BASE"
 
   # ── Always: product version lockstep ──────────────────────────────────
   # The four version files and their lockfiles must agree; on a v* tag they
   # must also agree with the tag, and CHANGELOG.md must have a heading for it.
+  # The job also checks CHANGELOG.md's formatting: the step is cheap, and
+  # here it runs on every pull request without a job the ruleset must name.
   version:
     name: Product version lockstep
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check the product version agrees everywhere
         env:
           TAG: ${{ needs.changes.outputs.release == 'true' && github.ref_name || '' }}
         run: ./scripts/check-version-lockstep.sh ${TAG:+"$TAG"}
+
+      - name: Check CHANGELOG.md's width, tight lists and dated entries
+        run: ./scripts/check-changelog.sh
 
   # ── Tag, or a manual run that asks for it: Docker image → DockerHub ───
   # On a tag or a manual run the changes job reports everything true, so
@@ -378,31 +503,42 @@ jobs:
   # green. A manual run with push_docker_image ticked pushes sha-<commit>
   # and nothing else: the version tags and latest belong to a release, so
   # an image built from a branch can never replace the one people pull.
+  #
+  # No pull request builds the image: nightly.yml builds it from main and
+  # starts it. This job builds it before it pushes, so an image that does
+  # not build fails the release, but it does not start it (#3000). Why:
+  # docs/adr/0007-ci-is-the-only-gate.md.
   docker:
     name: Docker image
     if: needs.changes.outputs.release == 'true' || (github.event_name == 'workflow_dispatch' && inputs.push_docker_image)
-    needs: [changes, fmt, clippy, test, check-tauri, web, docs, license, docker-context, version]
+    needs: [changes, fmt, clippy, test, check-tauri, windows-config, windows-local-server, web, docs, license, docker-context, version]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # id-token signs the image's build provenance attestation with the
+    # workflow's OIDC identity, and attestations stores it with the repository.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       # How much of the commit the sha-<commit> tag and the image's Build
       # both use, so the two agree. 8 is build-version's --short=8.
       SHORT_SHA_LENGTH: 8
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         env:
           DOCKER_METADATA_SHORT_SHA_LENGTH: ${{ env.SHORT_SHA_LENGTH }}
         with:
@@ -440,7 +576,8 @@ jobs:
           fi
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ./docker/Dockerfile
@@ -452,11 +589,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Ties the pushed image, by its digest, to this workflow run, so
+      # `gh attestation verify oci://docker.io/bitrealm/message-crate:<tag>
+      # --repo messagecrate/message-crate` can check it. The attestation is
+      # stored with the repository and pushed to Docker Hub beside the image.
+      # subject-name spells out the docker.io/ registry, because the action
+      # needs the registry in the name to push the attestation to it.
+      # create-storage-record is off, because it needs artifact-metadata:
+      # write as well, and the job asks for id-token and attestations alone.
+      - name: Attest the image's build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: docker.io/bitrealm/message-crate
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
   # ── Tag only: Tauri desktop app → GitHub Release ──────────────────────
   release:
     name: Desktop App (${{ matrix.label }})
     if: needs.changes.outputs.release == 'true'
-    needs: [changes, fmt, clippy, test, check-tauri, web, docs, license, docker-context, version]
+    needs: [changes, fmt, clippy, test, check-tauri, windows-config, windows-local-server, web, docs, license, docker-context, version]
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -472,12 +625,12 @@ jobs:
     # Installers ship unsigned: no signing or notarization step exists in
     # this job. Whether to sign them is open in issue #1019.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -516,7 +669,7 @@ jobs:
       # api.github.com; unauthenticated, the 60-per-hour limit is shared by
       # every runner on the same address and the lookup 403s.
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.23.0
+        uses: cargo-bins/cargo-binstall@3be4ad2b146f3302f92e5956c54fedbb6ae8cccc # v1.25.3
 
       - name: Install Tauri CLI
         shell: bash
@@ -563,7 +716,7 @@ jobs:
           esac
           ls -la dist/
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: package-${{ matrix.label }}
           path: dist/*
@@ -579,16 +732,39 @@ jobs:
     needs: [changes, release, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # contents creates the release. id-token signs the installers' build
+    # provenance attestation with the workflow's OIDC identity, and
+    # attestations stores it with the repository.
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: dist
           merge-multiple: true
           pattern: package-*
+
+      # Ties every installer to this workflow run, so
+      # `gh attestation verify <file> --repo messagecrate/message-crate` can
+      # check a download. The installers are unsigned (#1019). This needs no
+      # certificate, because Sigstore signs with the workflow's OIDC identity.
+      - name: Attest the installers' build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: dist/*
+
+      # Written after the attestation, so it lists the installers alone.
+      # `sha256sum --ignore-missing -c SHA256SUMS` checks the ones downloaded.
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum message_crate_* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create GitHub Release
         env:
@@ -625,4 +801,21 @@ jobs:
 
           \`\`\`bash
           docker pull bitrealm/message-crate:${TAG#v}
-          \`\`\`"
+          \`\`\`
+
+          ## Check a download
+
+          \`SHA256SUMS\` lists the SHA-256 of every installer. In the directory that holds the downloaded installer and \`SHA256SUMS\`:
+
+          \`\`\`bash
+          sha256sum --ignore-missing -c SHA256SUMS
+          \`\`\`
+
+          Every installer and the Docker image carry a build provenance attestation, which ties each one to the workflow run that built it from this tag. The GitHub CLI checks it:
+
+          \`\`\`bash
+          gh attestation verify message_crate_${TAG#v}_amd64.deb --repo messagecrate/message-crate
+          gh attestation verify oci://docker.io/bitrealm/message-crate:${TAG#v} --repo messagecrate/message-crate
+          \`\`\`
+
+          Windows and macOS: https://messagecrate.app/docs/user/try/install-the-desktop-app/#check-the-download"

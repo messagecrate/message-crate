@@ -29,21 +29,36 @@ describe("AddIdentityDialog", () => {
     expect(onConfirm).toHaveBeenCalledWith({ address: "Bob@Example.com", service: "email" });
   });
 
-  it("refuses a value that is not a number or an address, before asking anyone", async () => {
+  it("adds a WhatsApp internal id and a sender name, which the server stores as other", async () => {
     const user = setupUser();
     const onConfirm = vi.fn();
     render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
-    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "12");
+    await user.click(screen.getByRole("button", { name: /Service/ }));
+    await user.click(screen.getByRole("option", { name: "WhatsApp" }));
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "123456789012345@lid");
     await user.click(screen.getByRole("button", { name: "Add" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Enter a phone number like +1 555-555-0119.",
-    );
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(onConfirm).toHaveBeenLastCalledWith({
+      address: "123456789012345@lid",
+      service: "whatsapp",
+    });
+
+    await user.click(screen.getByRole("button", { name: /Service/ }));
+    await user.click(screen.getByRole("option", { name: "Text Message" }));
+    await user.clear(screen.getByRole("textbox", { name: "Identity" }));
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "sam");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    expect(onConfirm).toHaveBeenLastCalledWith({ address: "sam", service: "phone" });
+  });
+
+  it("refuses a value under Email that is not an address, before asking anyone", async () => {
+    const user = setupUser();
+    const onConfirm = vi.fn();
+    render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
     await user.click(screen.getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
-    await user.clear(screen.getByRole("textbox", { name: "Identity" }));
     await fill(user, screen.getByRole("textbox", { name: "Identity" }), "not-an-address");
     await user.keyboard("{Enter}");
     expect(screen.getByRole("alert")).toHaveTextContent(

@@ -1,16 +1,16 @@
 ---
 title: Database tables
-description: SQLite tables in Message Crate and how chats, contacts, and messages link through typed handles.
+description: SQLite tables in Message Crate and how conversations, contacts, and messages link through typed handles.
 ---
 
 The Message Crate SQLite database falls into four groups:
 
-1. **Chats and texts** — threads, participants, messages, files, reactions
+1. **Conversations and messages** — conversations, participants, messages, files, reactions
 2. **People and groups** — handles, contacts, contact groups, accounts
 3. **Staging** — temporary copies used while importing
-4. **Trash markers** — soft-delete lists without removing chat data
+4. **Trash markers** — soft-delete lists without removing message data
 
-Chats and people are **not** joined by a shared person ID. They meet through
+Conversations and people are **not** joined by a shared person ID. They meet through
 the **`handles`** table: every phone number, email, or username appears once
 per account **per platform** (`phone` or `whatsapp`) as a typed handle, and
 conversations, participants, messages, and contacts all point at the same
@@ -35,19 +35,19 @@ erDiagram
     message_tags ||--o{ message_tag_members : "has"
 ```
 
-## Chats and texts
+## Conversations and messages
 
 ### `conversations`
 
-One row = one chat thread (`account_id`, `chat_handle_id` → `handles`,
+One row = one conversation (`account_id`, `chat_handle_id` → `handles`,
 `conversation_type`, `group_title`, and related fields). There is no
 conversation-level messaging transport: SMS vs iMessage vs RCS varies per
-message. Thread chrome for “which backup” uses distinct `messages.source`
+message. The conversation view's “which backup” uses distinct `messages.source`
 values.
 
 ### `participants`
 
-One row = one handle in one chat (`handle_id` → `handles`, required, and an
+One row = one handle in one conversation (`handle_id` → `handles`, required, and an
 optional `name_alias`). A person the backup names with no address has a handle
 of type `other` holding the name. The participant's contact is the one its
 handle is on in `contact_handles`.
@@ -63,7 +63,7 @@ optional `duplicate_of`).
 ### `attachments` / `tapbacks`
 
 Files and reactions tied to a message. Attachments may store `sha256`, and
-the paths of the Preview (`derived_*`) and the Thumbnail (`thumbnail_*`) the
+the paths of the Preview (`preview_*`) and the Thumbnail (`thumbnail_*`) the
 server makes for the browser. Reactions record `sender_handle_id`
 → `handles`.
 
@@ -94,12 +94,20 @@ The Audit Trail: what each user did, and when, for everything `imports` and
 account it is about and that account's `username`, with counts and names in
 `details`. A session's `logged_in` row carries `session_expires_at`, and the
 `session_ended` row that closes it points back through `session_entry_id`; a
-session with no such row reads as expired from its expiry. Deleting an account
+session with no such row reads as expired from its expiry, or from the later
+one in `session_extensions`, where each use of the session records how far it
+moved its expiry, because no `audit_entries` row is ever changed. Deleting an account
 sets `account_id` NULL here and on its `imports` and `exports`, which keep the
 `username`, and marks each of them with `deletion_entry_id`, the id of the
 account's `account_deleted` row, by which the deleted account is read apart
 from any other account given its username. Refused logins for a username no
-account has are deleted after 90 days; nothing else is.
+account has are deleted after 90 days; nothing else is. Two triggers hold
+this for any statement, one run by hand included. `audit_entries_never_edited`
+refuses every update except the two that deleting an account makes:
+`deletion_entry_id` set once, to the `account_deleted` row about the same
+account, and `account_id` set NULL once that account's row is gone.
+`audit_entries_never_deleted` refuses the delete of any row but a refused login
+for an unknown username.
 
 ### `message_crate`
 
@@ -161,13 +169,18 @@ tables and reads back into them, one row per `contact_handles` link:
 |---|---|
 | `contact_id` | `contacts.id` |
 | `display_name` | `contacts.preferred_name`, trimmed |
-| `groups` | the names of the contact's `contact_groups`, joined with `;` |
-| `service` | `handles.service` |
-| `identity_type` | `handles.handle_type` |
+| `service` | `Email` for a `handles.handle_type` of `email`, otherwise `Text Message` for a `handles.service` of `phone` and `WhatsApp` for `whatsapp` |
 | `identity` | `handles.normalized` |
+| `groups` | the names of the contact's `contact_groups`, joined with `;` |
+
+No column holds `handles.handle_type`: a load types each row by its service
+and its shape, and keeps the stored type of an identity written exactly as
+`handles.normalized` holds it on that service.
 
 `POST /v1/contacts/address-book` writes it and `POST /v1/contacts` loads it;
-`crates/server/server/src/db/address_book.rs` holds both directions. The
+`POST /v1/contacts/vcard-address-book` writes one from a vCard file and
+stores nothing. `crates/server/server/src/db/address_book.rs` holds every
+direction. The
 rules of a load are in
 [`docs/architecture/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md).
 
@@ -178,21 +191,21 @@ status names.
 
 ### `message_tags` / `message_tag_members`
 
-Named stamps on whole conversation threads (not on individual messages). A
-thread can have several tags. New messages in a tagged thread stay under that
-tag. A new thread is untagged until someone adds a tag.
+Named stamps on whole conversations (not on individual messages). A
+conversation can have several tags. New messages in a tagged conversation stay
+under that tag. A new conversation is untagged until someone adds a tag.
 
-## How chats meet people
+## How conversations meet people
 
 There is no `contact_id` on conversations. The link is the `handles` table:
 
-- 1:1 `conversations.chat_handle_id` and `participants.handle_id` on the chat
-  side
+- One-to-one `conversations.chat_handle_id` and `participants.handle_id` on the
+  conversation side
 - `contact_handles.handle_id` on the contact side
 
-Chat-side and contact-side reference the same per-account handle rows, so when
-a chat handle and a contact handle are the same identity, the UI treats that
-chat as belonging to that contact.
+The conversation side and the contact side reference the same per-account
+handle rows, so when a conversation's chat handle and a contact handle are the
+same identity, the UI treats that conversation as belonging to that contact.
 
 ```mermaid
 flowchart LR
@@ -250,8 +263,8 @@ SQLite, so it is reported once for the whole database and never per account.
 
 | You want… | Look in… |
 |-----------|----------|
-| A chat thread | `conversations` |
-| Who is listed in a chat | `participants` |
+| A conversation | `conversations` |
+| Who is listed in a conversation | `participants` |
 | An identity (phone, email, username) | `handles` |
 | The texts | `messages` |
 | Photos and files | `attachments` |

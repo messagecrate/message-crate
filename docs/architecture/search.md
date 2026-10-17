@@ -59,6 +59,17 @@ Each rule holds on every list, and each has its reason.
   a word.
   Why: a Saved Search then holds only what to find, so it means the same thing
   on every screen that runs it.
+- **A Saved Search is checked for what every list refuses, and for nothing
+  else.** Saving or editing one reads its query without a list
+  (`search::check_for_every_list`): a query over 2,048 bytes, a syntax error
+  such as a parenthesis or quote that never closes, more than 32 free-text
+  words, more than 64 parts, or more than 32 levels of parentheses and `not`
+  is refused with the sentence a list gives (#2184). No `word:` is looked up
+  and no value is read. A word one list lacks, a word no list has, or a value
+  no word understands is stored as written and refused when it runs. Why: a
+  Saved Search runs on more than one list, and the words differ between
+  lists. The limits and the grammar are the same on every list, so a query
+  that breaks them could never run anywhere.
 - **Relevance ranks by the positive free-text words.** The Messages list's
   `sort=relevance` orders by the full-text index's `bm25()` over the query's
   free-text words that are not behind `-` or `not`; field words never rank.
@@ -205,7 +216,7 @@ Case and accents:
   `LIKE` and `NOCASE` collation fold no more, so the server replaces
   `lower()` on every connection with one that folds Unicode
   (`db/sqlite_functions.rs`, registered through `sqlite3_auto_extension`).
-  It lowers each letter on its own, never by its neighbours, so a word's
+  It lowers each letter on its own, never by its neighbors, so a word's
   start lowers the same as the word: `name:ΚΩΣ*` finds "ΚΩΣΤΑΣ", and `İ`
   lowers to a plain `i`, so `name:istanbul` finds "İstanbul".
   Message text, which goes through the full-text index, folds case too.
@@ -246,6 +257,12 @@ whose row shows nothing that matched looks like a search bug.
 so.** Each free-text word matches a message when its final text (the body,
 subject, and attachment text above) holds it or any one of its earlier
 versions does; the words of one query may be found in different versions.
+A source may record an edit without the text it replaced: iMazing writes an
+Edited Date and the final text only, so its version has no text
+(`message_versions.text` is NULL). Such a version is in no index, because
+nothing could find the message by it; the conversation shows it as
+"Earlier version not in the backup" with its time, and it never carries
+`matched` (#2030).
 The `body:` word reads the final body only. A hit the query would not find
 by its final text alone, with every free-text word reading only
 `messages_fts` and the file names, was found by an earlier version: the
@@ -327,7 +344,7 @@ below use these phrases for them:
 | List | Base row | Plain text searches | Defaults | Lifted by |
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
-| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members. The `orphaned:` key of a conversation of orphaned messages is read as nothing for the same reason; it is found by its title and its person | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. A one-to-one conversation with no participants is listed under the name of the contact its own identity is on, so that name is searched too, with the contact left out while it is in the trash unless the query carries `trashed:` (#2737). Why: a conversation is found by the name it is shown under. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members. The `orphaned:` key of a conversation of orphaned messages is read as nothing for the same reason; it is found by its title and its person | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 | Messages | one message | the full-text indexes (above): the final text and every earlier version, and attachment file names, an Unsent message's own text and file names excepted | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
@@ -388,8 +405,8 @@ An Unsent message has no subject line here, for the same reason as `body:`.
 Text, `none`, `any`.
 
 - **Contacts**: the contact's own name. `none` is a contact with no name.
-- **Conversations**: a participant's name. `none` is a participant with no name.
-- **Messages**: a participant's name in the message's conversation.
+- **Conversations**: a participant's name. `none` is a participant with no name. A one-to-one conversation with no participants is listed under the person whose address is the conversation's own identity, so that person's name counts as a participant's: the name of the contact that identity is on, and no name when it is on none (#2737).
+- **Messages**: a participant's name in the message's conversation, read as on Conversations, the person of a one-to-one conversation with no participants included.
 
 ### `title:`
 
@@ -459,17 +476,20 @@ Choice: `direct`, `group`, `orphaned`.
 
 Choice: `imessage`, `sms`, `mms`, `rcs`, `whatsapp`.
 
-- **Contacts**: one of the messages of the contact's conversations travelled this way.
-- **Conversations**: one of the conversation's messages travelled this way.
-- **Messages**: the message travelled this way.
+- **Contacts**: one of the messages of the contact's conversations traveled this way.
+- **Conversations**: one of the conversation's messages traveled this way.
+- **Messages**: the message traveled this way.
 
 ### `source:`
 
 Choice: `imessage`, `whatsapp`, `sms-backup-restore`, `imazing`,
 `openextract`, `go-sms-pro`, `sms-backup-plus`. Each value is the id an
 exporter writes into `export.source`, which the import stamps on every message
-it writes, so the word compares the stored id with no mapping. A new exporter
-adds its id to the list and nothing else. Why: a person whose messages came
+it writes, so the word compares the stored id with no mapping. A backup type's
+id is a constant in `api_types::source_id`, which
+`Exporter::source_id` in `message-crate-core` returns and its exporter writes.
+Search reads `SOURCE_IDS`, and a test in `message-crate-core` fails when
+`SOURCE_IDS` and the backup types' ids differ. Why: a person whose messages came
 through iMazing, GO SMS Pro or SMS Backup+ can name that backup, and no value
 quietly takes in or leaves out another (#1116).
 

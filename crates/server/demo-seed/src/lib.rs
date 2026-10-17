@@ -5,6 +5,7 @@
 //! SMS Backup & Restore, and WhatsApp).
 
 mod assets;
+pub mod bundle;
 mod config;
 mod contacts;
 mod conversations;
@@ -27,36 +28,35 @@ use rand_chacha::ChaCha8Rng;
 pub use config::{DemoSize, SeedConfig};
 pub use conversations::GenStats;
 
-const IMESSAGE_SOURCE: &str = "imessage";
-const SBR_SOURCE: &str = "sms-backup-restore";
-const WHATSAPP_SOURCE: &str = "whatsapp";
+use bundle::{IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE};
+
 const GENERATED_PATHS: [&str; 3] = ["staging", "config", "README.md"];
 
 /// The error generation returns when its cancel flag is set: it stopped
 /// part-way, and its temporary directory, with every file it wrote, is
 /// removed.
 ///
-/// `message-crate-core` has a `Cancelled` and a `check_cancel` of the same
+/// `message-crate-core` has a `Canceled` and a `check_cancel` of the same
 /// shape for exporter runs. demo-seed keeps its own because the server, its
 /// only caller that cancels, does not link `message-crate-core` (the export
 /// pipeline's run model, ADR 0012), and the flag is all it needs from it.
 #[derive(Debug)]
-pub struct Cancelled;
+pub struct Canceled;
 
-impl std::fmt::Display for Cancelled {
+impl std::fmt::Display for Canceled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("demo generation was stopped")
     }
 }
 
-impl std::error::Error for Cancelled {}
+impl std::error::Error for Canceled {}
 
-/// Return [`Cancelled`] when `cancel` is set. Generation calls it between
+/// Return [`Canceled`] when `cancel` is set. Generation calls it between
 /// conversations and between files, so a caller that sets the flag waits
 /// for one file at most.
-pub(crate) fn stop_if_cancelled(cancel: &AtomicBool) -> Result<()> {
+pub(crate) fn stop_if_canceled(cancel: &AtomicBool) -> Result<()> {
     if cancel.load(Ordering::Relaxed) {
-        return Err(Cancelled.into());
+        return Err(Canceled.into());
     }
     Ok(())
 }
@@ -79,18 +79,18 @@ fn rounded_fraction(total: usize, fraction: f64) -> usize {
 /// Returns an error if a directory cannot be created, a file cannot be written,
 /// the new files fail a check, or they cannot replace the old ones.
 pub fn generate(cfg: &SeedConfig) -> Result<GenStats> {
-    generate_cancellable(cfg, &AtomicBool::new(false))
+    generate_cancelable(cfg, &AtomicBool::new(false))
 }
 
 /// [`generate`], stopped part-way when `cancel` is set: it returns
-/// [`Cancelled`], the files it wrote are removed, and the previous files at
+/// [`Canceled`], the files it wrote are removed, and the previous files at
 /// `cfg.out` stay as they were.
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when `cancel` is set, and the errors of
+/// Returns [`Canceled`] when `cancel` is set, and the errors of
 /// [`generate`].
-pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
+pub fn generate_cancelable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
     let out = Path::new(&cfg.out);
     let parent = output_parent_dir(out);
     fs::create_dir_all(parent)
@@ -111,15 +111,22 @@ pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<Gen
         Ok(stats) => stats,
         Err(error) => return Err(keep_prepared_if_restore_failed(prepared, error)),
     };
-
-    println!("The Demo Data is written to {}", out.display());
-    println!("  seed:          {}", cfg.seed);
-    println!("  contacts:      {}", stats.contacts);
-    println!("  groups:        {}", stats.groups);
-    println!("  conversations: {}", stats.conversation_files);
-    println!("  messages:      {}", stats.messages);
-    println!("  attachments:   {}", stats.attachment_refs);
     Ok(stats)
+}
+
+/// What a generated data set holds, one line per count, aligned as a table.
+/// The caller says them where its output goes: the `demo-seed` and
+/// `reset-demo` commands print them, and `serve`, which builds the Demo
+/// Account from the same data, writes nothing to standard output (#2018).
+#[must_use]
+pub fn summary_lines(stats: &GenStats) -> [String; 5] {
+    [
+        format!("contacts:      {}", stats.contacts),
+        format!("groups:        {}", stats.groups),
+        format!("conversations: {}", stats.conversation_files),
+        format!("messages:      {}", stats.messages),
+        format!("attachments:   {}", stats.attachment_refs),
+    ]
 }
 
 /// Parent directory of `out`, or `.` when `out` has no parent (for example `demo`).
@@ -197,7 +204,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
         corpus::Corpus::load_pride_and_prejudice().context("load public-domain message corpus")?;
     let names = names::NameBank::load_default().context("load name lists")?;
 
-    let attachment_digests = assets::write_attachment_blobs(&imessage_attachments)?;
+    let attachment_digests = assets::write_attachment_files(&imessage_attachments)?;
     // Copy the same attachment files into the Android and WhatsApp directories so
     // those conversations can point at the same relative paths.
     copy_dir_files(&imessage_attachments, &sbr_attachments, cancel)?;
@@ -205,7 +212,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
 
     let (roster, mut rng) = seeded_roster(cfg, &names)?;
     contacts::write_address_book(&config_dir, &roster)?;
-    contacts::write_seed_toml(&config_dir)?;
+    bundle::write_seed_toml(&config_dir)?;
 
     let staging = conversations::StagingDirs {
         imessage: &imessage_staging,
@@ -260,9 +267,11 @@ where
     if active == prepared {
         anyhow::bail!("active and prepared demo roots must differ");
     }
-    let stats = prepare(prepared)?;
+    let mut stats = prepare(prepared)?;
     validate_generated_bundle(prepared, cancel)?;
-    replace_generated_paths(active, prepared)?;
+    stats
+        .warnings
+        .extend(replace_generated_paths(active, prepared)?);
     Ok(stats)
 }
 
@@ -304,7 +313,7 @@ fn validate_tree_files(root: &Path, cancel: &AtomicBool) -> Result<()> {
         for entry in fs::read_dir(&directory)
             .with_context(|| format!("read prepared directory {}", directory.display()))?
         {
-            stop_if_cancelled(cancel)?;
+            stop_if_canceled(cancel)?;
             let path = entry?.path();
             if path.is_dir() {
                 pending.push(path);
@@ -343,7 +352,9 @@ fn is_jsonl_file(path: &Path) -> bool {
 ///
 /// Returns an error if a rename fails. If the previous files cannot be fully
 /// restored, they are left in the backup directory and the error says so.
-fn replace_generated_paths(active: &Path, prepared: &Path) -> Result<()> {
+/// Returns a warning, for the caller to say, when the new files are in place
+/// but the backup of the previous ones could not be removed.
+fn replace_generated_paths(active: &Path, prepared: &Path) -> Result<Option<String>> {
     replace_generated_paths_with(active, prepared, move_path, |backup| {
         fs::remove_dir_all(backup)
     })
@@ -444,7 +455,7 @@ fn replace_generated_paths_with<F, R>(
     prepared: &Path,
     mut rename: F,
     remove_backup: R,
-) -> Result<()>
+) -> Result<Option<String>>
 where
     F: FnMut(&Path, &Path) -> Result<()>,
     R: FnOnce(&Path) -> io::Result<()>,
@@ -475,16 +486,16 @@ where
             &backed_up,
             &installed,
             error,
-        );
+        )
+        .map(|()| None);
     }
 
-    if let Err(cleanup_error) = remove_backup(&backup) {
-        eprintln!(
-            "The newly generated demo files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
+    Ok(remove_backup(&backup).err().map(|cleanup_error| {
+        format!(
+            "The new Demo Data files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
             backup.display()
-        );
-    }
-    Ok(())
+        )
+    }))
 }
 
 /// Set aside the current `staging`, `config`, and `README.md`, then move the new copies in.
@@ -607,11 +618,11 @@ fn remove_path_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Generate the built-in data set of `size` into `out`, stopped part-way
-/// when `cancel` is set ([`generate_cancellable`]).
+/// when `cancel` is set ([`generate_cancelable`]).
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when `cancel` is set, or an error if `out` is not
+/// Returns [`Canceled`] when `cancel` is set, or an error if `out` is not
 /// valid UTF-8 or generation fails.
 pub fn generate_size_to(size: DemoSize, out: &Path, cancel: &AtomicBool) -> Result<GenStats> {
     generate_with_out(SeedConfig::for_size(size)?, out, cancel)
@@ -635,7 +646,7 @@ fn generate_with_out(mut cfg: SeedConfig, out: &Path, cancel: &AtomicBool) -> Re
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("demo out path is not UTF-8: {}", out.display()))?
         .to_string();
-    generate_cancellable(&cfg, cancel)
+    generate_cancelable(&cfg, cancel)
 }
 
 /// Copy each file in `from` into `to`, until `cancel` is set.
@@ -643,11 +654,11 @@ fn generate_with_out(mut cfg: SeedConfig, out: &Path, cancel: &AtomicBool) -> Re
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when `cancel` is set, or an error if a directory
+/// Returns [`Canceled`] when `cancel` is set, or an error if a directory
 /// cannot be listed or a file cannot be copied.
 fn copy_dir_files(from: &Path, to: &Path, cancel: &AtomicBool) -> Result<()> {
     for entry in fs::read_dir(from)? {
-        stop_if_cancelled(cancel)?;
+        stop_if_canceled(cancel)?;
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
@@ -674,7 +685,7 @@ fn write_readme(
     let body = format!(
         r"# Message Crate demo dataset
 
-Generated message-ir JSONL bundle for local browsing without a real phone backup.
+Generated JSONL conversation files for local browsing without a real phone backup.
 `staging/` is written by `demo-seed` and is not stored in git.
 `reset-demo` writes its bundle into a temporary directory instead.
 
@@ -685,7 +696,7 @@ Three staging trees simulate separate backups:
 - `staging/whatsapp/` — WhatsApp-style export for ~{whatsapp_pct}% of contacts (same phone, platform `whatsapp`)
 
 Most conversations are single-source. A small set appears in both iMessage and Android so the
-Sources panel and cross-source dedupe can be exercised. WhatsApp threads share the phone number
+Sources panel and cross-source dedupe can be exercised. WhatsApp conversations share the phone number
 with Text message handles so the contact drawer shows both platforms.
 
 Regenerate + import in one step:
@@ -720,12 +731,12 @@ Prejudice ({corpus_sentences} sentences) under `crates/server/demo-seed/data/cor
 
 - **Triple sources** — `imessage` vs `sms-backup-restore` vs `whatsapp`
 - **Platform handles** — Text message + WhatsApp rows on the same contact
-- **Transport mix** — SMS/RCS mixed into iMessage threads (~20% by default)
+- **Transport mix** — SMS/RCS mixed into iMessage conversations (~20% by default)
 - **Contacts / groups / No Messages** — group memberships and zero-message rows
 - **Unassigned** — identities with messages and no address book row (phone + email)
-- **Rate skew** — most 1:1 threads ~200–300 msgs/year (bursty days); rare whales up to ~12k/year
+- **Rate skew** — most one-to-one conversations ~200–300 msgs/year (bursty days); rare whales up to ~12k/year
 - **History** — typical first contact ~3–5 years ago; longest ~14 years; newest ~1 week
-- **Group Chats** — membership mean ~5 groups/contact; size mean ~4; at least 10 groups with 8–20 participants; bursty days (several / none / a lot)
+- **Group conversations** — membership mean ~5 groups/contact; size mean ~4; at least 10 groups with 8–20 participants; bursty days (several / none / a lot)
 - **Replies, tapbacks, attachments** — including one intentionally missing file
 - **Deleted in the source app and Unsent** — a few Apple Messages one-to-one messages carry each mark; an Unsent one keeps no text
 - **Edited messages** — a few Apple Messages one-to-one messages were edited once or twice and keep their earlier versions

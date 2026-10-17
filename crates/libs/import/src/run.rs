@@ -34,22 +34,22 @@
 //!   huge single uploads. Message batches are split, and large attachments use
 //!   multipart, so a big chat or video does not hit that wall.
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use jsonl_journal::ServerTarget;
-use message_crate_core::{CancelFlag, RunLogLevel, check_cancel};
+use message_crate_core::{CancelFlag, Canceled, RunLogLevel, check_cancel};
+use message_crate_http::ServerAway;
 
 use crate::AuthInfo;
-use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
-use crate::http::{HttpSession, ImportOutcome};
-use crate::journal::{self, RunJournal};
+use crate::directory::{file_label, input_directory, list_jsonl_files};
+use crate::http::HttpSession;
+use crate::journal::{self, EarlierProgress, RunJournal};
 use crate::pipeline::{ChunkStep, ImportPipeline};
 use crate::prepare::{
     PrepareContext, PrepareOutcome, PrepareQueue, PrepareResult, PreparedFile, SharedJournal,
@@ -57,26 +57,24 @@ use crate::prepare::{
 use crate::progress::{ProgressEvent, ProgressFn, Reporter};
 use crate::report::{
     AssetTotals, ImportReport, count_file_results, elapsed_ms, format_import_summary, now_stamp,
-    outcome_status,
+    what_the_server_did,
 };
 
 /// How many messages to pack into one import HTTP request when size is not the limit.
 pub const DEFAULT_BATCH_SIZE: usize = 1_000;
-/// Soft max size of one import request body (about 64 MiB).
-///
-/// Kept under Cloudflare's ~100 MiB upload cap so a large group chat is
-/// split into several requests instead of one giant one that gets rejected.
-pub const MAX_IMPORT_BODY_BYTES: usize = 64 * 1024 * 1024;
 /// Sentinel for "do not flush import batches on message count; size only".
 ///
 /// Desktop import uses this so SMS-style short messages pack until
-/// [`MAX_IMPORT_BODY_BYTES`] instead of stopping at a small count.
+/// [`MAX_IMPORT_BATCH_BYTES`](api_types::MAX_IMPORT_BATCH_BYTES)
+/// instead of stopping at a small count.
 pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// Max size for uploading an attachment in a single HTTP PUT.
 ///
 /// Bigger files use multipart upload (many smaller pieces), which proxies
-/// accept more reliably than one huge body.
-pub const MAX_PROXY_BODY_BYTES: usize = 90 * 1024 * 1024;
+/// accept more reliably than one huge body. The largest import batch, so an
+/// attachment arrives at the speed a batch does
+/// (`docs/architecture/http-api.md`, "Credentials and reach").
+pub const MAX_PROXY_BODY_BYTES: usize = api_types::MAX_IMPORT_BATCH_BYTES;
 /// What a server's attachment size limit reads as until its owner sets one.
 /// A caller that uploads to a real server reads the limit from `GET /v1/server`
 /// and passes that; this is for tests.
@@ -100,23 +98,8 @@ pub struct ImportConfig {
     /// The logged-in Session's token. The desktop app never passes an API
     /// Token.
     pub token: String,
-    /// `Append` adds to existing data; `Replace` clears then imports (with force).
-    pub mode: ImportMode,
     /// If true, ignore the journal and upload/import everything again.
     pub force: bool,
-    /// Text-only import: do not upload or attach media.
-    pub skip_attachments: bool,
-    /// If true, always re-hash files and fail when the export's claimed sha256
-    /// does not match the bytes on disk. Overrides `trust_export`.
-    ///
-    /// If false (default), files are still hashed from disk unless
-    /// `trust_export` skips them, and a mismatch is a warning: the disk hash is
-    /// used. A path cache avoids hashing the same file twice when several chats
-    /// share it.
-    pub verify_digests: bool,
-    /// If true, skip re-hashing attachments when the JSON Lines `size_bytes` matches
-    /// the file size on disk. Default remains full verification of every file.
-    pub trust_export: bool,
     /// Extra tries per HTTP request after a transient failure.
     pub max_retries: u32,
     /// Messages per import request; at least 1.
@@ -131,24 +114,20 @@ pub struct ImportConfig {
     pub asset_multipart_threshold: usize,
     /// Hard max attachment size this run will attempt to upload.
     pub asset_max_bytes: u64,
-    /// Where to write the report JSON; `None` puts it beside the input.
-    pub report_path: Option<PathBuf>,
     /// Where to write the run log; `None` puts it beside the input.
     pub log_path: Option<PathBuf>,
-    /// Where the journal lives; `None` puts it beside the input.
-    pub journal_path: Option<PathBuf>,
     /// Checked between files and uploads; set it to stop the run early.
-    /// The run sets it itself when the server refuses the session, so a
-    /// refused session stops the run the way a cancel does.
-    pub cancel: Option<CancelFlag>,
-    /// Existing Import Run to post into when the caller already created one.
-    pub import_id: Option<i64>,
-    /// The country of the phone the backup came from, as an ISO 3166-1
-    /// alpha-2 code (`GB`), stated on the Import Run this Upload creates: the
-    /// server reads every phone number the run's files write without its
-    /// `+` code as a number in it (#1676). `None` states no country. A run
-    /// the caller already created (`import_id`) carries its own.
-    pub phone_country: Option<String>,
+    /// The run only reads it: a session the server refuses stops the run the
+    /// way a cancel does through a flag of the run's own, so the same config
+    /// can run the next Upload.
+    pub cancel: CancelFlag,
+    /// The Import Run every batch is posted into. The caller starts it
+    /// before the Upload and completes it after, so the run's source, mode
+    /// and phone country are the ones the caller stated on it. The Upload
+    /// reads the run's mode from the server and goes by it, as the server
+    /// does: a replace run forgets the journal, an append run resumes from
+    /// it (#3144).
+    pub import_id: i64,
 }
 
 /// Check the session token against the server without importing any messages.
@@ -175,18 +154,32 @@ pub(crate) struct Session {
     /// Username the server reports for the account the session token resolved to.
     pub username: String,
     pub auth: AuthInfo,
-    /// The run's cancel flag, which a refused session sets.
-    pub stop: CancelFlag,
-    /// Set once the server refuses the session token.
+    /// The caller's cancel flag. The run reads it and never sets it.
+    pub cancel: CancelFlag,
+    /// Set once the server refuses the session token. It is this run's own,
+    /// and stops the run as the caller's cancel flag does.
     pub refused: Arc<AtomicBool>,
+    /// Set once a request fails because the server could not take it, with
+    /// why: it was stopping, too busy, or could not be reached. Like
+    /// `refused`, it stops the run as a cancel does.
+    pub away: Arc<OnceLock<ServerAway>>,
+    /// How long a request that sends a piece (an import batch, an
+    /// attachment, or a part of one) waits for its answer, from the limit
+    /// the server states ([`crate::http::piece_wait`]).
+    pub piece_wait: std::time::Duration,
+    /// The mode of the Import Run the Upload posts into, read from the
+    /// server at login ([`crate::http::run_mode`]). The Upload goes by it
+    /// as the server does (#3144).
+    pub mode: ImportMode,
 }
 
 impl Session {
     /// Run `op` against the server with retries, and stop the run when the
-    /// server refuses the session token. Every request that sends
+    /// server refuses the session token or is not there to take the request.
+    /// Every request that sends
     /// conversations or attachments goes through here, so none of them can
-    /// miss the refusal. Starting and completing the Upload's own Import Run
-    /// do not: the desktop app hands over its run, so the Upload does neither.
+    /// miss the refusal. The Upload neither starts nor completes its Import
+    /// Run: the caller does both.
     ///
     /// # Errors
     ///
@@ -196,25 +189,55 @@ impl Session {
         max_retries: u32,
         mut op: impl FnMut(&Self) -> Result<T>,
     ) -> Result<T> {
-        message_crate_http::with_retries(max_retries, || op(self))
-            .inspect_err(|error| self.note_refusal(error))
+        // A run told to stop makes no further retry, so a Pause while the
+        // server is away does not wait out the rest of a retry's wait.
+        message_crate_http::with_retries_until(
+            max_retries,
+            || self.check_stop().is_err(),
+            || op(self),
+        )
+        .inspect_err(|error| self.note_halt(error))
     }
 
-    /// Stop the run when `error` is the server refusing the session token.
+    /// Stop the run when `error` is the server refusing the session token,
+    /// or the server not being there to take the request.
     ///
-    /// A refused session refuses every later request too, so the run stops
-    /// as it would for a cancel, and what it did not send stays for the next
-    /// Upload rather than being recorded as failed.
-    fn note_refusal(&self, error: &anyhow::Error) {
+    /// A refused session refuses every later request too, and a server that
+    /// is stopping, too busy, or out of reach fails the later requests the
+    /// same way until it is back. So the run stops as it would for a cancel, and what it did
+    /// not send stays for the next Upload rather than being recorded as
+    /// failed. The first reason the server was away is the one kept.
+    fn note_halt(&self, error: &anyhow::Error) {
         if message_crate_http::is_session_refused(error) {
             self.refused.store(true, Ordering::SeqCst);
-            self.stop.store(true, Ordering::SeqCst);
+        } else if let Some(away) = message_crate_http::server_away(error) {
+            let _ = self.away.set(away);
         }
     }
 
     /// True once the server has refused the session token.
     pub(crate) fn is_refused(&self) -> bool {
         self.refused.load(Ordering::SeqCst)
+    }
+
+    /// Why the server was not there to take a request, once one failed for
+    /// that.
+    pub(crate) fn away(&self) -> Option<ServerAway> {
+        self.away.get().copied()
+    }
+
+    /// Whether the run must stop: the caller canceled it, the server
+    /// refused the session token, or the server was not there to take a
+    /// request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Canceled`] when the run must stop.
+    pub(crate) fn check_stop(&self) -> std::result::Result<(), Canceled> {
+        if self.is_refused() || self.away().is_some() {
+            return Err(Canceled);
+        }
+        check_cancel(&self.cancel)
     }
 }
 
@@ -227,7 +250,8 @@ struct RunPaths {
 }
 
 impl RunPaths {
-    /// Resolve the export directory and the three side files, honouring overrides in `cfg`.
+    /// Resolve the export directory and the three side files: the report and
+    /// the journal beside the export, and the log where `cfg` names it.
     ///
     /// # Errors
     ///
@@ -235,18 +259,12 @@ impl RunPaths {
     fn resolve(cfg: &ImportConfig) -> Result<Self> {
         let input = input_directory(&cfg.input)?;
         Ok(Self {
-            report: cfg
-                .report_path
-                .clone()
-                .unwrap_or_else(|| input.join(journal::REPORT_NAME)),
+            report: input.join(journal::REPORT_NAME),
             log: cfg
                 .log_path
                 .clone()
                 .unwrap_or_else(|| input.join(journal::LOG_NAME)),
-            journal: cfg
-                .journal_path
-                .clone()
-                .unwrap_or_else(|| journal::journal_path(&input)),
+            journal: journal::journal_path(&input),
             input,
         })
     }
@@ -256,53 +274,42 @@ impl RunPaths {
 ///
 /// High-level flow:
 /// 1. Log in, open the journal, and list conversation files.
-/// 2. Start a few **prepare workers** ([`PrepareQueue`]). Each worker reads one
+/// 2. Start a few **prepare workers** (`PrepareQueue`). Each worker reads one
 ///    chat file, uploads its attachments, and builds message chunks.
 /// 3. The main thread **consumes prepare results in file order**, packs
 ///    message chunks into import batches, and sends those batches over HTTP
-///    ([`ImportPipeline`]). An import can start while prepare workers keep
+///    (`ImportPipeline`). An import can start while prepare workers keep
 ///    working on later chats.
-/// 4. Complete the Import Run this Upload started, then write the report.
+/// 4. Write the report. The Import Run stays open: the caller that started
+///    it completes it.
 ///
 /// # Errors
 ///
-/// Returns an error when setup fails, a worker disconnects, the report cannot
-/// be written, or the Upload could not complete the Import Run it started
-/// and the run did not pause. A conversation that fails is recorded in the
-/// report and the run goes on to the next one. A session the server stops
-/// accepting during the run is not an error: the run pauses, and the report
-/// says so in `session_refused`. A failed completion of a paused run is not
-/// an error either. The report comes back with
-/// `cancelled` and `completion_refused` both `true` and `ok` `false`, and
-/// [`ProgressEvent::Finished`] fires, so the caller still sees the pause.
+/// Returns an error when setup fails, a worker disconnects, the journal
+/// cannot be updated, or the report cannot be written. A conversation that
+/// fails is recorded in the report and the run goes on to the next one. A
+/// session the server stops accepting during the run is not an error: the
+/// run pauses, and the report says so in `session_refused`.
 pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<ImportReport> {
-    // A refused session stops the run through the cancel flag, so the run
-    // always has one.
-    let stop = cfg.cancel.clone().unwrap_or_default();
-    let cfg = &ImportConfig {
-        cancel: Some(stop.clone()),
-        ..cfg.clone()
-    };
     let run_started = Instant::now();
     let started_at = now_stamp();
     let paths = RunPaths::resolve(cfg)?;
     let mut out = Reporter::open(&paths.log, progress)?;
 
-    check_cancel(cfg.cancel.as_ref())?;
-    let files = list_jsonl_files(&paths.input, &[&paths.journal, &paths.report, &paths.log])?;
+    check_cancel(&cfg.cancel)?;
+    let files = list_jsonl_files(&paths.input, &[&paths.log])?;
     if files.is_empty() {
         bail!(
             "no .jsonl files under {} (export with JSONL in the Export tab first)",
             paths.input.display()
         );
     }
-    let session = match login(cfg, stop.clone(), &mut out) {
+    let session = match login(cfg, &mut out) {
         Ok(session) => session,
         // A session that has already ended is refused at the first request,
         // and stops the run the same way as one refused later.
         Err(error) if message_crate_http::is_session_refused(&error) => {
-            stop.store(true, Ordering::SeqCst);
-            let report = refused_at_login(cfg, &files, started_at, run_started);
+            let report = refused_at_login(&files, started_at, run_started);
             return finish_refused_at_login(&paths, report, &mut out);
         }
         Err(error) => return Err(error),
@@ -310,11 +317,12 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let journal = RunJournal::open(
         paths.journal.clone(),
         ServerTarget::new(&session.url, &session.username),
-        cfg.force || cfg.mode == ImportMode::Replace,
+        earlier_progress(session.mode, cfg.force),
         &mut |line| out.show_at(RunLogLevel::Warn, line),
     )?;
     out.expect_files(files.len());
-    let import_id = start_import_run(cfg, &session, &paths.input, &mut out)?;
+    let import_id = cfg.import_id;
+    out.show(format!("Uploading into Import Run {import_id}"));
     let batch_size = cfg.batch_size.max(1);
 
     let shared = Mutex::new(SharedJournal::new(journal));
@@ -324,41 +332,41 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let mut assets = AssetTotals::default();
 
     let halted = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
-    settle(cfg, &mut pipeline, halted, &mut out)?;
+    settle(&session, &mut pipeline, halted, &mut out)?;
     let session_refused = session.is_refused();
-    if session_refused {
-        out.show_at(
-            RunLogLevel::Warn,
-            "The server no longer accepts this session, so the Upload paused. \
-             The next Upload sends what this one did not."
-                .into(),
-        );
+    let away = session.away();
+    if let Some(line) = halt_line(session_refused, away) {
+        out.show_at(RunLogLevel::Warn, line);
     }
-    pipeline.record_cancelled(&files, &mut out);
+    pipeline.record_canceled(&files, &mut out);
     out.flush_file_counter();
 
     let (results, accounting) = pipeline.into_results();
-    let journal = shared.into_inner().expect("journal mutex poisoned").journal;
+    let journal = shared
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+        .journal;
     let counted = count_file_results(&results);
     // A pause is the one halt the caller resumes from, so the report tells
     // it apart from a failure. It halted the run only when it left a
     // conversation for the next Upload: one that came after the last
     // request went out halted nothing, so that Upload completed (#1903). A
     // refused session always halts the run, even when the batch it refused
-    // carried only a conversation that had already failed.
-    let cancelled = counted.cancelled > 0 || session_refused;
+    // carried only a conversation that had already failed, and so does a
+    // server that was not there to take a request.
+    let canceled = counted.canceled > 0 || session_refused || away.is_some();
     // Only shrink/rewrite the journal after a clean run so a failed run can retry.
-    if counted.failed == 0 && !cancelled {
+    if counted.failed == 0 && !canceled {
         let _ = journal.compact();
     }
-    let mut report = ImportReport {
-        ok: counted.failed == 0 && !cancelled,
-        cancelled,
+    let report = ImportReport {
+        ok: counted.failed == 0 && !canceled,
+        canceled,
         session_refused,
-        completion_refused: false,
+        server_away: away,
         account: session.auth.account_id,
         username: session.username.clone(),
-        mode: cfg.mode,
+        mode: Some(session.mode),
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
@@ -366,7 +374,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         conversations_ok: counted.ok,
         conversations_failed: counted.failed,
         conversations_skipped: counted.skipped,
-        conversations_cancelled: counted.cancelled,
+        conversations_canceled: counted.canceled,
         messages_attempted: accounting.attempted,
         messages_inserted: accounting.inserted,
         messages_deduped: accounting.deduped,
@@ -376,56 +384,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         assets_bytes: assets.bytes,
         results,
     };
-    // The run is completed before the report is written, so a refused
-    // completion leaves a report that is not `ok` beside the error. A
-    // refused session cannot complete it: the run stays open on the server
-    // for the next Upload.
-    let completed = if cfg.import_id.is_none() && !session_refused {
-        complete_import_run(&session, import_id, &report, &mut out)
-    } else {
-        Ok(())
-    };
-    let completion_error = match completed {
-        Ok(()) => None,
-        Err(error) => {
-            report.ok = false;
-            report.completion_refused = true;
-            // A session that ended before the completion refuses it too, and
-            // the caller ends the session by this flag.
-            if message_crate_http::is_session_refused(&error) {
-                report.session_refused = true;
-            }
-            // A paused run returns its report, not the refusal. The caller
-            // tells a pause from a failure by `cancelled`, which the error
-            // would hide (#1635), so the refusal goes to the log instead.
-            if cancelled {
-                out.show_at(
-                    RunLogLevel::Error,
-                    format!(
-                        "The Upload could not complete its Import Run, so the server may still \
-                     hold it as running: {error:#}"
-                    ),
-                );
-                None
-            } else {
-                Some(error)
-            }
-        }
-    };
-    let written = write_report(&paths.report, &report);
-    // A refused completion of a run that did not pause is the error that
-    // matters: the server may still hold the run. A report that could not be
-    // written as well goes to the log.
-    if let (Some(_), Err(write_error)) = (&completion_error, &written) {
-        out.log_at(
-            RunLogLevel::Error,
-            &format!("The Upload's report could not be written: {write_error:#}"),
-        );
-    }
-    if let Some(error) = completion_error {
-        return Err(error);
-    }
-    written?;
+    write_report(&paths.report, &report)?;
     out.log("");
     out.log(&format_import_summary(&report));
     out.conversation_issues(&report.results);
@@ -434,15 +393,38 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     Ok(report)
 }
 
-/// Check the session token and pick the account name the rest of the run uses.
+/// The sentence that says why the server halted the run, if it did: it
+/// refused the session, or it was away ([`what_the_server_did`]). A refused
+/// session outranks the server being away, because the desktop app ends
+/// the session for it.
+fn halt_line(session_refused: bool, away: Option<ServerAway>) -> Option<String> {
+    if session_refused {
+        return Some(
+            "The server no longer accepts this session, so the Upload paused. \
+             The next Upload sends what this one did not."
+                .into(),
+        );
+    }
+    away.map(|away| {
+        format!(
+            "The server {}, so the Upload paused. \
+             The next Upload sends what this one did not.",
+            what_the_server_did(away)
+        )
+    })
+}
+
+/// Check the session token, pick the account name the rest of the run uses,
+/// and read the mode of the Import Run the Upload posts into.
 ///
 /// The session token decides which account this run uses, and the run names
 /// it by the username the server returns.
 ///
 /// # Errors
 ///
-/// Returns an error when the HTTP client cannot be built or the session token is rejected.
-fn login(cfg: &ImportConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Result<Session> {
+/// Returns an error when the HTTP client cannot be built, the session token
+/// is rejected, or the server does not answer the Import Run.
+fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
@@ -452,44 +434,41 @@ fn login(cfg: &ImportConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Re
         username: username.clone(),
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
-    if cfg.skip_attachments {
-        out.show("Skipping attachments (text-only import)".into());
-    }
+    let piece_wait = crate::http::piece_wait(&http, &url, &cfg.token)?;
+    let mode = crate::http::run_mode(&http, &url, &cfg.token, cfg.import_id)?;
     Ok(Session {
         http,
         url,
         token: cfg.token.clone(),
         username,
         auth,
-        stop,
+        cancel: cfg.cancel.clone(),
         refused: Arc::new(AtomicBool::new(false)),
+        away: Arc::new(OnceLock::new()),
+        piece_wait,
+        mode,
     })
 }
 
 /// The report of a run whose session the server refused at login: nothing
 /// was sent, and every conversation is left for the next Upload. No account
 /// answered, so `account` is 0 and `username` is empty.
-fn refused_at_login(
-    cfg: &ImportConfig,
-    files: &[PathBuf],
-    started_at: String,
-    run_started: Instant,
-) -> ImportReport {
+fn refused_at_login(files: &[PathBuf], started_at: String, run_started: Instant) -> ImportReport {
     ImportReport {
-        cancelled: true,
+        canceled: true,
         session_refused: true,
-        mode: cfg.mode,
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
         conversations_total: files.len() as u64,
-        conversations_cancelled: files.len() as u64,
+        conversations_canceled: files.len() as u64,
         results: files
             .iter()
-            .map(|path| crate::report::FileResult::cancelled(&file_label(path)))
+            .map(|path| crate::report::FileResult::canceled(&file_label(path)))
             .collect(),
         // Nothing was sent, and no account answered: every count is 0, the
-        // account 0 and the username empty.
+        // account 0 and the username empty. No Import Run was read, so
+        // there is no mode.
         ..ImportReport::default()
     }
 }
@@ -515,36 +494,17 @@ fn finish_refused_at_login(
     Ok(report)
 }
 
-/// Create the Import Run every batch is posted into, or reuse the one the
-/// caller already created. There is no run without one: a server that refuses
-/// to start it ends the Upload here, before any file is read.
-///
-/// # Errors
-///
-/// Returns the server's refusal, which includes an account that already has a
-/// running Import Run.
-fn start_import_run(
-    cfg: &ImportConfig,
-    session: &Session,
-    input: &Path,
-    out: &mut Reporter<'_, '_>,
-) -> Result<i64> {
-    let source = detect_source(input)
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "unknown".to_string());
-    if let Some(import_id) = cfg.import_id {
-        out.show(format!("Reusing Import Run {import_id} for {source}"));
-        return Ok(import_id);
+/// What this Upload does with the journal's earlier progress, by the mode
+/// of the Import Run it posts into: a replace forgets it, force ignores it,
+/// and an append resumes from it.
+fn earlier_progress(mode: ImportMode, force: bool) -> EarlierProgress {
+    if mode == ImportMode::Replace {
+        EarlierProgress::Forget
+    } else if force {
+        EarlierProgress::Ignore
+    } else {
+        EarlierProgress::Resume
     }
-    let id = session.start_import(
-        &source,
-        cfg.mode,
-        Some("message-crate-import"),
-        cfg.phone_country.as_deref(),
-    )?;
-    out.show(format!("Recording Import Run {id} for {source}"));
-    Ok(id)
 }
 
 /// Run the prepare workers and the import loop until every file is consumed
@@ -572,7 +532,7 @@ fn drive(
 
         while next_consume < total {
             // Cancel must still join the in-flight import and write a report.
-            if check_cancel(ctx.cfg.cancel.as_ref()).is_err() {
+            if ctx.session.check_stop().is_err() {
                 aborted = true;
                 break;
             }
@@ -699,23 +659,26 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 }
 
 /// End of run: send any leftover batch and wait for the last import. A
-/// halted run (`halted`, or the cancel flag) sends nothing more, and still
-/// waits for the in-flight import so the journal stays consistent.
+/// halted run (`halted`, a cancel, a refused session, or a server that was
+/// not there to take a request) sends nothing
+/// more, and still waits for the in-flight import so the journal stays
+/// consistent.
 ///
 /// Whether the run halted is not decided here: a cancel that arrives while
 /// the last request is in flight halts nothing, so the caller reads the halt
-/// from the conversations left unsent and from a refused session instead.
+/// from the conversations left unsent, a refused session, and a server that
+/// was not there instead.
 ///
 /// # Errors
 ///
 /// Returns an error when the journal cannot be updated or the import thread panicked.
 fn settle(
-    cfg: &ImportConfig,
+    session: &Session,
     pipeline: &mut ImportPipeline<'_>,
     halted: bool,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
-    let halted = halted || check_cancel(cfg.cancel.as_ref()).is_err();
+    let halted = halted || session.check_stop().is_err();
     if halted || !pipeline.flush_and_continue(true, out)? {
         let _ = pipeline.join_inflight(out);
     }
@@ -736,28 +699,4 @@ fn write_report(path: &Path, report: &ImportReport) -> Result<()> {
         serde_json::to_string_pretty(report).context("serialize report")?,
     )
     .with_context(|| format!("write report {}", path.display()))
-}
-
-/// Tell the server how the Import Run this Upload started ended.
-///
-/// # Errors
-///
-/// Returns an error when the server refuses the completion or no answer
-/// comes. The server may then still hold the run as running, so the caller
-/// must not report the Upload as a success.
-fn complete_import_run(
-    session: &Session,
-    import_id: i64,
-    report: &ImportReport,
-    out: &mut Reporter<'_, '_>,
-) -> Result<()> {
-    session.complete_import(
-        import_id,
-        &ImportOutcome {
-            status: outcome_status(report),
-            bytes_uploaded: report.assets_bytes,
-        },
-    )?;
-    out.log(&format!("Import Run {import_id} completed"));
-    Ok(())
 }

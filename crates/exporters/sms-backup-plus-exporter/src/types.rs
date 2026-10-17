@@ -1,11 +1,11 @@
 //! Shared parsed message types for SMS Backup+ EML conversion.
 
 use crate::email_numbers::EmailNumber;
-use message_ir::IrConversationType;
+use ir::ConversationType;
 use phone::Handle;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AttachmentBlob {
+pub(crate) struct AttachmentBytes {
     pub filename: String,
     pub original_name: Option<String>,
     pub mime_type: Option<String>,
@@ -19,7 +19,7 @@ pub(crate) struct ParsedMessage {
     /// The peer's handle key, the group key, or empty when the mail records
     /// no address.
     pub chat_key: String,
-    pub conversation_type: IrConversationType,
+    pub conversation_type: ConversationType,
     pub group_title: Option<String>,
     pub participants: Vec<Handle>,
     pub timestamp_secs: f64,
@@ -30,7 +30,7 @@ pub(crate) struct ParsedMessage {
     pub is_from_me: bool,
     pub sender: Option<Handle>,
     pub text: String,
-    pub attachments: Vec<AttachmentBlob>,
+    pub attachments: Vec<AttachmentBytes>,
     /// MIME parts dropped because their content could not be decoded.
     pub unreadable_parts: u64,
     pub name_alias: Option<String>,
@@ -53,6 +53,6 @@ pub(crate) struct ParsedMessage {
 impl ParsedMessage {
     /// True for a message in a group conversation.
     pub(crate) fn is_group(&self) -> bool {
-        self.conversation_type == IrConversationType::Group
+        self.conversation_type == ConversationType::Group
     }
 }

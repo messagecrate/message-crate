@@ -7,7 +7,7 @@ type RunDirDeleteFailureNoticeProps = {
 };
 
 /**
- * Says that a run directory of a discarded, cancelled or finished Import
+ * Says that a run directory of a discarded, canceled or finished Import
  * Run is still on disk, and why. A run directory can hold several
  * gigabytes, so a failed delete is never dropped without a word.
  */

@@ -1,5 +1,5 @@
 import { mediaExtractFields } from "./sbrExtractFields";
-import type { AttachmentMediaMode, ExtractConfig } from "./types";
+import type { AttachmentChoices, ExtractConfig } from "./types";
 import type { WhatsappMethodId } from "./whatsappImport";
 
 /**
@@ -14,20 +14,18 @@ import type { WhatsappMethodId } from "./whatsappImport";
  * Android's only source, iPhone's fallback when the backup carries no owner
  * key. The iPhone backup password is sent only for iPhone when non-empty.
  */
-export function whatsappExtractFields(args: {
-  source: WhatsappMethodId;
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
-  key: string;
-  backupPassword: string;
-  wa: string;
-  media: string;
-  db: string;
-  business: boolean;
-  ownerPhone: string;
-}): Pick<
+export function whatsappExtractFields(
+  args: AttachmentChoices & {
+    source: WhatsappMethodId;
+    key: string;
+    backupPassword: string;
+    wa: string;
+    media: string;
+    db: string;
+    isBusinessApp: boolean;
+    ownerPhone: string;
+  },
+): Pick<
   ExtractConfig,
   | "attachment_media"
   | "media_max_resolution"
@@ -38,7 +36,7 @@ export function whatsappExtractFields(args: {
   | "whatsapp_wa"
   | "whatsapp_media"
   | "whatsapp_db"
-  | "whatsapp_business"
+  | "is_business_app"
   | "owner_phones"
 > {
   const fields: ReturnType<typeof whatsappExtractFields> = {
@@ -71,8 +69,8 @@ export function whatsappExtractFields(args: {
   }
 
   if (args.source === "whatsapp-ios") {
-    if (args.business) {
-      fields.whatsapp_business = true;
+    if (args.isBusinessApp) {
+      fields.is_business_app = true;
     }
     const password = args.backupPassword.trim();
     if (password) {

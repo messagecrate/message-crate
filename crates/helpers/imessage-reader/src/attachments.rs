@@ -7,7 +7,7 @@ use crabapple::error::BackupError;
 use imessage_database::tables::attachment::Attachment;
 use imessage_reader_protocol::{AttachmentFile, Event};
 
-use crate::{backup::decrypt_file, error::RuntimeError, session::MailSession};
+use crate::{backup::decrypt_file, error::RuntimeError, log::emit_warning, session::MailSession};
 
 /// The path Messages resolves for this attachment on the selected platform,
 /// or `None` when it has no file.
@@ -50,7 +50,7 @@ pub(crate) fn decrypt_for_app(session: &MailSession, source: &Path) -> Event {
         match decrypt_file(backup, source, session.options.scratch_dir()) {
             Ok(temp) => AttachmentFile::Ready { path: temp },
             Err(RuntimeError::BackupError(BackupError::FileNotFoundInBackup(_))) => {
-                session.options.emit_log(format!(
+                emit_warning(format!(
                     "Attachment {} is not in the encrypted backup, so it is recorded without its file",
                     source.display()
                 ));
@@ -76,7 +76,12 @@ mod tests {
     /// `fixture`'s backup: the photo's stored file in the backup.
     fn photo_path(session: &MailSession, fixture: &FixtureBackup) -> PathBuf {
         let messages = FixtureDb::messages(session);
-        let attachments = Attachment::from_message(session.data_source.db(), &messages[0]).unwrap();
+        let attachments = Attachment::from_message(
+            session.data_source.db(),
+            &messages[0],
+            &session.capabilities,
+        )
+        .unwrap();
         let path = resolved_path(session, &attachments[0]).unwrap();
         assert_eq!(
             path,
@@ -125,8 +130,12 @@ mod tests {
         let fixture = FixtureDb::write();
         let session = fixture.session();
         let messages = FixtureDb::messages(&session);
-        let mut attachments =
-            Attachment::from_message(session.data_source.db(), &messages[0]).unwrap();
+        let mut attachments = Attachment::from_message(
+            session.data_source.db(),
+            &messages[0],
+            &session.capabilities,
+        )
+        .unwrap();
         assert_eq!(attachments.len(), 1);
 
         assert_eq!(

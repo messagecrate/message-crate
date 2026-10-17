@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
-use message_ir::{IdentityService, IdentityType};
+use anyhow::{Context, Result};
+use ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -39,6 +39,17 @@ impl HandleIdCache {
     pub fn country(&self) -> Option<&'static phone::Country> {
         self.country
     }
+
+    /// The country a phone number written without its `+` code is read in:
+    /// `stated`, the country the conversation file names for that identity,
+    /// else the run's.
+    #[must_use]
+    pub fn country_for(
+        &self,
+        stated: Option<&'static phone::Country>,
+    ) -> Option<&'static phone::Country> {
+        stated.or(self.country)
+    }
 }
 
 /// One standard form of a handle for identity matching, per type, with the
@@ -61,16 +72,18 @@ pub fn normalize_handle(
 
 /// The shape of an address the source did not type: [`phone::Handle::parse`],
 /// the one rule for what an address looks like. A blank address is `Other`.
-/// An import never stores this type without asking the service first:
+/// No identity is stored with this type without asking the service first:
 /// [`handle_type_on`] does both.
 pub fn handle_type_of(address: &str) -> IdentityType {
     phone::Handle::parse(address).map_or(IdentityType::Other, |handle| handle.kind())
 }
 
-/// The type an import gives an address it meets on `service`: the service
-/// decides which types are valid, and the shape ([`handle_type_of`]) picks
-/// among them. Every address an import meets is typed here, and the
-/// conversation file states no type (#1933).
+/// The type an address takes on `service`: the service decides which types
+/// are valid, and the shape ([`handle_type_of`]) picks among them. Every
+/// address an import meets is typed here, and the conversation file states
+/// no type (#1933). So is every identity a person adds by hand to a contact
+/// or to their own account, so one typed in matches the row an import
+/// stored for the same address (#2709).
 ///
 /// WhatsApp carries phone numbers and its own ids (`…@lid`, `…@g.us`,
 /// `…@s.whatsapp.net`), which are `Other`, so an address with an `@` on
@@ -84,49 +97,71 @@ pub fn handle_type_on(address: &str, service: IdentityService) -> IdentityType {
     service.type_on(handle_type_of(address))
 }
 
-/// A new identity refused because its service cannot carry its type: an
-/// email address on WhatsApp, the one pair refused. WhatsApp reaches a person
-/// by phone number, and keeps an internal id for one it knows by no number as
-/// `other`, so it carries no email address. The phone service carries every
-/// type: iMessage reaches an email address too.
+/// A new identity refused because its service cannot carry its type
+/// ([`IdentityService::carries`]), such as an email address on WhatsApp.
+/// WhatsApp reaches a person by phone number, and keeps an internal id for
+/// one it knows by no number as `other`, so it carries no email address.
 #[derive(Debug, thiserror::Error)]
-#[error("{address} is an email address, and WhatsApp carries no email addresses")]
-pub struct EmailOnWhatsapp {
+#[error(
+    "{address} is {}, and {} carries no {}",
+    type_noun(*handle_type).0,
+    service.label(),
+    type_noun(*handle_type).1
+)]
+pub struct ServiceCannotCarry {
     /// The address as the request gave it.
     pub address: String,
+    /// The service the identity was asked for on.
+    pub service: IdentityService,
+    /// The identity's type.
+    pub handle_type: IdentityType,
+}
+
+/// One identity of the type, and many, as a refusal names them.
+fn type_noun(handle_type: IdentityType) -> (&'static str, &'static str) {
+    match handle_type {
+        IdentityType::Phone => ("a phone number", "phone numbers"),
+        IdentityType::Email => ("an email address", "email addresses"),
+        IdentityType::Username => ("a username", "usernames"),
+        IdentityType::Other => ("an identity of type other", "identities of type other"),
+    }
 }
 
 /// Refuse a new identity of `handle_type` on `service` when the service
-/// cannot carry it.
+/// does not carry it.
 ///
 /// # Errors
 ///
-/// [`EmailOnWhatsapp`] for an email address on WhatsApp.
+/// [`ServiceCannotCarry`] for every pair [`IdentityService::carries`]
+/// refuses.
 pub fn check_service_carries(
     address: &str,
     service: IdentityService,
     handle_type: IdentityType,
-) -> std::result::Result<(), EmailOnWhatsapp> {
-    match (service, handle_type) {
-        (IdentityService::Whatsapp, IdentityType::Email) => Err(EmailOnWhatsapp {
+) -> std::result::Result<(), ServiceCannotCarry> {
+    if service.carries(handle_type) {
+        Ok(())
+    } else {
+        Err(ServiceCannotCarry {
             address: address.to_string(),
-        }),
-        _ => Ok(()),
+            service,
+            handle_type,
+        })
     }
 }
 
 /// The service an identity is on, as a request names it and the profile
 /// reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
 /// SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
-/// The service never decides the identity's type, which comes from the
-/// address.
+/// The address's shape picks the identity's type among those the service
+/// carries, so an address with an `@` is `other` on WhatsApp.
 //
-// Any other word is refused, naming the two. Read as `phone`, a misspelt
+// Any other word is refused, naming the two. Read as `phone`, a misspelled
 // `whatsap` put an identity on Text Message without a word (#1630), and
 // `email` lived on as a second name for `phone` (#1631).
 //
 // This is the HTTP API's enum; the OpenAPI reference publishes it as
-// `IdentityService`. `message_ir::IdentityService` is the conversation file's
+// `IdentityService`. `ir::IdentityService` is the conversation file's
 // enum of the same two services, whose `parse` reads every word but
 // `whatsapp` and `wa` as `phone`; the `From` impls below convert between the
 // two. The `Api` prefix keeps the two apart in Rust, because one bare name
@@ -187,13 +222,24 @@ pub async fn existing_handle_id(
     .bind(raw)
     .bind(key.as_str())
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the identity the account holds for an address")?;
     Ok(id)
+}
+
+/// The address and type of one `handles` row, the pair an identity is
+/// matched by whatever its service.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AddressAndType {
+    /// The address's key (`handles.normalized`).
+    pub normalized: String,
+    /// `phone`, `email`, `username` or `other`.
+    pub handle_type: String,
 }
 
 /// One `handles` row as a country pick reads it: the address as written,
 /// its type, its service, and its key.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct KeyedRow {
     /// The address exactly as the source wrote it.
     pub raw: String,
@@ -202,6 +248,7 @@ pub struct KeyedRow {
     /// `phone` or `whatsapp`.
     pub service: String,
     /// The key it is matched under (`normalized`).
+    #[sqlx(rename = "normalized")]
     pub key: String,
 }
 
@@ -215,20 +262,15 @@ pub async fn keyed_row(
     account_id: i64,
     handle_id: i64,
 ) -> Result<Option<KeyedRow>> {
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
+    sqlx::query_as::<_, KeyedRow>(
         "SELECT raw, handle_type, service, normalized FROM handles
          WHERE account_id = $1 AND id = $2",
     )
     .bind(account_id)
     .bind(handle_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    Ok(row.map(|(raw, handle_type, service, key)| KeyedRow {
-        raw,
-        handle_type,
-        service,
-        key,
-    }))
+    .await
+    .context("read an identity's address, type, service and key")
 }
 
 /// The account's phone identity on `service` keyed `key`, other than
@@ -244,7 +286,7 @@ pub async fn phone_holding_key(
     service: &str,
     except: i64,
 ) -> Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT id FROM handles
          WHERE account_id = $1 AND normalized = $2 AND handle_type = 'phone' AND service = $3
            AND id <> $4",
@@ -254,7 +296,8 @@ pub async fn phone_holding_key(
     .bind(service)
     .bind(except)
     .fetch_optional(&mut *conn)
-    .await?)
+    .await
+    .context("read the phone identity holding a key")
 }
 
 /// Give the account's `handles` row `handle_id` the key `key`, a phone
@@ -278,7 +321,8 @@ pub async fn set_plus_form(
     .bind(handle_id)
     .bind(key)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("give a phone identity its + form")?;
     Ok(())
 }
 
@@ -325,7 +369,8 @@ pub async fn upsert_handle_row_in(
     .bind(handle_type.as_str())
     .bind(service_str)
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("insert an identity")?
     .rows_affected();
     let id: i64 = sqlx::query_scalar(
         "SELECT id FROM handles
@@ -336,13 +381,18 @@ pub async fn upsert_handle_row_in(
     .bind(handle_type.as_str())
     .bind(service_str)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("read the id of an identity")?;
     Ok((id, inserted > 0 && note.is_some()))
 }
 
 /// Same as [`upsert_handle_row`], but skip the two SQL statements when this
 /// import already resolved the same identity. Third value is `true` on a
 /// cache hit so callers can skip leftover per-row work (sibling contact link).
+///
+/// A phone number written without its `+` code is read in `stated`, the
+/// country the conversation file names for this identity, else in the run's
+/// country ([`HandleIdCache::in_country`]).
 pub async fn upsert_handle_row_cached(
     conn: &mut SqliteConnection,
     cache: &mut HandleIdCache,
@@ -350,8 +400,10 @@ pub async fn upsert_handle_row_cached(
     raw: &str,
     handle_type: IdentityType,
     service: Option<&str>,
+    stated: Option<&'static phone::Country>,
 ) -> Result<(i64, bool, bool)> {
-    let normalized = normalize_handle(raw, handle_type, cache.country).key;
+    let country = cache.country_for(stated);
+    let normalized = normalize_handle(raw, handle_type, country).key;
     let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let key = (
         account_id.to_string(),
@@ -363,7 +415,7 @@ pub async fn upsert_handle_row_cached(
         return Ok((id, false, true));
     }
     let (id, flagged) =
-        upsert_handle_row_in(conn, account_id, raw, handle_type, service, cache.country).await?;
+        upsert_handle_row_in(conn, account_id, raw, handle_type, service, country).await?;
     cache.ids.insert(key, id);
     Ok((id, flagged, false))
 }
@@ -390,14 +442,14 @@ pub struct Identity {
     pub start_date: Option<String>,
     /// When the newest such message was sent, or null when there is none.
     pub end_date: Option<String>,
-    /// Direct, group, and orphaned conversations: for a contact, those the identity
+    /// One-to-one, group, and orphaned conversations: for a contact, those the identity
     /// takes part in, whoever wrote in them; for an account, those holding
     /// at least one of the identity's messages. Trashed conversations are
     /// excluded.
     pub conversations: u64,
     /// The identity's messages in one-to-one conversations, trashed
     /// conversations and duplicates excluded.
-    pub direct_messages: u64,
+    pub one_to_one_messages: u64,
     /// The identity's messages in group conversations, on the same terms.
     pub group_messages: u64,
     /// The identity's messages in conversations of orphaned messages, on the
@@ -428,24 +480,25 @@ pub enum IdentitiesOf {
 }
 
 /// One row of [`identities`]: address, service, whether its country is
-/// unknown, first and last timestamp, conversation count, direct, group, and
+/// unknown, first and last timestamp, conversation count, one-to-one, group, and
 /// orphaned message counts.
-type IdentityRow = (
-    String,
-    String,
-    bool,
-    Option<String>,
-    Option<String>,
-    i64,
-    i64,
-    i64,
-    i64,
-);
+#[derive(sqlx::FromRow)]
+struct IdentityRow {
+    normalized: String,
+    service: String,
+    country_unknown: bool,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    conversations: i64,
+    one_to_one: i64,
+    group_messages: i64,
+    orphaned: i64,
+}
 
 /// The identities of an account or of a contact, each with its messages,
 /// phones before emails and each in order.
 pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result<Vec<Identity>> {
-    let not_trashed = crate::search::emit::NOT_TRASHED_CONVERSATION;
+    let not_trashed = crate::db::trash::not_trashed_conversation("c");
     // `messages` is a `FROM … WHERE …` over identity `l`'s messages. It ends
     // in its WHERE clause, so a column can narrow it by conversation type.
     //
@@ -495,37 +548,40 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 CASE WHEN h.handle_type = 'email' THEN 'email'
                      WHEN h.service = 'whatsapp' THEN 'whatsapp'
                      ELSE 'phone' END AS service,
-                {country_unknown},
-                (SELECT MIN(m.timestamp) {messages}),
-                (SELECT MAX(m.timestamp) {messages}),
-                {conversations},
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'individual'),
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'group'),
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned')
+                {country_unknown} AS country_unknown,
+                (SELECT MIN(m.timestamp) {messages}) AS start_date,
+                (SELECT MAX(m.timestamp) {messages}) AS end_date,
+                {conversations} AS conversations,
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'one-to-one') AS one_to_one,
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'group') AS group_messages,
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned') AS orphaned
          FROM linked l
          JOIN handles h ON h.id = l.handle_id
          {scope}
          ORDER BY CASE WHEN h.handle_type = 'email' THEN 1 ELSE 0 END, h.normalized",
     );
-    let mut query = sqlx::query_as::<_, IdentityRow>(&sql).bind(account_id);
+    let mut query = sqlx::query_as::<_, IdentityRow>(sqlx::AssertSqlSafe(sql)).bind(account_id);
     if let IdentitiesOf::Contact { contact_id, .. } = of {
         query = query.bind(contact_id);
     }
-    let rows = query.fetch_all(&mut *conn).await?;
+    let rows = query
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the identities and their message counts")?;
     Ok(rows
         .into_iter()
         .map(
-            |(
-                handle,
-                service,
-                country_unknown,
-                start_date,
-                end_date,
-                conversations,
-                direct,
-                group,
-                orphaned,
-            )| {
+            |IdentityRow {
+                 normalized: handle,
+                 service,
+                 country_unknown,
+                 start_date,
+                 end_date,
+                 conversations,
+                 one_to_one,
+                 group_messages: group,
+                 orphaned,
+             }| {
                 Identity {
                     address: handle,
                     service,
@@ -533,7 +589,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                     start_date,
                     end_date,
                     conversations: conversations.max(0) as u64,
-                    direct_messages: direct.max(0) as u64,
+                    one_to_one_messages: one_to_one.max(0) as u64,
                     group_messages: group.max(0) as u64,
                     orphaned_messages: orphaned.max(0) as u64,
                 }
@@ -549,13 +605,14 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
 ///
 /// Returns an error when the query fails.
 pub async fn identity_handle_ids(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT h.id FROM handles h WHERE h.account_id = $1 AND {} ORDER BY h.id",
         crate::db::account_profile::is_account_identity_sql("h", "$1"),
-    ))
+    )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's own identities on every service")
 }
 
 /// True when an import would give `handle_id` a contact for what the
@@ -570,13 +627,13 @@ pub async fn is_met_in_conversations(
     account_id: i64,
     handle_id: i64,
 ) -> Result<bool> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM participants p
                         JOIN conversations c ON c.id = p.conversation_id
                         WHERE c.account_id = $1 AND p.handle_id = $2)
              OR EXISTS (SELECT 1 FROM conversations c
                         WHERE c.account_id = $1 AND c.chat_handle_id = $2
-                          AND c.conversation_type = 'individual' COLLATE NOCASE)
+                          AND c.conversation_type = 'one-to-one' COLLATE NOCASE)
              OR EXISTS (SELECT 1 FROM messages m
                         WHERE m.account_id = $1 AND m.sender_handle_id = $2
                           AND m.is_from_me = 0)",
@@ -584,7 +641,8 @@ pub async fn is_met_in_conversations(
     .bind(account_id)
     .bind(handle_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("check whether an identity is met in the account's conversations")
 }
 
 #[cfg(test)]
@@ -594,6 +652,60 @@ mod tests {
 
     const TEST_ACCOUNT: i64 = 7;
 
+    /// A new identity is refused for every pair its service does not carry
+    /// ([`IdentityService::carries`]), with a reason naming the service and
+    /// the type, and let through for every pair it carries. A username on
+    /// Text Message was let through, because only an email address on
+    /// WhatsApp was refused (#2212). The two loops list every
+    /// `IdentityService` and `IdentityType`, and must follow the enums.
+    #[test]
+    fn a_new_identity_is_refused_for_every_type_its_service_does_not_carry() {
+        let refusals = [
+            (
+                IdentityService::Phone,
+                IdentityType::Username,
+                "x is a username, and Text Message carries no usernames",
+            ),
+            (
+                IdentityService::Whatsapp,
+                IdentityType::Email,
+                "x is an email address, and WhatsApp carries no email addresses",
+            ),
+            (
+                IdentityService::Whatsapp,
+                IdentityType::Username,
+                "x is a username, and WhatsApp carries no usernames",
+            ),
+        ];
+        let mut refused = 0;
+        for service in [IdentityService::Phone, IdentityService::Whatsapp] {
+            for handle_type in [
+                IdentityType::Phone,
+                IdentityType::Email,
+                IdentityType::Username,
+                IdentityType::Other,
+            ] {
+                let answer =
+                    check_service_carries("x", service, handle_type).map_err(|e| e.to_string());
+                if service.carries(handle_type) {
+                    assert_eq!(answer, Ok(()), "{service:?} {handle_type:?}");
+                } else {
+                    let (_, _, reason) = refusals
+                        .iter()
+                        .find(|(s, t, _)| *s == service && *t == handle_type)
+                        .unwrap_or_else(|| panic!("no reason for {service:?} {handle_type:?}"));
+                    assert_eq!(answer, Err((*reason).to_string()));
+                    refused += 1;
+                }
+            }
+        }
+        assert_eq!(
+            refused,
+            refusals.len(),
+            "every listed reason is a refused pair"
+        );
+    }
+
     /// The count of numbers that need a look takes one for each identity the
     /// call both created and flagged, so a plain new number and a flagged
     /// number met again add nothing.
@@ -602,7 +714,7 @@ mod tests {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+        crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
             .await
             .unwrap();
 
@@ -651,7 +763,7 @@ mod tests {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+        crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
             .await
             .unwrap();
         let mut cache = HandleIdCache::default();
@@ -662,6 +774,7 @@ mod tests {
             "+15555550100",
             IdentityType::Phone,
             Some("phone"),
+            None,
         )
         .await
         .unwrap();
@@ -672,6 +785,7 @@ mod tests {
             "+15555550100",
             IdentityType::Phone,
             Some("phone"),
+            None,
         )
         .await
         .unwrap();

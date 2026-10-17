@@ -1,0 +1,202 @@
+{
+  "desktop-job:error": [
+    {
+      "canceled": true,
+      "detail": "canceled"
+    },
+    {
+      "canceled": false,
+      "detail": "write c.jsonl: No space left on device",
+      "user_message": "The disk is full. Free some space, then try again."
+    }
+  ],
+  "desktop-job:file-done": [
+    {
+      "file": "c.jsonl",
+      "status": "ok"
+    },
+    {
+      "file": "c.jsonl",
+      "status": "failed"
+    },
+    {
+      "file": "c.jsonl",
+      "status": "skipped"
+    }
+  ],
+  "desktop-job:file-written": [
+    {
+      "file": "c.jsonl",
+      "status": "written"
+    },
+    {
+      "file": "c.jsonl",
+      "status": "skipped"
+    }
+  ],
+  "desktop-job:issue": [
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "error",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "note",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "resolved",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "sms-1.xml",
+      "kind": "skip",
+      "reason": "could not be read",
+      "step": "parse"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "c.jsonl:attachments/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be converted",
+      "step": "media"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "c.jsonl",
+      "kind": "skip",
+      "reason": "upload failed",
+      "step": "upload"
+    }
+  ],
+  "desktop-job:progress": [
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "setup",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "parse",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "attachments",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "prepare",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "check",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "media",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 100,
+      "bytes_total": 500,
+      "done": 2,
+      "status": "Deriving backup keys",
+      "step": "upload",
+      "total": 5,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 1,
+      "bytes_total": 2,
+      "done": 0,
+      "step": "media",
+      "total": 0,
+      "waiting": "ffmpeg"
+    },
+    {
+      "bytes_done": 1,
+      "bytes_total": 2,
+      "done": 0,
+      "step": "media",
+      "total": 0,
+      "waiting": "ffprobe"
+    },
+    {
+      "bytes_done": 1,
+      "bytes_total": 2,
+      "done": 0,
+      "step": "media",
+      "total": 0,
+      "waiting": "wtsexporter"
+    }
+  ],
+  "local-server:notice": [
+    {
+      "cause": "unanswered",
+      "state": "restarting"
+    },
+    {
+      "cause": "exited",
+      "state": "restarting"
+    },
+    {
+      "state": "answering"
+    },
+    {
+      "details": "database is locked",
+      "message": "Message Crate stopped 4 times within 10 minutes.",
+      "state": "failed"
+    }
+  ]
+}

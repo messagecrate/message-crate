@@ -1,5 +1,8 @@
 import type { IdentityType } from "./handleKind";
 
+/** A conversation's shape, as `conversations.conversation_type` stores it. */
+export type ConversationType = "group" | "one-to-one";
+
 export type ContactSection =
   | "all"
   | "no-messages"
@@ -53,7 +56,10 @@ export type ContactDetail = ContactListItem & {
 export type YearThread = {
   year: number;
   messageCount: number;
-  /** Attachments on messages in this year thread. */
+  /**
+   * Attachments in this year thread. Read through `/v1`, it counts the
+   * messages that carry one, because the server counts no attachments by year.
+   */
   attachmentCount: number;
   dateStart: string;
   dateEnd: string;
@@ -112,9 +118,9 @@ export type AttachmentRow = {
   originalName: string | null;
   assetsPath: string | null;
   sha256: string | null;
-  derivedMimeType: string | null;
-  derivedAssetsPath: string | null;
-  derivedSha256: string | null;
+  previewMimeType: string | null;
+  previewAssetsPath: string | null;
+  previewSha256: string | null;
 };
 
 export type MessageRow = {

@@ -1,11 +1,11 @@
-import { useCallback, useSyncExternalStore } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, onAccountIdChange } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
+import type { StagingSummary } from "../../lib/desktop/staging";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import type { MediaToolName, StagingSummary } from "../../lib/tauri";
-import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
-import type { ImportJobFormValues } from "./useImportJob";
+import { createExternalStore } from "../../lib/externalStore";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
+import type { MediaToolName } from "../../lib/types";
+import type { ImportPhase, ImportStep } from "./importProgressState";
 
 /** A run directory Message Crate could not delete, and the reason it gave. */
 export type RunDirDeleteFailure = { path: string; reason: string };
@@ -18,7 +18,8 @@ export type RunDirDeleteFailure = { path: string; reason: string };
  * or uploading on its own thread, and the person is meant to come back to
  * the run wherever it has got to (CONTEXT.md, "Import Run"). React state in
  * the screen was lost on every navigation; this store is read by the screen
- * and by the sidebar badge, and written only by `useImportJob`.
+ * and by the sidebar badge, and written only by the app's Import Run service
+ * (`run/service.ts`, built in `useImportJob.ts`) and its modules in `run/`.
  *
  * The store is named with the account that started the run, the rule ADR 0002
  * sets for every cache entry: another account logged in on the same desktop
@@ -47,7 +48,7 @@ export type ImportRunState = {
   mediaSummary: StagingSummary | null;
   /**
    * Files Media tried and could not convert or compress. Null when Media
-   * has not run, and on a resume, where the Media stage's own report is gone.
+   * has not run, and on a resume, where the Media Stage's own report is gone.
    */
   mediaFailedCount: number | null;
   /** Which of ffmpeg and ffprobe the chosen Media mode needs and can't use. */
@@ -67,12 +68,18 @@ export type ImportRunState = {
    */
   resumeError: string | null;
   /**
+   * Why the last Import could not start: the backup or the account's profile
+   * could not be read for the identity check, so no run exists. Shown on the
+   * form until the next Import starts or the form changes.
+   */
+  startError: string | null;
+  /**
    * The server did not record that the run reached the review on screen.
    * Shown on the review; approving writes the stage again before it goes on.
    */
   reviewError: string | null;
   /**
-   * True only while a not-cancellable summarize call is in flight: the
+   * True only while a not-cancelable summarize call is in flight: the
    * review renders once the summary resolves, and until then the run
    * view stays up with Cancel disabled, since there is nothing to stop.
    */
@@ -80,31 +87,43 @@ export type ImportRunState = {
   sourceIdentities: string[] | null;
   /**
    * A run directory Message Crate could not delete, and why: from a
-   * discarded or cancelled run, or the cleanup after a finished one. Shown
+   * discarded or canceled run, or the cleanup after a finished one. Shown
    * until the person dismisses it or a later delete of the directory succeeds,
    * so a directory of several gigabytes is never left behind unsaid.
    */
   runDirDeleteFailure: RunDirDeleteFailure | null;
 };
 
+/**
+ * What a finished run leaves on screen, at its empty values: every site that
+ * clears a run spreads it. `resumeError` and `runDirDeleteFailure` are not
+ * in it: each outlives a return to the form, so the sites that do clear them
+ * write them. `startError` is not in it either: only `startImport` writes it,
+ * and the next Import, a resume, or a change to the form clears it.
+ */
+export const CLEARED_RUN = {
+  summaryView: null,
+  runDir: null,
+  importRunId: null,
+  stagingSummary: null,
+  mediaSummary: null,
+  mediaFailedCount: null,
+  mediaToolsMissing: [],
+  mediaPartiallyRan: false,
+  computingSummary: false,
+  reviewError: null,
+} satisfies Partial<ImportRunState>;
+
 export function initialImportRunState(steps: ImportStep[]): ImportRunState {
   return {
+    ...CLEARED_RUN,
     accountId: null,
     phase: "form",
     running: false,
     steps,
     form: null,
-    summaryView: null,
-    runDir: null,
-    importRunId: null,
-    stagingSummary: null,
-    mediaSummary: null,
-    mediaFailedCount: null,
-    mediaToolsMissing: [],
-    mediaPartiallyRan: false,
     resumeError: null,
-    reviewError: null,
-    computingSummary: false,
+    startError: null,
     sourceIdentities: null,
     runDirDeleteFailure: null,
   };
@@ -112,36 +131,33 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
 
 type Patch = Partial<ImportRunState> | ((state: ImportRunState) => Partial<ImportRunState>);
 
-function createImportRunStore(initial: ImportRunState) {
-  let state = initial;
-  const listeners = new Set<() => void>();
+/**
+ * A store of one Import Run. The app has one (`importRunStore`); a test may make its own.
+ * `set` merges a patch into the run rather than replacing it.
+ */
+export function createImportRunStore(initial: ImportRunState) {
+  const store = createExternalStore(initial);
   return {
-    get: (): ImportRunState => state,
+    get: store.get,
     set: (patch: Patch): void => {
+      const state = store.get();
       const next = typeof patch === "function" ? patch(state) : patch;
-      state = { ...state, ...next };
-      for (const listener of listeners) listener();
+      store.set({ ...state, ...next });
     },
-    subscribe: (listener: () => void): (() => void) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe: store.subscribe,
     /** Back to a fresh form: between tests, and when another account takes the store over. */
-    reset: (fresh: ImportRunState): void => {
-      state = fresh;
-      for (const listener of listeners) listener();
-    },
+    reset: (fresh: ImportRunState): void => store.set(fresh),
   };
 }
+
+export type ImportRunStore = ReturnType<typeof createImportRunStore>;
 
 /** The one store. There is one Import Run per account, and one account logged in. */
 export const importRunStore = createImportRunStore(initialImportRunState([]));
 
 /**
  * True from the run's first stage to its end: while a stage runs and while
- * the run waits at a review. Ended (`done`), cancelled, discarded or never
+ * the run waits at a review. Ended (`done`), canceled, discarded or never
  * started (`form`), and the identity stop before any stage, are not.
  *
  * A review holds it only for the account that started the run. The desktop
@@ -160,7 +176,7 @@ function holdsDesktop(state: ImportRunState): boolean {
  * included. Each stage's job holds it too, but only while that job runs, so
  * without this a Convert could start between two stages and the desktop
  * would refuse the run's next one (#1407). Following the run releases it
- * however the run ends: finished, failed, paused, cancelled or discarded.
+ * however the run ends: finished, failed, paused, canceled or discarded.
  */
 let releaseDesktop: (() => void) | null = null;
 function followRun(): void {
@@ -174,27 +190,6 @@ function followRun(): void {
 }
 importRunStore.subscribe(followRun);
 onAccountIdChange(followRun);
-
-/** The fresh form, as an account that has no run in the store reads it. */
-const FRESH_RUN = initialImportRunState(stepsFor("copy"));
-
-/**
- * The run in the store when `accountId` started it, and the fresh form when
- * another account did.
- */
-export function importRunFor(state: ImportRunState, accountId: number | null): ImportRunState {
-  return state.accountId === accountId ? state : FRESH_RUN;
-}
-
-/**
- * The logged-in account's run as it stands, re-rendering the caller whenever
- * any of it changes.
- */
-export function useImportRunState(): ImportRunState {
-  const accountId = useAuth().accountId ?? null;
-  const read = useCallback(() => importRunFor(importRunStore.get(), accountId), [accountId]);
-  return useSyncExternalStore(importRunStore.subscribe, read, read);
-}
 
 /** True at either review: the run is waiting for the person to decide. */
 export function isReviewPhase(phase: ImportPhase): boolean {

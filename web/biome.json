@@ -54,12 +54,26 @@
           "level": "error",
           "options": {
             "paths": {
+              "@tanstack/react-query": {
+                "importNames": ["useMutation", "MutationObserver", "*"],
+                "message": "Write account data with useRouteMutation from src/hooks/useRouteQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+              },
+              "@tauri-apps/api/core": "Call the desktop through a module in src/lib/desktop/",
+              "@tauri-apps/api/event": "Call the desktop through a module in src/lib/desktop/",
+              "@tauri-apps/api/window": "Call the desktop through a module in src/lib/desktop/",
+              "@tauri-apps/plugin-dialog": "Call the desktop through a module in src/lib/desktop/",
               "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653).",
               "react-aria-components": {
                 "importNames": ["Tab"],
                 "message": "Use Tab from src/components/Tab.tsx, the one tab style (STYLE_GUIDE.md, rule 4)."
               }
             }
+          }
+        },
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": {
+            "filenameCases": ["camelCase", "PascalCase"]
           }
         },
         "useComponentExportOnlyModules": {
@@ -70,16 +84,16 @@
               "ATTACHMENT_OPTIONS",
               "ListBoxItem",
               "RESOLUTION_OPTIONS",
+              "authModule",
               "bubbleBody",
               "completionTextFor",
-              "fieldStyle",
               "formatCompare",
               "formatMessageTime",
-              "hintStyle",
+              "hintClass",
               "mockedAuth",
               "namesSender",
               "renderWithProviders",
-              "sectionGap",
+              "sectionGapClass",
               "selectItemClassName",
               "senderName",
               "tapbackGroups",
@@ -104,6 +118,31 @@
       }
     },
     {
+      "includes": ["src/lib/desktop/*.ts", "!src/lib/desktop/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@tanstack/react-query": {
+                    "importNames": ["useMutation", "MutationObserver", "*"],
+                    "message": "Write account data with useRouteMutation from src/hooks/useRouteQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+                  },
+                  "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653).",
+                  "react-aria-components": {
+                    "importNames": ["Tab"],
+                    "message": "Use Tab from src/components/Tab.tsx, the one tab style (STYLE_GUIDE.md, rule 4)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/components/Tab.tsx"],
       "linter": {
         "rules": {
@@ -112,6 +151,14 @@
               "level": "error",
               "options": {
                 "paths": {
+                  "@tanstack/react-query": {
+                    "importNames": ["useMutation", "MutationObserver", "*"],
+                    "message": "Write account data with useRouteMutation from src/hooks/useRouteQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+                  },
+                  "@tauri-apps/api/core": "Call the desktop through a module in src/lib/desktop/",
+                  "@tauri-apps/api/event": "Call the desktop through a module in src/lib/desktop/",
+                  "@tauri-apps/api/window": "Call the desktop through a module in src/lib/desktop/",
+                  "@tauri-apps/plugin-dialog": "Call the desktop through a module in src/lib/desktop/",
                   "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653)."
                 }
               }
@@ -119,6 +166,51 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "src/hooks/useRouteQuery.ts",
+        "src/components/DownloadAttachmentButton.tsx",
+        "src/hooks/useStreamedMedia.ts",
+        "src/hooks/useToolsStatus.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@tauri-apps/api/core": "Call the desktop through a module in src/lib/desktop/",
+                  "@tauri-apps/api/event": "Call the desktop through a module in src/lib/desktop/",
+                  "@tauri-apps/api/window": "Call the desktop through a module in src/lib/desktop/",
+                  "@tauri-apps/plugin-dialog": "Call the desktop through a module in src/lib/desktop/",
+                  "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653).",
+                  "react-aria-components": {
+                    "importNames": ["Tab"],
+                    "message": "Use Tab from src/components/Tab.tsx, the one tab style (STYLE_GUIDE.md, rule 4)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+        "src/test/**/*.ts",
+        "src/test/**/*.tsx"
+      ],
+      "plugins": ["./biome-plugins/noTimedWaitsInTests.grit"]
+    },
+    {
+      "includes": ["src/**/*.ts", "src/**/*.tsx", "!src/lib/desktop/**"],
+      "plugins": ["./biome-plugins/noTauriMocksOutsideDesktop.grit"]
     },
     {
       "includes": ["**/*.test.tsx"],

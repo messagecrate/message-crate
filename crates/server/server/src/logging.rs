@@ -41,7 +41,19 @@ static SERVER_LOG: RwLock<Option<LogFiles>> = RwLock::new(None);
 
 /// Install the subscriber: stderr, and the server's log once
 /// [`write_files_in`] opens it. Call once, before any work; a second call is
-/// ignored so tests that build a server in-process do not panic.
+/// ignored so tests that build a server in-process do not panic. A unit
+/// test never calls it: the log capture of unit tests installs its own
+/// process-wide subscriber.
+///
+/// The call that installs the subscriber also installs the panic hook
+/// (`log_panics`), so a panic on any thread of the process reaches the
+/// log as well.
+///
+/// Neither layer reports a write it could not make. A layer that does
+/// reports it with `eprintln!`, which panics when stderr is a pipe with no
+/// reader, as it is once the desktop app that started the server has
+/// crashed (#1934). Every line would then panic, and the panic hook's own
+/// line would panic inside the hook, which aborts the process.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let subscriber = tracing_subscriber::registry()
@@ -50,15 +62,58 @@ pub fn init() {
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
                 .with_ansi(std::io::stderr().is_terminal())
-                .with_target(false),
+                .with_target(false)
+                .log_internal_errors(false),
         )
         .with(file_layer(FileTarget::Process));
-    let _ = tracing::subscriber::set_global_default(subscriber);
+    if tracing::subscriber::set_global_default(subscriber).is_ok() {
+        log_panics();
+    }
+}
+
+/// Send every panic of the process through `tracing` at `ERROR`, with its
+/// message and the file and line it happened at, in place of Rust's default
+/// hook, which writes to stderr alone. A panic in a request handler, the
+/// media pass or any other thread of `serve` then leaves a line in the
+/// server's log, under the span it happened in, so a handler's panic carries
+/// its request's id (#2086).
+///
+/// The default hook still runs when `RUST_BACKTRACE` asks for a backtrace,
+/// because only it writes one, and when `RUST_LOG` leaves out the `ERROR`
+/// line, so a panic always reaches stderr or the log.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let logged = tracing::event_enabled!(tracing::Level::ERROR);
+        tracing::error!(panic = %info, "A thread of the server panicked");
+        if !logged || std::env::var_os("RUST_BACKTRACE").is_some_and(|value| value != "0") {
+            default(info);
+        }
+    }));
+}
+
+/// Write why the process ends with `error`. Once `serve` has opened the
+/// server's log, the line goes there at `ERROR`, with the error's whole
+/// chain, as well as to stderr, so the owner can read why a Message Crate
+/// would not start or why it stopped (#2079). Before then, in every other
+/// subcommand, and when `RUST_LOG` leaves out the `ERROR` line, it goes to
+/// stderr alone, as `fn main() -> Result<()>` would write it, so the reason
+/// always reaches stderr.
+pub fn write_failure(error: &anyhow::Error) {
+    let writes_files = SERVER_LOG.read().is_ok_and(|slot| slot.is_some());
+    if writes_files && tracing::event_enabled!(tracing::Level::ERROR) {
+        tracing::error!(
+            error = %crate::api_error::error_chain(error),
+            "The server stopped with an error"
+        );
+    } else {
+        eprintln!("Error: {error:?}");
+    }
 }
 
 /// Open the server's log in `data_dir` and send every line from here on to it
 /// as well as to stderr. `serve` calls it before it touches the database, so
-/// a database that fails to open is in the log.
+/// a database that fails to open is in the log ([`write_failure`]).
 ///
 /// # Errors
 ///
@@ -73,18 +128,76 @@ pub fn write_files_in(data_dir: &Path) -> std::io::Result<LogFiles> {
 }
 
 /// A subscriber that writes, at `filter`, to `files` alone, formatted as the
-/// server's log is. For a test that reads what a run left in the log.
+/// server's log is. For a test that reads what a run left in the log. Its
+/// first call also installs [`AskEachTime`] process-wide, through
+/// [`install_ask_each_time`].
 #[cfg(test)]
 pub(crate) fn subscriber_for(
     files: LogFiles,
     filter: &str,
 ) -> impl tracing::Subscriber + Send + Sync {
+    install_ask_each_time();
     tracing_subscriber::registry()
         .with(EnvFilter::new(filter))
         .with(file_layer(FileTarget::Files(files)))
 }
 
-/// The server's log layer: the stderr format without colour, one event per
+/// Install [`AskEachTime`] as the process-wide subscriber, once.
+///
+/// A test installs its log capture as its thread's default, beside tests on
+/// other threads that install none. `tracing` caches, once per process,
+/// whether any subscriber wants each `tracing::warn!` and the like. While
+/// exactly one subscriber exists in the process, it fills that cache by
+/// asking only the subscriber of the thread that first reaches the line. A
+/// test thread with no subscriber then marks the line as wanted by no one,
+/// and the test whose subscriber does want it reads an empty log (#2824).
+/// With a process-wide subscriber, at least two subscribers exist whenever
+/// a test captures the log, so `tracing` asks every one of them.
+#[cfg(test)]
+fn install_ask_each_time() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        tracing::subscriber::set_global_default(AskEachTime)
+            .expect("no unit test calls `init` or installs a process-wide subscriber");
+    });
+}
+
+/// The process-wide subscriber of a test run: it records nothing, and
+/// answers "ask me each time" for every line, so no line's cached answer is
+/// ever "no one wants it" and each line asks the subscriber of the thread
+/// it runs on.
+#[cfg(test)]
+struct AskEachTime;
+
+#[cfg(test)]
+impl tracing::Subscriber for AskEachTime {
+    fn register_callsite(
+        &self,
+        _: &'static tracing::Metadata<'static>,
+    ) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::sometimes()
+    }
+
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        false
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, _: &tracing::Event<'_>) {}
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+/// The server's log layer: the stderr format without color, one event per
 /// line.
 fn file_layer<S>(target: FileTarget) -> impl tracing_subscriber::Layer<S>
 where
@@ -94,6 +207,9 @@ where
         .with_writer(target)
         .with_ansi(false)
         .with_target(false)
+        // A write a full disk refuses is not reported on stderr, which may
+        // be a pipe with no reader (`init`).
+        .log_internal_errors(false)
 }
 
 /// Which files the server's log layer writes to.

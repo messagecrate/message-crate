@@ -1,20 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
+import { MIB } from "../../test/units";
 import { estimatePiles, estimatesHeading, filesOverLimit, mediaJobVerb } from "./reviewForecast";
-
-const MB = 1024 * 1024;
 
 function file(
   name: string,
-  sizeMb: number,
+  sizeMib: number,
   verdict: AttachmentForecast["verdict"],
-  estimateMb = sizeMb,
+  estimateMib = sizeMib,
 ): AttachmentForecast {
   return {
     path: `attachments/${name}`,
     name,
-    sizeBytes: sizeMb * MB,
-    estimateBytes: estimateMb * MB,
+    sizeBytes: sizeMib * MIB,
+    estimateBytes: estimateMib * MIB,
     verdict,
   };
 }
@@ -28,13 +27,13 @@ function summary(forecasts: AttachmentForecast[]): StagingSummary {
     attachments: forecasts.length,
     attachmentBytes: 0,
     forecasts,
-    assetMaxBytes: 50 * MB,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
   };
 }
 
 describe("mediaJobVerb", () => {
-  it("names the job only for the modes that have a Media stage", () => {
+  it("names the job only for the modes that have a Media Stage", () => {
     expect(mediaJobVerb("convert")).toBe("converting");
     expect(mediaJobVerb("compress")).toBe("compressing");
     expect(mediaJobVerb("copy")).toBeNull();
@@ -102,7 +101,7 @@ describe("estimatePiles", () => {
 });
 
 describe("estimatesHeading", () => {
-  it("names the operation, and is absent when there is no Media stage", () => {
+  it("names the operation, and is absent when there is no Media Stage", () => {
     expect(estimatesHeading("compress")).toBe("Compression estimates");
     expect(estimatesHeading("convert")).toBe("Conversion estimates");
     expect(estimatesHeading("copy")).toBeNull();

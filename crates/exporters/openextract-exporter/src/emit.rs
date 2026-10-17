@@ -1,26 +1,23 @@
 //! Convert OpenExtract rows into the shared conversation structure, then write
-//! the chosen output format via [`ExportWriter`].
+//! the chosen output format through [`convert_backup`].
 
-use crate::parse::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
+use crate::read::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use anyhow::Result;
 use chrono::DateTime;
-use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
-    project_conversation,
+use ir::{
+    Attachment, ConversationDocument, ConversationKey, ConversationType, ExportMeta, IdentityType,
+    NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Transport,
+    VendorFields, orphaned_chat_id,
 };
-use message_ir::{
-    ConversationKey, ExportMeta, IdentityType, IrConversationType, IrParticipant, IrService,
-    IrSource, NAMELESS_CHAT_ID, PendingConversation, PendingMessage, ProjectionHooks,
-    orphaned_chat_id,
-};
-use message_staging::{AttachmentSource, ExportWriter};
+use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use phone::Handle;
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
+use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "openextract";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::OpenExtract.source_id();
 const EXPORT_TOOL: &str = "OpenExtract";
 const EXPORT_TOOL_VERSION: &str = "0.5.1";
 
@@ -32,20 +29,14 @@ const VENDOR_KEY: &str = "vendor_key";
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error and note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert OpenExtract CSV(s) under `input`.
 ///
-/// When `cancel` is set, cooperative cancellation is checked between CSV files
-/// and before writing. Cancelled runs return an error with message `cancelled`.
+/// Cancellation is checked between CSV files, between conversations, and
+/// before writing. A canceled run returns
+/// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
 ///
@@ -55,66 +46,83 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input,
         output,
-        transforms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        convert_run,
     } = args;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
-    let writer = ExportWriter::open(&output, output_format, transforms, resume)?;
+    convert_backup(
+        &output,
+        convert_run,
+        WriterSetup::default(),
+        |_writer, cancel, report| {
+            let mut ingest = Ingest {
+                conversations: BTreeMap::new(),
+                report,
+            };
+            let csv_files = discover_csv_files(input)?;
+            for path in &csv_files {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_file(path);
+            }
+            let export = message_crate_core::export_meta(
+                EXPORT_SOURCE,
+                EXPORT_TOOL,
+                EXPORT_TOOL_VERSION,
+                None,
+                None,
+            );
+            // OpenExtract writes no date of its own, so the backup is as new
+            // as the newest CSV it wrote.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                csv_files.iter().map(PathBuf::as_path),
+            );
+            Ok(ReadBackup {
+                conversations: ingest.conversations.into_iter().collect(),
+                project: OpenExtractDocuments {
+                    export,
+                    backup_taken_at_unix_ms,
+                },
+                report: ingest.report,
+            })
+        },
+    )
+}
 
-    let mut ingest = Ingest {
-        conversations: BTreeMap::new(),
-        report: ExportReport::with_issues(issues.cloned()),
-    };
-    let csv_files = discover_csv_files(input)?;
-    for path in &csv_files {
-        message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_file(path);
-    }
-    message_crate_core::check_cancel(cancel)?;
-    let Ingest {
-        conversations,
-        mut report,
-    } = ingest;
+/// The projection of each conversation read, for [`convert_backup`].
+struct OpenExtractDocuments {
+    export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
+}
 
-    // OpenExtract writes no date of its own, so the backup is as new as the
-    // newest CSV it wrote.
-    let export = message_crate_core::export_meta(
-        EXPORT_SOURCE,
-        EXPORT_TOOL,
-        EXPORT_TOOL_VERSION,
-        None,
-        None,
-        message_crate_core::newest_file_modified_unix_ms(csv_files.iter().map(PathBuf::as_path)),
-    );
-    let mut documents = Vec::new();
-    for (chat_id, mut pending) in conversations {
+impl Project for OpenExtractDocuments {
+    type Conversation = (String, Pending);
+
+    fn project(
+        &mut self,
+        (chat_id, mut pending): (String, Pending),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
         let hooks = OpenExtractProjection {
-            export: &export,
+            export: &self.export,
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms,
             key: &pending.key,
         };
-        if let Some(mut doc) =
-            project_conversation(&chat_id, &mut pending.convo, &hooks, &mut report)
-        {
-            if matches!(pending.key, Key::UnknownPerson) {
-                doc.conversation.conversation_type = IrConversationType::Orphaned;
-            }
-            documents.push(doc);
+        let mut document =
+            project_conversation(&chat_id, &mut pending.conversation, &hooks, report)?;
+        if matches!(pending.key, Key::UnknownPerson) {
+            document.conversation.conversation_type = ConversationType::Orphaned;
         }
+        Some(document)
     }
 
-    // OpenExtract carries no attachments; every attachment source is Missing.
-    writer.finish(
-        documents,
-        &mut |att| (AttachmentSource::Missing, att.size_bytes),
-        cancel,
-        &mut report,
-    )?;
-
-    Ok(report)
+    /// OpenExtract carries no attachments; every attachment source is Missing.
+    fn attachment_source(
+        &mut self,
+        attachment: &mut Attachment,
+    ) -> (AttachmentSource, Option<u64>) {
+        (AttachmentSource::Missing, attachment.size_bytes)
+    }
 }
 
 /// Parse-time state shared across every CSV file in one export.
@@ -126,7 +134,7 @@ struct Ingest {
 /// One conversation and its key, awaiting projection.
 struct Pending {
     key: Key,
-    convo: PendingConversation,
+    conversation: PendingConversation,
 }
 
 /// What a conversation is keyed by.
@@ -180,7 +188,7 @@ impl Conversation {
         }
     }
 
-    fn group(vendor_id: String, members: Vec<IrParticipant>, group_name: Option<String>) -> Self {
+    fn group(vendor_id: String, members: Vec<Participant>, group_name: Option<String>) -> Self {
         Self {
             key: Key::Keyed(ConversationKey::Group { vendor_id, members }),
             contact_name: String::new(),
@@ -222,15 +230,15 @@ impl Ingest {
                 by_label.entry(label).or_default().push(row);
             }
         }
-        let labelled: HashMap<String, Conversation> = by_label
+        let labeled: HashMap<String, Conversation> = by_label
             .into_iter()
-            .map(|(label, rows)| (label.to_string(), labelled_conversation(&rows, label)))
+            .map(|(label, rows)| (label.to_string(), labeled_conversation(&rows, label)))
             .collect();
         // How many rows alike in every column went to "Orphaned · Unknown
         // person" before this one ([`row_digest`]).
         let mut alike: HashMap<[u8; 32], usize> = HashMap::new();
         for row in rows {
-            match conversation_label(&row).and_then(|label| labelled.get(label)) {
+            match conversation_label(&row).and_then(|label| labeled.get(label)) {
                 Some(conversation) => self.ingest_row(path, row, conversation, None),
                 None if resolve_is_from_me(&row) => {
                     let earlier = alike.entry(row_digest(&row)).or_default();
@@ -280,7 +288,7 @@ impl Ingest {
 
     /// Add one row of the CSV at `path` to its conversation, or count why it
     /// was dropped. `vendor_key` tells apart rows the export cannot: two
-    /// copies with different keys are two messages ([`message_ir::one_copy_per_message`]).
+    /// copies with different keys are two messages ([`ir::one_copy_per_message`]).
     fn ingest_row(
         &mut self,
         path: &Path,
@@ -304,15 +312,15 @@ impl Ingest {
                 if let Key::Keyed(ConversationKey::NameOnly(name)) = &conversation.key {
                     // Counted once per conversation, not once per row.
                     report.caveat(
-                        message_crate_core::NAME_ONLY_CHAT,
+                        message_crate_core::NAME_ONLY_CONVERSATION,
                         1,
                         format!("{} ({name})", path.display()),
-                        message_crate_core::NAME_ONLY_CHAT_NOTE,
+                        message_crate_core::NAME_ONLY_CONVERSATION_NOTE,
                     );
                 }
                 Pending {
                     key: conversation.key.clone(),
-                    convo: PendingConversation::new(
+                    conversation: PendingConversation::new(
                         chat_id,
                         conversation.key.is_group(),
                         conversation.group_name.clone(),
@@ -330,11 +338,10 @@ impl Ingest {
         if let Some(vendor_key) = vendor_key {
             extra.insert(VENDOR_KEY.into(), vendor_key);
         }
-        pending.convo.messages.push(PendingMessage {
+        pending.conversation.messages.push(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_identity,
-            sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text,
             attachments: Vec::new(),
             extra,
@@ -359,7 +366,7 @@ fn conversation_label(row: &RawRow) -> Option<&str> {
 /// person did, it is one-to-one with them, and where nobody did, with the
 /// person the label names: as for iMazing, only a second person makes a
 /// group.
-fn labelled_conversation(rows: &[&RawRow], label: &str) -> Conversation {
+fn labeled_conversation(rows: &[&RawRow], label: &str) -> Conversation {
     match other_parties(rows).as_slice() {
         [] => one_to_one(None, Some(label)),
         [one] => one_to_one(Some(one), Some(label)),
@@ -402,15 +409,17 @@ fn address(sender: &str) -> Option<Handle> {
 }
 
 /// A group member: their address, or the name the source gives in its place.
-fn member(party: &str) -> IrParticipant {
+fn member(party: &str) -> Participant {
     match address(party) {
-        Some(address) => IrParticipant {
+        Some(address) => Participant {
             identity: Some(address.into_key()),
             display_name: None,
+            country: None,
         },
-        None => IrParticipant {
+        None => Participant {
             identity: None,
             display_name: Some(party.to_string()),
+            country: None,
         },
     }
 }
@@ -419,7 +428,7 @@ fn member(party: &str) -> IrParticipant {
 /// the person the `Conversation` value names (`label`).
 ///
 /// It is keyed by an address when either gives one, the sender's first. A
-/// chat labelled with a person's name whose rows carry that person's number
+/// chat labeled with a person's name whose rows carry that person's number
 /// is keyed by the number the source recorded. Only when neither is an
 /// address is it keyed by the name, the label's first: the exporter records
 /// the name and no address, and the server resolves it against contacts on
@@ -566,9 +575,11 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
     None
 }
 
-/// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
+/// OpenExtract deltas of the shared [`ir::project_pending`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The key of the conversation being projected.
     key: &'a Key,
 }
@@ -578,27 +589,38 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
-    fn vendor_key(&self, msg: &PendingMessage) -> Option<String> {
-        msg.extra.get(VENDOR_KEY).cloned()
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
+        message.extra.get(VENDOR_KEY).cloned()
+    }
+
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
-        fields.insert("source_kind".into(), json!(msg.extra_str("source_kind")));
+        fields.insert(
+            "source_kind".into(),
+            json!(message.extra_str("source_kind")),
+        );
         fields.insert(
             "has_attachments".into(),
-            json!(msg.extra_flag("has_attachments")),
+            json!(message.extra_flag("has_attachments")),
         );
         // A group's `Conversation` value is kept as data, not as its title:
         // the export does not say whether it is a name or a list of people.
-        if let Some(name) = &convo.display_name {
+        if let Some(name) = &conversation.display_name {
             fields.insert("conversation".into(), json!(name));
         }
-        IrSource {
+        VendorFields {
             android_type: None,
             fields,
         }
@@ -609,17 +631,19 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
     /// conversation keyed by a name, the name and no address. The conversation
     /// that names nobody, and "Orphaned · Unknown person", have no roster at
     /// all.
-    fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         match self.key {
             Key::Nameless | Key::UnknownPerson => Vec::new(),
             Key::Keyed(ConversationKey::Group { members, .. }) => members.clone(),
-            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![Participant {
                 identity: Some(handle.clone()),
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
+                country: None,
             }],
-            Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::NameOnly(_)) => vec![Participant {
                 identity: None,
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
+                country: None,
             }],
         }
     }
@@ -628,6 +652,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::OutputFormat;
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::PathBuf;
@@ -643,11 +668,10 @@ mod tests {
         convert_export(ConvertExportArgs {
             input,
             output,
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Csv,
-            cancel: None,
-            resume: false,
-            issues: None,
+            convert_run: ConvertRun {
+                output_format: OutputFormat::Csv,
+                ..ConvertRun::default()
+            },
         })
     }
 
@@ -664,7 +688,7 @@ mod tests {
         let out = dir.path().join("out");
         let report = convert(dir.path(), &out).unwrap();
         assert_eq!(report.conversations, 1);
-        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
+        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 0);
         let body = fs::read_to_string(out.join("+15555550122.csv")).unwrap();
         assert!(body.contains("openextract"));
     }
@@ -681,7 +705,7 @@ mod tests {
         );
         let out = dir.path().join("out");
         let report = convert(dir.path(), &out).unwrap();
-        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 1);
+        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 1);
         assert_eq!(report.conversations, 1);
         let csv_path = out.join("name_Cathy_Arp.csv");
         assert!(csv_path.is_file(), "missing {}", csv_path.display());

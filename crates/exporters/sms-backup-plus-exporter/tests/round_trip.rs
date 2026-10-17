@@ -4,9 +4,9 @@
 use crate::SmsBackupPlusArchive;
 use crate::emit::{ConvertExportArgs, convert_export};
 use chrono::{TimeZone, Utc};
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
-use message_ir::{ConversationDocument, IrDirection};
-use message_ir_format::{FormatSink, mark_export_directory, read_conversation_jsonl};
+use ir::{ConversationDocument, Direction};
+use ir_format::{FormatSink, mark_export_directory, read_conversation_jsonl};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, LogSink, OutputFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -24,17 +24,16 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
     convert_export(ConvertExportArgs {
         inputs: &[input.to_path_buf()],
         output_dir: output,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::default(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        log: None,
-        issues: None,
-        resume: false,
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .unwrap();
     let mut documents: Vec<ConversationDocument> = fs::read_dir(output)
@@ -85,7 +84,7 @@ type MessageShape = (
     String,
     String,
     i64,
-    IrDirection,
+    Direction,
     Option<String>,
     String,
     String,
@@ -102,7 +101,7 @@ fn shape(documents: &[ConversationDocument]) -> Vec<MessageShape> {
                     message.guid.clone(),
                     message.timestamp_unix_ms,
                     message.direction,
-                    message.sender_identity.clone(),
+                    message.sender.identity.clone(),
                     message.message_kind.as_str().to_string(),
                     message.text.clone(),
                     message
@@ -153,10 +152,7 @@ fn each_conversation_is_one_directory_of_one_eml_per_message() {
     let first = tempfile::tempdir().unwrap();
     let exported = tempfile::tempdir().unwrap();
     let before = import(&fixture(), first.path());
-    let stems: Vec<String> = before
-        .iter()
-        .map(ConversationDocument::filename_stem)
-        .collect();
+    let stems: Vec<String> = before.iter().map(ir_format::filename_stem).collect();
 
     export(before, first.path(), exported.path());
 
@@ -191,28 +187,21 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
     let second = tempfile::tempdir().unwrap();
     let mut before = import(&fixture(), first.path());
     for document in &mut before {
-        let group =
-            document.conversation.conversation_type == message_ir::IrConversationType::Group;
+        let group = document.conversation.conversation_type == ir::ConversationType::Group;
         if group {
             document.conversation.group_title = Some("Family".into());
         }
         for message in &mut document.messages {
-            if group && message.direction == IrDirection::Incoming {
-                message.sender_identity = None;
-                message.sender_display_name = None;
+            if group && message.direction == Direction::Incoming {
+                message.sender.identity = None;
+                message.sender.display_name = None;
             }
             if message.text.starts_with("Hello from Alice") {
-                message.attachments.push(message_ir::IrAttachment {
-                    path: None,
+                message.attachments.push(ir::Attachment {
                     original_name: Some("notes.txt".into()),
                     mime_type: Some("text/plain".into()),
-                    digest_sha256: None,
-                    is_sticker: false,
-                    transcription: None,
-                    sticker_effect: None,
-                    size_bytes: None,
-                    missing_reason: None,
                     bytes: Some(b"shopping list".to_vec()),
+                    ..ir::testutil::sample_attachment()
                 });
             }
         }
@@ -221,7 +210,7 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
     export(before, first.path(), exported.path());
     let after = import(exported.path(), second.path());
 
-    let messages: Vec<&message_ir::IrMessage> = after
+    let messages: Vec<&ir::Message> = after
         .iter()
         .flat_map(|document| document.messages.iter())
         .collect();
@@ -229,7 +218,7 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
         .iter()
         .find(|message| message.text == "Hello group from Bob")
         .expect("the received group message");
-    assert_eq!(from_bob.sender_identity, None);
+    assert_eq!(from_bob.sender.identity, None);
     assert!(
         after
             .iter()
@@ -240,7 +229,7 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
     assert!(
         messages
             .iter()
-            .all(|message| message.sender_display_name.as_deref() != Some("Family"))
+            .all(|message| message.sender.display_name.as_deref() != Some("Family"))
     );
     let from_alice = messages
         .iter()
@@ -282,7 +271,7 @@ fn a_conversation_keyed_by_a_name_survives_an_export_and_a_second_import() {
     let ids = |documents: &[ConversationDocument]| -> Vec<String> {
         documents
             .iter()
-            .map(|doc| doc.conversation.chat_identifier.clone())
+            .map(|document| document.conversation.chat_identifier.clone())
             .collect()
     };
     assert_eq!(ids(&before), ["name:AMAZON"]);
@@ -303,31 +292,31 @@ fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
     let staged = tempfile::tempdir().unwrap();
     let exported = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
-    let mut doc = message_ir::testutil::sample_document("from Mary");
-    doc.conversation.chat_identifier =
-        message_ir::ConversationKey::NameOnly("Mom".into()).chat_id();
-    doc.conversation.participants = vec![message_ir::IrParticipant {
+    let mut document = ir::testutil::sample_document("from Mary");
+    document.conversation.chat_identifier = ir::ConversationKey::NameOnly("Mom".into()).chat_id();
+    document.conversation.participants = vec![ir::Participant {
         identity: None,
         display_name: Some("Mom".into()),
+        country: None,
     }];
-    doc.messages[0].direction = IrDirection::Incoming;
-    doc.messages[0].sender_identity = None;
-    doc.messages[0].sender_display_name = Some("Mary".into());
-    let mut sent = doc.messages[0].clone();
+    document.messages[0].direction = Direction::Incoming;
+    document.messages[0].sender.identity = None;
+    document.messages[0].sender.display_name = Some("Mary".into());
+    let mut sent = document.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
     sent.timestamp_unix_ms += 1000;
-    sent.direction = IrDirection::Outgoing;
-    sent.sender_display_name = None;
+    sent.direction = Direction::Outgoing;
+    sent.sender.display_name = None;
     sent.text = "to Mom".into();
-    doc.messages.push(sent);
+    document.messages.push(sent);
 
     fs::create_dir_all(staged.path().join("attachments")).unwrap();
-    export(vec![doc], staged.path(), exported.path());
+    export(vec![document], staged.path(), exported.path());
     let after = import(exported.path(), second.path());
 
     let ids: Vec<&str> = after
         .iter()
-        .map(|doc| doc.conversation.chat_identifier.as_str())
+        .map(|imported| imported.conversation.chat_identifier.as_str())
         .collect();
     assert_eq!(ids, ["name:Mom"]);
     assert_eq!(after[0].messages.len(), 2);
@@ -349,29 +338,26 @@ fn exported_mail(root: &Path) -> Vec<String> {
 
 /// A received and a sent message in a conversation keyed `chat_id`, whose
 /// roster is `participants`.
-fn two_way_document(
-    chat_id: String,
-    participants: Vec<message_ir::IrParticipant>,
-) -> ConversationDocument {
-    let mut doc = message_ir::testutil::sample_document("received");
-    doc.conversation.chat_identifier = chat_id;
-    doc.conversation.participants = participants;
-    doc.messages[0].sender_identity = None;
-    doc.messages[0].sender_display_name = None;
-    let mut sent = doc.messages[0].clone();
+fn two_way_document(chat_id: String, participants: Vec<ir::Participant>) -> ConversationDocument {
+    let mut document = ir::testutil::sample_document("received");
+    document.conversation.chat_identifier = chat_id;
+    document.conversation.participants = participants;
+    document.messages[0].sender.identity = None;
+    document.messages[0].sender.display_name = None;
+    let mut sent = document.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
     sent.timestamp_unix_ms += 1000;
-    sent.direction = IrDirection::Outgoing;
+    sent.direction = Direction::Outgoing;
     sent.text = "sent".into();
-    doc.messages.push(sent);
-    doc
+    document.messages.push(sent);
+    document
 }
 
 /// The texts of every message in `documents`, sorted.
 fn texts(documents: &[ConversationDocument]) -> Vec<String> {
     let mut texts: Vec<String> = documents
         .iter()
-        .flat_map(|doc| doc.messages.iter().map(|m| m.text.trim().to_string()))
+        .flat_map(|document| document.messages.iter().map(|m| m.text.trim().to_string()))
         .collect();
     texts.sort();
     texts
@@ -385,14 +371,14 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
     let staged = tempfile::tempdir().unwrap();
     let exported = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
-    let doc = two_way_document(message_ir::NAMELESS_CHAT_ID.to_string(), Vec::new());
+    let document = two_way_document(ir::NAMELESS_CHAT_ID.to_string(), Vec::new());
 
     fs::create_dir_all(staged.path().join("attachments")).unwrap();
-    export(vec![doc], staged.path(), exported.path());
+    export(vec![document], staged.path(), exported.path());
     let mail = exported_mail(exported.path());
     assert_eq!(mail.len(), 2);
     for eml in &mail {
-        assert!(!eml.contains(message_ir::NAMELESS_CHAT_ID), "{eml}");
+        assert!(!eml.contains(ir::NAMELESS_CHAT_ID), "{eml}");
         assert!(eml.contains("X-smssync-address: \r\n"), "{eml}");
         assert!(eml.contains("Subject: SMS\r\n"), "{eml}");
     }
@@ -400,9 +386,9 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
 
     let ids: Vec<&str> = after
         .iter()
-        .map(|doc| doc.conversation.chat_identifier.as_str())
+        .map(|imported| imported.conversation.chat_identifier.as_str())
         .collect();
-    assert_eq!(ids, [message_ir::NAMELESS_CHAT_ID]);
+    assert_eq!(ids, [ir::NAMELESS_CHAT_ID]);
     assert!(
         after[0].conversation.participants.is_empty(),
         "{:?}",
@@ -412,9 +398,9 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
     let received = after[0]
         .messages
         .iter()
-        .find(|m| m.direction == IrDirection::Incoming)
+        .find(|m| m.direction == Direction::Incoming)
         .expect("the received message");
-    assert_eq!(received.sender_identity, None);
+    assert_eq!(received.sender.identity, None);
 }
 
 /// A person known only by a name written like a number comes back from an
@@ -426,21 +412,22 @@ fn a_name_written_like_a_number_survives_an_export_and_a_second_import() {
         let staged = tempfile::tempdir().unwrap();
         let exported = tempfile::tempdir().unwrap();
         let second = tempfile::tempdir().unwrap();
-        let doc = two_way_document(
-            message_ir::ConversationKey::NameOnly(name.into()).chat_id(),
-            vec![message_ir::IrParticipant {
+        let document = two_way_document(
+            ir::ConversationKey::NameOnly(name.into()).chat_id(),
+            vec![ir::Participant {
                 identity: None,
                 display_name: Some(name.into()),
+                country: None,
             }],
         );
 
         fs::create_dir_all(staged.path().join("attachments")).unwrap();
-        export(vec![doc], staged.path(), exported.path());
+        export(vec![document], staged.path(), exported.path());
         let after = import(exported.path(), second.path());
 
         let ids: Vec<&str> = after
             .iter()
-            .map(|doc| doc.conversation.chat_identifier.as_str())
+            .map(|imported| imported.conversation.chat_identifier.as_str())
             .collect();
         assert_eq!(ids, [format!("name:{name}")], "{name}");
         assert_eq!(texts(&after), ["received", "sent"], "{name}");

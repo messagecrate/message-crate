@@ -5,13 +5,11 @@
  *
  * A number whose country nobody stated is stored as the digits typed and
  * matches no number written with its `+` (#1676). The import form states the
- * phone's country for a whole run, and the Contacts and My Identities screens
- * pick one for a single identity; both offer this list.
+ * phone's country for a whole run. The Contacts screen, My Identities, and the
+ * Profile tab of an account the owner opens from User Accounts each pick one
+ * for a single identity. Each of them offers this list.
  */
 
-import { keys } from "./queryKeys";
-import { useRouteQuery } from "./routeQuery";
-import { listPhoneCountries } from "./serverApi";
 import type { components } from "./serverApi.types";
 
 /** One country, with the name the person reads it by. */
@@ -42,22 +40,4 @@ export function namedPhoneCountries(
   return countries
     .map((country) => ({ ...country, name: names?.of(country.code) ?? country.code }))
     .sort((a, b) => a.name.localeCompare(b.name, locale));
-}
-
-/** The country list, fetched once a session. */
-export function usePhoneCountries(): {
-  countries: PhoneCountryChoice[];
-  loading: boolean;
-  error: Error | null;
-} {
-  const { data, isPending, error } = useRouteQuery(
-    keys.phoneCountries.all,
-    (signal) => listPhoneCountries({ signal }),
-    { staleTime: Number.POSITIVE_INFINITY },
-  );
-  return {
-    countries: data ? namedPhoneCountries(data) : [],
-    loading: isPending,
-    error: data === undefined ? error : null,
-  };
 }

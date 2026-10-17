@@ -3,8 +3,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkServerHealth,
+  checkServerHealthWithRetry,
   HEALTH_BACKOFF_CAP_MS,
   HEALTH_PROBE_TIMEOUT_MS,
+  HEALTH_RECHECK_AFTER_FAILURE_MS,
   healthBackoffMs,
   healthProbeUrl,
 } from "./serverHealth";
@@ -62,7 +64,19 @@ describe("checkServerHealth", () => {
       method: "GET",
       signal: expect.any(AbortSignal),
       cache: "no-store",
+      redirect: "error",
     });
+  });
+
+  it("reads a redirect as an unreachable server, as every /v1 call does", async () => {
+    // A browser's fetch rejects with a TypeError when `redirect: "error"` meets a redirect.
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.redirect === "error") throw new TypeError("Failed to fetch");
+      return { ok: true };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkServerHealth("http://mc.example")).resolves.toBe(false);
   });
 
   it("probes this origin when the URL is blank", async () => {
@@ -73,6 +87,7 @@ describe("checkServerHealth", () => {
       method: "GET",
       signal: expect.any(AbortSignal),
       cache: "no-store",
+      redirect: "error",
     });
   });
 
@@ -117,5 +132,71 @@ describe("checkServerHealth", () => {
     const pending = checkServerHealth("http://127.0.0.1:8080");
     await vi.advanceTimersByTimeAsync(HEALTH_PROBE_TIMEOUT_MS);
     await expect(pending).resolves.toBe(false);
+  });
+});
+
+describe("checkServerHealthWithRetry", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("asks once when the first probe answers ok", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkServerHealthWithRetry("http://127.0.0.1:8080")).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again after a failed probe, and the second answer decides", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = checkServerHealthWithRetry("http://127.0.0.1:8080");
+    await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS - 1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not ask again when nothing answers", async () => {
+    // A busy server still answers, with an error; a refused connection has
+    // nothing behind it that a second ask could find.
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkServerHealthWithRetry("http://127.0.0.1:8080")).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns false when both probes fail", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = checkServerHealthWithRetry("http://127.0.0.1:8080");
+    await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS);
+    await expect(pending).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not ask again once aborted during the wait", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+    const ac = new AbortController();
+
+    const pending = checkServerHealthWithRetry("http://127.0.0.1:8080", ac.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    ac.abort();
+    await expect(pending).resolves.toBe(false);
+    await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

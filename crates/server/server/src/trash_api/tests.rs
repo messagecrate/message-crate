@@ -1,10 +1,12 @@
 use axum::http::StatusCode;
 
 use crate::db::trash::{Trashable, move_to_trash};
+use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
-    conversation_header, delete_status, fake_sha256, fixture_with_account, get_json, get_status,
-    message_line, register_via_api, seed_conversation,
+    conversation_header, delete_raw, delete_status, expect_problem, fake_sha256,
+    fixture_with_account, get_json, get_raw, get_status, message_line, register_via_api,
+    seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -14,12 +16,12 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
         &SeedConversation {
             account_id: account.account_id,
             handle,
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],
@@ -100,17 +102,14 @@ async fn empty_trash_deletes_trashed_conversations_and_forgets_trashed_contacts(
         StatusCode::OK,
         "the conversation that was not trashed is still there"
     );
-    let doomed_status = get_status(
+    // The deleted conversation is gone.
+    let (status, text) = get_raw(
         &fixture.state,
         &format!("/v1/conversations/{doomed}"),
         &alice.token,
     )
     .await;
-    assert_eq!(
-        doomed_status,
-        StatusCode::NOT_FOUND,
-        "the deleted conversation is gone"
-    );
+    expect_problem(status, &text, ProblemType::NotFound);
 
     assert!(
         !doomed_file.exists(),
@@ -168,8 +167,8 @@ async fn empty_trash_needs_the_delete_permission() {
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     fixture.turn_off_delete(alice.account_id).await;
 
-    let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, text) = delete_raw(&fixture.state, "/v1/trash", &alice.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
     assert_eq!(
         conversation_total(&fixture, &alice.token, "trashed:yes").await,
         1,
@@ -180,21 +179,20 @@ async fn empty_trash_needs_the_delete_permission() {
 /// Start an Import Run for `imessage`, as an Upload does before it asks
 /// about any file, and return its id.
 async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    crate::test_support::start_import_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage" }),
     )
-    .await;
-    run["id"].as_i64().unwrap()
+    .await
+    .0
 }
 
 /// One batch of one incoming message whose attachment is the file `sha`.
 fn batch_naming(sha: &str) -> String {
     let message = message_line("g-new", "new")
         .sender("+15555550123")
-        .attachment(message_ir::IrAttachment {
+        .attachment(ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/photo.bin",
@@ -213,21 +211,21 @@ fn batch_naming(sha: &str) -> String {
 /// must not leave the imported attachment without its file.
 ///
 /// The run starts before `HEAD`, because that is the order an Upload sends:
-/// `message-crate-import` (`crates/libs/import/src/run.rs`) starts the run
+/// `import` (`crates/libs/import/src/run.rs`) starts the run
 /// before any asset request.
 #[tokio::test]
 async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch() {
     let (fixture, alice) = fixture_with_account().await;
     let bytes = b"shared photo bytes";
     let sha = crate::assets_api::Sha256::of_bytes(bytes);
-    let blob = fixture
+    let asset_file = fixture
         .state
         .cfg
         .paths
         .assets_dir_for_account(alice.account_id)
         .join(crate::assets_api::shard_rel_path(&sha, ""));
-    std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
-    std::fs::write(&blob, bytes).unwrap();
+    std::fs::create_dir_all(asset_file.parent().unwrap()).unwrap();
+    std::fs::write(&asset_file, bytes).unwrap();
     let old = seed(&fixture, &alice, "+15555550177").await;
     {
         let mut conn = fixture.conn().await;
@@ -250,8 +248,8 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     //    holds the file: it does.
     let run = start_run(&fixture, &alice).await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let head = reqwest::Client::new()
-        .head(format!("{}/v1/assets/{sha}", server.base()))
+    let head = server
+        .head(&format!("/v1/assets/{sha}"))
         .bearer_auth(&alice.token)
         .send()
         .await
@@ -261,15 +259,13 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     // 3. The batch that names the file arrives.
-    let (status, text) = crate::test_support::post_raw(
+    crate::test_support::post_import_batch(
         &fixture.state,
-        &format!("/v1/imports/{run}/batches"),
         &alice.token,
-        "application/jsonl",
+        run,
         batch_naming(sha.as_str()),
     )
     .await;
-    assert!(status.is_success(), "{status} {text}");
 
     let mut conn = fixture.conn().await;
     let assets_path: Option<String> = sqlx::query_scalar(
@@ -280,28 +276,17 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     .await
     .unwrap();
     assert!(
-        assets_path.is_some() && blob.is_file(),
-        "the imported attachment has no file: assets_path={assets_path:?}, blob on disk={}",
-        blob.is_file()
+        assets_path.is_some() && asset_file.is_file(),
+        "the imported attachment has no file: assets_path={assets_path:?}, file on disk={}",
+        asset_file.is_file()
     );
     drop(conn);
 
-    complete_run(&fixture, &alice, run).await;
+    crate::test_support::complete_import_run(&fixture.state, &alice.token, run).await;
     assert!(
-        blob.is_file(),
+        asset_file.is_file(),
         "the sweep at the run's end keeps a file the new message names"
     );
-}
-
-/// End the Import Run `run` as an Upload does.
-async fn complete_run(fixture: &TestFixture, account: &RegisteredAccount, run: i64) {
-    let _: serde_json::Value = crate::test_support::post_json(
-        &fixture.state,
-        &format!("/v1/imports/{run}/complete"),
-        &account.token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
 }
 
 /// A file Empty Trash kept because an Import Run was running is removed
@@ -312,10 +297,10 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
     let (fixture, alice) = fixture_with_account().await;
     let sha = fake_sha256('c');
     let doomed = seed(&fixture, &alice, "+15555550178").await;
-    let blob = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
-    let sidecar = blob.parent().unwrap().join(format!(".{sha}.mime"));
+    let doomed_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
+    let sidecar = doomed_file.parent().unwrap().join(format!(".{sha}.mime"));
     let kept = seed(&fixture, &alice, "+15555550181").await;
-    let kept_blob =
+    let kept_file =
         attach_stored_file(&fixture.state, alice.account_id, kept, &fake_sha256('d')).await;
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     let run = start_run(&fixture, &alice).await;
@@ -323,15 +308,18 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
     let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(
-        blob.is_file(),
+        doomed_file.is_file(),
         "a running Import Run may still need the file"
     );
 
-    complete_run(&fixture, &alice, run).await;
-    assert!(!blob.exists(), "nothing names the file once the run ended");
+    crate::test_support::complete_import_run(&fixture.state, &alice.token, run).await;
+    assert!(
+        !doomed_file.exists(),
+        "nothing names the file once the run ended"
+    );
     assert!(!sidecar.exists(), "its MIME sidecar goes with it");
     assert!(
-        kept_blob.is_file(),
+        kept_file.is_file(),
         "a file a conversation still names is not swept"
     );
 }
@@ -345,13 +333,14 @@ async fn a_run_started_after_the_delete_commits_keeps_its_original() {
     let (fixture, alice) = fixture_with_account().await;
     let sha = fake_sha256('e');
     let doomed = seed(&fixture, &alice, "+15555550182").await;
-    let blob = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
+    let asset_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     let mut conn = fixture.conn().await;
     let files = crate::db::trash::empty_trash(
         &mut conn,
         alice.account_id,
         crate::db::audit_trail::AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap()
@@ -369,7 +358,7 @@ async fn a_run_started_after_the_delete_commits_keeps_its_original() {
     .await;
 
     assert!(
-        blob.is_file(),
+        asset_file.is_file(),
         "a run that started after the commit may still need the file"
     );
 }
@@ -433,7 +422,7 @@ fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
     let message = message_line(&format!("g-{source}"), &format!("from {source}"))
         .sms()
         .sender(handle)
-        .attachment(message_ir::IrAttachment {
+        .attachment(ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg")
         });
@@ -452,14 +441,12 @@ async fn import_file_from(
     bytes: &[u8],
 ) -> StatusCode {
     let sha = crate::assets_api::Sha256::of_bytes(bytes);
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    let (run, _) = crate::test_support::start_import_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": source }),
     )
     .await;
-    let run = run["id"].as_i64().unwrap();
     let (put, text) = crate::test_support::put_raw(
         &fixture.state,
         &format!("/v1/assets/{sha}"),
@@ -469,16 +456,14 @@ async fn import_file_from(
     )
     .await;
     assert!(put.is_success(), "{put} {text}");
-    let (status, text) = crate::test_support::post_raw(
+    crate::test_support::post_import_batch(
         &fixture.state,
-        &format!("/v1/imports/{run}/batches"),
         &account.token,
-        "application/jsonl",
+        run,
         batch_from_source(source, handle, sha.as_str()),
     )
     .await;
-    assert!(status.is_success(), "{status} {text}");
-    complete_run(fixture, account, run).await;
+    crate::test_support::complete_import_run(&fixture.state, &account.token, run).await;
     put
 }
 
@@ -524,7 +509,7 @@ async fn conversation_of_source(
 async fn a_file_imported_from_two_sources_is_stored_once() {
     let (fixture, alice) = fixture_with_account().await;
     let bytes = b"one photo, two backups";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
 
     let first = import_file_from(&fixture, &alice, "imessage", "+15555550140", bytes).await;
     let second = import_file_from(
@@ -572,7 +557,7 @@ async fn a_file_imported_from_two_sources_is_stored_once() {
 async fn deleting_one_sources_messages_for_good_keeps_the_file_the_other_names() {
     let (fixture, alice) = fixture_with_account().await;
     let bytes = b"one photo, two backups";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
     import_file_from(&fixture, &alice, "imessage", "+15555550140", bytes).await;
     import_file_from(
         &fixture,

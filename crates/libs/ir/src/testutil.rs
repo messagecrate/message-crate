@@ -1,17 +1,35 @@
 //! Shared test fixture for crate tests (behind the `testutil` feature).
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
-    ExportMeta, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
+    Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
+    Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message, MessageKind,
+    Participant, Reaction, ReplyTo, SCHEMA_VERSION, Sender, Transport, VendorFields,
 };
 use serde_json::json;
+
+/// Attachment fixture: a JPEG named `photo.jpg` with no staged file, no
+/// bytes, no size, and no digest. A test sets the fields it cares about on
+/// the result, with struct update syntax or by assignment.
+pub fn sample_attachment() -> Attachment {
+    Attachment {
+        path: None,
+        original_name: Some("photo.jpg".into()),
+        mime_type: Some("image/jpeg".into()),
+        digest_sha256: None,
+        is_sticker: false,
+        transcription: None,
+        sticker_effect: None,
+        size_bytes: None,
+        missing_reason: None,
+        bytes: None,
+    }
+}
 
 /// One-message conversation fixture: an incoming SMS from `+15555550101`.
 ///
 /// `text` becomes the message body. Stats are computed on return.
 pub fn sample_document(text: &str) -> ConversationDocument {
-    let mut doc = ConversationDocument {
+    let mut document = ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
             source: "sms-backup-restore".into(),
@@ -19,27 +37,31 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             tool_version: "10.26.003".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
-            participants: vec![IrParticipant {
+            participants: vec![Participant {
                 identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
+                country: None,
             }],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: crate::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Sms,
+            sender: Sender {
+                identity: Some("+15555550101".into()),
+                display_name: Some("Sam".into()),
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: text.into(),
@@ -49,7 +71,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             edits: vec![],
             reply_to: None,
             imessage: None,
-            source: Some(IrSource {
+            source: Some(VendorFields {
                 android_type: Some(1),
                 fields: {
                     let mut m = serde_json::Map::new();
@@ -57,29 +79,30 @@ pub fn sample_document(text: &str) -> ConversationDocument {
                     m
                 },
             }),
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     };
-    doc.finalize_stats();
-    doc
+    document.finalize_stats();
+    document
 }
 
 /// One-message WhatsApp conversation fixture: [`sample_document`] with
 /// `+15555550102` as the other person and every message on the WhatsApp
 /// service, with no source bag. `text` becomes the message body.
 pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
-    let mut doc = sample_document(text);
-    doc.export.source = "whatsapp".into();
-    doc.conversation.chat_identifier = "+15555550102".into();
-    doc.conversation.participants[0].identity = Some("+15555550102".into());
-    for msg in &mut doc.messages {
-        msg.guid = "ffeeddccbbaa99887766554433221100".into();
-        msg.service = IrService::Whatsapp;
-        msg.message_kind = IrMessageKind::Unknown;
-        msg.sender_identity = Some("+15555550102".into());
-        msg.source = None;
+    let mut document = sample_document(text);
+    document.export.source = "whatsapp".into();
+    document.conversation.chat_identifier = "+15555550102".into();
+    document.conversation.participants[0].identity = Some("+15555550102".into());
+    for message in &mut document.messages {
+        message.guid = "ffeeddccbbaa99887766554433221100".into();
+        message.service = Transport::Whatsapp;
+        message.message_kind = MessageKind::Unknown;
+        message.sender.identity = Some("+15555550102".into());
+        message.source = None;
     }
-    doc
+    document
 }
 
 /// Two-message iMessage conversation fixture: an incoming reply with a send
@@ -88,7 +111,7 @@ pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
 /// might mirror is set, so a format that must not leak them has something to
 /// leak.
 pub fn sample_imessage_document() -> ConversationDocument {
-    let mut doc = ConversationDocument {
+    let mut document = ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
             source: "imessage".into(),
@@ -96,28 +119,32 @@ pub fn sample_imessage_document() -> ConversationDocument {
             tool_version: "0.1.0".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
-            participants: vec![IrParticipant {
+            participants: vec![Participant {
                 identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
+                country: None,
             }],
             stats: ConversationStats::default(),
         },
         messages: vec![
-            IrMessage {
+            Message {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
                 timestamp_unix_ms: 1_400_773_261_000,
                 time_precision: crate::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
-                service: IrService::IMessage,
-                message_kind: IrMessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
-                sender_display_name: Some("Sam".into()),
+                direction: Direction::Incoming,
+                service: Transport::IMessage,
+                message_kind: MessageKind::IMessage,
+                sender: Sender {
+                    identity: Some("+15555550101".into()),
+                    display_name: Some("Sam".into()),
+                    country: None,
+                },
                 owner_identity: None,
                 subject: None,
                 text: "hello imessage".into(),
@@ -134,12 +161,12 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 edits: vec![
                     EarlierVersion {
                         part_index: 0,
-                        text: "helo imessage".into(),
+                        text: Some("helo imessage".into()),
                         edited_at_unix_ms: Some(1_400_773_261_000),
                     },
                     EarlierVersion {
                         part_index: 0,
-                        text: "hello imesage".into(),
+                        text: Some("hello imesage".into()),
                         edited_at_unix_ms: None,
                     },
                 ],
@@ -147,22 +174,26 @@ pub fn sample_imessage_document() -> ConversationDocument {
                     guid: Some("parent-guid-1111".into()),
                     part_index: Some(0),
                 }),
-                imessage: Some(IrImessage {
+                imessage: Some(ImessageExtensions {
                     send_effect: Some("Sent with Balloons".into()),
                     parts: Some(json!([{"index": 0, "kind": "run", "text": "hello imessage"}])),
-                    ..IrImessage::default()
+                    ..ImessageExtensions::default()
                 }),
                 source: None,
+                backup_taken_at_unix_ms: None,
             },
-            IrMessage {
+            Message {
                 guid: "TAPBACK-GUID-0001".into(),
                 timestamp_unix_ms: 1_400_773_262_000,
                 time_precision: crate::TimePrecision::Milliseconds,
-                direction: IrDirection::Outgoing,
-                service: IrService::IMessage,
-                message_kind: IrMessageKind::Tapback,
-                sender_identity: Some("+15555550100".into()),
-                sender_display_name: Some("Me".into()),
+                direction: Direction::Outgoing,
+                service: Transport::IMessage,
+                message_kind: MessageKind::Tapback,
+                sender: Sender {
+                    identity: Some("+15555550100".into()),
+                    display_name: Some("Me".into()),
+                    country: None,
+                },
                 owner_identity: None,
                 subject: None,
                 text: "Loved a message".into(),
@@ -171,18 +202,19 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 deletion: None,
                 edits: vec![],
                 reply_to: None,
-                imessage: Some(IrImessage {
+                imessage: Some(ImessageExtensions {
                     associated_guid: Some("parent-guid-1111".into()),
                     associated_part: Some(0),
                     tapback_kind: Some("loved".into()),
                     tapback_action: Some("add".into()),
-                    ..IrImessage::default()
+                    ..ImessageExtensions::default()
                 }),
                 source: None,
+                backup_taken_at_unix_ms: None,
             },
         ],
         packaging_stem_suffix: None,
     };
-    doc.finalize_stats();
-    doc
+    document.finalize_stats();
+    document
 }

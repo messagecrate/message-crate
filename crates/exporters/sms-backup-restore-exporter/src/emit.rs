@@ -1,14 +1,16 @@
 //! Read SMS Backup & Restore XML into the shared conversation structure, then
-//! write the chosen output format via [`ExportWriter`].
+//! write the chosen output format through [`convert_backup`].
 
 use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
+use ir::ConversationDocument;
+use ir_format::MergedArchive;
 use message_crate_core::{
-    CancelFlag, DUPLICATES_DROPPED, ExportReport, ExportTransforms, IssueSink, ItemKind,
-    OutputFormat, SKIPPED_INVALID_DATE, unreadable_parts_note,
+    ConvertRun, DUPLICATES_DROPPED, ExportReport, IssueSink, ItemKind, OutputFormat,
+    SKIPPED_INVALID_DATE, unreadable_parts_note,
 };
-use message_staging::{AttachmentSource, ExportWriter};
+use staging::{Project, ReadBackup, WriterSetup, convert_backup};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,
@@ -16,7 +18,7 @@ use std::path::Path;
 /// order Convert's log gives them, and send each error to `issues` as an
 /// Import Error and each message kept with something left out of it as a
 /// note naming the file and the message.
-fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportReport {
+fn to_core_report(report: ReadReport, issues: &IssueSink) -> ExportReport {
     let mut out = ExportReport {
         conversations: report.conversations,
         // Every message in a produced document is either sent or received.
@@ -25,7 +27,7 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         received: report.received,
         skipped_invalid_date: report.skipped_invalid_date,
         duplicates_dropped: report.duplicates_dropped,
-        ..ExportReport::with_issues(issues.cloned())
+        ..ExportReport::with_issues(issues.clone())
     };
     for error in &report.errors {
         out.error(ItemKind::File, &error.file, &error.what_happened());
@@ -74,66 +76,68 @@ fn dropped_references_note(n: u64) -> String {
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output_dir: &'a Path,
-    /// the Scratch Directory, which the run's attachment spool goes under.
-    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert SMS Backup & Restore XML into the shared conversation structure,
 /// then write the chosen output format.
+///
+/// Cancellation is checked while the backup is read and between
+/// conversations.
 ///
 /// # Errors
 ///
 /// Returns an error when the XML cannot be read, a conversation cannot be
 /// written, or the user cancels.
 pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport> {
-    // The read options still need the compress settings after `transforms`
-    // moves into the writer.
-    let compress = args.transforms.compress.clone();
-    let mut writer = ExportWriter::open(
-        args.output_dir,
-        args.output_format,
-        args.transforms,
-        args.resume,
-    )?
-    .with_spool(args.scratch_dir);
-    if args.output_format == OutputFormat::Xml {
+    let setup = WriterSetup {
+        spool: true,
         // This crate owns the backup format, so a round trip back to
         // `smses.xml` goes through its own archive writer.
-        writer = writer.with_archive(Box::new(SbrArchive));
-    }
-    let (documents, report) = read_backup(
-        args.input,
-        ReadOptions {
-            owner_phones: args.owner_phones,
-            attachments_dir: Some(writer.attachments_dir()),
-            spool: writer.spool(),
-            media: writer.media_mode(),
-            compress,
-            log: writer.log(),
-            progress: writer.progress(),
-            cancel: args.cancel,
+        archive: (args.convert_run.output_format == OutputFormat::Xml)
+            .then(|| Box::new(SbrArchive) as Box<dyn MergedArchive>),
+    };
+    convert_backup(
+        args.output_dir,
+        args.convert_run,
+        setup,
+        |writer, cancel, report| {
+            let (documents, read_report) = read_backup(
+                args.input,
+                ReadOptions {
+                    owner_phones: args.owner_phones,
+                    attachments_dir: Some(writer.attachments_dir()),
+                    spool: writer.spool(),
+                    files: writer.files(),
+                    sinks: writer.sinks(cancel),
+                },
+            )?;
+            // The reader already counted conversations; zero the
+            // conversation counter so `ExportWriter::finish`, which
+            // `convert_backup` runs, counts only the documents it writes.
+            let mut report = to_core_report(read_report, &report.issues);
+            report.conversations = 0;
+            Ok(ReadBackup {
+                conversations: documents,
+                project: ReadDocuments,
+                report,
+            })
         },
-    )?;
+    )
+}
 
-    // The reader already counted conversations; zero the conversation
-    // counter so the shared write tail's fold counts only the documents it
-    // actually writes.
-    let mut core = to_core_report(report, args.issues);
-    core.conversations = 0;
-    writer.finish(
-        documents,
-        &mut AttachmentSource::take_bytes,
-        args.cancel,
-        &mut core,
-    )?;
-    Ok(core)
+/// The reader's documents, which need no projection, for [`convert_backup`].
+struct ReadDocuments;
+
+impl Project for ReadDocuments {
+    type Conversation = ConversationDocument;
+
+    fn project(
+        &mut self,
+        document: ConversationDocument,
+        _report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        Some(document)
+    }
 }

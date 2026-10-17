@@ -1,10 +1,44 @@
-import type { NavEntityCopy } from "../components/NavEntityList";
 import { UNKNOWN_GROUP_LABEL } from "./unknownGroup";
 
 /**
  * The words the sidebar and the toolbar menus use for Contact Groups and
  * Message Tags, in one place so the two surfaces never disagree.
  */
+
+/** The words one sidebar section of named sets uses. */
+export type NavEntityCopy = {
+  /** Section id used for the collapse state. */
+  id: string;
+  /** Section heading, e.g. "Contact Groups". */
+  title: string;
+  /** Route prefix for one entity, e.g. "/group". */
+  routeBase: string;
+  /** Route for the "none of these" page, e.g. "/no-group". */
+  emptyRoute: string;
+  /**
+   * A permanent row rendered above the list, for a collection the server
+   * computes rather than the person curating. It cannot be renamed or
+   * deleted, so it carries no options menu.
+   */
+  permanentRoute?: string;
+  /** Label of the permanent row, e.g. "Unknown". */
+  permanentLabel?: string;
+  /** Label of the "none of these" row, e.g. "No group". */
+  emptyLabel: string;
+  /** Where a delete sends the user when they were on the deleted page. */
+  fallbackRoute: string;
+  addLabel: string;
+  createTitle: string;
+  renameTitle: string;
+  namePlaceholder: string;
+  /** Menu button label, completed with the entity name. */
+  optionsLabel: (name: string) => string;
+  /** What the delete confirmation says is removed and what is kept. */
+  deleteBody: (name: string) => string;
+  createError: string;
+  renameError: string;
+  deleteError: string;
+};
 
 export const CONTACT_GROUP_COPY: NavEntityCopy = {
   id: "contact-groups",

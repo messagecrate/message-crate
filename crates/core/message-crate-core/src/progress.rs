@@ -6,8 +6,8 @@
 //! belongs to and carries the counts that stage has, so a caller can match
 //! on the variant and use the fields without parsing anything.
 //!
-//! The events are emitted from the shared write layer (`message-staging`'s
-//! `ExportWriter` and write queue, `message-ir-format`'s `FormatSink`, and
+//! The events are emitted from the shared write layer (`staging`'s
+//! `ExportWriter` and write queue, `ir-format`'s `FormatSink`, and
 //! this crate's attachment stager) and from the few exporter-specific loops
 //! that have progress worth showing (iMessage's message stream and its
 //! backup-decrypt setup steps).
@@ -57,13 +57,6 @@ pub enum ProgressEvent {
         /// Conversation files the run will write.
         total: usize,
     },
-    /// Attachments converted or compressed so far by the Media stage.
-    Media {
-        /// Files finished.
-        done: usize,
-        /// Files the Media stage covers.
-        total: usize,
-    },
     /// The write queue finished with one conversation file: it wrote the
     /// file, or a resumed run found it already written to the end and
     /// skipped it without reading the conversation again. The desktop app
@@ -101,7 +94,6 @@ impl ProgressEvent {
             Self::Parse { .. } => Some(0),
             Self::Attachments { .. } => Some(1),
             Self::Prepare { .. } => Some(2),
-            Self::Media { .. } => Some(3),
         }
     }
 
@@ -113,8 +105,7 @@ impl ProgressEvent {
             Self::Setup { .. } | Self::FileWritten { .. } => true,
             Self::Parse { done, total }
             | Self::Attachments { done, total, .. }
-            | Self::Prepare { done, total }
-            | Self::Media { done, total } => done == 0 || (total > 0 && done >= total),
+            | Self::Prepare { done, total } => done == 0 || (total > 0 && done >= total),
         }
     }
 }
@@ -136,13 +127,13 @@ impl From<AttachmentProgress> for ProgressEvent {
 pub const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How many stages [`ProgressEvent::paced_stage`] names.
-const PACED_STAGES: usize = 4;
+const PACED_STAGES: usize = 3;
 
-/// Callback for typed progress events. The desktop app sets one; a run
-/// without a sink reports nothing, since there is no bar to move.
+/// Callback for typed progress events. The desktop app sets one; a run with
+/// no bar to move passes [`ProgressSink::none`].
 ///
 /// The sink paces what it delivers: each stage's counts reach the callback
-/// at most once per [`PROGRESS_INTERVAL`], except a stage's first and last
+/// at most once per `PROGRESS_INTERVAL`, except a stage's first and last
 /// counts and every setup step, which always do. Stages are paced apart
 /// because the write queue reports conversations and attachments at the
 /// same time.
@@ -160,6 +151,12 @@ impl ProgressSink {
         F: Fn(ProgressEvent) + Send + Sync + 'static,
     {
         Self::with_interval(PROGRESS_INTERVAL, f)
+    }
+
+    /// A sink that drops every event. It is unpaced, so [`Self::emit`]
+    /// answers `true` for each: with no bar, every event is due.
+    pub fn none() -> Self {
+        Self::unpaced(|_| {})
     }
 
     /// Wrap a callback that receives every event, for a caller (a test,
@@ -203,20 +200,16 @@ impl ProgressSink {
     }
 }
 
+impl Default for ProgressSink {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 impl fmt::Debug for ProgressSink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("ProgressSink")
     }
-}
-
-/// Send a progress event to `sink` when one is set. Unlike log lines, there
-/// is no fallback: a run with no sink has nothing to draw.
-///
-/// Returns whether the event was due, so a caller that writes a log line
-/// beside each count writes it at the same pace. With no sink nothing is
-/// paced and every event is due.
-pub fn emit_progress(sink: Option<&ProgressSink>, event: ProgressEvent) -> bool {
-    sink.is_none_or(|sink| sink.emit(event))
 }
 
 #[cfg(test)]
@@ -296,15 +289,14 @@ mod tests {
         assert_eq!(seen.lock().unwrap().len(), 5);
     }
 
+    /// A caller that writes a log line beside each count writes it when the
+    /// count was due, so a sink with no bar must answer that every count is.
     #[test]
-    fn emit_progress_reaches_the_sink_and_is_a_no_op_without_one() {
-        let (sink, seen) = recording_sink();
-        emit_progress(Some(&sink), ProgressEvent::Parse { done: 5, total: 10 });
-        emit_progress(None, ProgressEvent::Parse { done: 6, total: 10 });
-        assert_eq!(
-            seen.lock().unwrap().as_slice(),
-            [ProgressEvent::Parse { done: 5, total: 10 }]
-        );
+    fn a_sink_with_no_bar_answers_that_every_count_is_due() {
+        let sink = ProgressSink::none();
+        for done in 1..=5 {
+            assert!(sink.emit(attachments(done)));
+        }
     }
 
     #[test]

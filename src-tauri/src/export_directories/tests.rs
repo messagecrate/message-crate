@@ -1,18 +1,17 @@
+use message_crate_core::{
+    ExportReport, ExportTransforms, FormatConfig, OutputConfig, OutputFormat, RunContext,
+};
 use std::path::{Path, PathBuf};
 
-use message_crate_core::{
-    ExportReport, ExportTransforms, ExporterConfig, FormatConfig, MediaConfig, ObfuscateConfig,
-    OutputFormat, SourceConfig,
-};
-use message_ir_format::{EXPORT_SENTINEL, FormatSink};
+use ir_format::{EXPORT_SENTINEL, FormatSink};
 
 use super::{CONVERTING, EXPORT_DIRECTORY_NAME, EXPORTED, ExportDirectories, ExportKind, sweep};
 
-/// An Export Directory in its own temporary app-data directory.
+/// An Export Directory in its own temporary Message Crate Directory.
 fn exports() -> (tempfile::TempDir, ExportDirectories) {
-    let app_data = tempfile::tempdir().unwrap();
-    let exports = ExportDirectories::in_app_data(app_data.path());
-    (app_data, exports)
+    let crate_dir = tempfile::tempdir().unwrap();
+    let exports = ExportDirectories::at(crate_dir.path().join(EXPORT_DIRECTORY_NAME));
+    (crate_dir, exports)
 }
 
 /// The names in `dir`, sorted.
@@ -28,44 +27,35 @@ fn names(dir: &Path) -> Vec<String> {
 /// Write one conversation into `dir` as JSON Lines, as an Export does.
 fn export_into(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap();
-    message_ir_format::mark_export_directory(dir).unwrap();
+    ir_format::mark_export_directory(dir).unwrap();
     let mut sink = FormatSink::open(dir, OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(message_ir::testutil::sample_document("hello export"))
+    sink.write_document(ir::testutil::sample_document("hello export"))
         .unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
-    std::fs::write(dir.join(message_crate_export::EXPORT_JOURNAL_NAME), "{}\n").unwrap();
+    std::fs::write(dir.join(export::EXPORT_JOURNAL_NAME), "{}\n").unwrap();
 }
 
 /// Convert `input` into `output` as CSV, as Export's format step does.
 fn convert(input: &Path, output: &Path, cache: &Path) {
-    message_reexport::run(&ExporterConfig {
-        inputs: vec![input.to_path_buf()],
-        output: output.to_path_buf(),
-        scratch_dir: cache.to_path_buf(),
-        timezone: None,
-        obfuscate: ObfuscateConfig::default(),
-        media: MediaConfig::default(),
-        cancel: None,
-        log: None,
-        progress: None,
-        issues: None,
-        output_format: OutputFormat::Csv,
-        resume: false,
-        source: SourceConfig::Format(FormatConfig::default()),
-    })
+    reexport::run(
+        &RunContext::new(cache),
+        &OutputConfig::new(output, OutputFormat::Csv),
+        &[input.to_path_buf()],
+        &FormatConfig::default(),
+    )
     .unwrap();
 }
 
 #[test]
 fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_files() {
-    let (app_data, exports) = exports();
+    let (crate_dir, exports) = exports();
     let made = exports
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();
     let dir = PathBuf::from(&made.dir);
     assert_eq!(
         dir,
-        app_data
+        crate_dir
             .path()
             .canonicalize()
             .unwrap()
@@ -77,7 +67,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
     convert(
         Path::new(&made.exported),
         Path::new(&made.converting),
-        &app_data.path().join("scratch"),
+        &crate_dir.path().join("scratch"),
     );
     let finished = exports.finish(&made.dir).unwrap();
 
@@ -86,7 +76,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
     assert!(
         !left.iter().any(|name| name == EXPORTED
             || name == CONVERTING
-            || name == message_crate_export::EXPORT_JOURNAL_NAME
+            || name == export::EXPORT_JOURNAL_NAME
             || name.ends_with(".jsonl")),
         "only the result is left: {left:?}"
     );
@@ -99,7 +89,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
 
 #[test]
 fn a_json_lines_export_keeps_its_files_and_drops_the_export_journal() {
-    let (_app_data, exports) = exports();
+    let (_crate_dir, exports) = exports();
     let made = exports
         .create(ExportKind::Export, "jsonl", "2026-10-04-1430", None)
         .unwrap();
@@ -110,25 +100,23 @@ fn a_json_lines_export_keeps_its_files_and_drops_the_export_journal() {
     let left = names(Path::new(&made.dir));
     assert!(left.iter().any(|name| name.ends_with(".jsonl")), "{left:?}");
     assert!(
-        !left
-            .iter()
-            .any(|name| name == message_crate_export::EXPORT_JOURNAL_NAME),
+        !left.iter().any(|name| name == export::EXPORT_JOURNAL_NAME),
         "{left:?}"
     );
 }
 
 #[test]
 fn an_export_to_another_destination_leaves_no_directory_behind() {
-    let (app_data, exports) = exports();
+    let (crate_dir, exports) = exports();
     let made = exports
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();
-    let chosen = app_data.path().join("chosen");
+    let chosen = crate_dir.path().join("chosen");
     export_into(Path::new(&made.exported));
     convert(
         Path::new(&made.exported),
         &chosen,
-        &app_data.path().join("scratch"),
+        &crate_dir.path().join("scratch"),
     );
 
     assert_eq!(exports.finish(&made.dir).unwrap(), None);
@@ -139,7 +127,7 @@ fn an_export_to_another_destination_leaves_no_directory_behind() {
 
 #[test]
 fn two_exports_in_one_minute_get_two_directories() {
-    let (_app_data, exports) = exports();
+    let (_crate_dir, exports) = exports();
     let first = exports
         .create(ExportKind::Export, "mbox", "2026-10-04-1430", None)
         .unwrap();
@@ -157,7 +145,7 @@ fn two_exports_in_one_minute_get_two_directories() {
 
 #[test]
 fn a_failed_export_s_directory_is_deleted_whole() {
-    let (_app_data, exports) = exports();
+    let (_crate_dir, exports) = exports();
     let made = exports
         .create(ExportKind::Convert, "eml", "2026-10-04-1430", None)
         .unwrap();
@@ -171,11 +159,11 @@ fn a_failed_export_s_directory_is_deleted_whole() {
 
 #[test]
 fn only_an_export_s_or_convert_s_directory_is_finished_or_discarded() {
-    let (app_data, exports) = exports();
+    let (crate_dir, exports) = exports();
     exports
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();
-    let mine = app_data.path().join("my-messages");
+    let mine = crate_dir.path().join("my-messages");
     std::fs::create_dir_all(&mine).unwrap();
     std::fs::write(mine.join("keep.txt"), "mine").unwrap();
     let elsewhere = exports.root().join("photos");
@@ -192,7 +180,7 @@ fn only_an_export_s_or_convert_s_directory_is_finished_or_discarded() {
 
 #[test]
 fn a_format_that_cannot_name_a_directory_is_refused() {
-    let (_app_data, exports) = exports();
+    let (_crate_dir, exports) = exports();
     assert!(
         exports
             .create(ExportKind::Export, "../csv", "2026-10-04-1430", None)
@@ -207,8 +195,8 @@ fn a_format_that_cannot_name_a_directory_is_refused() {
 
 #[test]
 fn a_destination_that_holds_the_export_directory_is_refused_before_anything_is_made() {
-    let (app_data, exports) = exports();
-    for chosen in [app_data.path().to_path_buf(), exports.root().to_path_buf()] {
+    let (crate_dir, exports) = exports();
+    for chosen in [crate_dir.path().to_path_buf(), exports.root().to_path_buf()] {
         std::fs::create_dir_all(&chosen).unwrap();
         let err = exports
             .create(
@@ -238,7 +226,7 @@ fn a_destination_that_holds_the_export_directory_is_refused_before_anything_is_m
 
 #[test]
 fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
-    let (app_data, exports) = exports();
+    let (crate_dir, exports) = exports();
     let interrupted = exports
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();
@@ -251,7 +239,7 @@ fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
     // The app quits mid-export: its hold on the marker ends with it.
     drop(exports);
 
-    let next_start = ExportDirectories::in_app_data(app_data.path());
+    let next_start = ExportDirectories::at(crate_dir.path().join(EXPORT_DIRECTORY_NAME));
     let running = next_start
         .create(ExportKind::Convert, "csv", "2026-10-04-1431", None)
         .unwrap();
@@ -286,7 +274,7 @@ fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
 
 #[test]
 fn the_sweep_leaves_a_run_that_is_still_being_made() {
-    let (_app_data, exports) = exports();
+    let (_crate_dir, exports) = exports();
     std::fs::create_dir_all(exports.root()).unwrap();
     // `create` has made the marker and not yet the directory.
     let marker = exports.root().join("export-2026-10-04-1430-csv.running");
@@ -299,7 +287,7 @@ fn the_sweep_leaves_a_run_that_is_still_being_made() {
 
 #[test]
 fn a_finished_run_is_never_swept_even_with_files_left_in_it() {
-    let (_app_data, exports) = exports();
+    let (_crate_dir, exports) = exports();
     let made = exports
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();

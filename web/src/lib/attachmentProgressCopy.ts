@@ -1,23 +1,10 @@
+import { formatBytes } from "./formatBytes";
 import type { AttachmentMediaMode } from "./types";
-
-/** Human-readable byte size (`"512 MB"`), shared by every import screen that reports size. */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = value >= 10 || unit === 0 ? 0 : 1;
-  return `${value.toFixed(digits)} ${units[unit]}`;
-}
 
 /**
  * Staging's attachments line for the run's attachment mode. Staging copies
- * the originals under Convert and Compress too; the Media stage converts
- * them afterwards, so only Skip reads differently here.
+ * the originals under Convert media and Convert & Compress media too; the
+ * Media Stage converts them afterwards, so only Skip reads differently here.
  */
 export function formatAttachmentProgress(input: {
   mode: AttachmentMediaMode;

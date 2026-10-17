@@ -168,12 +168,12 @@ mod tests {
             &SeedConversation {
                 account_id: account,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "guard.jsonl",
                 messages: &[SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-01T00:00:00.000Z",
+                    timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                     is_from_me: false,
                     body: "kept",
                 }],
@@ -211,10 +211,7 @@ mod tests {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES (1, 'a')")
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 1, "a").await;
         let alone = sqlx::query("INSERT INTO attachments (message_id) VALUES (1)")
             .execute(&mut *conn)
             .await;
@@ -239,7 +236,7 @@ mod tests {
             .await
             .unwrap();
         for table in ["messages_fts", "attachments", "messages"] {
-            sqlx::query(&format!("DROP TABLE {table}"))
+            sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {table}")))
                 .execute(&mut *conn)
                 .await
                 .unwrap_or_else(|e| panic!("drop {table}: {e}"));

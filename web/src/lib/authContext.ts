@@ -1,0 +1,72 @@
+/**
+ * The logged-in account, as every screen and query reads it through `useAuth`
+ * (`hooks/useAuth.ts`).
+ *
+ * Its own module, importing neither `useRouteQuery` nor `useAccountProfile`,
+ * because both read `useAuth` and `AuthProvider.tsx` imports both
+ * (`useRouteQuery` through `sessionQueryClient.tsx`): `AuthProvider.tsx` holds
+ * the provider that fills this context.
+ */
+import { createContext } from "react";
+import type { AccountRunDirectories } from "./importRun";
+import type { PrefLifetime } from "./storage";
+
+/**
+ * How long a saved login lasts: `"kept"` past this visit, or `"visit"` until
+ * the tab closes. The saved login's storage lifetime, named for the login
+ * screens so they need not reach into `storage.ts`.
+ */
+export type LoginLifetime = PrefLifetime;
+
+export interface AuthState {
+  serverUrl: string;
+  token: string | null;
+  accountId: number | null;
+  isAuthenticated: boolean;
+}
+
+export interface AuthContextValue extends AuthState {
+  /**
+   * Log in with a session the server issued. `lifetime` `"visit"` keeps the
+   * saved login for this visit only, as "Keep me logged in" unticked asks;
+   * it defaults to `"kept"`, the login kept for the next visit.
+   */
+  login: (
+    serverUrl: string,
+    token: string,
+    accountId: number,
+    lifetime?: LoginLifetime,
+  ) => Promise<void>;
+  /** Save a new session token after the user changes their password. */
+  updateToken: (token: string) => void;
+  /**
+   * Revoke the server session (best-effort) and clear the saved login.
+   *
+   * An Upload that is running is paused first, and the session is revoked
+   * once the pause is recorded: the Upload sends this session's token. Unless
+   * `ask` is false, logout first asks whether to pause it, and does nothing
+   * when the person goes back. It waits at most `UPLOAD_PAUSE_LIMIT_MS`
+   * (`AuthProvider.tsx`) for the pause, less when the person presses **Log out now**, and then
+   * revokes the session anyway and says the Upload resumes from what it sent.
+   *
+   * `deletedAccountDirectories` is given when the account has just been deleted:
+   * the directories of its Import Runs found on this computer, deleted once the
+   * session is revoked, and the ones Message Crate may not read. One that
+   * cannot be deleted, and one Message Crate may not read, are named in a
+   * notice.
+   */
+  logout: (options?: {
+    ask?: boolean;
+    deletedAccountDirectories?: AccountRunDirectories;
+  }) => Promise<void>;
+  setServer: (url: string) => void;
+  /**
+   * Check the saved login again, after a startup check the server never
+   * answered. `serverUrl` is the address just found reachable: a login saved
+   * for any other address is left alone, so a token only ever goes to the
+   * server that issued it. Does nothing when no login is saved.
+   */
+  retrySavedLogin: (serverUrl: string) => void;
+}
+
+export const AuthContext = createContext<AuthContextValue | null>(null);

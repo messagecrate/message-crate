@@ -1,5 +1,5 @@
-import type { SortOrder } from "../components/SortMenu";
 import type { MessagesListParams } from "./serverApi";
+import type { SortOrder } from "./sortOrder";
 
 /** What the Messages list can be sorted by. */
 export type MessageSearchSortKey = "relevance" | "date";

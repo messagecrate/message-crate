@@ -26,6 +26,18 @@ describe("missingAttachmentChipLabel", () => {
     ).toBe("gone.bin (missing — file not found)");
   });
 
+  it("says an attachment an export could not fetch was not fetched", () => {
+    expect(
+      missingAttachmentChipLabel(
+        attachment({
+          original_name: "menu.pdf",
+          mime_type: "application/pdf",
+          missing_reason: "not_fetched",
+        }),
+      ),
+    ).toBe("menu.pdf · application/pdf (missing — not fetched by the export)");
+  });
+
   it("labels a deliberately skipped attachment as skipped, not missing", () => {
     expect(
       missingAttachmentChipLabel(
@@ -49,15 +61,7 @@ describe("missingAttachmentChipLabel", () => {
     ).toBe("clip.mov (could not be converted — no video stream)");
   });
 
-  it("shows an explicit unknown reason instead of swallowing it", () => {
-    expect(
-      missingAttachmentChipLabel(
-        attachment({ original_name: "a.bin", missing_reason: "unknown: gremlins" }),
-      ),
-    ).toBe("a.bin (could not be imported — gremlins)");
-  });
-
-  it("keeps an unrecognized raw reason visible, worded like the unknown case", () => {
+  it("keeps an unrecognized reason visible", () => {
     expect(
       missingAttachmentChipLabel(
         attachment({ original_name: "a.bin", missing_reason: "weird_reason" }),
@@ -71,14 +75,6 @@ describe("missingAttachmentChipLabel", () => {
         attachment({ original_name: "clip.mov", missing_reason: "convert_failed: " }),
       ),
     ).toBe("clip.mov (could not be converted)");
-  });
-
-  it("drops the trailing dash when an unknown reason has no detail", () => {
-    expect(
-      missingAttachmentChipLabel(
-        attachment({ original_name: "a.bin", missing_reason: "unknown: " }),
-      ),
-    ).toBe("a.bin (could not be imported)");
   });
 
   it("treats no_path and null as plain missing", () => {

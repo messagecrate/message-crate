@@ -2,7 +2,7 @@ import { useStreamedMedia } from "../hooks/useStreamedMedia";
 import { useThumbnail } from "../hooks/useThumbnail";
 import { attachmentName } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import { PlayIcon } from "./icons";
 import PlainButton from "./PlainButton";
@@ -44,7 +44,7 @@ export default function VideoPlayer({ attachment }: { attachment: MessageAttachm
   return (
     <ThumbnailTile tileRef={ref}>
       <div className="h-full overflow-hidden rounded-md border border-border">
-        <ThumbnailPicture name={name} url={thumbnail.url} />
+        <ThumbnailPicture name={name} thumbnail={thumbnail} />
       </div>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
         {media.playable ? (
@@ -52,13 +52,16 @@ export default function VideoPlayer({ attachment }: { attachment: MessageAttachm
             onPress={media.play}
             isDisabled={media.pending}
             aria-label={`Play ${name}`}
-            className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-none bg-media-control text-lightbox-text disabled:cursor-wait ${focusRing}`}
+            className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-none bg-media-control text-lightbox-text disabled:cursor-wait ${focusRingClass}`}
           >
-            <PlayIcon size={20} />
+            <PlayIcon size={20} className="shrink-0" />
           </PlainButton>
         ) : null}
         {media.note ? (
-          <span className="mx-3 rounded bg-media-control px-2 py-1 text-center text-[0.75rem] text-lightbox-text">
+          <span
+            title={media.note}
+            className="mx-3 line-clamp-3 break-words rounded bg-media-control px-2 py-1 text-center text-[0.75rem] text-lightbox-text"
+          >
             {media.note}
           </span>
         ) : null}

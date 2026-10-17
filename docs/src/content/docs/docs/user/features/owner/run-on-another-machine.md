@@ -10,7 +10,7 @@ This page covers a server on a second computer, such as a home server, reached o
 
 Three things differ from the first-time path:
 
-- The server must be published on the network. The first-time command publishes it to its own computer only.
+- The server must be published on the network. The first-time command, in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#start-the-server), publishes it to its own computer only.
 - The browser and the desktop app need the server's address in place of `localhost`.
 - A Message Crate that already holds messages has to be moved, by copying its Docker volume.
 
@@ -23,13 +23,21 @@ Without it, Docker publishes port 8080 on every network the computer is connecte
 
 ```bash title="Start a Message Crate that the network can reach"
 docker run -d --name message-crate \
+  --stop-timeout 40 \
   --restart unless-stopped \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --read-only \
+  --tmpfs /tmp \
   -p 8080:8080 \
   -v message-crate-data:/app/data \
   bitrealm/message-crate:latest
 ```
 
-A server that is already running with the first-time command is removed first with `docker stop message-crate` and `docker rm message-crate`.
+A Message Crate started from `docker/compose.yml` publishes its port on `127.0.0.1` only, like the first-time command, as `"127.0.0.1:8080:8080"` under `ports:`.
+Changing that line to `"8080:8080"` and running `docker compose up -d` again publishes it on every network.
+
+A server that is already running with the first-time command is removed first with `docker stop -t 40 message-crate` and `docker rm message-crate`.
 Both leave the `message-crate-data` volume alone, so the messages stay.
 
 ### Only on a trusted network
@@ -38,13 +46,26 @@ The server speaks plain HTTP.
 Passwords, Session tokens, and messages cross the network unencrypted, so anyone who can listen on that network can read them.
 
 That is acceptable on a home network where every device is trusted.
-Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy with TLS in front of the server.
-Setting one up is outside this guide.
+Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy in front of the server that adds both TLS and a sign-in of its own.
+A visitor then signs in to the proxy before any request reaches the server.
+TLS encrypts passwords and messages on their way across the network.
+It still lets anyone reach the server's login and the Demo Account.
+The account login keeps one account's messages apart from another's.
+It is not built to stand alone on the internet.
+The Demo Account opens with no password.
+A user account can have no password at all.
+A password has no minimum length.
+Setting up the proxy is outside this guide.
 
-Two settings matter more once other computers can reach the server:
+Three things matter more once other computers can reach the server:
 
-- The Owner's password is the only thing between the network and every account.
+- The Owner's password is the only thing between the network and every account but the Demo Account.
 - **Let anyone who can reach this server create their own account**, under [Server Settings](/docs/user/features/owner/owner-home/#server-settings), should stay off, because "anyone" now means every device on the network.
+- The Demo Account has no password, so every device on the network can open it with **Explore Demo Account**.
+  It holds made-up conversations and can't import, so no real messages reach it.
+  It can't delete messages for good either, so no message a visitor removes is lost.
+  A conversation one visitor moves to the Trash stays there for the next to restore.
+  An Owner who doesn't want it open deletes it, as [Demo Account](/docs/user/features/owner/owner-home/#demo-account) on Owner Home describes.
 
 ## Open it in a browser
 
@@ -86,9 +107,6 @@ The desktop app's own origins, `tauri://localhost`, `http://tauri.localhost`, an
 
 The browser needs no entry either, because it loads the website from the same server it then talks to.
 
-The Docker image's configuration lists two more origins, `http://localhost:5173` and `http://127.0.0.1:5173`.
-They are for developing Message Crate and play no part here.
-
 ## Move an existing Message Crate
 
 Everything a Message Crate holds is in the Docker volume `message-crate-data`: the database and the attachment files.
@@ -102,7 +120,7 @@ A newer server that finds an older database layout rebuilds the database empty, 
 The server must be stopped first, because a database copied while the server is writing to it can be incomplete.
 
 ```bash title="On the old computer: stop the server"
-docker stop message-crate
+docker stop -t 40 message-crate
 ```
 
 The next command starts a temporary container that packs the volume into `message-crate-data.tar.gz` in the current directory.
@@ -117,11 +135,57 @@ docker run --rm \
 `"$PWD"` is the current directory in a Linux or macOS shell.
 PowerShell on Windows takes `"${PWD}"` in its place.
 
-The file then goes to the new computer by whatever means is at hand: a USB drive, a network share, or `scp`.
+### Encrypt the file before it leaves the computer
+
+`message-crate-data.tar.gz` holds every account's messages and attachments, unencrypted.
+Anyone who gets a copy of the file can read all of them.
+The accounts' passwords don't protect it, because a password guards the server's login and the file is read without the server.
+
+The file should be encrypted before it travels, because a USB drive can be lost and a network share or a copy left behind can be read by others.
+`age` and `gpg` both encrypt a file with a passphrase.
+Neither comes with macOS or Windows.
+Most Linux installations have `gpg` but not `age`.
+`age` installs with `brew install age` on macOS, `winget install FiloSottile.age` on Windows, and the package `age` on Linux.
+`gpg` installs with `brew install gnupg` or GPG Suite on macOS, Gpg4win on Windows, and the package `gnupg` on Linux.
+
+Either command below writes an encrypted copy beside the file and asks for the passphrase twice:
+
+```bash title="On the old computer: encrypt the file with age or with gpg"
+# age writes message-crate-data.tar.gz.age
+age -p -o message-crate-data.tar.gz.age message-crate-data.tar.gz
+
+# gpg writes message-crate-data.tar.gz.gpg
+gpg -c message-crate-data.tar.gz
+```
+
+Neither tool removes the unencrypted file.
+The next command deletes it, so only the encrypted copy remains:
+
+```bash title="On the old computer: delete the unencrypted file"
+# Linux or macOS
+rm message-crate-data.tar.gz
+
+# PowerShell on Windows
+Remove-Item message-crate-data.tar.gz
+```
+
+The encrypted copy goes to the new computer by whatever means is at hand: a USB drive, a network share, or `scp`.
+The passphrase should travel separately from the file, because a passphrase stored beside the file protects nothing.
 
 ### Restore the volume
 
-The first command makes an empty volume with the same name.
+The encrypted copy is decrypted first, with the tool that encrypted it, which asks for the passphrase:
+
+```bash title="On the new computer: decrypt the file with age or with gpg"
+# a file that age encrypted
+age -d -o message-crate-data.tar.gz message-crate-data.tar.gz.age
+
+# a file that gpg encrypted
+gpg -o message-crate-data.tar.gz -d message-crate-data.tar.gz.gpg
+```
+
+The next two commands restore the volume.
+The first makes an empty volume with the same name.
 The second unpacks the file into it, from the directory that holds `message-crate-data.tar.gz`.
 
 ```bash title="On the new computer: restore the volume"
@@ -143,3 +207,16 @@ The old computer's container stays stopped from here on.
 Two running copies would each take new imports, and nothing merges them afterwards.
 
 The old volume remains on the old computer until `docker volume rm message-crate-data` deletes it.
+
+Once the counts match, neither file is needed any more, because the restored volume holds everything they held.
+Each copy left behind is one more place the messages can be read from.
+`message-crate-data.tar.gz` is deleted from the new computer, with `rm` or `Remove-Item` as on the old computer.
+The encrypted copy is deleted everywhere it went: the new computer, the old computer, and the USB drive or network share it traveled through.
+
+### Encrypt the disk that holds the volume
+
+The volume itself is unencrypted too.
+The server stores the database and the attachment files on disk as they are, on the new computer and on the old one until its volume is deleted.
+The computer that runs the server should therefore use full-disk encryption, so a stolen computer or a disk taken out of it doesn't give up the messages.
+FileVault does that on macOS, BitLocker on Windows, and LUKS on Linux.
+On macOS and Windows, Docker Desktop keeps its volumes inside a disk image on the computer's own disk, so the computer's full-disk encryption covers them.

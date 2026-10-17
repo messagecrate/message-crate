@@ -13,60 +13,102 @@ use crate::names::NameBank;
 use crate::phones;
 pub use crate::phones::OWNER_PHONE;
 
-/// Demo owner email address. Matches the value in `crates/server/demo-seed/config/seed.toml`.
+/// Demo owner email address. Written into `config/seed.toml` by [`crate::bundle::write_seed_toml`].
 pub const OWNER_EMAIL: &str = "demo.ingest@example.com";
 
+/// Which conversations a contact appears in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageScope {
+    /// A one-to-one conversation. The contact gets a budget of group
+    /// conversations only rarely: up to two, in 15% of cases. Filling a group
+    /// conversation that is still short can add the contact anyway.
     OneToOne,
+    /// Group conversations only, with no one-to-one conversation.
     Group,
+    /// A one-to-one conversation and group conversations. A contact with no
+    /// messages also gets this scope, and `has_messages` keeps it out of both.
     Both,
 }
 
+/// One invented person in the demo address book.
 #[derive(Debug, Clone)]
 pub struct Contact {
+    /// The contact's phone numbers, the primary one first.
     pub phones: Vec<String>,
+    /// First name. Every contact has one.
     pub first_name: String,
+    /// Middle name, empty when the contact has none.
     pub middle_name: String,
+    /// Last name, empty when the contact has none.
     pub last_name: String,
+    /// The contact's Contact Groups, such as Family or Work, from the
+    /// `[contact_groups]` names.
     pub groups: Vec<String>,
+    /// False for a contact that appears in no conversation.
     pub has_messages: bool,
+    /// Which conversations the contact appears in.
     pub message_scope: MessageScope,
+    /// Messages per year in the contact's one-to-one conversation.
     pub msgs_per_year: f64,
+    /// Age in years of the first message in the contact's one-to-one conversation.
     pub span_years: f64,
     /// Also write a WhatsApp conversation for this contact's primary phone.
     pub has_whatsapp: bool,
 }
 
+/// A phone number or email address that has a one-to-one conversation but no
+/// contact in the address book.
 #[derive(Debug, Clone)]
 pub struct Unassigned {
+    /// The phone number or email address.
     pub handle: String,
+    /// The name the conversation file gives the handle, if any.
     pub name_alias: Option<String>,
+    /// True when `handle` is an email address rather than a phone number.
     pub email_only: bool,
 }
 
+/// One group conversation to write.
 #[derive(Debug, Clone)]
 pub struct GroupSpec {
+    /// The group's position in [`Roster::groups`], which also names its file
+    /// and its chat id.
     pub index: usize,
+    /// The members, as positions in [`Roster::contacts`]. Empty on a phone-only group.
     pub member_idxs: Vec<usize>,
+    /// True when the members are phone numbers with no contact behind them.
     pub phone_only: bool,
+    /// The members of a phone-only group. Empty on any other group.
     pub phone_only_handles: Vec<String>,
+    /// Messages per year in the group.
     pub msgs_per_year: f64,
+    /// Age in years of the group's first message.
     pub span_years: f64,
+    /// The group's name, or `None` for an unnamed group.
     pub title: Option<String>,
 }
 
 /// Contacts, groups, and unassigned handles used to write the demo conversations.
 #[derive(Debug)]
 pub struct Roster {
+    /// The people in the demo address book.
     pub contacts: Vec<Contact>,
+    /// The phone numbers and email addresses with messages and no contact.
     pub unassigned: Vec<Unassigned>,
+    /// The group conversations to write.
     pub groups: Vec<GroupSpec>,
 }
 
+/// Chat id of the group conversation with no messages, written when
+/// `edge_cases.empty_group` is set.
 pub const EMPTY_GROUP_HANDLE: &str = "chat0000000001";
+/// The two members of the group conversation with no messages.
 pub const EMPTY_GROUP_MEMBERS: [&str; 2] = ["+12125550101", "+13035550102"];
-pub const EMPTY_THREAD_HANDLE: &str = "+13125550100";
+/// The other person in the one-to-one conversation with no messages, written
+/// when `edge_cases.empty_one_to_one` is set.
+pub const EMPTY_ONE_TO_ONE_HANDLE: &str = "+13125550100";
+/// The person in the orphaned messages, ones the backup holds without
+/// recording which conversation they were said in.
 pub const ORPHAN_SENDER: &str = "+447700900999";
 
 /// The numbers the generator writes by name. They are kept out of the
@@ -76,7 +118,7 @@ const FIXED_PHONES: [&str; 5] = [
     OWNER_PHONE,
     EMPTY_GROUP_MEMBERS[0],
     EMPTY_GROUP_MEMBERS[1],
-    EMPTY_THREAD_HANDLE,
+    EMPTY_ONE_TO_ONE_HANDLE,
     ORPHAN_SENDER,
 ];
 
@@ -167,16 +209,16 @@ fn make_contact(
 
     let mut groups = Vec::new();
     if inactive {
-        groups.push(cfg.labels.names[3].clone());
+        groups.push(cfg.contact_groups.names[3].clone());
     } else {
-        if rng.random_bool(cfg.labels.family) {
-            groups.push(cfg.labels.names[0].clone());
+        if rng.random_bool(cfg.contact_groups.family) {
+            groups.push(cfg.contact_groups.names[0].clone());
         }
-        if rng.random_bool(cfg.labels.work) {
-            groups.push(cfg.labels.names[1].clone());
+        if rng.random_bool(cfg.contact_groups.work) {
+            groups.push(cfg.contact_groups.names[1].clone());
         }
-        if rng.random_bool(cfg.labels.college) {
-            groups.push(cfg.labels.names[2].clone());
+        if rng.random_bool(cfg.contact_groups.college) {
+            groups.push(cfg.contact_groups.names[2].clone());
         }
     }
 
@@ -703,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn group_labels_come_from_config_names() {
+    fn contact_group_names_come_from_config() {
         let cfg =
             SeedConfig::for_size(crate::config::DemoSize::Large).expect("load the large settings");
         let names = NameBank::load_default().expect("names");
@@ -712,8 +754,8 @@ mod tests {
         for contact in &roster.contacts {
             for group in &contact.groups {
                 assert!(
-                    cfg.labels.names.iter().any(|n| n == group),
-                    "group label not from config: {group}"
+                    cfg.contact_groups.names.iter().any(|n| n == group),
+                    "Contact Group not from config: {group}"
                 );
             }
         }

@@ -11,7 +11,7 @@ export const NearScreenRoot = createContext<Element | null>(null);
  * How far beyond the visible area an element counts as near: about a screen
  * above and below, so a Thumbnail has loaded by the time it scrolls in.
  */
-export const NEAR_SCREEN_MARGIN = "800px 0px";
+const NEAR_SCREEN_MARGIN = "800px 0px";
 
 /**
  * Whether the element given to the returned ref has come near the screen.

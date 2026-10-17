@@ -1,14 +1,15 @@
-import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
-import { textInputClassName } from "../../components/TextField";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { textInputClass } from "../../components/TextField";
+import { useRouteCache, useRouteMutation } from "../../hooks/useRouteQuery";
+import { useServerInfo } from "../../hooks/useServerInfo";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
-import { getServerSettings, updateServerSettings } from "../../lib/serverApi";
-import { useServerInfo } from "../../lib/useServerInfo";
+import { updateServerSettings } from "../../lib/serverApi";
+import { AllStagingUsage } from "../settings/StagingDirectoryUsage";
 import { DemoAccountCard } from "./DemoAccountCard";
+import { useServerSettings } from "./useServerSettings";
 
 const MIB = 1024 * 1024;
 
@@ -26,25 +27,23 @@ function megabytes(bytes: number): string {
  * attachment; it lives nowhere but here. The Demo
  * Account is added or reset here. Under them the server states which code it runs and which schema its database
  * carries: the Build, and the Schema Fingerprint as the number the server
- * stamps into the database and names in its startup warning.
+ * stamps into the database and names in its startup warning. Last is the
+ * journal mode the database runs in, `wal` unless the server could not turn
+ * write-ahead logging on.
  */
 export function ServerSettingsPanel() {
   const cache = useRouteCache();
-  const { data, isPending, error } = useRouteQuery(keys.serverSettings.all, (signal) =>
-    getServerSettings({ signal }),
-  );
-  const save = useMutation({
+  const { data, isPending, error } = useServerSettings();
+  const save = useRouteMutation({
     mutationFn: (public_registration: boolean) => updateServerSettings({ public_registration }),
     onSuccess: (settings) => cache.set(keys.serverSettings.all, settings),
-    onSettled: () => cache.invalidateAccount(),
   });
-  const saveLimit = useMutation({
+  const saveLimit = useRouteMutation({
     mutationFn: (asset_max_bytes: number) => updateServerSettings({ asset_max_bytes }),
     onSuccess: (settings) => {
       cache.set(keys.serverSettings.all, settings);
       setLimitDraft(null);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
   // What the owner has typed and not yet saved; null shows the limit in force.
   const [limitDraft, setLimitDraft] = useState<string | null>(null);
@@ -55,7 +54,7 @@ export function ServerSettingsPanel() {
   if (error) {
     return (
       <p className="text-[0.875rem] text-danger">
-        {apiErrorMessage(error, "Could not load server settings.")}
+        {errorLine(error, "Could not load server settings.")}
       </p>
     );
   }
@@ -95,7 +94,7 @@ export function ServerSettingsPanel() {
         </p>
         {save.error ? (
           <p className="mt-2 text-[0.813rem] text-danger" role="alert">
-            {apiErrorMessage(save.error, "Could not save.")}
+            {errorLine(save.error, "Could not save.")}
           </p>
         ) : null}
       </div>
@@ -117,7 +116,7 @@ export function ServerSettingsPanel() {
             min={1}
             step="any"
             inputMode="decimal"
-            className={`${textInputClassName} w-[8rem]`}
+            className={`${textInputClass} w-[8rem]`}
             value={limitText}
             disabled={saveLimit.isPending}
             onChange={(event) => setLimitDraft(event.target.value)}
@@ -133,23 +132,31 @@ export function ServerSettingsPanel() {
         </p>
         {saveLimit.error ? (
           <p className="mt-2 mb-0 text-[0.813rem] text-danger" role="alert">
-            {apiErrorMessage(saveLimit.error, "Could not save.")}
+            {errorLine(saveLimit.error, "Could not save.")}
           </p>
         ) : null}
       </form>
 
+      <AllStagingUsage />
+
       <DemoAccountCard />
 
-      {info.data ? (
-        <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 rounded-xl border border-border bg-elevated p-4 text-[0.875rem]">
-          <dt className="text-muted">Version</dt>
-          <dd className="m-0 font-mono text-[0.813rem] text-text">{info.data.version}</dd>
-          <dt className="text-muted">Schema fingerprint</dt>
-          <dd className="m-0 font-mono text-[0.813rem] text-text">
-            {info.data.schema_fingerprint}
-          </dd>
-        </dl>
-      ) : null}
+      <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 rounded-xl border border-border bg-elevated p-4 text-[0.875rem]">
+        {info.data ? (
+          <>
+            <dt className="text-muted">Version</dt>
+            <dd className="m-0 font-mono text-[0.813rem] text-text">{info.data.version}</dd>
+            <dt className="text-muted">Schema fingerprint</dt>
+            <dd className="m-0 font-mono text-[0.813rem] text-text">
+              {info.data.schema_fingerprint}
+            </dd>
+          </>
+        ) : null}
+        <dt className="text-muted">Journal mode</dt>
+        <dd className="m-0 font-mono text-[0.813rem] text-text">
+          {data.journal.mode ?? "unknown (the server's log says why)"}
+        </dd>
+      </dl>
     </section>
   );
 }

@@ -1,12 +1,11 @@
 //! The shared exporter run skeleton and tail.
 
-use crate::config::ExporterConfig;
+use crate::config::{ConvertRun, OutputConfig, RunContext};
 use crate::pipeline::{ExportReport, RunResult};
 use crate::process::check_cancel;
-use crate::transforms::ExportTransforms;
 
-/// The shared exporter run skeleton: cancel check, transforms, conversion,
-/// media-failure bail, and result assembly.
+/// The shared exporter run skeleton: cancel check, the run-wide settings
+/// ([`ConvertRun::new`]), conversion, and result assembly.
 ///
 /// Exporters no longer resolve names from a contacts file. A backup that
 /// carries its own contact data (Apple's address book, WhatsApp's contacts
@@ -15,70 +14,86 @@ use crate::transforms::ExportTransforms;
 ///
 /// # Errors
 ///
-/// Returns an error when the user cancels, conversion fails, or media
-/// processing fails for every candidate file.
+/// Returns an error when the user cancels or conversion fails.
 pub fn run_pipeline(
-    config: &ExporterConfig,
-    convert: impl FnOnce(ExportTransforms) -> anyhow::Result<ExportReport>,
+    context: &RunContext,
+    output: &OutputConfig,
+    convert: impl FnOnce(ConvertRun) -> anyhow::Result<ExportReport>,
 ) -> anyhow::Result<RunResult> {
-    check_cancel(config.cancel.as_ref())?;
-    let report = convert(ExportTransforms::from_config(config))?;
-    finish_run(config, &report, config.media.mode.needs_tools())
+    check_cancel(&context.cancel)?;
+    let report = convert(ConvertRun::new(context, output))?;
+    Ok(finish_run(output, &report))
 }
 
-/// The run tail shared by exporters whose middle diverges (WhatsApp, iMessage,
-/// SMS Backup+): media-failure bail plus log-line and summary assembly.
-///
-/// # Errors
-///
-/// Returns an error when media processing fails for every candidate file.
-pub fn finish_run(
-    config: &ExporterConfig,
-    report: &ExportReport,
-    needs_tools: bool,
-) -> anyhow::Result<RunResult> {
-    report.check_media(needs_tools)?;
-    let mut messages = report.media_lines();
-    report.summary_lines(config.output_format, &config.output, &mut messages);
-    Ok(RunResult::new(messages, report))
+/// The run tail shared by exporters whose middle diverges (WhatsApp,
+/// iMessage): log-line and summary assembly.
+pub fn finish_run(output: &OutputConfig, report: &ExportReport) -> RunResult {
+    let mut messages: Vec<String> = report.obfuscated_line().into_iter().collect();
+    report.summary_lines(output.format, &output.directory, &mut messages);
+    RunResult::new(messages, report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FormatConfig, MediaConfig, ObfuscateConfig, OutputFormat, SourceConfig};
-    use media::{CompressOptions, MediaMode};
-    use std::path::PathBuf;
+    use crate::config::{AttachmentFiles, MediaConfig, ObfuscateConfig, OutputFormat};
+    use crate::pipeline::{IssueSink, RunIssue, RunIssueKind, RunIssueStep};
+    use std::sync::{Arc, Mutex};
 
-    fn config(mode: MediaMode, obfuscate: bool) -> ExporterConfig {
-        ExporterConfig {
-            inputs: Vec::new(),
-            output: PathBuf::from("out"),
-            scratch_dir: PathBuf::from("/cache"),
-            timezone: None,
+    fn output(files: AttachmentFiles, obfuscate: bool) -> OutputConfig {
+        OutputConfig {
             obfuscate: ObfuscateConfig {
                 enabled: obfuscate,
                 seed: None,
             },
             media: MediaConfig {
-                mode,
-                compress: CompressOptions::default(),
+                files,
+                ..MediaConfig::default()
             },
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: OutputFormat::Jsonl,
-            resume: false,
-            source: SourceConfig::Format(FormatConfig::default()),
+            ..OutputConfig::new("out", OutputFormat::Jsonl)
         }
+    }
+
+    fn context() -> RunContext {
+        RunContext::new("/cache")
+    }
+
+    /// A run-wide setting the config holds and the convert step never sees
+    /// is a setting the run ignores: a resumed run that cleans its output,
+    /// or a cancel the reader never checks.
+    #[test]
+    fn run_pipeline_hands_convert_every_run_wide_setting_of_the_config() {
+        let mut context = context();
+        let mut output = output(AttachmentFiles::Originals, false);
+        let rows = Arc::new(Mutex::new(Vec::new()));
+        let rows_seen = Arc::clone(&rows);
+        context.issues = IssueSink::new(move |issue| rows_seen.lock().unwrap().push(issue));
+        output.format = OutputFormat::Csv;
+        output.resume = true;
+
+        run_pipeline(&context, &output, |run| {
+            assert!(Arc::ptr_eq(&run.cancel, &context.cancel));
+            run.issues.emit(RunIssue {
+                kind: RunIssueKind::Error,
+                step: RunIssueStep::Parse,
+                item: "a.txt".into(),
+                reason: "unreadable".into(),
+                conversation: None,
+            });
+            assert_eq!(run.output_format, OutputFormat::Csv);
+            assert!(run.resume);
+            Ok(ExportReport::default())
+        })
+        .unwrap();
+        assert_eq!(rows.lock().unwrap().len(), 1);
     }
 
     #[test]
     fn run_pipeline_hands_the_config_transforms_to_convert_and_returns_the_summary() {
-        let result = run_pipeline(&config(MediaMode::Convert, true), |t| {
+        let result = run_pipeline(&context(), &output(AttachmentFiles::Skip, true), |run| {
+            let t = run.transforms;
             assert!(t.obfuscate);
-            assert_eq!(t.media, MediaMode::Convert);
+            assert_eq!(t.files, AttachmentFiles::Skip);
             Ok(ExportReport {
                 conversations: 1,
                 messages: 3,
@@ -96,24 +111,12 @@ mod tests {
     }
 
     #[test]
-    fn run_pipeline_fails_when_media_failed_on_every_file() {
-        let err = run_pipeline(&config(MediaMode::Convert, false), |_| {
-            let mut report = ExportReport::default();
-            report.media.errors.push("a.heic: ffmpeg not found".into());
-            Ok(report)
-        })
-        .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "media processing failed for all candidate files"
-        );
-    }
-
-    #[test]
     fn run_pipeline_returns_the_convert_error() {
-        let err = run_pipeline(&config(MediaMode::Clone, false), |_| {
-            anyhow::bail!("unreadable backup")
-        })
+        let err = run_pipeline(
+            &context(),
+            &output(AttachmentFiles::Originals, false),
+            |_| anyhow::bail!("unreadable backup"),
+        )
         .unwrap_err();
         assert_eq!(err.to_string(), "unreadable backup");
     }

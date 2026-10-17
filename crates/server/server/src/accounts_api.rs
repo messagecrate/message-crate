@@ -14,17 +14,23 @@
 //! how much it holds, never what it says.
 //! See `docs/adr/0008-the-owner-holds-no-messages.md`.
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use message_ir::IdentityService;
+use chrono::{DateTime, Utc};
+use ir::IdentityService;
 use serde::{Deserialize, Serialize};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::api_error::ApiError;
+use crate::auth::{AuthIdentity, LoggedIn, Owner, refuse_for_demo_account};
+use crate::config::Config;
+use crate::credentials::RefusalWait;
 use crate::credentials::{
-    change_password_on_conn, check_auth_rate_limit, count_auth_failure, hash_owner_password,
-    hash_user_password, password_bucket, passwords_match, refuse_when_rate_limited,
-    require_username_free, require_valid_username,
+    change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
+    require_password_within_cap, require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
 use crate::db::handles::{self, ApiIdentityService, Identity};
@@ -34,11 +40,11 @@ use crate::db::{WriteTx, begin_write};
 use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun, with_yourself};
-use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
-use crate::server::{
-    ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
-};
+use crate::imports_api::dto::{ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary};
+use crate::imports_api::with_yourself;
+use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
+use crate::server::{Created, DemoState, ImportState};
+use crate::text_caps::{MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, capped_text};
 
 pub(crate) mod api_tokens;
 
@@ -262,12 +268,12 @@ pub(crate) async fn require_account_reach(
     )
 )]
 pub async fn list_accounts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Owner(_auth): Owner,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<Account>>, ApiError> {
     let page = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let total = account_profile::count_accounts(&mut conn).await?;
     let ids = account_profile::account_ids_page(&mut conn, page.limit, page.offset).await?;
 
@@ -277,27 +283,31 @@ pub async fn list_accounts(
             items.push(account);
         }
     }
-    Ok(Json(Page {
-        items,
-        total: total.max(0) as u64,
-        limit: page.limit,
-        offset: page.offset,
-    }))
+    Ok(Json(page_from_rows(items, total.max(0) as u64, page)))
 }
 
 /// Body for creating an account, by the owner or by a stranger.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountRequest {
-    /// Login username.
+    /// Login username, which the server trims: 1 to 128 characters, each a
+    /// letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+    /// `422 Unprocessable Entity`.
     pub username: String,
-    /// Local password, of any length. Absent or empty opens an account with
-    /// no password.
+    /// Local password: no minimum length, at most 128 characters, counted
+    /// as characters rather than bytes and not trimmed. Over 128 is refused
+    /// with `422 Unprocessable Entity`. Absent or empty opens an account
+    /// with no password.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub password: Option<String>,
-    /// Display name shown in Message Crate.
+    /// Display name shown in Message Crate, trimmed. Over 200 characters is
+    /// refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub preferred_name: Option<String>,
-    /// Phone number linked to the account.
+    /// Phone number linked to the account, trimmed. Over 320 characters is
+    /// refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub phone: Option<String>,
 }
@@ -335,12 +345,11 @@ pub struct CreateAccountResponse {
             headers(("Location" = String, description = "Path of the new account"))
         ),
         crate::problem::openapi::RegistrationClosed,
-        crate::problem::openapi::UsernameTaken,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::UsernameTaken
     )
 )]
 pub async fn create_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     auth: Option<AuthIdentity>,
     headers: axum::http::HeaderMap,
     Json(req): Json<CreateAccountRequest>,
@@ -353,31 +362,46 @@ pub async fn create_account(
                 "only the owner creates accounts for others; a stranger creates their own with no credential while registration is open".into(),
             ));
         }
-        None => {
-            // One count for the whole server, like `claim`: a count per
-            // username lets a script that tries a new name each time through.
-            check_auth_rate_limit(&state.auth_rate_limits, "register")?;
-            false
-        }
+        None => false,
     };
 
-    let password_hash = hash_user_password(req.password.as_deref().unwrap_or(""))?;
-    let preferred_name = req.preferred_name.as_deref().and_then(message_ir::nonempty);
-    let phone = req.phone.as_deref().and_then(message_ir::nonempty);
+    let preferred_name = req
+        .preferred_name
+        .as_deref()
+        .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS))
+        .transpose()?
+        .and_then(ir::nonempty);
+    let phone = req
+        .phone
+        .as_deref()
+        .map(|phone| capped_text("phone", phone, MAX_IDENTITY_ADDRESS_CHARS))
+        .transpose()?
+        .and_then(ir::nonempty);
 
-    let mut conn = state.db.acquire().await?;
-    if !by_owner && !server_settings::load(&mut conn).await?.public_registration {
-        return Err(ApiError::RegistrationClosed(
-            "this Message Crate does not accept new accounts; ask its owner for one".into(),
-        ));
+    // A stranger is refused on a closed server before the password is hashed,
+    // so a refusal costs no Argon2 work. This read takes no lock, so the
+    // owner may close registration before the write transaction below
+    // begins: the check inside that transaction is the one that decides.
+    if !by_owner {
+        require_registration_open(&mut *db.acquire().await?).await?;
     }
+    // Hashed before a connection is taken for the write, so neither a pooled
+    // connection nor the write lock is held for the length of an Argon2 hash.
+    let password_hash = hash_user_password(req.password.as_deref().unwrap_or("")).await?;
+
+    let mut conn = db.acquire().await?;
 
     // The insert, the phone, and the profile-setup mark land together: a
     // failure between them would leave an account that owes profile setup
     // without being marked for it. The write transaction takes the write
-    // lock before the username check, so two registrations of one name
-    // cannot both pass the check and then race to the insert.
+    // lock before the registration and username checks, so the owner cannot
+    // close registration between the check and the insert, and two
+    // registrations of one name cannot both pass the check and then race to
+    // the insert.
     let mut tx = begin_write(&mut conn).await?;
+    if !by_owner {
+        require_registration_open(&mut tx).await?;
+    }
     require_username_free(&mut tx, &username).await?;
     let account_id = account_profile::insert_account(
         &mut tx,
@@ -404,20 +428,22 @@ pub async fn create_account(
     } else {
         AuditActor::Anonymous
     };
+    let now = Utc::now();
     audit_trail::record(
         &mut tx,
         &NewEntry::about(AuditAction::AccountCreated, actor, (account_id, &username)),
+        now,
     )
     .await?;
     let token = if by_owner {
         None
     } else {
         // Registering opens a Session, so it is the account's first login.
-        let app = crate::server::connecting_app(&headers);
-        let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref())
+        let app = crate::auth::connecting_app(&headers);
+        let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref(), now)
             .await
             .map_err(ApiError::Internal)?;
-        account_profile::record_login(&mut tx, account_id).await?;
+        account_profile::record_login(&mut tx, account_id, now).await?;
         Some(token)
     };
     tx.commit().await?;
@@ -429,6 +455,17 @@ pub async fn create_account(
         location: format!("/v1/accounts/{account_id}"),
         body: CreateAccountResponse { account, token },
     })
+}
+
+/// Refuse a stranger's registration while the owner has registration closed.
+async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), ApiError> {
+    if server_settings::load(conn).await?.public_registration {
+        Ok(())
+    } else {
+        Err(ApiError::RegistrationClosed(
+            "this Message Crate does not accept new accounts; ask its owner for one".into(),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -448,11 +485,11 @@ pub async fn create_account(
     )
 )]
 pub async fn get_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<Account>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     Ok(Json(require_account(&mut conn, target).await?))
 }
@@ -460,11 +497,14 @@ pub async fn get_account(
 /// One identity to link onto the account, with its platform service.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct LinkAccountIdentityRequest {
-    /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
+    /// The address as typed, e.g. `+15555550100` or `alex@example.com`. Over
+    /// 320 characters after trimming is refused with
+    /// `422 Unprocessable Entity`.
     pub address: String,
-    /// The service the address is on. It never decides the identity's type,
-    /// which comes from the address: an email address is on the phone
-    /// service, and one on WhatsApp is refused.
+    /// The service the address is on. The address's shape picks the
+    /// identity's type among those the service carries: an address with an
+    /// `@` is an email address on the phone service, and `other` on
+    /// WhatsApp, such as an internal id `123456789012345@lid`.
     pub service: ApiIdentityService,
 }
 
@@ -473,9 +513,9 @@ pub struct LinkAccountIdentityRequest {
 pub struct UnlinkAccountIdentityRequest {
     /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
     pub address: String,
-    /// The service the address is on. It never decides the identity's type,
-    /// which comes from the address: an email address is on the phone
-    /// service.
+    /// The service the address is on. The identity is found as the type
+    /// the address takes there: an address with an `@` is an email address
+    /// on the phone service, and `other` on WhatsApp.
     pub service: ApiIdentityService,
 }
 
@@ -486,7 +526,8 @@ pub struct UnlinkAccountIdentityRequest {
 pub struct UpdateAccountRequest {
     /// Display name. Absent leaves the current name unchanged, `null` clears
     /// it, and a string sets it, trimmed. A string that is empty after
-    /// trimming clears it.
+    /// trimming clears it, and one over 200 characters is refused with
+    /// `422 Unprocessable Entity`.
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<String>)]
     pub preferred_name: Option<Option<String>>,
@@ -508,7 +549,9 @@ pub struct UpdateAccountRequest {
     /// nothing.
     #[serde(default)]
     pub set_identity_country: Option<crate::identity_country::SetIdentityCountryRequest>,
-    /// Disable or re-enable login.
+    /// Disable or enable the account. A disabled account may not log in,
+    /// and its API tokens are refused while it stays disabled. Disabling it
+    /// also ends its Session, so enabling it again takes a new login.
     #[serde(default)]
     pub disabled: Option<bool>,
     /// Allow or forbid import.
@@ -534,6 +577,30 @@ where
 }
 
 impl UpdateAccountRequest {
+    /// Refuse a display name or an identity to link that is over its cap
+    /// (`text_caps`), before anything in the body is applied, naming every
+    /// one that is. An identity to unlink is not held to it: it names a row
+    /// already stored.
+    fn check_caps(&self) -> Result<(), ApiError> {
+        let name = self
+            .preferred_name
+            .iter()
+            .flatten()
+            .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS));
+        let addresses = self.identities.iter().enumerate().map(|(at, entry)| {
+            capped_text(
+                &format!("identities[{at}].address"),
+                &entry.address,
+                MAX_IDENTITY_ADDRESS_CHARS,
+            )
+        });
+        ApiError::unless_broken(
+            name.chain(addresses)
+                .filter_map(|checked| checked.err().map(|e| e.to_string()))
+                .collect(),
+        )
+    }
+
     /// True when the body names the display name, the time zone or an identity.
     fn touches_profile(&self) -> bool {
         self.preferred_name.is_some()
@@ -561,11 +628,7 @@ impl UpdateAccountRequest {
 
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
-enum ProfileUpdateError {
-    /// The service cannot carry an identity of the address's type: an email
-    /// address on WhatsApp.
-    #[error(transparent)]
-    ServiceCannotCarry(#[from] handles::EmailOnWhatsapp),
+pub(crate) enum ProfileUpdateError {
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -583,18 +646,8 @@ impl From<sqlx::Error> for ProfileUpdateError {
     }
 }
 
-impl From<ProfileUpdateError> for ApiError {
-    fn from(e: ProfileUpdateError) -> Self {
-        match e {
-            err @ (ProfileUpdateError::ServiceCannotCarry(_)
-            | ProfileUpdateError::UnknownTimeZone(_)) => Self::validation(err.to_string()),
-            ProfileUpdateError::Country(error) => error.into(),
-            ProfileUpdateError::Db(err) => Self::Internal(err),
-        }
-    }
-}
-
-/// Apply name, zone and identity changes on an open connection.
+/// Apply name, zone and identity changes on an open connection, stamping
+/// each contact they change `now`.
 async fn apply_profile_update(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -602,6 +655,7 @@ async fn apply_profile_update(
     time_zone: Option<&str>,
     identities: &[LinkAccountIdentityRequest],
     remove_identities: &[UnlinkAccountIdentityRequest],
+    now: DateTime<Utc>,
 ) -> std::result::Result<(), ProfileUpdateError> {
     if let Some(name) = time_zone.map(str::trim).filter(|n| !n.is_empty()) {
         let zone: chrono_tz::Tz = name
@@ -629,7 +683,7 @@ async fn apply_profile_update(
             continue;
         }
         let service = IdentityService::from(entry.service);
-        let handle_type = handles::handle_type_of(raw);
+        let handle_type = handles::handle_type_on(raw, service);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
 
@@ -639,8 +693,7 @@ async fn apply_profile_update(
             continue;
         }
         let service = IdentityService::from(entry.service);
-        let handle_type = handles::handle_type_of(raw);
-        handles::check_service_carries(raw, service, handle_type)?;
+        let handle_type = handles::handle_type_on(raw, service);
         account_profile::link_account_handle_with_service(
             conn,
             account_id,
@@ -652,30 +705,32 @@ async fn apply_profile_update(
     }
 
     if let Some(before) = with_yourself_before {
-        with_yourself::follow_identities(conn, before).await?;
+        with_yourself::follow_identities(conn, before, now).await?;
     }
     Ok(())
 }
 
-/// Apply a profile update in one write transaction.
+/// Apply a profile update in one write transaction, at `now`.
 async fn update_profile_on_conn(
     conn: &mut SqliteConnection,
     account_id: i64,
     req: &UpdateAccountRequest,
     completes_setup: bool,
+    now: DateTime<Utc>,
 ) -> std::result::Result<(), ProfileUpdateError> {
     let mut tx = begin_write(conn).await?;
-    update_profile_in(&mut tx, account_id, req, completes_setup).await?;
+    update_profile_in(&mut tx, account_id, req, completes_setup, now).await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// Apply a profile update inside the caller's write transaction.
+/// Apply a profile update inside the caller's write transaction, at `now`.
 async fn update_profile_in(
     tx: &mut WriteTx<'_>,
     account_id: i64,
     req: &UpdateAccountRequest,
     completes_setup: bool,
+    now: DateTime<Utc>,
 ) -> std::result::Result<(), ProfileUpdateError> {
     apply_profile_update(
         tx,
@@ -684,11 +739,12 @@ async fn update_profile_in(
         req.time_zone.as_deref(),
         &req.identities,
         &req.remove_identities,
+        now,
     )
     .await?;
     if let Some(set) = &req.set_identity_country {
         use crate::identity_country::{Whose, set_identity_country};
-        set_identity_country(tx, account_id, Whose::Account, set)
+        set_identity_country(tx, account_id, Whose::Account, set, now)
             .await
             .map_err(ProfileUpdateError::Country)?;
     }
@@ -709,15 +765,20 @@ async fn update_profile_in(
 /// with its account's on every request. The owner restrains the account and
 /// the tokens follow, without ever seeing one.
 ///
+/// Disabling the account also ends its Session, recorded as revoked by the
+/// owner, so enabling it again does not bring back the old token or the
+/// Media Links signed under it: the holder logs in again (#2074).
+///
 /// What changed goes in the Audit Trail as the owner's act: disabling or
 /// re-enabling, and which permissions were turned on and off. A flag sent
 /// with the value it already had changes nothing and records nothing. The
 /// caller holds the write transaction, so the change and its record land
-/// together.
+/// together. The record is stamped `now`.
 async fn apply_flags(
-    conn: &mut SqliteConnection,
+    conn: &mut WriteTx<'_>,
     account_id: i64,
     req: &UpdateAccountRequest,
+    now: DateTime<Utc>,
 ) -> Result<(), ApiError> {
     let before = account_profile::load_account_auth(conn, account_id)
         .await?
@@ -741,8 +802,13 @@ async fn apply_flags(
             AuditActor::Owner,
             account_id,
             Details::default(),
+            now,
         )
         .await?;
+        if disabled {
+            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Owner, now)
+                .await?;
+        }
     }
     let was = before.permissions;
     let changes = [
@@ -771,6 +837,7 @@ async fn apply_flags(
             AuditActor::Owner,
             account_id,
             details,
+            now,
         )
         .await?;
     }
@@ -800,13 +867,14 @@ async fn apply_flags(
     )
 )]
 pub async fn update_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<Account>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    req.check_caps()?;
     if req.touches_flags() {
         refuse_for_demo_account(target, "status and permissions are fixed")?;
     }
@@ -821,6 +889,7 @@ pub async fn update_account(
         // search alike for every visitor.
         refuse_for_demo_account(target, "display name and time zone are fixed")?;
     }
+    let now = Utc::now();
     match reach {
         reach @ (Reach::Own | Reach::OwnersOwn) => {
             if req.touches_flags() {
@@ -835,7 +904,7 @@ pub async fn update_account(
                     )
                 });
             }
-            update_profile_on_conn(&mut conn, target, &req, true).await?;
+            update_profile_on_conn(&mut conn, target, &req, true, now).await?;
         }
         Reach::Owner => {
             // The owner sets up an account for its holder: the name, zone and
@@ -843,9 +912,9 @@ pub async fn update_account(
             // failed flag leaves the profile as it was too.
             let mut tx = begin_write(&mut conn).await?;
             if req.touches_profile() {
-                update_profile_in(&mut tx, target, &req, false).await?;
+                update_profile_in(&mut tx, target, &req, false, now).await?;
             }
-            apply_flags(&mut tx, target, &req).await?;
+            apply_flags(&mut tx, target, &req, now).await?;
             tx.commit().await?;
         }
     }
@@ -854,12 +923,17 @@ pub async fn update_account(
 
 /// Confirmation flag and the current password when one is set: the body an
 /// account sends to delete itself. The owner sends none.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct DeleteAccountRequest {
     /// Must be `true`; anything else is rejected.
     pub confirm: bool,
-    /// Required when the account's `has_password` is true.
+    /// Required when the account's `has_password` is true. A password is at
+    /// most 128 characters, so a longer one is refused with
+    /// `422 Unprocessable Entity` before it is checked.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub current_password: Option<String>,
 }
 
@@ -890,21 +964,22 @@ pub struct DeleteAccountRequest {
         crate::problem::openapi::InvalidCredentials,
         crate::problem::openapi::DemoAccountProtected,
         crate::problem::openapi::NotTheOwner,
-        crate::problem::openapi::StateConflict,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::StateConflict
     )
 )]
 pub async fn delete_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(demo): State<DemoState>,
+    State(refusal_wait): State<RefusalWait>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     body: Option<Json<DeleteAccountRequest>>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     // Checked before the account is looked up: a build removes the account
     // row and writes it again, and a delete must not slip in between.
-    if account_profile::is_demo_account(target) && auth.is_owner() && state.demo_build.is_building()
-    {
+    if account_profile::is_demo_account(target) && auth.is_owner() && demo.build.is_building() {
         return Err(ApiError::StateConflict(
             "the Demo Account is being built; delete it when the build ends".into(),
         ));
@@ -916,7 +991,7 @@ pub async fn delete_account(
     if reach.is_own() {
         if account_profile::is_demo_account(target) {
             return Err(ApiError::DemoAccountProtected(
-                "the demo account cannot be deleted; use reset-demo to restore it".into(),
+                "the Demo Account cannot delete itself".into(),
             ));
         }
         // Deleting the account deletes every message it owns, so an account
@@ -941,22 +1016,26 @@ pub async fn delete_account(
         if has_password(password_hash.as_deref()) {
             let Some(pw) = req.current_password.as_deref() else {
                 return Err(ApiError::validation(
-                    "Current password is required to delete this account.",
+                    "current password is required to delete this account",
                 ));
             };
-            require_current_password(&state, target, password_hash.as_deref(), pw)?;
+            // No pooled connection is held for the length of the Argon2 check.
+            drop(conn);
+            require_current_password(&refusal_wait, password_hash.as_deref(), pw).await?;
+            conn = db.acquire().await?;
         }
     }
 
-    account_profile::delete_account(&mut conn, target, reach.actor()).await?;
+    account_profile::delete_account(&mut conn, target, reach.actor(), Utc::now()).await?;
     // The account is gone once its row is, so a directory that cannot be removed
     // (a permission error, a busy file) is logged with its path rather than
     // answered as a failure. No later account takes this id, so the directory
     // stays out of every account's reach until someone removes it.
-    let paths = state.cfg.paths.clone();
-    let removed =
-        tokio::task::spawn_blocking(move || crate::asset_store::remove_account_dir(&paths, target))
-            .await;
+    let paths = cfg.paths.clone();
+    let removed = crate::request_id::spawn_blocking_in_current_span(move || {
+        crate::asset_store::remove_account_dir(&paths, target)
+    })
+    .await;
     let failure = match removed {
         Ok(Ok(())) => None,
         Ok(Err(e)) => Some(e.to_string()),
@@ -965,7 +1044,7 @@ pub async fn delete_account(
     if let Some(error) = failure {
         tracing::warn!(
             account_id = target,
-            path = %crate::asset_store::account_dir(&state.cfg.paths, target).display(),
+            path = %crate::asset_store::account_dir(&cfg.paths, target).display(),
             %error,
             "The account is deleted, but its data directory could not be removed"
         );
@@ -978,41 +1057,52 @@ pub async fn delete_account(
 // ---------------------------------------------------------------------------
 
 /// Check the `current_password` an account sent to confirm a change to
-/// itself. A wrong one counts in the same bucket as a failed login as that
-/// account, and past the login's limit the guess is refused unchecked: an open
-/// session must not be a way to guess the password faster than the login
-/// allows.
-fn require_current_password(
-    state: &AppState,
-    account_id: i64,
+/// itself. A wrong one waits as a refused login does, then answers
+/// `invalid-credentials`: an open session must not be a way to guess the
+/// password faster than the login allows.
+///
+/// A current password over the cap is refused as a login refuses one, as
+/// `validation-failed` before any check: no password the server accepts is
+/// that long.
+///
+/// Argon2 runs on the blocking thread pool. The caller holds no database
+/// connection across this call, so neither the check nor the wait holds
+/// one.
+async fn require_current_password(
+    refusal_wait: &RefusalWait,
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
-    let bucket = password_bucket(account_id);
-    refuse_when_rate_limited(&state.auth_rate_limits, &bucket)?;
-    if !passwords_match(password_hash, current) {
-        count_auth_failure(&state.auth_rate_limits, &bucket)?;
-        return Err(ApiError::InvalidCredentials(
-            "Current password is incorrect.".into(),
-        ));
+    require_password_within_cap("current_password", current)?;
+    if !passwords_match(password_hash, current).await? {
+        return Err(refusal_wait.refuse("current password is incorrect").await);
     }
     Ok(())
 }
 
 /// The new password.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReplaceAccountPasswordRequest {
-    /// The new password. Empty clears a user account's password; the
-    /// owner's must be one character or more.
+    /// The new password: no minimum length for a user account, where empty
+    /// clears it, and one character or more for the owner's. At most 128
+    /// characters, counted as characters rather than bytes and not trimmed;
+    /// over 128 is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 128)]
     pub password: String,
     /// The new password typed a second time. The server, not the screen,
     /// refuses a pair that differs, so the checks run in one fixed order:
     /// current password, then the pair, then that the new one differs from the
     /// current one.
+    #[schema(max_length = 128)]
     pub password_confirmation: String,
     /// The password being replaced. Required when the owner changes its
-    /// own; nobody else sends it.
+    /// own; nobody else sends it. A password is at most 128 characters, so a
+    /// longer one is refused with `422 Unprocessable Entity` before it is
+    /// checked.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub current_password: Option<String>,
 }
 
@@ -1045,18 +1135,21 @@ pub struct ReplaceAccountPasswordResponse {
         (status = 204, description = "Password set by the owner"),
         crate::problem::openapi::InvalidCredentials,
         crate::problem::openapi::NotTheOwner,
-        crate::problem::openapi::DemoAccountProtected,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::DemoAccountProtected
     )
 )]
 pub async fn replace_account_password(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(refusal_wait): State<RefusalWait>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Json(req): Json<ReplaceAccountPasswordRequest>,
 ) -> Result<Response, ApiError> {
-    let mut conn = state.db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    // The reads before the Argon2 runs take a pooled connection only for the
+    // statement that needs it, and the write takes one after them, so no
+    // connection is held for the length of a hash or a check.
+    let reach =
+        require_account_reach(&mut *db.acquire().await?, &auth, target, Admits::Owner).await?;
     // The login card's button enters the Demo Account with no password, so
     // one set by anybody would shut it.
     refuse_for_demo_account(target, "password cannot be set")?;
@@ -1067,34 +1160,37 @@ pub async fn replace_account_password(
     if reach == Reach::OwnersOwn {
         let Some(current) = req.current_password.as_deref() else {
             return Err(ApiError::validation(
-                "Current password is required to change the owner's password.",
+                "current password is required to change the owner's password",
             ));
         };
-        let password_hash = account_profile::load_password_hash(&mut conn, target).await?;
-        require_current_password(&state, target, password_hash.as_deref(), current)?;
+        let password_hash =
+            account_profile::load_password_hash(&mut *db.acquire().await?, target).await?;
+        require_current_password(&refusal_wait, password_hash.as_deref(), current).await?;
         if req.password != req.password_confirmation {
-            return Err(ApiError::validation("New passwords do not match."));
+            return Err(ApiError::validation("new passwords do not match"));
         }
         if req.password == current {
             return Err(ApiError::validation(
-                "New password must be different from the current password.",
+                "new password must be different from the current password",
             ));
         }
     } else if req.password != req.password_confirmation {
-        return Err(ApiError::validation("New passwords do not match."));
+        return Err(ApiError::validation("new passwords do not match"));
     }
 
     // The owner must have a password; a user account may have none.
     let new_hash = if account_profile::is_server_owner(target) {
-        Some(hash_owner_password(&req.password)?)
+        Some(hash_owner_password(&req.password).await?)
     } else {
-        hash_user_password(&req.password)?
+        hash_user_password(&req.password).await?
     };
+    let mut conn = db.acquire().await?;
     let new_hash = new_hash.as_deref();
+    let now = Utc::now();
 
     match reach {
         Reach::Own | Reach::OwnersOwn => {
-            let token = change_password_on_conn(&mut conn, target, new_hash).await?;
+            let token = change_password_on_conn(&mut conn, target, new_hash, now).await?;
             Ok(Json(ReplaceAccountPasswordResponse { token }).into_response())
         }
         Reach::Owner => {
@@ -1106,6 +1202,7 @@ pub async fn replace_account_password(
                 AuditActor::Owner,
                 target,
                 Details::default(),
+                now,
             )
             .await?;
             tx.commit().await?;
@@ -1165,18 +1262,20 @@ pub struct DeleteMessagesResponse {
     )
 )]
 pub async fn delete_account_messages(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(imports): State<ImportState>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     body: Option<Json<DeleteMessagesRequest>>,
 ) -> Result<Json<DeleteMessagesResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     // Emptied, the Demo Account would still be offered on the login card and
     // open onto nothing. The owner removes Demo Data by deleting the account.
     refuse_for_demo_account(target, "messages cannot be deleted for good")?;
     if reach.is_own() {
-        crate::server::require_delete_access(&auth)?;
+        crate::auth::require_delete_access(&auth)?;
         if !body.is_some_and(|Json(req)| req.confirm) {
             return Err(ApiError::validation("confirmation flag must be true"));
         }
@@ -1186,23 +1285,30 @@ pub async fn delete_account_messages(
     // between two batches and never inside one. The lock order is account
     // lock, then pool, so the connection is given back first.
     drop(conn);
-    let _batch_lock = state.account_import_locks.lock(target.to_string()).await;
-    let mut conn = state.db.acquire().await?;
-    let stats =
-        account_profile::delete_all_messages_for_account(&mut conn, target, reach.actor()).await?;
-    drop(conn);
-    crate::asset_store::remove_all_attachment_files(
-        &state.db,
-        std::sync::Arc::clone(&state.cfg),
+    let _batch_lock = imports.account_locks.lock(target.to_string()).await;
+    let mut conn = db.acquire().await?;
+    let stats = account_profile::delete_all_messages_for_account(
+        &mut conn,
         target,
+        reach.actor(),
+        Utc::now(),
     )
-    .await;
+    .await?;
+    drop(conn);
+    crate::asset_store::remove_all_attachment_files(&db, std::sync::Arc::clone(&cfg), target).await;
 
     Ok(Json(DeleteMessagesResponse {
         conversations: stats.conversations,
         attachments: stats.attachments,
     }))
 }
+
+/// How many of an account's largest attachments the Storage tab lists:
+/// enough to find what is taking the space, few enough to read in one list.
+/// The docs of [`AccountStorage::top_attachments`] and
+/// [`get_account_storage`] give the number too, because they are the
+/// OpenAPI reference, and a test holds them to it.
+const TOP_ATTACHMENTS: i64 = 100;
 
 /// What an account holds: counts, attachment bytes and the largest files.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -1238,18 +1344,19 @@ pub(crate) struct AccountStorage {
     )
 )]
 pub(crate) async fn get_account_storage(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<AccountStorage>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let scope = Scope::Account(target);
     let total_bytes = storage::attachment_bytes(&mut conn, scope).await?;
     let attachment_count = storage::attachment_count(&mut conn, scope).await?;
     let conversation_count = storage::conversation_count(&mut conn, scope).await?;
     let contact_count = storage::contact_count(&mut conn, scope).await?;
-    let mut top_attachments = imports::top_attachments_by_size(&mut conn, target, 100).await?;
+    let mut top_attachments =
+        imports::top_attachments_by_size(&mut conn, target, TOP_ATTACHMENTS).await?;
     if matches!(reach, Reach::Owner) {
         top_attachments = top_attachments
             .into_iter()
@@ -1287,13 +1394,13 @@ pub(crate) async fn get_account_storage(
     )
 )]
 pub(crate) async fn list_account_identities(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<Identity>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = handles::identities(&mut conn, handles::IdentitiesOf::Account(target)).await?;
     Ok(Json(page_of(rows, params)))
@@ -1312,22 +1419,23 @@ pub(crate) async fn list_account_identities(
 // run's detail carries the counts.
 //
 // The account reads its runs in full. The owner reads each as an
-// `OwnerImportRun` or `OwnerExportRun`, which hold only what ADR 0008 lists:
+// `OwnerImportRun` (in a list an `OwnerImportRunSummary`) or an
+// `OwnerExportRun`, which hold only what ADR 0008 lists:
 // a run's summary, its issues and an export's query say whom the account
 // talks to and what it searched for. The owner's view is a type of its own
 // rather than the account's with fields removed, so a field added to a run
 // reaches the owner only when someone adds it to that type.
 
 /// An account's Import Runs as its reader may see them: each an
-/// `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
-/// owner. Neither carries the run's issues.
+/// `ImportRunSummary` for the account itself, an `OwnerImportRunSummary`
+/// for the owner. Neither carries the run's issues.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub(crate) enum AccountImportRuns {
     /// The account's own runs.
     Own(Page<ImportRunSummary>),
     /// Another account's runs, as the owner reads them.
-    Owner(Page<OwnerImportRun>),
+    Owner(Page<OwnerImportRunSummary>),
 }
 
 /// One of an account's Import Runs as its reader may see it.
@@ -1346,13 +1454,13 @@ pub(crate) enum AccountImportRun {
 #[serde(untagged)]
 pub(crate) enum AccountExportRuns {
     /// The account's own runs.
-    Own(Page<message_crate_api_types::ExportRun>),
+    Own(Page<api_types::ExportRun>),
     /// Another account's runs, as the owner reads them.
     Owner(Page<OwnerExportRun>),
 }
 
 /// An account's Import Runs as a page, newest first unless `sort` says
-/// otherwise. The owner reads any account's, each an `OwnerImportRun`; an
+/// otherwise. The owner reads any account's, each an `OwnerImportRunSummary`; an
 /// account reads its own in full.
 #[utoipa::path(
     get,
@@ -1372,24 +1480,25 @@ pub(crate) enum AccountExportRuns {
     )
 )]
 pub(crate) async fn list_account_imports(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
-    Query(query): Query<crate::imports_api::ListImportsQuery>,
+    Query(query): Query<crate::imports_api::dto::ListImportsQuery>,
 ) -> Result<Json<AccountImportRuns>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = crate::imports_api::import_rows_page(&mut conn, target, query).await?;
     Ok(Json(if reach.is_own() {
-        AccountImportRuns::Own(crate::imports_api::runs_page(rows))
+        AccountImportRuns::Own(rows.map(Into::into))
     } else {
-        AccountImportRuns::Owner(crate::imports_api::runs_page(rows))
+        AccountImportRuns::Owner(rows.map(Into::into))
     }))
 }
 
 /// One of an account's Import Runs: status, timings and counts, and for the
-/// account itself its summary and issues. A run that is another account's
-/// is a 404.
+/// account itself its summary and issues. The owner reads it as an
+/// `OwnerImportRun`, with the attachments whose Thumbnail or Preview
+/// could not be made and why. A run that is another account's is a 404.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/imports/{import_id}",
@@ -1405,11 +1514,11 @@ pub(crate) async fn list_account_imports(
     )
 )]
 pub(crate) async fn get_account_import(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((target, import_id)): Path<(i64, i64)>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<AccountImportRun>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     if !reach.is_own() {
         let row = imports::get_owned_import(&mut conn, target, import_id)
@@ -1432,7 +1541,7 @@ pub(crate) async fn get_account_import(
     security(("session" = [])),
     params(
         ("id" = i64, Path, description = "Account id"),
-        ("status" = Option<message_crate_api_types::ExportStatus>, Query, description = "Only the runs with this status"),
+        ("status" = Option<api_types::ExportStatus>, Query, description = "Only the runs with this status"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
         ("offset" = Option<usize>, Query, description = "Rows to skip, at most 50000"),
         ("sort" = Option<String>, Query, description = "`started_at` or `-started_at`. Default `-started_at`, newest first.")
@@ -1443,21 +1552,18 @@ pub(crate) async fn get_account_import(
     )
 )]
 pub(crate) async fn list_account_exports(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<crate::exports_api::ListExportsQuery>,
 ) -> Result<Json<AccountExportRuns>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let page = crate::exports_api::exports_page(&mut conn, target, query).await?;
     if !reach.is_own() {
-        return Ok(Json(AccountExportRuns::Owner(Page {
-            items: page.items.into_iter().map(OwnerExportRun::from).collect(),
-            total: page.total,
-            limit: page.limit,
-            offset: page.offset,
-        })));
+        return Ok(Json(AccountExportRuns::Owner(
+            page.map(OwnerExportRun::from),
+        )));
     }
     Ok(Json(AccountExportRuns::Own(page)))
 }
@@ -1482,14 +1588,14 @@ pub(crate) async fn list_account_exports(
     )
 )]
 pub(crate) async fn list_account_audit_trail(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<crate::audit_trail_api::ListAccountAuditTrailQuery>,
 ) -> Result<Json<Page<crate::db::audit_trail::AuditEntry>>, ApiError> {
-    require_reach(&state, &auth, target).await?;
+    require_reach(&db, &auth, target).await?;
     crate::audit_trail_api::audit_trail_page(
-        &state,
+        &db,
         crate::db::audit_trail::Scope::Account(target),
         auth.account_id,
         query.limit,
@@ -1501,11 +1607,11 @@ pub(crate) async fn list_account_audit_trail(
 /// [`require_account_reach`], admitting the owner, on a connection of its
 /// own, for a handler whose work then runs on another.
 async fn require_reach(
-    state: &AppState,
+    db: &SqlitePool,
     auth: &AuthIdentity,
     target: i64,
 ) -> Result<Reach, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     require_account_reach(&mut conn, auth, target, Admits::Owner).await
 }
 

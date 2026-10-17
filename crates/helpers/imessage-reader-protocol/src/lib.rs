@@ -12,8 +12,8 @@
 //!
 //! 1. The app sends [`Request::Export`] or [`Request::Identities`].
 //! 2. The helper answers [`Event::Source`] once, then streams [`Event::Log`],
-//!    [`Event::Progress`], [`Event::Conversation`] and [`Event::Message`]
-//!    lines in any order, then
+//!    [`Event::Warning`], [`Event::Progress`], [`Event::Conversation`] and
+//!    [`Event::Message`] lines in any order, then
 //!    [`Event::ExportDone`] (or [`Event::Identities`] for the identities
 //!    request). [`Event::Error`] ends the request instead when it fails.
 //! 3. For an encrypted backup the app may then send any number of
@@ -27,8 +27,9 @@
 //!    before it writes anything, so the app can check its disk for room.
 //! 2. The app sends [`Request::DecryptDomain`] to go ahead, or closes the
 //!    helper's stdin to stop, and the helper exits having written nothing.
-//! 3. The helper streams [`Event::Log`] and [`Event::Progress`] lines while it
-//!    decrypts, then sends [`Event::BackupDomainDone`].
+//! 3. The helper streams [`Event::Log`], [`Event::Warning`] and
+//!    [`Event::Progress`] lines while it decrypts, then sends
+//!    [`Event::BackupDomainDone`].
 //!
 //! This crate carries the type definitions, their serde shapes, and one rule:
 //! [`bare_address`], which says what an owner address looks like on the wire.
@@ -36,7 +37,7 @@
 //!
 //! [`Reaction`], [`Deletion`] and [`EarlierVersion`] are defined here and
 //! nowhere else. Each is the shape the conversation file carries too
-//! (`message_ir` re-exports them), for every source, and this is the one
+//! (`ir` re-exports them), for every source, and this is the one
 //! crate both the GPL reader and the app may link.
 
 use std::path::PathBuf;
@@ -59,7 +60,7 @@ use serde_json::Value;
 /// 6: [`Event::Attachment`] carries an [`AttachmentFile`], which tells a
 /// file the backup does not hold from one that failed to decrypt.
 /// 7: every address is named an identity: [`Participant::identity`],
-/// [`Message::sender_identity`], [`Message::owner_identity`] and the
+/// `Message::sender_identity`, [`Message::owner_identity`] and the
 /// tapbacks' `reactor_identity` (they were `handle`, `sender_handle`,
 /// `owner_handle` and `reactor_handle`).
 /// 8: a message's reactions are [`Message::reactions`], a list of
@@ -77,7 +78,26 @@ use serde_json::Value;
 /// 13: a reply carries [`Message::reply_to`], a [`ReplyTo`] naming the
 /// message it quotes and the part, and `Imessage::is_reply`,
 /// `in_reply_to_guid`, `thread_originator_part` and `num_replies` are gone.
-pub const PROTOCOL_VERSION: u32 = 13;
+/// 14: an [`EarlierVersion`] may carry no text ([`EarlierVersion::text`] is
+/// optional), for a source that records an edit and not the text it
+/// replaced.
+/// 15: a message carries [`Message::time_precision`], whether `chat.db`
+/// recorded its time below the second.
+/// 16: a [`Participant`] carries [`Participant::country`] and a message
+/// `Message::sender_country`, the country `chat.db`'s `handle` row names
+/// for that identity.
+/// 17: [`Event::Warning`] carries a line about something the run went on
+/// without, which [`Event::Log`] carried before.
+/// 18: a one-to-one conversation's [`Conversation::conversation_type`] is
+/// [`ONE_TO_ONE_CONVERSATION_TYPE`] (`one-to-one`), where it was
+/// `individual`.
+/// 19: a message's sender is one [`Message::sender`], a [`Sender`], where it
+/// was `sender_identity`, `sender_display_name` and `sender_country`.
+pub const PROTOCOL_VERSION: u32 = 19;
+
+/// The [`Conversation::conversation_type`] of a one-to-one conversation: one
+/// with a single other person that the source does not mark as a group.
+pub const ONE_TO_ONE_CONVERSATION_TYPE: &str = "one-to-one";
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -130,7 +150,20 @@ pub fn bare_address(raw: &str) -> Option<String> {
 /// message to the person as it is (`ios_backup::Helper` turns it into the
 /// request's error unchanged), so this sentence is part of what the two
 /// sides agree on, and it sits here with the rest of that agreement.
-pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
+pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The Encryption password is incorrect.";
+
+/// The [`Event::Error`] message the helper sends when an encrypted iPhone
+/// backup comes with no password. The WhatsApp import from an iPhone backup
+/// refuses the same case with the same sentence, so it sits here, where both
+/// sides of the process boundary can reach it.
+pub const ENCRYPTED_BACKUP_PASSWORD_REQUIRED: &str =
+    "The backup is encrypted. Fill in the Encryption password.";
+
+/// The [`Event::Error`] message the helper sends when a password comes with
+/// an iPhone backup that is not encrypted. The WhatsApp import from an
+/// iPhone backup refuses the same case with the same sentence.
+pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
+    "This backup is not encrypted. Clear the Encryption password.";
 
 /// The file name of the helper executable, without the `.exe` Windows adds.
 pub const HELPER_NAME: &str = "imessage-reader";
@@ -237,8 +270,16 @@ pub enum Event {
         /// Whether attachment paths need [`Request::Attachment`] to read.
         encrypted: bool,
     },
-    /// A progress or warning line for the app's log.
+    /// A line for the app's log about something the helper did, such as a
+    /// step it started.
     Log {
+        /// The line, without a trailing newline.
+        line: String,
+    },
+    /// A line for the app's log about something the run went on without,
+    /// such as a contacts database it could not read or a message it left
+    /// out. The app writes it into the Import Run's log at `WARN`.
+    Warning {
         /// The line, without a trailing newline.
         line: String,
     },
@@ -282,7 +323,7 @@ pub enum Event {
         /// Files written. Zero means the backup does not hold the domain.
         files: u64,
         /// Files the manifest lists that could not be decrypted. Each one
-        /// has a line on the log.
+        /// has a warning on the log.
         failures: u64,
     },
     /// The request failed. The helper writes nothing after this line.
@@ -346,7 +387,8 @@ pub struct Conversation {
     /// Apple's `chat.chat_identifier`, or [`orphaned_chat_id`] for messages
     /// in no chat.
     pub chat_identifier: String,
-    /// `individual`, `group`, or [`ORPHANED_CONVERSATION_TYPE`].
+    /// [`ONE_TO_ONE_CONVERSATION_TYPE`], `group`, or
+    /// [`ORPHANED_CONVERSATION_TYPE`].
     pub conversation_type: String,
     /// The name a person gave the group, if any.
     pub group_title: Option<String>,
@@ -361,6 +403,26 @@ pub struct Participant {
     pub identity: String,
     /// The contact name, when the address book knows one.
     pub display_name: Option<String>,
+    /// The country Messages read this identity in: the `country` column of
+    /// its `handle` row, as an upper-case ISO 3166-1 alpha-2 code (`GB`).
+    /// `None` when the row names none, or the conversation has no `handle`
+    /// row for the identity.
+    pub country: Option<String>,
+}
+
+/// The person who sent an incoming message, read from the `handle` row the
+/// message row names. Every fact about a sender travels in this one value, so
+/// a new fact is added here and nowhere else in the protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sender {
+    /// Phone number or email address as Messages stores it: the `handle`
+    /// row's `id`.
+    pub identity: String,
+    /// The contact name, when the address book knows one, else the address.
+    pub display_name: String,
+    /// The country Messages read the identity in, as [`Participant::country`]
+    /// says.
+    pub country: Option<String>,
 }
 
 /// One message row, already classified.
@@ -372,6 +434,11 @@ pub struct Message {
     pub guid: String,
     /// Sent time as milliseconds since 1970-01-01 UTC.
     pub timestamp_unix_ms: i64,
+    /// How finely `chat.db` recorded the time: `milliseconds` for a
+    /// nanosecond stamp (macOS 10.13 and iOS 11 on), `seconds` for a stamp
+    /// in seconds from an older database, or for a time read from the raw
+    /// stamp because the library could not read the date.
+    pub time_precision: TimePrecision,
     /// `true` for a message the owner sent.
     pub outgoing: bool,
     /// `iMessage`, `SMS`, `RCS`, or empty when unknown.
@@ -379,10 +446,9 @@ pub struct Message {
     /// `imessage`, `sms`, `mms`, `tapback`, `sticker_tapback`,
     /// `announcement`, `location_share`, or `balloon`.
     pub message_kind: String,
-    /// The sender's address, for an incoming message.
-    pub sender_identity: Option<String>,
-    /// The sender's contact name, for an incoming message.
-    pub sender_display_name: Option<String>,
+    /// Who sent an incoming message. `None` for a message the owner sent,
+    /// and for an incoming row whose `handle` row names no address.
+    pub sender: Option<Sender>,
     /// The subject line, when the message has one.
     pub subject: Option<String>,
     /// The body, or the sentence that stands in for a tapback or
@@ -469,12 +535,45 @@ pub struct Reaction {
     pub reactor_display_name: Option<String>,
 }
 
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file.
+///
+/// The flag, never the value, says whether a time has milliseconds: a
+/// millisecond time can end in `.000`, and a whole-second one always does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimePrecision {
+    /// Whole seconds: the milliseconds are zero because the source has none.
+    Seconds,
+    /// Milliseconds, as the phone stored them.
+    Milliseconds,
+}
+
+impl TimePrecision {
+    /// Both precisions.
+    pub const ALL: [Self; 2] = [Self::Seconds, Self::Milliseconds];
+
+    /// The name the conversation file, the database and the HTTP API use:
+    /// `seconds` or `milliseconds`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Milliseconds => "milliseconds",
+        }
+    }
+
+    /// The precision [`Self::as_str`] names, or `None` for any other text.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == value)
+    }
+}
+
 /// Why a message's content is gone, or marked as going, in the app it came
 /// from.
 ///
 /// Every source writes the same two marks, so the type is defined here, the
 /// one crate the Apple Messages Reader and the rest of Message Crate may both
-/// link, and `message-ir` re-exports it.
+/// link, and `ir` re-exports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Deletion {
@@ -503,19 +602,24 @@ impl Deletion {
 }
 
 /// One earlier version of one part of an edited message: the text that part
-/// held before an edit replaced it.
+/// held before an edit replaced it, or only that an edit replaced it.
 ///
 /// A message's own text is its final version, so a list of these holds only
 /// the versions before it, oldest first within each part. Every source that
 /// records edits writes the same shape, so the type is defined here beside
-/// [`Reaction`] and `message-ir` re-exports it.
+/// [`Reaction`] and `ir` re-exports it. Apple Messages keeps each
+/// version's text. iMazing records only that a message was edited, and when,
+/// so its version has no text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EarlierVersion {
     /// The part of the message this version belongs to; 0 for the first or
     /// only part.
     pub part_index: u32,
-    /// The part's text in this version.
-    pub text: String,
+    /// The part's text in this version; `None` when the source records the
+    /// edit and not the text it replaced. A version with no text is not
+    /// searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     /// When this version was written, as milliseconds since 1970-01-01 UTC:
     /// the send time for the original, the time of the edit that wrote it for
     /// a later one. `None` when the source does not record it.
@@ -527,7 +631,7 @@ pub struct EarlierVersion {
 /// whether or not the quoted message can be named.
 ///
 /// Every source that records replies writes the same shape, so the type is
-/// defined here beside [`Reaction`] and `message-ir` re-exports it.
+/// defined here beside [`Reaction`] and `ir` re-exports it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReplyTo {
     /// The quoted message's GUID, as the source names it; `None` when the
@@ -583,6 +687,28 @@ pub enum AttachmentSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every other test compares against the constants, so only this one
+    /// fails when a sentence's wording changes. The wording is repeated
+    /// outside Rust and must change with it: the troubleshooting page
+    /// (`docs/.../owner/troubleshooting.md`) heads a section with each of
+    /// the first two, and the Import form shows the first from its own
+    /// copy in `web/src/lib/encryptedBackup.ts`.
+    #[test]
+    fn the_backup_password_sentences_are_the_ones_the_person_reads() {
+        assert_eq!(
+            ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
+            "The backup is encrypted. Fill in the Encryption password."
+        );
+        assert_eq!(
+            UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+            "This backup is not encrypted. Clear the Encryption password."
+        );
+        assert_eq!(
+            IOS_BACKUP_PASSWORD_INCORRECT,
+            "The Encryption password is incorrect."
+        );
+    }
 
     #[test]
     fn requests_and_events_round_trip_with_their_tags() {

@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
+import { useColumnResize } from "../hooks/useColumnResize";
+import { useReportColumnResizing } from "../hooks/useReportColumnResizing";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
-import { useReportColumnResizing } from "./columnResizeState";
-import { useColumnResize } from "./useColumnResize";
 
 const DEFAULT_WIDTH = 300;
 /** The narrowest the list column gets, by a drag or by a narrow window. */

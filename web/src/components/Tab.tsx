@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
 import type { Key } from "react-aria-components";
 import { Tab as RACTab, SelectionIndicator } from "react-aria-components";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 
 /**
  * The app's tab: React Aria's `Tab`, drawn as a label over an accent line that
  * slides to the selected tab. Settings and the login card both use it, so a
  * change to how a tab looks is made here once (#1728).
  *
- * The tone comes from React Aria's data attributes: muted, the text colour when
+ * The tone comes from React Aria's data attributes: muted, the text color when
  * hovered or selected, and dimmed with the not-allowed cursor when disabled
  * (`web/STYLE_GUIDE.md`, "Disabled"). React Aria never marks a disabled tab
  * hovered, so a disabled tab keeps its muted tone under the pointer.
@@ -19,16 +19,18 @@ import { focusRing } from "../lib/uiStyles";
  * Biome's `noRestrictedImports` refuses React Aria's `Tab` everywhere but here.
  * This file's override in `web/biome.json` replaces the root rule's paths
  * rather than adding to them, so it copies every root path except
- * `react-aria-components`; a path added to the root rule is added there too.
+ * `react-aria-components`. A path added to the root rule must be added there
+ * too. `scripts/check-biome-restricted-imports.mjs` fails when this override's
+ * list is anything but the root list less `react-aria-components`.
  */
-export type TabProps = {
+type TabProps = {
   id: Key;
   children: ReactNode;
   /** The text size and layout of the strip it sits in, such as `flex-1 text-center`. */
   className?: string;
 };
 
-const tabClass = `relative -mb-px cursor-pointer border-none bg-transparent px-3 py-2 font-medium text-muted transition-colors duration-200 data-hovered:text-text data-selected:text-text data-disabled:cursor-not-allowed data-disabled:opacity-50 ${focusRing}`;
+const tabClass = `relative -mb-px cursor-pointer border-none bg-transparent px-3 py-2 font-medium text-muted transition-colors duration-200 data-hovered:text-text data-selected:text-text data-disabled:cursor-not-allowed data-disabled:opacity-50 ${focusRingClass}`;
 
 export default function Tab({ id, children, className = "" }: TabProps) {
   return (

@@ -1,12 +1,11 @@
 [package]
-name = "message-ir"
+name = "ir"
 version = "0.1.0"
 edition = "2024"
 description = "Schema types for the common-message ConversationDocument intermediate representation"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
-anyhow = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
 # For `Reaction`, `Deletion`, `EarlierVersion` and `ReplyTo`, which are
@@ -14,12 +13,10 @@ hex = { workspace = true }
 # crate is MIT OR Apache-2.0 and links nothing GPL. Why:
 # docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.
 imessage-reader-protocol = { path = "../../helpers/imessage-reader-protocol" }
+phone = { path = "../phone" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [features]
 testutil = []

@@ -6,19 +6,19 @@
 //! with no progress record: a file under its final derivative name is fully
 //! patched, and an original still on disk means work remains.
 //!
-//! The desktop app runs it as an Import Run's Media stage, which is what
-//! "the Media stage" means below. A local export runs the same code through
-//! the write queue's `run_media_post_pass`, outside any Import Run.
+//! The desktop app runs it as an Import Run's Media Stage, which is what
+//! "the Media Stage" means below. Staging never converts: it copies the
+//! originals this pass reads.
 //!
 //! ## Naming and resume
 //!
-//! The final name for a converted attachment is `{original_stem}-mv.{target_ext}`
-//! — never the bare name [`media::derivative_name`] returns. A same-format
+//! The final name for a converted attachment is `{original_stem}-mv.{target_ext}`,
+//! never the bare name [`media::derivative_name`] returns. A same-format
 //! compress (`photo.jpg` → `photo.jpg`) or a video in either mode
 //! (`clip.mp4` → `clip.mp4`) would otherwise produce a final name equal to
 //! the source's own name, or equal to an already-committed derivative's own
-//! name on a later resume — both break the "an original on disk means work
-//! remains" invariant the Media stage depends on for resume. The `-mv` suffix
+//! name on a later resume. Both break the "an original on disk means work
+//! remains" invariant the Media Stage depends on for resume. The `-mv` suffix
 //! cannot collide with a staged original's own name: staged names come from
 //! `attachment_dest_name` (`{utc-date}-{digest16}{ext}`), whose stem is
 //! hex, and hex digits never include `m` or `v`.
@@ -26,16 +26,16 @@
 //! An attachment is pending when its recorded path exists on disk,
 //! [`media::derivative_name`] returns `Some` for that file, and the file's
 //! stem does not end in `-mv` (a `-mv` stem marks an already-committed
-//! derivative, which must never re-enter the pending list — for a video, or
+//! derivative, which must never re-enter the pending list: for a video, or
 //! a compressed same-format file, `derivative_name` would otherwise call it
 //! pending forever and re-degrade it on every resume).
 //!
 //! When the recorded path's stem ends in `-mv` but the file is *not* on
 //! disk, the previous run crashed between patching the conversation file and
 //! renaming the derivative into place. The original is still there under its
-//! old name, so the Media stage heals: it strips the `-mv` suffix and looks under
+//! old name, so the Media Stage heals: it strips the `-mv` suffix and looks under
 //! `attachments/` for a file with that stem (any extension) that
-//! `derivative_name` still wants, and re-transcodes it — the recorded
+//! `derivative_name` still wants, and re-transcodes it. The recorded
 //! digest/size/path are stale regardless, so a heal re-patches
 //! exactly like a fresh conversion. When no such file exists but another
 //! attachment sharing the original dropped it for size, the note it left
@@ -46,8 +46,8 @@
 //! ## Aliasing
 //!
 //! Staged names are content-addressed (`attachment_dest_name`), and both
-//! writers are idempotent by name, so two attachments — in the same document
-//! or in different ones — can legitimately record the identical `path` when
+//! writers are idempotent by name, so two attachments (in the same document
+//! or in different ones) can legitimately record the identical `path` when
 //! they carry the same bytes. Every patch here therefore applies to *every*
 //! attachment recorded at a given path, not just the one that happened to be
 //! scanned first, and a recorded path that has gone missing without a `-mv`
@@ -58,7 +58,7 @@
 //!
 //! A shared original whose derivative comes out over the size limit is
 //! deleted together with the derivative, so a later attachment
-//! recording the same path finds neither. Before deleting, the Media stage writes a
+//! recording the same path finds neither. Before deleting, the Media Stage writes a
 //! note beside the original's name, `{original_name}.too_large`, holding the
 //! derivative's size. A recorded path that is gone, has no committed
 //! derivative, and has that note records `too_large` with the size, in this
@@ -67,23 +67,22 @@
 //!
 //! ## Tool availability and failure
 //!
-//! ffmpeg/ffprobe are probed once, before any document is touched — parity
-//! with `media::process_attachment_files`. A missing pair fails the whole
-//! Media stage; it must never brand every attachment `convert_failed: ffmpeg not
-//! found`. An attachment ffmpeg genuinely fails on, by contrast, is an
-//! item-level issue: `missing_reason` gets `convert_failed: <detail>` and the
-//! original — still on disk, untouched — keeps its `path` and
-//! `digest_sha256` so a resume retries it rather than treating a transient
-//! failure as permanent loss.
+//! ffmpeg/ffprobe are probed once, before any document is touched. A
+//! missing pair fails the whole Media Stage; it must never brand every
+//! attachment `convert_failed: ffmpeg not found`. An attachment ffmpeg
+//! genuinely fails on, by contrast, is an item-level issue:
+//! `missing_reason` gets `convert_failed: <detail>` and the original, still
+//! on disk and untouched, keeps its `path` and `digest_sha256` so a resume
+//! retries it rather than treating a transient failure as permanent loss.
 //!
 //! ## Issues
 //!
-//! Every attachment the Media stage leaves without a converted file goes to the
+//! Every attachment the Media Stage leaves without a converted file goes to the
 //! issue sink as a `skip` row naming the conversation file and the
 //! attachment: one it could not convert, one whose converted file is over
 //! the size limit, and one an interrupted earlier attempt lost. Each row is sent
 //! before the conversation file is written, so a stop between the two leaves
-//! the work pending and the resumed Media stage reports it again. A row's item is
+//! the work pending and the resumed Media Stage reports it again. A row's item is
 //! the conversation file and the original's staged path, which no other
 //! file in the conversation shares. A file an earlier attempt could not convert
 //! is settled again by a later attempt, which first sends a
@@ -94,19 +93,21 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, MediaMode, TranscodeOutcome};
+use ir::{Attachment, ConversationDocument, missing_reason};
+use media::{CompressOptions, HevcFallback, MediaMode, MediaTools, TranscodeOutcome};
 use message_crate_core::{
-    CancelFlag, IssueSink, RunIssue, RunIssueKind, check_cancel, emit_issue, mime_for_rel,
+    CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, RunIssueStep, check_cancel,
+    mime_for_rel,
 };
-use message_ir::{ConversationDocument, IrAttachment};
 
-use message_ir_format::read_conversation_jsonl;
-use message_ir_format::write_conversation_jsonl_to;
+use ir_format::read_conversation_jsonl;
+use ir_format::write_conversation_jsonl_to;
 
 /// Suffix on a derivative that is written but not yet committed.
 ///
 /// Named so it survives the media crate's ffmpeg-scratch sweep, which matches
-/// `.msgmedia.tmp.` — deleting this file would delete the resume signal.
+/// `.msgmedia.tmp.`. The sweep must not delete this file, because it is the
+/// resume signal.
 const IN_PROGRESS_SUFFIX: &str = ".in_progress";
 
 /// Suffix on the note left beside a dropped original's name: the original
@@ -126,15 +127,16 @@ const TOO_LARGE_SUFFIX: &str = ".too_large";
 /// `pending_in` will never queue for it again.
 pub(crate) const COMMITTED_SUFFIX: &str = "-mv";
 
-/// What the Media stage should do.
+/// What the Media Stage should do.
 ///
 /// Staging records these in the run directory
 /// ([`write_media_settings`](crate::write_media_settings)), and the summary
-/// and the Media stage read them back from there, so the whole Import Run works to
+/// and the Media Stage read them back from there, so the whole Import Run works to
 /// one set of values.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TranscodeOptions {
-    /// Convert or Compress. Clone and Disabled make the Media stage a no-op.
+    /// `convert` or `compress`. `clone` and `disabled` make the Media Stage a
+    /// no-op.
     pub mode: MediaMode,
     /// Video targets, from the import form.
     pub compress: CompressOptions,
@@ -142,36 +144,36 @@ pub struct TranscodeOptions {
     pub asset_max_bytes: u64,
 }
 
-/// How far the Media stage has got.
+/// How far the Media Stage has got.
 #[derive(Debug, Clone, Copy)]
 pub struct TranscodeProgress {
     /// Files finished, however they finished.
     pub done: usize,
-    /// Files the Media stage found work for.
+    /// Files the Media Stage found work for.
     pub total: usize,
 }
 
-/// What the Media stage did.
+/// What the Media Stage did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TranscodeReport {
     /// Attachments replaced by a derivative.
     pub converted: usize,
-    /// Attachments the Media stage left alone.
+    /// Attachments the Media Stage left alone.
     pub skipped: usize,
     /// Attachments dropped because their derivative came out over the size
     /// limit, counted once per conversation that records the dropped file.
     pub too_large: usize,
     /// Attachments ffmpeg could not process.
     pub failed: usize,
-    /// Attachments an interrupted prior run lost beyond recovery — neither
+    /// Attachments an interrupted prior run lost beyond recovery: neither
     /// the original nor a usable derivative survived. `missing_reason` is set
     /// to `file_missing`.
     pub missing: usize,
     /// Attachments repointed at an already-existing derivative without a
-    /// transcode — the aliasing case: another attachment (this document or
-    /// another) already converted and deleted the shared original.
+    /// transcode. This is the aliasing case: another attachment (this document
+    /// or another) already converted and deleted the shared original.
     pub repointed: usize,
-    /// Total bytes of the originals the Media stage replaced.
+    /// Total bytes of the originals the Media Stage replaced.
     pub bytes_before: u64,
     /// Total bytes of the derivatives it wrote.
     pub bytes_after: u64,
@@ -184,16 +186,23 @@ pub struct TranscodeReport {
 ///
 /// # Errors
 ///
-/// Returns an error when the Media stage is cancelled, ffmpeg/ffprobe are
+/// Returns an error when the Media Stage is canceled, ffmpeg/ffprobe are
 /// unavailable, or the directory cannot be read, or a conversation file cannot
 /// be parsed or written. A single attachment ffmpeg cannot process is an
 /// item-level issue, counted in the report and sent to `issues` as it
 /// happens, never an error.
+///
+/// The first video it compresses as H.264 because HEVC failed sends why to
+/// `log` as a warning, once for the whole Media Stage, at the moment it is
+/// found: a stop or an error later in the stage cannot lose it, and a resume
+/// never re-encodes that video to find it again.
 pub fn transcode_staged(
     run_dir: &Path,
     options: &TranscodeOptions,
-    cancel: Option<&CancelFlag>,
-    issues: Option<&IssueSink>,
+    tools: &dyn MediaTools,
+    cancel: &CancelFlag,
+    issues: &IssueSink,
+    log: &LogSink,
     on_progress: &mut dyn FnMut(TranscodeProgress),
 ) -> Result<TranscodeReport> {
     if matches!(options.mode, MediaMode::Clone | MediaMode::Disabled) {
@@ -202,10 +211,10 @@ pub fn transcode_staged(
     // A cancel already requested short-circuits before we even ask whether
     // the tools are there.
     check_cancel(cancel)?;
-    // Parity with `process_attachment_files`: fail the whole Media stage up front
-    // when the tools are missing, rather than branding every attachment
-    // `convert_failed: ffmpeg not found`.
-    media::require_ffmpeg()?;
+    // Fail the whole Media Stage up front when the tools are missing,
+    // rather than branding every attachment `convert_failed: ffmpeg not
+    // found`.
+    tools.require()?;
 
     let files = conversation_files(run_dir)?;
     // Counting up front costs a second parse of each conversation file and
@@ -214,67 +223,70 @@ pub fn transcode_staged(
     on_progress(TranscodeProgress { done: 0, total });
 
     let mut report = TranscodeReport::default();
+    let mut hevc_fallback = HevcFallback::default();
     let mut done = 0usize;
     for jsonl in &files {
         check_cancel(cancel)?;
-        let mut doc = read_conversation_jsonl(jsonl)?;
-        let work = pending_in(run_dir, &doc, options.mode)?;
+        let mut document = read_conversation_jsonl(jsonl)?;
+        let work = pending_in(run_dir, &document, options.mode)?;
         for item in work {
             check_cancel(cancel)?;
             // An earlier attempt could not convert this file, and this one
             // settles it now, however: the earlier row no longer holds. A
             // new failure sends a fresh row after this one.
             let recorded_rel = item.recorded_rel();
-            if had_convert_failure(&doc, recorded_rel) {
-                emit_issue(
-                    issues,
-                    media_issue(
-                        jsonl,
-                        &doc,
-                        recorded_rel,
-                        recorded_rel,
-                        RunIssueKind::Resolved,
-                        "is tried again",
-                    ),
-                );
+            if had_convert_failure(&document, recorded_rel) {
+                issues.emit(media_issue(
+                    jsonl,
+                    &document,
+                    recorded_rel,
+                    recorded_rel,
+                    RunIssueKind::Resolved,
+                    "is tried again",
+                ));
             }
             match item {
-                PendingWork::Transcode { recorded_rel, src } => {
-                    apply_transcode(
+                PendingWork::Transcode {
+                    recorded_rel,
+                    src,
+                    is_heal,
+                } => {
+                    let target = TranscodeTarget {
                         run_dir,
                         jsonl,
-                        &mut doc,
-                        &recorded_rel,
-                        &src,
-                        false,
+                        recorded_rel: &recorded_rel,
+                        src: &src,
+                        is_heal,
+                    };
+                    let hevc_failure = apply_transcode(
+                        &target,
+                        &mut document,
                         options,
+                        tools,
+                        cancel,
                         issues,
                         &mut report,
                     )?;
-                }
-                PendingWork::HealTranscode { recorded_rel, src } => {
-                    apply_transcode(
-                        run_dir,
-                        jsonl,
-                        &mut doc,
-                        &recorded_rel,
-                        &src,
-                        true,
-                        options,
-                        issues,
-                        &mut report,
-                    )?;
+                    if let Some(line) = hevc_fallback.record(hevc_failure) {
+                        log.warn(line);
+                    }
                 }
                 PendingWork::Repoint {
                     recorded_rel,
                     derivative,
                 } => {
-                    apply_repoint(jsonl, &mut doc, &recorded_rel, &derivative, &mut report)?;
+                    apply_repoint(
+                        jsonl,
+                        &mut document,
+                        &recorded_rel,
+                        &derivative,
+                        &mut report,
+                    )?;
                 }
                 PendingWork::DroppedTooLarge { recorded_rel, size } => {
                     apply_too_large(
                         jsonl,
-                        &mut doc,
+                        &mut document,
                         &recorded_rel,
                         &recorded_rel,
                         size,
@@ -283,7 +295,7 @@ pub fn transcode_staged(
                     )?;
                 }
                 PendingWork::Unrecoverable { recorded_rel } => {
-                    apply_unrecoverable(jsonl, &mut doc, &recorded_rel, issues, &mut report)?;
+                    apply_unrecoverable(jsonl, &mut document, &recorded_rel, issues, &mut report)?;
                 }
             }
             done += 1;
@@ -293,7 +305,7 @@ pub fn transcode_staged(
     Ok(report)
 }
 
-/// `*.jsonl` files directly under `run_dir`, sorted, non-recursive — the
+/// `*.jsonl` files directly under `run_dir`, sorted, non-recursive. The
 /// sink writes them flat (`FormatSink::open_prepared`).
 ///
 /// `pub(crate)`: shared with `staging_summary`, which walks the same list.
@@ -308,12 +320,12 @@ pub(crate) fn conversation_files(run_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Sum of [`pending_in`] over every conversation file — the progress total.
+/// Sum of [`pending_in`] over every conversation file: the progress total.
 fn count_remaining(run_dir: &Path, files: &[PathBuf], mode: MediaMode) -> Result<usize> {
     let mut total = 0usize;
     for jsonl in files {
-        let doc = read_conversation_jsonl(jsonl)?;
-        total += pending_in(run_dir, &doc, mode)?.len();
+        let document = read_conversation_jsonl(jsonl)?;
+        total += pending_in(run_dir, &document, mode)?.len();
     }
     Ok(total)
 }
@@ -323,7 +335,6 @@ impl PendingWork {
     fn recorded_rel(&self) -> &str {
         match self {
             Self::Transcode { recorded_rel, .. }
-            | Self::HealTranscode { recorded_rel, .. }
             | Self::Repoint { recorded_rel, .. }
             | Self::DroppedTooLarge { recorded_rel, .. }
             | Self::Unrecoverable { recorded_rel } => recorded_rel,
@@ -337,14 +348,18 @@ impl PendingWork {
 /// one (in the same document) names the same physical file and therefore
 /// shares the same fate, so [`pending_in`] queues each recorded path once.
 enum PendingWork {
-    /// Transcode `src` — untouched, still at its recorded name — and commit.
-    Transcode { recorded_rel: String, src: PathBuf },
-    /// The recorded name is a crash-heal `-mv` name with nothing on disk;
-    /// `src` is the recovered original.
-    HealTranscode { recorded_rel: String, src: PathBuf },
+    /// Transcode `src` and commit. `src` is untouched, still at its recorded
+    /// name, unless `is_heal` is set.
+    Transcode {
+        recorded_rel: String,
+        src: PathBuf,
+        /// The recorded name is a crash-heal `-mv` name with nothing on
+        /// disk, and `src` is the recovered original.
+        is_heal: bool,
+    },
     /// The recorded path is gone, but its would-be derivative already
-    /// exists — the aliasing case, or the crash window right after the
-    /// shared original's delete. Repoint, no transcode needed.
+    /// exists. That happens in the aliasing case, or in the crash window right
+    /// after the shared original's delete. Repoint, no transcode needed.
     Repoint {
         recorded_rel: String,
         derivative: PathBuf,
@@ -357,21 +372,21 @@ enum PendingWork {
     Unrecoverable { recorded_rel: String },
 }
 
-/// Attachments in `doc` still needing the Media stage, deduplicated by
+/// Attachments in `document` still needing the Media Stage, deduplicated by
 /// recorded path.
 ///
 /// See the module docs for the pending rule, the crash-heal rule, and the
 /// aliasing repoint rule.
 fn pending_in(
     run_dir: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     mode: MediaMode,
 ) -> Result<Vec<PendingWork>> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for msg in &doc.messages {
-        for att in &msg.attachments {
-            let Some(rel) = att.path.as_deref() else {
+    for message in &document.messages {
+        for attachment in &message.attachments {
+            let Some(rel) = attachment.path.as_deref() else {
                 continue;
             };
             if !seen.insert(rel.to_string()) {
@@ -379,18 +394,19 @@ fn pending_in(
                 // the same path in this document.
                 continue;
             }
-            let abs = message_ir::safe_attachment_path(run_dir, rel)?;
+            let abs = ir::safe_attachment_path(run_dir, rel)?;
             let stem = abs.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let committed = stem.ends_with(COMMITTED_SUFFIX);
 
             if abs.is_file() {
-                // A committed derivative (or anything the Media stage does
+                // A committed derivative (or anything the Media Stage does
                 // not touch) is not work; only a fresh, still-original file
                 // is.
                 if !committed && media::derivative_name(&abs, mode).is_some() {
                     out.push(PendingWork::Transcode {
                         recorded_rel: rel.to_string(),
                         src: abs,
+                        is_heal: false,
                     });
                 }
                 continue;
@@ -403,16 +419,17 @@ fn pending_in(
                 // derivative into place.
                 // The original may instead have been dropped for size by
                 // another attachment sharing it, which leaves its note. The
-                // Media stage reaches that state only when a conversation sorted
+                // Media Stage reaches that state only when a conversation sorted
                 // before this one failed to convert the original in the
                 // interrupted run, and its retry on resume came out over the
                 // limit where this attachment's conversion had not (a
                 // derivative whose size varies right at the limit).
                 let orig_stem = &stem[..stem.len() - COMMITTED_SUFFIX.len()];
                 if let Some(found) = find_recoverable_original(run_dir, orig_stem, mode)? {
-                    out.push(PendingWork::HealTranscode {
+                    out.push(PendingWork::Transcode {
                         recorded_rel: rel.to_string(),
                         src: found,
+                        is_heal: true,
                     });
                 } else if let Some(size) = find_too_large_note(run_dir, &abs, mode)? {
                     out.push(PendingWork::DroppedTooLarge {
@@ -429,7 +446,7 @@ fn pending_in(
 
             // Not committed, not on disk: maybe another attachment sharing
             // the same bytes (this document or another) already converted
-            // it and deleted the shared original — or the shared original
+            // it and deleted the shared original. Or the shared original
             // was dropped for good (too_large deletes both the derivative
             // and the original, and leaves a note saying so).
             // The recorded file has no
@@ -437,8 +454,8 @@ fn pending_in(
             // the size floors exist to skip a small *live* file, and are
             // meaningless against a file that is not there. When
             // `derivative_name` returns `None`, the mode converts nothing
-            // for this kind of file at all — its absence has nothing to do
-            // with the Media stage, and it is left alone.
+            // for this kind of file at all. Its absence has nothing to do
+            // with the Media Stage, and it is left alone.
             if let Some(name) = final_derivative_name_for_missing(&abs, mode) {
                 let derivative = run_dir.join("attachments").join(&name);
                 if derivative.is_file() {
@@ -466,7 +483,7 @@ fn pending_in(
 }
 
 /// Find a file under `run_dir/attachments` whose stem is `orig_stem` and
-/// that the Media stage would still touch — the crash-heal search.
+/// that the Media Stage would still touch. This is the crash-heal search.
 fn find_recoverable_original(
     run_dir: &Path,
     orig_stem: &str,
@@ -481,7 +498,7 @@ fn find_recoverable_original(
 }
 
 /// The derivative size recorded in the too-large note of the original that
-/// `committed` — a missing `-mv` name — was converted from, or `None` when
+/// `committed` (a missing `-mv` name) was converted from, or `None` when
 /// `attachments/` holds no such note.
 ///
 /// The note is named `{original_name}.too_large`, and the original's
@@ -530,8 +547,8 @@ fn find_in_attachments<T>(
 
 /// The name a committed derivative of `src` gets: `{original_stem}-mv.{target_ext}`.
 ///
-/// Never the bare name [`media::derivative_name`] returns — see the module
-/// docs for why a same-format compress or a video in either mode makes that
+/// Never the bare name [`media::derivative_name`] returns. The module docs
+/// say why a same-format compress or a video in either mode makes that
 /// name collide with the source, or with an already-committed derivative on
 /// a later resume.
 fn final_derivative_name(src: &Path, mode: MediaMode) -> Option<String> {
@@ -548,7 +565,7 @@ fn final_derivative_name_for_missing(src: &Path, mode: MediaMode) -> Option<Stri
 
 /// Turn a bare `derivative_name`-shaped `forecast` (`"{stem}.{ext}"`) into the
 /// committed `-mv` name, keyed off `src`'s own stem rather than the
-/// forecast's — see the module docs on why the committed name must never
+/// forecast's. The module docs say why the committed name must never
 /// equal the bare forecast.
 fn committed_name_from(src: &Path, forecast: Option<String>) -> Option<String> {
     let forecast = forecast?;
@@ -578,7 +595,7 @@ fn read_too_large_note(original: &Path) -> Option<u64> {
         .ok()
 }
 
-/// `attachments/{file name of path}` — the doc-relative form every patch
+/// `attachments/{file name of path}`: the document-relative form every patch
 /// records.
 fn attachment_rel(path: &Path) -> Result<String> {
     let name = path
@@ -588,27 +605,27 @@ fn attachment_rel(path: &Path) -> Result<String> {
     Ok(format!("attachments/{name}"))
 }
 
-/// Apply `patch` to every attachment across `doc` recorded at `recorded_rel`.
+/// Apply `patch` to every attachment across `document` recorded at `recorded_rel`.
 ///
-/// Content-addressed staging means more than one attachment — in the same
-/// document — can legitimately share a path; every one of them must move
-/// together; see the module docs.
+/// Content-addressed staging means more than one attachment in the same
+/// document can legitimately share a path. Every one of them must move
+/// together, as the module docs explain.
 fn patch_all_matching(
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
-    patch: impl Fn(&mut IrAttachment),
+    patch: impl Fn(&mut Attachment),
 ) {
-    for msg in &mut doc.messages {
-        for att in &mut msg.attachments {
-            if att.path.as_deref() == Some(recorded_rel) {
-                patch(att);
+    for message in &mut document.messages {
+        for attachment in &mut message.attachments {
+            if attachment.path.as_deref() == Some(recorded_rel) {
+                patch(attachment);
             }
         }
     }
 }
 
 /// What a repoint writes into every matching attachment: the target file's
-/// doc-relative path, digest, size, and MIME type, read fresh off disk.
+/// document-relative path, digest, size, and MIME type, read fresh off disk.
 struct DiskAttachmentFields {
     rel: String,
     digest: String,
@@ -620,13 +637,13 @@ struct DiskAttachmentFields {
 ///
 /// Used by [`apply_repoint`] (aiming at an existing derivative) and by both
 /// places a heal has to fall back to the recovered original rather than a
-/// derivative: the Media stage declining the file (`Skipped`), and ffmpeg
-/// failing on it (`Err`). In the heal cases `recorded_rel` — the phantom
-/// `-mv` name a crashed prior run already wrote into the document — must not
+/// derivative: the Media Stage declining the file (`Skipped`), and ffmpeg
+/// failing on it (`Err`). In the heal cases `recorded_rel`, the phantom
+/// `-mv` name a crashed prior run already wrote into the document, must not
 /// be left standing, since nothing will ever exist under it.
 fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
     let rel = attachment_rel(src)?;
-    let digest = media::file_sha256(src)?;
+    let digest = file_io::file_sha256(src)?;
     let size = std::fs::metadata(src)
         .with_context(|| format!("stat {}", src.display()))?
         .len();
@@ -639,31 +656,51 @@ fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
     })
 }
 
-/// Transcode `src` and commit it, in this order: derivative
+/// The one staged file [`apply_transcode`] converts, and where it is recorded.
+struct TranscodeTarget<'a> {
+    /// The run directory whose `attachments/` directory holds `src`.
+    run_dir: &'a Path,
+    /// The conversation file that records the attachment.
+    jsonl: &'a Path,
+    /// The attachment path the conversation file records.
+    recorded_rel: &'a str,
+    /// The original file on disk.
+    src: &'a Path,
+    /// A crash-heal recovery: `recorded_rel` points at a `-mv` name nothing
+    /// produced yet, rather than at `src` itself. That distinction only
+    /// matters when the Media Stage declines the file (the `Skipped` arm of
+    /// [`apply_transcode`]) or fails on it (the `Err` arm). Everywhere else
+    /// a heal behaves exactly like a fresh transcode.
+    is_heal: bool,
+}
+
+/// Transcode `target.src` and commit it, in this order: derivative
 /// written, conversation file patched, derivative renamed into its final
 /// name, original deleted. Reversing any pair leaves the directory lying about
 /// itself.
 ///
-/// `is_heal` marks a crash-heal recovery: `recorded_rel` currently points at
-/// a `-mv` name nothing produced yet, rather than at `src` itself. That
-/// distinction only matters when the Media stage declines the file (see the
-/// `Skipped` arm) — everywhere else a heal behaves exactly like a fresh
-/// transcode.
-#[allow(clippy::too_many_arguments)]
+/// Returns why HEVC failed when the video was compressed as H.264 instead.
+/// Setting `cancel` kills the ffmpeg that runs, and the stage ends as
+/// canceled rather than recording the file as one that failed.
 fn apply_transcode(
-    run_dir: &Path,
-    jsonl: &Path,
-    doc: &mut ConversationDocument,
-    recorded_rel: &str,
-    src: &Path,
-    is_heal: bool,
+    target: &TranscodeTarget<'_>,
+    document: &mut ConversationDocument,
     options: &TranscodeOptions,
-    issues: Option<&IssueSink>,
+    tools: &dyn MediaTools,
+    cancel: &CancelFlag,
+    issues: &IssueSink,
     report: &mut TranscodeReport,
-) -> Result<()> {
+) -> Result<Option<String>> {
+    let &TranscodeTarget {
+        run_dir,
+        jsonl,
+        recorded_rel,
+        src,
+        is_heal,
+    } = target;
     let Some(name) = final_derivative_name(src, options.mode) else {
         report.skipped += 1;
-        return Ok(());
+        return Ok(None);
     };
     let attachments_dir = run_dir.join("attachments");
     let final_path = attachments_dir.join(&name);
@@ -677,71 +714,79 @@ fn apply_transcode(
         recorded_rel.to_string()
     };
 
-    match media::transcode_file(src, &marker, options.mode, &options.compress) {
+    match media::transcode_file(
+        tools,
+        src,
+        &marker,
+        options.mode,
+        &options.compress,
+        Some(cancel.as_ref()),
+    ) {
         Err(err) => {
-            emit_issue(
-                issues,
-                media_issue(
-                    jsonl,
-                    doc,
-                    recorded_rel,
-                    &item_rel,
-                    RunIssueKind::Skip,
-                    &format!("could not be converted, so the original file is kept: {err:#}"),
-                ),
-            );
-            let reason = format!("convert_failed: {err}");
+            // A conversion the cancel killed says nothing about the file.
+            check_cancel(cancel)?;
+            issues.emit(media_issue(
+                jsonl,
+                document,
+                recorded_rel,
+                &item_rel,
+                RunIssueKind::Skip,
+                &format!("could not be converted, so the original file is kept: {err:#}"),
+            ));
+            // Short, with no path: the whole error went into the row above,
+            // and so into the run's log.
+            let reason = missing_reason::convert_failed(&media::why_not_converted(&err, src));
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
                 // run already wrote into the document; nothing will ever
-                // exist under it. Keeping it here — the way a non-heal
-                // failure keeps its path — would strand the document
+                // exist under it. Keeping it here, the way a non-heal
+                // failure keeps its path, would strand the document
                 // pointing at a name that can never exist. Repoint at the
                 // recovered original first, exactly like the `Skipped` heal
                 // arm below, then record the failure on it.
                 let r = disk_attachment_fields(src)?;
-                patch_all_matching(doc, recorded_rel, |att| {
-                    att.path = Some(r.rel.clone());
-                    att.digest_sha256 = Some(r.digest.clone());
-                    att.size_bytes = Some(r.size);
-                    att.mime_type.clone_from(&r.mime);
-                    att.missing_reason = Some(reason.clone());
+                patch_all_matching(document, recorded_rel, |attachment| {
+                    attachment.path = Some(r.rel.clone());
+                    attachment.digest_sha256 = Some(r.digest.clone());
+                    attachment.size_bytes = Some(r.size);
+                    attachment.mime_type.clone_from(&r.mime);
+                    attachment.missing_reason = Some(reason.clone());
                 });
             } else {
                 // The original is untouched on disk. Clearing `path` here
                 // would sever the only reference to bytes that still exist,
                 // turning a transient failure into permanent loss, and
                 // `pending_in` (which skips `path == None`) would never
-                // retry it — so only the reason changes; everything else
+                // retry it. So only the reason changes, and everything else
                 // (path, digest, size, mime) stays exactly as recorded.
-                patch_all_matching(doc, recorded_rel, |att| {
-                    att.missing_reason = Some(reason.clone());
+                patch_all_matching(document, recorded_rel, |attachment| {
+                    attachment.missing_reason = Some(reason.clone());
                 });
             }
-            write_conversation_jsonl_to(jsonl, doc)?;
+            write_conversation_jsonl_to(jsonl, document)?;
             report.failed += 1;
-            Ok(())
+            Ok(None)
         }
         Ok(TranscodeOutcome::Skipped) => {
             if is_heal {
-                // The doc currently points at a phantom `-mv` name that
-                // nothing will ever produce — the Media stage declined this
-                // file. Repoint it back at the recovered original so a
+                // The document currently points at a phantom `-mv` name that
+                // nothing will ever produce, because the Media Stage declined
+                // this file. Repoint it back at the recovered original so a
                 // resume does not chase a name that can never exist.
                 let r = disk_attachment_fields(src)?;
-                patch_all_matching(doc, recorded_rel, |att| {
-                    att.path = Some(r.rel.clone());
-                    att.digest_sha256 = Some(r.digest.clone());
-                    att.size_bytes = Some(r.size);
-                    att.mime_type.clone_from(&r.mime);
-                    att.missing_reason = None;
+                patch_all_matching(document, recorded_rel, |attachment| {
+                    attachment.path = Some(r.rel.clone());
+                    attachment.digest_sha256 = Some(r.digest.clone());
+                    attachment.size_bytes = Some(r.size);
+                    attachment.mime_type.clone_from(&r.mime);
+                    attachment.missing_reason = None;
                 });
-                write_conversation_jsonl_to(jsonl, doc)?;
+                write_conversation_jsonl_to(jsonl, document)?;
             }
             report.skipped += 1;
-            Ok(())
+            Ok(None)
         }
-        Ok(TranscodeOutcome::Produced) => {
+        Ok(TranscodeOutcome::Produced { hevc_failure }) => {
             let produced_len = std::fs::metadata(&marker)
                 .with_context(|| format!("stat {}", marker.display()))?
                 .len();
@@ -758,7 +803,7 @@ fn apply_transcode(
                     .with_context(|| format!("write {}", note.display()))?;
                 apply_too_large(
                     jsonl,
-                    doc,
+                    document,
                     recorded_rel,
                     &item_rel,
                     produced_len,
@@ -767,21 +812,21 @@ fn apply_transcode(
                 )?;
                 let _ = std::fs::remove_file(&marker);
                 let _ = std::fs::remove_file(src);
-                return Ok(());
+                return Ok(hevc_failure);
             }
             // Read the file on disk. A replayed digest can be
             // stale, and the server dedupes assets by sha256.
-            let digest = media::file_sha256(&marker)?;
+            let digest = file_io::file_sha256(&marker)?;
             let rel = attachment_rel(&final_path)?;
             let mime = mime_for_rel(&rel);
-            patch_all_matching(doc, recorded_rel, |att| {
-                att.path = Some(rel.clone());
-                att.digest_sha256 = Some(digest.clone());
-                att.size_bytes = Some(produced_len);
-                att.mime_type.clone_from(&mime);
-                att.missing_reason = None;
+            patch_all_matching(document, recorded_rel, |attachment| {
+                attachment.path = Some(rel.clone());
+                attachment.digest_sha256 = Some(digest.clone());
+                attachment.size_bytes = Some(produced_len);
+                attachment.mime_type.clone_from(&mime);
+                attachment.missing_reason = None;
             });
-            write_conversation_jsonl_to(jsonl, doc)?;
+            write_conversation_jsonl_to(jsonl, document)?;
             // The `-mv` suffix in `final_derivative_name` makes this
             // structurally impossible, but a future naming change must fail
             // loudly here rather than silently destroy the original before
@@ -794,7 +839,7 @@ fn apply_transcode(
             );
             // Synced before the original goes, so a power loss cannot
             // leave an empty derivative and no original.
-            message_ir::rename_into_place(&marker, &final_path)
+            file_io::rename_into_place(&marker, &final_path)
                 .with_context(|| format!("commit {}", final_path.display()))?;
             let _ = std::fs::remove_file(src);
             // A note from an earlier run under a lower limit no longer
@@ -803,52 +848,54 @@ fn apply_transcode(
             report.converted += 1;
             report.bytes_before += original_len;
             report.bytes_after += produced_len;
-            Ok(())
+            Ok(hevc_failure)
         }
     }
 }
 
-/// The attachments in `doc` recorded at `recorded_rel`.
+/// The attachments in `document` recorded at `recorded_rel`.
 fn recorded_at<'a>(
-    doc: &'a ConversationDocument,
+    document: &'a ConversationDocument,
     recorded_rel: &'a str,
-) -> impl Iterator<Item = &'a IrAttachment> + 'a {
-    doc.messages
+) -> impl Iterator<Item = &'a Attachment> + 'a {
+    document
+        .messages
         .iter()
-        .flat_map(|msg| &msg.attachments)
-        .filter(move |att| att.path.as_deref() == Some(recorded_rel))
+        .flat_map(|message| &message.attachments)
+        .filter(move |attachment| attachment.path.as_deref() == Some(recorded_rel))
 }
 
 /// True when an earlier attempt recorded that it could not convert the file at
 /// `recorded_rel`.
-fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
-    recorded_at(doc, recorded_rel).any(|att| {
-        att.missing_reason
+fn had_convert_failure(document: &ConversationDocument, recorded_rel: &str) -> bool {
+    recorded_at(document, recorded_rel).any(|attachment| {
+        attachment
+            .missing_reason
             .as_deref()
-            .is_some_and(|reason| reason.starts_with("convert_failed"))
+            .is_some_and(missing_reason::is_convert_failed)
     })
 }
 
 /// A Media row about the attachment at `recorded_rel`. Its `item` is the
 /// conversation file and the original's staged path `item_rel`, which no
-/// other file in the conversation shares, and which a row the Media stage reports
+/// other file in the conversation shares, and which a row the Media Stage reports
 /// again on a resume has too. Its `reason` opens with the attachment's
 /// original name, when it has one, and goes on with `what`.
 fn media_issue(
     jsonl: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
     kind: RunIssueKind,
     what: &str,
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-    let name = recorded_at(doc, recorded_rel)
-        .find_map(|att| att.original_name.as_deref().and_then(message_ir::trimmed))
+    let name = recorded_at(document, recorded_rel)
+        .find_map(|attachment| attachment.original_name.as_deref().and_then(ir::trimmed))
         .unwrap_or("The attachment");
     RunIssue {
         kind,
-        step: "media".into(),
+        step: RunIssueStep::Media,
         item: format!("{conversation}:{item_rel}"),
         reason: format!("{name} {what}"),
         // Media rows are settled by a `resolved` row, not by their conversation.
@@ -856,75 +903,78 @@ fn media_issue(
     }
 }
 
-/// The row for an attachment the Media stage left out because its converted file is
+/// The row for an attachment the Media Stage left out because its converted file is
 /// `size` bytes, over the server's attachment size limit.
 fn too_large_issue(
     jsonl: &Path,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
     size: u64,
 ) -> RunIssue {
     media_issue(
         jsonl,
-        doc,
+        document,
         recorded_rel,
         item_rel,
         RunIssueKind::Skip,
         &format!(
             "is {size} bytes ({} MiB) after conversion, over the attachment size limit, so it \
              was left out",
-            size / message_ir::MIB
+            size / ir::MIB
         ),
     )
 }
 
 /// Repoint every attachment recorded at `recorded_rel` to `derivative`,
-/// which already exists — no transcode needed. The aliasing case: another
+/// which already exists, so no transcode is needed. The aliasing case: another
 /// attachment already converted and deleted the shared original.
 fn apply_repoint(
     jsonl: &Path,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
     derivative: &Path,
     report: &mut TranscodeReport,
 ) -> Result<()> {
     let r = disk_attachment_fields(derivative)?;
-    patch_all_matching(doc, recorded_rel, |att| {
-        att.path = Some(r.rel.clone());
-        att.digest_sha256 = Some(r.digest.clone());
-        att.size_bytes = Some(r.size);
-        att.mime_type.clone_from(&r.mime);
-        att.missing_reason = None;
+    patch_all_matching(document, recorded_rel, |attachment| {
+        attachment.path = Some(r.rel.clone());
+        attachment.digest_sha256 = Some(r.digest.clone());
+        attachment.size_bytes = Some(r.size);
+        attachment.mime_type.clone_from(&r.mime);
+        attachment.missing_reason = None;
     });
-    write_conversation_jsonl_to(jsonl, doc)?;
+    write_conversation_jsonl_to(jsonl, document)?;
     report.repointed += 1;
     Ok(())
 }
 
 /// Mark every attachment recorded at `recorded_rel` `too_large` with the
 /// derivative size `size`: an earlier attachment sharing the path converted
-/// over the limit and the Media stage dropped the shared original.
+/// over the limit and the Media Stage dropped the shared original.
 fn apply_too_large(
     jsonl: &Path,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
     size: u64,
-    issues: Option<&IssueSink>,
+    issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
-    emit_issue(
-        issues,
-        too_large_issue(jsonl, doc, recorded_rel, item_rel, size),
-    );
-    patch_all_matching(doc, recorded_rel, |att| {
-        att.path = None;
-        att.digest_sha256 = None;
-        att.missing_reason = Some("too_large".to_string());
-        att.size_bytes = Some(size);
+    issues.emit(too_large_issue(
+        jsonl,
+        document,
+        recorded_rel,
+        item_rel,
+        size,
+    ));
+    patch_all_matching(document, recorded_rel, |attachment| {
+        attachment.path = None;
+        attachment.digest_sha256 = None;
+        attachment.missing_reason = Some(missing_reason::TOO_LARGE.to_string());
+        attachment.size_bytes = Some(size);
     });
-    write_conversation_jsonl_to(jsonl, doc)?;
+    write_conversation_jsonl_to(jsonl, document)?;
     report.too_large += 1;
     Ok(())
 }
@@ -934,29 +984,26 @@ fn apply_too_large(
 /// recover.
 fn apply_unrecoverable(
     jsonl: &Path,
-    doc: &mut ConversationDocument,
+    document: &mut ConversationDocument,
     recorded_rel: &str,
-    issues: Option<&IssueSink>,
+    issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
-    emit_issue(
-        issues,
-        media_issue(
-            jsonl,
-            doc,
-            recorded_rel,
-            recorded_rel,
-            RunIssueKind::Skip,
-            "was lost when an earlier Media Stage stopped partway, so it was left out",
-        ),
-    );
-    patch_all_matching(doc, recorded_rel, |att| {
-        att.path = None;
-        att.digest_sha256 = None;
-        att.missing_reason = Some("file_missing".to_string());
-        att.size_bytes = None;
+    issues.emit(media_issue(
+        jsonl,
+        document,
+        recorded_rel,
+        recorded_rel,
+        RunIssueKind::Skip,
+        "was lost when an earlier Media Stage stopped partway, so it was left out",
+    ));
+    patch_all_matching(document, recorded_rel, |attachment| {
+        attachment.path = None;
+        attachment.digest_sha256 = None;
+        attachment.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
+        attachment.size_bytes = None;
     });
-    write_conversation_jsonl_to(jsonl, doc)?;
+    write_conversation_jsonl_to(jsonl, document)?;
     report.missing += 1;
     Ok(())
 }

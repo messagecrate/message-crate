@@ -45,12 +45,10 @@ async fn open(config: &Path) -> OpenDb {
 async fn with_alice(config: &Path) {
     let opened = open(config).await;
     let mut conn = opened.conn().await.unwrap();
-    account_profile::insert_account_at(&mut conn, ALICE, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, ALICE, "alice").await;
 }
 
-async fn count(config: &Path, sql: &str) -> i64 {
+async fn count(config: &Path, sql: &'static str) -> i64 {
     let opened = open(config).await;
     let mut conn = opened.conn().await.unwrap();
     sqlx::query_scalar(sql).fetch_one(&mut *conn).await.unwrap()
@@ -76,12 +74,12 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
     let config = server_config(dir.path());
     open(&config).await.close().await;
 
-    let unclaimed = run(Cli {
-        command: Commands::ResetOwnerPassword(ResetOwnerPasswordArgs {
-            password: "correct horse battery staple".into(),
+    let unclaimed = reset_owner_password_with(
+        ResetOwnerPasswordArgs {
             config: config.clone(),
-        }),
-    })
+        },
+        "correct horse battery staple",
+    )
     .await
     .unwrap_err();
     assert_eq!(
@@ -89,23 +87,23 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
         "this Message Crate has no owner yet; use `create-owner` to claim it"
     );
 
-    run(Cli {
-        command: Commands::CreateOwner(CreateOwnerArgs {
+    create_owner_with(
+        CreateOwnerArgs {
             username: "Owner".into(),
-            password: "correct horse battery staple".into(),
             config: config.clone(),
-        }),
-    })
+        },
+        "correct horse battery staple",
+    )
     .await
     .unwrap();
 
-    let twice = run(Cli {
-        command: Commands::CreateOwner(CreateOwnerArgs {
+    let twice = create_owner_with(
+        CreateOwnerArgs {
             username: "again".into(),
-            password: "correct horse battery staple".into(),
             config: config.clone(),
-        }),
-    })
+        },
+        "correct horse battery staple",
+    )
     .await
     .unwrap_err();
     assert_eq!(
@@ -113,12 +111,12 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
         "this Message Crate already has an owner; use `reset-owner-password` to set a new password for it"
     );
 
-    run(Cli {
-        command: Commands::ResetOwnerPassword(ResetOwnerPasswordArgs {
-            password: "a different long enough password".into(),
+    reset_owner_password_with(
+        ResetOwnerPasswordArgs {
             config: config.clone(),
-        }),
-    })
+        },
+        "a different long enough password",
+    )
     .await
     .unwrap();
 
@@ -182,7 +180,7 @@ async fn import_records_the_conversation_then_dedupe_and_process_assets_run_on_i
 
 #[tokio::test]
 async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names_the_count() {
-    use crate::process_assets::tests::{ACCOUNT, attach_stored_blob, seed_message};
+    use crate::process_assets::tests::{ACCOUNT, attach_stored_original, seed_message};
     use media::testutil::PNG_1X1_RGB;
 
     let dir = tempfile::tempdir().unwrap();
@@ -197,12 +195,20 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "imessage").await;
         let sha = "c".repeat(64);
-        attach_stored_blob(&opened, &mut conn, message_id, &sha, ".png", PNG_1X1_RGB).await;
+        attach_stored_original(
+            &opened,
+            &mut conn,
+            message_id,
+            &sha,
+            "image/png",
+            PNG_1X1_RGB,
+        )
+        .await;
         let original = opened
             .cfg
             .paths
             .assets_dir_for_account(ALICE)
-            .join(format!("cc/{sha}.png"));
+            .join(format!("cc/{sha}"));
         fs::remove_file(original).unwrap();
     }
 
@@ -223,53 +229,6 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
     assert_eq!(
         err.to_string(),
         "1 original whose Preview or Thumbnail could not be made"
-    );
-}
-
-/// An incomplete original that cannot be removed fails `process-assets`
-/// with its own count, not as a Preview or Thumbnail that could not be made,
-/// because nothing was being made (#1849).
-#[cfg(unix)]
-#[tokio::test]
-async fn process_assets_fails_when_an_incomplete_original_was_not_removed_and_names_it() {
-    use crate::process_assets::tests::{ACCOUNT, attach_stored_blob, seed_message, with_read_only};
-
-    let dir = tempfile::tempdir().unwrap();
-    let config = server_config(dir.path());
-    with_alice(&config).await;
-    // The process_assets fixtures seed rows for ACCOUNT, which must be alice.
-    assert_eq!(ACCOUNT, ALICE);
-    let shard = {
-        let opened = open(&config).await;
-        let mut conn = opened.conn().await.unwrap();
-        let message_id = seed_message(&mut conn, "imessage").await;
-        let sha = "c".repeat(64);
-        attach_stored_blob(&opened, &mut conn, message_id, &sha, ".part", b"half").await;
-        opened.cfg.paths.assets_dir_for_account(ALICE).join("cc")
-    };
-
-    let Some(result) = with_read_only(
-        &shard,
-        run(Cli {
-            command: Commands::ProcessAssets(ProcessAssetsArgs {
-                config: config.clone(),
-                force: false,
-                dry_run: false,
-                skip_image: false,
-                skip_video: false,
-                skip_audio: false,
-                db: None,
-            }),
-        }),
-    )
-    .await
-    else {
-        return;
-    };
-
-    assert_eq!(
-        result.unwrap_err().to_string(),
-        "1 incomplete original that could not be removed"
     );
 }
 
@@ -337,6 +296,7 @@ async fn imports_discard_clears_a_stranded_import_run_so_the_next_import_runs() 
                 "replace",
                 Some("message-crate-server"),
             ),
+            crate::test_support::fixed_start_instant(),
         )
         .await
         .unwrap()
@@ -371,7 +331,7 @@ async fn imports_discard_clears_a_stranded_import_run_so_the_next_import_runs() 
             .await
             .unwrap()
     };
-    assert_eq!(status, "cancelled");
+    assert_eq!(status, "canceled");
 
     run(Cli {
         command: Commands::Import(import_args(&config, &input)),
@@ -525,7 +485,7 @@ async fn dump_openapi_writes_the_document_to_the_output_path() {
 
 #[test]
 fn import_counts_print_one_line_for_each_count() {
-    let counts = crate::imports_api::ImportCounts {
+    let counts = crate::imports_api::pipeline::ImportCounts {
         conversations: 2,
         messages: 5,
         mode: ImportMode::Replace,
@@ -541,12 +501,12 @@ fn import_counts_print_one_line_for_each_count() {
          \x20 messages deduped: 0\n\
          \x20 attachment records: 0 (message↔media links in the database)\n\
          \x20 tapbacks:      0\n\
-         \x20 media files stored:  0 (unique blobs under assets/)\n\
+         \x20 media files stored:  0 (Assets new to assets/)\n\
          \x20 media files reused:  0 (same content hash already on disk)\n\
          \x20 media files missing: 0 (attachment path not found on disk)\n"
     );
 
-    let appended = crate::imports_api::ImportCounts {
+    let appended = crate::imports_api::pipeline::ImportCounts {
         mode: ImportMode::Append,
         messages_appended: 4,
         phones_needing_review: 1,
@@ -555,13 +515,11 @@ fn import_counts_print_one_line_for_each_count() {
     let text = format_import_counts(&appended);
     assert!(text.contains("  messages appended: 4\n"), "{text}");
     assert!(
-        text.ends_with(
-            "  phones needing review: 1 (ambiguous numbers — fix them in Message Crate)\n"
-        ),
+        text.ends_with("  phones needing review: 1 (ambiguous numbers to fix in Message Crate)\n"),
         "{text}"
     );
 
-    let incomplete = crate::imports_api::ImportCounts {
+    let incomplete = crate::imports_api::pipeline::ImportCounts {
         other_identities: 2,
         ..Default::default()
     };
@@ -704,4 +662,30 @@ fn serve_refuses_a_config_file_together_with_a_data_dir() {
         "d",
     ];
     assert!(Cli::try_parse_from(argv).is_err());
+}
+
+/// #2094: a password given as an argument is visible to every local user
+/// through `ps` while the command runs, so neither owner command takes one.
+#[test]
+fn the_owner_commands_take_no_password_argument() {
+    for args in [
+        &[
+            "create-owner",
+            "--username",
+            "owner",
+            "--password",
+            "secret",
+        ][..],
+        &["reset-owner-password", "--password", "secret"][..],
+    ] {
+        let err = Cli::try_parse_from(
+            std::iter::once("message-crate-server").chain(args.iter().copied()),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::UnknownArgument,
+            "{args:?}"
+        );
+    }
 }

@@ -1,4 +1,4 @@
-//! Cancelling an Apple Messages run while `imessage-reader` is running.
+//! Canceling an Apple Messages run while `imessage-reader` is running.
 //!
 //! The test sits in a test binary of its own because it finds the reader
 //! among this process's children: in `helper_process.rs` other tests start
@@ -9,6 +9,7 @@
 
 mod common;
 
+use message_crate_core::{LogSink, ProgressSink};
 use std::{
     path::Path,
     process::Command,
@@ -22,9 +23,8 @@ use std::{
 
 use chat_db_fixture::write_chat_db;
 use common::{config, helper_binary};
-use message_crate_core::{ExporterConfig, LogSink, ProgressSink};
 
-/// How long a cancelled run may take to return. The fixture exports in well
+/// How long a canceled run may take to return. The fixture exports in well
 /// under a second, so a run still going after this is stuck.
 const RUN_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -50,12 +50,12 @@ fn readers_started_by_this_process() -> Vec<u32> {
         .collect()
 }
 
-/// The run is cancelled once the reader has sent its first log line or
+/// The run is canceled once the reader has sent its first log line or
 /// progress count, so the reader is running when cancel is set. The run must
-/// return `cancelled`, and the reader must be gone: killed and waited for by
+/// return `canceled`, and the reader must be gone: killed and waited for by
 /// the exporter, not left running with the Messages database open.
 #[test]
-fn a_cancelled_run_stops_and_kills_the_reader() {
+fn a_canceled_run_stops_and_kills_the_reader() {
     helper_binary();
     let dir = tempfile::tempdir().unwrap();
     let db_path = write_chat_db(dir.path());
@@ -77,22 +77,19 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
     };
     let on_log = cancel_on_first_event.clone();
     let on_progress = cancel_on_first_event;
-    let config = ExporterConfig {
-        log: Some(LogSink::new(move |_| on_log())),
-        progress: Some(ProgressSink::unpaced(move |_| on_progress())),
-        issues: None,
-        ..config(&db_path, &output, Some(Arc::clone(&cancel)))
-    };
+    let mut config = config(&db_path, &output, Arc::clone(&cancel));
+    config.context.log = LogSink::new(move |_| on_log());
+    config.context.progress = ProgressSink::unpaced(move |_| on_progress());
 
     // The run goes on its own thread so a run that never returns fails the
     // test instead of hanging it.
     let (done, result) = mpsc::channel();
     std::thread::spawn(move || {
-        let _ = done.send(imessage_ir_exporter::run(&config).map(|_| ()));
+        let _ = done.send(config.run(imessage_ir_exporter::run).map(|_| ()));
     });
     let result = result
         .recv_timeout(RUN_TIMEOUT)
-        .unwrap_or_else(|_| panic!("the cancelled run had not returned after {RUN_TIMEOUT:?}"));
+        .unwrap_or_else(|_| panic!("the canceled run had not returned after {RUN_TIMEOUT:?}"));
 
     let running_at_cancel = seen
         .lock()
@@ -104,8 +101,8 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
         1,
         "one reader was running when cancel was set: {running_at_cancel:?}"
     );
-    let err = result.expect_err("the run was cancelled");
-    assert_eq!(err.to_string(), "cancelled");
+    let err = result.expect_err("the run was canceled");
+    assert_eq!(err.to_string(), "canceled");
     assert!(
         readers_started_by_this_process().is_empty(),
         "the reader {running_at_cancel:?} is still running, or exited and was never waited for"
@@ -113,7 +110,7 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
     assert!(no_jsonl_under(&output));
 }
 
-/// Whether `dir` holds no `.jsonl` file: a cancelled run writes no export.
+/// Whether `dir` holds no `.jsonl` file: a canceled run writes no export.
 fn no_jsonl_under(dir: &Path) -> bool {
     std::fs::read_dir(dir).map_or(true, |entries| {
         entries

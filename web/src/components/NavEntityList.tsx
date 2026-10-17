@@ -1,8 +1,10 @@
 import { type ReactNode, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { slugFromPath, slugPath } from "../lib/contactGroups";
-import { type NameCollection, useNameCollectionActions } from "../lib/nameCollection";
+import { useNameCollectionActions } from "../hooks/useNameCollectionActions";
+import { errorLine } from "../lib/apiErrorMessage";
+import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
+import type { NameCollection } from "../lib/nameCollection";
+import type { NavEntityCopy } from "../lib/namedSetCopy";
 import ConfirmDialog from "./ConfirmDialog";
 import GroupNameDialog from "./GroupNameDialog";
 import { EllipsisIcon } from "./icons";
@@ -11,6 +13,8 @@ import NavGlyphButton from "./NavGlyphButton";
 import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navCurrent,
+  navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
 import PlainButton from "./PlainButton";
@@ -21,40 +25,6 @@ import PopupMenu from "./PopupMenu";
  * tags. Both were 248-line components differing only in vocabulary, down to a
  * byte-identical copy of `apiErrorMessage`.
  */
-export type NavEntityCopy = {
-  /** Section id used for the collapse state. */
-  id: string;
-  /** Section heading, e.g. "Contact Groups". */
-  title: string;
-  /** Route prefix for one entity, e.g. "/group". */
-  routeBase: string;
-  /** Route for the "none of these" page, e.g. "/no-group". */
-  emptyRoute: string;
-  /**
-   * A permanent row rendered above the list, for a collection the server
-   * computes rather than the person curating. It cannot be renamed or
-   * deleted, so it carries no options menu.
-   */
-  permanentRoute?: string;
-  /** Label of the permanent row, e.g. "Unknown". */
-  permanentLabel?: string;
-  /** Label of the "none of these" row, e.g. "No group". */
-  emptyLabel: string;
-  /** Where a delete sends the user when they were on the deleted page. */
-  fallbackRoute: string;
-  addLabel: string;
-  createTitle: string;
-  renameTitle: string;
-  namePlaceholder: string;
-  /** Menu button label, completed with the entity name. */
-  optionsLabel: (name: string) => string;
-  /** What the delete confirmation says is removed and what is kept. */
-  deleteBody: (name: string) => string;
-  createError: string;
-  renameError: string;
-  deleteError: string;
-};
-
 export default function NavEntityList({
   names,
   collection,
@@ -81,6 +51,11 @@ export default function NavEntityList({
   // The slug of the set whose page is open, decoded, so a name with spaces
   // or other escaped characters compares as itself.
   const openSlug = slugFromPath(location.pathname, copy.routeBase);
+  // The set whose page is open, found the way the page finds it, so a slug
+  // in another case still marks its row.
+  const openName = openSlug === null ? null : groupFromSlug(openSlug, names);
+  const permanentOpen = location.pathname === copy.permanentRoute;
+  const emptyOpen = location.pathname === copy.emptyRoute;
 
   const create = async (name: string) => {
     if (collection.isReserved(name)) {
@@ -93,7 +68,7 @@ export default function NavEntityList({
       setCreateOpen(false);
       navigate(slugPath(copy.routeBase, slug(created)));
     } catch (err) {
-      setError(apiErrorMessage(err, copy.createError));
+      setError(errorLine(err, copy.createError));
     }
   };
 
@@ -106,11 +81,11 @@ export default function NavEntityList({
     try {
       const next = await actions.rename(from, to);
       setRenameFor(null);
-      if (openSlug === slug(from)) {
+      if (openName === from) {
         navigate(slugPath(copy.routeBase, slug(next)));
       }
     } catch (err) {
-      setError(apiErrorMessage(err, copy.renameError));
+      setError(errorLine(err, copy.renameError));
     }
   };
 
@@ -119,11 +94,11 @@ export default function NavEntityList({
     try {
       await actions.remove(name);
       setDeleteFor(null);
-      if (openSlug === slug(name)) {
+      if (openName === name) {
         navigate(copy.fallbackRoute);
       }
     } catch (err) {
-      setError(apiErrorMessage(err, copy.deleteError));
+      setError(errorLine(err, copy.deleteError));
     }
   };
 
@@ -142,7 +117,8 @@ export default function NavEntityList({
         {copy.permanentRoute && copy.permanentLabel ? (
           <PlainButton
             onPress={() => navigate(copy.permanentRoute as string)}
-            className={`${navGlyphRowClass(location.pathname === copy.permanentRoute)} cursor-pointer`}
+            className={navGlyphButtonRowClass(permanentOpen)}
+            aria-current={navCurrent(permanentOpen)}
           >
             <span className={NAV_NESTED_ROW_CLASS}>
               <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>
@@ -152,13 +128,14 @@ export default function NavEntityList({
         ) : null}
         {names.map((name) => {
           const href = slugPath(copy.routeBase, slug(name));
-          const active = openSlug === slug(name);
+          const active = name === openName;
           return (
             <div key={name} className="relative w-full">
               <div className={navGlyphRowClass(active)}>
                 <PlainButton
                   onPress={() => navigate(href)}
                   className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
+                  aria-current={navCurrent(active)}
                 >
                   <span className={NAV_LEADING_GLYPH_CLASS}>{icon}</span>
                   <span className="min-w-0 truncate">{name}</span>
@@ -172,7 +149,7 @@ export default function NavEntityList({
                         active ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                       }
                     >
-                      <EllipsisIcon size={15} />
+                      <EllipsisIcon size={15} className="shrink-0" />
                     </NavGlyphButton>
                   }
                   label={copy.optionsLabel(name)}
@@ -203,7 +180,8 @@ export default function NavEntityList({
 
         <PlainButton
           onPress={() => navigate(copy.emptyRoute)}
-          className={`${navGlyphRowClass(location.pathname === copy.emptyRoute)} cursor-pointer`}
+          className={navGlyphButtonRowClass(emptyOpen)}
+          aria-current={navCurrent(emptyOpen)}
         >
           <span className={NAV_NESTED_ROW_CLASS}>
             <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>

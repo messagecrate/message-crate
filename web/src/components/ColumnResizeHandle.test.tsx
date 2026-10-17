@@ -93,7 +93,7 @@ describe("ColumnResizeHandle", () => {
   });
 
   /**
-   * The accent line is the grip's ::after, which the stylesheet colours only
+   * The accent line is the grip's ::after, which the stylesheet colors only
    * while `data-active` is set. Without the attribute the line never shows.
    */
   it.each([

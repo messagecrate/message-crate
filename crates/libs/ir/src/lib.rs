@@ -1,26 +1,27 @@
 //! Shared conversation structure every exporter writes.
 //!
-//! A [`ConversationDocument`] is the in-memory form of one chat: export
-//! metadata, participants, and messages. Backup converters parse vendor
-//! formats into this type. Writing files (JSON, CSV, EML, and so on) lives
-//! in `message-ir-format`. The atomic, synced write those files go through
-//! ([`write_atomic`]) lives here, so attachment staging, media conversion and
-//! the journal use the same one. Converting an existing export directory lives in
-//! `message-reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
+//! A [`ConversationDocument`] is the in-memory form of one conversation:
+//! export metadata, participants, and messages. Backup converters parse
+//! vendor formats into this type. Writing files (JSON, CSV, EML, and so on)
+//! lives in `ir-format`. The atomic, synced write those files go
+//! through lives in `file-io`. Converting an existing export
+//! directory lives in `reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 //!
 //! Converters stage parsed rows in [`PendingMessage`] and
 //! [`PendingConversation`] (with per-converter metadata in their `extra`
 //! maps) before building a [`ConversationDocument`].
+//!
+//! Types are named for what they are, with no prefix: the crate path tells
+//! `ir::Message` from `api_types::Message`, and a file
+//! that needs both imports one of them with `as`.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use serde_json::{Map, Value};
 
 mod attachment_path;
 mod conversation_key;
-mod durable;
 mod identity;
+pub mod missing_reason;
 mod projection;
 mod schema_version;
 #[cfg(feature = "testutil")]
@@ -30,19 +31,21 @@ pub use attachment_path::{UNSAFE_ATTACHMENT_PATH, UnsafeAttachmentPath, safe_att
 pub use conversation_key::{
     ConversationKey, GROUP_CHAT_ID_PREFIX, NAME_CHAT_ID_PREFIX, NAMELESS_CHAT_ID, name_of_chat_id,
 };
-pub use durable::{rename_into_place, write_atomic, write_atomic_via};
 pub use identity::{
-    MessageCopy, MessageGuid, MessageIdentity, TimePrecision, collapse_whitespace,
-    one_copy_per_message,
+    MessageCopy, MessageGuid, MessageIdentity, collapse_whitespace, one_copy_per_message,
 };
 pub use projection::{
-    PendingReply, ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit,
-    default_participants, display_names_for_handles, ensure_conversation, message_time,
-    pending_to_document, prepare_conversation,
+    PendingReply, ProjectedRole, Projection, ProjectionHooks, ProjectionTally, SortKeyUnit,
+    default_message_kind, default_participants, display_names_for_handles, ensure_conversation,
+    message_time, prepare_conversation, project_pending,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
 };
+
+/// Kind of a participant identity. Defined in `phone`, which classifies an
+/// address, so that crate does not depend on the conversation model.
+pub use phone::IdentityType;
 
 /// One reaction on a message, the same shape for every source.
 ///
@@ -52,13 +55,15 @@ pub use schema_version::{
 /// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 pub use imessage_reader_protocol::Reaction;
 
-/// The storage id of [`IrConversationType::Orphaned`], what every chat id of
-/// an orphaned conversation starts with, and that chat id. Defined in
+/// The storage ids of [`ConversationType::OneToOne`] and
+/// [`ConversationType::Orphaned`], what every chat id of an orphaned
+/// conversation starts with, and that chat id. Defined in
 /// `imessage-reader-protocol` beside [`Reaction`], for the same reason: the
-/// Apple Messages Reader writes orphaned conversations in the shape the
-/// conversation file carries.
+/// Apple Messages Reader writes conversations in the shape the conversation
+/// file carries.
 pub use imessage_reader_protocol::{
-    ORPHANED_CHAT_ID_PREFIX, ORPHANED_CONVERSATION_TYPE, orphaned_chat_id,
+    ONE_TO_ONE_CONVERSATION_TYPE, ORPHANED_CHAT_ID_PREFIX, ORPHANED_CONVERSATION_TYPE,
+    orphaned_chat_id,
 };
 
 /// Why a message's content is gone in the app it came from: Deleted in the
@@ -69,9 +74,19 @@ pub use imessage_reader_protocol::{
 /// file carries.
 pub use imessage_reader_protocol::Deletion;
 
-/// One earlier version of one part of an edited message: its part, its text,
-/// and when it was written. A message's `text` is its final version, so
-/// [`IrMessage::edits`] holds only the versions before it.
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file, `seconds` or `milliseconds`.
+///
+/// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
+/// reason: the Apple Messages Reader sends each message's precision in the
+/// shape the conversation file carries
+/// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
+pub use imessage_reader_protocol::TimePrecision;
+
+/// One earlier version of one part of an edited message: its part, its text
+/// when the source kept it, and when it was written. A message's `text` is
+/// its final version, so [`Message::edits`] holds only the versions before
+/// it.
 ///
 /// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
 /// reason: the Apple Messages Reader writes it in the shape the conversation
@@ -138,9 +153,21 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 13;
+///
+/// Version 15 adds the country an identity was read in (`country`, and
+/// the sender's); version 14 had none. Version 16 names a one-to-one
+/// conversation `one-to-one` in
+/// [`ConversationMeta::conversation_type`], where version 15 said
+/// `individual`. Version 17 dates each message by the backup it came from
+/// ([`Message::backup_taken_at_unix_ms`]) and says when the file was written
+/// ([`ExportMeta::exported_at_unix_ms`]), where version 16 gave the whole
+/// file one backup date. Version 18 carries a message's sender as one
+/// [`Message::sender`] object, where version 17 wrote `sender_identity`,
+/// `sender_display_name` and `sender_country` beside each other.
+pub const SCHEMA_VERSION: u32 = 18;
 
-/// One exported chat: export metadata, conversation roster and stats, and messages.
+/// One exported conversation: export metadata, conversation roster and
+/// stats, and messages.
 ///
 /// This is the common-message schema every exporter writes and every reader
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
@@ -150,10 +177,10 @@ pub struct ConversationDocument {
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
-    /// Roster and computed stats for this chat.
+    /// Roster and computed stats for this conversation.
     pub conversation: ConversationMeta,
     /// Messages in timestamp order.
-    pub messages: Vec<IrMessage>,
+    pub messages: Vec<Message>,
     /// On-disk stem suffix (e.g. `__whatsapp`). Never written into JSON or JSON Lines files.
     #[serde(skip)]
     pub packaging_stem_suffix: Option<String>,
@@ -172,22 +199,29 @@ pub struct ExportMeta {
     pub owner_identity: Option<String>,
     /// Outgoing display name. Set when known (iMessage caller-id or `"Me"`).
     pub owner_display_name: Option<String>,
-    /// When the backup this file was read from was made, in Unix
-    /// milliseconds: an iPhone backup's `Manifest.plist` date, an SMS Backup
-    /// & Restore file's `backup_date`, or the backup file's modification
-    /// time where the source records nothing better. `None` when nothing
-    /// says. Between two copies of one message from one source, the import
-    /// lets the copy from the later backup decide its deletion mark and text.
-    pub backup_taken_at_unix_ms: Option<i64>,
+    /// The Export Date: when the run that wrote this file wrote it, in Unix
+    /// milliseconds, as its caller gave the instant. Carried for whoever
+    /// opens the file; it decides nothing on import, and the server does not
+    /// store it. `None` when the file was read from a format that does not
+    /// say.
+    pub exported_at_unix_ms: Option<i64>,
 }
 
 /// The shape of a conversation: one-to-one, group, or orphaned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IrConversationType {
-    /// One-on-one chat with a single peer.
-    Individual,
-    /// Chat with multiple peers.
+pub enum ConversationType {
+    /// A one-to-one conversation: one with a single other person that the
+    /// source does not mark as a group. Serialized `one-to-one`.
+    #[serde(rename = "one-to-one")]
+    OneToOne,
+    /// A group conversation. Where the source marks its groups (a WhatsApp
+    /// `@g.us` id, Apple's chat style), the mark decides, whatever the number
+    /// of other people in it. Where the source has no mark, two or more
+    /// people other than the account holder make a group: an SMS or MMS
+    /// backup counts the addresses a message names, and an iMazing or
+    /// OpenExtract export counts who wrote, not who was in the group. iMazing
+    /// also takes a Messages session named as a roster ("A & B") as a group.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
     /// conversation they were said in. The ones that name one person, sent
@@ -197,74 +231,39 @@ pub enum IrConversationType {
     Orphaned,
 }
 
-impl IrConversationType {
-    /// Lowercase storage id (`individual` / `group` / `orphaned`).
+impl ConversationType {
+    /// Lowercase storage id (`one-to-one` / `group` / `orphaned`).
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Individual => "individual",
+            Self::OneToOne => ONE_TO_ONE_CONVERSATION_TYPE,
             Self::Group => "group",
             Self::Orphaned => ORPHANED_CONVERSATION_TYPE,
         }
     }
 
     /// Parse a storage id, ignoring case; anything but `group` or `orphaned`
-    /// is `Individual`.
+    /// is `OneToOne`.
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "group" => Self::Group,
             ORPHANED_CONVERSATION_TYPE => Self::Orphaned,
-            _ => Self::Individual,
+            _ => Self::OneToOne,
         }
     }
 }
 
-/// Kind of a participant identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum IdentityType {
-    /// Telephone number.
-    Phone,
-    /// Email address.
-    Email,
-    /// App username (e.g. Telegram `@user`).
-    Username,
-    /// Any identity that is not phone, email, or username.
-    Other,
-}
-
-impl IdentityType {
-    /// Lowercase storage id (`phone` / `email` / `username` / `other`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Phone => "phone",
-            Self::Email => "email",
-            Self::Username => "username",
-            Self::Other => "other",
-        }
-    }
-
-    /// Parse a storage id; unknown values map to `Other`.
-    pub fn parse(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "phone" => Self::Phone,
-            "email" => Self::Email,
-            "username" => Self::Username,
-            _ => Self::Other,
-        }
-    }
-}
-
-/// Roster and computed stats for one chat.
+/// Roster and computed stats for one conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMeta {
     /// Stable chat id from the source (E.164, group key, or app thread id).
     pub chat_identifier: String,
-    /// Individual or group.
-    pub conversation_type: IrConversationType,
-    /// Group display title; `None` for individuals and untitled groups.
+    /// One-to-one, group, or orphaned.
+    pub conversation_type: ConversationType,
+    /// Group display title; `None` for one-to-one conversations and untitled
+    /// groups.
     pub group_title: Option<String>,
     /// Roster of identities and display names.
-    pub participants: Vec<IrParticipant>,
+    pub participants: Vec<Participant>,
     /// Computed counts and first/last timestamps.
     pub stats: ConversationStats,
 }
@@ -273,37 +272,45 @@ pub struct ConversationMeta {
 /// computed from `messages` at write time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ConversationStats {
-    /// Number of messages in the chat.
+    /// Number of messages in the conversation.
     pub message_count: u64,
     /// Total attachments across all messages.
     pub attachment_count: u64,
-    /// Earliest message timestamp; `None` when the chat has no messages.
+    /// Earliest message timestamp. `None` when the conversation has no messages.
     pub first_timestamp_unix_ms: Option<i64>,
-    /// Latest message timestamp; `None` when the chat has no messages.
+    /// Latest message timestamp. `None` when the conversation has no messages.
     pub last_timestamp_unix_ms: Option<i64>,
 }
 
-/// One chat member: an identity, a display name, or both.
+/// One conversation member: an identity, a display name, or both.
 ///
 /// `identity` is `None` when the source named a person without recording any
-/// address for them — the rescue exporters (iMazing, OpenExtract, SMS
+/// address for them. The rescue exporters (iMazing, OpenExtract, SMS
 /// Backup+) read formats that identify the other party by name alone. Such a
 /// participant always carries a `display_name`; the server reconciles it
 /// against contacts on import rather than the exporter inventing an address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrParticipant {
+pub struct Participant {
     /// Phone, email, or username string; `None` when the source recorded no
     /// address for this person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
     /// Display name shown in UIs; `None` when the source has none.
     pub display_name: Option<String>,
+    /// The country the source read this identity in, as an upper-case ISO
+    /// 3166-1 alpha-2 code (`GB`): a phone number written without its `+`
+    /// code is a number in this country. `None`, and left out of the file,
+    /// when the source names none; Apple Messages names one from `chat.db`'s
+    /// `handle.country`, and no other source does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 
-/// Transport a message arrived on.
+/// The transport a message took: SMS, MMS (recorded as `sms`), RCS, iMessage,
+/// or another service's own. Written to the file under the key `service`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IrService {
+pub enum Transport {
     /// SMS text.
     Sms,
     /// Apple iMessage (serialized as `imessage`).
@@ -321,11 +328,11 @@ pub enum IrService {
     Telegram,
     /// Slack.
     Slack,
-    /// Unrecognized or unset service.
+    /// Unrecognized or unset transport.
     Unknown,
 }
 
-impl IrService {
+impl Transport {
     /// Lowercase storage id (`sms` / `imessage` / `whatsapp` / …).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -359,7 +366,7 @@ impl IrService {
 
 /// Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS).
 ///
-/// UI labels: `Phone` → "Text message", `Whatsapp` → "WhatsApp".
+/// [`Self::label`] gives the name the app shows for each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentityService {
@@ -378,6 +385,14 @@ impl IdentityService {
         }
     }
 
+    /// The service's name as the app shows it: "Text Message" or "WhatsApp".
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Phone => "Text Message",
+            Self::Whatsapp => "WhatsApp",
+        }
+    }
+
     /// Parse storage ids and common aliases from documents, UI, and import.
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
@@ -389,28 +404,48 @@ impl IdentityService {
         }
     }
 
-    /// The type an address of shape `kind` takes on this service. WhatsApp
-    /// carries no email address, so an `@` address on WhatsApp, such as
-    /// `123456@lid`, is `Other`. Every other shape keeps its type (#1671).
-    pub fn type_on(self, kind: IdentityType) -> IdentityType {
+    /// Whether this service carries identities of type `kind`. Text Message
+    /// carries phone numbers and email addresses, because iMessage reaches an
+    /// email address. WhatsApp carries phone numbers and its own ids
+    /// (`…@lid`, `…@g.us`), which are `Other`. Every service carries `Other`,
+    /// the type of a name that is neither a number nor an address, such as
+    /// the sender `AMAZON`. No service carries a username.
+    ///
+    /// Every pair is listed, so a new service or type does not compile until
+    /// someone decides whether it is carried.
+    pub fn carries(self, kind: IdentityType) -> bool {
         match (self, kind) {
-            (Self::Whatsapp, IdentityType::Email) => IdentityType::Other,
-            (_, kind) => kind,
+            (Self::Phone, IdentityType::Phone | IdentityType::Email | IdentityType::Other)
+            | (Self::Whatsapp, IdentityType::Phone | IdentityType::Other) => true,
+            (Self::Phone, IdentityType::Username)
+            | (Self::Whatsapp, IdentityType::Email | IdentityType::Username) => false,
+        }
+    }
+
+    /// The type an address of shape `kind` takes on this service: the shape's
+    /// type when the service carries it ([`Self::carries`]), and `Other`
+    /// otherwise. WhatsApp carries no email address, so an `@` address on
+    /// WhatsApp, such as `123456@lid`, is `Other` (#1671).
+    pub fn type_on(self, kind: IdentityType) -> IdentityType {
+        if self.carries(kind) {
+            kind
+        } else {
+            IdentityType::Other
         }
     }
 
     /// Map a per-message transport onto a handle platform bucket.
-    pub fn from_ir_service(service: IrService) -> Self {
-        match service {
-            IrService::Whatsapp => Self::Whatsapp,
-            IrService::Sms
-            | IrService::IMessage
-            | IrService::Rcs
-            | IrService::Discord
-            | IrService::Signal
-            | IrService::Telegram
-            | IrService::Slack
-            | IrService::Unknown => Self::Phone,
+    pub fn from_transport(transport: Transport) -> Self {
+        match transport {
+            Transport::Whatsapp => Self::Whatsapp,
+            Transport::Sms
+            | Transport::IMessage
+            | Transport::Rcs
+            | Transport::Discord
+            | Transport::Signal
+            | Transport::Telegram
+            | Transport::Slack
+            | Transport::Unknown => Self::Phone,
         }
     }
 }
@@ -418,7 +453,7 @@ impl IdentityService {
 /// Shape of one message row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum IrMessageKind {
+pub enum MessageKind {
     /// Plain SMS text.
     Sms,
     /// Multimedia message.
@@ -440,7 +475,7 @@ pub enum IrMessageKind {
     Unknown,
 }
 
-impl IrMessageKind {
+impl MessageKind {
     /// Lowercase storage id (`sms` / `mms` / `imessage` / `tapback` / …).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -472,9 +507,40 @@ impl IrMessageKind {
     }
 }
 
+/// The person who sent a message. Every fact about a sender travels in this
+/// one value, so a new fact is added here and nowhere else in the file.
+/// Each fact is optional: a source can name a sender by address alone, by
+/// name alone, or not at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sender {
+    /// The sender's address: a phone number, an email address, or the
+    /// source's own handle. The owner's identity for an outgoing message.
+    pub identity: Option<String>,
+    /// The sender's display name.
+    pub display_name: Option<String>,
+    /// The country the source read [`Self::identity`] in, as
+    /// [`Participant::country`] says. `None`, and left out of the file,
+    /// when the source names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+}
+
+impl Sender {
+    /// The sender a source names by identity and display name, with no
+    /// country. An empty identity or name is none.
+    pub fn new(identity: Option<String>, display_name: Option<String>) -> Self {
+        let given = |value: Option<String>| value.filter(|value| !value.is_empty());
+        Self {
+            identity: given(identity),
+            display_name: given(display_name),
+            country: None,
+        }
+    }
+}
+
 /// One message in a conversation: sender, body text, and attachments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrMessage {
+pub struct Message {
     /// Stable message id: Apple's own for Apple Messages, otherwise a
     /// [`MessageGuid`] made from the message's identity.
     pub guid: String,
@@ -487,15 +553,13 @@ pub struct IrMessage {
     /// when its source also holds it with milliseconds in the same second.
     pub time_precision: TimePrecision,
     /// Incoming or outgoing.
-    pub direction: IrDirection,
+    pub direction: Direction,
     /// Transport the message arrived on.
-    pub service: IrService,
+    pub service: Transport,
     /// Row shape.
-    pub message_kind: IrMessageKind,
-    /// Identity of the actual sender (the owner's identity for outgoing).
-    pub sender_identity: Option<String>,
-    /// Display name of the actual sender.
-    pub sender_display_name: Option<String>,
+    pub message_kind: MessageKind,
+    /// Who sent the message: the owner for an outgoing one.
+    pub sender: Sender,
     /// The owner's own address on this message: the one it was sent from
     /// (outgoing) or received at (incoming). `None` when the source knows
     /// only one owner address, which is then `export.owner_identity`.
@@ -506,7 +570,7 @@ pub struct IrMessage {
     /// Plain-text body; never includes attachment data.
     pub text: String,
     /// Attachment metadata in order; bytes live on disk or in `bytes`.
-    pub attachments: Vec<IrAttachment>,
+    pub attachments: Vec<Attachment>,
     /// The reactions that stand on this message, each naming the person who
     /// reacted. Removed reactions are already left out. Empty, and left out
     /// of the file, when the message has none or the source records none.
@@ -528,22 +592,33 @@ pub struct IrMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<ReplyTo>,
     /// Apple extensions; `None` for non-iMessage messages.
-    pub imessage: Option<IrImessage>,
+    pub imessage: Option<ImessageExtensions>,
     /// Vendor leftovers (Android type code and raw fields).
-    pub source: Option<IrSource>,
+    pub source: Option<VendorFields>,
+    /// The Backup Date: when the backup this message was read from was
+    /// made, in Unix milliseconds. An iPhone backup's `Manifest.plist` date,
+    /// an SMS Backup & Restore file's `backup_date`, or the backup file's
+    /// modification time where the source records nothing better; a file
+    /// an Export Run wrote carries each message's stored date, so one file
+    /// can hold messages from several backups. `None`, and left out of the
+    /// file, when nothing says. Between two copies of one message from one
+    /// source, the import lets the copy from the later backup decide its
+    /// deletion mark and text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_taken_at_unix_ms: Option<i64>,
 }
 
 /// Whether the owner sent or received the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IrDirection {
+pub enum Direction {
     /// Received from a peer.
     Incoming,
     /// Sent by the owner.
     Outgoing,
 }
 
-impl IrMessage {
+impl Message {
     /// Whether this is an SMS or an MMS, from any source, iMessage's SMS
     /// fallback included. An MMS carries the `Sms` service with the `Mms`
     /// kind. A message whose service is unknown (a Mac `chat.db` row with no
@@ -553,16 +628,16 @@ impl IrMessage {
     /// exports hold these and leave every other message out.
     pub fn is_sms_or_mms(&self) -> bool {
         match self.service {
-            IrService::Sms => true,
-            IrService::Unknown => {
-                matches!(self.message_kind, IrMessageKind::Sms | IrMessageKind::Mms)
+            Transport::Sms => true,
+            Transport::Unknown => {
+                matches!(self.message_kind, MessageKind::Sms | MessageKind::Mms)
             }
             _ => false,
         }
     }
 }
 
-impl IrDirection {
+impl Direction {
     /// Lowercase storage id (`incoming` / `outgoing`).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -585,16 +660,16 @@ pub struct AttachmentMeta {
     /// 64-hex SHA-256 of the file contents (content addressing).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest_sha256: Option<String>,
-    /// Stored file length in bytes, as [`IrAttachment::size_bytes`].
+    /// Stored file length in bytes, as [`Attachment::size_bytes`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
-    /// Why the file is not there, as [`IrAttachment::missing_reason`].
+    /// Why the file is not there, as [`Attachment::missing_reason`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_reason: Option<String>,
 }
 
-impl From<&IrAttachment> for AttachmentMeta {
-    fn from(a: &IrAttachment) -> Self {
+impl From<&Attachment> for AttachmentMeta {
+    fn from(a: &Attachment) -> Self {
         Self {
             path: a.path.clone(),
             original_name: a.original_name.clone(),
@@ -612,7 +687,7 @@ impl From<&IrAttachment> for AttachmentMeta {
 /// and the bytes live in a sidecar file under `attachments/` (or in `bytes`
 /// for in-memory EML/MBOX/XML embedding).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrAttachment {
+pub struct Attachment {
     /// Relative path under `attachments/` to the staged file.
     pub path: Option<String>,
     /// Filename the sender's device had for the file.
@@ -632,8 +707,9 @@ pub struct IrAttachment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
     /// None when the attachment was imported; set only when bytes were
-    /// skipped, to one of a closed set: `file_missing`, `too_large`,
-    /// `not_copied`, `convert_failed: <detail>`, or `unknown: <raw>`.
+    /// skipped, to one of the closed set in [`missing_reason`]:
+    /// `file_missing`, `too_large`, `not_copied`, `not_fetched`, `no_path`,
+    /// or `convert_failed: <detail>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_reason: Option<String>,
     /// In-memory bytes for EML embedding; never written to JSON.
@@ -641,9 +717,9 @@ pub struct IrAttachment {
     pub bytes: Option<Vec<u8>>,
 }
 
-/// Vendor leftovers. Display names live on `sender_display_name`, not here.
+/// Vendor leftovers. Display names live on [`Sender::display_name`], not here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct IrSource {
+pub struct VendorFields {
     /// Android `type` attribute from the source (e.g. 1 = received, 2 = sent).
     pub android_type: Option<i32>,
     /// Raw vendor attributes; display names never live here.
@@ -651,7 +727,7 @@ pub struct IrSource {
     pub fields: Map<String, Value>,
 }
 
-impl IrSource {
+impl VendorFields {
     /// True when no vendor leftovers were recorded.
     pub fn is_empty(&self) -> bool {
         self.android_type.is_none() && self.fields.is_empty()
@@ -665,7 +741,7 @@ impl IrSource {
 
 /// iMessage extensions. Nested Apple blobs remain JSON values (not strings).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct IrImessage {
+pub struct ImessageExtensions {
     /// iMessage send effect (e.g. `slam`).
     pub send_effect: Option<String>,
     /// Shared-location payload.
@@ -694,7 +770,7 @@ pub struct IrImessage {
     pub tapback_action: Option<String>,
 }
 
-impl IrImessage {
+impl ImessageExtensions {
     /// True when every field is unset (`None`).
     pub fn is_empty(&self) -> bool {
         self.send_effect.is_none()
@@ -719,185 +795,25 @@ impl IrImessage {
 }
 
 impl ConversationDocument {
-    /// Filename stem used for CSV, JSON, and mail directories (no extension).
-    pub fn filename_stem(&self) -> String {
-        let handles: Vec<String> = self
-            .conversation
-            .participants
-            .iter()
-            .filter_map(|p| p.identity.clone())
-            .collect();
-        conversation_stem(
-            self.conversation.conversation_type.as_str(),
-            &self.conversation.chat_identifier,
-            self.conversation.group_title.as_deref(),
-            &handles,
-            self.packaging_stem_suffix.as_deref(),
-        )
-    }
-
     /// Recompute [`ConversationMeta::stats`] from `messages`.
     pub fn finalize_stats(&mut self) {
         self.conversation.stats = compute_stats(&self.messages);
     }
 }
 
-/// Give every document a file name no other document in `docs` has.
-///
-/// Two conversations can reduce to one [`filename_stem`](ConversationDocument::filename_stem):
-/// two groups with the same title, two untitled groups with the same people,
-/// or two names that differ only in case on a disk that ignores case. Written
-/// as they are, the second file would replace the first and lose its
-/// messages. Each document in such a clash gets a short suffix taken from its
-/// chat identifier, so the names are the same on every run over the same
-/// backup and a resumed run finds its files.
-///
-/// # Errors
-///
-/// Names the file when two documents still share one after that (the same
-/// chat identifier twice), so the caller can refuse rather than write one
-/// over the other.
-pub fn give_each_document_its_own_file(
-    docs: &mut [&mut ConversationDocument],
-) -> Result<(), String> {
-    let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, doc) in docs.iter().enumerate() {
-        by_name
-            .entry(doc.filename_stem().to_lowercase())
-            .or_default()
-            .push(i);
-    }
-    for clash in by_name.values().filter(|indexes| indexes.len() > 1) {
-        for &i in clash {
-            let doc = &mut *docs[i];
-            let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
-            let suffix = doc.packaging_stem_suffix.take().unwrap_or_default();
-            doc.packaging_stem_suffix = Some(format!("{suffix}__{}", &digest[..8]));
-        }
-    }
-    let mut names = HashSet::new();
-    for doc in docs.iter() {
-        let stem = doc.filename_stem();
-        if !names.insert(stem.to_lowercase()) {
-            return Err(format!("two conversations would both be written to {stem}"));
-        }
-    }
-    Ok(())
-}
-
-/// Max peer phones included in an untitled group filename stem.
-const GROUP_FILENAME_MAX_PHONES: usize = 10;
-
-/// A file stem with anything but letters, digits, `-`, `_`, and `+` replaced by `_`.
-fn sanitize_stem(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '+' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-/// True for a handle that is a phone number: an optional `+` then digits.
-fn is_phone_handle(value: &str) -> bool {
-    let value = value.trim();
-    if value.is_empty() {
-        return false;
-    }
-    if let Some(rest) = value.strip_prefix('+') {
-        !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
-    } else {
-        value.chars().all(|c| c.is_ascii_digit())
-    }
-}
-
-/// The stem with `suffix` appended when there is one.
-fn with_suffix(stem: &str, suffix: Option<&str>) -> String {
-    match suffix {
-        Some(s) if !s.is_empty() => format!("{stem}{s}"),
-        _ => stem.to_string(),
-    }
-}
-
-/// Standard per-conversation filename stem (no extension — callers append
-/// `.csv`, `.jsonl`, …).
-///
-/// - Individual → `sanitize_stem(chat_id)` (+ optional suffix)
-/// - Group with a real `group_title` → sanitized title
-/// - Untitled group → `group_+A_+B_…` (sorted unique E.164, max 10);
-///   if more than 10 peers, append `_<16 hex>` of SHA-256 over the full roster
-/// - Untitled group with empty roster → `group_unknown` (or hash of `chat_id`)
-pub fn conversation_stem(
-    conversation_type: &str,
-    chat_id: &str,
-    group_title: Option<&str>,
-    participant_e164s: &[String],
-    suffix: Option<&str>,
-) -> String {
-    let is_group = conversation_type.eq_ignore_ascii_case("group");
-    if !is_group {
-        let stem = sanitize_stem(chat_id);
-        return with_suffix(&stem, suffix);
-    }
-
-    if let Some(title) = group_title.and_then(trimmed) {
-        let stem = sanitize_stem(title);
-        if !stem.is_empty() && !stem.chars().all(|c| c == '_') {
-            return with_suffix(&stem, suffix);
-        }
-    }
-
-    let phones = unique_sorted_phone_handles(participant_e164s);
-
-    if phones.is_empty() {
-        let stem = if chat_id.trim().is_empty() {
-            "group_unknown".to_string()
-        } else {
-            let digest = hex::encode(Sha256::digest(chat_id.as_bytes()));
-            format!("group_{}", &digest[..16])
-        };
-        return with_suffix(&stem, suffix);
-    }
-
-    let mut stem = "group".to_string();
-    for phone in phones.iter().take(GROUP_FILENAME_MAX_PHONES) {
-        stem.push('_');
-        stem.push_str(phone);
-    }
-    if phones.len() > GROUP_FILENAME_MAX_PHONES {
-        let joined = phones.join("|");
-        let digest = hex::encode(Sha256::digest(joined.as_bytes()));
-        stem.push('_');
-        stem.push_str(&digest[..16]);
-    }
-    with_suffix(&stem, suffix)
-}
-
-/// Trim, keep phone-looking handles, sort, and drop duplicates.
-fn unique_sorted_phone_handles(participant_e164s: &[String]) -> Vec<String> {
-    let mut phones: Vec<String> = participant_e164s
-        .iter()
-        .map(|p| p.trim().to_string())
-        .filter(|p| is_phone_handle(p))
-        .collect();
-    phones.sort();
-    phones.dedup();
-    phones
-}
-
 /// Count messages and attachments and find first/last timestamps.
-fn compute_stats(messages: &[IrMessage]) -> ConversationStats {
+fn compute_stats(messages: &[Message]) -> ConversationStats {
     let message_count = messages.len() as u64;
     let attachment_count = messages.iter().map(|m| m.attachments.len() as u64).sum();
     let mut first = None;
     let mut last = None;
-    for msg in messages {
-        first = Some(first.map_or(msg.timestamp_unix_ms, |f: i64| f.min(msg.timestamp_unix_ms)));
-        last = Some(last.map_or(msg.timestamp_unix_ms, |l: i64| l.max(msg.timestamp_unix_ms)));
+    for message in messages {
+        first = Some(first.map_or(message.timestamp_unix_ms, |f: i64| {
+            f.min(message.timestamp_unix_ms)
+        }));
+        last = Some(last.map_or(message.timestamp_unix_ms, |l: i64| {
+            l.max(message.timestamp_unix_ms)
+        }));
     }
     ConversationStats {
         message_count,
@@ -926,33 +842,6 @@ pub fn format_local_ts(secs: i64) -> Option<(String, String, String)> {
     ))
 }
 
-/// Stream a file through SHA-256 in 64 KB chunks (no full read into memory).
-///
-/// Returns 64 lowercase hex digits — the same fingerprint format
-/// `digest_sha256` fields carry.
-///
-/// # Errors
-///
-/// Returns an error when the file cannot be opened or read; the error message
-/// names the file.
-pub fn file_sha256(path: &std::path::Path) -> std::io::Result<String> {
-    use std::io::Read;
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| std::io::Error::new(e.kind(), format!("open {}: {e}", path.display())))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .map_err(|e| std::io::Error::new(e.kind(), format!("read {}: {e}", path.display())))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hex::encode(hasher.finalize()))
-}
-
 /// `s` trimmed, or `None` when blank. The one place "blank means absent"
 /// is spelled out; pass it to `Option::and_then` for optional fields.
 pub fn trimmed(s: &str) -> Option<&str> {
@@ -965,42 +854,23 @@ pub fn nonempty(s: &str) -> Option<String> {
     trimmed(s).map(str::to_string)
 }
 
-/// `value` trimmed, unless it is blank or the literal `null` / `none` that
-/// some backups write where an attachment name is missing.
-pub fn valid_filename(value: &str) -> Option<String> {
-    let value = value.trim();
-    (!value.is_empty()
-        && !value.eq_ignore_ascii_case("null")
-        && !value.eq_ignore_ascii_case("none"))
-    .then(|| value.to_string())
-}
-
 /// One mebibyte, for byte counts shown or compared in MiB.
 pub const MIB: u64 = 1024 * 1024;
 
-/// Owner identity for outgoing rows: identity + display (`"Me"` if identity set but name missing).
-pub fn owner_sender(export: &ExportMeta) -> (Option<String>, Option<String>) {
-    let handle = export.owner_identity.as_deref().and_then(nonempty);
-    let display = export
+/// The sender of an outgoing row: the owner's identity and display name
+/// (`"Me"` when the identity is set and the name is missing).
+pub fn owner_sender(export: &ExportMeta) -> Sender {
+    let identity = export.owner_identity.as_deref().and_then(nonempty);
+    let display_name = export
         .owner_display_name
         .as_deref()
         .and_then(nonempty)
-        .or_else(|| handle.as_ref().map(|_| "Me".into()));
-    (handle, display)
-}
-
-/// Parse Android type strings / numbers into `i32`.
-pub fn parse_android_type(s: &str) -> Option<i32> {
-    let t = s.trim();
-    if t.is_empty() {
-        return None;
+        .or_else(|| identity.as_ref().map(|_| "Me".into()));
+    Sender {
+        identity,
+        display_name,
+        country: None,
     }
-    t.parse::<i32>().ok()
-}
-
-/// Parse a JSON string into a [`Value`], or return the string as a JSON string value.
-pub fn parse_json_value(s: &str) -> Value {
-    serde_json::from_str(s).unwrap_or_else(|_| json!(s))
 }
 
 /// Export and conversation metadata without messages (JSONL header line
@@ -1011,40 +881,40 @@ pub struct ConversationHeader {
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
-    /// Roster and computed stats for this chat.
+    /// Roster and computed stats for this conversation.
     pub conversation: ConversationMeta,
 }
 
 impl ConversationHeader {
     /// Copy export and conversation metadata from a full document.
-    pub fn from_document(doc: &ConversationDocument) -> Self {
+    pub fn from_document(document: &ConversationDocument) -> Self {
         Self {
-            schema_version: doc.schema_version,
-            export: doc.export.clone(),
-            conversation: doc.conversation.clone(),
+            schema_version: document.schema_version,
+            export: document.export.clone(),
+            conversation: document.conversation.clone(),
         }
     }
 
     /// The document a reader builds from a header and the messages that
     /// followed it, at the current schema version, with its stats computed.
     /// It has no stem suffix: a reader recovers that from the file name.
-    pub fn into_document(self, messages: Vec<IrMessage>) -> ConversationDocument {
-        let mut doc = ConversationDocument {
+    pub fn into_document(self, messages: Vec<Message>) -> ConversationDocument {
+        let mut document = ConversationDocument {
             schema_version: SCHEMA_VERSION,
             export: self.export,
             conversation: self.conversation,
             messages,
             packaging_stem_suffix: None,
         };
-        doc.finalize_stats();
-        doc
+        document.finalize_stats();
+        document
     }
 }
 
-/// Intermediate message before conversion to [`IrMessage`].
+/// Intermediate message before conversion to [`Message`].
 ///
 /// Exporters parse vendor formats into these, then convert to
-/// [`ConversationDocument`] in their `pending_to_document` functions.
+/// [`ConversationDocument`] through the shared [`project_pending`].
 /// Exporter-specific metadata goes in [`Self::extra`].
 #[derive(Debug, Clone)]
 pub struct PendingMessage {
@@ -1052,10 +922,10 @@ pub struct PendingMessage {
     pub sort_key: i64,
     /// Whether the owner sent the message.
     pub is_from_me: bool,
-    /// Identity of the sender (the owner's identity when `is_from_me`).
-    pub sender_identity: String,
-    /// Display name of the sender; `None` when the source has none.
-    pub sender_display_name: Option<String>,
+    /// Who sent the message, as the source names them, built with
+    /// [`Sender::new`]. The projection gives an outgoing message the owner
+    /// as its sender and ignores this for one.
+    pub sender: Sender,
     /// Plain-text body; never includes attachment data.
     pub text: String,
     /// Relative paths to staged attachment files.
@@ -1082,7 +952,7 @@ impl PendingMessage {
     }
 }
 
-/// Intermediate attachment reference before conversion to [`IrAttachment`].
+/// Intermediate attachment reference before conversion to [`Attachment`].
 #[derive(Debug, Clone)]
 pub struct PendingAttachment {
     /// Relative path to the staged file.
@@ -1109,8 +979,8 @@ impl PendingAttachment {
     /// carrying the size when the exporter recorded one: the runner that
     /// writes the file reads the payload by its digest and fills the path
     /// in, and the size when it is still unknown.
-    pub fn to_ir(&self) -> IrAttachment {
-        IrAttachment {
+    pub fn to_ir(&self) -> Attachment {
+        Attachment {
             path: None,
             original_name: self.name_hint.clone(),
             mime_type: self.mime_type(),
@@ -1130,13 +1000,15 @@ impl PendingAttachment {
 pub struct PendingConversation {
     /// Stable chat id from the source.
     pub chat_id: String,
-    /// Display name for the chat; `None` when the source has none.
+    /// Display name for the conversation. `None` when the source has none.
     pub display_name: Option<String>,
-    /// Participant handles in E.164 form.
-    pub participant_e164s: Vec<String>,
-    /// Messages awaiting conversion to [`IrMessage`].
+    /// Participant handles: a phone number in E.164 form where the source
+    /// gives one, else the source's own handle (an email address, a short
+    /// code, a name).
+    pub participant_handles: Vec<String>,
+    /// Messages awaiting conversion to [`Message`].
     pub messages: Vec<PendingMessage>,
-    /// Whether this is a group chat.
+    /// Whether this is a group conversation.
     pub is_group: bool,
     /// Whether any message in this conversation has attachments.
     pub has_attachments: bool,
@@ -1150,12 +1022,12 @@ impl PendingConversation {
         chat_id: impl Into<String>,
         is_group: bool,
         display_name: Option<String>,
-        participant_e164s: Vec<String>,
+        participant_handles: Vec<String>,
     ) -> Self {
         Self {
             chat_id: chat_id.into(),
             display_name,
-            participant_e164s,
+            participant_handles,
             messages: Vec::new(),
             is_group,
             has_attachments: false,
@@ -1175,79 +1047,6 @@ impl PendingConversation {
             .map(|m| m.extra_str("contact_name").trim())
             .find(|n| !n.is_empty())
             .map(str::to_string)
-    }
-}
-
-#[cfg(test)]
-mod conversation_stem_tests {
-    use super::conversation_stem;
-
-    #[test]
-    fn individual_uses_chat_id() {
-        assert_eq!(
-            conversation_stem("individual", "+15550112", None, &[], None),
-            "+15550112"
-        );
-    }
-
-    #[test]
-    fn group_with_title_uses_title() {
-        assert_eq!(
-            conversation_stem("group", "chat-x", Some("Family Chat"), &[], None),
-            "Family_Chat"
-        );
-    }
-
-    #[test]
-    fn group_with_a_one_word_title_uses_it_and_not_the_phones() {
-        let peers = vec!["+15555550100".into()];
-        assert_eq!(
-            conversation_stem("group", "chat-x", Some("Family"), &peers, None),
-            "Family"
-        );
-    }
-
-    #[test]
-    fn untitled_group_lists_sorted_phones() {
-        let peers = vec!["+18285550100".into(), "+14075550100".into()];
-        assert_eq!(
-            conversation_stem("group", "chat-group-x", None, &peers, None),
-            "group_+14075550100_+18285550100"
-        );
-    }
-
-    #[test]
-    fn untitled_group_over_ten_appends_hash() {
-        let peers: Vec<String> = (100..=112).map(|i| format!("+1555555{i:04}")).collect();
-        let stem = conversation_stem("group", "chat-x", None, &peers, None);
-        assert!(stem.starts_with("group_+15555550100_"));
-        assert!(stem.contains("+15555550109_"));
-        assert!(!stem.contains("+15555550110"));
-        let hash = stem.rsplit('_').next().unwrap();
-        assert_eq!(hash.len(), 16);
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(
-            stem,
-            conversation_stem("group", "other-id", None, &peers, None)
-        );
-    }
-
-    #[test]
-    fn whatsapp_suffix() {
-        let peers = vec!["+15555550100".into()];
-        assert_eq!(
-            conversation_stem("group", "x", None, &peers, Some("__whatsapp")),
-            "group_+15555550100__whatsapp"
-        );
-    }
-
-    #[test]
-    fn none_title_uses_phones_not_synthetic() {
-        let peers = vec!["+15555550100".into()];
-        assert_eq!(
-            conversation_stem("group", "chat-group-x", None, &peers, None),
-            "group_+15555550100"
-        );
     }
 }
 
@@ -1301,11 +1100,14 @@ mod storage_id_round_trip_tests {
     #[test]
     fn conversation_type() {
         for v in [
-            IrConversationType::Individual,
-            IrConversationType::Group,
-            IrConversationType::Orphaned,
+            ConversationType::OneToOne,
+            ConversationType::Group,
+            ConversationType::Orphaned,
         ] {
-            assert_eq!(IrConversationType::parse(v.as_str()), v);
+            assert_eq!(ConversationType::parse(v.as_str()), v);
+            // `as_str` takes `one-to-one` and `orphaned` from
+            // `imessage-reader-protocol`'s constants, so this also pins the
+            // serde names to them.
             assert_matches_serde(v, v.as_str());
         }
     }
@@ -1326,17 +1128,17 @@ mod storage_id_round_trip_tests {
     #[test]
     fn service() {
         for v in [
-            IrService::Sms,
-            IrService::IMessage,
-            IrService::Whatsapp,
-            IrService::Rcs,
-            IrService::Discord,
-            IrService::Signal,
-            IrService::Telegram,
-            IrService::Slack,
-            IrService::Unknown,
+            Transport::Sms,
+            Transport::IMessage,
+            Transport::Whatsapp,
+            Transport::Rcs,
+            Transport::Discord,
+            Transport::Signal,
+            Transport::Telegram,
+            Transport::Slack,
+            Transport::Unknown,
         ] {
-            assert_eq!(IrService::parse(v.as_str()), v);
+            assert_eq!(Transport::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }
@@ -1352,43 +1154,26 @@ mod storage_id_round_trip_tests {
     #[test]
     fn message_kind() {
         for v in [
-            IrMessageKind::Sms,
-            IrMessageKind::Mms,
-            IrMessageKind::IMessage,
-            IrMessageKind::Tapback,
-            IrMessageKind::StickerTapback,
-            IrMessageKind::Announcement,
-            IrMessageKind::LocationShare,
-            IrMessageKind::Balloon,
-            IrMessageKind::Unknown,
+            MessageKind::Sms,
+            MessageKind::Mms,
+            MessageKind::IMessage,
+            MessageKind::Tapback,
+            MessageKind::StickerTapback,
+            MessageKind::Announcement,
+            MessageKind::LocationShare,
+            MessageKind::Balloon,
+            MessageKind::Unknown,
         ] {
-            assert_eq!(IrMessageKind::parse(v.as_str()), v);
+            assert_eq!(MessageKind::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }
 
     #[test]
     fn direction() {
-        for v in [IrDirection::Incoming, IrDirection::Outgoing] {
+        for v in [Direction::Incoming, Direction::Outgoing] {
             assert_matches_serde(v, v.as_str());
         }
-    }
-}
-
-#[cfg(test)]
-mod valid_filename_tests {
-    use super::valid_filename;
-
-    #[test]
-    fn a_blank_name_or_the_word_null_or_none_is_no_file_name() {
-        for missing in ["", "   ", "null", "NULL", "none"] {
-            assert_eq!(valid_filename(missing), None, "{missing:?}");
-        }
-    }
-
-    #[test]
-    fn a_real_name_comes_back_trimmed() {
-        assert_eq!(valid_filename(" a.jpg ").as_deref(), Some("a.jpg"));
     }
 }
 
@@ -1399,11 +1184,10 @@ mod pending_message_tests {
 
     #[test]
     fn an_extra_flag_is_set_only_by_the_value_true() {
-        let msg = PendingMessage {
+        let message = PendingMessage {
             sort_key: 0,
             is_from_me: false,
-            sender_identity: String::new(),
-            sender_display_name: None,
+            sender: crate::Sender::default(),
             text: String::new(),
             attachments: Vec::new(),
             extra: BTreeMap::from([
@@ -1411,9 +1195,51 @@ mod pending_message_tests {
                 ("is_deleted".to_string(), "false".to_string()),
             ]),
         };
-        assert!(msg.extra_flag("is_sticker"));
-        assert!(!msg.extra_flag("is_deleted"));
-        assert!(!msg.extra_flag("never_set"));
+        assert!(message.extra_flag("is_sticker"));
+        assert!(!message.extra_flag("is_deleted"));
+        assert!(!message.extra_flag("never_set"));
+    }
+}
+
+/// Which identity types each service carries, and the type an address of
+/// each shape takes there
+/// (`docs/architecture/contacts-identities-and-messages.md`).
+#[cfg(test)]
+mod service_carries_tests {
+    use super::{IdentityService, IdentityType};
+
+    /// Every `(service, type)` pair and whether the service carries it;
+    /// [`IdentityService::carries`] says why.
+    const TABLE: [(IdentityService, IdentityType, bool); 8] = [
+        (IdentityService::Phone, IdentityType::Phone, true),
+        (IdentityService::Phone, IdentityType::Email, true),
+        (IdentityService::Phone, IdentityType::Username, false),
+        (IdentityService::Phone, IdentityType::Other, true),
+        (IdentityService::Whatsapp, IdentityType::Phone, true),
+        (IdentityService::Whatsapp, IdentityType::Email, false),
+        (IdentityService::Whatsapp, IdentityType::Username, false),
+        (IdentityService::Whatsapp, IdentityType::Other, true),
+    ];
+
+    #[test]
+    fn each_service_carries_only_the_types_it_names() {
+        for (service, kind, carried) in TABLE {
+            assert_eq!(service.carries(kind), carried, "{service:?} {kind:?}");
+        }
+    }
+
+    /// A shape the service carries keeps its type, and one it cannot carry
+    /// is `other`, so an import never stores a pair the service refuses.
+    #[test]
+    fn a_shape_the_service_cannot_carry_is_other() {
+        for (service, kind, carried) in TABLE {
+            let expected = if carried { kind } else { IdentityType::Other };
+            assert_eq!(service.type_on(kind), expected, "{service:?} {kind:?}");
+            assert!(
+                service.carries(service.type_on(kind)),
+                "{service:?} {kind:?}"
+            );
+        }
     }
 }
 

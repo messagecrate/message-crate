@@ -1,0 +1,71 @@
+# gitleaks configuration for the secret scan in ci.yml ("Secret scan
+# (gitleaks)") and scripts/check-secrets.sh.
+#
+# gitleaks' default rules find provider tokens (GitHub, AWS, Slack and the
+# rest). The one rule added here finds Message Crate's own tokens, which no
+# provider pattern knows. The allowlists below name the test vectors that look
+# like secrets and are not, each by its file and its exact value, so a real
+# secret added to the same file is still found. A path may also follow a
+# slash, because gitleaks reads the file of a merge commit's re-merge diff
+# (scripts/check-secrets.sh) as `b/<path>`.
+
+title = "Message Crate"
+
+[extend]
+useDefault = true
+
+# A Session token (`mc-user-`) or an API token (`mc-api-`): the prefix, then 32
+# letters and digits, as `generate_prefixed_token` in
+# crates/server/server/src/db/session_tokens.rs writes them.
+[[rules]]
+id = "message-crate-token"
+description = "Message Crate Session or API token"
+regex = '''\bmc-(?:user|api)-[A-Za-z0-9]{32}\b'''
+keywords = ["mc-user-", "mc-api-"]
+
+# The SHA-256 known answers that pin how a token is stored.
+[[allowlists]]
+description = "SHA-256 known answers in the session token tests"
+condition = "AND"
+paths = ['''(?:^|/)crates/server/server/src/db/session_tokens\.rs$''']
+regexTarget = "line"
+regexes = [
+  '''2f149722de58d39a2c4c28c6889a5bcdfeef221933624142cc2339411007a7a8''',
+  '''892e92b80959400565df97dd4983106d1c7d61ecf6814a4694f8d878d0745cc1''',
+  '''e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855''',
+]
+
+# Argon2 hashes written by argon2 0.5.3, which must still verify.
+[[allowlists]]
+description = "Pinned Argon2 hashes in the credential tests"
+condition = "AND"
+paths = ['''(?:^|/)crates/server/server/src/credentials/tests\.rs$''']
+regexTarget = "line"
+regexes = [
+  '''\$argon2id\$v=19\$m=19456,t=2,p=1\$/ic5l4xy5HAgEHBiuv0t3A\$iI1c7vmoqfa79pGmE3/iquM09ezwKoYA8U1dxtWH/rg''',
+  '''\$argon2id\$v=19\$m=19456,t=2,p=1\$Mp73mogaQlz3ZqmokZzY/A\$CVBX4QUiJTjS5u4sLQ7rvMEuSo8e6c1izYXZTtJo\+RQ''',
+  '''\$argon2id\$v=19\$m=19456,t=2,p=1\$l9S0iAuO7kK\+iuZf99EN9g\$FQ35n77YztPzFZAYqhZnyRLK6TUg7nuXUGiO7Nx1s90''',
+]
+
+# The string the API token mask test shortens, shaped like a real API token.
+[[allowlists]]
+description = "API token mask test string"
+condition = "AND"
+paths = ['''(?:^|/)crates/server/server/src/db/api_tokens\.rs$''']
+regexTarget = "line"
+regexes = ['''mc-api-Sd1abcdefghijklmnopqrsmtuvwxyZmE''']
+
+# Made-up WhatsApp keys in tests, which gitleaks' generic-api-key rule reads
+# as secrets because of the word "key" beside them.
+[[allowlists]]
+description = "Made-up WhatsApp keys in tests"
+condition = "AND"
+paths = [
+  '''(?:^|/)web/src/screens/import/useImportJob\.test\.tsx$''',
+  '''(?:^|/)crates/server/server/src/imports_api/tests/[a-z_]+\.rs$''',
+]
+regexTarget = "line"
+regexes = [
+  '''whatsappKey: "0123abcd4567"''',
+  '''"whatsappKey": "0123456789abcdef"''',
+]

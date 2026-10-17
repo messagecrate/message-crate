@@ -4,6 +4,7 @@ members = [
     "crates/libs/phone",
     "crates/libs/csv",
     "crates/libs/ir",
+    "crates/libs/file-io",
     "crates/libs/ir-format",
     "crates/libs/staging",
     "crates/libs/reexport",
@@ -14,6 +15,7 @@ members = [
     "crates/libs/media",
     "crates/libs/go-sms-mms",
     "crates/libs/mms-parts",
+    "crates/libs/android-fields",
     "crates/libs/journal",
     "crates/libs/build-version",
     "crates/libs/http",
@@ -40,7 +42,8 @@ members = [
 exclude = ["src-tauri"]
 
 [workspace.dependencies]
-message-ir = { path = "crates/libs/ir" }
+ir = { path = "crates/libs/ir" }
+file-io = { path = "crates/libs/file-io" }
 contacts = { path = "crates/libs/contacts" }
 phone = { path = "crates/libs/phone" }
 # Declared once here and inherited with `workspace = true`; a member adds only
@@ -62,6 +65,8 @@ tempfile = "3.27.0"
 reqwest = { version = "0.12.25", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "json"] }
 quick-xml = "0.42.0"
 thiserror = "2.0.19"
+mailparse = "0.18.0"
+mail-builder = "1.0.0"
 
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -77,15 +82,15 @@ redundant_pub_crate = "allow"
 
 # Release binaries (the Docker image and the desktop bundles) are built rarely
 # and run for a long time, so spend the build time on whole-program
-# optimisation. `panic` stays `unwind`: message-crate-import, the journal and the
+# optimization. `panic` stays `unwind`: `import`, the journal and the
 # iMessage helper catch a worker thread's panic through `join`.
 [profile.release]
 lto = "fat"
 codegen-units = 1
 strip = true
 
-# Argon2 is built to be slow, and unoptimised it is slower still: every test
-# that sets or checks a password pays for it. Optimising the two crates that
+# Argon2 is built to be slow, and unoptimized it is slower still: every test
+# that sets or checks a password pays for it. Optimizing the two crates that
 # do the hashing cuts the server's unit tests from about 52 s to 22 s, and a
 # mutation-testing run pays that once per server mutant.
 [profile.dev.package.argon2]

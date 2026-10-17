@@ -26,6 +26,7 @@ This document contains the help content for the `message-crate-server` command-l
 * [`message-crate-server process-assets`↴](#message-crate-server-process-assets)
 * [`message-crate-server create-owner`↴](#message-crate-server-create-owner)
 * [`message-crate-server reset-owner-password`↴](#message-crate-server-reset-owner-password)
+* [`message-crate-server healthcheck`↴](#message-crate-server-healthcheck)
 
 ## `message-crate-server`
 
@@ -35,7 +36,7 @@ Import and view messages in SQLite
 
 ###### **Subcommands:**
 
-* `import` — Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+* `import` — Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
 * `imports` — Work on an account's Import Runs (`discard` clears a stranded one)
 * `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source, or once in whole seconds beside its millisecond copy in one source
 * `reset-demo` — Rebuild the Demo Account: generate Demo Data, clear the account, import, and process assets. Adds the account when it is not there
@@ -45,14 +46,15 @@ Import and view messages in SQLite
 * `dump-cli-docs` — Write this CLI's docs-site reference page (Markdown) to stdout or --output. Does not open the database
 * `dump-error-docs` — Write one docs-site page per HTTP problem type (Markdown) into the --output directory, or all of them to stdout. Does not open the database
 * `process-assets` — Make the Thumbnails and Previews of stored attachments under `assets_converted/`, for rebuilding and repair
-* `create-owner` — Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner
-* `reset-owner-password` — Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet
+* `create-owner` — Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner. The password is read from standard input: typed without echo at a terminal, or else the first line
+* `reset-owner-password` — Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet. The password is read from standard input: typed without echo at a terminal, or else the first line
+* `healthcheck` — Ask `/health` of the `serve` this container runs, at the address it listens on, and exit 0 when it answers ok, 1 when not. The release image's Docker health check. Linux only: it reads `/proc`
 
 
 
 ## `message-crate-server import`
 
-Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
 
 **Usage:** `message-crate-server import [OPTIONS] --input <INPUT> --account <ACCOUNT>`
 
@@ -241,14 +243,13 @@ Make the Thumbnails and Previews of stored attachments under `assets_converted/`
 
 ## `message-crate-server create-owner`
 
-Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner
+Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner. The password is read from standard input: typed without echo at a terminal, or else the first line
 
-**Usage:** `message-crate-server create-owner [OPTIONS] --username <USERNAME> --password <PASSWORD>`
+**Usage:** `message-crate-server create-owner [OPTIONS] --username <USERNAME>`
 
 ###### **Options:**
 
 * `--username <USERNAME>` — Login username for the owner
-* `--password <PASSWORD>` — Password for the owner; must satisfy the server's password policy
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
@@ -257,16 +258,23 @@ Claim an unclaimed Message Crate by creating its owner. Refuses one that already
 
 ## `message-crate-server reset-owner-password`
 
-Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet
+Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet. The password is read from standard input: typed without echo at a terminal, or else the first line
 
-**Usage:** `message-crate-server reset-owner-password [OPTIONS] --password <PASSWORD>`
+**Usage:** `message-crate-server reset-owner-password [OPTIONS]`
 
 ###### **Options:**
 
-* `--password <PASSWORD>` — New password for the owner; must satisfy the password policy
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
+
+
+
+## `message-crate-server healthcheck`
+
+Ask `/health` of the `serve` this container runs, at the address it listens on, and exit 0 when it answers ok, 1 when not. The release image's Docker health check. Linux only: it reads `/proc`
+
+**Usage:** `message-crate-server healthcheck`
 
 
 

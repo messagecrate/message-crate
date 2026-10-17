@@ -3,10 +3,11 @@
 //! Every route that takes a row id from the path has to decide between 404
 //! and going ahead, and the decision is the same one each time: the row
 //! exists *and* its `account_id` is the caller's. Asking it here rather than
-//! inline keeps the two cases — an id that does not exist, and another
-//! account's id — indistinguishable from outside, which is what makes them
+//! inline keeps the two cases (an id that does not exist, and another
+//! account's id) indistinguishable from outside, which is what makes them
 //! both a 404 rather than one a 404 and the other a 403.
 
+use anyhow::Context as _;
 use sqlx::{Executor, Row, SqliteConnection};
 
 use crate::db::sql::{SqlParam, bind_all};
@@ -48,9 +49,9 @@ async fn owns_row(
     account_id: i64,
     id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let found: Option<i64> = sqlx::query_scalar(&format!(
+    let found: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT 1 FROM {table} WHERE id = $1 AND account_id = $2"
-    ))
+    )))
     .bind(id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
@@ -81,13 +82,13 @@ impl OwnedTable {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn missing_ids(
     conn: &mut SqliteConnection,
     table: OwnedTable,
     account_id: i64,
     ids: &[i64],
-) -> Result<Vec<i64>, sqlx::Error> {
+) -> anyhow::Result<Vec<i64>> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -98,11 +99,15 @@ pub async fn missing_ids(
     );
     let mut params = vec![SqlParam::Int(account_id)];
     params.extend(ids.iter().map(|id| SqlParam::Int(*id)));
-    let rows = (&mut *conn).fetch_all(bind_all(&sql, &params)).await?;
-    let found = rows
-        .iter()
-        .map(|row| row.try_get::<i64, _>(0))
-        .collect::<Result<std::collections::HashSet<_>, _>>()?;
+    let found = (&mut *conn)
+        .fetch_all(bind_all(sqlx::AssertSqlSafe(sql), &params))
+        .await
+        .and_then(|rows| {
+            rows.iter()
+                .map(|row| row.try_get::<i64, _>("id"))
+                .collect::<Result<std::collections::HashSet<_>, _>>()
+        })
+        .context("find which of the selected ids the account holds")?;
     let mut missing: Vec<i64> = ids
         .iter()
         .copied()
@@ -126,11 +131,8 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
         for account in [ACCOUNT_A, ACCOUNT_B] {
-            sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $1)")
-                .bind(account)
-                .execute(&mut *conn)
-                .await
-                .unwrap();
+            crate::test_support::insert_account_with_id(&mut conn, account, &account.to_string())
+                .await;
         }
         (pool, dir)
     }

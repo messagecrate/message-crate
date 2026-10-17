@@ -3,19 +3,20 @@ import { Header, ListBoxSection } from "react-aria-components";
 import Select, {
   ListBoxItem,
   selectItemClassName,
-  selectSectionHeaderClassName,
+  selectSectionHeaderClass,
 } from "../../components/Select";
-import { formatDateTime } from "../../lib/formatDate";
-import type { DeletedAccount } from "../../lib/serverApi";
-import AuditTrail from "../auditTrail/AuditTrail";
 import {
   type AuditTrailOf,
   auditTrailKey,
   auditTrailOf,
   useDeletedAccounts,
-} from "../auditTrail/useAuditTrail";
-import { sectionHint } from "../settings/storage/storageUtils";
-import { useOwnerAccounts } from "./useOwnerAccounts";
+} from "../../hooks/useAuditTrail";
+import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
+import { formatDateTime } from "../../lib/formatDate";
+import type { DeletedAccount } from "../../lib/serverApi";
+import AuditTrail from "../auditTrail/AuditTrail";
+import { sectionHintClass } from "../settings/storage/storageUtils";
+import { serverLogOfRequest } from "./serverLogOfRequest";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
@@ -27,15 +28,14 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
  * account's number too.
  */
 function deletedLabels(deleted: DeletedAccount[]) {
-  const lines = deleted.map(
-    (account) => `${account.username}, deleted ${formatDateTime(account.deleted_at)}`,
-  );
-  return deleted.map((account, i) => ({
+  const lines = deleted.map((account) => ({
+    account,
+    line: `${account.username}, deleted ${formatDateTime(account.deleted_at)}`,
+  }));
+  return lines.map(({ account, line }) => ({
     account,
     label:
-      lines.indexOf(lines[i]) === lines.lastIndexOf(lines[i])
-        ? lines[i]
-        : `${lines[i]} (#${account.id})`,
+      lines.filter((other) => other.line === line).length === 1 ? line : `${line} (#${account.id})`,
   }));
 }
 
@@ -47,6 +47,8 @@ function deletedLabels(deleted: DeletedAccount[]) {
  * its holder reads under Settings. Below the live accounts it lists each
  * deleted account by its old username and when it was deleted, and picking
  * one narrows the list to the entries and runs that account left behind.
+ *
+ * An entry written in a request links to that request's lines in Logs.
  */
 export function OwnerAuditTrailPanel() {
   const [of, setOf] = useState<AuditTrailOf>({ kind: "all" });
@@ -83,7 +85,7 @@ export function OwnerAuditTrailPanel() {
             ))}
             {deleted.length > 0 && (
               <ListBoxSection>
-                <Header className={selectSectionHeaderClassName}>Deleted accounts</Header>
+                <Header className={selectSectionHeaderClass}>Deleted accounts</Header>
                 {deletedLabels(deleted).map(({ account, label }) => {
                   return (
                     <ListBoxItem
@@ -101,11 +103,11 @@ export function OwnerAuditTrailPanel() {
           </Select>
         </div>
       </div>
-      <p className={sectionHint}>
+      <p className={sectionHintClass}>
         Logins, imports, exports and every change to an account, newest first. Entries are never
         changed or removed, and stay after an account is deleted.
       </p>
-      <AuditTrail of={of} showAccount={of.kind === "all"} />
+      <AuditTrail of={of} showAccount={of.kind === "all"} logHref={serverLogOfRequest} />
     </section>
   );
 }

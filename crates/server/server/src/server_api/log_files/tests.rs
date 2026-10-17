@@ -40,8 +40,8 @@ async fn the_owner_lists_the_files_and_downloads_one_whole() {
     assert_eq!(newest["bytes"], on_disk.len());
 
     let server = serve(state).await;
-    let response = reqwest::Client::new()
-        .get(format!("{}/v1/server/log-files/{}", server.base(), ids[0]))
+    let response = server
+        .get(&format!("/v1/server/log-files/{}", ids[0]))
         .bearer_auth(&owner.token)
         .send()
         .await

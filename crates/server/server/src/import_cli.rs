@@ -9,13 +9,13 @@ use anyhow::{Context, Result, bail};
 use crate::config::validate_source_id;
 use crate::db::account_profile;
 use crate::dedupe::{self, DedupeStats};
-use crate::imports_api::{
-    self, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-};
+use crate::imports_api::pipeline::{self, ImportCounts, ImportOptions};
+use crate::imports_api::records::ExportRecord;
+use crate::imports_api::{ImportError, ImportFailure};
 use crate::jsonl;
-use crate::models::ExportRecord;
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
+use api_types::ImportMode;
 use media::MediaMode;
 
 /// Options for a CLI directory import.
@@ -84,7 +84,7 @@ impl SourcePlan {
         if discovered.is_empty() {
             bail!(
                 "no conversation export.source found in {}; each conversation needs \
-                 export.source in the message-ir header (or pass --source)",
+                 export.source in the conversation file header (or pass --source)",
                 input.display()
             );
         }
@@ -120,7 +120,7 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportCo
     print_plan(opts, opened, &plan);
 
     let mut conn = opened.conn().await?;
-    account_profile::ensure_account_row(&mut conn, opts.account_id).await?;
+    account_profile::create_account_row_if_missing(&mut conn, opts.account_id).await?;
 
     let mut import_counts = ImportCounts {
         mode: opts.mode,
@@ -185,7 +185,7 @@ async fn import_under_session(
         .assets_dir
         .clone()
         .unwrap_or_else(|| cfg.paths.assets_dir_for_account(account_id));
-    let import_run = imports_api::OwnedImportRun::start(
+    let import_run = pipeline::OwnedImportRun::start(
         conn,
         account_id,
         source,
@@ -194,32 +194,30 @@ async fn import_under_session(
     )
     .await?;
 
+    let media_tools = cfg.media_tools();
     let import_opts = ImportOptions {
         assets_dir: &assets_dir,
-        asset_root: &opts.input_dir,
+        asset_root: Some(&opts.input_dir),
         mode: opts.mode,
         source: opts.source_override.as_deref().unwrap_or(""),
         account_id,
         import_id: Some(import_run.id),
         source_from_jsonl: plan.from_jsonl,
         media: opts.media,
+        media_tools: &media_tools,
         wipe_sources: Some(vec![source.to_string()]),
         phone_country: None,
         progress: opts.progress,
+        now: chrono::Utc::now(),
     };
-    let result = imports_api::import_jsonl_files_on_conn(
-        conn,
-        paths,
-        &import_opts,
-        imports_api::ImportSchemaMode::AssumeReady,
-    )
-    .await
-    .map_err(anyhow::Error::from);
+    let result = pipeline::import_jsonl_files_on_conn(conn, paths, &import_opts)
+        .await
+        .map_err(anyhow::Error::from);
     let import_id = import_run.id;
     import_run.finish(conn, &result).await;
     // No server runs the background pass here, so the Assets wait in the
     // queue for the next `serve` (`docs/architecture/media.md`, rule 4).
-    crate::media_queue::queue_without_waking(conn, account_id, import_id).await;
+    crate::media_queue::queue_without_waking(conn, account_id, import_id, chrono::Utc::now()).await;
     result
 }
 
@@ -304,8 +302,7 @@ fn files_by_source(paths: &[PathBuf]) -> Result<BTreeMap<String, Vec<PathBuf>>> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::account_profile;
-    use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
+    use crate::imports_api::pipeline::IMPORT_CONTACT_GROUP_NAME_SQL;
     use crate::open_db::fresh_config;
     use crate::test_support::{conversation_header, message_line};
     use tempfile::TempDir;
@@ -327,9 +324,7 @@ mod tests {
     async fn fixture_with_export(dir: &Path) -> (OpenDb, CliImportOptions) {
         let opened = OpenDb::create_or_open(fresh_config(dir)).await.unwrap();
         let mut conn = opened.conn().await.unwrap();
-        account_profile::insert_account_at(&mut conn, ALICE, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, ALICE, "alice").await;
         drop(conn);
 
         let input = dir.join("export");
@@ -349,7 +344,7 @@ mod tests {
         (opened, opts)
     }
 
-    async fn count(opened: &OpenDb, sql: &str) -> i64 {
+    async fn count(opened: &OpenDb, sql: &'static str) -> i64 {
         let mut conn = opened.conn().await.unwrap();
         sqlx::query_scalar(sql)
             .bind(ALICE)
@@ -419,7 +414,7 @@ mod tests {
     /// Search's query. A run missing either shortcut is left out.
     async fn runs_with_their_shortcuts(opened: &OpenDb) -> Vec<(String, String, i64, String)> {
         let mut conn = opened.conn().await.unwrap();
-        sqlx::query_as(&format!(
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT i.source, g.name,
                     (SELECT COUNT(*) FROM contact_group_members m WHERE m.group_id = g.id),
                     s.query
@@ -431,7 +426,7 @@ mod tests {
                ON s.account_id = i.account_id AND s.query = 'import:#' || i.id
              WHERE i.account_id = $1
              ORDER BY i.id"
-        ))
+        )))
         .bind(ALICE)
         .fetch_all(&mut *conn)
         .await
@@ -539,7 +534,7 @@ mod tests {
                 assert_eq!(refused_line, line);
                 assert_eq!(
                     printed,
-                    format!("{}: Line {line} of the file: {detail}.", path.display())
+                    format!("{}: line {line} of the file: {detail}", path.display())
                 );
                 detail
             }

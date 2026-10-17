@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
-use sqlx::Arguments;
-use sqlx::SqliteConnection;
+use crate::models::StoredTime;
+use sqlx::query::Query;
 use sqlx::sqlite::{SqliteArguments, SqliteRow};
+use sqlx::{Arguments, SqlSafeStr, Sqlite, SqliteConnection};
 
 /// One bound parameter in a dynamic query, whose binds are of mixed types
 /// and counted only at run time.
@@ -14,18 +15,22 @@ use sqlx::sqlite::{SqliteArguments, SqliteRow};
 pub enum SqlParam {
     Text(String),
     Int(i64),
+    /// A stored message time, for a comparison with `messages.timestamp`
+    /// (`StoredTime`, #1965).
+    Time(StoredTime),
 }
 
 /// Encode `params` into sqlx arguments, in order.
 ///
 /// `String`/`i64` cannot fail to encode; an encode
 /// failure is unreachable and panics like sqlx's own `Query::bind`.
-pub fn bind_args<'q>(params: &[SqlParam]) -> SqliteArguments<'q> {
+pub fn bind_args(params: &[SqlParam]) -> SqliteArguments {
     let mut args = SqliteArguments::default();
     for p in params {
         match p {
             SqlParam::Text(v) => args.add(v.clone()),
             SqlParam::Int(v) => args.add(*v),
+            SqlParam::Time(v) => args.add(v.clone()),
         }
         .expect("error encoding argument");
     }
@@ -34,15 +39,10 @@ pub fn bind_args<'q>(params: &[SqlParam]) -> SqliteArguments<'q> {
 
 /// Build a query from `sql` with all params bound, in order. Placeholders in
 /// the SQL must match this order.
-///
-/// sqlx 0.8.6 does not re-export `Query` at the crate root (the root
-/// `sqlx::Query` re-export is 0.9-only), so the concrete query type is
-/// unnameable; this builds the arguments through the public `Arguments` API
-/// instead.
-pub fn bind_all<'q>(
-    sql: &'q str,
+pub fn bind_all(
+    sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> impl sqlx::Execute<'q, sqlx::Sqlite> + 'q {
+) -> Query<'static, Sqlite, SqliteArguments> {
     sqlx::query_with(sql, bind_args(params))
 }
 
@@ -109,7 +109,7 @@ where
     let mut map: HashMap<i64, Vec<T>> = HashMap::new();
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let sql = build_sql(&in_placeholders(1, chunk.len()));
-        let mut q = sqlx::query(&sql);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
         for id in chunk {
             q = q.bind(*id);
         }
@@ -167,7 +167,11 @@ mod tests {
     fn bind_args_encodes_every_variant_in_order() {
         // Every variant must encode without panicking, in order; the
         // argument count is the only thing the arguments let us observe.
-        let params = vec![SqlParam::Text("t".into()), SqlParam::Int(7)];
+        let params = vec![
+            SqlParam::Text("t".into()),
+            SqlParam::Int(7),
+            SqlParam::Time(crate::test_support::stored_time("2020-01-01T00:00:00.000Z")),
+        ];
         let args = bind_args(&params);
         assert_eq!(args.len(), params.len());
     }

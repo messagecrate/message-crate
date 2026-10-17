@@ -11,18 +11,17 @@ testutil = []
 [dependencies]
 anyhow = { workspace = true }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../../libs/ir" }
-message-ir-format = { path = "../../libs/ir-format" }
-message-staging = { path = "../../libs/staging" }
-message-csv = { path = "../../libs/csv" }
-media = { path = "../../libs/media" }
+ir = { path = "../../libs/ir" }
+ir-format = { path = "../../libs/ir-format" }
+staging = { path = "../../libs/staging" }
+message-crate-csv = { path = "../../libs/csv" }
 phone = { path = "../../libs/phone" }
 mms-parts = { path = "../../libs/mms-parts" }
 sbr = { path = "../../libs/sbr" }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-message-ir = { path = "../../libs/ir", features = ["testutil"] }
+ir = { path = "../../libs/ir", features = ["testutil"] }
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 tempfile = { workspace = true }
 

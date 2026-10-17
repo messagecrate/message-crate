@@ -298,7 +298,7 @@ export function notTrashedHandleSql(
   return `AND NOT EXISTS (
     SELECT 1 FROM trashed_conversations th
     JOIN conversations thc ON thc.id = th.conversation_id
-    WHERE thc.conversation_type = 'individual'
+    WHERE thc.conversation_type = 'one-to-one'
       AND thc.chat_handle_id = ${handleIdExpr}
       AND th.account_id = ${accountExpr}
   )`;

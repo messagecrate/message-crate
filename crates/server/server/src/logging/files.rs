@@ -62,7 +62,10 @@ impl LogFiles {
     /// Returns an error when the directory cannot be made or read, or the
     /// newest file cannot be opened.
     pub fn open(dir: &Path, limits: LogLimits) -> io::Result<Self> {
-        fs::create_dir_all(dir)?;
+        // Owner-only, as the Data Directory it is made in (#2097): `serve`
+        // opens its log before the database, so on a new Message Crate this
+        // is what makes the Data Directory.
+        file_io::create_dir_all_owner_only(dir)?;
         let number = file_numbers(dir)?.last().copied().unwrap_or(1);
         let path = file_path(dir, number);
         let cut_short = ends_mid_line(&path)?;
@@ -92,7 +95,8 @@ impl LogFiles {
     /// Write one formatted event as one line. A line break inside it, from a
     /// message or an error chain that holds one, is written as the two
     /// characters `\n`, so every line of the file is one event and starts
-    /// with its time and level.
+    /// with its time and level. Any other control character is written as
+    /// `\xNN`.
     ///
     /// # Errors
     ///
@@ -216,22 +220,25 @@ fn open_append(path: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).append(true).open(path)
 }
 
-/// `event` as one line ending in `\n`: trailing line breaks dropped, and each
-/// line break inside written as `\n`.
+/// `event` as one line ending in `\n`: trailing line breaks dropped, each
+/// line break inside written as `\n`, and every other control character
+/// escaped (`log_lines::push_escaped`), so a terminal shows the
+/// line rather than acting on it. `tracing-subscriber` escapes them in an
+/// event's message, but not in a field written with `%`. The event is read as
+/// UTF-8, which is all `tracing-subscriber` writes; a byte that is not would
+/// be written as U+FFFD.
 fn one_line(event: &[u8]) -> Vec<u8> {
-    let trimmed = event
-        .iter()
-        .rposition(|b| *b != b'\n' && *b != b'\r')
-        .map_or(&event[..0], |last| &event[..=last]);
-    let mut line = Vec::with_capacity(trimmed.len() + 1);
-    let mut bytes = trimmed.iter().peekable();
-    while let Some(&b) = bytes.next() {
-        match b {
-            b'\r' if bytes.peek() == Some(&&b'\n') => {}
-            b'\n' | b'\r' => line.extend_from_slice(b"\\n"),
-            _ => line.push(b),
+    let text = String::from_utf8_lossy(event);
+    let text = text.trim_end_matches(['\n', '\r']);
+    let mut line = String::with_capacity(text.len() + 1);
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' if chars.peek() == Some(&'\n') => {}
+            '\n' | '\r' => line.push_str("\\n"),
+            _ => log_lines::push_escaped(&mut line, c),
         }
     }
-    line.push(b'\n');
-    line
+    line.push('\n');
+    line.into_bytes()
 }

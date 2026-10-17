@@ -7,13 +7,13 @@ import AppHeader from "./AppHeader";
 
 vi.mock("./AppAccountMenu", () => ({ default: () => null }));
 vi.mock("./VersionNotice", () => ({ default: () => null }));
-vi.mock("../lib/useSearchSuggestions", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/useSearchSuggestions")>()),
+vi.mock("./useSearchSuggestions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./useSearchSuggestions")>()),
   useSearchSuggestions: () => [],
 }));
 
-vi.mock("../lib/searchFields", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/searchFields")>()),
+vi.mock("../hooks/useMarkedWords", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/useMarkedWords")>()),
   useMarkedWords: () => ({ marked: [], ready: true }),
 }));
 

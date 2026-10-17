@@ -8,14 +8,13 @@ use crate::config::OutputFormat;
 use crate::counter::{
     ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
     DUPLICATES_DROPPED, ItemKind, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
-    count_of_files, error_and_note_lines, item_line, item_reason,
+    error_and_note_lines, item_line, item_reason,
 };
 use anyhow::{Context, bail};
-use media::MediaReport;
-pub use message_crate_api_types::RunIssueKind;
-use message_ir::{
+pub use api_types::RunIssueKind;
+use ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
-    pending_to_document, prepare_conversation,
+    prepare_conversation, project_pending,
 };
 use std::fmt;
 use std::fs;
@@ -98,8 +97,8 @@ pub struct RunIssue {
     /// [`RunIssueKind::Resolved`] when an earlier row with the same step and
     /// item no longer holds.
     pub kind: RunIssueKind,
-    /// The step that raised it, such as `attachments`.
-    pub step: String,
+    /// The step that raised it.
+    pub step: RunIssueStep,
     /// What was affected, such as an attachment's path in the backup.
     pub item: String,
     /// Why, in one sentence; for a note, what the run did.
@@ -115,11 +114,28 @@ pub struct RunIssue {
     pub conversation: Option<String>,
 }
 
-/// The note an exporter sends for a chat that names its person with no
-/// address, which it keeps under the name alone, counted as
-/// [`crate::NAME_ONLY_CHAT`].
-pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \
-     address, so the conversation is kept under the name alone.";
+/// The step of an Import Run that raised a [`RunIssue`], sent to the window
+/// as its lowercase word. The words are the `step` union of
+/// `ImportIssueEvent` in `web/src/lib/types.ts`, which files each row under
+/// the stage its step belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunIssueStep {
+    /// An exporter reading the backup.
+    Parse,
+    /// An exporter copying a message's attachments.
+    Attachments,
+    /// The Media Stage.
+    Media,
+    /// The Upload.
+    Upload,
+}
+
+/// The note an exporter sends for a conversation that names its person with
+/// no address, which it keeps under the name alone, counted as
+/// [`crate::NAME_ONLY_CONVERSATION`].
+pub const NAME_ONLY_CONVERSATION_NOTE: &str = "This conversation names its person with no phone number \
+     or email address, so it is kept under the name alone.";
 
 /// The note an exporter sends for a message it kept with `n` parts left out
 /// because they could not be read.
@@ -140,17 +156,14 @@ pub fn unreadable_parts_note(n: u64) -> String {
 /// of [`ItemKind::Csv`].
 pub const CSV_NOT_READ: &str = "could not be read and was left out";
 
-/// The [`RunIssue::step`] of a row an exporter records while it reads the
-/// backup.
-const READ_STEP: &str = "parse";
-
 /// Callback that receives each [`RunIssue`] the moment a run records it.
 ///
 /// The desktop app sets one and sends each row on to its window, which
 /// writes it into the Import Run's record at once: an app that closes
 /// mid-run keeps every row that had arrived. A row's `kind` says what it
-/// is, so a new kind of row travels through the same sink. A run without a
-/// sink reports its rows nowhere but the log lines it writes beside them.
+/// is, so a new kind of row travels through the same sink. A run given
+/// [`IssueSink::none`] reports its rows nowhere but the log lines it writes
+/// beside them.
 #[derive(Clone)]
 pub struct IssueSink(Arc<dyn Fn(RunIssue) + Send + Sync>);
 
@@ -163,22 +176,26 @@ impl IssueSink {
         Self(Arc::new(f))
     }
 
+    /// A sink that drops every row.
+    pub fn none() -> Self {
+        Self::new(|_| {})
+    }
+
     /// Send one row to the callback.
     pub fn emit(&self, issue: RunIssue) {
         (self.0)(issue);
     }
 }
 
-impl fmt::Debug for IssueSink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("IssueSink")
+impl Default for IssueSink {
+    fn default() -> Self {
+        Self::none()
     }
 }
 
-/// Send `issue` to `sink` when one is set.
-pub fn emit_issue(sink: Option<&IssueSink>, issue: RunIssue) {
-    if let Some(sink) = sink {
-        sink.emit(issue);
+impl fmt::Debug for IssueSink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IssueSink")
     }
 }
 
@@ -206,10 +223,8 @@ pub struct ExportReport {
     pub duplicates_dropped: u64,
     /// Attachment files saved to the output.
     pub attachments_saved: u64,
-    /// What media conversion did to the staged attachments.
-    pub media: MediaReport,
     /// Documents whose handles, names and bodies were obfuscated.
-    pub obfuscated_docs: u64,
+    pub obfuscated_documents: u64,
     /// What failed, one sentence for each item that names it, such as an
     /// [`crate::item_line`] (capped by each exporter). The summary gives
     /// them under the Import Errors heading.
@@ -225,14 +240,14 @@ pub struct ExportReport {
     pub extra: Vec<(Counter, u64)>,
     /// Where [`ExportReport::error`], [`ExportReport::note`] and
     /// [`ExportReport::caveat`] send each row the moment the run records it.
-    /// `None` sends the rows nowhere, and the lines in `errors` and `notes`
-    /// are all that is kept.
-    pub issues: Option<IssueSink>,
+    /// With [`IssueSink::none`], the default, the lines in `errors` and
+    /// `notes` are all that is kept.
+    pub issues: IssueSink,
 }
 
 impl ExportReport {
     /// An empty report that sends its rows to `issues`.
-    pub fn with_issues(issues: Option<IssueSink>) -> Self {
+    pub fn with_issues(issues: IssueSink) -> Self {
         Self {
             issues,
             ..Self::default()
@@ -281,16 +296,13 @@ impl ExportReport {
 
     /// Send one row about an item of the backup to `issues`.
     fn send(&self, kind: RunIssueKind, item: String, reason: String) {
-        emit_issue(
-            self.issues.as_ref(),
-            RunIssue {
-                kind,
-                step: READ_STEP.into(),
-                item,
-                reason,
-                conversation: None,
-            },
-        );
+        self.issues.emit(RunIssue {
+            kind,
+            step: RunIssueStep::Parse,
+            item,
+            reason,
+            conversation: None,
+        });
     }
 
     /// The run's log line for [`NOT_SMS_OR_MMS_LEFT_OUT`]: how many messages
@@ -306,42 +318,11 @@ impl ExportReport {
         })
     }
 
-    /// Refuse a run whose Media stage failed on every file it tried, when
-    /// the mode needed ffmpeg: that is a missing tool, not a bad file.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when `needs_tools` is set, the Media stage reported
-    /// errors, and it processed nothing.
-    pub fn check_media(&self, needs_tools: bool) -> anyhow::Result<()> {
-        if needs_tools && !self.media.errors.is_empty() && self.media.processed == 0 {
-            bail!("media processing failed for all candidate files");
-        }
-        Ok(())
-    }
-
-    /// Human-readable lines about the write tail: the Media stage, with each
-    /// of its failures as the sentence it was written as, and obfuscation.
-    /// Empty when neither did anything.
-    pub fn media_lines(&self) -> Vec<String> {
-        let mut lines = Vec::new();
-        if self.media.processed > 0 || self.media.skipped > 0 || !self.media.errors.is_empty() {
-            lines.push(format!(
-                "Media: processed {}, skipped {}",
-                count_of_files(self.media.processed as u64),
-                count_of_files(self.media.skipped as u64)
-            ));
-            for err in self.media.errors.iter().take(10) {
-                lines.push(format!("  {err}"));
-            }
-            if self.media.errors.len() > 10 {
-                lines.push(format!("  …and {} more", self.media.errors.len() - 10));
-            }
-        }
-        if self.obfuscated_docs > 0 {
-            lines.push(CONVERSATIONS_OBFUSCATED.line(self.obfuscated_docs));
-        }
-        lines
+    /// The line that says how many conversations were obfuscated, `None`
+    /// when none were.
+    pub fn obfuscated_line(&self) -> Option<String> {
+        (self.obfuscated_documents > 0)
+            .then(|| CONVERSATIONS_OBFUSCATED.line(self.obfuscated_documents))
     }
 
     /// Append the summary lines to `out`: where the export went, then each
@@ -408,17 +389,17 @@ impl ExportReport {
 ///
 /// This is the step every exporter runs after parsing: sort the messages the
 /// way the exporter's hooks say, drop rows whose timestamp cannot be
-/// represented, project the rest with [`pending_to_document`], and fold the
+/// represented, project the rest with [`project_pending`], and fold the
 /// counts into `report`. Returns `None` when no message survives.
 pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
-    convo: &mut PendingConversation,
+    conversation: &mut PendingConversation,
     hooks: &H,
     report: &mut ExportReport,
 ) -> Option<ConversationDocument> {
     let unit = hooks.sort_key_unit();
     let (keep, skipped) = prepare_conversation(
-        convo,
+        conversation,
         |a, b| hooks.message_order(a, b),
         |key| unit.to_secs(key),
     );
@@ -426,9 +407,9 @@ pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     if !keep {
         return None;
     }
-    let (doc, tally) = pending_to_document(chat_id, convo, hooks);
-    report.absorb_tally(tally);
-    Some(doc)
+    let projection = project_pending(chat_id, conversation, hooks);
+    report.absorb_tally(projection.tally);
+    Some(projection.document)
 }
 
 /// Create and canonicalize the output directory, canonicalize every input,
@@ -463,23 +444,25 @@ pub fn prepare_outputs(
     Ok((resolved, output))
 }
 
-/// Standard export metadata: source / tool / version, the owner identity,
-/// and when the backup was made.
+/// Standard export metadata: source / tool / version and the owner
+/// identity. The Export Date is left for the convert step to stamp
+/// (`staging::convert_backup`), which is given it by its caller; each
+/// message's Backup Date is the exporter's
+/// [`ProjectionHooks::backup_taken_at_unix_ms`].
 pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
     owner_identity: Option<String>,
     owner_display_name: Option<String>,
-    backup_taken_at_unix_ms: Option<i64>,
-) -> message_ir::ExportMeta {
-    message_ir::ExportMeta {
+) -> ir::ExportMeta {
+    ir::ExportMeta {
         source: source.to_string(),
         tool: tool.to_string(),
         tool_version: tool_version.to_string(),
         owner_identity,
         owner_display_name,
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms: None,
     }
 }
 
@@ -554,9 +537,9 @@ mod tests {
     fn summary_lines_print_notes_apart_from_errors() {
         let rows = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = Arc::clone(&rows);
-        let mut report = ExportReport::with_issues(Some(IssueSink::new(move |issue| {
+        let mut report = ExportReport::with_issues(IssueSink::new(move |issue| {
             sink.lock().unwrap().push(issue);
-        })));
+        }));
         report.note(ItemKind::Picture, "a.jpg", "is named by 2 rows");
         report.error(
             ItemKind::Csv,
@@ -650,61 +633,6 @@ mod tests {
             names,
             vec![PathBuf::from("a.xml"), PathBuf::from("sub").join("c.xml")]
         );
-    }
-
-    fn report_with_media(processed: usize, errors: &[&str]) -> ExportReport {
-        ExportReport {
-            media: MediaReport {
-                processed,
-                errors: errors.iter().map(|e| (*e).to_string()).collect(),
-                ..MediaReport::default()
-            },
-            ..ExportReport::default()
-        }
-    }
-
-    #[test]
-    fn check_media_refuses_a_pass_that_failed_on_every_file() {
-        let err = report_with_media(0, &["a.heic: ffmpeg not found"])
-            .check_media(true)
-            .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "media processing failed for all candidate files"
-        );
-    }
-
-    #[test]
-    fn check_media_accepts_a_pass_that_processed_a_file() {
-        report_with_media(1, &["a.heic: bad file"])
-            .check_media(true)
-            .unwrap();
-    }
-
-    #[test]
-    fn check_media_accepts_a_pass_with_no_errors() {
-        report_with_media(0, &[]).check_media(true).unwrap();
-    }
-
-    /// The Media stage's failures are sentences of their own, so the log
-    /// shows each as it is, with no `media warning:` before it (#1888).
-    #[test]
-    fn media_lines_show_each_failure_as_its_own_sentence() {
-        let failure = "1 file could not be converted; its conversation entry says why";
-        assert_eq!(
-            report_with_media(1, &[failure]).media_lines(),
-            [
-                "Media: processed 1 file, skipped 0 files".to_string(),
-                format!("  {failure}"),
-            ]
-        );
-    }
-
-    #[test]
-    fn check_media_accepts_failures_when_the_mode_needs_no_tools() {
-        report_with_media(0, &["a.heic: ffmpeg not found"])
-            .check_media(false)
-            .unwrap();
     }
 
     #[test]

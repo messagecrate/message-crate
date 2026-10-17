@@ -1,7 +1,9 @@
 use super::*;
+use crate::write_queue::conversation_file;
+use ir::{Attachment, Participant};
+use ir_format::write_conversation_jsonl_to;
 use media::CompressOptions;
-use message_ir::{IrAttachment, IrParticipant};
-use message_ir_format::write_conversation_jsonl_to;
+use media::testutil::FakeTools;
 
 fn summary_options() -> TranscodeOptions {
     TranscodeOptions {
@@ -26,57 +28,55 @@ fn staged_fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("attachments")).unwrap();
 
-    let mut doc_a = message_ir::testutil::sample_document("hi from conversation A");
-    doc_a.conversation.chat_identifier = "+15550101".into();
-    doc_a.conversation.participants = vec![IrParticipant {
+    let mut document_a = ir::testutil::sample_document("hi from conversation A");
+    document_a.conversation.chat_identifier = "+15550101".into();
+    document_a.conversation.participants = vec![Participant {
         identity: Some("+15550101".into()),
         display_name: Some("A".into()),
+        country: None,
     }];
-    let mut second = doc_a.messages[0].clone();
+    let mut second = document_a.messages[0].clone();
     second.guid = "guid-a2".into();
     second.timestamp_unix_ms += 1000;
-    let mut third = doc_a.messages[0].clone();
+    let mut third = document_a.messages[0].clone();
     third.guid = "guid-a3".into();
     third.timestamp_unix_ms += 2000;
-    third.attachments = vec![IrAttachment {
+    third.attachments = vec![Attachment {
         path: Some("attachments/photo.png".into()),
         original_name: Some("photo.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         // Deliberately stale: the reader must measure the file on disk,
         // never trust this.
         size_bytes: Some(1),
-        missing_reason: None,
-        bytes: None,
+        ..ir::testutil::sample_attachment()
     }];
-    doc_a.messages.push(second);
-    doc_a.messages.push(third);
-    doc_a.finalize_stats();
-    let jsonl_a = dir.path().join(format!("{}.jsonl", doc_a.filename_stem()));
-    write_conversation_jsonl_to(&jsonl_a, &doc_a).unwrap();
+    document_a.messages.push(second);
+    document_a.messages.push(third);
+    document_a.finalize_stats();
+    let jsonl_a = conversation_file(dir.path(), &document_a);
+    write_conversation_jsonl_to(&jsonl_a, &document_a).unwrap();
 
-    let mut doc_b = message_ir::testutil::sample_document("hi from conversation B");
-    doc_b.conversation.chat_identifier = "+15550100".into();
-    doc_b.conversation.participants = vec![
-        IrParticipant {
+    let mut document_b = ir::testutil::sample_document("hi from conversation B");
+    document_b.conversation.chat_identifier = "+15550100".into();
+    document_b.conversation.participants = vec![
+        Participant {
             identity: Some("+15550101".into()),
             display_name: None,
+            country: None,
         },
-        IrParticipant {
+        Participant {
             identity: Some("+15550100".into()),
             display_name: Some("B".into()),
+            country: None,
         },
     ];
-    let mut second_b = doc_b.messages[0].clone();
+    let mut second_b = document_b.messages[0].clone();
     second_b.guid = "guid-b2".into();
     second_b.timestamp_unix_ms += 1000;
-    doc_b.messages.push(second_b);
-    doc_b.finalize_stats();
-    let jsonl_b = dir.path().join(format!("{}.jsonl", doc_b.filename_stem()));
-    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    document_b.messages.push(second_b);
+    document_b.finalize_stats();
+    let jsonl_b = conversation_file(dir.path(), &document_b);
+    write_conversation_jsonl_to(&jsonl_b, &document_b).unwrap();
 
     dir
 }
@@ -92,22 +92,18 @@ fn staged_fixture_with_missing_reason(reason: &str) -> tempfile::TempDir {
     let attachment = dir.path().join("attachments/broken.png");
     std::fs::write(&attachment, vec![9u8; 2048]).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("hello");
-    doc.messages[0].attachments = vec![IrAttachment {
+    let mut document = ir::testutil::sample_document("hello");
+    document.messages[0].attachments = vec![Attachment {
         path: Some("attachments/broken.png".into()),
         original_name: Some("broken.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(2048),
         missing_reason: Some(reason.to_string()),
-        bytes: None,
+        ..ir::testutil::sample_attachment()
     }];
-    doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    document.finalize_stats();
+    let jsonl = conversation_file(dir.path(), &document);
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     dir
 }
 
@@ -120,29 +116,24 @@ fn staged_fixture_with_sizes(specs: &[(&str, u64)]) -> tempfile::TempDir {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("attachments only");
-    doc.messages[0].attachments = specs
+    let mut document = ir::testutil::sample_document("attachments only");
+    document.messages[0].attachments = specs
         .iter()
         .map(|(name, size)| {
             let file = std::fs::File::create(attachments_dir.join(name)).unwrap();
             file.set_len(*size).unwrap();
-            IrAttachment {
+            Attachment {
                 path: Some(format!("attachments/{name}")),
                 original_name: Some((*name).to_string()),
                 mime_type: None,
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
                 size_bytes: Some(*size),
-                missing_reason: None,
-                bytes: None,
+                ..ir::testutil::sample_attachment()
             }
         })
         .collect();
-    doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    document.finalize_stats();
+    let jsonl = conversation_file(dir.path(), &document);
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     dir
 }
 
@@ -158,32 +149,27 @@ fn staged_fixture_with_aliased_attachment(size: u64) -> tempfile::TempDir {
         .set_len(size)
         .unwrap();
 
-    let shared_attachment = || IrAttachment {
+    let shared_attachment = || Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(size),
-        missing_reason: None,
-        bytes: None,
+        ..ir::testutil::sample_attachment()
     };
 
-    let mut doc_a = message_ir::testutil::sample_document("conversation A, shared photo");
-    doc_a.conversation.chat_identifier = "+15550100".into();
-    doc_a.messages[0].attachments = vec![shared_attachment()];
-    doc_a.finalize_stats();
-    let jsonl_a = dir.path().join(format!("{}.jsonl", doc_a.filename_stem()));
-    write_conversation_jsonl_to(&jsonl_a, &doc_a).unwrap();
+    let mut document_a = ir::testutil::sample_document("conversation A, shared photo");
+    document_a.conversation.chat_identifier = "+15550100".into();
+    document_a.messages[0].attachments = vec![shared_attachment()];
+    document_a.finalize_stats();
+    let jsonl_a = conversation_file(dir.path(), &document_a);
+    write_conversation_jsonl_to(&jsonl_a, &document_a).unwrap();
 
-    let mut doc_b = message_ir::testutil::sample_document("conversation B, same photo");
-    doc_b.conversation.chat_identifier = "+15550199".into();
-    doc_b.messages[0].attachments = vec![shared_attachment()];
-    doc_b.finalize_stats();
-    let jsonl_b = dir.path().join(format!("{}.jsonl", doc_b.filename_stem()));
-    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    let mut document_b = ir::testutil::sample_document("conversation B, same photo");
+    document_b.conversation.chat_identifier = "+15550199".into();
+    document_b.messages[0].attachments = vec![shared_attachment()];
+    document_b.finalize_stats();
+    let jsonl_b = conversation_file(dir.path(), &document_b);
+    write_conversation_jsonl_to(&jsonl_b, &document_b).unwrap();
 
     dir
 }
@@ -195,38 +181,39 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).unwrap();
 
-    let mut doc = message_ir::testutil::sample_document("lots of attachments");
-    doc.messages[0].attachments = (0..count)
+    let mut document = ir::testutil::sample_document("lots of attachments");
+    document.messages[0].attachments = (0..count)
         .map(|i| {
             let name = format!("f{i:04}.bin");
             std::fs::File::create(attachments_dir.join(&name))
                 .unwrap()
                 .set_len(10)
                 .unwrap();
-            IrAttachment {
+            Attachment {
                 path: Some(format!("attachments/{name}")),
                 original_name: Some(name),
                 mime_type: None,
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
                 size_bytes: Some(10),
-                missing_reason: None,
-                bytes: None,
+                ..ir::testutil::sample_attachment()
             }
         })
         .collect();
-    doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    document.finalize_stats();
+    let jsonl = conversation_file(dir.path(), &document);
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
     dir
 }
 
 #[test]
 fn counts_conversations_messages_and_distinct_contacts() {
     let dir = staged_fixture(); // two conversations, one shared participant
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.conversations, 2);
     assert_eq!(summary.messages, 5);
     assert_eq!(
@@ -243,13 +230,13 @@ fn the_summary_carries_the_limit_its_verdicts_were_measured_against() {
         asset_max_bytes: 7 * 1024 * 1024,
         ..summary_options()
     };
-    let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+    let summary = summarize_staging(dir.path(), &options, &FakeTools::new(), &mut |_| {}).unwrap();
     assert_eq!(summary.asset_max_bytes, 7 * 1024 * 1024);
 }
 
 #[test]
 fn the_summary_carries_the_attachment_mode_staging_recorded() {
-    // The screen decides from this whether the run has a Media stage, so it
+    // The screen decides from this whether the run has a Media Stage, so it
     // must be the directory's mode, sent under the form's name for it.
     for (mode, form_name) in [
         (MediaMode::Disabled, "skip"),
@@ -261,7 +248,13 @@ fn the_summary_carries_the_attachment_mode_staging_recorded() {
             mode,
             ..summary_options()
         };
-        let summary = summarize_staging(staged_fixture().path(), &options, &mut |_| {}).unwrap();
+        let summary = summarize_staging(
+            staged_fixture().path(),
+            &options,
+            &FakeTools::new(),
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(summary.media_mode, mode);
         assert_eq!(
             serde_json::to_value(&summary).unwrap()["mediaMode"],
@@ -277,14 +270,26 @@ fn attachment_bytes_are_measured_on_disk_not_read_from_the_document() {
     let dir = staged_fixture();
     let attachment = dir.path().join("attachments/photo.png");
     std::fs::write(&attachment, vec![7u8; 4096]).unwrap();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.attachment_bytes, 4096);
 }
 
 #[test]
 fn an_attachment_that_is_already_missing_is_counted_but_not_forecast() {
     let dir = staged_fixture_with_missing_reason("not_copied");
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.attachments, 1);
     assert_eq!(summary.attachment_bytes, 0);
     assert!(
@@ -299,7 +304,13 @@ fn only_files_worth_reporting_get_a_forecast_row() {
     // verdict is something other than "fits as-is", because that is the
     // whole content of the report.
     let dir = staged_fixture_with_sizes(&[("small.png", 1024), ("huge.png", 900 * 1024 * 1024)]);
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.forecasts.len(), 1);
     assert_eq!(summary.forecasts[0].name, "huge.png");
     assert_eq!(summary.forecasts[0].verdict, SizeVerdict::ProbablyTooBig);
@@ -307,12 +318,12 @@ fn only_files_worth_reporting_get_a_forecast_row() {
 
 #[test]
 fn clone_mode_forecasts_each_file_at_the_size_it_already_has() {
-    // The Media stage does nothing under these modes, so every file is judged on
+    // The Media Stage does nothing under these modes, so every file is judged on
     // the size it already has and no probing happens at all.
     let dir = staged_fixture_with_sizes(&[("huge.png", 900 * 1024 * 1024)]);
     let mut options = summary_options();
     options.mode = MediaMode::Clone;
-    let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+    let summary = summarize_staging(dir.path(), &options, &FakeTools::new(), &mut |_| {}).unwrap();
     assert_eq!(summary.forecasts.len(), 1);
     assert_eq!(summary.forecasts[0].verdict, SizeVerdict::ProbablyTooBig);
     assert_eq!(
@@ -328,7 +339,13 @@ fn a_jpeg_convert_leaves_alone_forecasts_its_own_size_not_a_shrink() {
     // the current size would promise a shrink that convert_video/image
     // never performs on a file already in its target format.
     let dir = staged_fixture_with_sizes(&[("big.jpg", 55 * 1024 * 1024)]);
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.forecasts.len(), 1);
     assert_eq!(
         summary.forecasts[0].estimate_bytes,
@@ -348,7 +365,8 @@ fn a_committed_derivative_is_judged_on_its_own_size_not_a_mode_factor() {
     for mode in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = summary_options();
         options.mode = mode;
-        let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+        let summary =
+            summarize_staging(dir.path(), &options, &FakeTools::new(), &mut |_| {}).unwrap();
         assert!(
             summary.forecasts.is_empty(),
             "a committed derivative under the limit gets no forecast row (mode {mode:?})"
@@ -362,7 +380,13 @@ fn aliased_attachments_sharing_one_file_count_bytes_and_forecast_once() {
     // `attachments` is per-reference (2); everything else measured from
     // the file itself is per-physical-file (1).
     let dir = staged_fixture_with_aliased_attachment(900 * 1024 * 1024);
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.attachments, 2, "one reference per document");
     assert_eq!(
         summary.attachment_bytes,
@@ -387,31 +411,32 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
         .set_len(900 * 1024 * 1024)
         .unwrap();
 
-    let shared_attachment = || IrAttachment {
+    let shared_attachment = || Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(900 * 1024 * 1024),
-        missing_reason: None,
-        bytes: None,
+        ..ir::testutil::sample_attachment()
     };
 
-    let mut doc = message_ir::testutil::sample_document("one conversation, two references");
-    doc.messages[0].attachments = vec![shared_attachment()];
-    let mut second = doc.messages[0].clone();
+    let mut document = ir::testutil::sample_document("one conversation, two references");
+    document.messages[0].attachments = vec![shared_attachment()];
+    let mut second = document.messages[0].clone();
     second.guid = "second-message-guid".into();
     second.timestamp_unix_ms += 1000;
     second.attachments = vec![shared_attachment()];
-    doc.messages.push(second);
-    doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    document.messages.push(second);
+    document.finalize_stats();
+    let jsonl = conversation_file(dir.path(), &document);
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
 
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(
         summary.attachments, 2,
         "one reference per message, both in the same document"
@@ -427,7 +452,13 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
 #[test]
 fn a_directory_with_no_conversation_files_is_an_empty_summary_not_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.conversations, 0);
     assert_eq!(summary.messages, 0);
 }
@@ -436,9 +467,14 @@ fn a_directory_with_no_conversation_files_is_an_empty_summary_not_an_error() {
 fn progress_reports_a_final_call_matching_the_attachment_total() {
     let dir = staged_fixture_with_sizes(&[("a.png", 10), ("b.png", 20), ("c.png", 30)]);
     let mut seen = Vec::new();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |p| {
-        seen.push((p.done, p.total));
-    })
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |p| {
+            seen.push((p.done, p.total));
+        },
+    )
     .unwrap();
     assert_eq!(seen.first(), Some(&(0, 3)));
     assert_eq!(seen.last(), Some(&(3, 3)));
@@ -449,9 +485,14 @@ fn progress_reports_a_final_call_matching_the_attachment_total() {
 fn progress_cadence_is_pinned_at_every_hundred_plus_a_final_call() {
     let dir = staged_fixture_with_many_attachments(250);
     let mut seen = Vec::new();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |p| {
-        seen.push((p.done, p.total));
-    })
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |p| {
+            seen.push((p.done, p.total));
+        },
+    )
     .unwrap();
     assert_eq!(
         seen,
@@ -466,23 +507,21 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
     let dir = tempfile::tempdir().unwrap();
     // The one incoming message has no address of its own, so it counts as
     // received at the export's owner, +15555550100.
-    let mut doc = message_ir::testutil::sample_document("received at the export's owner");
-    let template = doc.messages[0].clone();
-    let message = |guid: &str,
-                   direction: message_ir::IrDirection,
-                   sender: Option<&str>,
-                   owner: Option<&str>| {
-        let mut msg = template.clone();
-        msg.guid = guid.into();
-        msg.direction = direction;
-        if direction == message_ir::IrDirection::Outgoing {
-            msg.sender_identity = sender.map(str::to_string);
-        }
-        msg.owner_identity = owner.map(str::to_string);
-        msg
-    };
-    use message_ir::IrDirection::{Incoming, Outgoing};
-    doc.messages.extend([
+    let mut document = ir::testutil::sample_document("received at the export's owner");
+    let template = document.messages[0].clone();
+    let message =
+        |guid: &str, direction: ir::Direction, sender: Option<&str>, owner: Option<&str>| {
+            let mut copy = template.clone();
+            copy.guid = guid.into();
+            copy.direction = direction;
+            if direction == ir::Direction::Outgoing {
+                copy.sender.identity = sender.map(str::to_string);
+            }
+            copy.owner_identity = owner.map(str::to_string);
+            copy
+        };
+    use ir::Direction::{Incoming, Outgoing};
+    document.messages.extend([
         message("out-1", Outgoing, Some("owner@example.com"), None),
         message("out-2", Outgoing, Some("+15555550100"), None),
         message(
@@ -497,11 +536,17 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
         message("in-1", Incoming, None, Some("owner@example.com")),
         message("in-2", Incoming, None, Some("other@example.com")),
     ]);
-    doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
-    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    document.finalize_stats();
+    let jsonl = conversation_file(dir.path(), &document);
+    write_conversation_jsonl_to(&jsonl, &document).unwrap();
 
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
 
     assert_eq!(
         summary.owner_identities,

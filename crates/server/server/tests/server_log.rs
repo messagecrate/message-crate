@@ -1,6 +1,7 @@
 //! What the server's log holds after a real `serve` process has handled an
 //! owner, an account, an API token, an Import Run, an attachment, a media
-//! link and searches: the requests, and never a password, a session or API
+//! link, searches and refused requests: the requests and the problem types
+//! they were refused with, and never a password, a session or API
 //! token (hashed or not), message text, attachment bytes, or a contact's
 //! name or identities (`docs/architecture/server-log.md`, ADR 0008).
 //!
@@ -12,17 +13,20 @@ mod common;
 
 use std::path::Path;
 
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use file_io::sha256_hex;
+use serde_json::json;
 
+use common::claim::{
+    ALICE_PASSWORD, Claimed, OWNER_PASSWORD, call, claimed_with_account, json_body,
+};
 use common::lines::{attachment, conversation_header, message_line};
-use common::{empty_message_crate, listen, serve};
+use common::log::newest_log;
+use common::{empty_message_crate, listen, listen_however_long, new_message_crate, serve};
 
-/// The owner's password.
-const OWNER_PASSWORD: &str = "Owner-Pw-7q2Lx9Vb";
-/// The account's first password, and the one it changes to.
-const ALICE_PASSWORD: &str = "Alice-Pw-3kN8wZr4";
+/// The account's new password.
 const ALICE_NEW_PASSWORD: &str = "Alice-Pw-Next-5Hd2Qm";
+/// A password that is not the account's, which a refused login sends.
+const WRONG_PASSWORD: &str = "Wrong-Pw-8Tc4Jy6n";
 /// What the imported message says, and the word a search looks for.
 const MESSAGE_TEXT: &str = "Meet me by the Tangerine Lighthouse at nine";
 const SEARCH_WORD: &str = "Tangerine";
@@ -32,41 +36,6 @@ const CONTACT_PHONE: &str = "+15555550177";
 const CONTACT_EMAIL: &str = "zebediah.quixote@example.com";
 /// The attachment's bytes.
 const ATTACHMENT: &[u8] = b"Attachment-Bytes-Pelican-Orchard-41";
-
-/// One call, answered with its status and JSON body (`Null` when it has
-/// none).
-async fn call(
-    base: &str,
-    method: reqwest::Method,
-    path: &str,
-    token: Option<&str>,
-    body: Option<(&str, Vec<u8>)>,
-) -> (reqwest::StatusCode, Value) {
-    let mut request = reqwest::Client::new().request(method, format!("{base}{path}"));
-    if let Some(token) = token {
-        request = request.bearer_auth(token);
-    }
-    if let Some((content_type, body)) = body {
-        request = request
-            .header(reqwest::header::CONTENT_TYPE, content_type)
-            .body(body);
-    }
-    let response = request.send().await.unwrap();
-    let status = response.status();
-    let text = response.text().await.unwrap();
-    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
-}
-
-fn json_body(value: &Value) -> Option<(&'static str, Vec<u8>)> {
-    Some(("application/json", serde_json::to_vec(value).unwrap()))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 /// Everything in the server's log files, and how many files there are.
 fn log_text(data_dir: &Path) -> (String, usize) {
@@ -80,6 +49,38 @@ fn log_text(data_dir: &Path) -> (String, usize) {
     (text, files)
 }
 
+/// Two requests the server refuses, whose lines name their problem type:
+/// alice logging in with [`WRONG_PASSWORD`] (`401 Unauthorized`), and a
+/// search by `alice` (her Session token) for `date:` [`SEARCH_WORD`], whose
+/// `detail` repeats the word (`422 Unprocessable Entity`).
+async fn refuse_a_wrong_password_and_a_search(base: &str, alice: &str) {
+    use reqwest::Method;
+    use reqwest::StatusCode as S;
+
+    let (status, answer) = call(
+        base,
+        Method::POST,
+        "/v1/session",
+        None,
+        json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::UNAUTHORIZED, "{answer}");
+    let (status, answer) = call(
+        base,
+        Method::GET,
+        &format!("/v1/messages?q=date:{SEARCH_WORD}"),
+        Some(alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::UNPROCESSABLE_ENTITY, "{answer}");
+    assert!(
+        answer["detail"].as_str().unwrap().contains(SEARCH_WORD),
+        "the detail repeats the word, so the check that the log leaves it out means something: {answer}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     use reqwest::Method;
@@ -91,48 +92,15 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    // The owner claims the Message Crate and opens registration.
-    let (status, claimed) = call(
-        base,
-        Method::POST,
-        "/v1/server/claim",
-        None,
-        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{claimed}");
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let (status, _) = call(
-        base,
-        Method::PATCH,
-        "/v1/server/settings",
-        Some(&owner),
-        json_body(&json!({ "public_registration": true })),
-    )
-    .await;
-    assert_eq!(status, S::OK);
+    // The owner claims the Message Crate and opens registration, and Alice
+    // registers and logs in.
+    let Claimed {
+        owner_token: owner,
+        alice_id,
+        alice_token: alice,
+    } = claimed_with_account(base).await;
 
-    // An account registers, logs in, and makes an API token.
-    let (status, registered) = call(
-        base,
-        Method::POST,
-        "/v1/accounts",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{registered}");
-    let alice_id = registered["account_id"].as_i64().unwrap();
-    let (status, session) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{session}");
-    let alice = session["token"].as_str().unwrap().to_string();
+    // Alice makes an API token.
     let (status, made) = call(
         base,
         Method::POST,
@@ -166,7 +134,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     )
     .await;
     assert!(status.is_success(), "{status} {answer}");
-    // Built through the unit tests' own builders, from message-ir's types, so
+    // Built through the unit tests' own builders, from `ir`'s types, so
     // the version and the field names follow the schema (#1732, #1898).
     let header = conversation_header("whatsapp", CONTACT_PHONE)
         .owner("+15555550106", Some("Me"))
@@ -174,11 +142,11 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         .participant(CONTACT_EMAIL, Some(CONTACT_NAME));
     let message = message_line("g-1", MESSAGE_TEXT)
         .at(1_700_000_000_000)
-        .service(message_ir::IrService::Whatsapp)
-        .kind(message_ir::IrMessageKind::Sms)
+        .service(ir::Transport::Whatsapp)
+        .kind(ir::MessageKind::Sms)
         .sender(CONTACT_PHONE)
         .sender_display_name(CONTACT_NAME)
-        .attachment(message_ir::IrAttachment {
+        .attachment(ir::Attachment {
             digest_sha256: Some(sha256.clone()),
             ..attachment(
                 "attachments/photo.bin",
@@ -237,7 +205,9 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     .await;
     assert_eq!(status, S::CREATED, "{link}");
     let media_link = link["url"].as_str().unwrap().to_string();
-    let bytes = reqwest::get(format!("{base}{media_link}"))
+    let bytes = common::client::http_client()
+        .get(format!("{base}{media_link}"))
+        .send()
         .await
         .unwrap()
         .bytes()
@@ -257,6 +227,8 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     .await;
     assert_eq!(status, S::OK, "{changed}");
     let alice_next = changed["token"].as_str().unwrap().to_string();
+
+    refuse_a_wrong_password_and_a_search(base, &alice_next).await;
 
     // The owner reads the log back through its route.
     let (status, lines) = call(
@@ -285,6 +257,8 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         "/v1/imports",
         "/v1/messages?q=",
         "media_link=",
+        "problem=invalid-credentials",
+        "problem=search-query-invalid",
     ] {
         assert!(log.contains(expected), "the log names {expected}");
     }
@@ -295,6 +269,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         ("the owner's password", OWNER_PASSWORD.to_string()),
         ("the account's password", ALICE_PASSWORD.to_string()),
         ("the account's new password", ALICE_NEW_PASSWORD.to_string()),
+        ("a wrong password", WRONG_PASSWORD.to_string()),
         ("a password hash", "$argon2".to_string()),
         ("the message text", MESSAGE_TEXT.to_string()),
         ("a word of the message", SEARCH_WORD.to_string()),
@@ -327,10 +302,11 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     );
 }
 
-/// Under `serve`, an Import Run's progress, its import, promote and dedupe
-/// lines, goes into the server's log, and nothing reaches standard output
-/// (#1945). The desktop app reads that output through a pipe a crashed app
-/// closes, and a print into it would panic the request part-way.
+/// Under `serve`, an Import Run's progress, the import and promote lines of its
+/// batch and the dedupe lines of its completion, goes into the server's log,
+/// and nothing reaches standard output (#1945). The desktop app reads that
+/// output through a pipe a crashed app closes, and a print into it would panic
+/// the request part-way.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_standard_output() {
     use reqwest::Method;
@@ -348,44 +324,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    let (status, claimed) = call(
-        base,
-        Method::POST,
-        "/v1/server/claim",
-        None,
-        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{claimed}");
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let (status, _) = call(
-        base,
-        Method::PATCH,
-        "/v1/server/settings",
-        Some(&owner),
-        json_body(&json!({ "public_registration": true })),
-    )
-    .await;
-    assert_eq!(status, S::OK);
-    let (status, registered) = call(
-        base,
-        Method::POST,
-        "/v1/accounts",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{registered}");
-    let (status, session) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{session}");
-    let alice = session["token"].as_str().unwrap().to_string();
+    let alice = claimed_with_account(base).await.alice_token;
 
     let (status, run) = call(
         base,
@@ -402,8 +341,8 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
         .participant(CONTACT_PHONE, Some(CONTACT_NAME));
     let message = message_line("g-1", MESSAGE_TEXT)
         .at(1_700_000_000_000)
-        .service(message_ir::IrService::Whatsapp)
-        .kind(message_ir::IrMessageKind::Sms)
+        .service(ir::Transport::Whatsapp)
+        .kind(ir::MessageKind::Sms)
         .sender(CONTACT_PHONE);
     let batch = format!("{}{}", header.line(), message.line()).into_bytes();
     let (status, answer) = call(
@@ -415,6 +354,16 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     )
     .await;
     assert_eq!(status, S::OK, "{answer}");
+    // The run's end runs the dedupe (#2040).
+    let (status, completed) = call(
+        base,
+        Method::POST,
+        &format!("/v1/imports/{run_id}/complete"),
+        Some(&alice),
+        json_body(&json!({ "status": "completed" })),
+    )
+    .await;
+    assert_eq!(status, S::OK, "{completed}");
     drop(server);
 
     let printed = std::fs::read_to_string(&stdout_path).unwrap();
@@ -435,4 +384,147 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
             "the log has an info line with {expected:?}:\n{log}"
         );
     }
+}
+
+/// A refused request leaves a line with its problem type and status, at
+/// `WARN` when it is about who may do what (`401 Unauthorized`,
+/// `403 Forbidden`) and at `INFO` for the rest, so the owner's Logs panel,
+/// which opens at warnings and up, shows a password guesser or a token that
+/// lost its rights (#2168). The line never holds the problem's `detail`,
+/// which can repeat what a person typed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_request_leaves_a_line_with_its_problem_type() {
+    use reqwest::Method;
+    use reqwest::StatusCode as S;
+
+    let root = tempfile::tempdir().unwrap();
+    let (data_dir, static_dir) = empty_message_crate(root.path());
+    let (_server, address) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "info"));
+    let base = format!("http://{address}");
+    let base = base.as_str();
+    let Claimed {
+        owner_token: owner,
+        alice_token: alice,
+        ..
+    } = claimed_with_account(base).await;
+
+    // A wrong password, a refused search, and an account reading the
+    // owner's log.
+    refuse_a_wrong_password_and_a_search(base, &alice).await;
+    let (status, answer) = call(
+        base,
+        Method::GET,
+        "/v1/server/log-lines",
+        Some(&alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::FORBIDDEN, "{answer}");
+
+    let (log, _) = log_text(&data_dir);
+    // The refused login leaves a warning naming the account by its id and
+    // the reason, and never the username typed. The warning a full count
+    // writes is checked in `credentials/tests.rs`, with a stopped clock.
+    let refused_logins = log
+        .lines()
+        .filter(|line| {
+            line.contains(" WARN ")
+                && line.contains("A login was refused")
+                && line.contains("reason=\"wrong_password\"")
+                && line.contains("account_id=")
+        })
+        .count();
+    assert_eq!(
+        refused_logins, 1,
+        "one warning for the wrong password:\n{log}"
+    );
+    assert!(
+        !log.contains("username=") && !log.contains("\"alice\""),
+        "a refused login's lines never name the username typed:\n{log}"
+    );
+    let refusal = |level: &str, problem: &str, status: u16, path: &str| {
+        log.lines().any(|line| {
+            line.contains(&format!(" {level} "))
+                && line.contains(path)
+                && line.contains(&format!("problem={problem}"))
+                && line.contains(&format!("status={status}"))
+        })
+    };
+    assert!(
+        refusal("WARN", "invalid-credentials", 401, "/v1/session"),
+        "the wrong password is a warning with its problem type:\n{log}"
+    );
+    assert!(
+        refusal("WARN", "not-the-owner", 403, "/v1/server/log-lines"),
+        "the account refused the owner's log is a warning with its problem type:\n{log}"
+    );
+    assert!(
+        refusal("INFO", "search-query-invalid", 422, "/v1/messages"),
+        "the refused search is an info line with its problem type:\n{log}"
+    );
+    for (what, needle) in [
+        ("the wrong password", WRONG_PASSWORD),
+        ("the word the search typed", SEARCH_WORD),
+    ] {
+        let lines: Vec<&str> = log.lines().filter(|line| line.contains(needle)).collect();
+        assert!(
+            lines.is_empty(),
+            "the log holds {what}:\n{}",
+            lines.join("\n")
+        );
+    }
+
+    // The owner's Logs panel opens at warnings and up, and shows the two.
+    let (status, lines) = call(
+        base,
+        Method::GET,
+        "/v1/server/log-lines?level=warn&limit=500",
+        Some(&owner),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::OK, "{lines}");
+    let warnings = lines["items"].to_string();
+    for problem in ["invalid-credentials", "not-the-owner"] {
+        assert!(
+            warnings.contains(problem),
+            "the warnings hold {problem}: {lines}"
+        );
+    }
+    assert!(
+        !warnings.contains("search-query-invalid"),
+        "a refused search is not a warning: {lines}"
+    );
+}
+
+/// A new Message Crate's first start builds the Demo Account under `serve`,
+/// and the build says every step in the server's log and nothing on
+/// standard output (#2018), which the desktop app reads through a pipe a
+/// crashed app closes.
+#[test]
+fn the_first_start_builds_the_demo_account_with_nothing_on_standard_output() {
+    let root = tempfile::tempdir().unwrap();
+    let (data_dir, static_dir) = new_message_crate(root.path());
+    let stdout_path = root.path().join("stdout.txt");
+    let stdout = std::fs::File::create(&stdout_path).unwrap();
+
+    let (_server, _address) = listen_however_long(
+        serve(&data_dir, &static_dir)
+            .env("RUST_LOG", "info")
+            .stdout(stdout),
+    );
+
+    let log = newest_log(&data_dir);
+    for step in [
+        "The Demo Account is built from these files",
+        "The demo address book named",
+        "The Demo Account was added",
+    ] {
+        assert!(log.contains(step), "no line says {step:?}:\n{log}");
+    }
+    let printed = std::fs::read_to_string(&stdout_path).unwrap();
+    assert!(
+        printed.is_empty(),
+        "the build printed on standard output:\n{printed}"
+    );
 }

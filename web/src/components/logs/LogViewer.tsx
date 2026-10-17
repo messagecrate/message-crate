@@ -1,18 +1,20 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useRouteInfiniteQuery } from "../../lib/routeQuery";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { useRouteInfiniteQuery } from "../../hooks/useRouteQuery";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
 import Button from "../Button";
 import Select, { ListBoxItem, selectItemClassName } from "../Select";
 import TextField from "../TextField";
-import { type LevelFilter, type LogDownload, type LogSource, logErrorMessage } from "./logSource";
+import type { LevelFilter, LogDownload, LogSource } from "./logSource";
 
 /** Lines read per page. */
 export const LOG_PAGE_SIZE = 200;
 
 /** How long the search waits after the last key before it reads the log. */
-const SEARCH_DELAY_MS = 250;
+export const SEARCH_DELAY_MS = 250;
 
 const LEVEL_LABELS: Record<LevelFilter, string> = {
   error: "Errors",
@@ -36,6 +38,10 @@ const LEVEL_CLASS: Record<LogLevel, string> = {
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
 
+/** Said when the search for a request's id finds no line. */
+export const REQUEST_NOT_IN_LOG =
+  "The server's log holds no line of this request. Either its oldest files were deleted as the log grew, or the log's level left the request's lines out.";
+
 /**
  * One log, read: a level filter (opens at warnings and up), a search that
  * reads as it is typed, a download of the log as it is, and the lines newest
@@ -45,11 +51,18 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
  * Owner Home's Logs panel shows the server's log and the Import Run logs on
  * this computer through it, and an Import Run's row in Settings → Storage
  * shows that run's log, so every log reads the same way.
+ *
+ * Given `request`, it opens at every level with the request's id in the
+ * search, so only that request's lines show. Every request leaves a line at
+ * `INFO`, so finding none means the log was rotated past it or `RUST_LOG`
+ * leaves out its `INFO` lines, as `RUST_LOG=warn` does. The viewer says so
+ * rather than that no line matches.
  */
 export default function LogViewer({
   source,
   downloads,
   unreadable,
+  request,
 }: {
   source: LogSource;
   /** The files the log downloads as. */
@@ -59,14 +72,12 @@ export default function LogViewer({
    * level, so the empty list does not blame the filter or the search.
    */
   unreadable?: string;
+  /** The id of the request whose lines to open on, from an Audit Trail entry. */
+  request?: string;
 }) {
-  const [level, setLevel] = useState<LevelFilter>("warn");
-  const [typed, setTyped] = useState("");
-  const [text, setText] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setText(typed.trim()), SEARCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [typed]);
+  const [level, setLevel] = useState<LevelFilter>(request ? "all" : "warn");
+  const [typed, setTyped] = useState(request ?? "");
+  const text = useDebouncedValue(typed.trim(), SEARCH_DELAY_MS);
 
   const lines = useRouteInfiniteQuery<LogLinesPage, number | undefined>(
     [...source.key, "lines", level, text],
@@ -142,11 +153,15 @@ export default function LogViewer({
         <p className="m-0 text-[0.813rem] text-muted">Reading the log…</p>
       ) : lines.error && items.length === 0 ? (
         <p role="alert" className="m-0 text-[0.813rem] text-danger">
-          {logErrorMessage(lines.error, "Could not read the log.")}
+          {errorLine(lines.error, "Could not read the log.")}
         </p>
       ) : items.length === 0 ? (
         <p className="m-0 text-[0.813rem] text-muted">
-          {text ? "No line matches the search." : `No line at this level.`}
+          {request && text === request && level === "all"
+            ? REQUEST_NOT_IN_LOG
+            : text
+              ? "No line matches the search"
+              : "No line at this level"}
         </p>
       ) : (
         <div
@@ -190,7 +205,7 @@ function LogDownloads({ downloads }: { downloads: LogDownload[] }) {
       const contents = await download.read();
       await saveFile(download.name, new Blob([contents], { type: "text/plain" }));
     } catch (err) {
-      setError(logErrorMessage(err, `Could not download ${download.name}.`));
+      setError(errorLine(err, `Could not download ${download.name}.`));
     } finally {
       setBusy("");
     }

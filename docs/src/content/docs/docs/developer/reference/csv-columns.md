@@ -5,12 +5,30 @@ description: Read the shared columns written for every conversation CSV.
 
 CSV output contains one row per message. Conversation and export identity are repeated on every row, so there is no separate metadata file.
 
+## Cells that start like a formula
+
+A spreadsheet runs a cell that starts with `=`, `+`, `-`, `@`, a tab, or a carriage return as a formula.
+A message's sender writes its text, so a message such as `=HYPERLINK(...)` would run when the export is opened.
+Every such cell is written with a `'` in front, which Excel and LibreOffice Calc read as "this cell is text".
+The `'` also keeps the `+` of a phone number such as `+15551234567`, and the `-` of a negative number.
+
+A cell that already starts with one or more `'` and then one of those characters gets one more `'`.
+Reading the file back takes exactly one `'` off a cell whose next character, after any further `'`, is one of them.
+So a CSV export imported or converted again gives back each cell exactly as it was.
+A spreadsheet that keeps the `'` when it saves the file, or drops it, gives the same result for every cell that does not itself start with `'`.
+A cell that does can lose its own `'`, because the spreadsheet reads that `'` as its text mark too.
+A cell `'hello` is written as it is, and a spreadsheet that drops the mark saves `hello`.
+A cell `'=x` is written `''=x`, and a spreadsheet that drops the outer mark saves `'=x`.
+That reads back as `=x`.
+Any other cell, a JSON column included, is written as it is.
+The diagnostic CSV files the GO SMS Pro import writes (`skipped_*.csv`) follow the same rule.
+
 ## Conversation and message identity
 
 | Column | Meaning |
 | --- | --- |
 | `chat_identifier` | Identifier for the conversation, usually a peer identity or group identifier. |
-| `conversation_type` | `individual` or `group`. |
+| `conversation_type` | `one-to-one` or `group`. |
 | `group_title` | Group name, or empty when none is known. |
 | `participants_json` | JSON array of participant identities and display names. |
 | `guid` | Stable message identifier. |
@@ -32,10 +50,10 @@ CSV output contains one row per message. Conversation and export identity are re
 | `sender_display_name` | Sender name. Outgoing rows default to `Me` when an owner identity is known. |
 | `subject` | Message subject when present. |
 | `text` | Message body. |
-| `attachments_json` | JSON array with attachment path, original name, media type, and available file fingerprints and media details. An attachment whose file was not copied keeps its `size_bytes` and its `missing_reason` (`file_missing`, `too_large`, `not_copied`, or `convert_failed: <detail>`). |
+| `attachments_json` | JSON array with attachment path, original name, media type, and available file fingerprints and media details. An attachment whose file was not copied keeps its `size_bytes` and its `missing_reason` (`file_missing`, `too_large`, `not_copied`, `not_fetched`, or `convert_failed: <detail>`). |
 | `reactions_json` | JSON array of the message's reactions, each with `part_index`, `kind`, `emoji` for an emoji reaction, `is_from_me`, and the person who reacted (`reactor_identity`, `reactor_display_name`). Empty when the message has none. |
 | `deletion` | `deleted_in_source_app` for a message deleted in the app it came from before the backup, `unsent` for one its sender took back, or empty for neither. A file with any other value is refused. |
-| `earlier_versions_json` | JSON array of an edited message's earlier versions, oldest first within each part, each with `part_index`, `text`, and `edited_at_unix_ms` when the source records when it was written. `text` holds the final version. Empty when the message was never edited. |
+| `earlier_versions_json` | JSON array of an edited message's earlier versions, oldest first within each part, each with `part_index`, `text` when the source kept the text the edit replaced (iMazing does not), and `edited_at_unix_ms` when the source records when it was written. `text` holds the final version. Empty when the message was never edited. |
 | `is_reply` | `true` for a reply, whether or not the message it quotes is in the export; `false` otherwise. |
 | `reply_to_guid` | The `guid` of the message a reply quotes, when the source names it; empty otherwise. The named message can be missing from the export. |
 | `reply_to_part` | The part of the quoted message a reply answers, `0` for the first or only part; empty when the source does not record one. |
@@ -49,7 +67,8 @@ CSV output contains one row per message. Conversation and export identity are re
 | `export_tool_version` | Source version recorded by the importer. |
 | `owner_identity` | Phone number or email for the person whose backup was exported. |
 | `owner_display_name` | Display name for the owner. |
-| `backup_taken_at_unix_ms` | When the backup the export was read from was made, in Unix milliseconds; blank when the export does not say. |
+| `backup_taken_at_unix_ms` | The message's Backup Date: when the backup this message was read from was made, in Unix milliseconds; blank when nothing says. Rows of one file can carry different dates when an Export Run wrote messages stored from several backups. |
+| `exported_at_unix_ms` | The Export Date: when the file was written, in Unix milliseconds, the same on every row; blank when the export does not say. |
 | `message_owner_identity` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_identity` then stands for the row. |
 | `android_type` | Original Android SMS type or MMS box number, or empty for other sources. |
 | `source_fields_json` | Compact JSON containing source-specific fields that do not have shared columns. |

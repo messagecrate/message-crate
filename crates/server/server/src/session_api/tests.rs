@@ -1,11 +1,12 @@
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 
 use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
-    expect_problem, fixture_with_account, get_json, get_raw, get_status, log_in, login_status,
-    post_created_json, post_raw, put_status, register_via_api, seed_conversation, test_fixture,
+    expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
+    log_in, log_in_raw, post_created_json, post_json_raw, put_status, register_via_api,
+    seed_conversation, serve, stored_time, test_fixture,
 };
 
 const TEST_ACCOUNT: i64 = 7;
@@ -56,21 +57,19 @@ async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
                     // An account id no `accounts` row holds.
                     let auth = AuthIdentity {
                         account_id: 9_999,
-                        capability: crate::server::AuthCapability::Session {
+                        capability: crate::auth::AuthCapability::Session {
                             permissions: crate::db::permissions::Permissions::all(),
                         },
                         credential: crate::db::audit_trail::CredentialUsed::Session(None),
                     };
-                    get_session(State(state), auth).await
+                    get_session(State(state.db.clone()), auth).await
                 }
             }),
         )
         .layer(axum::middleware::from_fn(crate::request_id::layer));
     let server = crate::test_support::serve_router(app).await;
 
-    let response = reqwest::get(format!("{}/v1/session", server.base()))
-        .await
-        .unwrap();
+    let response = server.get("/v1/session").send().await.unwrap();
     let status = response.status();
     let text = response.text().await.unwrap();
     expect_problem(status, &text, ProblemType::AuthenticationRequired);
@@ -100,12 +99,9 @@ async fn a_session_is_created_read_and_deleted_at_one_path() {
 
     let status = crate::test_support::delete_status(&state, "/v1/session", &token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let status = crate::test_support::get_status(&state, "/v1/session", &token).await;
-    assert_eq!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "a deleted session no longer names an account"
-    );
+    // A deleted session no longer names an account.
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/session", &token).await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 }
 
 /// Logging out ends a Session and nothing else. An API token is not a
@@ -123,6 +119,7 @@ async fn logging_out_with_an_api_token_is_refused_and_leaves_the_token_working()
         "push",
         crate::db::permissions::Permissions::all(),
         None,
+        crate::test_support::routed_credential_instant(),
     )
     .await
     .unwrap()
@@ -228,12 +225,12 @@ async fn seed_source(state: &crate::server::AppState, account_id: i64, source: &
         &SeedConversation {
             account_id,
             handle: &format!("+1555{account_id}{}", source.len()),
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source,
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],
@@ -272,14 +269,18 @@ async fn a_session_lists_the_account_sources_oldest_first() {
 async fn logout_on_conn_leaves_registered_account() {
     let fixture = test_fixture().await;
     let mut conn = fixture.conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
-    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
+    let token = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
-    logout_on_conn(&mut conn, &token).await.unwrap();
+    logout_on_conn(&mut conn, &token, crate::test_support::fixed_instant())
+        .await
+        .unwrap();
 
     assert_eq!(
         account_profile::username_for_account(&mut conn, TEST_ACCOUNT)
@@ -289,13 +290,16 @@ async fn logout_on_conn_leaves_registered_account() {
         Some("alice")
     );
     assert!(
-        session_tokens::lookup_session(&mut conn, &token)
+        session_tokens::lookup_session(&mut conn, &token, crate::test_support::fixed_instant())
             .await
             .unwrap()
             .is_none()
     );
 }
 
+/// A disabled account's login is refused with the answer every refused
+/// login gets, whether the password was right or wrong, so a guesser does
+/// not learn which guess was right. The Audit Trail still records why.
 #[tokio::test]
 async fn disabled_account_cannot_log_in() {
     let (fixture, created) = fixture_with_account().await;
@@ -308,8 +312,30 @@ async fn disabled_account_cannot_log_in() {
         .await
         .unwrap();
 
-    let status = login_status(&state, "alice", "hunter2hunter2").await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, text) = log_in_raw(&state, "alice", "hunter2hunter2").await;
+    expect_problem_for(
+        "the right password",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
+    );
+    let (status, text) = log_in_raw(&state, "alice", "not-the-password").await;
+    expect_problem_for(
+        "a wrong password",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
+    );
+
+    let reasons: Vec<String> = sqlx::query_scalar(
+        "SELECT reason FROM audit_entries
+         WHERE action = 'login_refused' AND account_id = $1 ORDER BY id",
+    )
+    .bind(created.account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(reasons, ["account_disabled", "wrong_password"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -421,14 +447,7 @@ async fn a_deleted_api_token_is_refused_on_the_export_routes() {
         "a deleted token paging its run",
     )
     .await;
-    let (status, text) = post_raw(
-        &state,
-        "/v1/exports",
-        &api_token,
-        "application/json",
-        everything.to_string(),
-    )
-    .await;
+    let (status, text) = post_json_raw(&state, "/v1/exports", &api_token, everything).await;
     expect_problem(status, &text, ProblemType::AuthenticationRequired);
     assert_eq!(
         get_status(&state, BROWSE, &alice.token).await,
@@ -523,22 +542,71 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
 
     let mut other_conn = fixture.conn().await;
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    crate::db::session_tokens::rotate_account_session_token(&mut other, account)
-        .await
-        .unwrap();
+    crate::db::session_tokens::rotate_account_session_token(
+        &mut other,
+        account,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let mut conn = fixture.conn().await;
     let created = crate::db::write_tx::commit_during(
         other,
-        CreateSessionResponse::for_existing_account(&mut conn, account, "alice".into(), None),
+        CreateSessionResponse::for_existing_account(
+            &mut conn,
+            account,
+            "alice".into(),
+            None,
+            crate::test_support::fixed_instant(),
+        ),
     )
     .await
     .expect("the second login signs in");
+    let LoginOpened::Session(created) = created else {
+        panic!("the second login must open a Session");
+    };
 
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &created.token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        &created.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(auth.account_id, account);
     assert_eq!(session_rows(&mut conn, account).await, 1);
+}
+
+/// A login whose password was right, and whose account the owner disabled
+/// while the password was checked, opens no Session: the disabled flag is
+/// read again under the write lock that would open it. Before, the login
+/// opened a Session after the owner's disable had ended the old one, and
+/// that Session worked again once the account was enabled (#2074).
+#[tokio::test]
+async fn a_login_to_an_account_disabled_during_its_password_check_opens_no_session() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    // The owner's disable, landing after the login's first check.
+    sqlx::query("UPDATE accounts SET disabled = 1 WHERE id = $1")
+        .bind(account)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let opened = CreateSessionResponse::for_existing_account(
+        &mut conn,
+        account,
+        "alice".into(),
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(opened, LoginOpened::Disabled));
+    assert_eq!(session_rows(&mut conn, account).await, 0);
 }
 
 /// How many session rows `account` holds.
@@ -548,4 +616,117 @@ async fn session_rows(conn: &mut sqlx::SqliteConnection, account: i64) -> i64 {
         .fetch_one(conn)
         .await
         .unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// The wait before a refused login is answered
+// ---------------------------------------------------------------------------
+
+/// How many refused logins the Audit Trail holds.
+async fn refused_logins(state: &crate::server::AppState) -> i64 {
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_entries WHERE action = 'login_refused'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// Every refused login waits, then gets one answer: a username nobody
+/// holds, a wrong password, an empty password, and the right password to a
+/// disabled account. The Audit Trail records each.
+#[tokio::test]
+async fn every_refused_login_waits_and_gets_the_same_answer() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = fixture.state.clone();
+    let refusals = [
+        (
+            "nobody",
+            crate::test_support::PASSWORD,
+            "a username nobody holds",
+        ),
+        ("alice", "not-it-at-all", "a wrong password"),
+        ("alice", "", "an empty password"),
+    ];
+    for (done, (username, password, why)) in refusals.into_iter().enumerate() {
+        let (status, text) = log_in_raw(&state, username, password).await;
+        let problem = expect_problem_for(why, status, &text, ProblemType::InvalidCredentials);
+        assert_eq!(
+            problem.detail.as_deref(),
+            Some("invalid username or password"),
+            "{why}"
+        );
+        assert_eq!(state.refusal_wait.waits(), done + 1, "{why} waited");
+    }
+
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query("UPDATE accounts SET disabled = 1 WHERE id = $1")
+        .bind(alice.account_id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+    let (status, text) = log_in_raw(&state, "alice", crate::test_support::PASSWORD).await;
+    let problem = expect_problem_for(
+        "the right password to a disabled account",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
+    );
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("invalid username or password")
+    );
+    assert_eq!(state.refusal_wait.waits(), 4, "the disabled account waited");
+    assert_eq!(refused_logins(&state).await, 4);
+}
+
+/// A login with the right password does not wait, and no number of wrong
+/// passwords before it shuts the holder out: nothing counts them (#2893).
+#[tokio::test]
+async fn the_right_password_never_waits_however_many_wrong_ones_came_first() {
+    let (fixture, _alice) = fixture_with_account().await;
+    let state = fixture.state.clone();
+    let wrong = 25;
+    for attempt in 0..wrong {
+        let (status, text) = log_in_raw(&state, "alice", "not-it-at-all").await;
+        expect_problem_for(
+            &format!("wrong password {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
+    }
+    for attempt in 0..3 {
+        let (status, text) = log_in_raw(&state, "alice", crate::test_support::PASSWORD).await;
+        assert_eq!(status, StatusCode::CREATED, "login {attempt}: {text}");
+    }
+    assert_eq!(
+        state.refusal_wait.waits(),
+        wrong,
+        "only the refusals waited"
+    );
+}
+
+/// A wrong password is `invalid-credentials` at `401 Unauthorized`, with no
+/// `Retry-After`: the server waited before answering, so there is nothing to
+/// wait for.
+#[tokio::test]
+async fn a_wrong_password_is_401_invalid_credentials() {
+    let (fixture, _) = fixture_with_account().await;
+    let state = fixture.state.clone();
+    let server = serve(&state).await;
+    let wrong = server
+        .post("/v1/session")
+        .json(&serde_json::json!({ "username": "alice", "password": "not-it-at-all" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(!wrong.headers().contains_key(header::RETRY_AFTER));
+    let status = wrong.status();
+    let text = wrong.text().await.unwrap();
+    let problem = expect_problem(status, &text, ProblemType::InvalidCredentials);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("invalid username or password")
+    );
 }

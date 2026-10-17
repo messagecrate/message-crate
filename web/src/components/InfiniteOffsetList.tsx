@@ -13,8 +13,8 @@ import { ListBox, ListBoxItem, ListLayout, Virtualizer } from "react-aria-compon
 import { groupByLetter } from "../lib/contactSort";
 import { keepAttribute } from "../lib/keepAttribute";
 import { formatVisibleRange } from "../lib/listPaging";
-import { isTauri } from "../lib/tauri-check";
-import { listRowDividersThin, resizeHandleGutter } from "../lib/tw";
+import { isTauri } from "../lib/tauriCheck";
+import { listRowDividersThinClass, resizeHandleGutterClass } from "../lib/tw";
 import { Z_LIFT } from "../lib/zLayers";
 import ListRangeHeader, { type SelectAllBox } from "./ListRangeHeader";
 import ListRangePill, {
@@ -74,7 +74,7 @@ function rowClass(selected: boolean, hovered = false): string {
     : hovered
       ? "bg-hover"
       : "bg-transparent hover:bg-hover";
-  return `box-border flex w-full cursor-pointer items-center gap-2.5 border-none p-2 px-3 text-left text-text outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${listRowDividersThin} ${fill}`;
+  return `box-border flex w-full cursor-pointer items-center gap-2.5 border-none p-2 px-3 text-left text-text outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${listRowDividersThinClass} ${fill}`;
 }
 
 /**
@@ -85,7 +85,7 @@ function rowClass(selected: boolean, hovered = false): string {
  * stretched over the whole row. Without that the row's padding and the gap
  * beside the lead cell show the hover fill and the pointer, then ignore the click.
  */
-const ROW_BODY =
+const ROW_BODY_CLASS =
   "flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 border-none bg-transparent p-0 text-left text-text outline-none after:absolute after:inset-0 after:content-['']";
 
 /**
@@ -93,11 +93,11 @@ const ROW_BODY =
  * button is only as tall as the name inside it, so the row draws the ring while
  * the button has keyboard focus.
  */
-const ROW_BODY_FOCUS_RING =
+const ROW_BODY_FOCUS_RING_CLASS =
   "has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-inset has-[>button:focus-visible]:ring-accent";
 
 /** Lifts the lead cell above the select button's stretched target, so it still takes its own clicks. */
-const ROW_LEAD = `relative flex shrink-0 self-center ${Z_LIFT}`;
+const ROW_LEAD_CLASS = `relative flex shrink-0 self-center ${Z_LIFT}`;
 
 /**
  * A row is either one button, or a container holding the lead cell plus that button.
@@ -137,9 +137,9 @@ function Row({
     );
   }
   return (
-    <div className={`relative ${className} ${ROW_BODY_FOCUS_RING}`} style={style} {...rest}>
-      <div className={ROW_LEAD}>{lead}</div>
-      <PlainButton onPress={onSelect} aria-current={ariaCurrent} className={ROW_BODY}>
+    <div className={`relative ${className} ${ROW_BODY_FOCUS_RING_CLASS}`} style={style} {...rest}>
+      <div className={ROW_LEAD_CLASS}>{lead}</div>
+      <PlainButton onPress={onSelect} aria-current={ariaCurrent} className={ROW_BODY_CLASS}>
         {children}
       </PlainButton>
     </div>
@@ -170,6 +170,24 @@ function rangeFromDrawnRows(root: HTMLElement, bottomInset: number): VisibleRang
   return { start, end };
 }
 
+/** The props both virtual lists take, one for the desktop app and one for the browser. */
+type VirtualListProps<T> = {
+  items: T[];
+  estimateSize: number;
+  dynamicSize: boolean;
+  selectedId: string | null;
+  onSelect: (item: T) => void;
+  isRowHighlighted?: (item: T) => boolean;
+  getId: (item: T) => string;
+  getTextValue?: (item: T) => string;
+  renderRow: (item: T) => ReactNode;
+  renderRowLead?: (item: T) => ReactNode;
+  requestMore: () => void;
+  hasMore: boolean;
+  onVisibleRangeChange: (range: VisibleRange) => void;
+  empty?: ReactNode;
+};
+
 function RacVirtualList<T extends object>({
   items,
   estimateSize,
@@ -186,23 +204,7 @@ function RacVirtualList<T extends object>({
   onVisibleRangeChange,
   empty,
   ariaLabel,
-}: {
-  items: T[];
-  estimateSize: number;
-  dynamicSize: boolean;
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
-  getId: (item: T) => string;
-  getTextValue?: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
-  ariaLabel: string;
-}) {
+}: VirtualListProps<T> & { ariaLabel: string }) {
   const listRef = useRef<HTMLDivElement>(null);
   const publishedRef = useRef<VisibleRange | null>(null);
   const onRangeRef = useRef(onVisibleRangeChange);
@@ -296,7 +298,7 @@ function RacVirtualList<T extends object>({
         // newly opened row would keep the old fill and mark without these.
         dependencies={[selectedId, isRowHighlighted]}
         onScroll={scheduleVisibleRange}
-        className={`block min-h-0 flex-1 overflow-auto outline-none ${RANGE_PILL_SCROLL_PAD_CLASS} ${resizeHandleGutter}`}
+        className={`block min-h-0 flex-1 overflow-auto outline-none ${RANGE_PILL_SCROLL_PAD_CLASS} ${resizeHandleGutterClass}`}
       >
         {(item) => {
           const id = getId(item);
@@ -340,22 +342,7 @@ function TanStackVirtualList<T>({
   hasMore,
   onVisibleRangeChange,
   empty,
-}: {
-  items: T[];
-  estimateSize: number;
-  dynamicSize: boolean;
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
-  getId: (item: T) => string;
-  getTextValue?: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
-}) {
+}: VirtualListProps<T>) {
   return (
     <VirtualList
       count={items.length}
@@ -393,7 +380,7 @@ function TanStackVirtualList<T>({
   );
 }
 
-const LETTER_DIVIDER = "flex items-center border-b border-border bg-panel px-3 py-1";
+const LETTER_DIVIDER_CLASS = "flex items-center border-b border-border bg-panel px-3 py-1";
 
 function SectionedLetterList<T>({
   items,
@@ -410,21 +397,10 @@ function SectionedLetterList<T>({
   currentLetter,
   onVisibleRangeChange,
   empty,
-}: {
-  items: T[];
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
+}: Omit<VirtualListProps<T>, "estimateSize" | "dynamicSize" | "getTextValue"> & {
   sectionLead?: ReactNode;
-  getId: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
   getSectionLetter: (item: T) => string;
   currentLetter: string | null;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
 }) {
   // This list is not virtualized, so both of these walk every contact. Rebuilding
   // them on each render is what made scrolling a large catalog expensive.
@@ -457,7 +433,11 @@ function SectionedLetterList<T>({
       let first = rows.length;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
-        if (rows[mid].getBoundingClientRect().bottom > viewTop) {
+        // `mid` stays inside `rows`. This runs on every scroll event, where a
+        // throw would break scrolling for a bug in a label, so a missing row
+        // reads as one above the viewport rather than throwing.
+        const row = rows[mid];
+        if (row && row.getBoundingClientRect().bottom > viewTop) {
           first = mid;
           hi = mid - 1;
         } else {
@@ -469,7 +449,7 @@ function SectionedLetterList<T>({
       let end = 0;
       for (let i = first; i < rows.length; i++) {
         const row = rows[i];
-        if (row.getBoundingClientRect().top >= viewBottom) break;
+        if (!row || row.getBoundingClientRect().top >= viewBottom) break;
         const raw = row.getAttribute("data-contact-index");
         const idx = raw == null ? Number.NaN : Number(raw);
         if (!Number.isFinite(idx)) continue;
@@ -515,13 +495,13 @@ function SectionedLetterList<T>({
   return (
     <div
       ref={scrollerRef}
-      className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}
+      className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}
       onScroll={onScroll}
     >
       {groups.map(([letter, groupItems]) => (
         <section key={letter} aria-label={`Names starting with ${letter}`}>
           {letter !== currentLetter ? (
-            <div className={`${LETTER_DIVIDER} gap-2.5`}>
+            <div className={`${LETTER_DIVIDER_CLASS} gap-2.5`}>
               {sectionLead}
               <span className="flex h-7 w-7 shrink-0 items-center justify-center text-[0.75rem] font-semibold text-muted">
                 {letter}
@@ -603,7 +583,7 @@ export default function InfiniteOffsetList<T extends object>({
     );
   }
 
-  const listProps = {
+  const listProps: VirtualListProps<T> = {
     items,
     estimateSize,
     dynamicSize,
@@ -642,20 +622,10 @@ export default function InfiniteOffsetList<T extends object>({
       ) : null}
       {getSectionLetter ? (
         <SectionedLetterList
-          items={items}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          isRowHighlighted={isRowHighlighted}
+          {...listProps}
           sectionLead={sectionLead}
-          getId={getId}
-          renderRow={renderRow}
-          renderRowLead={renderRowLead}
-          requestMore={requestMore}
-          hasMore={hasMore}
           getSectionLetter={getSectionLetter}
           currentLetter={headerLetter}
-          onVisibleRangeChange={setVisibleRange}
-          empty={empty}
         />
       ) : isTauri() ? (
         <RacVirtualList {...listProps} ariaLabel={ariaLabel} />

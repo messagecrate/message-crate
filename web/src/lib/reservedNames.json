@@ -1,0 +1,86 @@
+{
+  "contactGroup": {
+    "label": "Contact Group",
+    "reserved": [
+      "home",
+      "contacts",
+      "all",
+      "excluded",
+      "no-messages",
+      "no messages",
+      "unassigned",
+      "trash",
+      "groups",
+      "group",
+      "group-chats",
+      "group chats",
+      "group-chats-2",
+      "group chats 2",
+      "group-messages",
+      "group messages",
+      "group-messages-2",
+      "group messages 2",
+      "no-label",
+      "no-group",
+      "no group",
+      "labels",
+      "label",
+      "no label",
+      "unknown",
+      "none"
+    ],
+    "special": [
+      {
+        "message": "Contacts is a reserved Contact Group",
+        "name": "contacts"
+      },
+      {
+        "message": "All is a reserved Contact Group",
+        "name": "all"
+      },
+      {
+        "message": "Excluded is a reserved Contact Group",
+        "name": "excluded"
+      },
+      {
+        "message": "Unassigned is a reserved Contact Group",
+        "name": "unassigned"
+      },
+      {
+        "message": "Trash is a reserved Contact Group",
+        "name": "trash"
+      },
+      {
+        "message": "No messages is a reserved Contact Group",
+        "name": "no messages"
+      },
+      {
+        "message": "No messages is a reserved Contact Group",
+        "name": "no-messages"
+      }
+    ]
+  },
+  "messageTag": {
+    "label": "Message Tag",
+    "reserved": [
+      "home",
+      "contacts",
+      "threads",
+      "thread",
+      "all",
+      "excluded",
+      "unassigned",
+      "trash",
+      "tags",
+      "tag",
+      "no-tag",
+      "no tag",
+      "groups",
+      "group",
+      "labels",
+      "label",
+      "none"
+    ],
+    "special": []
+  }
+}

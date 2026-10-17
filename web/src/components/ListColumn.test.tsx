@@ -63,7 +63,7 @@ describe("ListColumn's resize grip", () => {
   function renderColumn() {
     const view = render(
       <ListColumn>
-        <p>Threads</p>
+        <p>Conversations</p>
       </ListColumn>,
     );
     const handle = view.getByRole("separator", { name: "Resize list column" });

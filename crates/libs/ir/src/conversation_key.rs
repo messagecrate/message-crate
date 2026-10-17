@@ -1,7 +1,7 @@
 //! What a conversation is keyed by.
 //!
 //! A conversation's chat id is its key: it is part of every message's
-//! `guid`, and the server recognises the conversation on the next import by
+//! `guid`, and the server recognizes the conversation on the next import by
 //! it. [`ConversationKey`] says what kind of key a conversation has, so that
 //! a group's key is never a person's address and a group's members are never
 //! read back out of its id.
@@ -14,9 +14,9 @@
 //! conversation that names nobody, and a person's orphaned messages never
 //! take the key of their one-to-one conversation.
 
-use crate::IrParticipant;
+use crate::Participant;
 
-/// What every group chat id starts with, so a group's key can never equal an
+/// What every group's chat id starts with, so a group's key can never equal an
 /// address.
 pub const GROUP_CHAT_ID_PREFIX: &str = "group:";
 
@@ -41,7 +41,7 @@ pub enum ConversationKey {
         /// The group's id, unique within its source.
         vendor_id: String,
         /// The people in the group other than the account holder.
-        members: Vec<IrParticipant>,
+        members: Vec<Participant>,
     },
     /// A one-to-one conversation with a person the source names and records
     /// no address for, keyed by the name. The name must not be blank: a
@@ -65,7 +65,7 @@ impl ConversationKey {
     /// The name is kept whole rather than made filename-safe, because a
     /// filename-safe stem gives "张伟" and "李娜" one key, and "Ana Lee" and
     /// "Ana.Lee" another. The file name is made from the chat id later, by
-    /// [`ConversationDocument::filename_stem`](crate::ConversationDocument::filename_stem).
+    /// `ir_format::filename_stem`.
     pub fn chat_id(&self) -> String {
         match self {
             Self::OneToOne(handle) => handle.clone(),
@@ -145,7 +145,7 @@ mod tests {
     /// A group's chat id is in a namespace of its own, so even a vendor id
     /// shaped like an address never gives a group a person's key.
     #[test]
-    fn a_group_chat_id_never_equals_an_address() {
+    fn a_groups_chat_id_never_equals_an_address() {
         let address = "+15555550111";
         let group = ConversationKey::Group {
             vendor_id: address.to_string(),

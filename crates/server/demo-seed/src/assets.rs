@@ -6,16 +6,19 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
-use sha2::{Digest, Sha256};
 
 /// Demo JPEG photos (path relative to export dir, display name, base color).
 pub struct JpgPhoto {
+    /// Where the photo is written, relative to the export directory.
     pub path: &'static str,
+    /// The file name the conversation gives the photo, as a phone would.
     pub original_name: &'static str,
     /// Base RGB the generated gradient starts from.
     pub color: [u8; 3],
 }
 
+/// The photos the demo conversations attach, each written once and attached
+/// to many messages in turn.
 pub const JPG_PHOTOS: &[JpgPhoto] = &[
     JpgPhoto {
         path: "attachments/sunset.jpg",
@@ -71,7 +74,9 @@ pub const OTHER_ATTACHMENTS: &[(&str, &str, bool)] = &[
 ];
 
 /// Write colorful JPEGs large enough to show inline in the web UI, plus a few
-/// small stand-in files for PNG, GIF, audio, and PDF.
+/// small stand-in files for PNG, GIF, audio, and PDF. These are the demo
+/// export's source files under their readable names, not Assets: the import
+/// stores them as Assets later.
 ///
 /// Returns a map from attachment path to a short fingerprint of the file
 /// contents and the file size in bytes. Conversation files store those
@@ -81,7 +86,7 @@ pub const OTHER_ATTACHMENTS: &[(&str, &str, bool)] = &[
 /// # Errors
 ///
 /// Returns an error if a JPEG cannot be written or a file cannot be read back.
-pub fn write_attachment_blobs(dir: &Path) -> Result<HashMap<String, (String, u64)>> {
+pub fn write_attachment_files(dir: &Path) -> Result<HashMap<String, (String, u64)>> {
     let mut digests = HashMap::new();
     for photo in JPG_PHOTOS {
         let name = photo
@@ -91,21 +96,21 @@ pub fn write_attachment_blobs(dir: &Path) -> Result<HashMap<String, (String, u64
         let path = dir.join(name);
         write_color_jpeg(&path, photo.color, 320, 240)?;
         let bytes = std::fs::read(&path)?;
-        record_blob(&mut digests, photo.path, &bytes);
+        record_digest(&mut digests, photo.path, &bytes);
     }
 
     fs::write(dir.join("landscape.png"), MINI_PNG)?;
-    record_blob(&mut digests, "attachments/landscape.png", MINI_PNG);
+    record_digest(&mut digests, "attachments/landscape.png", MINI_PNG);
 
     fs::write(dir.join("sticker.gif"), MINI_GIF)?;
-    record_blob(&mut digests, "attachments/sticker.gif", MINI_GIF);
+    record_digest(&mut digests, "attachments/sticker.gif", MINI_GIF);
 
     let voice = mini_wav();
     fs::write(dir.join("voice.wav"), &voice)?;
-    record_blob(&mut digests, "attachments/voice.wav", &voice);
+    record_digest(&mut digests, "attachments/voice.wav", &voice);
 
     fs::write(dir.join("notes.pdf"), MINI_PDF)?;
-    record_blob(&mut digests, "attachments/notes.pdf", MINI_PDF);
+    record_digest(&mut digests, "attachments/notes.pdf", MINI_PDF);
 
     // attachments/missing-file.heic is left out of this map on purpose.
     // Conversation JSONL still points at it, but the file is not on disk, so
@@ -115,8 +120,8 @@ pub fn write_attachment_blobs(dir: &Path) -> Result<HashMap<String, (String, u64
 }
 
 /// Store the content fingerprint and byte length for `relative_path`.
-fn record_blob(digests: &mut HashMap<String, (String, u64)>, relative_path: &str, bytes: &[u8]) {
-    let sha = hex::encode(Sha256::digest(bytes));
+fn record_digest(digests: &mut HashMap<String, (String, u64)>, relative_path: &str, bytes: &[u8]) {
+    let sha = file_io::sha256_hex(bytes);
     digests.insert(relative_path.into(), (sha, bytes.len() as u64));
 }
 
@@ -227,10 +232,10 @@ mod tests {
 
     #[test]
     fn mini_wav_is_readable_by_ffprobe() {
-        let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        let Some(tools) = media::testutil::real_ffmpeg() else {
             return;
         };
-        let ffprobe = media::ffprobe_path().expect("the guard found ffprobe");
+        let ffprobe = tools.ffprobe_path().expect("real_ffmpeg found ffprobe");
 
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("voice.wav");

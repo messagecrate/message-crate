@@ -12,6 +12,7 @@ mod parse;
 
 use anyhow::{Context, Result, bail};
 use chrono::{Local, TimeZone, Utc};
+use ir::{Direction, Message};
 use mail_builder::MessageBuilder;
 use mail_builder::encoders::{Base64Encoder, QuotedPrintableEncoder};
 use mail_builder::headers::address::Address;
@@ -19,7 +20,6 @@ use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::date::Date;
 use mail_builder::headers::raw::Raw;
 use mail_builder::mime::MimePart;
-use message_ir::{IrDirection, IrMessage};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -51,7 +51,7 @@ pub struct MailAttachment {
     pub bytes: Vec<u8>,
     /// Shared attachment metadata (`path` is never serialized to the EML; readers
     /// restore the IR path separately).
-    pub meta: message_ir::AttachmentMeta,
+    pub meta: ir::AttachmentMeta,
     /// Sticker flag serialized in the attachment meta JSON.
     pub is_sticker: bool,
     /// OCR/transcription text serialized in the attachment meta JSON.
@@ -60,7 +60,7 @@ pub struct MailAttachment {
     pub sticker_effect: Option<String>,
 }
 
-impl From<&MailAttachment> for message_ir::IrAttachment {
+impl From<&MailAttachment> for ir::Attachment {
     fn from(a: &MailAttachment) -> Self {
         Self {
             path: None,
@@ -90,13 +90,14 @@ pub enum MailPackage {
 /// context the headers need, plus the IR message itself.
 ///
 /// The message-level fields (guid, timestamp, direction, text, the iMessage
-/// extension bag, the Android source bag) live in [`message_ir::IrMessage`];
+/// extension bag, the Android source bag) live in [`ir::Message`];
 /// the writer reads them straight from the IR instead of a flattened copy.
 #[derive(Debug, Clone)]
 pub struct MailMessage {
-    /// Conversation id → `X-ME-Chat-Identifier`, directory stem, group chat address local part.
+    /// Conversation id → `X-ME-Chat-Identifier`, and the local part of a
+    /// group conversation's address.
     pub chat_identifier: String,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: String,
     /// Group title → `X-ME-Group-Title`, To display name, subject label.
     pub group_title: Option<String>,
@@ -112,39 +113,45 @@ pub struct MailMessage {
     pub export_tool: String,
     /// → `X-ME-Export-Tool-Version`.
     pub export_tool_version: String,
-    /// When the backup was made, in Unix milliseconds →
-    /// `X-ME-Backup-Taken-At-Unix-Ms`; `None` when the export does not say.
-    pub backup_taken_at_unix_ms: Option<i64>,
-    /// Optional stem suffix (e.g. `"__whatsapp"`) for conversation directory / mbox names.
-    pub filename_suffix: Option<String>,
+    /// The Export Date, when the file was written, in Unix milliseconds →
+    /// `X-ME-Exported-At-Unix-Ms`; `None` when the export does not say. The
+    /// message's own Backup Date is
+    /// [`Message::backup_taken_at_unix_ms`] → `X-ME-Backup-Taken-At-Unix-Ms`.
+    pub exported_at_unix_ms: Option<i64>,
     /// The message itself (headers read guid, timestamp, direction, service,
     /// kind, sender, subject, text, and the iMessage / source bags from here;
-    /// its `attachments` list is ignored in favour of `attachments` below).
-    pub message: IrMessage,
+    /// its `attachments` list is ignored in favor of `attachments` below).
+    pub message: Message,
     /// MIME parts plus the `X-ME-Attachment-Meta` JSON (bytes loaded).
     pub attachments: Vec<MailAttachment>,
 }
 
 impl MailMessage {
     /// The iMessage extension bag, when present.
-    fn im(&self) -> Option<&message_ir::IrImessage> {
+    fn im(&self) -> Option<&ir::ImessageExtensions> {
         self.message.imessage.as_ref()
     }
 }
 
-/// Write one conversation as EML directories or a single mboxrd file.
+/// Write one conversation as EML directories or a single mboxrd file, named
+/// `stem` (the directory `<stem>/` or the file `<stem>.mbox`) under
+/// `output_root`. The caller names the conversation; this crate only writes
+/// it.
 ///
 /// # Errors
 ///
 /// Returns an error when the directory or file cannot be written.
 pub fn write_mail_package(
     output_root: &Path,
+    stem: &str,
     package: MailPackage,
     messages: &[MailMessage],
 ) -> Result<PathBuf> {
     match package {
-        MailPackage::EmlDirectories => write_conversation(output_root, messages),
-        MailPackage::Mbox => write_conversation_mbox(output_root, messages),
+        MailPackage::EmlDirectories => write_conversation(&output_root.join(stem), messages),
+        MailPackage::Mbox => {
+            write_conversation_mbox(&output_root.join(format!("{stem}.mbox")), messages)
+        }
     }
 }
 
@@ -163,33 +170,17 @@ struct AttachmentMetaCell<'a> {
     missing_reason: Option<&'a str>,
 }
 
-/// Conversation directory stem (shared per-conversation filename stem).
-fn conversation_stem(msg: &MailMessage) -> String {
-    let participant_identities: Vec<String> = msg
-        .participants
-        .iter()
-        .map(|p| p.identity.clone())
-        .collect();
-    message_ir::conversation_stem(
-        &msg.conversation_type,
-        &msg.chat_identifier,
-        msg.group_title.as_deref(),
-        &participant_identities,
-        msg.filename_suffix.as_deref(),
-    )
-}
-
 /// Write a single `.eml` into an existing conversation directory.
 ///
 /// `sequence` is 1-based (`000001_…`). Creates `conv_dir` if missing.
-fn write_message_file(conv_dir: &Path, sequence: u32, msg: &MailMessage) -> Result<PathBuf> {
+fn write_message_file(conv_dir: &Path, sequence: u32, message: &MailMessage) -> Result<PathBuf> {
     if sequence == 0 {
         bail!("write_message_file sequence must be >= 1");
     }
     fs::create_dir_all(conv_dir)
         .with_context(|| format!("create conversation dir {}", conv_dir.display()))?;
-    let path = conv_dir.join(eml_file_name(sequence, &msg.message)?);
-    let bytes = build_eml(msg)?;
+    let path = conv_dir.join(eml_file_name(sequence, &message.message)?);
+    let bytes = build_eml(message)?;
     let mut file = File::create(&path).with_context(|| format!("create {}", path.display()))?;
     file.write_all(&bytes)
         .with_context(|| format!("write {}", path.display()))?;
@@ -204,7 +195,7 @@ fn write_message_file(conv_dir: &Path, sequence: u32, msg: &MailMessage) -> Resu
 /// # Errors
 ///
 /// Returns an error when the message's time cannot be represented.
-pub fn eml_file_name(sequence: u32, message: &IrMessage) -> Result<String> {
+pub fn eml_file_name(sequence: u32, message: &Message) -> Result<String> {
     let secs = message.timestamp_unix_ms.div_euclid(1000);
     let (date_part, time_part) = local_date_time_parts(secs)
         .with_context(|| format!("invalid timestamp_unix_ms {}", message.timestamp_unix_ms))?;
@@ -214,17 +205,14 @@ pub fn eml_file_name(sequence: u32, message: &IrMessage) -> Result<String> {
     ))
 }
 
-/// Write one conversation directory of `.eml` files under `output_root`.
+/// Write one conversation as the directory `conv_dir` of `.eml` files.
 ///
-/// Returns the conversation directory path. Messages are sorted by timestamp,
-/// then guid, before writing.
-fn write_conversation(output_root: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
+/// Returns `conv_dir`. Messages are sorted by timestamp, then guid, before
+/// writing.
+fn write_conversation(conv_dir: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
     if messages.is_empty() {
         bail!("write_conversation requires at least one message");
     }
-
-    let stem = conversation_stem(&messages[0]);
-    let conv_dir = output_root.join(&stem);
 
     let mut ordered: Vec<&MailMessage> = messages.iter().collect();
     ordered.sort_by(|a, b| {
@@ -234,23 +222,18 @@ fn write_conversation(output_root: &Path, messages: &[MailMessage]) -> Result<Pa
             .then_with(|| a.message.guid.cmp(&b.message.guid))
     });
 
-    for (idx, msg) in ordered.iter().enumerate() {
-        write_message_file(&conv_dir, (idx + 1) as u32, msg)?;
+    for (idx, message) in ordered.iter().enumerate() {
+        write_message_file(conv_dir, (idx + 1) as u32, message)?;
     }
 
-    Ok(conv_dir)
-}
-
-/// Path to the per-conversation mboxrd file (`<stem>.mbox` under `output_root`).
-fn conversation_mbox_path(output_root: &Path, msg: &MailMessage) -> PathBuf {
-    output_root.join(format!("{}.mbox", conversation_stem(msg)))
+    Ok(conv_dir.to_path_buf())
 }
 
 /// Append one message to a conversation `.mbox` in mboxrd form.
 ///
 /// Creates parent directories and the file if missing. Messages should be
 /// appended in chronological order for a usable mailbox.
-fn append_message_mbox(mbox_path: &Path, msg: &MailMessage) -> Result<()> {
+fn append_message_mbox(mbox_path: &Path, message: &MailMessage) -> Result<()> {
     if let Some(parent) = mbox_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("create mbox parent {}", parent.display()))?;
@@ -261,24 +244,23 @@ fn append_message_mbox(mbox_path: &Path, msg: &MailMessage) -> Result<()> {
         .open(mbox_path)
         .with_context(|| format!("open mbox {}", mbox_path.display()))?;
     let mut writer = BufWriter::new(file);
-    write_mboxrd_record(&mut writer, msg)?;
+    write_mboxrd_record(&mut writer, message)?;
     writer
         .flush()
         .with_context(|| format!("flush mbox {}", mbox_path.display()))?;
     Ok(())
 }
 
-/// Write one conversation `.mbox` under `output_root` (mboxrd).
+/// Write one conversation as the mboxrd file `path`.
 ///
-/// Returns the `.mbox` path. Messages are sorted by timestamp, then guid.
-fn write_conversation_mbox(output_root: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
+/// Returns `path`. Messages are sorted by timestamp, then guid.
+fn write_conversation_mbox(path: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
     if messages.is_empty() {
         bail!("write_conversation_mbox requires at least one message");
     }
 
-    let path = conversation_mbox_path(output_root, &messages[0]);
     if path.exists() {
-        fs::remove_file(&path)
+        fs::remove_file(path)
             .with_context(|| format!("replace existing mbox {}", path.display()))?;
     }
 
@@ -290,11 +272,11 @@ fn write_conversation_mbox(output_root: &Path, messages: &[MailMessage]) -> Resu
             .then_with(|| a.message.guid.cmp(&b.message.guid))
     });
 
-    for msg in ordered {
-        append_message_mbox(&path, msg)?;
+    for message in ordered {
+        append_message_mbox(path, message)?;
     }
 
-    Ok(path)
+    Ok(path.to_path_buf())
 }
 
 /// Escape a single line for mboxrd: lines matching `^>*From ` get a leading `>`.
@@ -312,10 +294,10 @@ fn escape_mboxrd_line(line: &str) -> String {
 }
 
 /// Write one message as an mboxrd record: the `From_` line, then the EML with body `From ` lines escaped.
-fn write_mboxrd_record(writer: &mut impl Write, msg: &MailMessage) -> Result<()> {
-    let eml = build_eml(msg)?;
-    let envelope = envelope_sender(msg);
-    let asctime = mbox_asctime_utc(msg.message.timestamp_unix_ms.div_euclid(1000))?;
+fn write_mboxrd_record(writer: &mut impl Write, message: &MailMessage) -> Result<()> {
+    let eml = build_eml(message)?;
+    let envelope = envelope_sender(message);
+    let asctime = mbox_asctime_utc(message.message.timestamp_unix_ms.div_euclid(1000))?;
     writeln!(writer, "From {envelope} {asctime}").context("write mbox From_ line")?;
 
     let text = String::from_utf8_lossy(&eml);
@@ -332,17 +314,18 @@ fn write_mboxrd_record(writer: &mut impl Write, msg: &MailMessage) -> Result<()>
 }
 
 /// The address for the mbox `From_` line: the sender for incoming, the owner otherwise.
-fn envelope_sender(msg: &MailMessage) -> String {
-    let identity = match msg.message.direction {
-        IrDirection::Incoming => msg
+fn envelope_sender(message: &MailMessage) -> String {
+    let identity = match message.message.direction {
+        Direction::Incoming => message
             .message
-            .sender_identity
+            .sender
+            .identity
             .as_deref()
-            .and_then(message_ir::trimmed)
-            .or_else(|| peer_identity(msg).and_then(message_ir::trimmed))
+            .and_then(ir::trimmed)
+            .or_else(|| peer_identity(message).and_then(ir::trimmed))
             .unwrap_or("unknown"),
-        IrDirection::Outgoing => {
-            let owner = msg.owner_identity.trim();
+        Direction::Outgoing => {
+            let owner = message.owner_identity.trim();
             if owner.is_empty() { "me" } else { owner }
         }
     };
@@ -417,7 +400,7 @@ fn guid_file_name_part(guid: &str) -> String {
 
 /// Synthetic RFC5322 address for an identity, with its display name.
 fn synthetic_address(identity: &str, display_name: Option<&str>) -> Address<'static> {
-    let name = display_name.and_then(message_ir::nonempty);
+    let name = display_name.and_then(ir::nonempty);
     Address::new_address(name, synthetic_email(identity))
 }
 
@@ -466,28 +449,29 @@ fn address_local_part(text: &str) -> String {
 
 /// The owner's address: their identity (or `me`) with their display name
 /// (or `Me`).
-fn owner_address(msg: &MailMessage) -> Address<'static> {
-    let identity = msg.owner_identity.trim();
+fn owner_address(message: &MailMessage) -> Address<'static> {
+    let identity = message.owner_identity.trim();
     let identity = if identity.is_empty() { "me" } else { identity };
-    let display = msg
+    let display = message
         .owner_display_name
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .unwrap_or(OWNER_DISPLAY_NAME);
     synthetic_address(identity, Some(display))
 }
 
-/// One browseable address for a group chat (roster stays in `X-ME-Participants`).
-fn conversation_address(msg: &MailMessage) -> Address<'static> {
-    let display = msg
+/// One browseable address for a group conversation (the members stay in
+/// `X-ME-Participants`).
+fn conversation_address(message: &MailMessage) -> Address<'static> {
+    let display = message
         .group_title
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .unwrap_or_else(|| {
-            let id = msg.chat_identifier.trim();
+            let id = message.chat_identifier.trim();
             if id.is_empty() { "group" } else { id }
         });
-    let id = msg.chat_identifier.trim();
+    let id = message.chat_identifier.trim();
     let local = if id.is_empty() {
         "group".to_string()
     } else {
@@ -500,20 +484,25 @@ fn conversation_address(msg: &MailMessage) -> Address<'static> {
 }
 
 /// The display name the participants list gives for `peer`.
-fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
-    msg.participants
+fn peer_display_name<'a>(message: &'a MailMessage, peer: &str) -> Option<&'a str> {
+    message
+        .participants
         .iter()
         .find(|p| p.identity == peer)
         .and_then(|p| p.display_name.as_deref())
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .or_else(|| {
-            msg.message
-                .sender_display_name
+            message
+                .message
+                .sender
+                .display_name
                 .as_deref()
-                .and_then(message_ir::trimmed)
+                .and_then(ir::trimmed)
                 .filter(|_| {
-                    msg.message
-                        .sender_identity
+                    message
+                        .message
+                        .sender
+                        .identity
                         .as_deref()
                         .is_some_and(|h| h == peer)
                 })
@@ -521,13 +510,13 @@ fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
 }
 
 /// The Message-ID domain: `imessage.local` for iMessage rows, else the default.
-fn message_id_domain(msg: &MailMessage) -> &'static str {
-    if msg
+fn message_id_domain(message: &MailMessage) -> &'static str {
+    if message
         .message
         .service
         .as_str()
         .eq_ignore_ascii_case("imessage")
-        || msg
+        || message
             .message
             .message_kind
             .as_str()
@@ -580,41 +569,33 @@ fn dot_atom(text: &str) -> String {
 }
 
 /// The `Content-Type` of an attachment's MIME part: its type when that is a
-/// `type/subtype` pair of RFC 2045 tokens (section 5.1), else
-/// `application/octet-stream`.
+/// `type/subtype` pair of RFC 2045 tokens (section 5.1,
+/// [`media::is_media_type`], the check the server holds an upload's type
+/// to), else `application/octet-stream`.
 ///
 /// Written as it was, a line break in the type ended the part's headers,
 /// and the part's bytes were lost. The type itself is kept in
 /// `X-ME-Attachment-Meta`, which the reader takes it from.
 fn part_content_type(mime: Option<&str>) -> &str {
-    let is_token = |s: &str| {
-        !s.is_empty()
-            && s.bytes()
-                .all(|b| b.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?=".contains(&b))
-    };
     match mime {
-        Some(m)
-            if m.split_once('/')
-                .is_some_and(|(t, s)| is_token(t) && is_token(s)) =>
-        {
-            m
-        }
+        Some(m) if media::is_media_type(m) => m,
         _ => "application/octet-stream",
     }
 }
 
-/// The other party's handle in a 1:1 conversation; groups have none.
-fn peer_identity(msg: &MailMessage) -> Option<&str> {
-    if msg.conversation_type.eq_ignore_ascii_case("group") {
+/// The other party's handle in a one-to-one conversation; groups have none.
+fn peer_identity(message: &MailMessage) -> Option<&str> {
+    if message.conversation_type.eq_ignore_ascii_case("group") {
         return None;
     }
-    msg.participants
+    message
+        .participants
         .iter()
         .map(|p| p.identity.as_str())
-        .find(|h| *h != msg.owner_identity)
+        .find(|h| *h != message.owner_identity)
         .or_else(|| {
-            let id = msg.chat_identifier.as_str();
-            if id != msg.owner_identity {
+            let id = message.chat_identifier.as_str();
+            if id != message.owner_identity {
                 Some(id)
             } else {
                 None
@@ -741,34 +722,34 @@ fn opt_header<'m>(
 /// Serialize one message as an RFC 5322 `.eml`: envelope addresses, the
 /// Message Crate headers every source carries, the iMessage-only headers,
 /// then the text body and one MIME part per attachment.
-fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
-    let (from, to) = envelope_addresses(msg);
-    let date_secs = msg.message.timestamp_unix_ms.div_euclid(1000);
-    let message_id = message_id(&msg.message.guid, message_id_domain(msg));
+fn build_eml(message: &MailMessage) -> Result<Vec<u8>> {
+    let (from, to) = envelope_addresses(message);
+    let date_secs = message.message.timestamp_unix_ms.div_euclid(1000);
+    let message_id = message_id(&message.message.guid, message_id_domain(message));
     let mut builder = MessageBuilder::new()
         .from(from)
         .to(to)
-        .subject(mail_subject(msg))
+        .subject(mail_subject(message))
         .date(Date::new(date_secs))
         .message_id(message_id);
-    builder = conversation_headers(builder, msg);
-    builder = reply_headers(builder, msg);
-    builder = imessage_headers(builder, msg);
-    builder = attachment_meta_header(builder, msg);
-    let text = text_body_part(&msg.message.text);
-    let body = if msg.attachments.is_empty() {
+    builder = conversation_headers(builder, message);
+    builder = reply_headers(builder, message);
+    builder = imessage_headers(builder, message);
+    builder = attachment_meta_header(builder, message);
+    let text = text_body_part(&message.message.text);
+    let body = if message.attachments.is_empty() {
         text
     } else {
-        let mut parts = Vec::with_capacity(msg.attachments.len() + 1);
+        let mut parts = Vec::with_capacity(message.attachments.len() + 1);
         parts.push(text);
-        for (i, att) in msg.attachments.iter().enumerate() {
-            let mime = part_content_type(att.meta.mime_type.as_deref());
-            let filename = att
+        for (i, attachment) in message.attachments.iter().enumerate() {
+            let mime = part_content_type(attachment.meta.mime_type.as_deref());
+            let filename = attachment
                 .meta
                 .original_name
                 .clone()
                 .unwrap_or_else(|| format!("attachment-{i}"));
-            parts.push(attachment_part(mime, filename, &att.bytes));
+            parts.push(attachment_part(mime, filename, &attachment.bytes));
         }
         MimePart::new("multipart/mixed", parts)
     };
@@ -783,7 +764,7 @@ fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
 /// Every byte of the text is quoted-printable encoded, each CR and LF as
 /// `=0D` and `=0A` (RFC 2045 section 6.7, rule 1), so the text's own line
 /// endings, trailing newlines and trailing whitespace come back unchanged
-/// instead of being folded to the CRLF a text body is canonicalised to
+/// instead of being folded to the CRLF a text body is canonicalized to
 /// (RFC 2049 section 4). The encoded body ends in a soft line break (`=` at
 /// the end of a line, rule 5), which encodes nothing: the line ending a
 /// `.eml` file or an mbox record adds after it belongs to that soft break
@@ -821,41 +802,42 @@ pub fn attachment_part(mime: &str, filename: String, bytes: &[u8]) -> MimePart<'
 
 /// Who the mail is from and to.
 ///
-/// A group chat is addressed as the chat itself, with the sender (or the
-/// owner) on the other side. A 1:1 chat is addressed peer-to-owner or
-/// owner-to-peer by direction.
-fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>) {
-    if msg.conversation_type.eq_ignore_ascii_case("group") {
-        let from = match msg.message.direction {
-            IrDirection::Incoming => {
-                let sender = msg
+/// A group conversation is addressed as the conversation itself, with the
+/// sender (or the owner) on the other side. A one-to-one conversation is
+/// addressed peer-to-owner or owner-to-peer by direction.
+fn envelope_addresses(message: &MailMessage) -> (Address<'static>, Address<'static>) {
+    if message.conversation_type.eq_ignore_ascii_case("group") {
+        let from = match message.message.direction {
+            Direction::Incoming => {
+                let sender = message
                     .message
-                    .sender_identity
+                    .sender
+                    .identity
                     .as_deref()
-                    .and_then(message_ir::trimmed)
+                    .and_then(ir::trimmed)
                     .unwrap_or("unknown");
-                synthetic_address(sender, msg.message.sender_display_name.as_deref())
+                synthetic_address(sender, message.message.sender.display_name.as_deref())
             }
-            IrDirection::Outgoing => owner_address(msg),
+            Direction::Outgoing => owner_address(message),
         };
-        return (from, conversation_address(msg));
+        return (from, conversation_address(message));
     }
-    let peer = peer_identity(msg)
-        .and_then(message_ir::trimmed)
+    let peer = peer_identity(message)
+        .and_then(ir::trimmed)
         .unwrap_or_else(|| {
-            let id = msg.chat_identifier.trim();
+            let id = message.chat_identifier.trim();
             if id.is_empty() { "unknown" } else { id }
         });
-    let peer_name = peer_display_name(msg, peer);
-    match msg.message.direction {
-        IrDirection::Incoming => (
+    let peer_name = peer_display_name(message, peer);
+    match message.message.direction {
+        Direction::Incoming => (
             synthetic_address(
                 peer,
-                peer_name.or(msg.message.sender_display_name.as_deref()),
+                peer_name.or(message.message.sender.display_name.as_deref()),
             ),
-            owner_address(msg),
+            owner_address(message),
         ),
-        IrDirection::Outgoing => (owner_address(msg), synthetic_address(peer, peer_name)),
+        Direction::Outgoing => (owner_address(message), synthetic_address(peer, peer_name)),
     }
 }
 
@@ -875,69 +857,92 @@ fn optional_headers<'m>(
 /// recorded them.
 fn conversation_headers<'m>(
     mut builder: MessageBuilder<'m>,
-    msg: &MailMessage,
+    message: &MailMessage,
 ) -> MessageBuilder<'m> {
-    let timestamp = msg.message.timestamp_unix_ms.to_string();
+    let timestamp = message.message.timestamp_unix_ms.to_string();
     for (name, value) in [
-        (headers::CHAT_IDENTIFIER, msg.chat_identifier.as_str()),
-        (headers::CONVERSATION_TYPE, msg.conversation_type.as_str()),
-        (headers::DIRECTION, msg.message.direction.as_str()),
-        (headers::SERVICE, msg.message.service.as_str()),
-        (headers::MESSAGE_KIND, msg.message.message_kind.as_str()),
+        (headers::CHAT_IDENTIFIER, message.chat_identifier.as_str()),
+        (
+            headers::CONVERSATION_TYPE,
+            message.conversation_type.as_str(),
+        ),
+        (headers::DIRECTION, message.message.direction.as_str()),
+        (headers::SERVICE, message.message.service.as_str()),
+        (headers::MESSAGE_KIND, message.message.message_kind.as_str()),
         (headers::TIMESTAMP_UNIX_MS, &timestamp),
-        (headers::TIME_PRECISION, msg.message.time_precision.as_str()),
-        (headers::GUID, msg.message.guid.as_str()),
-        (headers::EXPORT_SOURCE, msg.export_source.as_str()),
-        (headers::EXPORT_TOOL, msg.export_tool.as_str()),
+        (
+            headers::TIME_PRECISION,
+            message.message.time_precision.as_str(),
+        ),
+        (headers::GUID, message.message.guid.as_str()),
+        (headers::EXPORT_SOURCE, message.export_source.as_str()),
+        (headers::EXPORT_TOOL, message.export_tool.as_str()),
         (
             headers::EXPORT_TOOL_VERSION,
-            msg.export_tool_version.as_str(),
+            message.export_tool_version.as_str(),
         ),
     ] {
         builder = x_me_header(builder, name, value);
     }
-    builder = opt_header(builder, headers::GROUP_TITLE, msg.group_title.as_deref());
-    if msg.conversation_type.eq_ignore_ascii_case("group") || !msg.participants.is_empty() {
+    builder = opt_header(
+        builder,
+        headers::GROUP_TITLE,
+        message.group_title.as_deref(),
+    );
+    if message.conversation_type.eq_ignore_ascii_case("group") || !message.participants.is_empty() {
         let participants_json =
-            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into());
+            serde_json::to_string(&message.participants).unwrap_or_else(|_| "[]".into());
         builder = x_me_header(builder, headers::PARTICIPANTS, &participants_json);
     }
-    let source = msg.message.source.as_ref();
+    let source = message.message.source.as_ref();
     optional_headers(
         builder,
         [
             (
                 headers::SENDER_IDENTITY,
-                msg.message.sender_identity.clone(),
+                message.message.sender.identity.clone(),
             ),
             (
                 headers::SENDER_DISPLAY_NAME,
-                msg.message.sender_display_name.clone(),
+                message.message.sender.display_name.clone(),
             ),
-            (headers::OWNER_IDENTITY, Some(msg.owner_identity.clone())),
+            (
+                headers::OWNER_IDENTITY,
+                Some(message.owner_identity.clone()),
+            ),
             (
                 headers::BACKUP_TAKEN_AT_UNIX_MS,
-                msg.backup_taken_at_unix_ms.map(|ms| ms.to_string()),
+                message
+                    .message
+                    .backup_taken_at_unix_ms
+                    .map(|ms| ms.to_string()),
             ),
-            (headers::OWNER_DISPLAY_NAME, msg.owner_display_name.clone()),
+            (
+                headers::EXPORTED_AT_UNIX_MS,
+                message.exported_at_unix_ms.map(|ms| ms.to_string()),
+            ),
+            (
+                headers::OWNER_DISPLAY_NAME,
+                message.owner_display_name.clone(),
+            ),
             (
                 headers::MESSAGE_OWNER_IDENTITY,
-                msg.message.owner_identity.clone(),
+                message.message.owner_identity.clone(),
             ),
-            (headers::SUBJECT, msg.message.subject.clone()),
+            (headers::SUBJECT, message.message.subject.clone()),
             (
                 headers::REACTIONS,
-                (!msg.message.reactions.is_empty())
-                    .then(|| serde_json::to_string(&msg.message.reactions).unwrap_or_default()),
+                (!message.message.reactions.is_empty())
+                    .then(|| serde_json::to_string(&message.message.reactions).unwrap_or_default()),
             ),
             (
                 headers::DELETION,
-                msg.message.deletion.map(|d| d.as_str().to_string()),
+                message.message.deletion.map(|d| d.as_str().to_string()),
             ),
             (
                 headers::EARLIER_VERSIONS,
-                (!msg.message.edits.is_empty())
-                    .then(|| serde_json::to_string(&msg.message.edits).unwrap_or_default()),
+                (!message.message.edits.is_empty())
+                    .then(|| serde_json::to_string(&message.message.edits).unwrap_or_default()),
             ),
             (
                 headers::ANDROID_TYPE,
@@ -958,13 +963,13 @@ fn conversation_headers<'m>(
 /// The reply headers: `X-ME-Is-Reply` on every reply, and for one whose
 /// quoted message is named, its guid and the standard `In-Reply-To` and
 /// `References`, so a mail client threads the two when both are exported.
-fn reply_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
-    let Some(reply_to) = msg.message.reply_to.as_ref() else {
+fn reply_headers<'m>(builder: MessageBuilder<'m>, message: &MailMessage) -> MessageBuilder<'m> {
+    let Some(reply_to) = message.message.reply_to.as_ref() else {
         return builder;
     };
     let mut builder = x_me_header(builder, headers::IS_REPLY, "true");
     if let Some(guid) = reply_to.guid.as_deref().filter(|s| !s.is_empty()) {
-        let mid = message_id(guid, message_id_domain(msg));
+        let mid = message_id(guid, message_id_domain(message));
         builder = builder.in_reply_to(mid.clone()).references(mid);
         builder = x_me_header(builder, headers::REPLY_TO_GUID, guid);
     }
@@ -977,8 +982,8 @@ fn reply_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageB
 
 /// The headers only iMessage rows carry: effects, the reaction a tapback row
 /// is, and app balloons. Rows from other services add nothing here.
-fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
-    let Some(im) = msg.im() else {
+fn imessage_headers<'m>(builder: MessageBuilder<'m>, message: &MailMessage) -> MessageBuilder<'m> {
+    let Some(im) = message.im() else {
         return builder;
     };
     optional_headers(
@@ -1008,12 +1013,12 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
 /// what was attached without decoding the MIME parts.
 fn attachment_meta_header<'m>(
     builder: MessageBuilder<'m>,
-    msg: &MailMessage,
+    message: &MailMessage,
 ) -> MessageBuilder<'m> {
-    if msg.attachments.is_empty() {
+    if message.attachments.is_empty() {
         return builder;
     }
-    let meta: Vec<AttachmentMetaCell<'_>> = msg
+    let meta: Vec<AttachmentMetaCell<'_>> = message
         .attachments
         .iter()
         .map(|a| AttachmentMetaCell {
@@ -1036,33 +1041,33 @@ fn attachment_meta_header<'m>(
 ///
 /// Shape: `Message with {peer|group title|chat id}`. SMS/MMS `subject` still
 /// goes to `X-ME-Subject` when present.
-fn mail_subject(msg: &MailMessage) -> String {
-    let with = conversation_subject_label(msg);
+fn mail_subject(message: &MailMessage) -> String {
+    let with = conversation_subject_label(message);
     format!("Message with {with}")
 }
 
 /// Who the subject names: the group title (else the chat id, else `group`),
 /// or the peer.
-fn conversation_subject_label(msg: &MailMessage) -> String {
-    if msg.conversation_type.eq_ignore_ascii_case("group") {
-        if let Some(t) = msg.group_title.as_deref().and_then(message_ir::trimmed) {
+fn conversation_subject_label(message: &MailMessage) -> String {
+    if message.conversation_type.eq_ignore_ascii_case("group") {
+        if let Some(t) = message.group_title.as_deref().and_then(ir::trimmed) {
             return t.to_string();
         }
-        let id = msg.chat_identifier.trim();
+        let id = message.chat_identifier.trim();
         if !id.is_empty() {
             return id.to_string();
         }
         return "group".to_string();
     }
 
-    if let Some(peer) = peer_identity(msg).and_then(message_ir::trimmed) {
-        if let Some(n) = peer_display_name(msg, peer) {
+    if let Some(peer) = peer_identity(message).and_then(ir::trimmed) {
+        if let Some(n) = peer_display_name(message, peer) {
             return n.to_string();
         }
         return peer.to_string();
     }
 
-    let id = msg.chat_identifier.trim();
+    let id = message.chat_identifier.trim();
     if id.is_empty() {
         "unknown".to_string()
     } else {

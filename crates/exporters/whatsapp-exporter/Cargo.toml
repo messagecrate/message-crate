@@ -9,12 +9,15 @@ autotests = false
 [dependencies]
 anyhow = { workspace = true }
 hex = { workspace = true }
+# MIT OR Apache-2.0, so this FCL crate may link it; only the sentences an
+# iPhone backup's password is refused with come from it.
+imessage-reader-protocol = { path = "../../helpers/imessage-reader-protocol" }
 ios-backup = { path = "../../libs/ios-backup" }
-message-csv = { path = "../../libs/csv" }
+message-crate-csv = { path = "../../libs/csv" }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../../libs/ir" }
-message-ir-format = { path = "../../libs/ir-format" }
-message-staging = { path = "../../libs/staging" }
+ir = { path = "../../libs/ir" }
+ir-format = { path = "../../libs/ir-format" }
+staging = { path = "../../libs/staging" }
 media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 plist = "1.9.0"
@@ -26,6 +29,7 @@ message-crate-core = { path = "../../core/message-crate-core", features = ["test
 ios-backup = { path = "../../libs/ios-backup", features = ["testutil"] }
 media = { path = "../../libs/media", features = ["testutil"] }
 tempfile = { workspace = true }
+file-io = { workspace = true }
 
 [lints]
 workspace = true

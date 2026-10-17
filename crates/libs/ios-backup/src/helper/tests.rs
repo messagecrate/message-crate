@@ -104,6 +104,12 @@ mod locating {
     }
 }
 
+/// A request that expects a `source` event first.
+#[cfg(unix)]
+fn faults_request() -> imessage_reader_protocol::Request {
+    faults::identities_request()
+}
+
 #[cfg(unix)]
 mod faults {
     use imessage_reader_protocol::{
@@ -111,9 +117,10 @@ mod faults {
     };
 
     use crate::testutil::{fake_helper, source_line, spawn_fake};
+    use message_crate_core::ProgressSink;
 
     /// A request that expects a `source` event first.
-    fn identities_request() -> Request {
+    pub(super) fn identities_request() -> Request {
         Request::Identities(IdentitiesRequest {
             source: Source {
                 db_path: "/nowhere/chat.db".into(),
@@ -175,6 +182,37 @@ mod faults {
             }
         ));
         helper.finish().unwrap();
+    }
+
+    /// A warning from the program reaches the run's log as a warning, at
+    /// `WARN`, and a log line as a line, at `INFO` (#2047).
+    #[test]
+    fn a_warning_from_the_program_is_a_warning_on_the_run_s_log() {
+        use message_crate_core::RunLogLevel;
+        use message_crate_core::testutil::recorded_log;
+
+        let dir = tempfile::tempdir().unwrap();
+        let body = format!(
+            "echo '{{\"event\":\"log\",\"line\":\"opening\"}}'\n\
+             echo '{{\"event\":\"warning\",\"line\":\"Contacts could not be read\"}}'\n\
+             {}",
+            source_line(PROTOCOL_VERSION)
+        );
+        let path = fake_helper(dir.path(), &body);
+        let (log, recorded) = recorded_log();
+        let mut helper =
+            crate::Helper::spawn_at(&path, &identities_request(), log, ProgressSink::none())
+                .expect("start the fake helper");
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        helper.finish().unwrap();
+        assert_eq!(
+            *recorded.lock().unwrap(),
+            [
+                (RunLogLevel::Info, "opening".to_string()),
+                (RunLogLevel::Warn, "Contacts could not be read".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -257,20 +295,9 @@ mod faults {
             let logged = Arc::clone(&logged);
             message_crate_core::LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
         };
-        // Retried while another test thread's fork still holds the script
-        // open for writing (`ETXTBSY`), as `spawn_fake` does.
-        let mut helper = (0..50)
-            .find_map(|_| {
-                match crate::Helper::spawn_at(&path, &identities_request(), Some(log.clone()), None)
-                {
-                    Ok(helper) => Some(helper),
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(20));
-                        None
-                    }
-                }
-            })
-            .expect("start the fake helper");
+        let mut helper =
+            crate::Helper::spawn_at(&path, &identities_request(), log, ProgressSink::none())
+                .expect("start the fake helper");
 
         assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
         let err = helper
@@ -319,5 +346,64 @@ mod faults {
 
         let err = helper.next_event().unwrap_err().to_string();
         assert_eq!(err, "The backup password is wrong.");
+    }
+}
+
+/// Cancel while the program sends nothing (#2085).
+#[cfg(unix)]
+mod cancel {
+    use std::{
+        os::unix::process::ExitStatusExt,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
+
+    use imessage_reader_protocol::{Event, PROTOCOL_VERSION};
+    use message_crate_core::{CancelFlag, Canceled, LogSink, ProgressSink};
+
+    use super::faults_request;
+    use crate::testutil::{fake_helper, source_line};
+
+    /// A program that says it is decrypting and then sends nothing, ever:
+    /// a long silent step, or a program stuck on a backup that went away.
+    /// Cancel is set when the log line arrives, so it is set while the
+    /// program is running and has nothing more to send. `next_event` must
+    /// return [`Canceled`] rather than wait for a line that never comes,
+    /// and the program must be gone: killed, not left holding the backup.
+    #[test]
+    fn cancel_stops_a_read_the_program_never_answers_and_kills_it() {
+        let dir = tempfile::tempdir().unwrap();
+        // `exec` puts `sleep` in the shell's place, so the process the
+        // helper started is the one that goes quiet.
+        let body = format!(
+            "{}\necho '{{\"event\":\"log\",\"line\":\"decrypting\"}}'\nexec sleep 100000",
+            source_line(PROTOCOL_VERSION)
+        );
+        let path = fake_helper(dir.path(), &body);
+        let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
+        let log = {
+            let cancel = Arc::clone(&cancel);
+            LogSink::new(move |line| {
+                if line == "decrypting" {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            })
+        };
+        let mut helper =
+            crate::Helper::spawn_at(&path, &faults_request(), log, ProgressSink::none())
+                .expect("start the fake helper")
+                .cancel_on(Arc::clone(&cancel));
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        let err = helper.next_event().unwrap_err();
+        assert!(err.downcast_ref::<Canceled>().is_some(), "{err:#}");
+        let status = helper
+            .child
+            .try_wait()
+            .expect("ask whether the program exited")
+            .expect("the program has exited");
+        assert_eq!(status.signal(), Some(9), "killed, not exited: {status}");
     }
 }

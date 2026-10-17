@@ -1,5 +1,6 @@
 //! An import that changes a stored message's content puts its duplicate
-//! flag right (#1805), through the dedupe every batch runs (#1969).
+//! flag right (#1805), through the dedupe every Import Run runs when it
+//! ends (#1969, #2040).
 
 use super::*;
 
@@ -18,57 +19,16 @@ async fn import(state: &crate::server::AppState, token: &str, source: &str, line
     for line in lines {
         body.push_str(&format!("{}\n", line.clone().sender(CHAT).at(SECOND)));
     }
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": source, "mode": "append" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/batches"),
-        token,
-        "application/jsonl",
-        body,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
+    import_one_batch(state, token, source, "append", body).await;
 }
 
 /// The message `guid` edited once, from "see you at six" to `text`.
 fn edited(guid: &str, text: &str) -> MessageLine {
     message_line(guid, text).edit(EarlierVersion {
         part_index: 0,
-        text: "see you at six".into(),
+        text: Some("see you at six".into()),
         edited_at_unix_ms: Some(SECOND + 60_000),
     })
-}
-
-/// The guid of the message `guid` is hidden behind, or `None` when it is
-/// shown.
-async fn hidden_behind(state: &crate::server::AppState, guid: &str) -> Option<String> {
-    let mut conn = state.db.acquire().await.unwrap();
-    sqlx::query_scalar(
-        r"
-        SELECT w.guid
-        FROM messages m
-        LEFT JOIN messages w ON w.id = m.duplicate_of
-        WHERE m.guid = $1
-        ",
-    )
-    .bind(guid)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
 }
 
 /// The texts a search for `word` finds.
@@ -197,7 +157,7 @@ async fn an_edit_evaluates_the_copies_around_the_message_again() {
 #[tokio::test]
 async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let (state, _fixture, token) = importer().await;
-    let missing = IrAttachment {
+    let missing = Attachment {
         size_bytes: Some(12),
         missing_reason: Some("not_found".into()),
         ..attachment(
@@ -236,7 +196,7 @@ async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let before = key(state.clone()).await;
 
     let bytes = b"photo-bytes".to_vec();
-    let sha = assets_api::sha256_hex(&bytes);
+    let sha = file_io::sha256_hex(&bytes);
     let (status, text) = crate::test_support::put_raw(
         &state,
         &format!("/v1/assets/{sha}"),
@@ -246,7 +206,7 @@ async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     )
     .await;
     assert!(status.is_success(), "{status}: {text}");
-    let found_file = IrAttachment {
+    let found_file = Attachment {
         digest_sha256: Some(sha),
         size_bytes: Some(bytes.len() as u64),
         ..attachment(

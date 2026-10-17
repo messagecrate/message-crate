@@ -30,8 +30,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// The Export Directory's name in the app-data directory. #1053 moves it into
-/// the Message Crate Directory.
+/// The Export Directory's name in the Message Crate Directory.
 pub const EXPORT_DIRECTORY_NAME: &str = "exports";
 
 /// The directory inside an Export's directory that holds the JSON Lines it
@@ -57,7 +56,7 @@ pub enum ExportKind {
 }
 
 impl ExportKind {
-    /// Every kind, for recognising a name.
+    /// Every kind, for recognizing a name.
     const ALL: [Self; 2] = [Self::Export, Self::Convert];
 
     /// The first part of the directory's name.
@@ -90,7 +89,7 @@ pub struct ExportDir {
     pub converting: String,
 }
 
-/// The Export Directory, in the app-data directory, and the markers this
+/// The Export Directory, in the Message Crate Directory, and the markers this
 /// process holds for the runs it has under way.
 #[derive(Debug)]
 pub struct ExportDirectories {
@@ -101,10 +100,10 @@ pub struct ExportDirectories {
 }
 
 impl ExportDirectories {
-    /// The Export Directory in `app_data_dir`.
-    pub fn in_app_data(app_data_dir: &Path) -> Self {
+    /// The Export Directory `root`.
+    pub fn at(root: PathBuf) -> Self {
         Self {
-            root: app_data_dir.join(EXPORT_DIRECTORY_NAME),
+            root,
             running: Mutex::new(HashMap::new()),
         }
     }
@@ -301,7 +300,7 @@ impl ExportDirectories {
         }
         // The journal lets a later Export into the same directory skip what it
         // fetched. Nothing exports into this directory again.
-        let journal = dir.join(message_crate_export::EXPORT_JOURNAL_NAME);
+        let journal = dir.join(export::EXPORT_JOURNAL_NAME);
         if journal.exists() {
             std::fs::remove_file(&journal).map_err(|e| left_over(&journal, e))?;
         }
@@ -317,7 +316,7 @@ impl ExportDirectories {
     }
 
     /// Delete the directory `dir` and everything in it, after its Export or
-    /// Convert failed or was cancelled. A directory already gone is not an
+    /// Convert failed or was canceled. A directory already gone is not an
     /// error.
     ///
     /// # Errors

@@ -1,12 +1,12 @@
 //! Read an EML directory or mboxrd mailbox back into a [`ConversationDocument`].
 
 use anyhow::{Context, Result, bail};
+use ir::{
+    Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
+    ExportMeta, Message, Participant, SCHEMA_VERSION, nonempty,
+};
 use mail::{MailMessage, mail_message_from_eml_bytes, mail_messages_from_mbox};
 use message_crate_core::discover_files;
-use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
-    IrConversationType, IrMessage, IrParticipant, SCHEMA_VERSION, nonempty,
-};
 use std::fs;
 use std::path::Path;
 
@@ -34,15 +34,15 @@ pub fn read_conversation_eml_dir(dir: &Path) -> Result<ConversationDocument> {
     let mut mail_messages = Vec::with_capacity(paths.len());
     for path in &paths {
         let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
-        let msg = mail_message_from_eml_bytes(&bytes)
+        let message = mail_message_from_eml_bytes(&bytes)
             .with_context(|| format!("parse {}", path.display()))?;
-        mail_messages.push(msg);
+        mail_messages.push(message);
     }
     mail_messages.sort_by(cmp_mail_messages);
 
-    let mut doc = document_from_mail_messages(&mail_messages)?;
-    crate::util::recover_stem_suffix(&mut doc, dir.file_name());
-    Ok(doc)
+    let mut document = document_from_mail_messages(&mail_messages)?;
+    crate::util::recover_stem_suffix(&mut document, dir.file_name());
+    Ok(document)
 }
 
 /// Read a conversation `.mbox` (mboxrd) into a conversation document.
@@ -56,9 +56,9 @@ pub fn read_conversation_mbox(path: &Path) -> Result<ConversationDocument> {
         bail!("mbox has no messages: {}", path.display());
     }
     mail_messages.sort_by(cmp_mail_messages);
-    let mut doc = document_from_mail_messages(&mail_messages)?;
-    crate::util::recover_stem_suffix(&mut doc, path.file_stem());
-    Ok(doc)
+    let mut document = document_from_mail_messages(&mail_messages)?;
+    crate::util::recover_stem_suffix(&mut document, path.file_stem());
+    Ok(document)
 }
 
 /// Order mail messages by timestamp, then GUID, so both readers agree.
@@ -86,23 +86,23 @@ fn document_from_mail_messages(messages: &[MailMessage]) -> Result<ConversationD
         tool_version: first.export_tool_version.clone(),
         owner_identity: nonempty(&first.owner_identity),
         owner_display_name: first.owner_display_name.as_deref().and_then(nonempty),
-        backup_taken_at_unix_ms: first.backup_taken_at_unix_ms,
+        exported_at_unix_ms: first.exported_at_unix_ms,
     };
 
-    let participants: Vec<IrParticipant> = first
+    let participants: Vec<Participant> = first
         .participants
         .iter()
         .map(participant_from_mail)
         .collect();
 
-    let ir_messages: Vec<IrMessage> = messages.iter().map(ir_message_from_mail).collect();
+    let ir_messages: Vec<Message> = messages.iter().map(ir_message_from_mail).collect();
 
-    let mut doc = ConversationDocument {
+    let mut document = ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export,
         conversation: ConversationMeta {
             chat_identifier: first.chat_identifier.clone(),
-            conversation_type: IrConversationType::parse(&first.conversation_type),
+            conversation_type: ConversationType::parse(&first.conversation_type),
             group_title: first.group_title.as_deref().and_then(nonempty),
             participants,
             stats: ConversationStats::default(),
@@ -110,35 +110,40 @@ fn document_from_mail_messages(messages: &[MailMessage]) -> Result<ConversationD
         messages: ir_messages,
         packaging_stem_suffix: None,
     };
-    doc.finalize_stats();
-    Ok(doc)
+    document.finalize_stats();
+    Ok(document)
 }
 
-/// Build an [`IrParticipant`] from a mail participant.
-fn participant_from_mail(p: &mail::Participant) -> IrParticipant {
-    IrParticipant {
+/// Build an [`Participant`] from a mail participant.
+fn participant_from_mail(p: &mail::Participant) -> Participant {
+    Participant {
         identity: nonempty(&p.identity),
         display_name: p.display_name.as_deref().and_then(nonempty),
+        country: None,
     }
 }
 
 /// Map one mail message into the shared conversation message type.
 ///
-/// The message already travels as [`IrMessage`]; only the attachment list is
+/// The message already travels as [`Message`]; only the attachment list is
 /// rebuilt, from the parsed MIME parts (which carry the bytes).
-fn ir_message_from_mail(msg: &MailMessage) -> IrMessage {
-    let mut out = msg.message.clone();
-    out.attachments = msg.attachments.iter().map(attachment_from_mail).collect();
+fn ir_message_from_mail(message: &MailMessage) -> Message {
+    let mut out = message.message.clone();
+    out.attachments = message
+        .attachments
+        .iter()
+        .map(attachment_from_mail)
+        .collect();
     out
 }
 
-/// Map one mail attachment into [`IrAttachment`].
-fn attachment_from_mail(a: &mail::MailAttachment) -> IrAttachment {
-    let mut att: IrAttachment = a.into();
-    att.bytes = if a.bytes.is_empty() {
+/// Map one mail attachment into [`Attachment`].
+fn attachment_from_mail(a: &mail::MailAttachment) -> Attachment {
+    let mut attachment: Attachment = a.into();
+    attachment.bytes = if a.bytes.is_empty() {
         None
     } else {
         Some(a.bytes.clone())
     };
-    att
+    attachment
 }

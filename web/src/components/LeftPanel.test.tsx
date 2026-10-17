@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mockedAuth, Providers } from "../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
+import type { NavItem } from "./appLayoutContext";
 import LeftPanel from "./LeftPanel";
 import { LEFT_PANEL_STORAGE_KEY, LEFT_PANEL_WIDTH_VAR } from "./leftPanelWidth";
 
@@ -17,21 +19,21 @@ const savedSearchState = vi.hoisted(() => ({
   savedSearches: [] as { id: number; name: string; query: string; kind: string }[],
 }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile }),
 }));
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", () => authModule());
 
-vi.mock("../lib/useContactGroups", () => ({
+vi.mock("../hooks/useContactGroups", () => ({
   useContactGroups: () => ({ groups: [] }),
 }));
 
-vi.mock("../lib/useMessageTags", () => ({
+vi.mock("../hooks/useMessageTags", () => ({
   useMessageTags: () => ({ tags: [] }),
 }));
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
@@ -39,7 +41,7 @@ const importAttentionState = vi.hoisted(() => ({
   attention: null as "waiting" | "paused" | "failed" | null,
 }));
 
-vi.mock("../screens/import/useImportAttention", () => ({
+vi.mock("./useImportAttention", () => ({
   useImportAttention: () => importAttentionState.attention,
 }));
 
@@ -49,16 +51,18 @@ const savedSearchActions = vi.hoisted(() => ({
   remove: vi.fn(),
 }));
 
-vi.mock("../lib/savedSearches", () => ({
+vi.mock("./useSavedSearches", () => ({
   useSavedSearches: () => ({ savedSearches: savedSearchState.savedSearches, loading: false }),
   useSavedSearchActions: () => ({ ...savedSearchActions, pending: false, error: null }),
 }));
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   localStorage.clear();
   profileState.profile = null;
   tauriState.isTauri = false;
@@ -75,11 +79,11 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-function renderPanel(initialEntries?: string[], browseQuery = "") {
+function renderPanel(initialEntries?: string[], browseQuery = "", navItem: NavItem | null = null) {
   return render(
     <Providers>
       <MemoryRouter initialEntries={initialEntries}>
-        <LeftPanel browseQuery={browseQuery} />
+        <LeftPanel browseQuery={browseQuery} navItem={navItem} />
         <LocationProbe />
       </MemoryRouter>
     </Providers>,
@@ -101,7 +105,7 @@ describe("LeftPanel", () => {
     render(
       <Providers>
         <MemoryRouter>
-          <LeftPanel browseQuery="" />
+          <LeftPanel browseQuery="" navItem={null} />
           <PaintProbe />
         </MemoryRouter>
       </Providers>,
@@ -144,6 +148,27 @@ describe("LeftPanel", () => {
     expect(alice.querySelector('[class*="size-[15px]"]')).not.toBeNull();
   });
 
+  it("marks the open Saved Search row as the current page, and no other", () => {
+    savedSearchState.savedSearches = [
+      { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
+      { id: 2, name: "Photos", query: "has:photo", kind: "manual" },
+    ];
+    renderPanel([`/?q=${encodeURIComponent("from:alice")}`]);
+    expect(screen.getByRole("button", { name: "From Alice" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Photos" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks no Saved Search row when none is open", () => {
+    savedSearchState.savedSearches = [
+      { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
+    ];
+    renderPanel(["/"]);
+    expect(screen.getByRole("button", { name: "From Alice" })).not.toHaveAttribute("aria-current");
+  });
+
   it("closes the saved-search options menu on Escape", async () => {
     savedSearchState.savedSearches = [
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
@@ -167,8 +192,9 @@ describe("LeftPanel", () => {
     await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "a saved search named 'From Alice' already exists",
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A saved search named 'From Alice' already exists",
     );
     expect(savedSearchActions.create).toHaveBeenCalledWith("From Alice", "from:alice");
     expect(screen.getByRole("dialog", { name: "New saved search" })).toBeTruthy();
@@ -183,7 +209,8 @@ describe("LeftPanel", () => {
     await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await settle();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows why a Saved Search edit was refused and keeps the form open", async () => {
@@ -202,8 +229,9 @@ describe("LeftPanel", () => {
     await fill(user, name, "Work");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "a saved search named 'Work' already exists",
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A saved search named 'Work' already exists",
     );
     expect(savedSearchActions.update).toHaveBeenCalledWith(1, "Work", "from:alice");
     expect(screen.getByRole("dialog", { name: "Edit saved search" })).toBeTruthy();
@@ -219,8 +247,10 @@ describe("LeftPanel", () => {
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
+    await settle();
+
     expect(savedSearchActions.remove).toHaveBeenCalledWith(1);
-    expect(await screen.findByRole("alert")).toHaveTextContent("saved search not found");
+    expect(screen.getByRole("alert")).toHaveTextContent("Saved search not found");
   });
 
   describe("desktop Import/Export Messages section", () => {
@@ -238,10 +268,14 @@ describe("LeftPanel", () => {
       expect(heading.querySelector('[class*="motion-reduce:transition-none"]')).not.toBeNull();
     });
 
-    it("highlights the Messages heading when Import is the current route", () => {
-      renderPanel(["/import"]);
+    it("highlights the Messages heading when the route is on Import", () => {
+      renderPanel(["/import"], "", "import");
       const heading = screen.getByRole("button", { name: "Messages", expanded: true });
       expect(heading.className).toMatch(/bg-hover/);
+      expect(screen.getByRole("button", { name: "Import" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
     });
 
     it("indents Import and Export like nested group rows", () => {

@@ -1,36 +1,15 @@
 import type { ReactNode } from "react";
+import { useColumnResizing } from "../hooks/useColumnResizing";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { conversationName } from "../lib/conversationName";
 import { formatDateSpan } from "../lib/formatDate";
 import { conversationServiceLabel } from "../lib/serviceLabel";
-import { useTimeZone } from "../lib/timeZone";
-import { listRowDivider } from "../lib/tw";
+import { listRowDividerClass } from "../lib/tw";
 import type { Conversation } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import Checkbox from "./Checkbox";
-import { useColumnResizing } from "./columnResizeState";
+import { GroupConversationIcon } from "./icons";
 import PlainButton from "./PlainButton";
-
-function GroupIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="inline-block shrink-0 align-[-1px]"
-    >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="7" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
 
 /** Comma-separated names; each name stays whole; at most two lines then ellipsis. */
 function GroupNames({ conv }: { conv: Conversation }) {
@@ -56,19 +35,10 @@ function GroupNames({ conv }: { conv: Conversation }) {
  * the name the Messages list gives it too.
  */
 function titleContent(conv: Conversation): ReactNode {
-  if (!conv.label && conv.is_group && conv.participants.length > 0) {
+  if (!conv.shown_title && conv.is_group && conv.participants.length > 0) {
     return <GroupNames conv={conv} />;
   }
-  return conversationTitleText(conv);
-}
-
-/** Plain-text form of the row title, for the checkbox's accessible name. */
-function conversationTitleText(conv: Conversation): string {
-  return conversationName({
-    title: conv.label,
-    isGroup: conv.is_group,
-    participants: conv.participants,
-  });
+  return conversationName(conv);
 }
 
 function GroupParticipantCount({ count }: { count: number }) {
@@ -78,7 +48,7 @@ function GroupParticipantCount({ count }: { count: number }) {
       title={`${count} participants`}
     >
       <span>{count}</span>
-      <GroupIcon />
+      <GroupConversationIcon size={12} className="inline-block shrink-0 align-[-1px]" />
     </span>
   );
 }
@@ -98,7 +68,7 @@ export default function ConversationRow({
 }) {
   const columnResizing = useColumnResizing();
   const isGroup = conversation.is_group;
-  const wraps = isGroup && !conversation.label && !columnResizing;
+  const wraps = isGroup && !conversation.shown_title && !columnResizing;
   const dateSpan = formatDateSpan(
     conversation.first_message_at,
     conversation.last_message_at,
@@ -126,13 +96,13 @@ export default function ConversationRow({
     </div>
   );
 
-  const rowClass = `box-border flex w-full items-center gap-2 border-none px-[0.85rem] py-[0.7rem] text-left ${listRowDivider} ${
+  const rowClass = `box-border flex w-full items-center gap-2 border-none px-[0.85rem] py-[0.7rem] text-left ${listRowDividerClass} ${
     isSelected ? "bg-hover" : "bg-transparent"
   }`;
 
   if (!onCheckChange) {
     return (
-      <PlainButton onPress={onClick} className={`cursor-pointer ${focusRing} ${rowClass}`}>
+      <PlainButton onPress={onClick} className={`cursor-pointer ${focusRingClass} ${rowClass}`}>
         {body}
       </PlainButton>
     );
@@ -151,13 +121,13 @@ export default function ConversationRow({
       */}
       <Checkbox
         checked={checked || false}
-        aria-label={`Select ${conversationTitleText(conversation)}`}
+        aria-label={`Select ${conversationName(conversation)}`}
         onChange={() => onCheckChange(conversation.id)}
         labelClassName="-my-[0.7rem] -mr-2 -ml-[0.85rem] shrink-0 items-center self-stretch pr-2 pl-[0.85rem]"
       />
       <PlainButton
         onPress={onClick}
-        className={`flex min-w-0 flex-1 cursor-pointer items-start border-none bg-transparent p-0 text-left ${focusRing}`}
+        className={`flex min-w-0 flex-1 cursor-pointer items-start border-none bg-transparent p-0 text-left ${focusRingClass}`}
       >
         {body}
       </PlainButton>

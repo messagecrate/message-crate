@@ -1,6 +1,6 @@
 //! The shared blocking HTTP session and the `GET /v1/session` login call.
 //!
-//! `message-crate-import` and `message-crate-export` both talk to the server through one
+//! `import` and `export` both talk to the server through one
 //! [`HttpSession`]. The session owns base-URL trimming and bearer-header
 //! construction so no caller formats `Authorization` by hand.
 
@@ -150,7 +150,7 @@ pub fn looks_like_html(body: &str) -> bool {
 }
 
 /// Map HTTP 401. When `http://` was redirected to `https://`, the token was
-/// dropped with the Authorization header — tell the user to use https.
+/// dropped with the Authorization header. Tell the user to use https.
 fn classify_unauthorized(
     requested_base: &str,
     requested_url: &reqwest::Url,
@@ -185,7 +185,6 @@ fn classify_auth_http_status(status: u16, body: String) -> AuthError {
     match status {
         403 => AuthError::Forbidden { status, body },
         404 => AuthError::ApiNotFound { status, body },
-        429 => AuthError::RateLimited { status, body },
         500..=599 => AuthError::ServerError { status, body },
         _ => AuthError::HttpStatus { status, body },
     }
@@ -213,7 +212,7 @@ mod tests {
     /// common error page in front of a server was reported as a JSON parse
     /// failure rather than as the wrong host.
     #[test]
-    fn an_html_error_page_is_recognised_whatever_its_case() {
+    fn an_html_error_page_is_recognized_whatever_its_case() {
         for body in [
             "<!doctype html><html><body>502 Bad Gateway</body></html>",
             "<!DOCTYPE html>",

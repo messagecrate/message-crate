@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,24 +10,28 @@ const retrySavedLogin = vi.fn();
 
 const authState = vi.hoisted(() => ({ serverUrl: "" }));
 
-vi.mock("../lib/auth", () => ({
-  useAuth: () => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl }),
-}));
+vi.mock("../hooks/useAuth", () =>
+  authModule(() => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl })),
+);
 
 const tauriState = vi.hoisted(() => ({ isTauri: false }));
 const startLocalServer = vi.hoisted(() => vi.fn());
-const localServerStatus = vi.hoisted(() => vi.fn());
-const openDataDirectory = vi.hoisted(() => vi.fn());
+const invokeLocalServerStatus = vi.hoisted(() => vi.fn());
+const invokeOpenMessageCrateDirectory = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
 vi.mock("../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/localServer")>()),
   startLocalServer: () => startLocalServer(),
-  localServerStatus: () => localServerStatus(),
-  openDataDirectory: () => openDataDirectory(),
+}));
+
+vi.mock("../lib/desktop/localServer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/localServer")>()),
+  invokeLocalServerStatus: () => invokeLocalServerStatus(),
+  invokeOpenMessageCrateDirectory: () => invokeOpenMessageCrateDirectory(),
 }));
 
 const setBaseUrlSpy = vi.hoisted(() => vi.fn());
@@ -51,24 +55,54 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   getServerState: vi.fn(),
   login: vi.fn(),
+  claimServer: vi.fn(),
+  createAccount: vi.fn(),
 }));
 
 vi.mock("../lib/serverHealth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverHealth")>()),
   checkServerHealth: vi.fn(),
+  checkServerHealthWithRetry: vi.fn(),
 }));
 
 import { getBaseUrl } from "../lib/api";
-import { getServerState, login as serverLogin } from "../lib/serverApi";
-import { checkServerHealth } from "../lib/serverHealth";
-import type { ServerState } from "../lib/useServerState";
-import { Providers } from "../test/providers";
+import { claimServer, createAccount, getServerState, login as serverLogin } from "../lib/serverApi";
+import {
+  checkServerHealth,
+  checkServerHealthWithRetry,
+  HEALTH_RECHECK_AFTER_FAILURE_MS,
+  HEALTH_URL_DEBOUNCE_MS,
+} from "../lib/serverHealth";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
+import { STARTING_POLL_MS } from "./auth/useLocalServer";
+import type { ServerState } from "./auth/useServerState";
 import LoginScreen from "./LoginScreen";
 
 const checkServerHealthMock = vi.mocked(checkServerHealth);
+const checkServerHealthWithRetryMock = vi.mocked(checkServerHealthWithRetry);
 const getServerStateMock = vi.mocked(getServerState);
 const serverLoginMock = vi.mocked(serverLogin);
+const claimServerMock = vi.mocked(claimServer);
+const createAccountMock = vi.mocked(createAccount);
+
+/**
+ * The card's connect asks again after a server's error before it says
+ * Disconnected. Most tests are about what the card shows once it has its
+ * answer, so by default connect makes one ask of the faked probe; the tests
+ * of the retry put the real one back over a faked `fetch`.
+ */
+function skipRetry() {
+  checkServerHealthWithRetryMock.mockImplementation((address, signal) =>
+    checkServerHealthMock(address, signal),
+  );
+}
+
+async function retryForReal() {
+  const actual = await vi.importActual<typeof import("../lib/serverHealth")>("../lib/serverHealth");
+  checkServerHealthWithRetryMock.mockImplementation(actual.checkServerHealthWithRetry);
+}
 
 /**
  * What a Message Crate at one address does: answers with its state, refuses
@@ -98,6 +132,8 @@ function serveAt(answer: (address: string) => Answer) {
       version: "0.10.0",
       schema_fingerprint: 1,
       asset_max_bytes: 1024,
+      body_stall_secs: 60,
+      body_total_secs: 300,
     };
   });
 }
@@ -142,26 +178,33 @@ describe("LoginScreen", () => {
     authState.serverUrl = "";
     startLocalServer.mockReset();
     startLocalServer.mockResolvedValue({ status: "ready", started_by_app: true });
-    localServerStatus.mockReset();
-    localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
-    openDataDirectory.mockReset();
-    openDataDirectory.mockResolvedValue(undefined);
+    invokeLocalServerStatus.mockReset();
+    invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
+    invokeOpenMessageCrateDirectory.mockReset();
+    invokeOpenMessageCrateDirectory.mockResolvedValue(undefined);
     setBaseUrlSpy.mockReset();
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
+    checkServerHealthWithRetryMock.mockReset();
+    skipRetry();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();
+    claimServerMock.mockReset();
+    createAccountMock.mockReset();
+    startFakeClock();
   });
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("logs in without a server-selection step", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Username" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
 
@@ -173,39 +216,44 @@ describe("LoginScreen", () => {
     stubServer("unclaimed", true);
     serverLoginMock.mockResolvedValue({ token: "mc-user-demo", account_id: 2, username: "demo" });
     renderScreen();
+    await settle();
 
-    const explore = await screen.findByRole("button", { name: "Explore Demo Account" });
+    const explore = screen.getByRole("button", { name: "Explore Demo Account" });
     expect(screen.getByRole("heading", { name: "Create Owner" })).toBeInTheDocument();
 
     await setupUser().click(explore);
+    await settle();
 
-    await waitFor(() => expect(login).toHaveBeenCalledWith("", "mc-user-demo", 2));
+    expect(login).toHaveBeenCalledWith("", "mc-user-demo", 2);
     expect(serverLoginMock).toHaveBeenCalledWith({ username: "demo", password: "" });
   });
 
   it("keeps the Demo Account button beside the login form once claimed", async () => {
     stubServer("closed", true);
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("button", { name: "Explore Demo Account" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Explore Demo Account" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
   });
 
   it("shows no Demo Account button when the server has no Demo Account", async () => {
     stubServer("closed", false);
     renderScreen();
+    await settle();
 
-    await screen.findByRole("button", { name: "Log in" });
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Explore Demo Account" })).not.toBeInTheDocument();
   });
 
   it("names the product and the server the card is connected to", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
     // A blank address is the website's own origin, named by host and port.
     const origin = new URL(window.location.origin);
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveTextContent(
       new RegExp(`^Connected to ${origin.hostname}:${origin.port || "80"}$`),
     );
     expect(screen.getByRole("heading", { name: "Message Crate" })).toBeInTheDocument();
@@ -216,16 +264,56 @@ describe("LoginScreen", () => {
     authState.serverUrl = "http://192.168.1.20:9000";
     stubServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByText("Connected to 192.168.1.20:9000")).toBeInTheDocument();
+    expect(screen.getByText("Connected to 192.168.1.20:9000")).toBeInTheDocument();
     expect(screen.queryByText(/http:\/\/192\.168\.1\.20/)).not.toBeInTheDocument();
+  });
+
+  // The forms send the password to the address the card is on, so over
+  // plain HTTP to another computer the card says it crosses the network
+  // unencrypted, on the login form and on Create Owner alike (#2115).
+  const IN_CLEAR = /not encrypted, so the password crosses the network as typed/;
+
+  it("says a plain HTTP connection to another computer is not encrypted", async () => {
+    authState.serverUrl = "http://192.168.1.20:8080";
+    stubServer("closed");
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByText(IN_CLEAR)).toBeInTheDocument();
+  });
+
+  it("says so above Create Owner too", async () => {
+    authState.serverUrl = "http://192.168.1.20:8080";
+    stubServer("unclaimed");
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("heading", { name: "Create Owner" })).toBeInTheDocument();
+    expect(screen.getByText(IN_CLEAR)).toBeInTheDocument();
+  });
+
+  it("says nothing of encryption for this computer or an https address", async () => {
+    for (const address of ["", "http://127.0.0.1:8080", "https://192.168.1.20:8080"]) {
+      authState.serverUrl = address;
+      stubServer("closed");
+      renderScreen();
+      await settle();
+
+      expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+      expect(screen.queryByText(IN_CLEAR), address).not.toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it("keeps both tabs, Login first", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((t) => t.textContent)).toEqual(["Login", "Create Account"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
@@ -235,8 +323,9 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
@@ -248,8 +337,9 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.queryByText(/At least 8 characters/i)).not.toBeInTheDocument();
@@ -259,25 +349,62 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
     await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
     await fill(user, screen.getByLabelText("Password"), "hunter22");
     await fill(user, screen.getByLabelText("Confirm Password"), "hunter23");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByText("Passwords do not match.")).toBeInTheDocument();
+    expect(screen.getByText("Passwords do not match.")).toBeInTheDocument();
     expect(login).not.toHaveBeenCalled();
   });
 
   it("says Disconnected when nothing answers", async () => {
     stubNoServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByText(/^Disconnected from /)).toBeInTheDocument();
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     // The address field belongs to the settings screen now, not the card.
     expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
+  });
+
+  it("asks once more before it says Disconnected, so one missed probe does not show it", async () => {
+    // A server whose database an import keeps busy can fail one /health and
+    // answer the next (#2718).
+    stubServer();
+    await retryForReal();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    renderScreen();
+    await settle();
+
+    await advanceTimersAndSettle(HEALTH_RECHECK_AFTER_FAILURE_MS - 1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connecting to /);
+
+    await advanceTimersAndSettle(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connected to /);
+  });
+
+  it("says Disconnected once the second probe in a row fails too", async () => {
+    stubNoServer();
+    await retryForReal();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+    renderScreen();
+    await settle();
+
+    await advanceTimersAndSettle(HEALTH_RECHECK_AFTER_FAILURE_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Disconnected from /);
   });
 
   it("shows the login form, disabled, when nothing answers", async () => {
@@ -285,8 +412,9 @@ describe("LoginScreen", () => {
     // server — has to look finished, or the screen seems to hang.
     stubNoServer();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(screen.queryByTestId("auth-form-skeleton")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeDisabled();
     // No server has said it takes new accounts, so the card does not offer one.
@@ -297,8 +425,9 @@ describe("LoginScreen", () => {
   it("shows the placeholder form only while it is still connecting", async () => {
     serveAt(() => "silent");
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Connecting to /);
+    expect(screen.getByText(/^Connecting to /)).toBeInTheDocument();
     expect(screen.getByTestId("auth-form-skeleton")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
   });
@@ -310,8 +439,9 @@ describe("LoginScreen", () => {
     serveAt(() => "silent");
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByText(/^Connecting to /)).toBeInTheDocument();
+    expect(screen.getByText(/^Connecting to /)).toBeInTheDocument();
     const link = screen.getByRole("button", { name: "Change server address" });
     expect(link).toBeEnabled();
 
@@ -322,8 +452,9 @@ describe("LoginScreen", () => {
   it("keeps the way out of a red card live", async () => {
     stubNoServer();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change server address" })).toBeEnabled();
   });
 
@@ -336,22 +467,22 @@ describe("LoginScreen", () => {
     serveAt((address) => (address.startsWith(A) ? { state: "closed" } : "down"));
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Connected to /);
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
     await user.type(field, B);
     await user.click(screen.getByRole("button", { name: "Use this address" }));
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveTextContent(
       `Nothing answered at ${B}. Still connected to ${A}.`,
     );
-    // Long enough for the card's own health probe (400ms debounce) to have
-    // run, had it gone back to watching A as a disconnected card.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-    });
+    // The probe has run by now, had the card gone back to watching A as a
+    // disconnected card.
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS);
     expect(screen.getByRole("status")).toHaveTextContent("Connected to crate-a.example:8080");
     expect(screen.getByRole("button", { name: "Log in" })).toBeEnabled();
     expect(setServer).not.toHaveBeenCalledWith(B);
@@ -364,15 +495,17 @@ describe("LoginScreen", () => {
     stubNoServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
     await fill(user, field, "http://127.0.0.1:9999");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "Nothing answered at http://127.0.0.1:9999.",
     );
     expect(screen.getByRole("status")).toHaveTextContent("Disconnected");
@@ -384,8 +517,9 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Connected to /);
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     const field = screen.getByRole("textbox", { name: "Address" });
@@ -407,9 +541,8 @@ describe("LoginScreen", () => {
 
     await fill(user, field, "http://127.0.0.1:8080");
     await user.click(apply());
-    await waitFor(() => {
-      expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
-    });
+    await settle();
+    expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
 
     // Back on the settings screen, the applied address is now the connected
     // one, so it is no longer a change — and editing it makes it one again.
@@ -425,8 +558,9 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
@@ -436,15 +570,16 @@ describe("LoginScreen", () => {
     expect(screen.queryByRole("tab", { name: "Login" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
   });
 
   it("reports what Test found for the typed address", async () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     stubNoServer();
@@ -452,8 +587,9 @@ describe("LoginScreen", () => {
     await user.clear(field);
     await fill(user, field, "http://127.0.0.1:9999");
     await user.click(screen.getByRole("button", { name: "Test" }));
+    await settle();
 
-    expect(await screen.findByText(/^Disconnected from /)).toBeInTheDocument();
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     // Testing does not commit the address: the card is still connected behind.
     expect(setServer).not.toHaveBeenCalledWith("http://127.0.0.1:9999");
   });
@@ -462,8 +598,9 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     // Opened on the address the card is connected to, so that connection is
     // this address's and saying so is true.
@@ -477,7 +614,8 @@ describe("LoginScreen", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Not tested: 127.0.0.1:9999");
 
     await user.click(screen.getByRole("button", { name: "Test" }));
-    expect(await screen.findByText("Disconnected from 127.0.0.1:9999")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("Disconnected from 127.0.0.1:9999")).toBeInTheDocument();
 
     // Editing after a failed test clears that answer without inventing a
     // better one. A green here would say the typed address works.
@@ -489,8 +627,9 @@ describe("LoginScreen", () => {
     stubNoServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     // Only the address being typed answers healthy — the disconnected card's
@@ -507,11 +646,10 @@ describe("LoginScreen", () => {
     await user.clear(field);
     await fill(user, field, "http://127.0.0.1:8080");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
-    });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
   });
 
   it("keeps the typed address when a slow probe for the old one answers late", async () => {
@@ -534,26 +672,24 @@ describe("LoginScreen", () => {
     );
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByText(/^Connecting to /)).toBeInTheDocument();
+    expect(screen.getByText(/^Connecting to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
     await fill(user, field, "http://127.0.0.1:8080");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
+    await settle();
 
-    await waitFor(() => {
-      expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
-    });
+    expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
 
     // Now the saved address answers healthy, after the typed one has already
     // been applied. It describes a server this screen has moved on from, and a
-    // probe nobody is waiting on any more may not speak for the card. A real
-    // timer gives every pending microtask its chance to write first.
+    // probe nobody is waiting on any more may not speak for the card. The
+    // settle lets everything that answer starts land before the test reads.
     answerSavedAddress?.();
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await settle();
 
     expect(setServer).not.toHaveBeenCalledWith("");
     expect(setServer).toHaveBeenLastCalledWith("http://127.0.0.1:8080");
@@ -568,15 +704,18 @@ describe("LoginScreen", () => {
     let healthy = false;
     serveAt(() => (healthy ? { state: "open" } : "down"));
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
 
     healthy = true;
 
-    expect(
-      await screen.findByRole("tab", { name: "Login" }, { timeout: 3000 }),
-    ).toBeInTheDocument();
-    expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
+    // The disconnected card's probe asks only once its debounce has passed.
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS - 1);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
+    await advanceTimersAndSettle(1);
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
   });
 
   it("tries the saved login again once the server is healthy again", async () => {
@@ -584,29 +723,35 @@ describe("LoginScreen", () => {
     serveAt(() => (healthy ? { state: "open" } : "down"));
     retrySavedLogin.mockClear();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(retrySavedLogin).not.toHaveBeenCalled();
 
     healthy = true;
 
-    await waitFor(() => expect(retrySavedLogin).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS - 1);
+    expect(retrySavedLogin).not.toHaveBeenCalled();
+    await advanceTimersAndSettle(1);
+    expect(retrySavedLogin).toHaveBeenCalledTimes(1);
     expect(retrySavedLogin).toHaveBeenCalledWith("");
   });
 
   it("probes the health of the address it is on, with an abort signal", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(checkServerHealthMock).toHaveBeenCalledWith("", expect.any(AbortSignal));
   });
 
   it("puts the credentials in a real form, so a password manager can fill it", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
-    const password = await screen.findByLabelText("Password");
+    const password = screen.getByLabelText("Password");
     // A password field outside a form is one browsers decline to offer to save.
     expect(password.closest("form")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Log in" })).toHaveAttribute("type", "submit");
@@ -619,24 +764,122 @@ describe("LoginScreen", () => {
   it("runs the login from the form's own submit event", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     const form = screen.getByLabelText("Password").closest("form");
     expect(form).not.toBeNull();
 
     fireEvent.submit(form as HTMLFormElement);
+    await settle();
 
     // Submitting with the username still empty reaches the handler's own check,
     // which is enough to show the form is what drives it.
-    expect(await screen.findByText("Username is required.")).toBeInTheDocument();
+    expect(screen.getByText("Username is required.")).toBeInTheDocument();
+  });
+
+  /** Fill the login form with a login the faked server accepts, without submitting it. */
+  async function fillLogin(user: ReturnType<typeof setupUser>) {
+    serverLoginMock.mockResolvedValue({ token: "mc-user-ada", account_id: 7, username: "ada" });
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+  }
+
+  it("offers Keep me logged in on the website, ticked, and keeps the login", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("checkbox", { name: "Keep me logged in" })).toBeChecked();
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-ada", 7, "kept");
+  });
+
+  it("logs in for this visit only with Keep me logged in unticked", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    await user.click(screen.getByRole("checkbox", { name: "Keep me logged in" }));
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-ada", 7, "visit");
+  });
+
+  it("offers no Keep me logged in in the desktop app, and keeps the login", async () => {
+    tauriState.isTauri = true;
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    expect(screen.queryByRole("checkbox", { name: "Keep me logged in" })).not.toBeInTheDocument();
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("http://127.0.0.1:8080", "mc-user-ada", 7, "kept");
+  });
+
+  it("logs a new account in for this visit only with Keep me logged in unticked", async () => {
+    stubServer();
+    createAccountMock.mockResolvedValue({
+      token: "mc-user-new",
+      account_id: 9,
+    } as Awaited<ReturnType<typeof createAccount>>);
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    await user.click(screen.getByRole("tab", { name: "Create Account" }));
+    const keep = screen.getByRole("checkbox", { name: "Keep me logged in" });
+    expect(keep).toBeChecked();
+    await user.click(keep);
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+    await fill(user, screen.getByLabelText("Confirm Password"), "hunter22");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-new", 9, "visit");
+  });
+
+  it("logs the new owner in for this visit only with Keep me logged in unticked", async () => {
+    stubServer("unclaimed");
+    claimServerMock.mockResolvedValue({
+      token: "mc-user-owner",
+      account_id: 1,
+      username: "admin",
+    });
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    const keep = screen.getByRole("checkbox", { name: "Keep me logged in" });
+    expect(keep).toBeChecked();
+    await user.click(keep);
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+    await fill(user, screen.getByLabelText("Confirm Password"), "hunter22");
+    await user.click(screen.getByRole("button", { name: "Create Owner" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-owner", 1, "visit");
   });
 
   it("calls the new-account action Continue, since profile setup finishes it", async () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
@@ -647,15 +890,16 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
     await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
     await fill(user, screen.getByLabelText("Password"), "hunter22");
     await fill(user, screen.getByLabelText("Confirm Password"), "hunter23");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    const message = await screen.findByText("Passwords do not match.");
+    const message = screen.getByText("Passwords do not match.");
     const confirmField = screen.getByLabelText("Confirm Password");
     const action = screen.getByRole("button", { name: "Continue" });
     const orRule = screen.getByText("or");
@@ -673,8 +917,9 @@ describe("LoginScreen", () => {
     tauriState.isTauri = true;
     stubServer();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(startLocalServer).toHaveBeenCalledTimes(1);
   });
 
@@ -683,7 +928,8 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
-    await screen.findByRole("tab", { name: "Login" });
+    await settle();
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     startLocalServer.mockClear();
 
     await user.click(screen.getByRole("button", { name: "Change server address" }));
@@ -691,38 +937,42 @@ describe("LoginScreen", () => {
     await user.clear(field);
     await fill(user, field, "http://crate.example:8080");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
+    await settle();
 
-    await waitFor(() => expect(setServer).toHaveBeenCalledWith("http://crate.example:8080"));
+    expect(setServer).toHaveBeenCalledWith("http://crate.example:8080");
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
   it("starts nothing in the browser", async () => {
     stubServer();
     renderScreen();
+    await settle();
 
-    await screen.findByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
   it("says the app's own Message Crate is starting, in place of Connected", async () => {
     tauriState.isTauri = true;
     startLocalServer.mockResolvedValue({ status: "starting", first_time: false });
-    localServerStatus.mockResolvedValue({ status: "starting", first_time: false });
+    invokeLocalServerStatus.mockResolvedValue({ status: "starting", first_time: false });
     stubNoServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Starting Message Crate…");
+    expect(screen.getByRole("status")).toHaveTextContent("Starting Message Crate…");
     expect(screen.queryByRole("tab", { name: "Login" })).toBeNull();
   });
 
   it("says a first start is setting Message Crate up", async () => {
     tauriState.isTauri = true;
     startLocalServer.mockResolvedValue({ status: "starting", first_time: true });
-    localServerStatus.mockResolvedValue({ status: "starting", first_time: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "starting", first_time: true });
     stubNoServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveTextContent(
       "Setting up Message Crate for the first time…",
     );
   });
@@ -730,18 +980,21 @@ describe("LoginScreen", () => {
   it("connects as soon as the app's own Message Crate answers", async () => {
     tauriState.isTauri = true;
     startLocalServer.mockResolvedValue({ status: "starting", first_time: true });
-    localServerStatus.mockResolvedValue({ status: "starting", first_time: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "starting", first_time: true });
     stubNoServer();
     renderScreen();
-    await screen.findByText("Setting up Message Crate for the first time…");
+    await settle();
+    expect(screen.getByText("Setting up Message Crate for the first time…")).toBeInTheDocument();
 
     stubServer("unclaimed", true);
-    localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Connected"), {
-      timeout: 3000,
-    });
-    expect(await screen.findByRole("button", { name: "Explore Demo Account" })).toBeEnabled();
+    // The card hears the app's server is ready when it next asks.
+    await advanceTimersAndSettle(STARTING_POLL_MS - 1);
+    expect(screen.getByRole("status")).toHaveTextContent("Setting up Message Crate");
+    await advanceTimersAndSettle(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Connected");
+    expect(screen.getByRole("button", { name: "Explore Demo Account" })).toBeEnabled();
   });
 
   it("says why its own Message Crate did not start, and tries again when asked", async () => {
@@ -755,16 +1008,15 @@ describe("LoginScreen", () => {
     stubNoServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Another program is using port 8080.",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Another program is using port 8080.");
     expect(screen.getByRole("button", { name: "Change server address" })).toBeEnabled();
     // Nothing the server wrote, so nothing to disclose.
     expect(screen.queryByText("Details")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Open data directory" }));
-    expect(openDataDirectory).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Open Message Crate directory" }));
+    expect(invokeOpenMessageCrateDirectory).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(startLocalServer).toHaveBeenCalledTimes(2);
@@ -780,8 +1032,9 @@ describe("LoginScreen", () => {
     });
     stubNoServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByText("Details")).toBeInTheDocument();
+    expect(screen.getByText("Details")).toBeInTheDocument();
     expect(screen.getByText("Error: database is locked")).toBeInTheDocument();
   });
 
@@ -790,8 +1043,9 @@ describe("LoginScreen", () => {
     authState.serverUrl = "http://crate.example:8080";
     stubServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(screen.getByText("Connected to crate.example:8080")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Server Address" })).toBeNull();
     expect(startLocalServer).not.toHaveBeenCalled();
@@ -808,23 +1062,27 @@ describe("LoginScreen", () => {
       ownRunning = true;
       return { status: "starting", first_time: false };
     });
-    localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
     serveAt((address) =>
       ownRunning && address.startsWith("http://127.0.0.1:8080") ? { state: "closed" } : "down",
     );
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    await user.click(screen.getByRole("button", { name: "Change server address" }));
     await user.click(
-      await screen.findByRole("button", { name: "Use the Message Crate on this computer" }),
+      screen.getByRole("button", { name: "Use the Message Crate on this computer" }),
     );
+    await settle();
 
-    await waitFor(() => expect(startLocalServer).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080"), {
-      timeout: 3000,
-    });
-    expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
+    expect(startLocalServer).toHaveBeenCalledTimes(1);
+    // The app's server answers only once it has started, which the card hears
+    // when it next asks how the start is going.
+    expect(setServer).not.toHaveBeenCalledWith("http://127.0.0.1:8080");
+    await advanceTimersAndSettle(STARTING_POLL_MS);
+    expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     expect(setBaseUrlSpy).not.toHaveBeenCalledWith("http://crate.example:8080");
   });
 
@@ -838,18 +1096,18 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText("Connected to crate.example:8080");
+    expect(screen.getByText("Connected to crate.example:8080")).toBeInTheDocument();
     expect(retrySavedLogin).not.toHaveBeenCalled();
 
-    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    await user.click(screen.getByRole("button", { name: "Change server address" }));
     await user.click(
-      await screen.findByRole("button", { name: "Use the Message Crate on this computer" }),
+      screen.getByRole("button", { name: "Use the Message Crate on this computer" }),
     );
+    await settle();
 
-    await waitFor(() => expect(retrySavedLogin).toHaveBeenCalledWith("http://127.0.0.1:8080"), {
-      timeout: 3000,
-    });
+    expect(retrySavedLogin).toHaveBeenCalledWith("http://127.0.0.1:8080");
   });
 
   it("says why the app's own Message Crate did not start, when asked to go back to it", async () => {
@@ -864,15 +1122,15 @@ describe("LoginScreen", () => {
     stubNoServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    await user.click(screen.getByRole("button", { name: "Change server address" }));
     await user.click(
-      await screen.findByRole("button", { name: "Use the Message Crate on this computer" }),
+      screen.getByRole("button", { name: "Use the Message Crate on this computer" }),
     );
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Another program is using port 8080.",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Another program is using port 8080.");
     expect(setServer).not.toHaveBeenCalledWith("http://127.0.0.1:8080");
   });
 
@@ -880,8 +1138,9 @@ describe("LoginScreen", () => {
     authState.serverUrl = "http://crate.example:8080";
     stubServer();
     renderScreen();
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Server Address" })).toBeNull();
   });
 
@@ -892,15 +1151,15 @@ describe("LoginScreen", () => {
     serveAt((address) => (address === "" ? { state: "open" } : "down"));
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Disconnected from /);
-    await user.click(await screen.findByRole("button", { name: "Change server address" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Use this website's own Message Crate" }),
-    );
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change server address" }));
+    await user.click(screen.getByRole("button", { name: "Use this website's own Message Crate" }));
+    await settle();
 
-    await waitFor(() => expect(setServer).toHaveBeenCalledWith(""), { timeout: 3000 });
-    expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
+    expect(setServer).toHaveBeenCalledWith("");
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
@@ -910,11 +1169,12 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Connected to /);
-    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change server address" }));
 
-    expect(await screen.findByRole("heading", { name: "Server Address" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Use the Message Crate on this computer" }),
     ).toBeNull();
@@ -924,11 +1184,12 @@ describe("LoginScreen", () => {
     stubServer();
     const user = setupUser();
     renderScreen();
+    await settle();
 
-    await screen.findByText(/^Connected to /);
-    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change server address" }));
 
-    expect(await screen.findByRole("heading", { name: "Server Address" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Use this website's own Message Crate" }),
     ).toBeNull();

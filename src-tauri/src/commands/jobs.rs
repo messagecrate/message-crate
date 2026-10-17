@@ -2,19 +2,20 @@
 //! `export`, `upload`, `transcode_staging`).
 //!
 //! One job runs at a time in this process. Every job reports on the same
-//! `extract:*` events, which do not say which job sent them, so a second job
-//! would end the first one's wait in the web app with its own finished event.
+//! `desktop-job:*` events, which do not say which job sent them, so a second
+//! job would end the first one's wait in the web app with its own finished
+//! event.
 //! A job command therefore starts its job with [`start_job`], which refuses
 //! while another job runs and names that job. The job gets a cancel flag of
 //! its own, and [`cancel_running_job`] sets the flag of the job that is
 //! running, so a Cancel stops that job and never one started after it.
 //!
 //! [`spawn_job`] runs the job on a worker thread, ends it, and only then sends
-//! its `extract:finished` or `extract:error` event: the web app starts the
-//! next stage's job as soon as that event arrives, and the job must have
-//! ended by then or the next one would be refused. What differs per command
-//! (building the config, mapping progress events, and shaping the finished
-//! summary) stays in the command.
+//! its `desktop-job:finished` or `desktop-job:error` event: the web app
+//! starts the next stage's job as soon as that event arrives, and the job
+//! must have ended by then or the next one would be refused. What differs per
+//! command (building the config, mapping progress events, and shaping the
+//! finished summary) stays in the command.
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -26,7 +27,8 @@ use message_crate_core::CancelFlag;
 use tauri::{AppHandle, Manager};
 
 use super::events;
-use super::events::ExtractErrorEvent;
+use super::events::DesktopJobErrorEvent;
+use crate::app_directories::RunLog;
 use crate::local_server::LocalServer;
 use crate::state::{AppState, JobName, RunningJob};
 
@@ -111,17 +113,22 @@ pub(crate) fn cancel_running_job(state: &Arc<Mutex<AppState>>) -> Result<(), Str
 }
 
 /// Run `job` on a worker thread, end it, and report its outcome: the summary
-/// it returns as `extract:finished`, or its failure as `extract:error`.
+/// it returns as `desktop-job:finished`, or its failure as `desktop-job:error`.
+///
+/// `run_log` is the Import Run's log of a Staging, Media or Upload job, and
+/// `None` for an Export or a Convert, which have none. A panic's text goes
+/// into it, because the job's own error handling is the code that panicked
+/// (#2071).
 ///
 /// The app's own Message Crate is not restarted for the network setting
 /// while the job runs, since the job may be an import into it.
-pub(crate) fn spawn_job<F>(app: AppHandle, job: Job, run: F)
+pub(crate) fn spawn_job<F>(app: AppHandle, job: Job, run_log: Option<RunLog>, run: F)
 where
-    F: FnOnce() -> Result<String, ExtractErrorEvent> + Send + 'static,
+    F: FnOnce() -> Result<String, DesktopJobErrorEvent> + Send + 'static,
 {
     let local_server_job = app.state::<LocalServer>().job_started();
     thread::spawn(move || {
-        let outcome = run_job(job, run);
+        let outcome = run_job(job, run_log.as_ref(), run);
         drop(local_server_job);
         match outcome {
             Ok(summary) => events::emit(&app, events::FINISHED, summary),
@@ -131,23 +138,29 @@ where
 }
 
 /// Run one job, end it, and return its finished summary or the
-/// `extract:error` payload the UI needs.
+/// `desktop-job:error` payload the UI needs.
 ///
 /// A panic counts as a failure. Without this, a panicking job sends neither
-/// `extract:finished` nor `extract:error`, and the UI waits forever. The
-/// message the person reads names the work as the screens do, because "job"
-/// is a word for the code only.
-fn run_job<F>(job: Job, run: F) -> Result<String, ExtractErrorEvent>
+/// `desktop-job:finished` nor `desktop-job:error`, and the UI waits forever.
+/// The message the person reads names the work as the screens do, because
+/// "job" is a word for the code only. The panic's text goes into `run_log`,
+/// when the job has one, so the Logs panel shows what the bug was (#2071).
+fn run_job<F>(job: Job, run_log: Option<&RunLog>, run: F) -> Result<String, DesktopJobErrorEvent>
 where
-    F: FnOnce() -> Result<String, ExtractErrorEvent>,
+    F: FnOnce() -> Result<String, DesktopJobErrorEvent>,
 {
     let name = job.name;
     let outcome = panic::catch_unwind(AssertUnwindSafe(run));
     drop(job);
     outcome.unwrap_or_else(|payload| {
-        Err(ExtractErrorEvent {
-            detail: format!("the job panicked: {}", panic_message(payload.as_ref())),
+        let detail = format!("the job panicked: {}", panic_message(payload.as_ref()));
+        if let Some(run_log) = run_log {
+            run_log.error(&anyhow::Error::msg(detail.clone()));
+        }
+        Err(DesktopJobErrorEvent {
+            detail,
             user_message: Some(panic_text(name)),
+            canceled: false,
         })
     })
 }
@@ -255,19 +268,19 @@ mod tests {
     fn a_job_has_ended_by_the_time_its_outcome_is_reported() {
         let state = new_state();
         let job = start_job(&state, JobName::Staging).unwrap();
-        let end = run_job(job, || Ok("done".into()));
+        let end = run_job(job, None, || Ok("done".into()));
         assert_eq!(end.unwrap(), "done");
         assert!(state.lock().unwrap().job.is_none());
 
         let job = start_job(&state, JobName::Staging).unwrap();
-        assert!(run_job(job, || panic!("bug")).is_err());
+        assert!(run_job(job, None, || panic!("bug")).is_err());
         assert!(state.lock().unwrap().job.is_none());
     }
 
     fn run(
-        run: impl FnOnce() -> Result<String, ExtractErrorEvent>,
-    ) -> Result<String, ExtractErrorEvent> {
-        run_job(start_job(&new_state(), JobName::Export).unwrap(), run)
+        run: impl FnOnce() -> Result<String, DesktopJobErrorEvent>,
+    ) -> Result<String, DesktopJobErrorEvent> {
+        run_job(start_job(&new_state(), JobName::Export).unwrap(), None, run)
     }
 
     #[test]
@@ -327,7 +340,7 @@ mod tests {
         ];
         for (name, text) in cases {
             let job = start_job(&new_state(), name).unwrap();
-            let error = run_job(job, || panic!("bug")).expect_err("a panic reports an error");
+            let error = run_job(job, None, || panic!("bug")).expect_err("a panic reports an error");
             assert_eq!(error.user_message.as_deref(), Some(text));
         }
     }
@@ -337,5 +350,33 @@ mod tests {
         let row = 7;
         let error = run(|| panic!("bad row {row}")).expect_err("a panic reports an error");
         assert!(error.detail.contains("bad row 7"), "{}", error.detail);
+    }
+
+    /// A panic's text goes into the Import Run's log, which the job's own
+    /// error handling cannot write, because that is the code that panicked
+    /// (#2071).
+    #[test]
+    fn a_job_that_panics_leaves_the_panic_message_in_its_run_s_log() {
+        use crate::app_directories::import_run_log;
+        use message_crate_core::RunLogLevel;
+        use message_crate_core::testutil::run_log_lines;
+        let logs = tempfile::tempdir().unwrap();
+        let run_dir =
+            std::path::Path::new("/home/sam/message-crate/staging-whatsapp-261004-143000");
+        let run_log = RunLog::open(logs.path(), run_dir);
+        let job = start_job(&new_state(), JobName::Staging).unwrap();
+
+        let error = run_job(job, Some(&run_log), || panic!("index out of bounds"))
+            .expect_err("a panic reports an error");
+
+        assert_eq!(error.detail, "the job panicked: index out of bounds");
+        let lines = run_log_lines(&import_run_log(logs.path(), run_dir));
+        assert_eq!(
+            lines,
+            [(
+                RunLogLevel::Error,
+                "the job panicked: index out of bounds".to_string()
+            )]
+        );
     }
 }

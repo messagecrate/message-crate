@@ -15,7 +15,7 @@ For the Message Crate the desktop app starts, the card says what went wrong in p
 
 For a Message Crate in Docker:
 
-1. `docker ps` lists the running containers. `message-crate` must be among them.
+1. `docker ps` lists the running containers. `message-crate` must be among them, and its status must read `(healthy)`. `(health: starting)` means Docker hasn't yet seen the server answer since the container started, which takes longest on the first start, while the server builds the Demo Account. On Docker Engine older than 25 it lasts at least 30 seconds after every start, because those versions ask the server only every 30 seconds. `(unhealthy)` means the process runs but the server has stopped answering, and `docker restart message-crate` starts it again. A container started for one command, such as `docker compose run --rm server reset-demo`, reads `(healthy)` while the command runs.
 2. `docker logs message-crate` shows what the server printed, including why it stopped.
 3. In the desktop app, **Server Address** must hold the server's address, and **Test** checks it. The app keeps the address after logging out and opens on the login card for it at the next start. It starts its own Message Crate only when the address is its own, `http://127.0.0.1:8080`.
 
@@ -38,11 +38,27 @@ The desktop app then needs `http://127.0.0.1:8090` under **Change server address
 The new release changed the database layout, and the server rebuilt the database empty.
 [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) describes what is gone and the way back.
 
+### Owner Home says the server could not turn on write-ahead logging
+
+The server turns on write-ahead logging each time it starts, so pages load while an import writes.
+When it can't, most often because another program has the database file open, the server starts without it, and every page waits for each import batch.
+The notice quotes the error SQLite gave when the server asked for write-ahead logging, such as `database is locked`, when it gave one; otherwise SQLite kept another journal mode without an error.
+The server's log, under **Logs** in Owner Home, holds the same warning from the start.
+Closing any other program that has the database file open, then restarting the server, turns it back on.
+**Server Settings** shows the journal mode, which reads `wal` once it is on.
+
 ## Logging in
 
-### "this account is disabled"
+### "invalid username or password" with the right password
 
-The Owner has set the account's **Status** to **Disabled**.
+The Owner may have set the account's **Status** to **Disabled**.
+A disabled account's login gets the same answer as a wrong password, so someone guessing passwords can't tell which guess was right.
+The Owner checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), and sets it back to **Active**.
+
+### A program reports "this account is disabled"
+
+The Owner set the account's **Status** to **Disabled**, and the program used one of the account's API tokens.
+A person using the account sees the login card instead, because disabling the account logs them out.
 The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
 
 ### An account's password is forgotten
@@ -56,11 +72,12 @@ Nothing in the browser or the desktop app can set the Owner's password, because 
 The server program sets it from a command line on the computer that runs Docker.
 
 ```bash title="Set a new Owner password"
-docker exec message-crate \
-  message-crate-server reset-owner-password --password 'the-new-password'
+docker exec -it message-crate message-crate-server reset-owner-password
 ```
 
-The command prints the Owner's username and ends every Session the Owner had open.
+The command asks for the new password and doesn't show it as it's typed.
+It takes the password that way, not on the command line, because a command line is visible to everyone signed in to the computer while the command runs, and stays in the shell's history afterwards.
+It prints the Owner's username and ends every Session the Owner had open.
 
 ### There is no Create Account on the login card
 
@@ -84,24 +101,33 @@ Importing needs an account, and that account needs **Import** on under **Message
 
 ## Import
 
-### "The backup is encrypted — fill Encryption password."
+### "The backup is encrypted. Fill in the Encryption password."
 
 The iPhone backup was made with encryption, and the Import form's **Encryption password** is empty.
 The password is the one chosen when the backup was made.
 
-### "This backup is not encrypted. Clear Encryption password."
+### "This backup is not encrypted. Clear the Encryption password."
 
 The iPhone backup was made without encryption, and the Import form's **Encryption password** holds a value.
 Import continues once the field is empty.
 
-### A WhatsApp import doesn't stop when cancelled
+### "… is free on …, the disk that holds the Staging Directory"
 
-A run can't be cancelled while `wtsexporter` is working. It ends when the program finishes.
+The Import form found less than 10 GB free on the disk that holds the Staging Directory, the Scratch Directory, or both.
+A run stops with an error when its disk fills part-way, so freeing space before the run starts saves running it again.
+Freeing space on that disk removes the line the next time the form reads it.
+Moving the Staging Directory to a disk with more room in **Settings → System** works too.
+The Scratch Directory is `~/message-crate/scratch`, so it can't be moved.
+The import can still start with the line showing.
+
+### A WhatsApp import doesn't stop when canceled
+
+A run can't be canceled while `wtsexporter` is working. It ends when the program finishes.
 [WhatsApp](/docs/user/import-sources/whatsapp/#limits) lists this with the other limits.
 
 ## ffmpeg, ffprobe and wtsexporter
 
-The desktop app runs three programs it doesn't include: `ffmpeg` and `ffprobe` for the Import form's **Attachments** choices **Convert** and **Compress & Convert**, and `wtsexporter` for a WhatsApp import.
+The desktop app runs three programs it doesn't include: `ffmpeg` and `ffprobe` for the Import form's **Attachments** choices **Convert media** and **Convert & Compress media**, and `wtsexporter` for a WhatsApp import.
 The server the app starts uses `ffmpeg` too, for the Previews and Thumbnails of photos and videos.
 Until it is there they wait, and the server makes them at its next start or after the next Import Run.
 Each time it starts, the app downloads the ones that are missing into its Tools Directory, in the background, and nothing needs doing.
@@ -138,7 +164,19 @@ On Linux and macOS it also needs permission to run:
 chmod +x ~/message-crate/tools/wtsexporter
 ```
 
-The app keeps a file put there by hand when it is this pinned file, and replaces anything else once a download succeeds.
+The permission has to be for the account that runs the app.
+A copy that another account owns, such as one root put there, can have permission to run for its owner alone.
+The Import form and **Settings → System** then say `wtsexporter` isn't used because it `is not executable by this account`.
+The account that owns the file runs `chmod +x` on it, or gives the account that runs the app ownership of it.
+The same reason shows when the disk the Tools Directory is on is mounted `noexec`, which lets no program on it run.
+Mounting it without `noexec` fixes that.
+
+The file put there must be this release's file for the computer, unchanged, because the app needs the build this release made.
+The app checks the file's SHA-256 checksum against the one it carries.
+A `wtsexporter` with any other contents isn't used, whether it is another build or a copy still being copied in.
+The Import form and **Settings → System** show it as not found until the whole file is in place, and the app downloads the pinned file over it.
+When that download fails, its reason starts with `The wtsexporter in the Tools Directory is not the file of release 0.13.0-mc.2`.
+The app keeps the pinned file, whoever put it there.
 [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 
 #### Linux on ARM
@@ -159,9 +197,9 @@ An older `pipx` can't repair that install in place.
 
 ### ffmpeg or ffprobe not found
 
-The Import form's **Attachments** choices **Convert** and **Compress & Convert** need both `ffmpeg` and `ffprobe`.
+The Import form's **Attachments** choices **Convert media** and **Convert & Compress media** need both `ffmpeg` and `ffprobe`.
 Without them an import with either choice still starts, because Staging reads the original files and needs neither program.
-At the Staging Review, the **Convert media** or **Compress media** button stays disabled until both are there, and **Try again** there downloads them at once.
+At the Staging Review, the **Convert media** or **Convert & Compress media** button stays disabled until both are there, and **Try again** there downloads them at once.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) covers what each choice does.
 
 When the download failed, the reason on the Import form and in **Settings → System** says why, and [The download failed](#the-download-failed) says what to do about it.
@@ -217,11 +255,14 @@ A failed download is tried again the next time the app starts, or at once with *
 
 | The reason starts with | What it means | What fixes it |
 |---|---|---|
-| `No connection to the download's server` | The connection to `github.com`, where every file comes from, failed or dropped: no internet, a firewall or proxy in the way, or a connection cut off partway through. | **Try again** once the computer is online, or a copy put in the Tools Directory by hand. |
+| `No connection to the download's server` | The connection to `github.com`, where every file comes from, failed or dropped: no internet, a firewall or proxy in the way, or a connection cut off partway through. Before it gave up, the app tried again after 5, 15, 30 and 60 seconds. The programs share those four tries, so a program whose download starts after the first one's may be tried only once. | **Try again** once the computer is online, or a copy put in the Tools Directory by hand. |
 | `The download's server answered`, then a status such as `503 Service Unavailable` | GitHub refused the request or had trouble. `404 Not Found` means the pinned file is no longer there. | **Try again** later. A `404 Not Found` that stays belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), and meanwhile a copy put in the Tools Directory by hand is used. |
 | `The downloaded file's checksum did not match the one this app carries` | The file that arrived isn't the one the app was built to accept, so the app deleted it. A proxy that rewrites downloads, or a damaged transfer, does this. | **Try again**. A mismatch that repeats belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), with the two checksums the reason names. |
-| `The file could not be written to the Tools Directory` | The disk is full, or the Tools Directory can't be written to. The reason ends with the operating system's words. | Free space on that disk, or give the account that runs the app permission to write to the Tools Directory, then **Try again**. |
+| `The file could not be written to or read back from the Tools Directory` | The disk is full or failing, or the Tools Directory can't be written to. The reason ends with the operating system's words. | Free space on that disk, or give the account that runs the app permission to write to the Tools Directory, then **Try again**. |
+| `The downloaded file could not be unpacked` | The file arrived and passed its checksum, and isn't a gzip file the app can unpack. A damaged file on GitHub, or a checksum this app carries for the wrong file, does this. | **Try again**. A failure that repeats belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), with the reason it names, and meanwhile a copy put in the Tools Directory by hand is used. |
 | `ffmpeg in the Tools Directory doesn't run on this computer`, or ffprobe or wtsexporter | The file passed its checksum and is in place, and the computer won't run it. The app doesn't download it again, because the download would be the same file. | For ffmpeg and ffprobe on Linux and Windows, the system's package manager, above, as the reason itself says. On macOS the app doesn't see Homebrew's copy, so [macOS blocks a program](#macos-blocks-a-program) is the fix there. For `wtsexporter`, `chmod +x` on Linux and macOS, and on macOS [macOS blocks a program](#macos-blocks-a-program) too. |
+| `ffmpeg in the Tools Directory could not be marked as a program that runs`, or ffprobe or wtsexporter | A copy found in the Tools Directory that the app didn't put there passed its checksum, doesn't run, and the app couldn't mark it as a program that runs. The reason ends with the operating system's words, most often that the file belongs to another account. The app tries again each time it starts. | Give the account that runs the app ownership of the file, or run `chmod +x` on it as its owner, then start the app again. For ffmpeg and ffprobe, the system's package manager, above, works too. |
+| `The wtsexporter in the Tools Directory is not the file of release`, then the release and the download's own reason | A `wtsexporter` is in the Tools Directory and isn't the pinned release's file, so it isn't used. Another build, or a copy still being copied in, does this. The rest of the reason says why the download that would replace it failed. | The fix for the rest of the reason, in this table. Or the pinned file, put there by hand as [Import can't find wtsexporter](#import-cant-find-wtsexporter) says, which the app uses once the whole file is in place. |
 | `The download was interrupted` | The download stopped partway through. | **Try again**. |
 | `The download could not be started` | The app couldn't start the download at all. | Starting the app again. |
 

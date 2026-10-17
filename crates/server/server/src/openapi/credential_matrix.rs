@@ -32,7 +32,7 @@ use crate::db::account_profile::{self, AccountFlags, OWNER_ACCOUNT_ID};
 use crate::db::api_tokens::create_api_token;
 use crate::db::permissions::Permissions;
 use crate::db::session_tokens::insert_account_session_token;
-use crate::test_support::{SeedConversation, SeedMessage, TestFixture, TestServer};
+use crate::test_support::{SeedConversation, SeedMessage, TestFixture, TestServer, http_client};
 
 /// The one password every account in the fixture has.
 const PASSWORD: &str = "matrix-password";
@@ -169,6 +169,10 @@ pub(super) struct Operation {
     pub(super) path: String,
     /// `None` when the operation names no `security`: a public route.
     pub(super) security: Option<Vec<Value>>,
+    /// Whether the document lists a `Cache-Control` header on one of the
+    /// operation's answers, or, for a `HEAD`, on the `GET` of the same path,
+    /// whose headers a `HEAD` answers.
+    pub(super) declares_cache_control: bool,
 }
 
 impl Operation {
@@ -272,6 +276,28 @@ impl Operation {
         self.path.contains('{') && !own_store
     }
 
+    /// Whether an answer with `status` may carry `cache_control`
+    /// (`docs/architecture/http-api.md`, "Caching"): `no-store` on every `/v1`
+    /// answer, except that an operation whose document lists a
+    /// `Cache-Control` of its own, such as an asset read, may send `private`,
+    /// or `private, no-store` under a Media Link, once the credential is
+    /// accepted. A `401` or `403` refuses the credential, so it is always
+    /// `no-store`. A route outside `/v1`, such as `/health`, is left as it is.
+    fn allows_cache_control(&self, status: StatusCode, cache_control: Option<&str>) -> bool {
+        if !crate::middleware::is_api_path(&self.path) {
+            return cache_control.is_none();
+        }
+        let credential_accepted =
+            status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN;
+        match cache_control {
+            Some("no-store") => true,
+            Some("private" | "private, no-store") => {
+                self.declares_cache_control && credential_accepted
+            }
+            _ => false,
+        }
+    }
+
     fn is_an_upload(&self) -> bool {
         self.path.starts_with("/v1/assets/{sha256}/uploads")
     }
@@ -281,15 +307,25 @@ impl Operation {
 pub(super) fn operations() -> Vec<Operation> {
     let doc: Value = serde_json::from_str(&super::dump_openapi_json()).unwrap();
     let mut operations = Vec::new();
+    let lists_cache_control = |op: &Value| {
+        op["responses"].as_object().is_some_and(|answers| {
+            answers
+                .values()
+                .any(|answer| answer["headers"].get("Cache-Control").is_some())
+        })
+    };
     for (path, item) in doc["paths"].as_object().unwrap() {
         for (method, op) in item.as_object().unwrap() {
             if !["get", "put", "post", "delete", "patch", "head"].contains(&method.as_str()) {
                 continue;
             }
+            let declares_cache_control =
+                lists_cache_control(op) || (method == "head" && lists_cache_control(&item["get"]));
             operations.push(Operation {
                 method: method.clone(),
                 path: path.clone(),
                 security: op["security"].as_array().cloned(),
+                declares_cache_control,
             });
         }
     }
@@ -321,9 +357,13 @@ impl Shared {
         )
         .await
         .unwrap();
-        let owner_session = insert_account_session_token(&mut conn, OWNER_ACCOUNT_ID)
-            .await
-            .unwrap();
+        let owner_session = insert_account_session_token(
+            &mut conn,
+            OWNER_ACCOUNT_ID,
+            crate::test_support::routed_credential_instant(),
+        )
+        .await
+        .unwrap();
         drop(conn);
         // The Demo Account, whose row grants everything, for `document_rules`.
         fixture.demo_account().await;
@@ -408,12 +448,21 @@ impl<'a> World<'a> {
                 .unwrap();
         }
         let session = async |conn: &mut sqlx::SqliteConnection, id| {
-            insert_account_session_token(conn, id).await.unwrap()
-        };
-        let token = async |conn: &mut sqlx::SqliteConnection, label, import, export| {
-            create_api_token(conn, alice, label, Permissions::token(import, export), None)
+            insert_account_session_token(conn, id, crate::test_support::routed_credential_instant())
                 .await
                 .unwrap()
+        };
+        let token = async |conn: &mut sqlx::SqliteConnection, label, import, export| {
+            create_api_token(
+                conn,
+                alice,
+                label,
+                Permissions::token(import, export),
+                None,
+                crate::test_support::routed_credential_instant(),
+            )
+            .await
+            .unwrap()
         };
         let tokens = Tokens {
             owner: shared.owner_session.clone(),
@@ -440,12 +489,12 @@ impl<'a> World<'a> {
             &SeedConversation {
                 account_id: alice,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "seed.jsonl",
                 messages: &[SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-01T00:00:00.000Z",
+                    timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                     is_from_me: true,
                     body: "hello",
                 }],
@@ -468,7 +517,7 @@ impl<'a> World<'a> {
              VALUES ($1, 'photo.png', 'image/png', $2, $3)",
         )
         .bind(message_id)
-        .bind(crate::assets_api::sha256_hex(ASSET_BYTES))
+        .bind(file_io::sha256_hex(ASSET_BYTES))
         .bind(ASSET_BYTES.len() as i64)
         .execute(&mut *tx)
         .await
@@ -526,11 +575,8 @@ impl<'a> World<'a> {
             .as_i64()
             .unwrap();
 
-        let asset = world.url(&format!(
-            "/v1/assets/{}",
-            crate::assets_api::sha256_hex(ASSET_BYTES)
-        ));
-        let response = reqwest::Client::new()
+        let asset = world.url(&format!("/v1/assets/{}", file_io::sha256_hex(ASSET_BYTES)));
+        let response = http_client()
             .put(asset)
             .bearer_auth(&world.tokens.alice)
             // Stored as an image, so its download answers in a media type of its
@@ -543,10 +589,7 @@ impl<'a> World<'a> {
         assert!(response.status().is_success(), "store the asset");
         world.upload_id = world
             .create(
-                &format!(
-                    "/v1/assets/{}/uploads",
-                    crate::assets_api::sha256_hex(UPLOAD_BYTES)
-                ),
+                &format!("/v1/assets/{}/uploads", file_io::sha256_hex(UPLOAD_BYTES)),
                 json!({ "bytes": UPLOAD_BYTES.len() }),
             )
             .await["upload_id"]
@@ -565,13 +608,18 @@ impl<'a> World<'a> {
             &mut tx,
             account_profile::DEMO_ACCOUNT_ID,
             crate::db::audit_trail::AuditActor::CommandLine,
+            crate::test_support::fixed_instant(),
         )
         .await
         .unwrap();
         tx.commit().await.unwrap();
-        insert_account_session_token(&mut conn, account_profile::DEMO_ACCOUNT_ID)
-            .await
-            .unwrap()
+        insert_account_session_token(
+            &mut conn,
+            account_profile::DEMO_ACCOUNT_ID,
+            crate::test_support::routed_credential_instant(),
+        )
+        .await
+        .unwrap()
     }
 
     pub(super) fn url(&self, path: &str) -> String {
@@ -580,7 +628,7 @@ impl<'a> World<'a> {
 
     /// POST as Alice and return the body of the `201 Created`.
     async fn create(&self, path: &str, body: Value) -> Value {
-        let response = reqwest::Client::new()
+        let response = http_client()
             .post(self.url(path))
             .bearer_auth(&self.tokens.alice)
             .json(&body)
@@ -625,8 +673,8 @@ impl<'a> World<'a> {
             "id" if id("/v1/server/log-files/") => "1".to_string(),
             "token_id" => self.spare_token_id.to_string(),
             "import_id" => self.import_id.to_string(),
-            "sha256" if path.contains("/uploads") => crate::assets_api::sha256_hex(UPLOAD_BYTES),
-            "sha256" => crate::assets_api::sha256_hex(ASSET_BYTES),
+            "sha256" if path.contains("/uploads") => file_io::sha256_hex(UPLOAD_BYTES),
+            "sha256" => file_io::sha256_hex(ASSET_BYTES),
             "upload_id" => self.upload_id.clone(),
             "part" => "1".to_string(),
             _ => panic!("the credential matrix has no row for {{{name}}} in {path}; add one"),
@@ -638,10 +686,11 @@ impl<'a> World<'a> {
         self.tokens.for_credential(credential)
     }
 
-    /// Call `op` with `credential` and return the status.
-    async fn call(&self, op: &Operation, credential: Credential) -> StatusCode {
+    /// Call `op` with `credential` and return the status and the
+    /// `Cache-Control` the answer carries.
+    async fn call(&self, op: &Operation, credential: Credential) -> (StatusCode, Option<String>) {
         let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
-        let mut request = reqwest::Client::new()
+        let mut request = http_client()
             .request(method, self.url(&self.path_for(op)))
             .bearer_auth(self.tokens.for_credential(credential));
         if let Some((content_type, body)) = body_for(op, self.n) {
@@ -651,18 +700,22 @@ impl<'a> World<'a> {
         }
         let response = request.send().await.unwrap();
         let status = response.status();
+        let cache_control = response
+            .headers()
+            .get(reqwest::header::CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_string());
         let _ = response.bytes().await;
-        status
+        (status, cache_control)
     }
 
     /// Whether Alice can still send a part of her upload.
     async fn upload_survives(&self) -> bool {
         let path = format!(
             "/v1/assets/{}/uploads/{}/parts/1",
-            crate::assets_api::sha256_hex(UPLOAD_BYTES),
+            file_io::sha256_hex(UPLOAD_BYTES),
             self.upload_id
         );
-        let response = reqwest::Client::new()
+        let response = http_client()
             .put(self.url(&path))
             .bearer_auth(&self.tokens.alice)
             .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -708,14 +761,19 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
         }
         ("post", "/v1/contacts") => Some((
             "text/csv",
-            b"contact_id,display_name,groups,service,identity_type,identity\n,Robin,,phone,phone,+15555550199\n"
+            b"contact_id,display_name,service,identity,groups\n,Robin,Text Message,+15555550199,\n"
                 .to_vec(),
         )),
         ("post", "/v1/contacts/address-book") => json(json!({})),
+        ("post", "/v1/contacts/vcard-address-book") => Some((
+            "text/vcard",
+            b"BEGIN:VCARD\nVERSION:3.0\nFN:Robin\nTEL:+15555550199\nEND:VCARD\n".to_vec(),
+        )),
         ("post", "/v1/contacts/summaries") => json(json!({ "ids": [1] })),
         ("post", "/v1/contacts/unmatched-identities") => json(json!({ "identifiers": [] })),
         ("patch", "/v1/contacts/{id}") => json(json!({ "name": "Samantha" })),
         ("post", "/v1/exports") => json(json!({ "scope": { "kind": "everything" } })),
+        ("post", "/v1/exports/{id}/complete") => json(json!({ "status": "completed" })),
         ("post", "/v1/imports") => json(json!({ "source": "imessage" })),
         ("patch", "/v1/imports/{id}") => json(json!({ "stage": "parse" })),
         ("post", "/v1/imports/{id}/batches") => Some(("application/x-ndjson", Vec::new())),
@@ -765,7 +823,7 @@ async fn run(shared: &Shared, n: usize, op: Operation, credential: Credential) -
             .unwrap();
     }
     let expected = op.expected(credential);
-    let status = world.call(&op, credential).await;
+    let (status, cache_control) = world.call(&op, credential).await;
     let row = |outcome: String| {
         format!(
             "{:<60} {:<20} {outcome}",
@@ -778,6 +836,9 @@ async fn run(shared: &Shared, n: usize, op: Operation, credential: Credential) -
             "expected {expected:<8} got {}",
             status.as_u16()
         )));
+    }
+    if !op.allows_cache_control(status, cache_control.as_deref()) {
+        return Some(row(format!("answered Cache-Control {cache_control:?}")));
     }
     if credential == Credential::OtherAccount && op.is_an_upload() && !world.upload_survives().await
     {
@@ -836,6 +897,7 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         method: method.into(),
         path: path.into(),
         security: security.as_array().cloned(),
+        declares_cache_control: false,
     };
     let browse = op("get", "/v1/messages", json!([{ "session": [] }]));
     assert_eq!(browse.expected(Credential::Session), Expected::Accepted);

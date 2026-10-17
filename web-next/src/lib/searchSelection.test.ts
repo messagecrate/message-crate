@@ -15,7 +15,7 @@ function hit(
     Pick<SearchConversationHit, "conversationId">,
 ): SearchConversationHit {
   return {
-    conversationType: "individual",
+    conversationType: "one-to-one",
     contactId: null,
     title: "t",
     chatIdentifier: "c",
@@ -110,7 +110,7 @@ describe("message search result selection", () => {
     assert.deepEqual(groups, [
       {
         key: "direct:+15550101",
-        conversationType: "individual",
+        conversationType: "one-to-one",
         chatIdentifier: "+15550101",
         title: "t",
         conversationIds: [1, 3],

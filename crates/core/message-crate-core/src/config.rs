@@ -1,17 +1,21 @@
 //! Shared typed export configuration for the exporter crates and the desktop app.
 //!
-//! [`ExporterConfig`] holds options common to (nearly) every exporter.
-//! Exporter-specific knobs live in [`SourceConfig`].
+//! Every exporter's `run` takes a [`RunContext`] (the run's plumbing), an
+//! [`OutputConfig`] (what it writes), its inputs, and its own backup type's
+//! config. [`ExporterConfig`] bundles them for the desktop app, which picks
+//! the exporter by its [`SourceConfig`] variant.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode};
+use media::{MediaTools, NoTools};
 
-use crate::exporters::{ApplePlatform, WhatsappPlatform};
-use crate::pipeline::{IssueSink, RunIssue, emit_issue};
-use crate::process::{CancelFlag, LogSink, emit_log};
-use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
+use crate::exporters::{ApplePlatform, Exporter, WhatsappPlatform};
+use crate::pipeline::IssueSink;
+use crate::process::{CancelFlag, LogSink, Sinks};
+use crate::progress::ProgressSink;
+use crate::transforms::ExportTransforms;
 
 /// Output packaging projected from the common message.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -69,91 +73,184 @@ impl OutputFormat {
     }
 }
 
-/// Shared export inputs. Source-specific fields are in [`Self::source`].
+/// What the Import form builds for one exporter: the inputs it reads, the
+/// output it writes, the run's plumbing, and the options of its own backup
+/// type. The desktop app hands each part to the exporter that
+/// [`Self::source`] names; no exporter takes the whole.
 #[derive(Debug, Clone)]
 pub struct ExporterConfig {
     /// Input paths (usually one). SMS Backup+ may pass several; WhatsApp may leave empty.
     pub inputs: Vec<PathBuf>,
-    /// Output directory the export is written to (packaging plus `attachments/`).
-    /// It holds output only.
-    pub output: PathBuf,
+    /// Where the export goes and what it does to what it writes.
+    pub output: OutputConfig,
+    /// The Scratch Directory, the cancel flag, and the sinks the run reports through.
+    pub context: RunContext,
+    /// The options of the one backup type this run reads.
+    pub source: SourceConfig,
+}
+
+/// The plumbing of one run: where its scratch data goes, the flag that
+/// cancels it, and the sinks it reports through. Nothing here changes what
+/// the export holds.
+#[derive(Debug, Clone)]
+pub struct RunContext {
     /// The desktop Scratch Directory. What a run writes that is not output
     /// (the attachment spool, the databases `imessage-reader` decrypts) goes
     /// in a scratch directory under it ([`crate::ScratchDir`]), never under
-    /// [`Self::output`]. The exporter crates do not know the app's directories,
-    /// so the app names it here.
+    /// [`OutputConfig::directory`]. The exporter crates do not know the
+    /// app's directories, so the app names it here.
     pub scratch_dir: PathBuf,
-    /// Optional zone for timestamps that carry none: a fixed UTC offset
-    /// (`UTC-05:00`) or an IANA name (`America/New_York`).
-    /// When `None`, dates are interpreted in host-local time.
-    pub timezone: Option<String>,
-    /// Fake-name rewrite settings; `None`-equivalent when disabled.
-    pub obfuscate: ObfuscateConfig,
-    /// Attachment handling for `FormatSink` (none / copy / convert / compress).
-    pub media: MediaConfig,
-    /// Shared cancel flag for in-process jobs; `None` means the run cannot be
-    /// cancelled.
-    pub cancel: Option<CancelFlag>,
-    /// Human-readable mid-run notes and warnings. `None` → stderr; the
-    /// desktop app sets a sink and shows the lines in its log panel.
-    pub log: Option<LogSink>,
-    /// Typed progress events (stage, done, total, bytes). `None` reports
-    /// nothing; the desktop app sets a sink and drives its progress bar
-    /// from the events. Log lines are never read for counts.
-    pub progress: Option<ProgressSink>,
+    /// Shared cancel flag for in-process jobs. A run that cannot be
+    /// canceled holds `CancelFlag::default()`, which nobody sets.
+    pub cancel: CancelFlag,
+    /// Human-readable mid-run notes and warnings. The desktop app sets a sink
+    /// and shows the lines in its log panel.
+    pub log: LogSink,
+    /// Typed progress events (stage, done, total, bytes). The desktop app
+    /// sets a sink and drives its progress bar from the events; a run with no
+    /// bar holds [`ProgressSink::none`]. Log lines are never read for counts.
+    pub progress: ProgressSink,
     /// Each row for the Import Run's record (an item skipped or failed), sent
-    /// the moment the run records it. `None` sends the rows nowhere; the
-    /// desktop app sets a sink and passes each row to its window, so an app
-    /// that closes mid-run keeps the rows that had arrived.
-    pub issues: Option<IssueSink>,
+    /// the moment the run records it. The desktop app sets a sink and passes
+    /// each row to its window, so an app that closes mid-run keeps the rows
+    /// that had arrived; a run that keeps no record holds [`IssueSink::none`].
+    pub issues: IssueSink,
+}
+
+impl RunContext {
+    /// The run's log, progress and cancel flag, for a step that takes them
+    /// together.
+    pub fn sinks(&self) -> Sinks<'_> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &self.cancel,
+        }
+    }
+
+    /// A run whose scratch data goes under `scratch_dir`, that nothing
+    /// cancels, and whose sinks drop what they get. The caller sets the
+    /// cancel flag and any sink it reads.
+    pub fn new(scratch_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            scratch_dir: scratch_dir.into(),
+            cancel: CancelFlag::default(),
+            log: LogSink::none(),
+            progress: ProgressSink::none(),
+            issues: IssueSink::none(),
+        }
+    }
+}
+
+/// Where an export goes and what it does to what it writes: the output
+/// directory, the packaging, media handling, fake names, and whether it
+/// continues an interrupted export.
+#[derive(Debug, Clone)]
+pub struct OutputConfig {
+    /// Output directory the export is written to (packaging plus `attachments/`).
+    /// It holds output only.
+    pub directory: PathBuf,
     /// Packaging format (`csv` / `eml` / `mbox` / `json` / `jsonl` / `xml` /
     /// `sms-backup-plus`).
-    pub output_format: OutputFormat,
+    pub format: OutputFormat,
+    /// Fake-name rewrite settings; `None`-equivalent when disabled.
+    pub obfuscate: ObfuscateConfig,
+    /// Whether the export copies the original attachment files.
+    pub media: MediaConfig,
     /// Continue an interrupted export in the same output directory: previous
     /// output is kept, and conversations already written are skipped. Only
     /// the desktop's import resume sets this.
     pub resume: bool,
-    /// Exporter-specific options; exactly one variant is set per run.
-    pub source: SourceConfig,
+    /// The Export Date every conversation file of the run carries
+    /// (`export.exported_at_unix_ms`), in Unix milliseconds: the instant
+    /// the caller gives, never one the run reads from the clock. `None`
+    /// writes none.
+    pub exported_at_unix_ms: Option<i64>,
 }
 
-impl ExporterConfig {
-    /// Send a progress or warning line to the log sink, or to stderr if none is set.
-    pub fn emit_log(&self, line: impl AsRef<str>) {
-        emit_log(self.log.as_ref(), line);
-    }
-
-    /// Send a typed progress event to the progress sink, if one is set.
-    pub fn emit_progress(&self, event: ProgressEvent) {
-        emit_progress(self.progress.as_ref(), event);
-    }
-
-    /// Send a row for the Import Run's record to the issue sink, if one is set.
-    pub fn emit_issue(&self, issue: RunIssue) {
-        emit_issue(self.issues.as_ref(), issue);
-    }
-
-    /// First input path, if any.
-    pub fn primary_input(&self) -> Option<&Path> {
-        self.inputs.first().map(PathBuf::as_path)
-    }
-
-    /// Require a single primary input (most exporters).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when no input is set, or when more than one path is set.
-    pub fn require_input(&self) -> Result<&Path, String> {
-        match self.inputs.as_slice() {
-            [path] => Ok(path.as_path()),
-            [] => Err("input is required".into()),
-            _ => Err("expected a single input path".into()),
+impl OutputConfig {
+    /// An export into `directory` packaged as `format`, that copies
+    /// attachments as they are, keeps every name, starts afresh, and writes
+    /// no Export Date. The caller sets any other choice.
+    pub fn new(directory: impl Into<PathBuf>, format: OutputFormat) -> Self {
+        Self {
+            directory: directory.into(),
+            format,
+            obfuscate: ObfuscateConfig::default(),
+            media: MediaConfig::default(),
+            resume: false,
+            exported_at_unix_ms: None,
         }
     }
 
     /// True when fake-name rewrite is on, or a seed was supplied.
     pub fn obfuscate_active(&self) -> bool {
         self.obfuscate.enabled || self.obfuscate.seed.is_some()
+    }
+}
+
+/// Require a single input path (most exporters).
+///
+/// # Errors
+///
+/// Returns an error when no input is set, or when more than one path is set.
+pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
+    match inputs {
+        [path] => Ok(path.as_path()),
+        [] => Err("input is required".into()),
+        _ => Err("expected a single input path".into()),
+    }
+}
+
+/// The run-wide settings every exporter's convert step takes beside its own
+/// inputs. [`ConvertRun::new`] builds them, so a new run-wide setting is
+/// added to this struct and to [`ConvertRun::new`], not to each exporter's
+/// arguments or to each `run` that fills them. The shared convert step,
+/// `staging::convert_backup`, unpacks every field, so a new one is
+/// named there and the step decides what it does with it. Apple Messages,
+/// which keeps a convert step of its own, reads the fields it uses.
+///
+/// It holds the run's cancel flag and issue sink themselves: a clone of
+/// either shares it, so a cancel set on the [`RunContext`] reaches the run.
+///
+/// The default writes [`OutputFormat::Json`] with no transforms, cannot be
+/// canceled, does not resume, sends its rows nowhere, names an empty
+/// Scratch Directory, so a test whose run spools sets `scratch_dir`, and
+/// writes no Export Date.
+#[derive(Debug, Clone, Default)]
+pub struct ConvertRun {
+    /// Media and obfuscation applied as conversations are written.
+    pub transforms: ExportTransforms,
+    /// The packaging the run writes.
+    pub output_format: OutputFormat,
+    /// Checked between files and before writing.
+    pub cancel: CancelFlag,
+    /// Continue an interrupted export: keep previous output and skip the
+    /// conversations already written.
+    pub resume: bool,
+    /// Where each row for the Import Run's record goes as the run records it.
+    pub issues: IssueSink,
+    /// The desktop Scratch Directory ([`RunContext::scratch_dir`]), which
+    /// the run's attachment spool goes under.
+    pub scratch_dir: PathBuf,
+    /// The Export Date every document is stamped with
+    /// ([`OutputConfig::exported_at_unix_ms`]).
+    pub exported_at_unix_ms: Option<i64>,
+}
+
+impl ConvertRun {
+    /// The run-wide settings of a run in `context` that writes `output`, with
+    /// the transforms [`ExportTransforms::new`] builds.
+    pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
+        Self {
+            transforms: ExportTransforms::new(context, output),
+            output_format: output.format,
+            cancel: context.cancel.clone(),
+            resume: output.resume,
+            issues: context.issues.clone(),
+            scratch_dir: context.scratch_dir.clone(),
+            exported_at_unix_ms: output.exported_at_unix_ms,
+        }
     }
 }
 
@@ -166,25 +263,50 @@ pub struct ObfuscateConfig {
     pub seed: Option<String>,
 }
 
+/// What Staging does with attachment files: copy the originals, or copy
+/// none. Staging never converts or compresses. That happens only in the
+/// Media Stage, after the Staging Review, from the staged originals.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AttachmentFiles {
+    /// Copy each attachment's original file into `attachments/`.
+    #[default]
+    Originals,
+    /// Copy no attachment files. Each attachment keeps its record, marked
+    /// `not_copied`.
+    Skip,
+}
+
+impl AttachmentFiles {
+    /// True when attachment files are copied.
+    pub fn copies(self) -> bool {
+        self == Self::Originals
+    }
+}
+
 #[derive(Debug, Clone)]
-/// How attachments are copied, converted, or compressed when writing output.
+/// How an export handles attachment files, and where its tools are.
 pub struct MediaConfig {
-    /// Attachment handling mode (none / copy / convert / compress).
-    pub mode: MediaMode,
-    /// Compress-mode options (long-edge cap, max fps, min size).
-    pub compress: CompressOptions,
+    /// Copy the original attachment files, or none.
+    pub files: AttachmentFiles,
+    /// The Tools Directory the WhatsApp exporter finds `wtsexporter` in
+    /// ([`MediaTools::tools_dir`]). The caller builds them from where it
+    /// keeps its tools ([`media::InstalledTools`]); a test passes a fake.
+    pub tools: Arc<dyn MediaTools>,
 }
 
 impl Default for MediaConfig {
+    /// Copy the originals, with no tools at all ([`NoTools`]).
     fn default() -> Self {
         Self {
-            mode: MediaMode::Clone,
-            compress: CompressOptions::default(),
+            files: AttachmentFiles::Originals,
+            tools: Arc::new(NoTools),
         }
     }
 }
 
-/// Exporter-specific options. Exactly one variant is set per run.
+/// The options of the backup type a run reads, one variant per exporter.
+/// Each exporter's `run` takes its own variant's config, so the desktop app
+/// picks the exporter by the variant.
 #[derive(Debug, Clone)]
 pub enum SourceConfig {
     /// GO SMS Pro backup source.
@@ -201,12 +323,26 @@ pub enum SourceConfig {
     Apple(AppleConfig),
     /// WhatsApp backup source.
     Whatsapp(WhatsappConfig),
-    /// Existing Message Crate output → another IR format (`message-reexport`).
-    Format(FormatConfig),
+}
+
+impl SourceConfig {
+    /// The backup type this config is for.
+    pub fn exporter(&self) -> Exporter {
+        match self {
+            Self::GoSmsPro(_) => Exporter::GoSmsPro,
+            Self::SmsBackupRestore(_) => Exporter::SmsBackupRestore,
+            Self::SmsBackupPlus(_) => Exporter::SmsBackupPlus,
+            Self::OpenExtract(_) => Exporter::OpenExtract,
+            Self::Imazing(_) => Exporter::Imazing,
+            Self::Apple(_) => Exporter::Imessage,
+            Self::Whatsapp(_) => Exporter::Whatsapp,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
-/// Convert an existing export directory to another output format.
+/// Convert an existing export directory to another output format
+/// (`reexport`). Not a backup type, so not a [`SourceConfig`].
 pub struct FormatConfig {
     /// When the Export Run this conversion is part of started. Export pulls
     /// JSON Lines from the server and then converts them, so its run starts
@@ -243,17 +379,20 @@ pub struct SmsBackupPlusConfig {
     pub phone_country: Option<&'static phone::Country>,
     /// Whether to emit verbose log lines.
     pub verbose: bool,
-    /// Whether to print the end-of-run summary.
-    pub include_summary: bool,
 }
 
 #[derive(Debug, Clone, Default)]
-/// OpenExtract has no extra fields beyond the shared [`ExporterConfig`].
+/// OpenExtract has no options of its own.
 pub struct OpenExtractConfig {}
 
 #[derive(Debug, Clone, Default)]
-/// iMazing has no extra fields beyond the shared [`ExporterConfig`] (timezone lives there).
-pub struct ImazingConfig {}
+/// iMazing extras: the zone its dates are read in.
+pub struct ImazingConfig {
+    /// Zone for iMazing's timestamps, which carry none: a fixed UTC offset
+    /// (`UTC-05:00`) or an IANA name (`America/New_York`). When `None`,
+    /// dates are interpreted in host-local time.
+    pub timezone: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 /// iMessage / iPhone backup extras: platform, copy method, address book, password.
@@ -306,7 +445,7 @@ pub struct WhatsappConfig {
     /// Explicit `msgstore.db` path.
     pub db: Option<PathBuf>,
     /// Whether the backup is a WhatsApp Business backup.
-    pub business: bool,
+    pub is_business_app: bool,
     /// The account holder's WhatsApp phone number, as typed on the form.
     /// Android has nothing else: a crypt backup does not carry the number.
     /// iPhone reads the number from the backup's preferences and uses this
@@ -317,104 +456,23 @@ pub struct WhatsappConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
-
-    fn config_with_inputs(inputs: Vec<PathBuf>) -> ExporterConfig {
-        ExporterConfig {
-            inputs,
-            output: PathBuf::from("out"),
-            scratch_dir: PathBuf::from("/cache"),
-            timezone: None,
-            obfuscate: ObfuscateConfig::default(),
-            media: MediaConfig::default(),
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: OutputFormat::Json,
-            resume: false,
-            source: SourceConfig::Format(FormatConfig::default()),
-        }
-    }
-
-    #[test]
-    fn emit_log_hands_each_line_to_the_log_sink() {
-        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let mut config = config_with_inputs(Vec::new());
-        config.log = Some(LogSink::new(move |line| {
-            sink_seen.lock().unwrap().push(line.to_string());
-        }));
-
-        config.emit_log("first");
-        config.emit_log(String::from("second"));
-
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec!["first".to_string(), "second".to_string()]
-        );
-    }
-
-    #[test]
-    fn emit_progress_hands_each_event_to_the_progress_sink() {
-        let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let mut config = config_with_inputs(Vec::new());
-        config.progress = Some(ProgressSink::new(move |event| {
-            sink_seen.lock().unwrap().push(event);
-        }));
-
-        config.emit_progress(ProgressEvent::Parse { done: 1, total: 4 });
-        config.emit_progress(ProgressEvent::Prepare { done: 2, total: 2 });
-
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec![
-                ProgressEvent::Parse { done: 1, total: 4 },
-                ProgressEvent::Prepare { done: 2, total: 2 },
-            ]
-        );
-    }
-
-    /// The same for progress events, and for the same reason: a progress bar
-    /// that has gone away must not be written to.
-    #[test]
-    fn clearing_the_progress_sink_stops_the_events() {
-        let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let mut config = config_with_inputs(Vec::new());
-        config.progress = Some(ProgressSink::new(move |event| {
-            sink_seen.lock().unwrap().push(event);
-        }));
-
-        config.emit_progress(ProgressEvent::Parse { done: 1, total: 2 });
-        config.progress = None;
-        config.emit_progress(ProgressEvent::Parse { done: 2, total: 2 });
-
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec![ProgressEvent::Parse { done: 1, total: 2 }],
-            "an event emitted with no sink must not reach the old one"
-        );
-    }
 
     #[test]
     fn require_input_returns_the_single_input_path() {
-        let config = config_with_inputs(vec![PathBuf::from("backup/chat.db")]);
-        assert_eq!(config.require_input(), Ok(Path::new("backup/chat.db")));
+        let inputs = [PathBuf::from("backup/chat.db")];
+        assert_eq!(require_input(&inputs), Ok(Path::new("backup/chat.db")));
     }
 
     #[test]
     fn require_input_refuses_a_config_with_no_input() {
-        let config = config_with_inputs(Vec::new());
-        assert_eq!(config.require_input(), Err("input is required".to_string()));
+        assert_eq!(require_input(&[]), Err("input is required".to_string()));
     }
 
     #[test]
     fn require_input_refuses_more_than_one_input() {
-        let config = config_with_inputs(vec![PathBuf::from("a.xml"), PathBuf::from("b.xml")]);
+        let inputs = [PathBuf::from("a.xml"), PathBuf::from("b.xml")];
         assert_eq!(
-            config.require_input(),
+            require_input(&inputs),
             Err("expected a single input path".to_string())
         );
     }

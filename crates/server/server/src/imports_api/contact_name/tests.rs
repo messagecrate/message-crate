@@ -14,7 +14,7 @@ async fn account() -> (
     let (pool, dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
     (conn, pool, dir)
@@ -40,6 +40,7 @@ async fn an_import_creates_the_contact_with_the_backup_name() {
         handle_id,
         Some("Ada"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -67,10 +68,17 @@ async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
     .unwrap();
 
     let mut counts = ImportCounts::default();
-    let first =
-        ensure_contact_for_handle(&mut conn, TEST_ACCOUNT, None, handle_id, None, &mut counts)
-            .await
-            .unwrap();
+    let first = ensure_contact_for_handle(
+        &mut conn,
+        TEST_ACCOUNT,
+        None,
+        handle_id,
+        None,
+        &mut counts,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let second = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -78,6 +86,7 @@ async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
         handle_id,
         Some("Ada"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -99,10 +108,17 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
     let met = insert_handle(&mut conn, "+15555550163", "imessage").await;
     let unmentioned = insert_handle(&mut conn, "+15555550164", "imessage").await;
     let mut counts = ImportCounts::default();
-    let old =
-        ensure_contact_for_handle(&mut conn, TEST_ACCOUNT, None, met, Some("Ada"), &mut counts)
-            .await
-            .unwrap();
+    let old = ensure_contact_for_handle(
+        &mut conn,
+        TEST_ACCOUNT,
+        None,
+        met,
+        Some("Ada"),
+        &mut counts,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     // The person then curated the contact: a second handle, a name of their
     // own, a group. None of it survives the trash.
     crate::db::contacts::link_handle_to_contact(
@@ -149,6 +165,7 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
         met,
         Some("Ada Lovelace"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -219,6 +236,7 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
         on_whatsapp,
         Some("Ada"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -236,6 +254,7 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
         on_phone,
         Some("Ada"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -342,7 +361,7 @@ async fn assert_imported_as_three_orphaned_conversations(
     .await
     .unwrap();
     let expected = [
-        ("+15555550154", "individual", 1),
+        ("+15555550154", "one-to-one", 1),
         ("orphaned:", "orphaned", 3),
         ("orphaned:+15555550154", "orphaned", 2),
         ("orphaned:+15555550155", "orphaned", 2),
@@ -408,8 +427,10 @@ async fn listed_conversations(
         account_id,
         q,
         &crate::db::conversations::DEFAULT_CONVERSATION_SORT,
-        50,
-        0,
+        crate::paging::PageParams {
+            limit: 50,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -419,7 +440,7 @@ async fn listed_conversations(
         .into_iter()
         .map(|c| {
             (
-                c.label,
+                c.shown_title,
                 c.participants
                     .into_iter()
                     .map(|p| p.identity.unwrap_or_default())
@@ -443,23 +464,21 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         })
         .collect();
     let assets = tmp.path().join("assets");
-    let opts = crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: crate::imports_api::ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        import_id: None,
-        phone_country: None,
-    });
-    crate::imports_api::import_jsonl_files_on_conn(
-        conn,
-        &paths,
-        &opts,
-        crate::imports_api::ImportSchemaMode::Ensure,
-    )
-    .await
-    .unwrap();
+    let opts = crate::imports_api::pipeline::ImportOptions::fixed(
+        crate::imports_api::pipeline::FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: Some(tmp.path()),
+            mode: api_types::ImportMode::Append,
+            source: "imessage",
+            account_id: TEST_ACCOUNT,
+            import_id: None,
+            phone_country: None,
+            now: crate::test_support::fixed_instant(),
+        },
+    );
+    crate::test_support::import_for_account(conn, &paths, &opts)
+        .await
+        .unwrap();
 }
 
 /// The rule "an import makes a contact for every person it meets": every
@@ -475,7 +494,7 @@ async fn assert_every_met_handle_has_a_live_contact(conn: &mut sqlx::SqliteConne
                          JOIN conversations c ON c.id = p.conversation_id
                          WHERE c.account_id = $1)
              OR h.id IN (SELECT chat_handle_id FROM conversations
-                         WHERE account_id = $1 AND conversation_type = 'individual'))
+                         WHERE account_id = $1 AND conversation_type = 'one-to-one'))
            AND h.id NOT IN (
              SELECT ch.handle_id FROM contact_handles ch
              WHERE ch.account_id = $1
@@ -498,7 +517,7 @@ async fn assert_every_met_handle_has_a_live_contact(conn: &mut sqlx::SqliteConne
 /// sibling's contact.
 #[tokio::test]
 async fn a_sender_no_header_names_still_gets_a_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -521,7 +540,7 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
 /// [`assert_imported_as_three_orphaned_conversations`] says.
 #[tokio::test]
 async fn orphaned_messages_make_one_conversation_per_person_and_one_naming_nobody() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -572,7 +591,7 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
             .map(|p| p["identity"].as_str().unwrap())
             .collect();
         read.push((
-            conversation["label"].as_str().unwrap().to_string(),
+            conversation["shown_title"].as_str().unwrap().to_string(),
             people.join(","),
         ));
     }
@@ -593,7 +612,7 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
 /// one that names nobody is "Orphaned · Unknown person" throughout (#1778).
 #[tokio::test]
 async fn an_orphaned_title_follows_its_person_s_contact_name() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -645,6 +664,7 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
         on_whatsapp,
         Some("Ada"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -682,7 +702,7 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
     );
 }
 
-/// Report (c): a one-to-one chat whose handle this run first met as a sender
+/// Report (c): a one-to-one conversation whose handle this run first met as a sender
 /// used to skip contact creation, because the handle cache said "seen" and
 /// the chat path read that as "has a contact". The sender fix alone makes
 /// this pass; it stays to guard the chat path against leaning on the cache
@@ -690,7 +710,7 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
 /// giving it a contact.
 #[tokio::test]
 async fn a_one_to_one_chat_first_met_as_a_sender_gets_a_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -728,7 +748,7 @@ async fn insert_handle(conn: &mut sqlx::SqliteConnection, raw: &str, service: &s
 }
 
 /// `sql` is a `SELECT COUNT(*)` with one `$1` bind, `id`.
-async fn count(conn: &mut sqlx::SqliteConnection, sql: &str, id: i64) -> i64 {
+async fn count(conn: &mut sqlx::SqliteConnection, sql: &'static str, id: i64) -> i64 {
     sqlx::query_scalar(sql)
         .bind(id)
         .fetch_one(&mut *conn)
@@ -756,6 +776,7 @@ async fn a_second_spelling_does_not_rename_anyone() {
         handle_id,
         Some("Ada Lovelace"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -766,6 +787,7 @@ async fn a_second_spelling_does_not_rename_anyone() {
         handle_id,
         Some("ada l"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -784,9 +806,16 @@ async fn made_by_the_person(conn: &mut sqlx::SqliteConnection, handle_id: i64, n
     contacts::link_handle_to_contact(conn, TEST_ACCOUNT, handle_id, contact_id, Origin::User)
         .await
         .unwrap();
-    contacts::propose_name(conn, TEST_ACCOUNT, contact_id, name, Origin::User)
-        .await
-        .unwrap();
+    contacts::propose_name(
+        conn,
+        TEST_ACCOUNT,
+        contact_id,
+        name,
+        Origin::User,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     contact_id
 }
 
@@ -814,6 +843,7 @@ async fn an_import_does_not_overwrite_a_name_the_person_typed() {
         handle_id,
         Some("Ada"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -837,6 +867,7 @@ async fn an_import_names_a_nameless_contact_the_person_made() {
         handle_id,
         Some("Ann"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -852,11 +883,17 @@ async fn an_import_names_a_nameless_contact_the_person_made() {
 async fn an_import_names_a_nameless_contact_a_load_made() {
     use crate::db::address_book::{LoadMode, load};
     let (mut conn, _pool, _dir) = account().await;
-    let text = "contact_id,display_name,groups,service,identity_type,identity\n\
-                ,,,phone,phone,+15555550170\n";
-    load(&mut conn, TEST_ACCOUNT, text, LoadMode::Append)
-        .await
-        .unwrap();
+    let text = "contact_id,display_name,service,identity,groups\n\
+                ,,Text Message,+15555550170,\n";
+    load(
+        &mut conn,
+        TEST_ACCOUNT,
+        text,
+        LoadMode::Append,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let (contact_id, handle_id, origin): (i64, i64, String) = sqlx::query_as(
         "SELECT c.id, h.id, c.origin FROM handles h
          JOIN contact_handles ch ON ch.handle_id = h.id
@@ -878,6 +915,7 @@ async fn an_import_names_a_nameless_contact_a_load_made() {
         handle_id,
         Some("Ann"),
         &mut counts,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -933,10 +971,16 @@ async fn sibling_contact_link_bumps_last_modified_only_on_insert() {
         .await
         .unwrap();
 
-    let linked = ensure_sibling_contact_link(&mut conn, TEST_ACCOUNT, None, wa_id)
-        .await
-        .unwrap()
-        .expect("sibling link");
+    let linked = ensure_sibling_contact_link(
+        &mut conn,
+        TEST_ACCOUNT,
+        None,
+        wa_id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap()
+    .expect("sibling link");
     assert_eq!(linked, contact_id);
     let after_insert: String =
         sqlx::query_scalar("SELECT last_modified FROM contacts WHERE id = $1")
@@ -944,7 +988,10 @@ async fn sibling_contact_link_bumps_last_modified_only_on_insert() {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    assert_ne!(after_insert, OLD);
+    assert_eq!(
+        after_insert, "2026-03-14 12:00:00",
+        "the link stamps the instant it was given"
+    );
 
     sqlx::query("UPDATE contacts SET last_modified = $1 WHERE id = $2")
         .bind(OLD)
@@ -952,10 +999,16 @@ async fn sibling_contact_link_bumps_last_modified_only_on_insert() {
         .execute(&mut *conn)
         .await
         .unwrap();
-    let again = ensure_sibling_contact_link(&mut conn, TEST_ACCOUNT, None, wa_id)
-        .await
-        .unwrap()
-        .expect("already linked");
+    let again = ensure_sibling_contact_link(
+        &mut conn,
+        TEST_ACCOUNT,
+        None,
+        wa_id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap()
+    .expect("already linked");
     assert_eq!(again, contact_id);
     let after_noop: String = sqlx::query_scalar("SELECT last_modified FROM contacts WHERE id = $1")
         .bind(contact_id)

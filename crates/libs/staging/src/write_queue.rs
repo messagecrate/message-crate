@@ -16,8 +16,9 @@
 //! ([`ProgressEvent::FileWritten`]): the desktop app keeps a row apart until
 //! its conversation is written (#1688).
 //!
-//! Writers never transcode. Convert and compress stage the originals here and
-//! run afterwards, on their own and resumable, through [`transcode_staged`].
+//! Writers stage the originals or nothing, and never transcode. Transcoding
+//! is the Media Stage's work, after the Staging Review, through
+//! [`transcode_staged`](crate::transcode_staged).
 //!
 //! Only non-obfuscated JSONL exports are routed here. Obfuscation is stateful
 //! across documents and the other formats merge or embed at finish, so those
@@ -31,17 +32,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, MediaMode};
+use ir::{Attachment, ConversationDocument};
+use ir_format::{filename_stem, give_each_document_its_own_file};
 use message_crate_core::{
-    AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
-    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink, WriteStatus,
-    attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
+    AttachmentFiles, AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, Counter,
+    LoadError, LogSink, OutputFormat, ProgressEvent, ProgressSink, Sinks, WriteStatus,
+    attachment_size_hint, check_cancel, run_attachment_jobs,
 };
-use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
 
 use crate::headroom::{Disk, bytes_to_copy, check_headroom};
-use crate::transcode::{TranscodeOptions, transcode_staged};
-use message_ir_format::{is_complete_file, write_format};
+use ir_format::{is_complete_file, write_format};
 
 /// Where a unit's attachment bytes come from at write time.
 #[derive(Debug, Default)]
@@ -49,7 +49,7 @@ pub enum AttachmentSource {
     /// Read this file when the attachment is written. Worker-safe: a plain
     /// `fs::read`, no shared handle.
     Path(PathBuf),
-    /// Bytes the exporter already holds (SBR blobs, handwriting SVG).
+    /// Bytes the exporter already holds (a decoded SBR attachment, handwriting SVG).
     Bytes(Vec<u8>),
     /// Nothing to read; the attachment becomes `file_missing` under a mode
     /// that copies files.
@@ -62,9 +62,9 @@ impl AttachmentSource {
     /// record, with the size to report; `Missing` when the exporter held
     /// none. The `source_for` hook of every exporter whose attachments
     /// arrive as bytes rather than files.
-    pub fn take_bytes(att: &mut IrAttachment) -> (Self, Option<u64>) {
-        let hint = attachment_size_hint(att);
-        match att.bytes.take() {
+    pub fn take_bytes(attachment: &mut Attachment) -> (Self, Option<u64>) {
+        let hint = attachment_size_hint(attachment);
+        match attachment.bytes.take() {
             Some(bytes) => (Self::Bytes(bytes), hint),
             None => (Self::Missing, hint),
         }
@@ -74,7 +74,7 @@ impl AttachmentSource {
 /// One attachment of a unit, pinned to its place in the document.
 #[derive(Debug)]
 pub struct UnitAttachment {
-    /// Index into `doc.messages`.
+    /// Index into `document.messages`.
     pub message_index: usize,
     /// Index into that message's `attachments`.
     pub attachment_index: usize,
@@ -84,7 +84,7 @@ pub struct UnitAttachment {
     pub timestamp_unix_ms: i64,
     /// Size from the backup when known; byte totals grow as unhinted files load.
     /// Always `None` for a `Missing` source, which is never copied, even when
-    /// the backup knew its size. [`ConversationUnit::from_doc`] makes an
+    /// the backup knew its size. [`ConversationUnit::from_document`] makes an
     /// empty `Bytes` source `Missing`, and [`drain_write_queue`] does the same
     /// for a `Path` with no file there, before either sums a total.
     pub size_hint: Option<u64>,
@@ -94,30 +94,27 @@ pub struct UnitAttachment {
 #[derive(Debug)]
 pub struct ConversationUnit {
     /// The conversation to write.
-    pub doc: ConversationDocument,
+    pub document: ConversationDocument,
     /// Its attachments, in message order.
     pub attachments: Vec<UnitAttachment>,
 }
 
 impl ConversationUnit {
-    /// Pair every attachment in `doc` with a source and a size hint.
+    /// Pair every attachment in `document` with a source and a size hint.
     ///
     /// The closure sees each attachment in message order and receives it as
     /// `&mut`, so an exporter carrying bytes on the document can move them
-    /// out with `att.bytes.take()` instead of copying them.
-    pub fn from_doc(
-        mut doc: ConversationDocument,
-        mut source_for: impl FnMut(
-            usize,
-            &mut message_ir::IrAttachment,
-        ) -> (AttachmentSource, Option<u64>),
+    /// out with `attachment.bytes.take()` instead of copying them.
+    pub fn from_document(
+        mut document: ConversationDocument,
+        mut source_for: impl FnMut(usize, &mut ir::Attachment) -> (AttachmentSource, Option<u64>),
     ) -> Self {
         let mut attachments = Vec::new();
         let mut flat = 0usize;
-        for (message_index, msg) in doc.messages.iter_mut().enumerate() {
-            let timestamp_unix_ms = msg.timestamp_unix_ms;
-            for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
-                let (source, size_hint) = counted_source(source_for(flat, att));
+        for (message_index, message) in document.messages.iter_mut().enumerate() {
+            let timestamp_unix_ms = message.timestamp_unix_ms;
+            for (attachment_index, attachment) in message.attachments.iter_mut().enumerate() {
+                let (source, size_hint) = counted_source(source_for(flat, attachment));
                 attachments.push(UnitAttachment {
                     message_index,
                     attachment_index,
@@ -128,18 +125,18 @@ impl ConversationUnit {
                 flat += 1;
             }
         }
-        Self { doc, attachments }
+        Self {
+            document,
+            attachments,
+        }
     }
 }
 
 /// How a drain stages files.
 #[derive(Debug, Clone)]
 pub struct WriteQueueOptions {
-    /// The mode the user asked for. Convert and compress stage originals here
-    /// and transcode afterwards — writers do not transcode.
-    pub media: MediaMode,
-    /// Compress settings, used by the convert/compress run after the write.
-    pub compress: CompressOptions,
+    /// Stage the original attachment files, or none.
+    pub files: AttachmentFiles,
     /// Skip units whose conversation file is already on disk.
     pub resume: bool,
     /// 0 picks a count from the machine. The sequential drain ignores it.
@@ -155,8 +152,6 @@ pub struct WriteQueueReport {
     pub conversations_skipped: usize,
     /// Attachment records staged with a path and a digest, duplicates included.
     pub attachments_saved: usize,
-    /// Filled by the convert/compress run after the write; default otherwise.
-    pub media: media::MediaReport,
 }
 
 impl WriteQueueReport {
@@ -167,13 +162,12 @@ impl WriteQueueReport {
         report.conversations += (self.conversations_written + self.conversations_skipped) as u64;
         report.conversations_skipped += self.conversations_skipped as u64;
         report.attachments_saved += self.attachments_saved as u64;
-        report.media = self.media.clone();
     }
 }
 
 /// Read one attachment source.
 ///
-/// `Bytes` are moved out of the source rather than copied — every source is
+/// `Bytes` are moved out of the source rather than copied. Every source is
 /// loaded at most once, so taking them is safe and spares a full copy of the
 /// payload. `Missing` reads as an absent file, which Staging turns
 /// into `file_missing`.
@@ -235,12 +229,7 @@ impl AttachmentTotals {
 
     /// Fold in what one attachment changed, then report the new counts: a
     /// log line for people and a [`ProgressEvent::Attachments`] for the bar.
-    fn add_and_report(
-        &mut self,
-        p: UnitProgress,
-        log: Option<&LogSink>,
-        progress: Option<&ProgressSink>,
-    ) {
+    fn add_and_report(&mut self, p: UnitProgress, log: &LogSink, progress: &ProgressSink) {
         self.done += p.done;
         self.bytes_done += p.bytes_done;
         self.bytes_total = self.bytes_total.saturating_add_signed(p.bytes_total_change);
@@ -250,20 +239,16 @@ impl AttachmentTotals {
             bytes_done,
             bytes_total,
         } = *self;
-        let due = emit_progress(
-            progress,
-            ProgressEvent::Attachments {
-                done,
-                total,
-                bytes_done,
-                bytes_total,
-            },
-        );
+        let due = progress.emit(ProgressEvent::Attachments {
+            done,
+            total,
+            bytes_done,
+            bytes_total,
+        });
         if due {
-            emit_log(
-                log,
-                format!("  attachments {done}/{total} {bytes_done}/{bytes_total}"),
-            );
+            log.emit(format!(
+                "  attachments {done}/{total} {bytes_done}/{bytes_total}"
+            ));
         }
     }
 }
@@ -280,18 +265,15 @@ struct UnitOutcome {
 impl UnitOutcome {
     /// Say that the drain finished with this unit's conversation file
     /// ([`ProgressEvent::FileWritten`]).
-    fn announce(&self, progress: Option<&ProgressSink>) {
-        emit_progress(
-            progress,
-            ProgressEvent::FileWritten {
-                file: self.file.clone(),
-                status: if self.written {
-                    WriteStatus::Written
-                } else {
-                    WriteStatus::Skipped
-                },
+    fn announce(&self, progress: &ProgressSink) {
+        progress.emit(ProgressEvent::FileWritten {
+            file: self.file.clone(),
+            status: if self.written {
+                WriteStatus::Written
+            } else {
+                WriteStatus::Skipped
             },
-        );
+        });
     }
 }
 
@@ -310,26 +292,24 @@ pub type AttachmentLoader<'a> =
 
 /// Drain `units` with a caller-supplied loader.
 ///
-/// Exporters whose attachment loader cannot cross threads — an encrypted iOS
-/// backup holds a SQLite connection that is not `Sync` — use this and get one
-/// writer. Everyone else wants `drain_write_queue`.
+/// Exporters whose attachment loader cannot cross threads use this and get
+/// one writer. An encrypted iOS backup is one: it holds a SQLite connection
+/// that is not `Sync`. Everyone else wants `drain_write_queue`.
 ///
 /// # Errors
 ///
 /// Returns the first unit error, which stops the drain. A cancel surfaces as
-/// `"cancelled"`.
+/// [`Sinks::cancel`] says.
 pub fn drain_write_queue_with_loader(
     output_dir: &Path,
     mut units: Vec<ConversationUnit>,
     options: &WriteQueueOptions,
     load: &mut AttachmentLoader<'_>,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
+    let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
-    check_units_headroom(output_dir, &units, options.media)?;
-    let attachments_dir = output_dir.join("attachments");
+    check_units_headroom(output_dir, &units, options.files)?;
     let mut report = WriteQueueReport::default();
 
     let unit_count = units.len();
@@ -342,15 +322,7 @@ pub fn drain_write_queue_with_loader(
     };
 
     for unit in units {
-        let outcome = write_one_unit(
-            output_dir,
-            &attachments_dir,
-            unit,
-            options,
-            load,
-            &report_progress,
-            cancel,
-        )?;
+        let outcome = write_one_unit(output_dir, unit, options, load, &report_progress, sinks)?;
         report.attachments_saved += outcome.attachments_saved;
         if outcome.written {
             report.conversations_written += 1;
@@ -358,16 +330,12 @@ pub fn drain_write_queue_with_loader(
             report.conversations_skipped += 1;
         }
         outcome.announce(progress);
-        emit_progress(
-            progress,
-            ProgressEvent::Prepare {
-                done: report.conversations_written + report.conversations_skipped,
-                total: unit_count,
-            },
-        );
+        progress.emit(ProgressEvent::Prepare {
+            done: report.conversations_written + report.conversations_skipped,
+            total: unit_count,
+        });
     }
 
-    report.media = run_media_post_pass(output_dir, options, log, progress, cancel)?;
     announce_finish(log, &report, options.resume);
     Ok(report)
 }
@@ -375,8 +343,8 @@ pub fn drain_write_queue_with_loader(
 /// Make every `Path` source with no file there `Missing`, with no size
 /// hint, so the byte totals and the disk check leave it out from the start
 /// rather than drop when the run reaches it (#1581). Each one is logged as
-/// the read would have logged it. With media turned off nothing is read,
-/// so the caller skips this. A unit a resumed run will skip, because its
+/// the read would have logged it. With no attachment files copied nothing
+/// is read, so the caller skips this. A unit a resumed run will skip, because its
 /// conversation file is already written to the end, reads nothing either,
 /// so its paths are not checked or logged again.
 ///
@@ -388,10 +356,10 @@ fn leave_out_files_that_are_gone(
     output_dir: &Path,
     units: &mut [ConversationUnit],
     resume: bool,
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) {
     for unit in units {
-        if written_by_an_earlier_run(output_dir, &unit.doc, resume) {
+        if written_by_an_earlier_run(output_dir, &unit.document, resume) {
             continue;
         }
         for attachment in &mut unit.attachments {
@@ -426,11 +394,11 @@ pub(crate) fn counted_source(
 /// [`load_attachment_source`] does.
 pub(crate) fn missing_if_no_file(
     (source, size_hint): (AttachmentSource, Option<u64>),
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) -> (AttachmentSource, Option<u64>) {
     match source {
         AttachmentSource::Path(path) if !path.is_file() => {
-            emit_log(log, unreadable_attachment_line(&path, "no file there"));
+            log.warn(unreadable_attachment_line(&path, "no file there"));
             (AttachmentSource::Missing, None)
         }
         found => (found, size_hint),
@@ -439,35 +407,41 @@ pub(crate) fn missing_if_no_file(
 
 /// The log line for an attachment whose file could not be read, naming the
 /// file and why. Every exporter that reads an attachment's file itself logs
-/// with it too, so the line reads alike wherever the read fails.
+/// with it too, so the line reads alike wherever the read fails. The run
+/// goes on without the file, so the line is a warning ([`LogSink::warn`]).
 pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
     format!("Attachment {} could not be read: {why}", path.display())
 }
 
 /// The conversation file a unit is written to.
-fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
-    output_dir.join(conversation_file_name(doc))
+pub(crate) fn conversation_file(output_dir: &Path, document: &ConversationDocument) -> PathBuf {
+    output_dir.join(conversation_file_name(document))
 }
 
 /// The name of the conversation file a unit is written to, without its
 /// directory: the name the Upload gives the file, and the one
 /// [`ProgressEvent::FileWritten`] and a loader's rows name it by.
-fn conversation_file_name(doc: &ConversationDocument) -> String {
-    format!("{}.jsonl", doc.filename_stem())
+fn conversation_file_name(document: &ConversationDocument) -> String {
+    format!("{}.jsonl", filename_stem(document))
 }
 
 /// Whether a resumed run skips this conversation: an earlier run wrote its
 /// file to the end, attachments and all. An empty or cut-off file left by a
 /// power loss is written again.
-fn written_by_an_earlier_run(output_dir: &Path, doc: &ConversationDocument, resume: bool) -> bool {
-    resume && is_complete_file(&conversation_file(output_dir, doc))
+fn written_by_an_earlier_run(
+    output_dir: &Path,
+    document: &ConversationDocument,
+    resume: bool,
+) -> bool {
+    resume && is_complete_file(&conversation_file(output_dir, document))
 }
 
 /// Give every unit a file name no other unit in the run has; see
 /// [`give_each_document_its_own_file`].
 fn give_each_unit_its_own_file(units: &mut [ConversationUnit]) -> Result<()> {
-    let mut docs: Vec<&mut ConversationDocument> = units.iter_mut().map(|u| &mut u.doc).collect();
-    give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)
+    let mut documents: Vec<&mut ConversationDocument> =
+        units.iter_mut().map(|u| &mut u.document).collect();
+    give_each_document_its_own_file(&mut documents).map_err(anyhow::Error::msg)
 }
 
 /// Writers scale with the machine: writing is IO and hashing, and past a
@@ -484,12 +458,10 @@ pub fn drain_units(
     output_dir: &Path,
     units: Vec<ConversationUnit>,
     options: &WriteQueueOptions,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
     report: &mut message_crate_core::ExportReport,
 ) -> Result<()> {
-    drain_write_queue(output_dir, units, options, log, progress, cancel)?.fold_into(report);
+    drain_write_queue(output_dir, units, options, sinks)?.fold_into(report);
     Ok(())
 }
 
@@ -502,20 +474,20 @@ pub fn drain_units(
 /// # Errors
 ///
 /// Returns the first unit error, or the headroom error when the staging disk
-/// cannot hold what the backup needs. A cancel surfaces as `"cancelled"`.
+/// cannot hold what the backup needs. A cancel surfaces as [`Sinks::cancel`]
+/// says.
 pub fn drain_write_queue(
     output_dir: &Path,
     mut units: Vec<ConversationUnit>,
     options: &WriteQueueOptions,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
+    let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
-    if options.media != MediaMode::Disabled {
+    if options.files.copies() {
         leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
     }
-    check_units_headroom(output_dir, &units, options.media)?;
+    check_units_headroom(output_dir, &units, options.files)?;
 
     let attachments_dir = output_dir.join("attachments");
     // Idempotent, but doing it once here keeps every worker's first write
@@ -573,18 +545,17 @@ pub fn drain_write_queue(
                         };
                         load_attachment_source(source).inspect_err(|e| {
                             if let Some(path) = named {
-                                emit_log(log, unreadable_attachment_line(&path, e));
+                                log.warn(unreadable_attachment_line(&path, e));
                             }
                         })
                     };
                     match write_one_unit(
                         output_dir,
-                        &attachments_dir,
                         unit,
                         options,
                         &mut load,
                         &report_progress,
-                        cancel,
+                        sinks,
                     ) {
                         Ok(outcome) => {
                             attachments_saved
@@ -597,13 +568,10 @@ pub fn drain_write_queue(
                             outcome.announce(progress);
                             let mut finished = units_done.lock().expect("write queue units done");
                             *finished += 1;
-                            emit_progress(
-                                progress,
-                                ProgressEvent::Prepare {
-                                    done: *finished,
-                                    total: unit_count,
-                                },
-                            );
+                            progress.emit(ProgressEvent::Prepare {
+                                done: *finished,
+                                total: unit_count,
+                            });
                         }
                         Err(err) => {
                             let mut slot = first_error.lock().expect("write queue error slot");
@@ -619,92 +587,33 @@ pub fn drain_write_queue(
         }
     });
 
-    if let Some(msg) = first_error.into_inner().expect("write queue error slot") {
-        anyhow::bail!(msg);
+    if let Some(message) = first_error.into_inner().expect("write queue error slot") {
+        anyhow::bail!(message);
     }
 
-    let mut report = WriteQueueReport {
+    let report = WriteQueueReport {
         conversations_written: written.load(Ordering::Relaxed),
         conversations_skipped: skipped.load(Ordering::Relaxed),
         attachments_saved: attachments_saved.load(Ordering::Relaxed),
-        media: media::MediaReport::default(),
     };
-    report.media = run_media_post_pass(output_dir, options, log, progress, cancel)?;
     announce_finish(log, &report, options.resume);
     Ok(report)
 }
 
-/// Convert or compress the staged originals, once every writer is done.
-///
-/// Writers stage originals and nothing else, so this is where convert and
-/// compress actually happen. Running it on its own gives per-file commits,
-/// so an interruption keeps every derivative already finished, and progress
-/// worth reporting.
-fn run_media_post_pass(
-    output_dir: &Path,
-    options: &WriteQueueOptions,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
-) -> Result<media::MediaReport> {
-    if !matches!(options.media, MediaMode::Convert | MediaMode::Compress) {
-        return Ok(media::MediaReport::default());
-    }
-
-    let transcode_options = TranscodeOptions {
-        mode: options.media,
-        compress: options.compress.clone(),
-        // No server limit applies to a local export, so nothing here is
-        // written off as too large. The desktop's own Media stage, which does
-        // enforce the real limit, never reaches this code: it stages with
-        // Clone and converts on its own.
-        asset_max_bytes: u64::MAX,
-    };
-    // The desktop never runs this branch (it stages with Clone and converts
-    // on its own after the Staging Review); the events are for any other consumer.
-    let report = transcode_staged(output_dir, &transcode_options, cancel, None, &mut |p| {
-        let due = emit_progress(
-            progress,
-            ProgressEvent::Media {
-                done: p.done,
-                total: p.total,
-            },
-        );
-        if due {
-            emit_log(log, format!("  media {}/{}", p.done, p.total));
-        }
-    })?;
-
-    let mut media = media::MediaReport {
-        processed: report.converted,
-        skipped: report.skipped + report.repointed,
-        bytes_before: report.bytes_before,
-        bytes_after: report.bytes_after,
-        errors: Vec::new(),
-    };
-    if report.failed > 0 {
-        // The per-file reasons are already on the attachments themselves.
-        media.errors.push(NOT_CONVERTED.line(report.failed as u64));
-    }
-    emit_log(log, media::done_line(options.media, &media));
-    Ok(media)
-}
-
 /// Refuse a drain the staging disk plainly cannot hold.
 ///
-/// `needed` counts the originals the run will copy. Peak usage is those plus
-/// one in-flight derivative, since the convert/compress run commits per file, so the
-/// sum plus a fixed slack is the honest requirement.
+/// `needed` counts the originals the run will copy, and the sum plus a fixed
+/// slack is the requirement.
 ///
-/// With media turned off nothing is copied, so nothing is counted. A
-/// `Missing` source is never copied either, and [`ConversationUnit::from_doc`]
+/// With no attachment files copied, nothing is counted. A
+/// `Missing` source is never copied either, and [`ConversationUnit::from_document`]
 /// already drops its hint, so the sum leaves it out.
 fn check_units_headroom(
     output_dir: &Path,
     units: &[ConversationUnit],
-    media: MediaMode,
+    files: AttachmentFiles,
 ) -> Result<()> {
-    if media == MediaMode::Disabled {
+    if !files.copies() {
         return Ok(());
     }
     // Summed before any resume skip: over-asking on a resumed run is the
@@ -712,7 +621,7 @@ fn check_units_headroom(
     // on disk already.
     let needed = bytes_to_copy(units.iter().flat_map(|unit| {
         unit.attachments.iter().filter_map(|a| {
-            let digest = unit.doc.messages[a.message_index].attachments[a.attachment_index]
+            let digest = unit.document.messages[a.message_index].attachments[a.attachment_index]
                 .digest_sha256
                 .as_deref();
             Some((digest, a.size_hint?))
@@ -728,36 +637,22 @@ const PREPARED: Counter = Counter::new(
     "Prepared {n} conversation files",
 );
 
-/// Files Media could not convert, each of whose conversation entries says
-/// why.
-const NOT_CONVERTED: Counter = Counter::new(
-    "media_not_converted",
-    "1 file could not be converted; its conversation entry says why",
-    "{n} files could not be converted; their conversation entries say why",
-);
-
 /// Say that the write queue is starting on `units` conversations: a log
 /// line for people and a zero-of-`units` prepare event for the bar.
-fn announce_start(log: Option<&LogSink>, progress: Option<&ProgressSink>, units: usize) {
-    emit_log(log, "");
-    emit_log(log, CONVERSATION_FILES_PREPARING.line(units as u64));
-    emit_progress(
-        progress,
-        ProgressEvent::Prepare {
-            done: 0,
-            total: units,
-        },
-    );
+fn announce_start(log: &LogSink, progress: &ProgressSink, units: usize) {
+    log.emit("");
+    log.emit(CONVERSATION_FILES_PREPARING.line(units as u64));
+    progress.emit(ProgressEvent::Prepare {
+        done: 0,
+        total: units,
+    });
 }
 
 /// Log the write queue's totals, noting resumed work.
-fn announce_finish(log: Option<&LogSink>, report: &WriteQueueReport, resume: bool) {
-    emit_log(log, PREPARED.line(report.conversations_written as u64));
+fn announce_finish(log: &LogSink, report: &WriteQueueReport, resume: bool) {
+    log.emit(PREPARED.line(report.conversations_written as u64));
     if resume && report.conversations_skipped > 0 {
-        emit_log(
-            log,
-            CONVERSATIONS_RESUMED.line(report.conversations_skipped as u64),
-        );
+        log.emit(CONVERSATIONS_RESUMED.line(report.conversations_skipped as u64));
     }
 }
 
@@ -767,30 +662,27 @@ fn announce_finish(log: Option<&LogSink>, report: &WriteQueueReport, resume: boo
 /// so its presence on disk vouches for everything it points at.
 fn write_one_unit(
     output_dir: &Path,
-    attachments_dir: &Path,
     unit: ConversationUnit,
     options: &WriteQueueOptions,
     load: &mut AttachmentLoader<'_>,
     on_progress: &dyn Fn(UnitProgress),
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<UnitOutcome> {
-    if cancel.is_some_and(|f| f.load(Ordering::Relaxed)) {
-        anyhow::bail!("cancelled");
-    }
+    check_cancel(sinks.cancel)?;
 
     let ConversationUnit {
-        mut doc,
+        mut document,
         attachments,
     } = unit;
     let attachment_count = attachments.len();
     let hint_sum: u64 = attachments.iter().filter_map(|a| a.size_hint).sum();
 
-    let file = conversation_file_name(&doc);
+    let file = conversation_file_name(&document);
     let path = output_dir.join(&file);
-    if written_by_an_earlier_run(output_dir, &doc, options.resume) {
-        // Count its attachments and their bytes as done — progress describes
-        // the whole import, not just this run's share of it — and load
-        // nothing.
+    if written_by_an_earlier_run(output_dir, &document, options.resume) {
+        // Count its attachments and their bytes as done, and load nothing.
+        // Progress describes the whole import, not just this run's share of
+        // it.
         on_progress(UnitProgress {
             done: attachment_count,
             bytes_done: hint_sum,
@@ -803,13 +695,11 @@ fn write_one_unit(
         });
     }
 
-    // Writers copy originals; convert and compress run later on their own.
-    let stage_mode = match options.media {
-        MediaMode::Disabled => MediaMode::Disabled,
-        _ => MediaMode::Clone,
-    };
-
-    let timestamps: Vec<i64> = doc.messages.iter().map(|m| m.timestamp_unix_ms).collect();
+    let timestamps: Vec<i64> = document
+        .messages
+        .iter()
+        .map(|m| m.timestamp_unix_ms)
+        .collect();
     let mut slots: HashMap<(usize, usize), UnitAttachment> = attachments
         .into_iter()
         .map(|a| ((a.message_index, a.attachment_index), a))
@@ -817,9 +707,9 @@ fn write_one_unit(
 
     let mut sources: Vec<AttachmentSource> = Vec::with_capacity(attachment_count);
     let mut jobs: Vec<AttachmentJob<'_>> = Vec::new();
-    for (message_index, msg) in doc.messages.iter_mut().enumerate() {
+    for (message_index, message) in document.messages.iter_mut().enumerate() {
         let fallback_ts = timestamps.get(message_index).copied().unwrap_or(0);
-        for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
+        for (attachment_index, attachment) in message.attachments.iter_mut().enumerate() {
             let slot = slots.remove(&(message_index, attachment_index));
             let (source, size_hint, timestamp_unix_ms) = match slot {
                 Some(a) => (a.source, a.size_hint, a.timestamp_unix_ms),
@@ -827,7 +717,7 @@ fn write_one_unit(
             };
             sources.push(source);
             jobs.push(AttachmentJob {
-                attachment: att,
+                attachment,
                 timestamp_unix_ms,
                 size_hint,
             });
@@ -841,11 +731,8 @@ fn write_one_unit(
         let sources = &mut sources;
         run_attachment_jobs(
             &mut jobs,
-            attachments_dir,
-            &MediaConfig {
-                mode: stage_mode,
-                compress: options.compress.clone(),
-            },
+            &output_dir.join("attachments"),
+            options.files,
             |i| match sources.get_mut(i) {
                 Some(source) => load(&file, source),
                 None => Ok(None),
@@ -863,10 +750,9 @@ fn write_one_unit(
                 unit_bytes_done = p.bytes_done;
                 unit_total_change = total_change;
             },
-            None,
-            cancel.map(|flag| flag.as_ref()),
-        )
-        .map_err(anyhow::Error::msg)?;
+            sinks.log,
+            sinks.cancel,
+        )?;
     }
 
     let attachments_saved = jobs
@@ -875,14 +761,14 @@ fn write_one_unit(
         .count();
     drop(jobs);
 
-    message_ir_format::clear_attachments_when_disabled(&mut doc, options.media);
-    for msg in &mut doc.messages {
-        for att in &mut msg.attachments {
-            att.bytes = None;
+    ir_format::clear_attachments_when_skipped(&mut document, options.files);
+    for message in &mut document.messages {
+        for attachment in &mut message.attachments {
+            attachment.bytes = None;
         }
     }
 
-    write_format(output_dir, OutputFormat::Jsonl, doc)
+    write_format(output_dir, OutputFormat::Jsonl, document)
         .with_context(|| format!("write {}", path.display()))?;
 
     Ok(UnitOutcome {

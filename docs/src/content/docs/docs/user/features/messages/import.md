@@ -55,6 +55,12 @@ A red asterisk marks a field that must be filled.
 The **Import** button stays disabled until every needed field is filled and every path exists.
 A path of the wrong kind gets a message under its field, for example `Pick the backup directory.` when a file is chosen where a directory is needed.
 
+In the desktop app, the form reads how much space is free on the disk that holds the Staging Directory and the disk that holds the Scratch Directory.
+A disk with less than 10 GB free gets a line above the **Import** button that names the disk, the directory and the space free, for example `4.2 GB is free on /home, the disk that holds the Staging Directory (/home/sam/message-crate). A large backup can need more than that.`
+Both directories on one disk get one line naming both.
+The line doesn't stop the import, because only Staging knows how much a backup needs (see [Staging](#staging)).
+The form reads the disks again when the source changes and when **Settings → System** changes the **Staging directory**.
+
 **Settings → System** has **Remember importer paths**.
 When it is on, the form restores the last paths used for each source.
 Passwords and keys are never remembered.
@@ -152,10 +158,10 @@ The field is filled in with the account's Time Zone.
 
 ### Attachments
 
-**Attachments** has four choices: **Copy**, **Convert**, **Compress & Convert**, and **Skip**.
+**Attachments** has four choices: **Copy**, **Convert media**, **Convert & Compress media**, and **Skip**.
 It starts on **Copy**.
 
-**Compress & Convert** adds three fields: **Target resolution**, **Max FPS**, and **Minimum Video File Size (Megabytes)**.
+**Convert & Compress media** adds three fields: **Target resolution**, **Max FPS**, and **Minimum Video File Size (Megabytes)**.
 
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) describes what each choice produces.
 
@@ -184,14 +190,14 @@ It reads `None of the addresses this backup sent from are on your profile.` and 
 
 An account has at most one Import Run at a time.
 
-A run moves through its Stages in order, and stops at each Review until it is approved or cancelled.
+A run moves through its Stages in order, and stops at each Review until it is approved or canceled.
 The whole run is one screen: a list of the Stages, with each Review as a row in the list where the run stops.
 Each row fills in with what that Stage made.
 
 1. **Staging**
 2. **Staging Review**
-3. **Media**, only under **Convert** or **Compress & Convert**
-4. **Media Review**, only under **Convert** or **Compress & Convert**
+3. **Media**, only under **Convert media** or **Convert & Compress media**
+4. **Media Review**, only under **Convert media** or **Convert & Compress media**
 5. **Upload**
 
 Under **Copy** and **Skip** the run goes from the Staging Review straight to Upload.
@@ -209,9 +215,10 @@ The Staging row shows:
 - **Options**, only when **Obfuscate** is on.
 
 Each run gets a new directory in the Staging Directory, named `staging-` followed by the source and the date and time.
-The Staging Directory is `~/message-crate` unless **Settings → System** names another **Staging directory**.
+On macOS and Linux only the user the app runs as can open that directory, so another user of the same computer can't read the messages staged in it; the Staging Directory itself keeps the permissions it has.
+The Staging Directory is `~/message-crate/staging` unless **Settings → System** names another **Staging directory**.
 
-While Staging reads the backup, it keeps its working files in the Scratch Directory, `scratch` in the operating system's app-data directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, WhatsApp's files read out of a phone backup (decrypted first when the iPhone backup is encrypted), and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
+While Staging reads the backup, it keeps its working files in the Scratch Directory, `~/message-crate/scratch`, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, WhatsApp's files read out of a phone backup (decrypted first when the iPhone backup is encrypted), and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
 They are deleted when Staging ends, whether it finished or failed.
 If the app was closed or stopped during Staging, they are deleted the next time the app starts.
 Before it writes, Staging checks that the disk holding the Scratch Directory and the disk holding the Staging Directory each have room, and stops with the space it needs when one does not.
@@ -220,18 +227,18 @@ A WhatsApp backup from Android is the exception, because its decrypted size isn'
 ### Staging Review
 
 The run stops and the row reads **Awaiting approval**.
-Everything it shows is read from the staged files, not estimated, except the group that is labelled as estimates.
+Everything it shows is read from the staged files, not estimated, except the group that is labeled as estimates.
 
 - **Contacts**: the count of contacts in the backup, split into **Existing** and **New** to the account.
 - **Attachments**: the **Size limit per file**, which is the server's attachment size limit as the run read it when it started, and **Files over the limit**, marked **Skip upload**. The row opens to each file and its size.
-- **Conversion estimates** or **Compression estimates**, under **Convert** or **Compress & Convert**. It sorts the files that matter into **Likely within limit**, **May exceed limit**, and **Not audio or video**. Each opens to its files, with the staged size and the expected size. The group is marked **Media has not run yet**, because these are estimates.
+- **Conversion estimates** or **Compression estimates**, under **Convert media** or **Convert & Compress media**. It sorts the files that matter into **Likely within limit**, **May exceed limit**, and **Not audio or video**. Each opens to its files, with the staged size and the expected size. The group is marked **Media has not run yet**, because these are estimates.
 - **Identities**, for an iMessage source: the addresses the backup's device used, how many messages each one **Sent** and **Received**, whether it is **On your profile**, and **Add to profile** for one that is not.
 
-The approve button says what happens next: **Upload to Message Crate**, **Convert media**, or **Compress media**.
+The approve button says what happens next: **Upload to Message Crate**, **Convert media**, or **Convert & Compress media**.
 It stays disabled while an export or a conversion runs, since the desktop app runs one job at a time, and names the job it waits for.
 **Cancel this import** ends the run and deletes its directory.
 
-When **Convert** or **Compress & Convert** is chosen and ffmpeg or ffprobe can't be used, the approve button is disabled and the row names the program.
+When **Convert media** or **Convert & Compress media** is chosen and ffmpeg or ffprobe can't be used, the approve button is disabled and the row names the program.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) says where the app looks for it.
 
 ### Media
@@ -270,7 +277,7 @@ A Review that has been approved folds to one line, **Approved**.
 When a finished run reports errors, an **Errors** table sits under the list, with the count beside the heading.
 Identical errors are grouped.
 Its columns are **Parse File**, **Stage**, and **Error Message**, and a row opens to the full message and the files it names.
-A file in the backup that the importer could not read, such as a CSV that is not a chat export, is an error that names the file.
+A file in the backup that the importer could not read, such as a CSV that is not a messages export, is an error that names the file.
 
 When a finished run kept something with a caveat, a **Notes** table sits under the errors, with the count beside the heading.
 A note is not an error, and a run with notes and no errors still reads as completed.
@@ -323,14 +330,14 @@ A run resumed at a Review, Media, or Upload keeps them, because none of those re
 
 | The run stopped | The screen reads | The button |
 |---|---|---|
-| Before Staging began copying | `Pick up your last import` | **Start over** reads the backup from the beginning with the same settings. |
-| During Staging | `Finish copying your backup` | **Pick up** reads the backup again and skips the conversations already copied. |
+| Before Staging began copying | `Your last import did not finish` | **Start over** reads the backup from the beginning with the same settings. |
+| During Staging | `Finish copying your backup` | **Resume** reads the backup again and skips the conversations already copied. |
 | During Staging, and the backup has changed since | `The backup has changed` | **Start over** reads it fresh, because copying more of it would mix two backups in one directory. |
-| At a Review | `Pick up where you left off` | **Show me the summary** reads the staged files again and returns to the Review. |
-| During Media | `Finish preparing your media` | **Carry on** processes the files Media had not reached. |
+| At a Review | `Resume where you left off` | **Show me the summary** reads the staged files again and returns to the Review. |
+| During Media | `Finish preparing your media` | **Resume** processes the files Media had not reached. |
 | During Upload, or paused | `Finish your last import` | **Resume** sends the conversations that are not uploaded yet, without staging again. |
 
-Three cases offer only **Discard this import**, because there is nothing on this computer to carry on from:
+Three cases offer only **Discard this import**, because there is nothing on this computer to resume:
 
 - The run's directory is gone.
 - The run was started on another computer, and its files are staged there.
@@ -362,15 +369,15 @@ The heading of a finished run says how it ended.
 | `Imported 1,234 messages` | The run succeeded. The number is the count of new messages. |
 | `Imported 1,234 messages, with errors` | The run succeeded and some messages or files failed. The **Errors** table lists them. |
 | `Import failed` | The run could not start, or Staging or Media failed. |
-| `Import cancelled` | Staging or Media was cancelled. |
+| `Import canceled` | Staging or Media was canceled. |
 | `Import paused` | The Upload was paused, or it failed before every conversation was sent. The run can be resumed. |
 
 A run that ends deletes its directory, and the journal with it.
-Its log stays in the Logs Directory, `logs` in the operating system's app-data directory (`~/.local/share/app.messagecrate.desktop/logs` on Linux), and Message Crate never deletes it.
+Its log stays in the Logs Directory, `~/message-crate/logs`, and Message Crate never deletes it.
 The run's row in **Settings → Storage** opens it again later, and the Owner reads it under **Logs** on Owner Home.
 After a success the Message Crate holds the messages, so the staged copy is no longer needed.
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
-A run that is cancelled or paused leaves its directory in place, because the staged files are what a resume reads.
+A run that is canceled or paused leaves its directory in place, because the staged files are what a resume reads.
 The Errors and notes of a paused run are kept with its staged files, so the finished run lists those of every part.
 
 A run that succeeded leads with where to go next:
@@ -385,7 +392,7 @@ The record of the run stays under **Import history** in [**Settings → Storage*
 ## Importing the same backup again
 
 A second import of the same backup creates no duplicates.
-The Message Crate recognises the messages it already holds and skips them, so a newer backup of the same phone adds only what is new.
+The Message Crate recognizes the messages it already holds and skips them, so a newer backup of the same phone adds only what is new.
 A message that changed since the first import is the exception: it takes the newer backup's text, earlier versions, and mark ([Edited messages](/docs/user/features/messages/browse/#edited-messages)).
 A message recovered after it was deleted loses its **Deleted in the source app** mark, and a message unsent since is marked **Unsent**.
 An older backup imported after a newer one leaves the message as it is.

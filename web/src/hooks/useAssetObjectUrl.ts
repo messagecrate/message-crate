@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorText } from "../lib/apiErrorMessage";
 import type { AssetVersion } from "../lib/assetUrl";
 import { fetchAssetObjectUrl } from "../lib/serverApi";
 
@@ -18,7 +19,7 @@ const keyOf = (sha256: string, version: AssetVersion) => `${version}:${sha256.tr
  * A version is fetched when it first appears in `requests`, kept while it
  * stays there, and released (its download stopped, its URL revoked) when it
  * leaves or the component unmounts. The viewer passes the photo on screen
- * and its neighbours, so stepping to the next one finds it already loaded.
+ * and its neighbors, so stepping to the next one finds it already loaded.
  *
  * Outside TanStack Query on purpose: the component showing the attachment owns
  * the URL and revokes it, which a cache entry cannot do. One of the two named
@@ -82,7 +83,7 @@ export function useAssetObjectUrls(
           setEntries((prev) =>
             new Map(prev).set(key, {
               url: null,
-              error: e instanceof Error ? e.message : String(e),
+              error: errorText(e),
             }),
           );
         });

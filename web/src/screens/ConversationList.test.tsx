@@ -13,7 +13,7 @@
  * anything.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
@@ -21,12 +21,12 @@ import { RightToolbarProvider } from "../components/RightToolbarContext";
 import { ApiError } from "../lib/api";
 import { createMessageTag, listConversations, updateMessageTagMembers } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
-import { mockedAuth, Providers } from "../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
-import { SLOW_STATE_WAIT } from "../test/waits";
 import ConversationList from "./ConversationList";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../lib/serverApi", () => ({
   // messageTags.ts pulls slug helpers from contactGroups.ts, whose module-level
@@ -67,12 +67,14 @@ let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  startFakeClock();
 });
 
 afterEach(() => {
   consoleErrorSpy.mockRestore();
-  vi.unstubAllGlobals();
   cleanup();
+  // Also takes back the ResizeObserver stub.
+  stopFakeClock();
 });
 
 /** Every logged message, joined, so one assertion covers every call shape. */
@@ -86,20 +88,25 @@ function loggedErrors(): string {
 
 describe("ConversationList", () => {
   it("registers the tag menu into the right toolbar without looping", async () => {
-    render(
-      <Providers>
-        <MemoryRouter>
-          <RightToolbarProvider>
-            <ConversationList selectedId={null} onSelect={() => {}} query="" />
-          </RightToolbarProvider>
-        </MemoryRouter>
-      </Providers>,
-    );
-
-    // Give the effect and any resulting re-renders a chance to settle. If the
-    // loop is present, React's nested-update guard trips well inside this
-    // window rather than the test just quietly hanging.
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // React's nested-update guard reports a loop through console.error and
+    // goes on looping, so `act` below would never return. Throwing from that
+    // report ends the loop and fails the test.
+    consoleErrorSpy.mockImplementation((...args: unknown[]) => {
+      const text = String(args[0]);
+      if (text.includes("Maximum update depth")) throw new Error(text);
+    });
+    // `act` runs every effect and every render they cause before it returns.
+    await act(async () => {
+      render(
+        <Providers>
+          <MemoryRouter>
+            <RightToolbarProvider>
+              <ConversationList selectedId={null} onSelect={() => {}} query="" />
+            </RightToolbarProvider>
+          </MemoryRouter>
+        </Providers>,
+      );
+    });
 
     const logged = loggedErrors();
     expect(logged).not.toMatch(/Maximum update depth/);
@@ -139,14 +146,14 @@ describe("ConversationList", () => {
         last_message_at: "2024-01-01T10:00:00Z",
         service: "sms",
         is_group: false,
-        label: `Chat ${id}`,
+        shown_title: `Chat ${id}`,
         tags: [],
       };
     }
 
-    /** The server's paging over `count` conversations. */
-    function serveConversations(count: number) {
-      const all = Array.from({ length: count }, (_, i) => chat(i + 1));
+    /** The server's paging over `count` conversations, each carrying `tags`. */
+    function serveConversations(count: number, tags: string[] = []) {
+      const all = Array.from({ length: count }, (_, i) => ({ ...chat(i + 1), tags }));
       vi.mocked(listConversations).mockImplementation(async ({ limit = 40, offset = 0 }) => ({
         items: all.slice(offset, offset + limit),
         total: all.length,
@@ -177,11 +184,12 @@ describe("ConversationList", () => {
         offset: 0,
       });
       renderList();
+      await settle();
       const user = setupUser();
-      await user.click(
-        await screen.findByRole("checkbox", { name: "Select Chat 1" }, SLOW_STATE_WAIT),
-      );
+      await user.click(screen.getByRole("checkbox", { name: "Select Chat 1" }));
+      await settle();
       await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
+      await settle();
 
       // Two of 3,000 are ticked.
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });
@@ -192,22 +200,57 @@ describe("ConversationList", () => {
       serveConversations(120);
       vi.mocked(updateMessageTagMembers).mockResolvedValue({ added: 120, removed: 0 });
       renderList();
+      await settle();
       const user = setupUser();
-      await screen.findByRole("checkbox", { name: "Select Chat 1" });
+      expect(screen.getByRole("checkbox", { name: "Select Chat 1" })).toBeInTheDocument();
 
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });
       await user.click(box);
-      await waitFor(() => expect(box).toBeChecked());
+      await settle();
+      expect(box).toBeChecked();
 
       await user.click(screen.getByRole("button", { name: "Message Tags" }));
-      await user.click(await screen.findByRole("checkbox", { name: "Holiday" }));
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Holiday" }));
+      await settle();
 
-      await waitFor(() => expect(vi.mocked(updateMessageTagMembers)).toHaveBeenCalled());
+      expect(vi.mocked(updateMessageTagMembers)).toHaveBeenCalled();
       const [id, body] = vi.mocked(updateMessageTagMembers).mock.calls[0] ?? [];
       expect(id).toBe(1);
       expect([...(body?.add ?? [])].sort((a, b) => a - b)).toEqual(
         Array.from({ length: 120 }, (_, i) => i + 1),
       );
+    });
+
+    it("clears every Message Tag on the selected conversations at once", async () => {
+      serveConversations(2, ["Holiday", "Receipts"]);
+      const members = vi.mocked(updateMessageTagMembers);
+      members.mockReset();
+      // The first write never answers, so Clear all reaches the second tag
+      // only if it does not wait for the first.
+      members.mockReturnValueOnce(new Promise(() => {}));
+      members.mockResolvedValue({ added: 0, removed: 2 });
+      renderList();
+      await settle();
+      const user = setupUser();
+      await user.click(screen.getByRole("checkbox", { name: "Select Chat 1" }));
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
+      await settle();
+
+      await user.click(screen.getByRole("button", { name: "Message Tags" }));
+      await settle();
+      await user.click(screen.getByRole("button", { name: "Clear all" }));
+      await settle();
+
+      expect(members).toHaveBeenCalledTimes(2);
+      const writes = members.mock.calls
+        .map(([id, body]) => ({ id, remove: [...(body?.remove ?? [])].sort((a, b) => a - b) }))
+        .sort((a, b) => a.id - b.id);
+      expect(writes).toEqual([
+        { id: 1, remove: [1, 2] },
+        { id: 2, remove: [1, 2] },
+      ]);
     });
 
     it("shows the server's refusal of a Message Tag created from the Message Tags menu", async () => {
@@ -216,33 +259,40 @@ describe("ConversationList", () => {
       const longName = "Trips ".repeat(14).trim();
       vi.mocked(createMessageTag).mockRejectedValue(new ApiError(422, refusal));
       renderList();
+      await settle();
       const user = setupUser();
 
-      await user.click(await screen.findByRole("checkbox", { name: "Select Chat 1" }));
+      await user.click(screen.getByRole("checkbox", { name: "Select Chat 1" }));
+      await settle();
       await user.click(screen.getByRole("button", { name: "Message Tags" }));
+      await settle();
       await user.click(screen.getByRole("button", { name: /Create Message Tag$/ }));
+      await settle();
       await user.type(screen.getByPlaceholderText("Message Tag name"), `${longName}{Enter}`);
+      await settle();
 
-      await waitFor(() =>
-        expect(vi.mocked(createMessageTag)).toHaveBeenCalledWith({ name: longName }),
-      );
-      expect(await screen.findByText(refusal)).toBeInTheDocument();
+      expect(vi.mocked(createMessageTag)).toHaveBeenCalledWith({ name: longName });
+      expect(screen.getByText("Name must be at most 80 characters")).toBeInTheDocument();
       expect(screen.getByPlaceholderText("Message Tag name")).toHaveValue(longName);
     });
 
     it("clears the ticks when the sort changes, so no action reaches part of them", async () => {
       serveConversations(1200);
       renderList();
+      await settle();
       const user = setupUser();
-      await screen.findByRole("checkbox", { name: "Select Chat 1" });
+      expect(screen.getByRole("checkbox", { name: "Select Chat 1" })).toBeInTheDocument();
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });
       await user.click(box);
-      await waitFor(() => expect(box).toBeChecked());
+      await settle();
+      expect(box).toBeChecked();
 
       await user.click(screen.getByRole("button", { name: /^Sort conversations by/ }));
+      await settle();
       await user.click(screen.getByRole("menuitemradio", { name: "Messages" }));
+      await settle();
 
-      await waitFor(() => expect(box).not.toBeChecked());
+      expect(box).not.toBeChecked();
       expect(box).not.toBePartiallyChecked();
       expect(screen.getByRole("checkbox", { name: "Select Chat 1" })).not.toBeChecked();
     });
@@ -251,24 +301,30 @@ describe("ConversationList", () => {
       serveConversations(1200);
       vi.mocked(updateMessageTagMembers).mockResolvedValue({ added: 1200, removed: 0 });
       renderList();
+      await settle();
       const user = setupUser();
-      await screen.findByRole("checkbox", { name: "Select Chat 1" });
+      expect(screen.getByRole("checkbox", { name: "Select Chat 1" })).toBeInTheDocument();
 
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });
       await user.click(box);
-      await waitFor(() => expect(box).toBeChecked());
+      await settle();
+      expect(box).toBeChecked();
 
       await user.click(screen.getByRole("button", { name: "Message Tags" }));
-      await user.click(await screen.findByRole("checkbox", { name: "Holiday" }));
-      await waitFor(() => expect(vi.mocked(updateMessageTagMembers)).toHaveBeenCalledTimes(1));
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Holiday" }));
+      await settle();
+      expect(vi.mocked(updateMessageTagMembers)).toHaveBeenCalledTimes(1);
       // Setting a Message Tag reloads the list, every page of it.
       const lastPageReads = () =>
         vi.mocked(listConversations).mock.calls.filter(([params]) => params.offset === 1040).length;
-      await waitFor(() => expect(lastPageReads()).toBe(2));
-      await waitFor(() => expect(box).toBeChecked());
+      expect(lastPageReads()).toBe(2);
+      expect(box).toBeChecked();
 
-      await user.click(await screen.findByRole("checkbox", { name: "Receipts" }));
-      await waitFor(() => expect(vi.mocked(updateMessageTagMembers)).toHaveBeenCalledTimes(2));
+      await user.click(screen.getByRole("checkbox", { name: "Receipts" }));
+      await settle();
+
+      expect(vi.mocked(updateMessageTagMembers)).toHaveBeenCalledTimes(2);
       const [id, body] = vi.mocked(updateMessageTagMembers).mock.calls[1] ?? [];
       expect(id).toBe(2);
       expect(body?.add).toHaveLength(1200);

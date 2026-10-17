@@ -2,8 +2,8 @@
 //! shows. The smoke tests call `convert_export` directly, so a `run()` that
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{OpenExtractConfig, RunIssue, SourceConfig};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
+use message_crate_core::{OpenExtractConfig, RunIssue, RunIssueStep};
 use std::fs;
 
 const ALL_CONVERSATIONS_CSV: &str = "\
@@ -19,13 +19,9 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     let input = tmp.path().join("all_conversations.csv");
     fs::write(&input, ALL_CONVERSATIONS_CSV).unwrap();
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::OpenExtract(OpenExtractConfig {}),
-    );
+    let config = jsonl_test_run(&[&input], &output, OpenExtractConfig {});
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Sam"), "{written}");
@@ -41,10 +37,10 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     );
 }
 
-/// A CSV the run cannot read is an Import Error naming it, and a chat kept
-/// under a name alone is a note naming it (#1626, #1535).
+/// A CSV the run cannot read is an Import Error naming it, and a conversation
+/// kept under a name alone is a note naming it (#1626, #1535).
 #[test]
-fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_chat() {
+fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_conversation() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in");
     fs::create_dir_all(&input).unwrap();
@@ -60,14 +56,10 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
     )
     .unwrap();
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::OpenExtract(OpenExtractConfig {}),
-    );
-    let issues = collect_issues(&mut config);
+    let mut config = jsonl_test_run(&[&input], &output, OpenExtractConfig {});
+    let issues = collect_issues(&mut config.context);
 
-    crate::run(&config).expect("run");
+    config.run(crate::run).expect("run");
 
     let issues = issues.lock().unwrap();
     let broken = input.join("broken.csv").display().to_string();
@@ -76,8 +68,8 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
         .find(|i| i.kind == message_crate_core::RunIssueKind::Error)
         .expect("an error row");
     assert_eq!(
-        (error.step.as_str(), error.item.as_str()),
-        ("parse", broken.as_str())
+        (error.step, error.item.as_str()),
+        (RunIssueStep::Parse, broken.as_str())
     );
     let notes: Vec<&RunIssue> = issues
         .iter()
@@ -87,9 +79,9 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
         notes,
         [&RunIssue {
             kind: message_crate_core::RunIssueKind::Note,
-            step: "parse".into(),
+            step: RunIssueStep::Parse,
             item: format!("{} (Mystery Person)", input.join("all_conversations.csv").display()),
-            reason: "This chat names its person with no phone number or email address, so the conversation is kept under the name alone.".into(),
+            reason: "This conversation names its person with no phone number or email address, so it is kept under the name alone.".into(),
             conversation: None,
         }]
     );

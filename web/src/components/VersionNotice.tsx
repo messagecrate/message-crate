@@ -1,6 +1,6 @@
+import { useServerInfo } from "../hooks/useServerInfo";
 import { APP_BUILD } from "../lib/build";
 import { productVersionOf, productVersionsDiffer } from "../lib/buildFormat";
-import { useServerInfo } from "../lib/useServerInfo";
 
 /**
  * Says so when this app and its server come from different releases. It blocks

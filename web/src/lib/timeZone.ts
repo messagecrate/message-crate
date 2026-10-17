@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext } from "react";
 
 /**
  * The account's time zone, and the one place the web app reads it.
@@ -9,7 +9,7 @@ import { createContext, useContext } from "react";
  * Settings → Profile, and the same one the server uses for `date:` boundaries
  * and the year filter. Every label in the app reads it through `useTimeZone`,
  * so a message at 11:59 pm on New Year's Eve sits in the old year in the
- * thread, in the year chips, and in search alike.
+ * conversation, in the year chips, and in search alike.
  */
 
 /** The zone this browser is in, or UTC when the runtime will not say. */
@@ -39,8 +39,3 @@ export function yearIn(iso: string, zone: string): number {
 }
 
 export const TimeZoneContext = createContext<string | null>(null);
-
-/** The zone to show message times in. Outside a provider: the browser's. */
-export function useTimeZone(): string {
-  return useContext(TimeZoneContext) ?? browserTimeZone();
-}

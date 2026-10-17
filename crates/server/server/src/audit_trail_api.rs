@@ -12,12 +12,17 @@
 //! (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 
 use axum::extract::State;
+use chrono::Utc;
 use serde::Deserialize;
+use sqlx::SqlitePool;
 
+use crate::api_error::ApiError;
+use crate::auth::Owner;
 use crate::db::audit_trail::{self, AuditEntry, DeletedAccount, Scope};
 use crate::extract::{Json, Query};
-use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageParams, page_params};
-use crate::server::{ApiError, AppState, Owner};
+use crate::paging::{
+    DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageParams, page_from_rows, page_params,
+};
 
 /// Query string of `GET /v1/audit-trail`.
 #[derive(Debug, Deserialize)]
@@ -56,27 +61,22 @@ fn trail_page_params(limit: Option<usize>, offset: Option<usize>) -> Result<Page
 /// and the owner never reads another account's secret (`http-api.md`,
 /// Credentials).
 pub(crate) async fn audit_trail_page(
-    state: &AppState,
+    db: &SqlitePool,
     scope: Scope,
     reader: i64,
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<Json<Page<AuditEntry>>, ApiError> {
     let params = trail_page_params(limit, offset)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let (mut items, total) =
-        audit_trail::page(&mut conn, scope, params.limit, params.offset).await?;
+        audit_trail::page(&mut conn, scope, params.limit, params.offset, Utc::now()).await?;
     for item in &mut items {
         if item.account_id != Some(reader) {
             item.api_token_hint = None;
         }
     }
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_from_rows(items, total, params)))
 }
 
 /// Every account's Audit Trail, newest first: logins, sessions ending,
@@ -105,14 +105,14 @@ pub(crate) async fn audit_trail_page(
     )
 )]
 pub(crate) async fn list_audit_trail(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Owner(auth): Owner,
     Query(query): Query<ListAuditTrailQuery>,
 ) -> Result<Json<Page<AuditEntry>>, ApiError> {
     let scope = query
         .deleted_account_id
         .map_or(Scope::All, Scope::DeletedAccount);
-    audit_trail_page(&state, scope, auth.account_id, query.limit, query.offset).await
+    audit_trail_page(&db, scope, auth.account_id, query.limit, query.offset).await
 }
 
 /// The deleted accounts whose entries the Audit Trail keeps, by username A to
@@ -135,20 +135,15 @@ pub(crate) async fn list_audit_trail(
     )
 )]
 pub(crate) async fn list_deleted_accounts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Owner(_auth): Owner,
     Query(query): Query<ListDeletedAccountsQuery>,
 ) -> Result<Json<Page<DeletedAccount>>, ApiError> {
     let params = trail_page_params(query.limit, query.offset)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let (items, total) =
         audit_trail::deleted_accounts_page(&mut conn, params.limit, params.offset).await?;
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_from_rows(items, total, params)))
 }
 
 #[cfg(test)]

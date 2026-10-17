@@ -30,11 +30,26 @@ assets_converted_dir = "assets_converted"
 # Auth uses per-account Import API tokens from the web Settings UI (not a host secret).
 [server]
 bind = "127.0.0.1:8080"
-# Largest multipart chunk. Default 64 MiB (keep under ~100 MB for Cloudflare).
-# The attachment size limit has no key here: the owner sets it under Server
-# Settings in the app (512 MiB until then). When the limit is smaller than this
-# chunk size, the server uses chunks the size of the limit.
-# asset_part_size = 67108864
+# Largest multipart part. Default 16 MiB, so a whole part arrives inside the
+# default body_total_secs at about 0.45 Mbit/s (keep under ~100 MB for
+# Cloudflare). The attachment size limit has no key here: the owner sets it
+# under Server Settings in the app (512 MiB until then). When the limit is
+# smaller than this part size, the server uses parts the size of the limit.
+# asset_part_size = 16777216
+
+# How long the server waits for a request body: seconds with no byte
+# arriving, and seconds for the whole body. Every body is held to them. A
+# body that meets either is refused (408 Request Timeout, body-stalled), and
+# sending the request again can succeed. For an upload, running the import
+# again continues it. An attachment upload nothing has been written to for
+# body_stall_secs, with no request to it running, is abandoned, and the
+# server removes it. Each must be greater than 0.
+# body_stall_secs = 60
+# body_total_secs = 300
+
+# Seconds a video or audio conversion may go without moving forward in the
+# file before ffmpeg is stopped. Default 120. Must be greater than 0.
+# transcode_stall_secs = 120
 
 # Extra CORS allowed origins. Two kinds of UI need no entry here: the website
 # this process serves (same origin), and the packaged desktop app, whose three

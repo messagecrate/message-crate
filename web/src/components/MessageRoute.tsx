@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { useRouteQuery } from "../hooks/useRouteQuery";
+import { errorLine } from "../lib/apiErrorMessage";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { keys } from "../lib/queryKeys";
 import {
@@ -10,7 +11,6 @@ import {
   openedAt,
   openedMatchedVersions,
 } from "../lib/resultsView";
-import { useRouteQuery } from "../lib/routeQuery";
 import { getConversation } from "../lib/serverApi";
 import MessageView from "../screens/MessageView";
 import ListColumn from "./ListColumn";
@@ -98,12 +98,12 @@ export default function MessageRoute() {
           {conversation ? (
             // The row clicked in the list stands in as placeholder data, so
             // the pane never empties between two conversations. Keyed by id,
-            // the thread starts again for each one: its page, year and find,
+            // the conversation starts again for each one: its page, year and find,
             // and any Move to trash or Contact Group still answering for the
             // last one, which then acts on nothing. Another result in the
             // same conversation starts it again at that message. The versions
             // a result was found by are not in the key: a new search that
-            // drops them keeps the thread where it is (#1648).
+            // drops them keeps the conversation where it is (#1648).
             <MessageView
               key={`${conversation.id}:${at ?? ""}`}
               conversation={conversation}
@@ -126,7 +126,7 @@ export default function MessageRoute() {
           ) : notFound ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <p className="m-0 text-[0.875rem] text-danger">
-                {apiErrorMessage(error, "Conversation not found.")}
+                {errorLine(error, "Conversation not found.")}
               </p>
               <Link
                 to="/"

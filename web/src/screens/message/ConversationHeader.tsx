@@ -3,17 +3,18 @@ import { ToggleButton } from "react-aria-components";
 import { useNavigate } from "react-router-dom";
 import PlainButton from "../../components/PlainButton";
 import PopupMenu, { type PopupMenuItem } from "../../components/PopupMenu";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { useTimeZone } from "../../hooks/useTimeZone";
+import { errorLine } from "../../lib/apiErrorMessage";
+import { conversationName } from "../../lib/conversationName";
 import { formatMonthYear } from "../../lib/formatDate";
 import { conversationServiceLabel } from "../../lib/serviceLabel";
-import { useTimeZone } from "../../lib/timeZone";
-import { useTrashConversation } from "../../lib/trash";
 import type { Conversation } from "../../lib/types";
-import { focusRing } from "../../lib/uiStyles";
+import { focusRingClass } from "../../lib/uiStyles";
 import ContactGroupFromConversation from "./ContactGroupFromConversation";
-import { useContactGroupMembers } from "./contactGroupMembers";
+import { useContactGroupMembers } from "./useContactGroupMembers";
+import { useTrashConversation } from "./useTrashConversation";
 
-const TOOL_CLASS = `cursor-pointer rounded-md border border-border bg-panel px-2.5 py-[0.2rem] text-[0.813rem] text-text hover:bg-hover ${focusRing}`;
+const TOOL_CLASS = `cursor-pointer rounded-md border border-border bg-panel px-2.5 py-[0.2rem] text-[0.813rem] text-text hover:bg-hover ${focusRingClass}`;
 
 /** The menu rows for the people in the conversation; one with a contact opens it. */
 function participantItems(
@@ -80,17 +81,13 @@ export default function ConversationHeader({
   const groupMembers = useContactGroupMembers(conversation);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
 
-  // The conversation just left the list this thread was opened from, so go
-  // back to it rather than leave the person on a thread that has quietly gone.
+  // The conversation just left the list it was opened from, so go back to that
+  // list rather than leave the person on a conversation that has quietly gone.
   const handleMoveToTrash = () => {
     trashConversation.mutate(conversation.id, { onSuccess: () => navigate("/") });
   };
 
-  const title =
-    conversation.label ||
-    (conversation.is_group
-      ? `${conversation.participants.length} participants`
-      : conversation.participants[0]?.name);
+  const title = conversationName(conversation);
   const service = conversationServiceLabel(conversation);
 
   const jumpItems: PopupMenuItem[] = [
@@ -172,7 +169,7 @@ export default function ConversationHeader({
 
       {trashConversation.error && (
         <div className="mt-2 rounded border border-danger-soft-border bg-danger-soft-bg px-3 py-2 text-[0.75rem] text-danger">
-          {apiErrorMessage(trashConversation.error, "Could not move this conversation to trash.")}
+          {errorLine(trashConversation.error, "Could not move this conversation to trash.")}
         </div>
       )}
     </div>

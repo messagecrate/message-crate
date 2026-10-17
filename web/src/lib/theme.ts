@@ -192,10 +192,7 @@ export function parseThemeShare(raw: string): ThemeSeeds | null {
     .map((p) => p.trim())
     .filter(Boolean);
   if (parts.length !== 4) return null;
-  const lightHeader = normalizeHex(parts[0]);
-  const lightAccent = normalizeHex(parts[1]);
-  const darkHeader = normalizeHex(parts[2]);
-  const darkAccent = normalizeHex(parts[3]);
+  const [lightHeader, lightAccent, darkHeader, darkAccent] = parts.map(normalizeHex);
   if (!lightHeader || !lightAccent || !darkHeader || !darkAccent) return null;
   return { lightHeader, lightAccent, darkHeader, darkAccent };
 }
@@ -260,5 +257,5 @@ export function readStoredSeeds(): ThemeSeeds {
   return parseStoredSeeds(readPref(THEME_SEEDS_KEY)) ?? DEFAULT_SEEDS;
 }
 
-// The first-paint theme script lives in web/index.html so the page is not
+// The first-paint theme script lives in web/public/theme.js so the page is not
 // the wrong colors for a frame before React starts.

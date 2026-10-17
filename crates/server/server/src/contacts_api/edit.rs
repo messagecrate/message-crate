@@ -3,7 +3,8 @@
 //! `db::handles`; this module decides which to run and what to refuse.
 
 use anyhow::Result as AnyResult;
-use message_ir::IdentityService;
+use chrono::{DateTime, Utc};
+use ir::IdentityService;
 use sqlx::SqliteConnection;
 
 use super::{
@@ -17,7 +18,7 @@ use crate::db::handles;
 use crate::identity_country::{
     CountryError, SetIdentityCountryRequest, Whose, set_identity_country,
 };
-use crate::server::ApiError;
+use crate::text_caps::{self, MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, capped_text};
 
 /// Why a contact edit did not happen.
 ///
@@ -26,7 +27,7 @@ use crate::server::ApiError;
 /// guessed: `mutate_contact` returned `anyhow` and the handler downcast the
 /// error, calling it a 400 unless it found a `sqlx::Error` underneath. That
 /// made "not a database error" mean "the person's fault", so any other
-/// internal failure — one wrapped in `context`, one from a helper — reached
+/// internal failure (one wrapped in `context`, one from a helper) reached
 /// the person as a 400 wearing an internal sentence.
 #[derive(Debug)]
 pub enum ContactEditError {
@@ -54,13 +55,10 @@ impl From<anyhow::Error> for ContactEditError {
     }
 }
 
-impl From<ContactEditError> for ApiError {
-    fn from(error: ContactEditError) -> Self {
-        match error {
-            ContactEditError::Refused(message) => Self::validation(message),
-            ContactEditError::Country(error) => error.into(),
-            ContactEditError::Failed(cause) => Self::Internal(cause),
-        }
+/// A value over its cap is the person's to shorten.
+impl From<text_caps::TooLong> for ContactEditError {
+    fn from(error: text_caps::TooLong) -> Self {
+        Self::Refused(error.to_string())
     }
 }
 
@@ -122,7 +120,8 @@ impl UpdateContactRequest {
 ///
 /// The existence check, the claim check and the write all run in `tx`, the
 /// caller's write transaction, so an address book load or a delete cannot
-/// change the contact or its identities between them.
+/// change the contact or its identities between them. Each contact the edit
+/// changes is stamped `now`.
 ///
 /// # Errors
 ///
@@ -132,11 +131,13 @@ pub async fn mutate_contact(
     account_id: i64,
     contact_id: i64,
     body: &UpdateContactRequest,
+    now: DateTime<Utc>,
 ) -> Result<bool, ContactEditError> {
     let mut editor = ContactEditor {
         conn: tx,
         account_id,
         contact_id,
+        now,
     };
     if !editor.exists().await? {
         return Ok(false);
@@ -145,12 +146,14 @@ pub async fn mutate_contact(
 }
 
 /// One contact of one account under edit. Every edit reads and writes the
-/// contact's handle links, so the three things they all need live here and
-/// the edits are methods.
+/// contact's handle links, so the things they all need live here and the
+/// edits are methods.
 struct ContactEditor<'a> {
     conn: &'a mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
+    /// The instant stamped on each contact the edit changes.
+    now: DateTime<Utc>,
 }
 
 /// Whether a handle may come to the contact an edit is for.
@@ -186,7 +189,7 @@ impl ContactEditor<'_> {
         set: &SetIdentityCountryRequest,
     ) -> Result<bool, ContactEditError> {
         let whose = Whose::Contact(self.contact_id);
-        set_identity_country(&mut *self.conn, self.account_id, whose, set)
+        set_identity_country(&mut *self.conn, self.account_id, whose, set, self.now)
             .await
             .map_err(ContactEditError::Country)?;
         self.touched().await
@@ -194,7 +197,7 @@ impl ContactEditor<'_> {
 
     /// Name the contact.
     async fn rename(&mut self, name: &str) -> Result<bool, ContactEditError> {
-        let name = name.trim();
+        let name = capped_text("name", name, MAX_PERSON_NAME_CHARS)?;
         if name.is_empty() {
             refuse!("name must not be empty");
         }
@@ -208,6 +211,7 @@ impl ContactEditor<'_> {
             self.contact_id,
             name,
             contacts::Origin::User,
+            self.now,
         )
         .await?;
         Ok(true)
@@ -218,7 +222,11 @@ impl ContactEditor<'_> {
         &mut self,
         add: &AddContactIdentityRequest,
     ) -> Result<bool, ContactEditError> {
-        let raw = add.address.trim();
+        let raw = capped_text(
+            "add_identity.address",
+            &add.address,
+            MAX_IDENTITY_ADDRESS_CHARS,
+        )?;
         if raw.is_empty() {
             refuse!("address must not be empty");
         }
@@ -242,7 +250,11 @@ impl ContactEditor<'_> {
         upd: &UpdateContactIdentityRequest,
     ) -> Result<bool, ContactEditError> {
         let prev = upd.previous_address.trim();
-        let next = upd.address.trim();
+        let next = capped_text(
+            "update_identity.address",
+            &upd.address,
+            MAX_IDENTITY_ADDRESS_CHARS,
+        )?;
         if prev.is_empty() || next.is_empty() {
             refuse!("previous_address and address must not be empty");
         }
@@ -313,12 +325,10 @@ impl ContactEditor<'_> {
     /// A row the account already holds for the address on `platform` is
     /// taken as it is, with the type its import gave it: a WhatsApp internal
     /// id such as `123456789012345@lid` is `other` there, as every import
-    /// types it (#1671). A new row is typed by the address alone (#1432).
-    ///
-    /// # Errors
-    ///
-    /// Refused when `platform` cannot carry a new identity of that type: an
-    /// email address on WhatsApp.
+    /// types it (#1671). A new row is typed the same way, by `platform` and
+    /// then the address's shape ([`handles::handle_type_on`]), so a new `@`
+    /// address on WhatsApp is `other` too (#2709), and every type it takes
+    /// is one `platform` carries.
     async fn handle_row(
         &mut self,
         raw: &str,
@@ -330,9 +340,7 @@ impl ContactEditor<'_> {
         {
             return Ok(id);
         }
-        let handle_type = handles::handle_type_of(raw);
-        handles::check_service_carries(raw, platform, handle_type)
-            .map_err(|refusal| ContactEditError::Refused(refusal.to_string()))?;
+        let handle_type = handles::handle_type_on(raw, platform);
         let (id, _) = handles::upsert_handle_row(
             &mut *self.conn,
             self.account_id,
@@ -382,10 +390,11 @@ impl ContactEditor<'_> {
         Ok(())
     }
 
-    /// Bump the contact's updated-at and report success, for edits that
-    /// changed the links but not the contact row.
+    /// Set the contact's updated-at to the edit's instant and report success,
+    /// for edits that changed the links but not the contact row.
     async fn touched(&mut self) -> Result<bool, ContactEditError> {
-        contacts::touch_contact(&mut *self.conn, self.account_id, self.contact_id).await?;
+        contacts::touch_contact(&mut *self.conn, self.account_id, self.contact_id, self.now)
+            .await?;
         Ok(true)
     }
 }

@@ -1,0 +1,103 @@
+import { type UseMutationResult, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
+import type { AccountProfile } from "../lib/account";
+import { errorLine } from "../lib/apiErrorMessage";
+import { keys } from "../lib/queryKeys";
+import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../lib/routeQueryKey";
+import { getAccountProfile, updateAccountProfile } from "../lib/serverApi";
+import { useAuth } from "./useAuth";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "./useRouteQuery";
+
+/**
+ * The logged-in account's profile.
+ *
+ * This used to be a module-level store with its own in-flight guard, its own
+ * subscriber list, and a `clearAccountProfile` that `AuthProvider.tsx` had to remember
+ * to call on both login and logout. All of that is TanStack Query's now,
+ * and the entry is named with the account, so nothing has to be cleared for
+ * one account to stop seeing another's profile.
+ */
+
+export function useAccountProfile(): {
+  profile: AccountProfile | null;
+  loading: boolean;
+  /** Why the profile could not be loaded, or `""`. `loading` is false by then. */
+  error: string;
+  /** Ask the server for the profile again, after `error`. */
+  retry: () => void;
+} {
+  const { data, isPending, error, refetch } = useRouteQuery(keys.accountProfile.all, (signal) =>
+    getAccountProfile({ signal }),
+  );
+  return {
+    profile: data ?? null,
+    loading: isPending,
+    error: error ? errorLine(error) : "",
+    retry: () => void refetch(),
+  };
+}
+
+/** What a change to the profile can carry: a name, identities to add, identities to drop. */
+export type AccountProfileChange = Parameters<typeof updateAccountProfile>[0];
+
+/**
+ * Change the account’s own name or identities.
+ *
+ * The server answers with the profile as it now stands, so that answer goes
+ * into the entry every screen reads, and the account's cache is marked stale
+ * once the write settles.
+ */
+export function useUpdateAccountProfile(): UseMutationResult<
+  AccountProfile,
+  Error,
+  AccountProfileChange
+> {
+  const cache = useRouteCache();
+  return useRouteMutation<AccountProfile, Error, AccountProfileChange>({
+    mutationFn: (body) => updateAccountProfile(body),
+    onSuccess: (profile) => {
+      cache.set(keys.accountProfile.all, profile);
+    },
+  });
+}
+
+/**
+ * Read the profile outside a render — during login, and before an import
+ * decides whether the backup belongs to this person. Rejects when the server
+ * cannot be read, so each caller decides what a failed read means.
+ *
+ * `accountId` is passed explicitly because login knows the account before the
+ * auth state carries it, and the entry has to land under the key the hook above
+ * will read.
+ */
+export function fetchAccountProfileFor(
+  client: ReturnType<typeof useQueryClient>,
+  accountId: number | null,
+  force = false,
+): Promise<AccountProfile> {
+  const key = routeQueryKey(accountId ?? ANONYMOUS_ACCOUNT, keys.accountProfile.all);
+  if (force) client.removeQueries({ queryKey: key });
+  return client.fetchQuery({ queryKey: key, queryFn: () => getAccountProfile() });
+}
+
+/**
+ * Fill the profile's entry at login or session restore, before the app renders. A profile that
+ * fails to load is left to the guards, which read the entry and hold until it
+ * loads, so the failure is not this caller's to report.
+ */
+export async function warmAccountProfile(
+  client: ReturnType<typeof useQueryClient>,
+  accountId: number,
+): Promise<void> {
+  await fetchAccountProfileFor(client, accountId, true).catch(() => {});
+}
+
+/** The same, for a caller that is already inside the logged-in tree. */
+export function useFetchAccountProfile(): (force?: boolean) => Promise<AccountProfile> {
+  const client = useQueryClient();
+  const { accountId } = useAuth();
+  return useCallback(
+    (force = false) => fetchAccountProfileFor(client, accountId, force),
+    [client, accountId],
+  );
+}

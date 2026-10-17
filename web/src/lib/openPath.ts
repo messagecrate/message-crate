@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { isTauri } from "./tauri-check";
+import { invokeOpenPath } from "./desktop/fs";
+import { isTauri } from "./tauriCheck";
 
 /**
  * Open a file or directory with the operating system's default handler.
@@ -13,5 +13,5 @@ export async function openPathInExplorer(path: string): Promise<void> {
   if (!isTauri()) {
     throw new Error("Opening directories requires the desktop app");
   }
-  await invoke("open_path", { path: trimmed });
+  await invokeOpenPath(trimmed);
 }

@@ -2,13 +2,15 @@
 //! act it is allowed to perform: claiming an unclaimed Message Crate.
 //!
 //! `GET /v1/server` reports this Message Crate's state as a single value rather than the
-//! two facts behind it — whether an owner exists, and whether public
-//! registration is on — so that the rule joining them is stated once, on the
+//! two facts behind it (whether an owner exists, and whether public
+//! registration is on), so that the rule joining them is stated once, on the
 //! server. A browser and a desktop app that each derived the entry screen from
 //! raw fields would be two copies of one rule, free to drift apart.
 //!
 //! It also reports the attachment size limit, because a program that uploads
 //! has to know it before it starts and only the owner reads the settings.
+//! How the database is stored is not part of it: the journal mode SQLite
+//! runs the database in is on the owner's `GET /v1/server/settings` (#2703).
 //!
 //! These are the server's only unauthenticated routes besides logging in and
 //! a stranger's `POST /v1/accounts`, and the first read routes that do not
@@ -16,27 +18,37 @@
 //! whole of the exception. See
 //! `docs/adr/0008-the-owner-holds-no-messages.md`.
 
+use std::sync::Arc;
+
 use axum::extract::State;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 pub(crate) mod log_files;
 pub(crate) mod log_lines;
 
+use crate::api_error::{ApiError, run_blocking};
+use crate::auth::Owner;
+use crate::config::Config;
+use crate::db::demo_account_build::DemoDataSize;
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
-use crate::server::{ApiError, AppState, Created, Owner};
+use crate::request_body::BodyTimeLimits;
+use crate::server::{AppState, Created, DemoState, WalError};
 
 /// Run `read`, a blocking read of the server's log files, off the async
 /// threads, and answer an I/O failure as a `500 Internal Server Error` with `what` as
-/// its cause.
+/// its cause. A read that panics or is canceled is a `500 Internal Server Error`
+/// too, through `run_blocking`, naming the task "log read".
 async fn read_log<T: Send + 'static>(
     what: &'static str,
     read: impl FnOnce() -> std::io::Result<T> + Send + 'static,
 ) -> Result<T, ApiError> {
-    tokio::task::spawn_blocking(read)
-        .await
-        .map_err(|error| ApiError::Internal(error.into()))?
-        .map_err(|error| ApiError::Internal(anyhow::Error::from(error).context(what)))
+    run_blocking("log read", move || {
+        read().map_err(|error| ApiError::Internal(anyhow::Error::from(error).context(what)))
+    })
+    .await
 }
 
 /// What state a Message Crate is in, from outside.
@@ -80,14 +92,32 @@ pub struct Server {
     /// The owner sets it in the server settings. An app reads it here before
     /// it prepares attachments for upload.
     pub asset_max_bytes: u64,
+    /// Seconds a request body, such as an import batch, an attachment, or a
+    /// part of one, may go with no byte arriving before the server stops
+    /// reading it and answers `408 Request Timeout` (`body-stalled`): the config
+    /// file's `[server] body_stall_secs`, 60 unless it sets one.
+    pub body_stall_secs: u64,
+    /// Seconds a whole request body may take to arrive, from the start of
+    /// the read, before the server stops reading it and answers
+    /// `408 Request Timeout` (`body-stalled`): the config file's
+    /// `[server] body_total_secs`, 300 unless it sets one. The desktop
+    /// app's Upload sizes its wait for each upload from it.
+    pub body_total_secs: u64,
 }
 
 /// Body for claiming a Message Crate.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ClaimServerRequest {
-    /// Login username for the owner.
+    /// Login username for the owner, which the server trims: 1 to 128
+    /// characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
+    /// is refused with `422 Unprocessable Entity`.
     pub username: String,
-    /// Password for the owner. Must satisfy the server's password policy.
+    /// Password for the owner: one character or more, at most 128
+    /// characters, counted as characters rather than bytes and not trimmed.
+    /// Empty or over 128 is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 128)]
     pub password: String,
 }
 
@@ -107,26 +137,32 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 /// Report whether this Message Crate is unclaimed, closed, or open.
 ///
 /// Also reports this Message Crate's id, the server's Build, its Schema
-/// Fingerprint, whether the Demo Account exists, and the attachment size
-/// limit.
+/// Fingerprint, whether the Demo Account exists, the attachment size limit,
+/// and the body time limits.
 #[utoipa::path(
     get,
     path = "/v1/server",
     tag = "Server",
     responses((status = 200, body = Server))
 )]
-pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+pub async fn get_server(
+    State(db): State<SqlitePool>,
+    State(demo): State<DemoState>,
+    State(body_time_limits): State<BodyTimeLimits>,
+) -> Result<Json<Server>, ApiError> {
+    let mut conn = db.acquire().await?;
     Ok(Json(Server {
         id: crate::db::schema::message_crate_id(&mut conn).await?,
         state: state_on_conn(&mut conn).await?,
-        demo_account: !state.demo_build.is_building()
+        demo_account: !demo.build.is_building()
             && account_profile::username_for_account(&mut conn, account_profile::DEMO_ACCOUNT_ID)
                 .await?
                 .is_some(),
         version: crate::BUILD.to_string(),
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
+        body_stall_secs: body_time_limits.stall.as_secs(),
+        body_total_secs: body_time_limits.total.as_secs(),
     }))
 }
 
@@ -151,20 +187,18 @@ pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, A
             headers(("Location" = String, description = "`/v1/session`, the Session the claim made"))
         ),
         crate::problem::openapi::StateConflict,
-        crate::problem::openapi::UsernameTaken,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::UsernameTaken
     )
 )]
 pub async fn claim_server(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     headers: axum::http::HeaderMap,
     Json(req): Json<ClaimServerRequest>,
 ) -> Result<Created<crate::session_api::CreateSessionResponse>, ApiError> {
     let username = crate::credentials::require_valid_username(&req.username)?;
-    crate::credentials::check_auth_rate_limit(&state.auth_rate_limits, "claim")?;
-    let password_hash = crate::credentials::hash_owner_password(&req.password)?;
+    let password_hash = crate::credentials::hash_owner_password(&req.password).await?;
 
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     // The claim check and the insert share a write transaction: two requests
     // racing for an unclaimed Message Crate must not both believe they won
     // it, and the second waits for the first and then finds the owner.
@@ -175,6 +209,7 @@ pub async fn claim_server(
         ));
     }
     crate::credentials::require_username_free(&mut tx, &username).await?;
+    let now = Utc::now();
     account_profile::insert_account_at(
         &mut tx,
         account_profile::OWNER_ACCOUNT_ID,
@@ -191,17 +226,19 @@ pub async fn claim_server(
             crate::db::audit_trail::AuditActor::Owner,
             (account_profile::OWNER_ACCOUNT_ID, &username),
         ),
+        now,
     )
     .await?;
     let token = crate::db::session_tokens::open_session(
         &mut tx,
         account_profile::OWNER_ACCOUNT_ID,
         &username,
-        crate::server::connecting_app(&headers).as_ref(),
+        crate::auth::connecting_app(&headers).as_ref(),
+        now,
     )
     .await
     .map_err(ApiError::Internal)?;
-    account_profile::record_login(&mut tx, account_profile::OWNER_ACCOUNT_ID).await?;
+    account_profile::record_login(&mut tx, account_profile::OWNER_ACCOUNT_ID, now).await?;
     tx.commit().await?;
 
     // The claim makes the owner's Session, and that is the resource it names.
@@ -215,22 +252,53 @@ pub async fn claim_server(
     })
 }
 
-/// The server settings the owner controls.
+/// The server settings the owner controls, with the database's journal
+/// beside them, which the owner reads and cannot change.
+// The settings are the `db/` read's own struct, flattened in whole, so its
+// fields are written once (`docs/architecture/http-api.md`, "Code"). Inline,
+// and `Api` in Rust, because the `db/` struct has the wire name too.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ServerSettings {
-    /// Anyone reaching the server may create their own account.
-    pub public_registration: bool,
-    /// The attachment size limit, in bytes: the largest asset the server
-    /// accepts. 536870912 (512 MiB) until the owner changes it.
-    pub asset_max_bytes: u64,
+#[schema(as = ServerSettings)]
+pub struct ApiServerSettings {
+    #[serde(flatten)]
+    #[schema(inline)]
+    pub settings: server_settings::ServerSettings,
+    /// The journal SQLite keeps the database with. Not a setting: the
+    /// server reports it here because only the owner may read it.
+    pub journal: DatabaseJournal,
 }
 
-impl From<server_settings::ServerSettings> for ServerSettings {
-    fn from(settings: server_settings::ServerSettings) -> Self {
-        Self {
-            public_registration: settings.public_registration,
-            asset_max_bytes: settings.asset_max_bytes,
-        }
+/// The journal SQLite keeps the database with, and why it is not
+/// write-ahead logging when it is not.
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct DatabaseJournal {
+    /// The journal mode SQLite runs the database in now, read when the
+    /// request is answered. The server asks for `wal` on every start. Any
+    /// other mode means it could not have it, as when another program held
+    /// the database file, and then every page waits while an import writes.
+    /// Owner Home says so. `null` when the mode could not be read; the
+    /// server's log says why.
+    pub mode: Option<crate::db::engine::JournalMode>,
+    /// The error SQLite gave when the server asked for write-ahead logging
+    /// as it started, in SQLite's words, such as `database is locked`.
+    /// `null` when SQLite gave none: it turned write-ahead logging on, or
+    /// kept another mode without an error.
+    pub wal_error: Option<String>,
+}
+
+/// The settings as the owner reads them: `settings` from the database, and
+/// the database's journal, read on `conn`.
+async fn settings_body(
+    wal_error: &WalError,
+    conn: &mut sqlx::SqliteConnection,
+    settings: server_settings::ServerSettings,
+) -> ApiServerSettings {
+    ApiServerSettings {
+        settings,
+        journal: DatabaseJournal {
+            mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
+            wal_error: wal_error.0.as_deref().map(str::to_owned),
+        },
     }
 }
 
@@ -261,22 +329,26 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
     None
 }
 
-/// Read the server settings.
+/// Read the server settings, and how the database is stored: its journal
+/// mode, and the error SQLite gave when the server asked for write-ahead
+/// logging.
 #[utoipa::path(
     get,
     path = "/v1/server/settings",
     tag = "Server",
     security(("session" = ["owner"])),
     responses(
-        (status = 200, body = ServerSettings),
+        (status = 200, body = ApiServerSettings),
     )
 )]
 pub async fn get_server_settings(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(wal_error): State<WalError>,
     Owner(_auth): Owner,
-) -> Result<Json<ServerSettings>, ApiError> {
-    let mut conn = state.db.acquire().await?;
-    Ok(Json(server_settings::load(&mut conn).await?.into()))
+) -> Result<Json<ApiServerSettings>, ApiError> {
+    let mut conn = db.acquire().await?;
+    let settings = server_settings::load(&mut conn).await?;
+    Ok(Json(settings_body(&wal_error, &mut conn, settings).await))
 }
 
 /// Change the server settings.
@@ -291,37 +363,56 @@ pub async fn get_server_settings(
     security(("session" = ["owner"])),
     request_body = UpdateServerSettingsRequest,
     responses(
-        (status = 200, body = ServerSettings),
+        (status = 200, body = ApiServerSettings),
     )
 )]
 pub async fn update_server_settings(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(wal_error): State<WalError>,
     Owner(_auth): Owner,
     Json(req): Json<UpdateServerSettingsRequest>,
-) -> Result<Json<ServerSettings>, ApiError> {
+) -> Result<Json<ApiServerSettings>, ApiError> {
     // Checked before anything is written, so a refused request changes nothing.
     if let Some(problem) = req.asset_max_bytes.and_then(asset_max_bytes_problem) {
         return Err(ApiError::validation(problem));
     }
-    let mut conn = state.db.acquire().await?;
-    if let Some(enabled) = req.public_registration {
-        let was = server_settings::load(&mut conn).await?.public_registration;
-        server_settings::set_public_registration(&mut conn, enabled).await?;
-        if enabled != was {
-            use crate::db::audit_trail::{AuditAction, AuditActor, NewEntry};
-            let action = if enabled {
-                AuditAction::RegistrationOpened
-            } else {
-                AuditAction::RegistrationClosed
-            };
-            let entry = NewEntry::about_no_account(action, AuditActor::Owner);
-            crate::db::audit_trail::record(&mut conn, &entry).await?;
-        }
+    use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
+    let mut conn = db.acquire().await?;
+    // One write transaction, so each setting is compared with the value it
+    // replaces and recorded once, however many requests arrive together.
+    let mut tx = crate::db::begin_write(&mut conn).await?;
+    let now = Utc::now();
+    let was = server_settings::load(&mut tx).await?;
+    if let Some(enabled) = req.public_registration
+        && enabled != was.public_registration
+    {
+        server_settings::set_public_registration(&mut tx, enabled).await?;
+        let action = if enabled {
+            AuditAction::RegistrationOpened
+        } else {
+            AuditAction::RegistrationClosed
+        };
+        audit_trail::record(
+            &mut tx,
+            &NewEntry::about_no_account(action, AuditActor::Owner),
+            now,
+        )
+        .await?;
     }
-    if let Some(bytes) = req.asset_max_bytes {
-        server_settings::set_asset_max_bytes(&mut conn, bytes).await?;
+    if let Some(bytes) = req.asset_max_bytes
+        && bytes != was.asset_max_bytes
+    {
+        server_settings::set_asset_max_bytes(&mut tx, bytes).await?;
+        let entry = NewEntry::about_no_account(AuditAction::AssetLimitChanged, AuditActor::Owner)
+            .with_details(Details {
+                asset_max_bytes: Some(bytes),
+                ..Details::default()
+            });
+        audit_trail::record(&mut tx, &entry, now).await?;
     }
-    Ok(Json(server_settings::load(&mut conn).await?.into()))
+    let settings = server_settings::load(&mut tx).await?;
+    tx.commit().await?;
+    Ok(Json(settings_body(&wal_error, &mut conn, settings).await))
 }
 
 /// What the whole database holds, summed over every account.
@@ -385,10 +476,10 @@ pub struct AccountMessages {
     )
 )]
 pub async fn get_server_storage(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Owner(_auth): Owner,
 ) -> Result<Json<ServerStorage>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let scope = storage::Scope::AllAccounts;
     let fts_bytes = storage::fts_bytes(&mut conn).await?;
     let messages_bytes = storage::messages_bytes(&mut conn).await?;
@@ -416,25 +507,6 @@ pub async fn get_server_storage(
         fts_bytes,
         accounts,
     }))
-}
-
-/// How much Demo Data the Demo Account holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DemoDataSize {
-    /// About 54,000 messages. A new Message Crate starts with this.
-    Medium,
-    /// About 613,000 messages. Building it takes about a minute.
-    Large,
-}
-
-impl From<DemoDataSize> for demo_seed::DemoSize {
-    fn from(size: DemoDataSize) -> Self {
-        match size {
-            DemoDataSize::Medium => Self::Medium,
-            DemoDataSize::Large => Self::Large,
-        }
-    }
 }
 
 /// Where the Demo Account stands.
@@ -484,13 +556,13 @@ struct DemoBuildShared {
     state: std::sync::Mutex<DemoBuildState>,
     /// The task running the build, for shutdown to wait on.
     task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Cancelled when the server stops.
+    /// Canceled when the server stops.
     stopping: tokio_util::sync::CancellationToken,
     /// Set when the server stops, so the ffmpeg a build runs is killed: the
-    /// build runs it to its end without an `await`, so cancelling the task
+    /// build runs it to its end without an `await`, so canceling the task
     /// alone waits for the conversion (#1729).
     conversions_stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    /// Told each time the state is set, so [`DemoBuild::ended`] looks again.
+    /// Told each time the state is set, so `DemoBuild::ended` looks again.
     ended: tokio::sync::Notify,
 }
 
@@ -542,17 +614,33 @@ impl DemoBuild {
     /// - The server stops ([`DemoBuild::stop`]): it is dropped where it is,
     ///   the Demo Account it left is removed, and the build's record stays
     ///   in the database, so the next start reports the build as failed.
+    ///
+    /// Returns `false`, and runs nothing, once the server has been told to
+    /// stop. [`DemoBuild::stop`] runs as the stop signal comes, while a
+    /// request that marked a build may still be on its way here, and a
+    /// build started after it would be one the stop never waits for
+    /// (#2122). The task slot stays locked from the check to the store, so
+    /// a stop either finds the task or is seen here.
+    #[must_use]
     pub(crate) fn run(
         &self,
         cfg: std::sync::Arc<crate::config::Config>,
         db: sqlx::SqlitePool,
         building: impl std::future::Future<Output = anyhow::Result<u64>> + Send + 'static,
-    ) {
+    ) -> bool {
+        let mut slot = self
+            .0
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.0.stopping.is_cancelled() {
+            return false;
+        }
         let build = self.clone();
         let stopping = self.0.stopping.clone();
-        let task = tokio::spawn(async move {
+        let task = crate::request_id::spawn_in_current_span(async move {
             let started = std::time::Instant::now();
-            let mut building = tokio::spawn(building);
+            let mut building = crate::request_id::spawn_in_current_span(building);
             let ended = tokio::select! {
                 ended = &mut building => ended,
                 () = stopping.cancelled() => {
@@ -601,11 +689,8 @@ impl DemoBuild {
             };
             build.set(state);
         });
-        *self
-            .0
-            .task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(task);
+        *slot = Some(task);
+        true
     }
 
     /// The flag that stops the conversions of a build, for
@@ -624,9 +709,12 @@ impl DemoBuild {
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Stop a running build and wait until it has removed what it wrote.
-    /// The server calls this once it has stopped serving, so the build does
-    /// not end part-way when the process exits.
+    /// Stop a running build and wait until it has removed what it wrote,
+    /// and refuse every build after it ([`DemoBuild::run`]). The server
+    /// calls this as the stop signal comes and waits for it alongside the
+    /// requests in flight, within `STOP_DRAIN_LIMIT`, so the build does not
+    /// end part-way when the process exits. A build still removing what it
+    /// wrote at the limit is cut off, and the next start removes the rest.
     pub(crate) async fn stop(&self) {
         self.stop_conversions();
         self.0.stopping.cancel();
@@ -676,7 +764,8 @@ pub(crate) async fn recover_stopped_demo_build(state: &AppState) -> anyhow::Resu
     let stopped = crate::reset_demo::remove_stopped_demo_build(&state.cfg, &state.db).await?;
     if stopped {
         state
-            .demo_build
+            .demo
+            .build
             .set(DemoBuildState::Failed(STOPPED_DURING_BUILD.into()));
     }
     Ok(stopped)
@@ -684,13 +773,13 @@ pub(crate) async fn recover_stopped_demo_build(state: &AppState) -> anyhow::Resu
 
 /// Where the Demo Account stands: the build in memory first, then the database.
 async fn demo_account_on_conn(
-    state: &AppState,
+    build: &DemoBuild,
     conn: &mut sqlx::SqliteConnection,
 ) -> Result<DemoAccount, ApiError> {
     let exists = account_profile::username_for_account(conn, account_profile::DEMO_ACCOUNT_ID)
         .await?
         .is_some();
-    Ok(match state.demo_build.get() {
+    Ok(match build.get() {
         DemoBuildState::Building(size) => DemoAccount {
             status: DemoAccountStatus::Building,
             size: Some(size),
@@ -727,11 +816,12 @@ async fn demo_account_on_conn(
     responses((status = 200, body = DemoAccount))
 )]
 pub async fn get_demo_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(demo): State<DemoState>,
     Owner(_auth): Owner,
 ) -> Result<Json<DemoAccount>, ApiError> {
-    let mut conn = state.db.acquire().await?;
-    Ok(Json(demo_account_on_conn(&state, &mut conn).await?))
+    let mut conn = db.acquire().await?;
+    Ok(Json(demo_account_on_conn(&demo.build, &mut conn).await?))
 }
 
 /// Add the Demo Account, or reset it.
@@ -754,35 +844,45 @@ pub async fn get_demo_account(
     request_body = ReplaceDemoAccountRequest,
     responses(
         (status = 202, description = "The build has started", body = DemoAccount),
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub async fn replace_demo_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(demo): State<DemoState>,
     Owner(_auth): Owner,
     Json(req): Json<ReplaceDemoAccountRequest>,
 ) -> Result<(axum::http::StatusCode, Json<DemoAccount>), ApiError> {
-    if !state.demo_build.start(req.size) {
+    if !demo.build.start(req.size) {
         return Err(ApiError::StateConflict(
             "the Demo Account is already being built".into(),
         ));
     }
     // The build is marked first, so no login can make a Session after the
     // Sessions are ended here.
-    if let Err(error) = end_demo_sessions(&state).await {
-        state.demo_build.set(DemoBuildState::Idle);
+    if let Err(error) = record_build_and_end_demo_sessions(&db, req.size).await {
+        demo.build.set(DemoBuildState::Idle);
         return Err(error);
     }
     let building = crate::reset_demo::build_demo_account(
-        state.db.clone(),
-        state.cfg.clone(),
+        db.clone(),
+        cfg.clone(),
         req.size.into(),
-        state.demo_bundle_generator,
-        state.demo_build.conversions_stopped(),
+        demo.bundle_generator,
+        demo.build.conversions_stopped(),
     );
-    state
-        .demo_build
-        .run(state.cfg.clone(), state.db.clone(), building);
+    // A server told to stop after the build was marked starts no build the
+    // stop would not wait for. The build's record is written, so the next
+    // start reports it as stopped, as it reports a build cut off part-way.
+    if !demo.build.run(cfg.clone(), db.clone(), building) {
+        demo.build
+            .set(DemoBuildState::Failed(STOPPED_DURING_BUILD.into()));
+        return Err(ApiError::ServerStopping(
+            "the server is stopping, so it did not start the Demo Account build; start it again once the server is running".into(),
+        ));
+    }
     Ok((
         axum::http::StatusCode::ACCEPTED,
         Json(DemoAccount {
@@ -793,15 +893,23 @@ pub async fn replace_demo_account(
     ))
 }
 
-/// End every Session of the Demo Account, so nobody is inside it while it
-/// is removed and built again.
-async fn end_demo_sessions(state: &AppState) -> Result<(), ApiError> {
-    let mut conn = state.db.acquire().await?;
+/// Record the owner's build of the Demo Account in the Audit Trail, then end
+/// every Session of the Demo Account, so nobody is inside it while it is
+/// removed and built again ([`crate::db::audit_trail::record_demo_build`]).
+async fn record_build_and_end_demo_sessions(
+    db: &SqlitePool,
+    size: DemoDataSize,
+) -> Result<(), ApiError> {
+    use crate::db::audit_trail::{self, AuditActor};
+    let mut conn = db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
+    let now = Utc::now();
+    audit_trail::record_demo_build(&mut tx, AuditActor::Owner, size, now).await?;
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,
         account_profile::DEMO_ACCOUNT_ID,
-        crate::db::audit_trail::AuditActor::Owner,
+        AuditActor::Owner,
+        now,
     )
     .await
     .map_err(ApiError::Internal)?;

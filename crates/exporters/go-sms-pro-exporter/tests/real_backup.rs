@@ -14,7 +14,7 @@
 
 use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::{csv_files, csv_rows};
-use message_crate_core::{ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, OutputFormat};
 use std::path::PathBuf;
 
 #[test]
@@ -29,13 +29,12 @@ fn real_backup_exports_clean_conversations() {
     let report = convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &[owner],
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
     .unwrap();
     println!("{report:#?}");

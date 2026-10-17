@@ -2,16 +2,17 @@ import ImportSummaryPanel, {
   type ImportSummaryView,
 } from "../../../components/import/ImportSummaryPanel";
 import PlainButton from "../../../components/PlainButton";
+import { formatBytes } from "../../../lib/formatBytes";
 import ImportContactsPanel from "./ImportContactsPanel";
+import ImportNotMadePanel from "./ImportNotMadePanel";
 import ImportRunLog from "./ImportRunLog";
 import type { AccountImportRun } from "./storageUtils";
 import {
-  formatBytes,
   formatImportDate,
   importBackup,
   importStatusLabel,
-  sectionHint,
-  sectionTitle,
+  sectionHintClass,
+  sectionTitleClass,
 } from "./storageUtils";
 
 export default function ImportDetailPanel({
@@ -43,7 +44,7 @@ export default function ImportDetailPanel({
     <div id={detailId} className="bg-surface p-4 contain-inline-size">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className={sectionTitle}>Import details</h3>
+          <h3 className={sectionTitleClass}>Import details</h3>
           {selectedImport ? (
             <div className="mt-2 flex flex-wrap gap-2 text-[0.75rem]">
               <span className="rounded-full border border-border bg-elevated px-2.5 py-1 text-text">
@@ -57,7 +58,7 @@ export default function ImportDetailPanel({
               </span>
             </div>
           ) : (
-            <p className={sectionHint}>Loading import details…</p>
+            <p className={sectionHintClass}>Loading import details…</p>
           )}
         </div>
         <PlainButton
@@ -129,6 +130,13 @@ export default function ImportDetailPanel({
               </p>
             )}
           </div>
+          {"not_made_attachments" in selectedImport ? (
+            <ImportNotMadePanel
+              attachmentCount={selectedImport.written_attachment_count}
+              counts={selectedImport.not_made_counts}
+              attachments={selectedImport.not_made_attachments}
+            />
+          ) : null}
           <ImportRunLog importRunId={selectedImport.id} />
         </>
       ) : null}

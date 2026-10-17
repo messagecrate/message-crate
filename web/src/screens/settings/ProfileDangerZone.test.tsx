@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
 import { routeQueryKey } from "../../lib/routeQueryKey";
-import { testQueryClient } from "../../test/providers";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { authModule, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { fill, setupUser } from "../../test/user";
 import { ProfileDangerZone } from "./ProfileDangerZone";
@@ -17,7 +18,7 @@ const logout = vi.hoisted(() => vi.fn());
 const desktop = vi.hoisted(() => ({ value: false }));
 const accountRunDirectories = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => desktop.value,
 }));
 
@@ -26,11 +27,9 @@ vi.mock("../../lib/importRun", async (importOriginal) => ({
   accountRunDirectories: (...a: unknown[]) => accountRunDirectories(...a),
 }));
 
-vi.mock("../../lib/auth", () => ({
-  useAuth: () => ({ accountId: 7, logout }),
-}));
+vi.mock("../../hooks/useAuth", () => authModule(() => ({ accountId: 7, logout })));
 
-vi.mock("../owner/useOwnerAccounts", () => ({
+vi.mock("../../hooks/useOwnerAccounts", () => ({
   useDeleteAccount: () => ({ mutateAsync: vi.fn() }),
   useDeleteAccountMessages: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -42,6 +41,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
 }));
 
 beforeEach(() => {
+  startFakeClock();
   deleteAccount.mockReset();
   deleteAllMessages.mockReset();
   logout.mockReset();
@@ -49,11 +49,20 @@ beforeEach(() => {
   accountRunDirectories.mockReset();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
+
+const UNREADABLE_DIRECTORY = {
+  path: "/Users/carol/Documents/staging",
+  reason:
+    "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings.",
+};
 
 describe("ProfileDangerZone", () => {
   it("shows the server's refusal inside the delete account dialog", async () => {
-    deleteAccount.mockRejectedValue(new Error("Current password is incorrect."));
+    deleteAccount.mockRejectedValue(new Error("current password is incorrect"));
     const user = setupUser();
     render(
       <QueryClientProvider client={testQueryClient()}>
@@ -76,15 +85,17 @@ describe("ProfileDangerZone", () => {
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: "wrong" });
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "Current password is incorrect.",
-    );
+    await settle();
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Current password is incorrect");
     expect(logout).not.toHaveBeenCalled();
   });
 
   it("names the directories of the account's Import Runs on this computer, and deletes them with the account", async () => {
     desktop.value = true;
-    accountRunDirectories.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
+    accountRunDirectories.mockResolvedValue({
+      found: ["/home/carol/staging/iphone-2026-10-04"],
+      unreadable: [UNREADABLE_DIRECTORY],
+    });
     deleteAccount.mockResolvedValue(undefined);
     const user = setupUser();
     render(
@@ -103,21 +114,25 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
-    expect(
-      await within(dialog).findByText("/home/carol/staging/iphone-2026-10-04"),
-    ).toBeInTheDocument();
+    await settle();
+    expect(within(dialog).getByText("/home/carol/staging/iphone-2026-10-04")).toBeInTheDocument();
     expect(dialog).toHaveTextContent(
       "Deleting the account also deletes the directories of its Import Runs on this computer:",
     );
+    // One the app may not read cannot be deleted, so it is named once the
+    // account is deleted, not here.
+    expect(dialog).not.toHaveTextContent(UNREADABLE_DIRECTORY.path);
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
-    await waitFor(() =>
-      expect(logout).toHaveBeenCalledWith({
-        ask: false,
-        deletedAccountDirectories: ["/home/carol/staging/iphone-2026-10-04"],
-      }),
-    );
+    await settle();
+    expect(logout).toHaveBeenCalledWith({
+      ask: false,
+      deletedAccountDirectories: {
+        found: ["/home/carol/staging/iphone-2026-10-04"],
+        unreadable: [UNREADABLE_DIRECTORY],
+      },
+    });
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: undefined });
   });
 
@@ -127,7 +142,10 @@ describe("ProfileDangerZone", () => {
     // has not answered yet.
     const client = testQueryClient();
     seedEntries(client, 7, [keys.imports.runDirectories]);
-    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), ["/home/carol/old"]);
+    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), {
+      found: ["/home/carol/old"],
+      unreadable: [],
+    });
     accountRunDirectories.mockReturnValue(new Promise(() => {}));
     const user = setupUser();
     render(
@@ -160,7 +178,10 @@ describe("ProfileDangerZone", () => {
     deleteAccount.mockResolvedValue(undefined);
     const client = testQueryClient();
     seedEntries(client, 7, [keys.imports.runDirectories]);
-    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), ["/home/carol/old"]);
+    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), {
+      found: ["/home/carol/old"],
+      unreadable: [],
+    });
     accountRunDirectories.mockRejectedValue(new Error("path_stat failed"));
     const user = setupUser();
     render(
@@ -179,13 +200,16 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
-    expect(await within(dialog).findByText(/so it deletes none/)).toBeInTheDocument();
+    await settle();
+    expect(within(dialog).getByText(/so it deletes none/)).toBeInTheDocument();
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
-    await waitFor(() =>
-      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
-    );
+    await settle();
+    expect(logout).toHaveBeenCalledWith({
+      ask: false,
+      deletedAccountDirectories: { found: [], unreadable: [] },
+    });
   });
 
   it("deletes no directory outside the desktop app", async () => {
@@ -211,9 +235,11 @@ describe("ProfileDangerZone", () => {
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
-    await waitFor(() =>
-      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
-    );
+    await settle();
+    expect(logout).toHaveBeenCalledWith({
+      ask: false,
+      deletedAccountDirectories: { found: [], unreadable: [] },
+    });
     expect(accountRunDirectories).not.toHaveBeenCalled();
   });
 
@@ -299,7 +325,8 @@ describe("ProfileDangerZone", () => {
     );
 
     expect(deleteAllMessages).toHaveBeenCalledWith({ confirm: true });
-    await waitFor(() => expect(freshEntries(client, 7, shown)).toEqual([]));
+    await settle();
+    expect(freshEntries(client, 7, shown)).toEqual([]);
   });
 
   it("offers neither delete when both are fixed for the account itself", async () => {

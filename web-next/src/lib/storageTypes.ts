@@ -18,9 +18,10 @@ export type TopAttachmentItem = {
   originalName: string | null;
   mimeType: string | null;
   sizeBytes: number;
-  conversationId: number;
+  /** `null`, with `chatIdentifier`, only when the owner reads another account. */
+  conversationId: number | null;
   conversationTitle: string | null;
-  chatIdentifier: string;
+  chatIdentifier: string | null;
 };
 
 export type StorageUsage = {

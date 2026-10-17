@@ -1,15 +1,16 @@
 use super::*;
 use crate::db::conversation_messages::{MessageSort, messages_from_sql};
 use crate::db::exports::ExportCounts;
-use crate::paging::SortKey;
+use crate::paging::{PageParams, SortKey};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture, delete_status,
-    expect_problem, fixture_with_account, get_json, get_raw, get_status, post_created_json,
-    post_json, post_raw, post_status, register_via_api, seed_conversation, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture,
+    claim_as_owner, delete_status, expect_problem, fixture_with_account, get_json, get_raw,
+    get_status, patch_status, post_created_json, post_json, post_json_raw, post_status,
+    register_via_api, seed_conversation, stored_time, test_fixture,
 };
+use api_types::ExportQueryList;
 use axum::http::StatusCode;
-use message_crate_api_types::ExportQueryList;
 use serde_json::{Value, json};
 
 /// The default sort every unit test below pages with.
@@ -33,19 +34,19 @@ async fn page(
         None,
         crate::search::tests::clock(),
         &crate::db::audit_trail::CredentialUsed::Session(None),
+        crate::test_support::fixed_instant(),
     )
     .await?;
-    export_messages(
+    Ok(export_messages(
         conn,
         ExportPageOpts {
             export_id: run.id,
             total: u64::try_from(run.message_count).unwrap(),
-            limit,
-            offset,
+            page: PageParams { limit, offset },
             order: oldest_first(),
         },
     )
-    .await
+    .await?)
 }
 
 /// The four counts a run over `scope` records.
@@ -57,6 +58,7 @@ async fn counts_of(conn: &mut SqliteConnection, scope: &ExportScope) -> ExportCo
         None,
         crate::search::tests::clock(),
         &crate::db::audit_trail::CredentialUsed::Session(None),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -119,7 +121,7 @@ async fn a_query_scope_takes_the_search_language() {
     );
 }
 
-/// A fixture with account `alice` (id 101) and two individual conversations
+/// A fixture with account `alice` (id 101) and two one-to-one conversations
 /// (`+1555`, `+1666`), each holding one SMS message ("hello one" in the
 /// first, "hello two" in the second) with ids 1 and 2. Returns the
 /// conversation ids the seeder made.
@@ -135,7 +137,7 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
         &SeedConversation {
             account_id: account,
             handle: "+1555",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[],
@@ -147,7 +149,7 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
         &SeedConversation {
             account_id: account,
             handle: "+1666",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[],
@@ -169,7 +171,7 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
         id: Some(2),
         source: "sms",
         service: Some("sms"),
-        timestamp: "2020-01-02T00:00:00.000Z",
+        timestamp: stored_time("2020-01-02T00:00:00.000Z"),
         body: Some("hello two"),
         ..MessageRow::new(101, conv2)
     }
@@ -187,7 +189,7 @@ async fn add_message(conn: &mut SqliteConnection, id: i64, conversation: i64, da
         id: Some(id),
         source: "sms",
         service: Some("sms"),
-        timestamp: &timestamp,
+        timestamp: stored_time(&timestamp),
         body: Some(body),
         ..MessageRow::new(101, conversation)
     }
@@ -284,7 +286,7 @@ async fn a_conversations_query_hides_what_the_conversations_list_hides() {
         &SeedConversation {
             account_id: bob,
             handle: "+1777",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-b.jsonl",
             messages: &[],
@@ -296,7 +298,7 @@ async fn a_conversations_query_hides_what_the_conversations_list_hides() {
         id: Some(9),
         source: "sms",
         service: Some("sms"),
-        timestamp: "2020-01-05T00:00:00.000Z",
+        timestamp: stored_time("2020-01-05T00:00:00.000Z"),
         body: Some("hello bob"),
         ..MessageRow::new(202, bobs)
     }
@@ -395,19 +397,17 @@ async fn a_selection_refuses_ids_the_account_does_not_hold_naming_them() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (id, account_id, chat_handle_id, conversation_type, source_file)
-         VALUES (99, 102, $1, 'individual', 'bob.jsonl')",
-    )
-    .bind(bob_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(99),
+        ..ConversationRow::new(102, bob_handle)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         id: Some(99),
         source: "sms",
         service: Some("sms"),
-        timestamp: "2020-02-01T00:00:00.000Z",
+        timestamp: stored_time("2020-02-01T00:00:00.000Z"),
         body: Some("bob secret"),
         ..MessageRow::new(102, 99)
     }
@@ -530,11 +530,11 @@ async fn export_includes_attachment_missing_reason() {
     assert_eq!(res.items.len(), 1);
     assert_eq!(res.items[0].service.as_deref(), Some("sms"));
     assert_eq!(res.items[0].attachments.len(), 1);
-    let att = &res.items[0].attachments[0];
-    assert!(att.sha256.is_none());
-    assert_eq!(att.missing_reason.as_deref(), Some("file_missing"));
-    assert_eq!(att.original_name.as_deref(), Some("gone.bin"));
-    assert_eq!(att.mime_type.as_deref(), Some("image/png"));
+    let attachment = &res.items[0].attachments[0];
+    assert!(attachment.sha256.is_none());
+    assert_eq!(attachment.missing_reason.as_deref(), Some("file_missing"));
+    assert_eq!(attachment.original_name.as_deref(), Some("gone.bin"));
+    assert_eq!(attachment.mime_type.as_deref(), Some("image/png"));
 }
 
 #[tokio::test]
@@ -575,7 +575,7 @@ async fn a_comma_list_of_conversation_ids_exports_exactly_those_conversations() 
         &SeedConversation {
             account_id: 101,
             handle: "+1777",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[],
@@ -687,19 +687,19 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-01T00:00:00.000Z",
+                    timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                     is_from_me: true,
                     body: "pizza tonight",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-02T00:00:00.000Z",
+                    timestamp: stored_time("2020-01-02T00:00:00.000Z"),
                     is_from_me: false,
                     body: "salad tomorrow",
                 },
@@ -712,12 +712,12 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550101",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-03T00:00:00.000Z",
+                timestamp: stored_time("2020-01-03T00:00:00.000Z"),
                 is_from_me: false,
                 body: "the menu",
             }],
@@ -861,7 +861,7 @@ async fn creating_a_run_records_the_scope_the_tool_and_the_counts() {
 }
 
 #[tokio::test]
-async fn a_scope_the_server_cannot_honour_is_refused_and_no_run_is_recorded() {
+async fn a_scope_the_server_cannot_honor_is_refused_and_no_run_is_recorded() {
     let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
     let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&fixture.state, bob.account_id).await;
@@ -873,13 +873,11 @@ async fn a_scope_the_server_cannot_honour_is_refused_and_no_run_is_recorded() {
             .await
             .unwrap();
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "selection", "conversation_ids": [bobs_conversation, 4242] } })
-            .to_string(),
+        json!({ "scope": { "kind": "selection", "conversation_ids": [bobs_conversation, 4242] } }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -890,44 +888,40 @@ async fn a_scope_the_server_cannot_honour_is_refused_and_no_run_is_recorded() {
         )]
     );
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "selection" } }).to_string(),
+        json!({ "scope": { "kind": "selection" } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "query", "list": "messages", "q": " " } }).to_string(),
+        json!({ "scope": { "kind": "query", "list": "messages", "q": " " } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "query", "list": "messages", "q": "wibble:yes" } }).to_string(),
+        json!({ "scope": { "kind": "query", "list": "messages", "q": "wibble:yes" } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::SearchQueryInvalid);
 
     // A body that parsed as JSON and then named a kind the server does not
     // have broke a rule, which is 422 like every other field.
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "backup" } }).to_string(),
+        json!({ "scope": { "kind": "backup" } }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -950,14 +944,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
         json!({ "kind": "query", "list": "messages", "q": "pizza" }),
     )
     .await;
-    let cancelled: Value = post_json(
-        &fixture.state,
-        &format!("/v1/exports/{}/cancel", first["id"]),
-        &alice.token,
-        json!({}),
-    )
-    .await;
-    assert_eq!(cancelled["status"], "cancelled");
+    // The second start closed the first as `canceled`.
 
     let list: Value = get_json(&fixture.state, "/v1/exports", &alice.token).await;
     assert_eq!(list["total"], 2);
@@ -966,7 +953,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
     let listed: Vec<&Value> = list["items"].as_array().unwrap().iter().collect();
     assert_eq!(listed[0]["id"], second["id"], "newest first: {list}");
     assert_eq!(listed[1]["id"], first["id"]);
-    assert_eq!(listed[1]["status"], "cancelled");
+    assert_eq!(listed[1]["status"], "canceled");
 
     let oldest_first: Value =
         get_json(&fixture.state, "/v1/exports?sort=started_at", &alice.token).await;
@@ -980,11 +967,9 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
     assert_eq!(
         problem.errors.unwrap(),
-        [
-            "status: unknown value 'bogus'; accepted values are running, completed, failed, cancelled"
-        ]
+        ["status: unknown value 'bogus'; accepted values are running, completed, failed, canceled"]
     );
-    let (status, text) = get_raw(&fixture.state, "/v1/exports?sort=colour", &alice.token).await;
+    let (status, text) = get_raw(&fixture.state, "/v1/exports?sort=color", &alice.token).await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
@@ -1006,12 +991,11 @@ async fn a_run_belongs_to_its_account() {
         expect_problem(status, &text, ProblemType::NotFound);
     }
     for action in ["complete", "cancel"] {
-        let (status, text) = post_raw(
+        let (status, text) = post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/{action}"),
             &bob.token,
-            "application/json",
-            "{}",
+            json!({ "status": "completed" }),
         )
         .await;
         expect_problem(status, &text, ProblemType::NotFound);
@@ -1111,7 +1095,7 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(completed["id"], id);
@@ -1131,12 +1115,11 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
         Some(format!("export {id} is not running (status=completed)").as_str())
     );
     for action in ["complete", "cancel"] {
-        let (status, text) = post_raw(
+        let (status, text) = post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/{action}"),
             &alice.token,
-            "application/json",
-            "{}",
+            json!({ "status": "completed" }),
         )
         .await;
         expect_problem(status, &text, ProblemType::StateConflict);
@@ -1144,24 +1127,72 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
 
     let other = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let other_id = other["id"].as_i64().unwrap();
-    let cancelled: Value = post_json(
+    let canceled: Value = post_json(
         &fixture.state,
         &format!("/v1/exports/{other_id}/cancel"),
         &alice.token,
         json!({}),
     )
     .await;
-    assert_eq!(cancelled["status"], "cancelled");
-    assert!(cancelled["finished_at"].is_string());
-    let (status, text) = post_raw(
+    assert_eq!(canceled["status"], "canceled");
+    assert!(canceled["finished_at"].is_string());
+    let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/exports/{other_id}/complete"),
         &alice.token,
-        "application/json",
-        "{}",
+        json!({ "status": "completed" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::StateConflict);
+}
+
+/// A run an error stopped is recorded as `failed`, never as `canceled`,
+/// which says the person gave it up (#2069). `complete` takes only the two
+/// outcomes it records, and a refused status leaves the run open.
+#[tokio::test]
+async fn complete_records_a_failed_run_as_failed() {
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let id = run["id"].as_i64().unwrap();
+
+    for status in ["running", "canceled", "bogus"] {
+        let (code, text) = post_json_raw(
+            &fixture.state,
+            &format!("/v1/exports/{id}/complete"),
+            &alice.token,
+            json!({ "status": status }),
+        )
+        .await;
+        expect_problem(code, &text, ProblemType::ValidationFailed);
+    }
+    let still: Value = get_json(&fixture.state, &format!("/v1/exports/{id}"), &alice.token).await;
+    assert_eq!(still["status"], "running");
+
+    let failed: Value = post_json(
+        &fixture.state,
+        &format!("/v1/exports/{id}/complete"),
+        &alice.token,
+        json!({ "status": "failed" }),
+    )
+    .await;
+    assert_eq!(failed["status"], "failed");
+    assert!(failed["finished_at"].is_string(), "{failed}");
+
+    let listed: Value = get_json(&fixture.state, "/v1/exports?status=failed", &alice.token).await;
+    assert_eq!(listed["total"], 1);
+    assert_eq!(listed["items"][0]["id"], id);
+    let (code, text) = post_json_raw(
+        &fixture.state,
+        &format!("/v1/exports/{id}/complete"),
+        &alice.token,
+        json!({ "status": "completed" }),
+    )
+    .await;
+    let problem = expect_problem(code, &text, ProblemType::StateConflict);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some(format!("export {id} is not running (status=failed)").as_str())
+    );
 }
 
 /// Open a write on `other` that completes run `id` the way `complete` does,
@@ -1196,12 +1227,11 @@ async fn a_close_that_loses_a_race_names_how_the_run_ended() {
     complete_elsewhere(&mut other, id).await;
     let (status, text) = crate::db::write_tx::commit_during(
         other,
-        post_raw(
+        post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/cancel"),
             &alice.token,
-            "application/json",
-            "{}",
+            json!({}),
         ),
     )
     .await;
@@ -1269,7 +1299,7 @@ async fn an_export_token_reads_messages_only_through_a_run() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(closed["status"], "completed");
@@ -1287,19 +1317,16 @@ async fn an_export_token_reads_messages_only_through_a_run() {
     }
 
     let without_export = api_token(&fixture, &alice, false).await;
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &without_export,
-        "application/json",
-        json!({ "scope": { "kind": "everything" } }).to_string(),
+        json!({ "scope": { "kind": "everything" } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::InsufficientScope);
-    assert_eq!(
-        get_status(&fixture.state, "/v1/exports", &without_export).await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = get_raw(&fixture.state, "/v1/exports", &without_export).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 }
 
 // ── A run is a snapshot ──────────────────────────────────────────────────────
@@ -1368,7 +1395,7 @@ async fn insert_message(
     let mut conn = fixture.conn().await;
     MessageRow {
         service: Some("imessage"),
-        timestamp,
+        timestamp: stored_time(timestamp),
         body: Some("arrived"),
         import_id,
         ..MessageRow::new(account, conversation)
@@ -1493,7 +1520,7 @@ async fn a_run_hands_over_exactly_what_matched_when_it_started() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(closed["message_count"], json!(delivered.len()));
@@ -1545,7 +1572,7 @@ async fn a_deleted_message_leaves_its_place_empty_and_closing_drops_the_list() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(closed["message_count"], 3, "the record keeps what matched");
@@ -1558,7 +1585,7 @@ async fn a_deleted_message_leaves_its_place_empty_and_closing_drops_the_list() {
     let other = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let other_id = other["id"].as_i64().unwrap();
     assert_eq!(snapshot_rows(&fixture, other_id).await, 1);
-    let _cancelled: Value = post_json(
+    let _canceled: Value = post_json(
         &fixture.state,
         &format!("/v1/exports/{other_id}/cancel"),
         &alice.token,
@@ -1568,7 +1595,7 @@ async fn a_deleted_message_leaves_its_place_empty_and_closing_drops_the_list() {
     assert_eq!(
         snapshot_rows(&fixture, other_id).await,
         0,
-        "cancelling drops the list"
+        "canceling drops the list"
     );
 }
 
@@ -1608,4 +1635,275 @@ async fn import_last_keeps_meaning_the_import_that_was_last_at_creation() {
     let (ids, total) = run_page_ids(&fixture, &alice.token, id, "").await;
     assert_eq!(ids, vec![from_first]);
     assert_eq!(total, 1);
+}
+
+/// Starting an Export Run for an account deleted after its credential was
+/// checked is refused as a credential whose account is gone, and puts no
+/// row back. Before #2061 the run made the row again, under the deleted id
+/// with no password.
+#[tokio::test]
+async fn an_export_run_for_a_deleted_account_brings_no_account_back() {
+    let (fixture, alice) = fixture_with_account().await;
+    let mut conn = fixture.conn().await;
+    crate::db::account_profile::delete_account(
+        &mut conn,
+        alice.account_id,
+        crate::db::audit_trail::AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+
+    let err = start_export_run(
+        &mut conn,
+        alice.account_id,
+        &query(""),
+        None,
+        crate::search::tests::clock(),
+        &crate::db::audit_trail::CredentialUsed::Session(None),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .expect_err("the deleted account's run must be refused");
+
+    assert!(matches!(err, ApiError::TokenRefused(_)), "{err:?}");
+    assert!(
+        !crate::db::account_profile::account_exists(&mut conn, alice.account_id)
+            .await
+            .unwrap(),
+        "the refused run put the deleted account's row back"
+    );
+}
+
+/// The `export_run_closed` entries about `account`, newest first, read at
+/// `now`.
+async fn closures(
+    fixture: &TestFixture,
+    account: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Vec<crate::db::audit_trail::AuditEntry> {
+    let mut conn = fixture.conn().await;
+    let (entries, _) = crate::db::audit_trail::page(
+        &mut conn,
+        crate::db::audit_trail::Scope::Account(account),
+        100,
+        0,
+        now,
+    )
+    .await
+    .unwrap();
+    entries
+        .into_iter()
+        .filter(|e| e.action == crate::db::audit_trail::AuditAction::ExportRunClosed)
+        .collect()
+}
+
+/// An account has one running Export Run: a second start closes the first
+/// as `canceled` and deletes its list, a page of the first is refused as for
+/// any run that is not running, and the Audit Trail says a new Export
+/// replaced it (#2080).
+#[tokio::test]
+async fn a_second_start_closes_the_first_and_its_list_goes() {
+    use crate::db::audit_trail::{AuditActor, AuditReason};
+
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let first = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let first_id = first["id"].as_i64().unwrap();
+    assert_eq!(snapshot_rows(&fixture, first_id).await, 3);
+
+    let second = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let second_id = second["id"].as_i64().unwrap();
+    assert_eq!(second["status"], "running");
+
+    let first: Value = get_json(
+        &fixture.state,
+        &format!("/v1/exports/{first_id}"),
+        &alice.token,
+    )
+    .await;
+    assert_eq!(first["status"], "canceled");
+    assert!(first["finished_at"].is_string(), "{first}");
+    assert_eq!(snapshot_rows(&fixture, first_id).await, 0);
+    assert_eq!(snapshot_rows(&fixture, second_id).await, 3);
+
+    let (status, text) = get_raw(
+        &fixture.state,
+        &format!("/v1/exports/{first_id}/messages"),
+        &alice.token,
+    )
+    .await;
+    let problem = expect_problem(status, &text, ProblemType::StateConflict);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some(format!("export {first_id} is not running (status=canceled)").as_str())
+    );
+    let (ids, total) = run_page_ids(&fixture, &alice.token, second_id, "").await;
+    assert_eq!((ids.len(), total), (3, 3));
+
+    let closed = closures(&fixture, alice.account_id, chrono::Utc::now()).await;
+    assert_eq!(closed.len(), 1, "{closed:?}");
+    assert_eq!(closed[0].reason, Some(AuditReason::Replaced));
+    assert_eq!(closed[0].actor, AuditActor::Holder);
+    assert_eq!(closed[0].export_run_id, Some(first_id));
+    assert_eq!(closed[0].username.as_deref(), Some(alice.username.as_str()));
+
+    // The index holds the rule on its own: a second running row is refused.
+    let mut conn = fixture.conn().await;
+    let reopened = sqlx::query("UPDATE exports SET status = 'running' WHERE id = $1")
+        .bind(first_id)
+        .execute(&mut *conn)
+        .await;
+    assert!(reopened.is_err(), "two running Export Runs for one account");
+}
+
+/// A running Export Run with no page read for an hour is closed as
+/// canceled and its list deleted; one whose page was read within the hour
+/// is left running. The times are passed in, never waited for (#2080).
+#[tokio::test]
+async fn a_run_idle_past_the_hour_is_closed_and_one_read_within_it_is_not() {
+    use crate::db::audit_trail::{AuditActor, AuditReason};
+    use chrono::TimeDelta;
+
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let account = alice.account_id;
+    let started = crate::test_support::fixed_instant();
+    let minutes = |m: i64| started + TimeDelta::minutes(m);
+    let mut conn = fixture.conn().await;
+    let run = start_export_run(
+        &mut conn,
+        account,
+        &ExportScope::Everything,
+        None,
+        crate::search::tests::clock(),
+        &crate::db::audit_trail::CredentialUsed::Session(None),
+        started,
+    )
+    .await
+    .unwrap();
+    let status_of = |id: i64| {
+        let pool = fixture.state.db.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT status FROM exports WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+
+    // Never read, started 59 minutes ago: not idle yet.
+    assert!(
+        exports::close_idle_runs(&mut conn, minutes(59))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // A page read 50 minutes in keeps it open past the hour from its start.
+    assert!(
+        exports::record_delivered(&mut conn, account, run.id, 1, minutes(50))
+            .await
+            .unwrap()
+    );
+    assert!(
+        exports::close_idle_runs(&mut conn, minutes(110))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(status_of(run.id).await, "running");
+    assert_eq!(snapshot_rows(&fixture, run.id).await, 3);
+
+    // An hour and a minute after that page, it is closed.
+    let closed_at = minutes(111);
+    assert_eq!(
+        exports::close_idle_runs(&mut conn, closed_at)
+            .await
+            .unwrap(),
+        [run.id]
+    );
+    let closed = exports::get_export(&mut conn, account, run.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(closed.status, ExportStatus::Canceled);
+    assert_eq!(closed.finished_at, Some(closed_at.to_rfc3339()));
+    assert_eq!(snapshot_rows(&fixture, run.id).await, 0);
+    // A page read after the close is refused.
+    assert!(
+        !exports::record_delivered(&mut conn, account, run.id, 2, minutes(112))
+            .await
+            .unwrap()
+    );
+
+    let entries = closures(&fixture, account, closed_at).await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].reason, Some(AuditReason::Idle));
+    assert_eq!(entries[0].actor, AuditActor::Server);
+    assert_eq!(entries[0].export_run_id, Some(run.id));
+    assert_eq!(entries[0].at, closed_at.to_rfc3339());
+}
+
+/// A page past the end of a run's list hands over nothing and still counts
+/// as a page read, which is how the desktop app keeps a run open while it
+/// fetches the Assets (#2080).
+#[tokio::test]
+async fn a_page_past_the_end_counts_as_a_page_read() {
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let id = run["id"].as_i64().unwrap();
+    let last_read = || async {
+        let mut conn = fixture.conn().await;
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT last_page_read_at FROM exports WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+    };
+    assert_eq!(last_read().await, None);
+
+    let (ids, total) = run_page_ids(&fixture, &alice.token, id, "offset=3&limit=1").await;
+    assert_eq!((ids.len(), total), (0, 3));
+    assert!(last_read().await.is_some());
+}
+
+/// The `ExportAccess` extractor guards `GET /v1/exports`: with `can_export`
+/// off, the endpoint refuses; turned back on, it succeeds.
+#[tokio::test]
+async fn export_endpoint_honors_can_export_flag() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "export-guard-keeper", "hunter2hunter2").await;
+    let user = register_via_api(&state, "export-guard-user", "hunter2hunter2").await;
+
+    assert_eq!(
+        patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_export": false }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    // can_export=false refuses GET /v1/exports.
+    let (status, text) = get_raw(&state, "/v1/exports", &user.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
+
+    assert_eq!(
+        patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_export": true }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get_status(&state, "/v1/exports", &user.token).await,
+        StatusCode::OK,
+        "can_export=true must allow GET /v1/exports"
+    );
 }

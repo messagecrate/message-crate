@@ -1,13 +1,12 @@
 //! Account rows, profile fields, and message deletion.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{IdentityService, IdentityType};
+use ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::begin_write;
 use crate::db::handles::{ApiIdentityService, normalize_handle, upsert_handle_row};
-use crate::db::schema;
 
 /// Contact points linked to an account, for profile display.
 #[derive(Debug, Clone)]
@@ -51,7 +50,7 @@ async fn account_email_addresses(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Vec<String>> {
-    Ok(sqlx::query_scalar::<_, String>(
+    sqlx::query_scalar::<_, String>(
         "SELECT h.normalized FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1 AND h.handle_type = $2
@@ -60,14 +59,20 @@ async fn account_email_addresses(
     .bind(account_id)
     .bind(IdentityType::Email.as_str())
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's email addresses")
 }
 
 /// The account's phone numbers, A to Z, each listed once. A number's services
 /// are the `handles.service` values of every `handles` row for that number
 /// that `account_handles` links to the account.
 async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<AccountPhone>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        normalized: String,
+        service: String,
+    }
+    let rows = sqlx::query_as::<_, Row>(
         "SELECT DISTINCT h.normalized, h.service FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1 AND h.handle_type = $2
@@ -76,9 +81,14 @@ async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<
     .bind(account_id)
     .bind(IdentityType::Phone.as_str())
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's phone numbers")?;
     let mut phones: Vec<AccountPhone> = Vec::new();
-    for (address, service) in rows {
+    for Row {
+        normalized: address,
+        service,
+    } in rows
+    {
         let service = ApiIdentityService::from(IdentityService::parse(&service));
         match phones.last_mut() {
             Some(phone) if phone.address == address => phone.services.push(service),
@@ -108,17 +118,18 @@ pub async fn account_identity_keys(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<std::collections::HashSet<(String, IdentityType)>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    let rows = sqlx::query_as::<_, super::handles::AddressAndType>(
         "SELECT DISTINCT h.normalized, h.handle_type FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1",
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's identities")?;
     Ok(rows
         .into_iter()
-        .map(|(normalized, handle_type)| (normalized, IdentityType::parse(&handle_type)))
+        .map(|row| (row.normalized, IdentityType::parse(&row.handle_type)))
         .collect())
 }
 
@@ -148,14 +159,15 @@ pub async fn is_account_identity(
     account_id: i64,
     handle_id: i64,
 ) -> Result<bool> {
-    Ok(sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (SELECT 1 FROM handles h WHERE h.account_id = $1 AND h.id = $2 AND {})",
         is_account_identity_sql("h", "$1"),
-    ))
+    )))
     .bind(account_id)
     .bind(handle_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("check whether an identity is one of the account's own")
 }
 
 /// The id of the account's own identity shown as `address` on `service`,
@@ -173,7 +185,7 @@ pub async fn account_identity_id(
     address: &str,
     service: Option<IdentityService>,
 ) -> Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT h.id FROM account_handles ah
          JOIN handles h ON h.id = ah.handle_id
          WHERE ah.account_id = $1 AND (h.raw = $2 OR h.normalized = $2)
@@ -185,15 +197,22 @@ pub async fn account_identity_id(
     .bind(address.trim())
     .bind(service.map(IdentityService::as_str))
     .fetch_optional(&mut *conn)
-    .await?)
+    .await
+    .context("find the account's identity at an address")
 }
 
-/// Ensure an `accounts` row exists at `account_id`, with the id as its stub
-/// username. The demo reset and the tests use it to place a row at a chosen
-/// id, and the import and export paths call it before they write for an
-/// account; new accounts are made by [`insert_account`] and
-/// [`insert_account_at`].
-pub async fn ensure_account_row(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
+/// Create an `accounts` row at `account_id`, with the id as its stub
+/// username and every other column at its default, unless one is there. It
+/// makes an account on purpose: the Demo Account build, the `import` command
+/// and the tests use it to place a row at a chosen id. No HTTP route calls
+/// it: a credential proved its account existed, and a route that finds the
+/// row gone answers as for a credential that no longer holds, because a row
+/// put back here would carry no password (#2061). New accounts are made by
+/// [`insert_account`] and [`insert_account_at`].
+pub async fn create_account_row_if_missing(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO accounts (id, username) VALUES ($1, $2)
          ON CONFLICT DO NOTHING",
@@ -202,7 +221,56 @@ pub async fn ensure_account_row(conn: &mut SqliteConnection, account_id: i64) ->
     .bind(account_id.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("failed to ensure account row for {account_id}"))?;
+    .context("create an account row if it is missing")?;
+    Ok(())
+}
+
+/// Write the Demo Account's row at `account_id`, named `username` and
+/// `preferred_name`, with no password, and take every identity off it, so
+/// the build links the seed's alone.
+///
+/// The Demo Account has no password, so anyone at the login card can enter
+/// it. The server takes its grant from its id (`DEMO_ACCOUNT_PERMISSIONS`)
+/// and does not read these flags for it. The row still says the same grant,
+/// export and neither import nor delete, so the database matches what the
+/// server applies (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn write_demo_account_row(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    username: &str,
+    preferred_name: &str,
+) -> Result<()> {
+    sqlx::query(
+        r"
+        INSERT INTO accounts (
+            id, username, password_hash, preferred_name, can_import, can_export, can_delete
+        )
+        VALUES ($1, $2, NULL, $3, 0, 1, 0)
+        ON CONFLICT(id) DO UPDATE SET
+            username = excluded.username,
+            preferred_name = excluded.preferred_name,
+            can_import = excluded.can_import,
+            can_export = excluded.can_export,
+            can_delete = excluded.can_delete
+        ",
+    )
+    .bind(account_id)
+    .bind(username)
+    .bind(preferred_name)
+    .execute(&mut *conn)
+    .await
+    .context("write the Demo Account's row")?;
+    // Phone and email identities that mark messages as from "you" live in
+    // `handles`, linked through `account_handles`.
+    sqlx::query("DELETE FROM account_handles WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *conn)
+        .await
+        .context("unlink the Demo Account's identities")?;
     Ok(())
 }
 
@@ -234,7 +302,8 @@ pub async fn link_account_handle_with_service(
     .bind(account_id)
     .bind(handle_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("link an identity to the account")?;
     Ok(handle_id)
 }
 
@@ -252,12 +321,12 @@ pub async fn lookup_account_by_username(
     if username.is_empty() {
         return Ok(None);
     }
-    schema::ensure_accounts_schema(conn).await?;
     let by_user: Option<i64> =
         sqlx::query_scalar("SELECT id FROM accounts WHERE username = $1 COLLATE NOCASE")
             .bind(username)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("look up an account by username")?;
     Ok(by_user)
 }
 
@@ -270,11 +339,11 @@ pub async fn lookup_account_ref(
 ) -> Result<Option<i64>> {
     let account_ref = account_ref.trim();
     if let Ok(id) = account_ref.parse::<i64>() {
-        schema::ensure_accounts_schema(conn).await?;
         let by_id: Option<i64> = sqlx::query_scalar("SELECT id FROM accounts WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("look up an account by id")?;
         if by_id.is_some() {
             return Ok(by_id);
         }
@@ -300,11 +369,11 @@ pub async fn username_for_account(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Option<String>> {
-    schema::ensure_accounts_schema(conn).await?;
     let name: Option<String> = sqlx::query_scalar("SELECT username FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's username")?;
     Ok(name)
 }
 
@@ -320,7 +389,8 @@ pub async fn load_password_hash(
         sqlx::query_scalar("SELECT password_hash FROM accounts WHERE id = $1")
             .bind(account_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the account's password hash")?;
     Ok(hash.flatten())
 }
 
@@ -335,21 +405,25 @@ pub async fn update_password_hash(
         .bind(account_id)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("update password hash for {account_id}"))?;
+        .context("store the account's password hash")?;
     Ok(())
 }
 
-/// Record that the account logged in just now. Called by every route that
+/// Record that the account logged in at `now`. Called by every route that
 /// opens a Session for a person: login, claiming the server, and
 /// registering. Rotating a token on a password change is not a login.
-pub async fn record_login(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+pub async fn record_login(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    let last_login_at = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     sqlx::query("UPDATE accounts SET last_login_at = $1 WHERE id = $2")
-        .bind(now)
+        .bind(last_login_at)
         .bind(account_id)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("record login for {account_id}"))?;
+        .context("record when the account last logged in")?;
     Ok(())
 }
 
@@ -362,7 +436,8 @@ pub async fn load_last_login(
         sqlx::query_scalar("SELECT last_login_at FROM accounts WHERE id = $1")
             .bind(account_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read when the account last logged in")?;
     Ok(at.flatten())
 }
 
@@ -371,22 +446,27 @@ pub async fn load_last_login(
 /// `account_handles/emails/api_tokens`). Its Audit Trail stays: entries and
 /// runs are unlinked, keep its username, and gain an `account_deleted` entry
 /// (`docs/adr/0020-the-audit-trail-outlives-the-account.md`). One
-/// transaction, so the record and the deletion land together. Returns
-/// whether there was an account to delete.
+/// transaction, so the record and the deletion land together; the record is
+/// stamped `now`. What was deleted is erased from the database's files
+/// ([`crate::db::erase`]). Returns whether there was an account to delete.
 pub async fn delete_account(
     conn: &mut SqliteConnection,
     account_id: i64,
     actor: crate::db::audit_trail::AuditActor,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<bool> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let existed =
-        crate::db::audit_trail::prepare_account_deletion(&mut tx, account_id, actor).await?;
+        crate::db::audit_trail::prepare_account_deletion(&mut tx, account_id, actor, now).await?;
     sqlx::query("DELETE FROM accounts WHERE id = $1")
         .bind(account_id)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete account {account_id}"))?;
-    tx.commit().await?;
+        .context("delete the account")?;
+    crate::db::erase::erase_and_commit(tx).await?;
+    crate::db::erase::clear_write_ahead_log(conn).await;
     Ok(existed)
 }
 
@@ -438,15 +518,19 @@ pub async fn delete_account_messages_batch(
              (SELECT id FROM messages WHERE account_id = $1 LIMIT $2)"
         }
     };
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let deleted = sqlx::query(sql)
         .bind(account_id)
         .bind(i64::from(limit.get()))
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete a batch of account {account_id}'s messages"))?
+        .context("delete a batch of the account's messages")?
         .rows_affected();
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .context("commit a batch of message deletions")?;
     Ok(if deleted == u64::from(limit.get()) {
         MessageBatch::MoreMayRemain
     } else {
@@ -471,8 +555,10 @@ pub const DEMO_ACCOUNT_PERMISSIONS: crate::db::permissions::Permissions =
         delete: false,
     };
 
-/// The Demo Account's username. It stays reserved while the Demo Account is
-/// absent, so no other account can take it and block the next build.
+/// The Demo Account's username, which every demo build writes. It is fixed
+/// here, not read from the demo bundle, and stays reserved while the Demo
+/// Account is absent, so no other account can take it and block the next
+/// build (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
 pub const DEMO_USERNAME: &str = "demo";
 
 /// True when `account_id` is the seeded demo account.
@@ -493,11 +579,11 @@ pub fn is_server_owner(account_id: i64) -> bool {
 
 /// True when there is an owner: this Message Crate is claimed.
 pub async fn is_claimed(conn: &mut SqliteConnection) -> Result<bool> {
-    schema::ensure_accounts_schema(conn).await?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE id = $1")
         .bind(OWNER_ACCOUNT_ID)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("check whether the owner's account exists")?;
     Ok(count > 0)
 }
 
@@ -505,7 +591,8 @@ pub async fn is_claimed(conn: &mut SqliteConnection) -> Result<bool> {
 /// and its permissions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountAuth {
-    /// May not log in; existing sessions are refused.
+    /// May not log in, and its API tokens are refused. Disabling the account
+    /// ended its Session.
     pub disabled: bool,
     /// The holder has not set up their profile; they must before going on.
     pub must_set_up_profile: bool,
@@ -514,29 +601,48 @@ pub struct AccountAuth {
 }
 
 /// Load one account's authorization row. `None` when the account is gone.
+///
+/// The owner's permissions and the Demo Account's are known from their ids
+/// and never read from their rows: the owner holds none
+/// (`docs/adr/0008-the-owner-holds-no-messages.md`), and the Demo Account
+/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. [`insert_account_at`] writes 0 to the
+/// owner's three permission columns so its row agrees, but the id alone
+/// decides.
 pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Option<AccountAuth>> {
-    schema::ensure_accounts_schema(conn).await?;
-    let row: Option<(i64, i64, i64, i64, i64)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        disabled: i64,
+        must_set_up_profile: i64,
+        can_import: i64,
+        can_export: i64,
+        can_delete: i64,
+    }
+    let row = sqlx::query_as::<_, Row>(
         "SELECT disabled, must_set_up_profile, can_import, can_export, can_delete
          FROM accounts WHERE id = $1",
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
-    Ok(row.map(
-        |(disabled, must_set_up, import, export, delete)| AccountAuth {
-            disabled: disabled != 0,
-            must_set_up_profile: must_set_up != 0,
-            permissions: if is_demo_account(account_id) {
-                DEMO_ACCOUNT_PERMISSIONS
-            } else {
-                crate::db::permissions::Permissions::from_ints(import, export, delete)
-            },
+    .await
+    .context("read the account's disabled flag and permissions")?;
+    Ok(row.map(|row| AccountAuth {
+        disabled: row.disabled != 0,
+        must_set_up_profile: row.must_set_up_profile != 0,
+        permissions: if is_server_owner(account_id) {
+            crate::db::permissions::Permissions::none()
+        } else if is_demo_account(account_id) {
+            DEMO_ACCOUNT_PERMISSIONS
+        } else {
+            crate::db::permissions::Permissions::from_ints(
+                row.can_import,
+                row.can_export,
+                row.can_delete,
+            )
         },
-    ))
+    }))
 }
 
 /// Mark an account as still owing profile setup, or clear the mark once its
@@ -551,12 +657,12 @@ pub async fn set_must_set_up_profile(
     account_id: i64,
     must_set_up: bool,
 ) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     sqlx::query("UPDATE accounts SET must_set_up_profile = $1 WHERE id = $2")
         .bind(i32::from(must_set_up))
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("mark whether the account owes profile setup")?;
     Ok(())
 }
 
@@ -571,15 +677,19 @@ pub struct DeletedMessagesStats {
 
 /// Permanently delete one account's conversations (cascades to messages,
 /// attachments, participants, tapbacks), staging rows, and trash markers,
-/// in one write transaction: all of it is deleted or none of it.
+/// in one write transaction: all of it is deleted or none of it, and the
+/// Audit Trail entry for it is stamped `now`. What was deleted is erased
+/// from the database's files ([`crate::db::erase`]).
 /// Contacts, groups, login details, and import tokens are retained.
 pub async fn delete_all_messages_for_account(
     conn: &mut SqliteConnection,
     account_id: i64,
     actor: crate::db::audit_trail::AuditActor,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DeletedMessagesStats> {
-    schema::ensure_schema(conn).await?;
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let attachment_count: i64 = sqlx::query_scalar(
         r"
         SELECT COUNT(*)
@@ -591,21 +701,22 @@ pub async fn delete_all_messages_for_account(
     )
     .bind(account_id)
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .context("count the account's attachments")?;
     let conversations = sqlx::query("DELETE FROM conversations WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete conversations for {account_id}"))?
+        .context("delete the account's conversations")?
         .rows_affected();
     sqlx::query("DELETE FROM staging_conversations WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete staging conversations for {account_id}"))?;
+        .context("delete the account's staged conversations")?;
     crate::db::trash::purge_account(&mut tx, account_id)
         .await
-        .with_context(|| format!("purge trash markers for {account_id}"))?;
+        .context("remove the account's trash markers")?;
     // Recorded in the delete's own transaction, so the two land together.
     crate::db::audit_trail::record_about(
         &mut tx,
@@ -617,9 +728,11 @@ pub async fn delete_all_messages_for_account(
             attachments: Some(attachment_count),
             ..crate::db::audit_trail::Details::default()
         },
+        now,
     )
     .await?;
-    tx.commit().await?;
+    crate::db::erase::erase_and_commit(tx).await?;
+    crate::db::erase::clear_write_ahead_log(conn).await;
     Ok(DeletedMessagesStats {
         conversations,
         attachments: u64::try_from(attachment_count).unwrap_or(0),
@@ -633,7 +746,8 @@ pub async fn load_time_zone(conn: &mut SqliteConnection, account_id: i64) -> Res
     let name: Option<String> = sqlx::query_scalar("SELECT time_zone FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's time zone")?;
     Ok(name
         .and_then(|n| n.trim().parse::<chrono_tz::Tz>().ok())
         .unwrap_or(chrono_tz::UTC))
@@ -649,18 +763,20 @@ pub async fn set_time_zone(
         .bind(zone.name())
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("store the account's time zone")?;
     Ok(())
 }
 
-/// The account's zone and today's date in it: what every search compile and
-/// every year boundary needs.
+/// The account's zone and the date `now` falls on in it: what every search
+/// compile and every year boundary needs.
 pub async fn account_clock(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<(chrono_tz::Tz, chrono::NaiveDate)> {
     let zone = load_time_zone(conn, account_id).await?;
-    Ok((zone, crate::search::today_in(zone)))
+    Ok((zone, crate::search::today_in(zone, now)))
 }
 
 /// Load the `preferred_name` for an account, if set.
@@ -672,7 +788,8 @@ pub async fn load_preferred_name(
         sqlx::query_scalar("SELECT preferred_name FROM accounts WHERE id = $1")
             .bind(account_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the account's preferred name")?;
     Ok(name
         .flatten()
         .map(|s| s.trim().to_string())
@@ -693,7 +810,8 @@ pub async fn set_preferred_name(
         .bind(name)
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("store the account's preferred name")?;
     Ok(())
 }
 
@@ -737,7 +855,8 @@ pub async fn set_account_flags(
     .bind(flags.can_delete.map(i32::from))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("store the account's status and permissions")?;
     Ok(())
 }
 
@@ -747,9 +866,10 @@ pub async fn set_account_flags(
 ///
 /// Returns an error when the statement fails.
 pub async fn count_accounts(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+    sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
         .fetch_one(&mut *conn)
-        .await?)
+        .await
+        .context("count the accounts")
 }
 
 /// Every account's id, lowest first.
@@ -758,9 +878,10 @@ pub async fn count_accounts(conn: &mut SqliteConnection) -> Result<i64> {
 ///
 /// Returns an error when the statement fails.
 pub async fn account_ids(conn: &mut SqliteConnection) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar("SELECT id FROM accounts ORDER BY id")
+    sqlx::query_scalar("SELECT id FROM accounts ORDER BY id")
         .fetch_all(&mut *conn)
-        .await?)
+        .await
+        .context("read every account's id")
 }
 
 /// Whether the account `account_id` exists.
@@ -768,14 +889,12 @@ pub async fn account_ids(conn: &mut SqliteConnection) -> Result<Vec<i64>> {
 /// # Errors
 ///
 /// Returns an error when the statement fails.
-pub async fn account_exists(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<bool, sqlx::Error> {
+pub async fn account_exists(conn: &mut SqliteConnection, account_id: i64) -> anyhow::Result<bool> {
     Ok(sqlx::query("SELECT 1 FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?
+        .await
+        .context("check that the account exists")?
         .is_some())
 }
 
@@ -790,7 +909,7 @@ pub async fn account_ids_page(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT id FROM accounts \
          ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, username LIMIT $2 OFFSET $3",
     )
@@ -798,7 +917,8 @@ pub async fn account_ids_page(
     .bind(limit as i64)
     .bind(i64::try_from(offset)?)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read a page of account ids")
 }
 
 /// Insert a new account row at the next generated id. All fields except
@@ -811,7 +931,6 @@ pub async fn insert_account(
     password_hash: Option<&str>,
     preferred_name: Option<&str>,
 ) -> Result<i64> {
-    schema::ensure_accounts_schema(conn).await?;
     // The id is chosen here rather than by the database's own generator,
     // because that generator would hand out 1 on an empty table, and 1 is
     // the owner. Ids below `FIRST_GENERATED_ACCOUNT_ID` belong to the accounts
@@ -823,7 +942,8 @@ pub async fn insert_account(
     let highest: Option<i64> =
         sqlx::query_scalar("SELECT seq FROM sqlite_sequence WHERE name = 'accounts'")
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the highest account id ever used")?;
     let id = highest.map_or(FIRST_GENERATED_ACCOUNT_ID, |highest| {
         highest.max(FIRST_GENERATED_ACCOUNT_ID - 1) + 1
     });
@@ -838,6 +958,11 @@ pub const FIRST_GENERATED_ACCOUNT_ID: i64 = 100;
 
 /// Insert an account at a fixed id: the owner at [`OWNER_ACCOUNT_ID`], and a
 /// test's chosen row.
+///
+/// The owner's row holds 0 for `can_import`, `can_export` and `can_delete`,
+/// because [`load_account_auth`] gives the owner none of the three from its
+/// id, and the row must not say otherwise to someone reading the database.
+/// Every other row holds 1 for all three.
 pub async fn insert_account_at(
     conn: &mut SqliteConnection,
     id: i64,
@@ -845,17 +970,20 @@ pub async fn insert_account_at(
     password_hash: Option<&str>,
     preferred_name: Option<&str>,
 ) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
+    let granted = i32::from(!is_server_owner(id));
     sqlx::query(
-        "INSERT INTO accounts (id, username, password_hash, preferred_name) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO accounts (id, username, password_hash, preferred_name,
+                               can_import, can_export, can_delete)
+         VALUES ($1, $2, $3, $4, $5, $5, $5)",
     )
     .bind(id)
     .bind(username)
     .bind(password_hash)
     .bind(preferred_name)
+    .bind(granted)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("insert account {username} at id {id}"))?;
+    .context("insert an account")?;
     Ok(())
 }
 
@@ -899,7 +1027,8 @@ pub async fn unlink_account_handle(
     .bind(handle_type.as_str())
     .bind(service)
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("unlink one of the account's identities")?
     .rows_affected();
     Ok(removed > 0)
 }
@@ -939,6 +1068,31 @@ mod tests {
                 address: "+15555550100".to_string(),
                 services: vec![ApiIdentityService::Phone],
             }]
+        );
+    }
+
+    /// Today is the day on the account's clock. At 10:00 UTC on 1 September
+    /// it is already 2 September on Kiritimati, 14 hours ahead (#2216).
+    #[tokio::test]
+    async fn today_is_the_day_in_the_accounts_zone() {
+        use chrono::TimeZone;
+        let fixture = crate::test_support::test_fixture().await;
+        fixture.account_with_id(ACCOUNT_ID, "Alice").await;
+        let mut conn = fixture.conn().await;
+        let kiritimati = chrono_tz::Pacific::Kiritimati;
+        set_time_zone(&mut conn, ACCOUNT_ID, kiritimati)
+            .await
+            .unwrap();
+        let now = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 10, 0, 0).unwrap();
+
+        let clock = account_clock(&mut conn, ACCOUNT_ID, now).await.unwrap();
+
+        assert_eq!(
+            clock,
+            (
+                kiritimati,
+                chrono::NaiveDate::from_ymd_opt(2026, 9, 2).unwrap()
+            )
         );
     }
 
@@ -1025,20 +1179,35 @@ mod tests {
             .await
             .unwrap();
         let bob = insert_account(&mut conn, "bob", None, None).await.unwrap();
-        delete_account(&mut conn, bob, crate::db::audit_trail::AuditActor::Owner)
-            .await
-            .unwrap();
+        delete_account(
+            &mut conn,
+            bob,
+            crate::db::audit_trail::AuditActor::Owner,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
         let carol = insert_account(&mut conn, "carol", None, None)
             .await
             .unwrap();
         assert!(carol > bob, "carol got {carol}, after bob's {bob}");
         // With every generated account gone, the next id still climbs.
-        delete_account(&mut conn, carol, crate::db::audit_trail::AuditActor::Owner)
-            .await
-            .unwrap();
-        delete_account(&mut conn, alice, crate::db::audit_trail::AuditActor::Owner)
-            .await
-            .unwrap();
+        delete_account(
+            &mut conn,
+            carol,
+            crate::db::audit_trail::AuditActor::Owner,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
+        delete_account(
+            &mut conn,
+            alice,
+            crate::db::audit_trail::AuditActor::Owner,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
         let dave = insert_account(&mut conn, "dave", None, None).await.unwrap();
         assert!(dave > carol, "dave got {dave}, after carol's {carol}");
     }
@@ -1196,19 +1365,13 @@ mod tests {
             link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
                 .await
                 .unwrap();
-        sqlx::query(
-            "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-             VALUES ($1, $2, 'individual', 'c.jsonl')",
-        )
-        .bind(ACCOUNT_ID)
-        .bind(handle_id)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        crate::test_support::ConversationRow::new(ACCOUNT_ID, handle_id)
+            .insert(&mut conn)
+            .await;
         sqlx::query(
             "INSERT INTO staging_conversations (
                 account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES ($1, $2, 'individual', 'c.jsonl')",
+             ) VALUES ($1, $2, 'one-to-one', 'c.jsonl')",
         )
         .bind(ACCOUNT_ID)
         .bind(handle_id)
@@ -1227,6 +1390,7 @@ mod tests {
             &mut conn,
             ACCOUNT_ID,
             crate::db::audit_trail::AuditActor::Holder,
+            crate::test_support::fixed_instant(),
         )
         .await;
 
@@ -1259,16 +1423,12 @@ mod tests {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-        sqlx::query(
-            "INSERT INTO conversations (
-                id, account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES (1, $1, $2, 'individual', 'c.jsonl')",
-        )
-        .bind(ACCOUNT_ID)
-        .bind(handle_id)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        crate::test_support::ConversationRow {
+            id: Some(1),
+            ..crate::test_support::ConversationRow::new(ACCOUNT_ID, handle_id)
+        }
+        .insert(&mut conn)
+        .await;
         let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         let msg_id = crate::test_support::MessageRow {
             is_from_me: true,
@@ -1291,6 +1451,7 @@ mod tests {
             &mut conn,
             ACCOUNT_ID,
             crate::db::audit_trail::AuditActor::Holder,
+            crate::test_support::fixed_instant(),
         )
         .await
         .unwrap();
@@ -1315,5 +1476,22 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    /// [`insert_account_at`] writes 0 to the owner's import, export and
+    /// delete columns and 1 to every other account's.
+    #[tokio::test]
+    async fn the_owner_row_holds_no_permission_and_other_rows_hold_all_three() {
+        let fixture = crate::test_support::test_fixture().await;
+        let mut conn = fixture.conn().await;
+        insert_account_at(&mut conn, OWNER_ACCOUNT_ID, "owner", None, None)
+            .await
+            .unwrap();
+        let alice = insert_account(&mut conn, "alice", None, None)
+            .await
+            .unwrap();
+        let stored = crate::test_support::stored_permissions;
+        assert_eq!(stored(&mut conn, OWNER_ACCOUNT_ID).await, (0, 0, 0));
+        assert_eq!(stored(&mut conn, alice).await, (1, 1, 1));
     }
 }

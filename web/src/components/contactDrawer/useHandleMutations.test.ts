@@ -3,10 +3,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContactHandle } from "../../lib/contactDetail";
+import { nth } from "../../test/nth";
 import { useHandleMutations } from "./useHandleMutations";
 
 const mutate = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/contactDetail", () => ({
+vi.mock("../../hooks/useUpdateContact", () => ({
   useUpdateContact: () => ({ mutate, isPending: false, error: null }),
 }));
 
@@ -18,7 +19,7 @@ function row(address: string, service: string): ContactHandle {
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: 0,
+    one_to_one_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
     country_unknown: false,
@@ -30,7 +31,7 @@ function removalOf(handle: ContactHandle): unknown {
   const { result } = renderHook(() => useHandleMutations({ contactId: "7" }));
   act(() => result.current.requestRemoveHandle(handle));
   act(() => result.current.confirmRemoveHandle());
-  return mutate.mock.calls[0][0].body.remove_identity;
+  return nth(mutate.mock.calls, 0)[0].body.remove_identity;
 }
 
 beforeEach(() => mutate.mockReset());
@@ -62,7 +63,7 @@ describe("useHandleMutations", () => {
   it("adds an email address on the phone service", () => {
     const { result } = renderHook(() => useHandleMutations({ contactId: "7" }));
     act(() => result.current.confirmAdd({ address: "ann@example.com", service: "email" }));
-    expect(mutate.mock.calls[0][0].body.add_identity).toEqual({
+    expect(nth(mutate.mock.calls, 0)[0].body.add_identity).toEqual({
       address: "ann@example.com",
       service: "phone",
     });

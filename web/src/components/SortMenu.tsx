@@ -1,8 +1,8 @@
 import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
-import { focusRing, menuItemClass, menuPopoverClass } from "../lib/uiStyles";
+import type { SortOrder } from "../lib/sortOrder";
+import { focusRingClass, menuItemClass, menuPopoverClass } from "../lib/uiStyles";
+import { MenuCheckIcon, SortIcon } from "./icons";
 import PlainButton from "./PlainButton";
-
-export type SortOrder = "asc" | "desc";
 
 export type SortField<Id extends string> = {
   id: Id;
@@ -52,9 +52,9 @@ export default function SortMenu<Id extends string>({
       <PlainButton
         aria-label={`Sort ${itemNoun} by ${sortedBy}`}
         title={`Sorted by ${sortedBy}`}
-        className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated text-muted hover:text-text aria-expanded:text-text ${focusRing}`}
+        className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated text-muted hover:text-text aria-expanded:text-text ${focusRingClass}`}
       >
-        <SortIcon />
+        <SortIcon size={16} />
       </PlainButton>
       <Popover
         placement="bottom end"
@@ -106,39 +106,11 @@ function SortOption({ id, label }: { id: string; label: string }) {
       {({ isSelected }) => (
         <>
           <span className="flex w-4 justify-center text-accent">
-            {isSelected ? <CheckIcon /> : null}
+            {isSelected ? <MenuCheckIcon size={14} /> : null}
           </span>
           {label}
         </>
       )}
     </MenuItem>
-  );
-}
-
-function SortIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M5 3v10M5 3l-2.5 2.5M5 3l2.5 2.5M11 13V3M11 13l-2.5-2.5M11 13l2.5-2.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 12 12" fill="none" aria-hidden>
-      <path
-        d="M2 6.2L4.6 9 10 3"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

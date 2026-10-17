@@ -20,10 +20,20 @@ impl Sql {
         self.text.push_str(s);
     }
 
-    /// Write `?` and bind a text value.
+    /// Write `?` and bind a text value. Not for a time compared with
+    /// `messages.timestamp`: [`Self::bind_time`] binds that.
     pub fn bind_text(&mut self, v: impl Into<String>) {
         self.text.push('?');
         self.params.push(SqlParam::Text(v.into()));
+    }
+
+    /// Write `?` and bind a stored message time, for a comparison with
+    /// `messages.timestamp` or an aggregate of it: only a
+    /// [`crate::models::StoredTime`], so the bound text has the stored form
+    /// (#1965).
+    pub fn bind_time(&mut self, t: &crate::models::StoredTime) {
+        self.text.push('?');
+        self.params.push(SqlParam::Time(t.clone()));
     }
 
     /// Write `?` and bind an integer.
@@ -81,7 +91,7 @@ impl TrashScope {
     /// ` AND <not trashed>` for conversation alias `conv`, or nothing.
     pub(crate) fn conversation_clause(self, conv: &str) -> String {
         match self {
-            Self::LeftOut => format!(" AND {}", super::emit::not_trashed_conversation(conv)),
+            Self::LeftOut => format!(" AND {}", crate::db::trash::not_trashed_conversation(conv)),
             Self::Counted => String::new(),
         }
     }
@@ -89,7 +99,7 @@ impl TrashScope {
     /// ` AND <not trashed>` for contact alias `ct`, or nothing.
     pub(crate) fn contact_clause(self, ct: &str) -> String {
         match self {
-            Self::LeftOut => format!(" AND {}", super::emit::not_trashed_contact(ct)),
+            Self::LeftOut => format!(" AND {}", crate::db::trash::not_trashed_contact(ct)),
             Self::Counted => String::new(),
         }
     }
@@ -340,7 +350,7 @@ pub(crate) fn contact_conversations_link(c2: &str) -> String {
 
 /// `FROM … WHERE …` over the messages contact `ct` sent: a received message
 /// (alias `m`) whose sender is one of the contact's handles, in any
-/// conversation (alias `c`), direct or group, duplicates left out, and a
+/// conversation (alias `c`), one-to-one or group, duplicates left out, and a
 /// conversation in the trash left out unless `trash` says it counts. The
 /// one definition of "a message the contact sent": `date:`, `messages:`,
 /// `first-message:` and `last-message:` on Contacts, the contact list's
@@ -348,7 +358,7 @@ pub(crate) fn contact_conversations_link(c2: &str) -> String {
 /// summary, and the contact's identity table all read it, so none of them
 /// can drift from the others (#725, #726, #913).
 ///
-/// Your own messages and other people's messages in a shared group chat are
+/// Your own messages and other people's messages in a shared group conversation are
 /// not the contact's, which is why this is not every message of every
 /// conversation the contact is in. `ix_messages_sender_timestamp` answers
 /// it per handle.

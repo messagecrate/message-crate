@@ -1,6 +1,6 @@
-import { sectionHint } from "../settings/storage/storageUtils";
+import { type AuditTrailOf, useAuditTrail } from "../../hooks/useAuditTrail";
+import { sectionHintClass } from "../settings/storage/storageUtils";
 import AuditTrailTable from "./AuditTrailTable";
-import { type AuditTrailOf, useAuditTrail } from "./useAuditTrail";
 
 /**
  * One Audit Trail, read and shown: a loading line, the error, or the table
@@ -10,14 +10,17 @@ import { type AuditTrailOf, useAuditTrail } from "./useAuditTrail";
 export default function AuditTrail({
   of,
   showAccount,
+  logHref,
 }: {
   /** Whose Audit Trail to read. */
   of: AuditTrailOf;
   /** Show the Account column: the owner's list of every account. */
   showAccount: boolean;
+  /** Where an entry's request's lines in the server's log are read; Owner Home's alone. */
+  logHref?: (requestId: string) => string;
 }) {
   const trail = useAuditTrail(of);
-  if (trail.loading) return <p className={`${sectionHint} mt-3`}>Loading the Audit Trail…</p>;
+  if (trail.loading) return <p className={`${sectionHintClass} mt-3`}>Loading the Audit Trail…</p>;
   if (trail.error) return <p className="mt-3 text-[0.875rem] text-danger">{trail.error}</p>;
   return (
     <AuditTrailTable
@@ -26,6 +29,7 @@ export default function AuditTrail({
       page={trail.page}
       onPageChange={trail.setPage}
       showAccount={showAccount}
+      logHref={logHref}
     />
   );
 }

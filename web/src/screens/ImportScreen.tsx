@@ -1,69 +1,74 @@
-import { useEffect, useRef, useState } from "react";
-import { phoneNumbers, profileAddresses } from "../lib/account";
-import { isAndroidSmsSource, needsOwnerEmails, splitEmails } from "../lib/androidSmsSources";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
-import { getDeviceId } from "../lib/deviceId";
-import {
-  emptyImessagePathStats,
-  IMESSAGE_DEFAULT_METHOD,
-  IMESSAGE_SOURCE_ID,
-  type ImessageMethodId,
-  imessageStatsForMethod,
-  isImessageMethod,
-  macMessagesDbPath,
-  type PathStat,
-  shouldPrefillMacMessagesDb,
-} from "../lib/imessageImport";
-import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
-import { serverService } from "../lib/offeredService";
-import { usePhoneCountries } from "../lib/phoneCountries";
-import { keys } from "../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
-import { unmatchedIdentities } from "../lib/serverApi";
-import {
-  getImporterPath,
-  getRememberImporterPaths,
-  loadRememberedImportPaths,
-  setImporterExtraPath,
-  setImporterPath,
-} from "../lib/system-settings";
-import { invokeHomeDir, invokeIosBackupEncrypted, invokePathStat } from "../lib/tauri";
-import { isTauri } from "../lib/tauri-check";
-import { useTimeZone } from "../lib/timeZone";
-import type { AttachmentMediaMode } from "../lib/types";
+import { useEffect, useReducer, useRef, useState } from "react";
 import {
   useAccountProfile,
   useFetchAccountProfile,
   useUpdateAccountProfile,
-} from "../lib/useAccountProfile";
+} from "../hooks/useAccountProfile";
+import { usePhoneCountries } from "../hooks/usePhoneCountries";
+import { useMarkAccountStale, useRouteCache, useRouteQuery } from "../hooks/useRouteQuery";
+import { useTimeZone } from "../hooks/useTimeZone";
+import { phoneNumbers, profileAddresses } from "../lib/account";
+import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
+import { invokeHomeDir, invokePathStat } from "../lib/desktop/fs";
+import { getDeviceId } from "../lib/deviceId";
 import {
-  emptyWhatsappPathStats,
-  isWhatsappMethod,
-  WHATSAPP_CRYPT_NAMES,
-  WHATSAPP_DEFAULT_METHOD,
-  WHATSAPP_SOURCE_ID,
-  type WhatsappMethodId,
-} from "../lib/whatsappImport";
+  IMESSAGE_DEFAULT_METHOD,
+  macMessagesDbPath,
+  shouldPrefillMacMessagesDb,
+} from "../lib/imessageImport";
+import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
+import { importSourceById, importSourceFor } from "../lib/importSources";
+import { serverService } from "../lib/offeredService";
+import { probePath, toDesktopOs } from "../lib/pathChecks";
+import { keys } from "../lib/queryKeys";
+import { unmatchedIdentities } from "../lib/serverApi";
+import {
+  getImporterPath,
+  getRememberImporterPaths,
+  type ImporterExtraField,
+  loadRememberedImportPaths,
+  setImporterExtraPath,
+  setImporterPath,
+} from "../lib/systemSettings";
+import { isTauri } from "../lib/tauriCheck";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
+import type { ProfilePhones } from "./import/formSections/types";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
+import {
+  type ImportFormAction,
+  type ImportPathField,
+  importFormReducer,
+  importJobValues,
+  newImportForm,
+  type SourcePaths,
+} from "./import/importForm";
 import { isReviewPhase } from "./import/importRunStore";
 import ResumeImportPanel from "./import/ResumeImportPanel";
 import RunDirDeleteFailureNotice from "./import/RunDirDeleteFailureNotice";
 import {
   checkSourceFingerprint,
   type DirectoryCheck,
+  type FingerprintCheck,
   type ResumeDecision,
   resumeDecisionFor,
   resumeReadsBackup,
 } from "./import/resumeDecision";
-import { parseStoredStagingSummary, useImportJob } from "./import/useImportJob";
+import type { DiscardOutcome } from "./import/run/finish";
+import { parseStoredStagingSummary } from "./import/run/stagingSummary";
+import {
+  useAndroidSmsPathStats,
+  useImessagePathStats,
+  useWhatsappPathStats,
+} from "./import/useBackupPathStats";
+import { useDeleteClosedRunDirectories } from "./import/useDeleteClosedRunDirectories";
+import { useImportJob } from "./import/useImportJob";
 
-const DEFAULT_SOURCE = IMESSAGE_DEFAULT_METHOD;
-const PATH_PROBE_DEBOUNCE_MS = 200;
+/** The account's phones before they are read, and for a source that does not ask for them. */
+const PROFILE_PHONES_UNREAD: ProfilePhones = { phones: [], ready: false, error: false };
 /** The server's own cap on one `/v1/contacts/unmatched-identities` request (`MAX_MATCH_IDENTIFIERS`,
  * `crates/server/server/src/contacts_api.rs`) — the client batches to it rather than
  * discovering the limit from a 422. */
@@ -75,47 +80,29 @@ const NO_IDENTIFIERS: readonly string[] = [];
 /** Nothing to decide -- the form renders. The one spelling of "no resume". */
 const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
-function mapPathStat(raw: { exists: boolean; isFile: boolean; isDirectory: boolean }): PathStat {
-  return {
-    exists: raw.exists,
-    isFile: raw.isFile,
-    isDirectory: raw.isDirectory,
-  };
-}
-
-async function probePath(path: string): Promise<PathStat | null> {
-  const trimmed = path.trim();
-  if (trimmed === "") return null;
-  try {
-    return mapPathStat(await invokePathStat(trimmed));
-  } catch {
-    return { exists: false, isFile: false, isDirectory: false };
-  }
-}
-
 /**
- * Whether a run's directory is still on disk. A stat that fails
- * outright is "unknown", not "missing": an IPC error says nothing about the
- * directory, and reading it as gone would offer to discard staged work that
- * may well still be there.
+ * Whether a run's directory is still on disk. A check that fails outright,
+ * or a directory the operating system will not describe, is "unknown", not
+ * "missing": neither says anything about whether the directory is there,
+ * and reading it as gone would offer to discard staged work that may well
+ * still be there.
  */
 async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
-  try {
-    const stat = await invokePathStat(runDir);
-    return stat.exists && stat.isDirectory ? "present" : "missing";
-  } catch {
-    return "unknown";
-  }
+  const stat = await probePath(runDir);
+  if (stat === null || stat.unreadable) return "unknown";
+  return stat.exists && stat.isDirectory ? "present" : "missing";
 }
 
 export default function ImportScreen() {
+  useDeleteClosedRunDirectories();
   const fetchAccountProfile = useFetchAccountProfile();
   const cache = useRouteCache();
+  const markAccountStale = useMarkAccountStale();
   const {
     phase,
     steps,
     running,
-    form,
+    form: runForm,
     summaryView,
     runDir,
     importRunId,
@@ -125,6 +112,7 @@ export default function ImportScreen() {
     mediaToolsMissing,
     mediaPartiallyRan,
     resumeError,
+    startError,
     reviewError,
     sourceIdentities,
     computingSummary,
@@ -137,6 +125,7 @@ export default function ImportScreen() {
     returnToForm,
     continueAfterIdentityStop,
     cancelIdentityStop,
+    formEdited,
     runDirDeleteFailure,
     discardRun,
     dismissRunDirDeleteFailure,
@@ -200,55 +189,42 @@ export default function ImportScreen() {
     }
   };
 
-  const [source, setSource] = useState(DEFAULT_SOURCE);
-  const [backupPath, setBackupPath] = useState(() =>
-    getRememberImporterPaths() ? getImporterPath(DEFAULT_SOURCE) : "",
+  const [form, dispatch] = useReducer(importFormReducer, null, () =>
+    newImportForm(getRememberImporterPaths() ? getImporterPath(IMESSAGE_DEFAULT_METHOD) : ""),
   );
-  const [attachmentRoot, setAttachmentRoot] = useState("");
-  const [appleContacts, setAppleContacts] = useState("");
-  const [pathStats, setPathStats] = useState(emptyImessagePathStats);
-  const [whatsappKey, setWhatsappKey] = useState("");
-  const [showWhatsappKey, setShowWhatsappKey] = useState(false);
-  const [whatsappWa, setWhatsappWa] = useState("");
-  const [whatsappMedia, setWhatsappMedia] = useState("");
-  const [whatsappDb, setWhatsappDb] = useState("");
-  const [whatsappBusiness, setWhatsappBusiness] = useState(false);
-  /** The holder's WhatsApp number; seeded from the profile's first phone. */
-  const [whatsappOwnerPhone, setWhatsappOwnerPhone] = useState("");
-  const [whatsappStats, setWhatsappStats] = useState(emptyWhatsappPathStats);
-  const [backupPassword, setBackupPassword] = useState("");
-  const [showBackupPassword, setShowBackupPassword] = useState(false);
-  const [attachmentMedia, setAttachmentMedia] = useState<AttachmentMediaMode>("copy");
-  const [maxResolution, setMaxResolution] = useState("720p");
-  const [maxFps, setMaxFps] = useState("30");
-  const [minSizeMb, setMinSizeMb] = useState("20");
-  const [ownerPhones, setOwnerPhones] = useState<string[]>([]);
-  /** Owner email addresses as typed; split into a list when the import starts. */
-  const [ownerEmails, setOwnerEmails] = useState("");
-  const [formatOpen, setFormatOpen] = useState(true);
-  const [processingOpen, setProcessingOpen] = useState(false);
-  const [obfuscate, setObfuscate] = useState(false);
-  const [phoneCountry, setPhoneCountry] = useState("");
+  const { source, backupPath } = form;
+  const pathStats = useImessagePathStats({
+    source,
+    backupPath,
+    attachmentRoot: form.attachmentRoot,
+    appleContacts: form.appleContacts,
+  });
+  const whatsappStats = useWhatsappPathStats({
+    source,
+    backupPath,
+    contactsDb: form.whatsappWa,
+    media: form.whatsappMedia,
+    db: form.whatsappDb,
+  });
+  const androidSmsStats = useAndroidSmsPathStats({ source, backupPath });
   const { countries: phoneCountries } = usePhoneCountries();
-  /** The zone iMazing dates are read in. The account's zone until the person
-   * picks another under Processing Options; null means "the account's". */
   const accountTimeZone = useTimeZone();
-  const [timeZoneOverride, setTimeZoneOverride] = useState<string | null>(null);
-  const timeZone = timeZoneOverride ?? accountTimeZone;
-  /** Profile phones after SBR fetch; empty until ready (or after a failed fetch). */
-  const [profilePhones, setProfilePhones] = useState<string[]>([]);
-  const [profilePhonesReady, setProfilePhonesReady] = useState(false);
-  const [profilePhonesError, setProfilePhonesError] = useState(false);
-  const ownerPhonesSeededRef = useRef(false);
-  const ownerEmailsSeededRef = useRef(false);
-  const whatsappOwnerPhoneSeededRef = useRef(false);
-  const lastImessageMethodRef = useRef<ImessageMethodId>(IMESSAGE_DEFAULT_METHOD);
-  const lastWhatsappMethodRef = useRef<WhatsappMethodId>(WHATSAPP_DEFAULT_METHOD);
+  const [profilePhones, setProfilePhones] = useState<ProfilePhones>(PROFILE_PHONES_UNREAD);
+  // The method last picked for each source with several, by source id, so
+  // picking the source again returns to it.
+  const lastMethodRef = useRef<Record<string, string>>({});
   const sourceChangeGenRef = useRef(0);
 
   const [resume, setResume] = useState<ResumeDecision>(NO_RESUME);
   const [resumeChecked, setResumeChecked] = useState(false);
   const discardingRef = useRef(false);
+  /**
+   * Why the panel's last Discard, or the discard before a Start over, did
+   * not close the run; null once one goes through or a resume starts. Kept
+   * here rather than on the run store's `resumeError`: the store may hold
+   * another account's run, and the panel's run is the account's on screen.
+   */
+  const [discardError, setDiscardError] = useState<string | null>(null);
   const resumingRef = useRef(false);
 
   /**
@@ -270,73 +246,49 @@ export default function ImportScreen() {
    */
   useEffect(() => {
     if (phase !== "form") return;
-    let cancelled = false;
+    let canceled = false;
     void (async () => {
       try {
         const run = await cache.fetch(keys.imports.running, (signal) => getActiveImportRun(signal));
         const directory = run?.run_dir ? await runDirectoryCheck(run.run_dir) : "missing";
         // Only a resume of the copy consults this; every later stage works
-        // from the staged directory rather than the backup. The full stat, not
-        // `probePath`'s narrowed one: the comparison needs the size and
-        // modified time.
-        const sourceStat = run?.source_fingerprint?.path
-          ? await invokePathStat(run.source_fingerprint.path).catch(() => null)
-          : null;
+        // from the staged directory rather than the backup. The desktop
+        // `PathStat`, not `probePath`'s `ImportPathStat`: the comparison needs
+        // the size and modified time, which `ImportPathStat` leaves out. A
+        // check that fails says nothing about the backup, so it is
+        // "unknown", never a backup that is gone.
+        const stored = run?.source_fingerprint ?? null;
+        const fingerprint: FingerprintCheck = stored?.path
+          ? await invokePathStat(stored.path).then(
+              (stat) => checkSourceFingerprint(stored, stat),
+              () => "unknown" as const,
+            )
+          : checkSourceFingerprint(stored, null);
         // A resume or discard that started while this was in flight owns
         // the decision -- a stale answer must not put the panel back.
-        if (!cancelled && !resumingRef.current && !discardingRef.current) {
+        if (!canceled && !resumingRef.current && !discardingRef.current) {
           setResume(
             resumeDecisionFor({
               run,
               deviceId: getDeviceId(),
               directory,
-              fingerprint: checkSourceFingerprint(run?.source_fingerprint ?? null, sourceStat),
+              fingerprint,
             }),
           );
         }
       } catch {
         // A server that cannot answer is not a reason to block the form.
-        if (!cancelled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
+        if (!canceled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
       } finally {
         // Only the first check decides what renders; a later one must not
         // blank the form while it runs.
-        if (!cancelled) setResumeChecked(true);
+        if (!canceled) setResumeChecked(true);
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [phase, cache]);
-
-  /** Populate the visible form from a resumed or restarted run's settings. */
-  function applyRestoredFormState(restored: ReturnType<typeof restoreFormFromSnapshot>): void {
-    if (!restored) return;
-    setSource(restored.source);
-    setBackupPath(restored.backupPath);
-    setBackupPassword("");
-    setAttachmentRoot(restored.attachmentRoot);
-    setAppleContacts(restored.appleContacts);
-    setWhatsappKey("");
-    setWhatsappWa(restored.whatsappWa);
-    setWhatsappMedia(restored.whatsappMedia);
-    setWhatsappDb(restored.whatsappDb);
-    setWhatsappBusiness(restored.whatsappBusiness);
-    whatsappOwnerPhoneSeededRef.current = true;
-    setWhatsappOwnerPhone(restored.whatsappOwnerPhone);
-    setAttachmentMedia(restored.attachmentMedia);
-    setMaxResolution(restored.maxResolution);
-    setMaxFps(restored.maxFps);
-    setMinSizeMb(restored.minSizeMb);
-    // Restoring settings counts as seeding: the SBR profile-phones effect
-    // must not overwrite what was just restored.
-    ownerPhonesSeededRef.current = true;
-    setOwnerPhones(restored.ownerPhones);
-    ownerEmailsSeededRef.current = true;
-    setOwnerEmails(restored.ownerEmails.join(", "));
-    setObfuscate(restored.obfuscate);
-    setPhoneCountry(restored.phoneCountry);
-    setTimeZoneOverride(restored.timeZone);
-  }
 
   /**
    * Discard the run the panel offers (`discardRun`): it closes with the
@@ -348,25 +300,34 @@ export default function ImportScreen() {
    * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
    * and a run with no recorded device counts as this install's there too.
    */
-  async function discardOfferedRun(run: ActiveImportRun): Promise<void> {
+  async function discardOfferedRun(run: ActiveImportRun): Promise<DiscardOutcome> {
     const thisDevice = !run.device_id || run.device_id === getDeviceId();
-    await discardRun(run.id, thisDevice ? run.run_dir : null);
+    return discardRun(run.id, thisDevice ? run.run_dir : null);
   }
 
   async function handleDiscardResume(): Promise<void> {
     const run = resume.run;
     if (!run || discardingRef.current || resumingRef.current) return;
     discardingRef.current = true;
+    setDiscardError(null);
+    let notClosed = false;
     try {
-      // The panel drops to the form either way; if the run is still
-      // live server-side, the next visit shows it again.
-      await discardOfferedRun(run);
+      // A discard that did not close the run (`not_closed`) keeps the
+      // panel, with the message on it, and the run's files: the run is
+      // still open there.
+      // Otherwise the panel drops to the form; a run whose session ended is
+      // offered again at the account's next login.
+      const outcome = await discardOfferedRun(run);
+      if (outcome.kind === "not_closed") {
+        notClosed = true;
+        setDiscardError(outcome.message);
+      }
     } finally {
       discardingRef.current = false;
-      setResume(NO_RESUME);
+      if (!notClosed) setResume(NO_RESUME);
       // The run is gone, or the server still has it; either way the badge
       // asks again rather than keep saying "waiting".
-      cache.invalidateAccount();
+      markAccountStale();
     }
   }
 
@@ -387,6 +348,7 @@ export default function ImportScreen() {
     // of screen state.
     if (resumingRef.current || discardingRef.current) return;
     resumingRef.current = true;
+    setDiscardError(null);
     try {
       const run = resume.run;
       const storedForm = restoreFormFromSnapshot(run.form);
@@ -397,7 +359,7 @@ export default function ImportScreen() {
         setResume({ kind: "settings_unreadable", run });
         return;
       }
-      applyRestoredFormState(storedForm);
+      dispatch({ type: "refill", form: storedForm });
       // The typed secret goes to this one run's extract and nowhere else:
       // not into the visible form's state, and never into a snapshot.
       const restoredForm = resumeSecret
@@ -408,14 +370,17 @@ export default function ImportScreen() {
         if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, {
-          runId: run.id,
-          runDir: run.run_dir,
-          // Without this, a resumed Upload has no plan to diff its expected
-          // omissions against, which demotes an honest `completed` verdict
-          // to `completed_with_issues` for exactly the interrupted-and-
-          // resumed case. Undefined when the stored summary is missing or
-          // unparsable — startImport/runUpload already tolerate that.
-          approved: parseStoredStagingSummary(run.summary),
+          at: "upload",
+          run: {
+            runId: run.id,
+            runDir: run.run_dir,
+            // Without this, a resumed Upload has no plan to diff its expected
+            // omissions against, which demotes an honest `completed` verdict
+            // to `completed_with_issues` for exactly the interrupted-and-
+            // resumed case. Undefined when the stored summary is missing or
+            // unparsable — startImport/runUpload already tolerate that.
+            approved: parseStoredStagingSummary(run.summary),
+          },
         });
         return;
       }
@@ -430,13 +395,16 @@ export default function ImportScreen() {
       if (resume.kind === "resume_write") {
         if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
-        await startImport(restoredForm, undefined, {
-          runId: run.id,
-          runDir: run.run_dir,
-          // The write is resumed rather than re-probed, so the Staging Review's identity
-          // section has to come from what was recorded on the run at
-          // creation rather than a fresh read of the backup.
-          identities: parseSourceIdentities(run.source_identities),
+        await startImport(restoredForm, {
+          at: "staging",
+          run: {
+            runId: run.id,
+            runDir: run.run_dir,
+            // The write is resumed rather than re-probed, so the Staging Review's identity
+            // section has to come from what was recorded on the run at
+            // creation rather than a fresh read of the backup.
+            identities: parseSourceIdentities(run.source_identities),
+          },
         });
         return;
       }
@@ -445,13 +413,18 @@ export default function ImportScreen() {
       // server allows only one running Import Run per account, so give up the old
       // one before starting the new run. setResume stays put until right
       // before startImport, so the panel (not a blank form) covers the
-      // discard round trip. The old directory goes with the run: nothing
-      // will ever reach it again, and it can be multiple gigabytes. A failed
-      // delete stays on screen through the new run.
-      // If the server is unreachable, the create call below surfaces its
-      // own error the same as any other failed import start.
-      await discardOfferedRun(run);
-      cache.invalidateAccount();
+      // discard round trip. The old directory goes with the run once the
+      // server has closed it: nothing will ever reach it again, and it can
+      // be multiple gigabytes. A failed delete stays on screen through the
+      // new run. A discard the server did not take leaves the old run
+      // holding the account's import slot, so the restart stops there: the
+      // panel stays with the message, as a Discard's does.
+      const outcome = await discardOfferedRun(run);
+      if (outcome.kind === "not_closed") {
+        setDiscardError(outcome.message);
+        return;
+      }
+      markAccountStale();
       setResume(NO_RESUME);
       await startImport(restoredForm);
     } finally {
@@ -459,65 +432,40 @@ export default function ImportScreen() {
     }
   }
 
-  // The profile's phones seed the owner fields: the Android SMS phone list,
-  // and the one WhatsApp number (Android's only source, iPhone's fallback).
+  // The profile's phones seed the owner fields: the owner phone list of a
+  // source that asks for it, and the WhatsApp number of a source that asks
+  // for that instead.
   useEffect(() => {
-    const isWhatsapp = isWhatsappMethod(source);
-    if (!isAndroidSmsSource(source) && !isWhatsapp) {
-      setProfilePhones([]);
-      setProfilePhonesReady(false);
-      setProfilePhonesError(false);
-      ownerPhonesSeededRef.current = false;
-      ownerEmailsSeededRef.current = false;
-      whatsappOwnerPhoneSeededRef.current = false;
+    const descriptor = importSourceFor(source);
+    if (!descriptor.asksOwnerPhones && !descriptor.asksWhatsappOwnerPhone) {
+      setProfilePhones(PROFILE_PHONES_UNREAD);
+      dispatch({ type: "unseed" });
       return;
     }
-    const wantsEmails = needsOwnerEmails(source);
-    let cancelled = false;
-    setProfilePhonesReady(false);
-    setProfilePhonesError(false);
+    const wantsEmails = descriptor.asksOwnerEmails;
+    let canceled = false;
+    setProfilePhones((current) => ({ ...current, ready: false, error: false }));
     void (async () => {
       try {
         const profile = await fetchAccountProfile();
-        if (cancelled) return;
-        if (!profile) throw new Error("profile unavailable");
+        if (canceled) return;
         const phones = phoneNumbers(profile);
-        setProfilePhones(phones);
-        setProfilePhonesError(false);
-        setProfilePhonesReady(true);
-        if (isWhatsapp) {
-          const [first] = phones;
-          if (first === undefined || whatsappOwnerPhoneSeededRef.current) return;
-          setWhatsappOwnerPhone((current) => {
-            if (current.trim().length > 0) return current;
-            whatsappOwnerPhoneSeededRef.current = true;
-            return first;
-          });
+        setProfilePhones({ phones, ready: true, error: false });
+        if (descriptor.asksWhatsappOwnerPhone) {
+          dispatch({ type: "seed", whatsappOwnerPhone: phones[0] });
           return;
         }
-        if (wantsEmails && profile.emails.length > 0 && !ownerEmailsSeededRef.current) {
-          setOwnerEmails((current) => {
-            if (current.trim().length > 0) return current;
-            ownerEmailsSeededRef.current = true;
-            return profile.emails.join(", ");
-          });
-        }
-        if (phones.length === 0 || ownerPhonesSeededRef.current) return;
-        setOwnerPhones((current) => {
-          if (current.length > 0) return current;
-          ownerPhonesSeededRef.current = true;
-          return phones;
+        dispatch({
+          type: "seed",
+          ownerPhones: phones,
+          ownerEmails: wantsEmails ? profile.emails.join(", ") : undefined,
         });
       } catch {
-        if (!cancelled) {
-          setProfilePhones([]);
-          setProfilePhonesError(true);
-          setProfilePhonesReady(true);
-        }
+        if (!canceled) setProfilePhones({ phones: [], ready: true, error: true });
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [source, fetchAccountProfile]);
 
@@ -527,127 +475,30 @@ export default function ImportScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isTauri() || !isImessageMethod(source)) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const [backup, attachment, contacts] = await Promise.all([
-          probePath(backupPath),
-          probePath(attachmentRoot),
-          probePath(appleContacts),
-        ]);
-        let backupEncrypted: boolean | null = null;
-        if (source === "imessage-ios" && backup?.exists && backup.isDirectory) {
-          try {
-            backupEncrypted = await invokeIosBackupEncrypted(backupPath.trim());
-          } catch {
-            backupEncrypted = null;
-          }
-        }
-        if (cancelled) return;
-        const next = {
-          backup,
-          attachmentRoot: attachment,
-          appleContacts: contacts,
-          backupEncrypted,
-        };
-        setPathStats(imessageStatsForMethod(source, next));
-      })();
-    }, PATH_PROBE_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [source, backupPath, attachmentRoot, appleContacts]);
-
-  useEffect(() => {
-    if (!isTauri() || !isWhatsappMethod(source)) return;
-    setWhatsappStats(emptyWhatsappPathStats());
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const root = backupPath.trim();
-        const [backup, contactsDb, media, db, msgstore, cryptHits] = await Promise.all([
-          probePath(backupPath),
-          probePath(whatsappWa),
-          probePath(whatsappMedia),
-          probePath(whatsappDb),
-          probePath(root ? `${root}/msgstore.db` : ""),
-          Promise.all(
-            WHATSAPP_CRYPT_NAMES.map(async (name) => {
-              const stat = await probePath(root ? `${root}/${name}` : "");
-              return stat?.exists && stat.isFile ? name : null;
-            }),
-          ),
-        ]);
-        let backupEncrypted: boolean | null = null;
-        if (source === "whatsapp-ios" && root !== "") {
-          try {
-            backupEncrypted = await invokeIosBackupEncrypted(root);
-          } catch {
-            backupEncrypted = null;
-          }
-        }
-        if (cancelled) return;
-        const cryptName = cryptHits.find((name) => name !== null) ?? null;
-        setWhatsappStats({
-          backup,
-          contactsDb,
-          media,
-          db,
-          hasMsgstoreDb: Boolean(msgstore?.exists && msgstore.isFile),
-          cryptName,
-          backupEncrypted,
-        });
-      })();
-    }, PATH_PROBE_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [source, backupPath, whatsappWa, whatsappMedia, whatsappDb]);
-
-  function applyRememberedPaths(nextSource: string): string {
+  /** The paths remembered for `nextSource`; a field it does not remember is empty. */
+  function rememberedPathsFor(nextSource: string): SourcePaths {
     const loaded = loadRememberedImportPaths(nextSource);
-    setBackupPath(loaded.backupPath);
-    if (isImessageMethod(nextSource)) {
-      setAttachmentRoot(loaded.attachmentRoot);
-      setAppleContacts(loaded.appleContacts);
-      setWhatsappWa("");
-      setWhatsappMedia("");
-      setWhatsappDb("");
-    } else if (isWhatsappMethod(nextSource)) {
-      setAttachmentRoot("");
-      setAppleContacts("");
-      setWhatsappWa(loaded.whatsappWa);
-      setWhatsappMedia(loaded.whatsappMedia);
-      setWhatsappDb(loaded.whatsappDb);
-    } else {
-      setAttachmentRoot("");
-      setAppleContacts("");
-      setWhatsappWa("");
-      setWhatsappMedia("");
-      setWhatsappDb("");
-    }
-    return loaded.backupPath;
+    const remembered = importSourceFor(nextSource).rememberedPaths;
+    const pathOf = (field: ImporterExtraField) => (remembered.includes(field) ? loaded[field] : "");
+    return {
+      backupPath: loaded.backupPath,
+      attachmentRoot: pathOf("attachmentRoot"),
+      appleContacts: pathOf("appleContacts"),
+      whatsappWa: pathOf("whatsappWa"),
+      whatsappMedia: pathOf("whatsappMedia"),
+      whatsappDb: pathOf("whatsappDb"),
+    };
   }
 
   function handleSourceChange(next: string): void {
-    const resolved =
-      next === IMESSAGE_SOURCE_ID
-        ? lastImessageMethodRef.current
-        : next === WHATSAPP_SOURCE_ID
-          ? lastWhatsappMethodRef.current
-          : next;
+    // `next` is a source id from the source list, or a method from Platform.
+    const picked = importSourceById(next);
+    const resolved = picked ? (lastMethodRef.current[picked.id] ?? picked.defaultMethod) : next;
     const gen = ++sourceChangeGenRef.current;
-    setSource(resolved);
-    if (isImessageMethod(resolved)) lastImessageMethodRef.current = resolved;
-    if (isWhatsappMethod(resolved)) lastWhatsappMethodRef.current = resolved;
-    setPathStats(emptyImessagePathStats());
-    setWhatsappStats(emptyWhatsappPathStats());
-    if (resolved !== "whatsapp-ios") setWhatsappBusiness(false);
-    const loadedBackup = applyRememberedPaths(resolved);
+    lastMethodRef.current[importSourceFor(resolved).id] = resolved;
+    const paths = rememberedPathsFor(resolved);
+    editForm({ type: "source", source: resolved, paths });
+    const loadedBackup = paths.backupPath;
 
     if (resolved !== "imessage-macos" || loadedBackup.trim() !== "" || !isTauri()) {
       return;
@@ -657,19 +508,20 @@ export default function ImportScreen() {
       try {
         const home = await invokeHomeDir();
         if (gen !== sourceChangeGenRef.current) return;
-        if (home.os !== "macos") return;
+        const os = toDesktopOs(home.os);
+        if (os !== "macos") return;
         const chatDb = macMessagesDbPath(home.path);
         if (chatDb === "") return;
-        const stat = mapPathStat(await invokePathStat(chatDb));
+        const stat = await invokePathStat(chatDb);
         if (gen !== sourceChangeGenRef.current) return;
         const prefill = shouldPrefillMacMessagesDb({
-          os: home.os,
+          os,
           homeDir: home.path,
-          chatDbExists: stat.exists && stat.isFile,
+          chatDb: stat,
           rememberedPath: loadedBackup,
         });
         if (prefill === "") return;
-        setBackupPath(prefill);
+        dispatch({ type: "path", field: "backupPath", value: prefill });
         if (getRememberImporterPaths()) setImporterPath(resolved, prefill);
       } catch {
         // Home directory and path checks are best-effort on Mac only.
@@ -677,47 +529,26 @@ export default function ImportScreen() {
     })();
   }
 
-  const updateBackupPath = (path: string) => {
-    setBackupPath(path);
-    if (getRememberImporterPaths()) setImporterPath(source, path);
-  };
+  /**
+   * Apply a change the person made on the form. A change to a value drops
+   * the last start's failure, which was about the values before it. A toggle
+   * only shows or hides part of the form, so the failure stays.
+   */
+  function editForm(action: ImportFormAction): void {
+    if (action.type !== "toggle") formEdited();
+    dispatch(action);
+  }
 
-  const updateAttachmentRoot = (path: string) => {
-    setAttachmentRoot(path);
-    if (getRememberImporterPaths() && isImessageMethod(source)) {
-      setImporterExtraPath(source, "attachmentRoot", path);
+  /** Set a path field, and remember it for the source when the source keeps it. */
+  const changePath = (field: ImportPathField, path: string) => {
+    editForm({ type: "path", field, value: path });
+    if (!getRememberImporterPaths()) return;
+    if (field === "backupPath") {
+      setImporterPath(source, path);
+    } else if (importSourceFor(source).rememberedPaths.includes(field)) {
+      setImporterExtraPath(source, field, path);
     }
   };
-
-  const updateAppleContacts = (path: string) => {
-    setAppleContacts(path);
-    if (getRememberImporterPaths() && isImessageMethod(source)) {
-      setImporterExtraPath(source, "appleContacts", path);
-    }
-  };
-
-  const updateWhatsappWa = (path: string) => {
-    setWhatsappWa(path);
-    if (getRememberImporterPaths() && isWhatsappMethod(source)) {
-      setImporterExtraPath(source, "whatsappWa", path);
-    }
-  };
-
-  const updateWhatsappMedia = (path: string) => {
-    setWhatsappMedia(path);
-    if (getRememberImporterPaths() && isWhatsappMethod(source)) {
-      setImporterExtraPath(source, "whatsappMedia", path);
-    }
-  };
-
-  const updateWhatsappDb = (path: string) => {
-    setWhatsappDb(path);
-    if (getRememberImporterPaths() && isWhatsappMethod(source)) {
-      setImporterExtraPath(source, "whatsappDb", path);
-    }
-  };
-
-  const isAndroidSms = isAndroidSmsSource(source);
 
   return (
     <div className={`min-w-0 p-6 ${phase === "form" ? "max-w-[640px]" : "max-w-5xl"}`}>
@@ -729,97 +560,22 @@ export default function ImportScreen() {
       )}
       {phase === "form" && resumeChecked && resume.kind === "none" && (
         <ImportFormFields
-          source={source}
+          form={form}
+          dispatch={editForm}
           onSourceChange={handleSourceChange}
-          backupPath={backupPath}
-          onBackupPathChange={updateBackupPath}
-          backupPassword={backupPassword}
-          onBackupPasswordChange={setBackupPassword}
-          showBackupPassword={showBackupPassword}
-          onToggleBackupPassword={() => setShowBackupPassword((v) => !v)}
-          attachmentRoot={attachmentRoot}
-          onAttachmentRootChange={updateAttachmentRoot}
-          appleContacts={appleContacts}
-          onAppleContactsChange={updateAppleContacts}
+          onPathChange={changePath}
           pathStats={pathStats}
-          whatsappKey={whatsappKey}
-          onWhatsappKeyChange={setWhatsappKey}
-          showWhatsappKey={showWhatsappKey}
-          onToggleWhatsappKey={() => setShowWhatsappKey((v) => !v)}
-          whatsappWa={whatsappWa}
-          onWhatsappWaChange={updateWhatsappWa}
-          whatsappMedia={whatsappMedia}
-          onWhatsappMediaChange={updateWhatsappMedia}
-          whatsappDb={whatsappDb}
-          onWhatsappDbChange={updateWhatsappDb}
-          whatsappBusiness={whatsappBusiness}
-          onWhatsappBusinessChange={setWhatsappBusiness}
-          whatsappOwnerPhone={whatsappOwnerPhone}
-          onWhatsappOwnerPhoneChange={(value) => {
-            whatsappOwnerPhoneSeededRef.current = true;
-            setWhatsappOwnerPhone(value);
-          }}
           whatsappStats={whatsappStats}
-          attachmentMedia={attachmentMedia}
-          onAttachmentMediaChange={setAttachmentMedia}
-          maxResolution={maxResolution}
-          onMaxResolutionChange={setMaxResolution}
-          maxFps={maxFps}
-          onMaxFpsChange={setMaxFps}
-          minSizeMb={minSizeMb}
-          onMinSizeMbChange={setMinSizeMb}
-          ownerPhones={ownerPhones}
-          onOwnerPhonesChange={(phones) => {
-            ownerPhonesSeededRef.current = true;
-            setOwnerPhones(phones);
-          }}
-          ownerEmails={ownerEmails}
-          onOwnerEmailsChange={(value) => {
-            ownerEmailsSeededRef.current = true;
-            setOwnerEmails(value);
-          }}
+          androidSmsStats={androidSmsStats}
           profilePhones={profilePhones}
-          profilePhonesReady={profilePhonesReady}
-          profilePhonesError={profilePhonesError}
-          showMissingAccountPhoneWarning={
-            profilePhonesReady && !profilePhonesError && profilePhones.length === 0
-          }
-          formatOpen={formatOpen}
-          onToggleFormat={() => setFormatOpen((o) => !o)}
-          processingOpen={processingOpen}
-          onToggleProcessing={() => setProcessingOpen((o) => !o)}
-          obfuscate={obfuscate}
-          onObfuscateChange={setObfuscate}
-          timeZone={timeZone}
-          onTimeZoneChange={setTimeZoneOverride}
-          phoneCountry={phoneCountry}
+          accountTimeZone={accountTimeZone}
           phoneCountries={phoneCountries}
-          onPhoneCountryChange={setPhoneCountry}
           running={running}
+          startError={startError}
           onImport={(flushedPhones) =>
-            void startImport({
-              source,
-              backupPath,
-              backupPassword,
-              attachmentMedia,
-              maxResolution,
-              maxFps,
-              minSizeMb,
-              ownerPhones: flushedPhones ?? ownerPhones,
-              ownerEmails: splitEmails(ownerEmails),
-              obfuscate,
-              timeZone,
-              phoneCountry,
-              isAndroidSms,
-              attachmentRoot,
-              appleContacts,
-              whatsappKey,
-              whatsappWa,
-              whatsappMedia,
-              whatsappDb,
-              whatsappBusiness,
-              whatsappOwnerPhone,
-            })
+            void startImport(
+              importJobValues(form, accountTimeZone, flushedPhones ?? form.ownerPhones),
+            )
           }
         />
       )}
@@ -828,7 +584,7 @@ export default function ImportScreen() {
         <ResumeImportPanel
           decision={resume}
           secret={resumeSecret}
-          error={resumeError}
+          error={discardError ?? resumeError}
           onResume={(typedSecret) => void handleResumeAction(typedSecret)}
           onDiscard={() => void handleDiscardResume()}
         />
@@ -839,7 +595,7 @@ export default function ImportScreen() {
           phase={phase}
           steps={steps}
           running={running}
-          form={form}
+          form={runForm}
           stagingSummary={stagingSummary}
           mediaSummary={mediaSummary}
           mediaFailedCount={mediaFailedCount}

@@ -6,9 +6,9 @@
 //! header with no image data.
 
 use crate::emit::{ConvertExportArgs, convert_export};
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
-use message_ir::ConversationDocument;
-use message_ir_format::read_conversation_jsonl;
+use ir::ConversationDocument;
+use ir_format::read_conversation_jsonl;
+use message_crate_core::{ConvertRun, ExportReport, LogSink, OutputFormat};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,31 +34,30 @@ fn convert_in(
     convert_export(ConvertExportArgs {
         inputs: &[input],
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        log: None,
-        issues: None,
-        resume: false,
+        log: &LogSink::none(),
         phone_country,
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert")
 }
 
 /// Every conversation the run wrote, keyed by chat identifier.
-fn documents(output_dir: &Path) -> BTreeMap<String, ConversationDocument> {
+fn documents_by_chat(output_dir: &Path) -> BTreeMap<String, ConversationDocument> {
     fs::read_dir(output_dir)
         .expect("output dir")
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
         .map(|p| {
-            let doc = read_conversation_jsonl(&p).expect("read jsonl");
-            (doc.conversation.chat_identifier.clone(), doc)
+            let document = read_conversation_jsonl(&p).expect("read jsonl");
+            (document.conversation.chat_identifier.clone(), document)
         })
         .collect()
 }
@@ -73,7 +72,7 @@ fn input_with(root: &Path, names: &[&str]) -> PathBuf {
     input
 }
 
-/// The roster of a one-to-one chat is the peer, named from the subject.
+/// The roster of a one-to-one conversation is the peer, named from the subject.
 ///
 /// `peer_handles_from_digits` fills the roster and `normalize_handle` writes
 /// the sender; each could return nothing and a message would still be written.
@@ -88,8 +87,8 @@ fn one_to_one_roster_holds_the_peer_named_from_the_subject() {
     let report = convert(&input, &out);
     assert_eq!(report.conversations, 1);
 
-    let docs = documents(&out);
-    let alice = &docs["+14075550107"];
+    let documents = documents_by_chat(&out);
+    let alice = &documents["+14075550107"];
     let roster: Vec<(Option<&str>, Option<&str>)> = alice
         .conversation
         .participants
@@ -98,9 +97,9 @@ fn one_to_one_roster_holds_the_peer_named_from_the_subject() {
         .collect();
     assert_eq!(roster, vec![(Some("+14075550107"), Some("Alice"))]);
 
-    let msg = &alice.messages[0];
-    assert_eq!(msg.sender_identity.as_deref(), Some("+14075550107"));
-    assert_eq!(msg.sender_display_name.as_deref(), Some("Alice"));
+    let message = &alice.messages[0];
+    assert_eq!(message.sender.identity.as_deref(), Some("+14075550107"));
+    assert_eq!(message.sender.display_name.as_deref(), Some("Alice"));
 }
 
 /// A group holds every peer, and an incoming message names the peer whose
@@ -119,8 +118,8 @@ fn group_roster_holds_both_peers_and_the_sender_is_the_one_in_from() {
 
     convert(&input, &out);
 
-    let docs = documents(&out);
-    let (chat_id, group) = docs.iter().next().expect("one conversation");
+    let documents = documents_by_chat(&out);
+    let (chat_id, group) = documents.iter().next().expect("one conversation");
     assert!(chat_id.starts_with("chat-group-"), "chat id {chat_id}");
     let mut handles: Vec<&str> = group
         .conversation
@@ -131,9 +130,9 @@ fn group_roster_holds_both_peers_and_the_sender_is_the_one_in_from() {
     handles.sort_unstable();
     assert_eq!(handles, vec!["+14075550107", "+14075550108"]);
 
-    let msg = &group.messages[0];
-    assert_eq!(msg.text.trim(), "Hello group from Bob");
-    assert_eq!(msg.sender_identity.as_deref(), Some("+14075550108"));
+    let message = &group.messages[0];
+    assert_eq!(message.text.trim(), "Hello group from Bob");
+    assert_eq!(message.sender.identity.as_deref(), Some("+14075550108"));
 }
 
 /// A mail that names the peer but records no address still gets its own
@@ -163,10 +162,10 @@ fn a_named_peer_with_no_address_gets_a_conversation_of_their_own() {
     let report = convert(&input, &out);
     assert_eq!(report.extra(crate::emit::UNKNOWN_CHAT_MESSAGES), 1);
 
-    let docs = documents(&out);
-    let alice = docs
+    let documents = documents_by_chat(&out);
+    let alice = documents
         .get("name:Alice")
-        .unwrap_or_else(|| panic!("keyed by the name: {:?}", docs.keys()));
+        .unwrap_or_else(|| panic!("keyed by the name: {:?}", documents.keys()));
     let roster: Vec<(Option<&str>, Option<&str>)> = alice
         .conversation
         .participants
@@ -208,10 +207,10 @@ fn people_known_only_by_non_ascii_names_get_a_conversation_each() {
 
     convert(&input, &out);
 
-    let docs = documents(&out);
-    let texts: Vec<(&str, &str)> = docs
+    let documents = documents_by_chat(&out);
+    let texts: Vec<(&str, &str)> = documents
         .iter()
-        .map(|(id, doc)| (id.as_str(), doc.messages[0].text.trim()))
+        .map(|(id, document)| (id.as_str(), document.messages[0].text.trim()))
         .collect();
     assert_eq!(
         texts,
@@ -249,9 +248,9 @@ fn ordinary_mail_is_skipped_and_counted_as_not_sms() {
     assert_eq!(report.extra(crate::emit::SKIPPED_PARSE_ERROR), 0);
     assert_eq!(report.extra(crate::emit::FLAT_EML), 1);
     assert_eq!(report.messages, 1);
-    let docs = documents(&out);
+    let documents = documents_by_chat(&out);
     assert_eq!(
-        docs["+14075550107"].messages[0].text.trim(),
+        documents["+14075550107"].messages[0].text.trim(),
         "Hello from Alice"
     );
 }
@@ -286,8 +285,8 @@ fn files_under_duplicate_and_exclude_are_skipped() {
         "only the top-level file is read"
     );
     assert_eq!(report.messages, 1);
-    let docs = documents(&out);
-    let texts: Vec<&str> = docs["+14075550107"]
+    let documents = documents_by_chat(&out);
+    let texts: Vec<&str> = documents["+14075550107"]
         .messages
         .iter()
         .map(|m| m.text.trim())
@@ -327,8 +326,8 @@ fn a_jpeg_part_is_exactly_one_jpg_attachment_and_a_plain_sms_has_none() {
     let report = convert(&input, &out);
     assert_eq!(report.attachments_saved, 1);
 
-    let docs = documents(&out);
-    let alice = &docs["+14075550107"];
+    let documents = documents_by_chat(&out);
+    let alice = &documents["+14075550107"];
     assert_eq!(alice.messages.len(), 2);
 
     let plain = &alice.messages[0];
@@ -338,13 +337,16 @@ fn a_jpeg_part_is_exactly_one_jpg_attachment_and_a_plain_sms_has_none() {
     let mms = &alice.messages[1];
     assert_eq!(mms.text.trim(), "Picture from Alice");
     assert_eq!(mms.attachments.len(), 1, "{:?}", mms.attachments);
-    let att = &mms.attachments[0];
-    let name = att.original_name.as_deref().expect("a generated name");
+    let attachment = &mms.attachments[0];
+    let name = attachment
+        .original_name
+        .as_deref()
+        .expect("a generated name");
     assert!(name.ends_with(".jpg"), "name {name}");
-    assert_eq!(att.mime_type.as_deref(), Some("image/jpeg"));
-    let path = att.path.as_deref().expect("staged");
+    assert_eq!(attachment.mime_type.as_deref(), Some("image/jpeg"));
+    let path = attachment.path.as_deref().expect("staged");
     assert!(path.ends_with(".jpg"), "path {path}");
-    assert_eq!(att.missing_reason, None);
+    assert_eq!(attachment.missing_reason, None);
     assert!(out.join(path).is_file(), "{path} was written");
 }
 
@@ -403,13 +405,18 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
 
     convert(&input, &out);
 
-    let docs = documents(&out);
-    let groups: Vec<&ConversationDocument> = docs
+    let documents = documents_by_chat(&out);
+    let groups: Vec<&ConversationDocument> = documents
         .iter()
         .filter(|(id, _)| id.starts_with("chat-"))
-        .map(|(_, doc)| doc)
+        .map(|(_, document)| document)
         .collect();
-    assert_eq!(groups.len(), 1, "{:?}", docs.keys().collect::<Vec<_>>());
+    assert_eq!(
+        groups.len(),
+        1,
+        "{:?}",
+        documents.keys().collect::<Vec<_>>()
+    );
     let group = groups[0];
     let mut handles: Vec<&str> = group
         .conversation
@@ -425,9 +432,9 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
         .iter()
         .find(|m| m.text.trim() == "reply from Carol")
         .expect("Carol's reply is in the group");
-    assert_eq!(reply.sender_identity.as_deref(), Some("+14075550111"));
+    assert_eq!(reply.sender.identity.as_deref(), Some("+14075550111"));
     assert!(
-        docs.contains_key("+14075550111"),
+        documents.contains_key("+14075550111"),
         "Carol's own conversation"
     );
 }
@@ -463,13 +470,13 @@ fn a_group_of_one_person_named_twice_is_their_one_to_one_conversation() {
 
     convert(&input, &out);
 
-    let docs = documents(&out);
+    let documents = documents_by_chat(&out);
     assert_eq!(
-        docs.keys().collect::<Vec<_>>(),
+        documents.keys().collect::<Vec<_>>(),
         ["+14075550111"],
         "one conversation, Carol's"
     );
-    assert_eq!(docs["+14075550111"].messages.len(), 2);
+    assert_eq!(documents["+14075550111"].messages.len(), 2);
 }
 
 /// A UK archive that gives Carol's address her number in national form in
@@ -515,10 +522,10 @@ fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_coun
         report.extra(crate::emit::GROUP_MEMBERS_WITH_SEVERAL_NUMBERS),
         0
     );
-    let docs = documents(&out);
-    let group = docs
+    let documents = documents_by_chat(&out);
+    let group = documents
         .values()
-        .find(|doc| doc.conversation.chat_identifier.starts_with("chat-"))
+        .find(|document| document.conversation.chat_identifier.starts_with("chat-"))
         .expect("the group");
     let mut members: Vec<&str> = group
         .conversation
@@ -528,7 +535,11 @@ fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_coun
         .collect();
     members.sort_unstable();
     assert_eq!(members, ["+447700900123", "+447700900456"]);
-    assert_eq!(docs["+447700900123"].messages.len(), 2, "one conversation");
+    assert_eq!(
+        documents["+447700900123"].messages.len(),
+        2,
+        "one conversation"
+    );
 
     let out = tmp.path().join("none");
     let report = convert_in(&input, &out, None);
@@ -542,7 +553,7 @@ fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_coun
 /// writes it with its `+` code, in the country the run states: the run
 /// keys the owner's numbers in that country, as it keys the archive's
 /// (#1676). Keyed with no country, `07700900123` named nobody the archive
-/// wrote, so the owner became the peer of their own one-to-one chat.
+/// wrote, so the owner became the peer of their own one-to-one conversation.
 #[test]
 fn an_owner_given_in_national_form_is_not_a_peer_in_the_run_s_country() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -566,24 +577,23 @@ Hello Dee\r\n",
     convert_export(ConvertExportArgs {
         inputs: &[input.as_path()],
         output_dir: &out,
-        scratch_dir: cache.path(),
         owner_phones: &["07700900123".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        log: None,
-        issues: None,
-        resume: false,
+        log: &LogSink::none(),
         phone_country: phone::country("GB"),
+        convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
 
-    let docs = documents(&out);
+    let documents = documents_by_chat(&out);
     assert_eq!(
-        docs.keys().map(String::as_str).collect::<Vec<_>>(),
+        documents.keys().map(String::as_str).collect::<Vec<_>>(),
         ["+447700900456"],
-        "the one-to-one chat is with Dee, not the owner"
+        "the one-to-one conversation is with Dee, not the owner"
     );
 }

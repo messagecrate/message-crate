@@ -1,7 +1,8 @@
 //! The address book routes: `POST /v1/contacts` loads Message Crate's own
-//! CSV into the account, and `POST /v1/contacts/address-book` writes it. The
-//! file's rules and both directions are in `db::address_book`; this module
-//! checks the request and hands it over.
+//! CSV into the account, `POST /v1/contacts/address-book` writes it, and
+//! `POST /v1/contacts/vcard-address-book` writes it from a vCard file for a
+//! person to edit. The file's rules and every direction are in
+//! `db::address_book`; this module checks the request and hands it over.
 
 use std::collections::HashSet;
 
@@ -9,14 +10,15 @@ use axum::extract::{Request, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
-use crate::db::address_book::{self, LoadCounts, LoadError, LoadMode};
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, refuse_for_demo_account};
+use crate::db::address_book::{self, LoadCounts, LoadMode};
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts::read::contact_ids_matching;
 use crate::extract::{Json, Query};
-use crate::server::{
-    ApiError, AppState, FullAccess, content_type_base, read_body_limited, refuse_for_demo_account,
-};
+use crate::request_body::{content_type_base, read_body_limited};
 
 /// What an address book load changed.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -66,8 +68,15 @@ impl From<LoadCounts> for CreateContactsResponse {
 /// thousands of identities, and the whole file is read into memory before
 /// parsing. The route reads the body itself against this cap, as the asset
 /// routes do, and not through `crate::extract::Json`, whose cap is
-/// [`crate::server::MAX_JSON_BODY_BYTES`].
+/// [`crate::limits::MAX_JSON_BODY_BYTES`].
 pub(crate) const MAX_ADDRESS_BOOK_BYTES: usize = 8 * 1024 * 1024;
+
+/// Largest vCard file the conversion route accepts, in bytes.
+///
+/// A phone's contacts carry their photos inside the file, base64-encoded:
+/// 544 cards from one iPhone, 184 of them with a photo, are about 20 MB. The
+/// file is read into memory whole, as the address book is.
+pub(crate) const MAX_VCARD_BYTES: usize = 64 * 1024 * 1024;
 
 /// The file name Export gives the address book.
 const EXPORT_FILE_NAME: &str = "address-book.csv";
@@ -79,19 +88,23 @@ pub(crate) struct CreateContactsQuery {
     mode: LoadMode,
 }
 
-impl From<LoadError> for ApiError {
-    fn from(error: LoadError) -> Self {
-        match error {
-            LoadError::Refused(reasons) => Self::ValidationFailed(reasons),
-            LoadError::Failed(cause) => Self::Internal(cause.context("load address book")),
-        }
-    }
-}
-
 /// Load an address book into this account. The body is the file itself:
 /// Message Crate's own CSV, one row per identity, with the columns
-/// `contact_id`, `display_name`, `groups`, `service`, `identity_type` and
-/// `identity`, as `POST /v1/contacts/address-book` writes it.
+/// `contact_id`, `display_name`, `service`, `identity` and `groups`, as
+/// `POST /v1/contacts/address-book` writes it.
+///
+/// `service` is `Text Message`, `Email` or `WhatsApp`, the words the screen
+/// where an identity is added offers, ignoring case. The file states no
+/// type: the service decides which types are valid and the address's shape
+/// picks among them, as adding an identity does. `Text Message` carries a
+/// phone number, an email address or any other name; `Email` is an email
+/// address on Text Message; `WhatsApp` carries a phone number or one of
+/// WhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),
+/// which are `other`. An identity written exactly as the account keys it on
+/// that service is that identity, whatever its type, so an exported file
+/// loads back as it was. A row whose address the service cannot carry, such
+/// as an email address on `WhatsApp` (an `@` address at any other domain),
+/// is refused, where adding an identity stores it as `other`.
 ///
 /// Rows that share a `contact_id` are one contact. An id the account holds
 /// names that contact, a blank id makes a new contact for that row, and any
@@ -140,7 +153,7 @@ impl From<LoadError> for ApiError {
     )
 )]
 pub(crate) async fn create_contacts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<CreateContactsQuery>,
     request: Request,
@@ -159,8 +172,9 @@ pub(crate) async fn create_contacts(
     if content.trim().is_empty() {
         return Err(ApiError::validation("address book is empty"));
     }
-    let mut conn = state.db.acquire().await?;
-    let counts = address_book::load(&mut conn, auth.account_id, content, query.mode).await?;
+    let mut conn = db.acquire().await?;
+    let now = chrono::Utc::now();
+    let counts = address_book::load(&mut conn, auth.account_id, content, query.mode, now).await?;
     let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));
     let details = Details {
         mode: Some(query.mode),
@@ -175,6 +189,7 @@ pub(crate) async fn create_contacts(
         AuditActor::Holder,
         auth.account_id,
         details,
+        now,
     )
     .await?;
     Ok(Json(counts.into()))
@@ -198,11 +213,12 @@ pub(crate) struct GetAddressBookRequest {
 /// ones among them, or every contact when the body names neither.
 ///
 /// The answer is `text/csv`, not JSON: one row per identity, with the
-/// columns `contact_id`, `display_name`, `groups`, `service`, `identity_type`
-/// and `identity`. A contact's name and its Contact Group names, separated
-/// by `;`, repeat on each of its rows. A contact with no name has a blank
-/// `display_name`, and a contact with no identity is one row with the last
-/// three columns blank. Contacts in the trash are left out.
+/// columns `contact_id`, `display_name`, `service`, `identity` and `groups`.
+/// `service` is `Text Message`, `Email` for an email address on Text
+/// Message, or `WhatsApp`. A contact's name and its Contact Group names,
+/// separated by `;`, repeat on each of its rows. A contact with no name has
+/// a blank `display_name`, and a contact with no identity is one row with
+/// `service` and `identity` blank. Contacts in the trash are left out.
 ///
 /// A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return
 /// is written with a `'` in front, in every column, because a spreadsheet
@@ -226,18 +242,20 @@ pub(crate) struct GetAddressBookRequest {
     )
 )]
 pub(crate) async fn get_address_book(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Json(body): Json<GetAddressBookRequest>,
 ) -> Result<Response, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
+    let now = chrono::Utc::now();
     let q = body.q.as_deref().unwrap_or("").trim();
     let only: Option<HashSet<i64>> = if q.is_empty() {
         (!body.ids.is_empty()).then(|| body.ids.iter().copied().collect())
     } else {
         // The same compile the Contacts list runs, so the file holds the
         // rows the person was looking at.
-        let clock = crate::db::account_profile::account_clock(&mut conn, auth.account_id).await?;
+        let clock =
+            crate::db::account_profile::account_clock(&mut conn, auth.account_id, now).await?;
         let matched = contact_ids_matching(&mut conn, auth.account_id, q, clock).await?;
         Some(if body.ids.is_empty() {
             matched
@@ -262,9 +280,103 @@ pub(crate) async fn get_address_book(
         AuditActor::Holder,
         auth.account_id,
         details,
+        now,
     )
     .await?;
-    Ok((
+    Ok(address_book_attachment(written.csv))
+}
+
+/// The query of `POST /v1/contacts/vcard-address-book`.
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct GetVcardAddressBookQuery {
+    #[serde(default)]
+    country: Option<String>,
+}
+
+/// Write an address book from a vCard file, for the person to edit and then
+/// load with `POST /v1/contacts`. The body is the file itself, one or more
+/// cards. Nothing is read from or stored in the account.
+///
+/// The answer is `text/csv` in the address book's columns: one row for each
+/// `TEL` and each `EMAIL` on each card. `contact_id` is `card1`, `card2`, …
+/// by the card's position in the file, so a card's rows load as one new
+/// contact. `display_name` is the card's `FN`, or its `N` assembled when it
+/// has no `FN`, and blank when it has neither. `service` is `Text Message`
+/// for a number and `Email` for an email address, never `WhatsApp`, because
+/// a card cannot say a number is on WhatsApp. `groups` is blank:
+/// `CATEGORIES` is not carried over. A card with no number and no email
+/// address gives no rows.
+///
+/// A number written without `+` is written in its `+` form in `country` when
+/// it is a valid number there. A number written with `+`, one that is not
+/// valid in `country`, and every number when no `country` is given are
+/// written exactly as the card has them. Nothing else is checked: the load
+/// refuses what it cannot store and names the rows. Cells are written with
+/// the `'` the export puts before a cell a spreadsheet would run.
+///
+/// A vCard 2.1 quoted-printable value is read in the charset its `CHARSET`
+/// names, such as `SHIFT_JIS` or `ISO-8859-1`, and as UTF-8 when it names
+/// none. A body that holds no `BEGIN:VCARD` line, and a card that writes its
+/// name, a number or an email address in a charset Message Crate cannot
+/// read, answer `422 Unprocessable Entity`.
+#[utoipa::path(
+    post,
+    path = "/v1/contacts/vcard-address-book",
+    tag = "Contacts",
+    security(("session" = [])),
+    params(
+        ("country" = Option<String>, Query, description = "The country a number written without its `+` code is read in, as an ISO 3166-1 code that `GET /v1/phone-countries` lists, such as `US`. Absent, every number is written as the card has it.")
+    ),
+    request_body(
+        content_type = "text/vcard",
+        content = String,
+        description = "The vCard file: one or more cards."
+    ),
+    responses(
+        (
+            status = 200,
+            description = "The address book, as an attachment named `address-book.csv`",
+            content_type = "text/csv",
+            body = String,
+            headers(("Content-Disposition" = String, description = "`attachment; filename=\"address-book.csv\"`"))
+        ),
+    )
+)]
+pub(crate) async fn get_vcard_address_book(
+    FullAccess(_auth): FullAccess,
+    Query(query): Query<GetVcardAddressBookQuery>,
+    request: Request,
+) -> Result<Response, ApiError> {
+    if !content_type_base(request.headers())
+        .is_some_and(|base| base.eq_ignore_ascii_case("text/vcard"))
+    {
+        return Err(ApiError::UnsupportedMediaType(
+            "Content-Type must be text/vcard".into(),
+        ));
+    }
+    let country = match query.country.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(code) => Some(phone::country(code).ok_or_else(|| {
+            ApiError::validation(format!(
+                "country {code:?} is not a country GET /v1/phone-countries lists"
+            ))
+        })?),
+    };
+    let body = read_body_limited(request.into_body(), MAX_VCARD_BYTES).await?;
+    let content = std::str::from_utf8(&body)
+        .map_err(|_| ApiError::MalformedBody("vCard file is not UTF-8 text".into()))?;
+    let Some(csv) = address_book::from_vcard(content, country)? else {
+        return Err(ApiError::validation(
+            "the file holds no vCard: it has no BEGIN:VCARD line",
+        ));
+    };
+    Ok(address_book_attachment(csv))
+}
+
+/// An address book answered as a file: `text/csv`, as an attachment named
+/// [`EXPORT_FILE_NAME`].
+fn address_book_attachment(csv: String) -> Response {
+    (
         [
             (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
             (
@@ -272,7 +384,7 @@ pub(crate) async fn get_address_book(
                 format!("attachment; filename=\"{EXPORT_FILE_NAME}\""),
             ),
         ],
-        written.csv,
+        csv,
     )
-        .into_response())
+        .into_response()
 }

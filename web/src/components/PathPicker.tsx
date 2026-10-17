@@ -1,7 +1,8 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
+import { errorText } from "../lib/apiErrorMessage";
+import { pickPath } from "../lib/desktop/fs";
 import Button from "./Button";
-import { textInputClassName } from "./TextField";
+import { textInputClass } from "./TextField";
 
 interface PathPickerProps {
   value: string;
@@ -31,18 +32,16 @@ export default function PathPicker({
 
   const browse = async () => {
     setBrowseError("");
-    let result: string | string[] | null;
+    let result: string | null;
     try {
-      result = directory
-        ? await open({ directory: true, multiple: false })
-        : await open({ multiple: false, filters });
+      result = await pickPath({ directory, filters });
     } catch (err) {
       // A Tauri command rejects with the plugin's own string, not an Error.
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = errorText(err);
       setBrowseError(`The file dialog could not be opened: ${reason}`);
       return;
     }
-    if (result && typeof result === "string") {
+    if (result) {
       onChange(result);
     }
   };
@@ -59,7 +58,7 @@ export default function PathPicker({
           spellCheck={false}
           autoComplete="off"
           disabled={isDisabled}
-          className={`flex-1 ${textInputClassName}`}
+          className={`flex-1 ${textInputClass}`}
         />
         <Button onClick={browse} size="xs" disabled={isDisabled}>
           Browse

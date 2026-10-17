@@ -21,9 +21,9 @@ export function applyCheckedRange(
   const anchor = anchorId === null ? -1 : orderedIds.indexOf(anchorId);
   const from = anchor === -1 ? clicked : Math.min(anchor, clicked);
   const to = anchor === -1 ? clicked : Math.max(anchor, clicked);
-  for (let i = from; i <= to; i++) {
-    if (on) next.add(orderedIds[i]);
-    else next.delete(orderedIds[i]);
+  for (const id of orderedIds.slice(from, to + 1)) {
+    if (on) next.add(id);
+    else next.delete(id);
   }
   return next;
 }

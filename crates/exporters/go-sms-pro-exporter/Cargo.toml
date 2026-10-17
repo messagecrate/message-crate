@@ -6,19 +6,19 @@ license = "LicenseRef-FCL-1.0-ALv2"
 autotests = false
 
 [dependencies]
+android-fields = { path = "../../libs/android-fields" }
 anyhow = { workspace = true }
 csv = { workspace = true }
-hex = { workspace = true }
+file-io = { workspace = true }
 go-sms-mms = { path = "../../libs/go-sms-mms" }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../../libs/ir" }
-message-ir-format = { path = "../../libs/ir-format" }
-message-staging = { path = "../../libs/staging" }
+message-crate-csv = { path = "../../libs/csv" }
+ir = { path = "../../libs/ir" }
+staging = { path = "../../libs/staging" }
 media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 quick-xml = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }

@@ -1,13 +1,12 @@
 import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
-import AuthSubmitButton from "../../components/AuthSubmitButton";
-import { LockIcon, PersonIcon } from "../../components/icons";
-import PasswordField from "../../components/PasswordField";
-import TextField from "../../components/TextField";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useAuth } from "../../hooks/useAuth";
 import { setBaseUrl } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
 import { claimServer } from "../../lib/serverApi";
-import { useAsyncAction } from "../../lib/useAsyncAction";
+import CredentialFields from "./CredentialFields";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**
  * Create the owner, which is the only thing an unclaimed Message Crate offers.
@@ -29,8 +28,7 @@ export default function ClaimForm({
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const keep = useKeepLoggedIn();
   const { busy, error, run } = useAsyncAction();
 
   const submit = (event: FormEvent) => {
@@ -49,7 +47,7 @@ export default function ClaimForm({
       const url = serverUrl.trim();
       setBaseUrl(url);
       const res = await claimServer({ username: username.trim(), password });
-      await login(url, res.token, res.account_id);
+      await login(url, res.token, res.account_id, keep.lifetime);
     });
   };
 
@@ -59,45 +57,17 @@ export default function ClaimForm({
         An owner is required to create and manage users.
       </p>
 
-      <TextField
-        label="Username"
-        leadingIcon={<PersonIcon size={16} />}
-        value={username}
-        onChange={setUsername}
-        name="username"
-        autoComplete="username"
-        isDisabled={disabled}
-      />
-
-      <PasswordField
-        label="Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={password}
-        onChange={setPassword}
-        name="new-password"
+      <CredentialFields
+        username={{ value: username, onChange: setUsername }}
+        password={{ value: password, onChange: setPassword }}
         autoComplete="new-password"
-        showPassword={showPassword}
-        onToggle={() => setShowPassword((v) => !v)}
-        isDisabled={disabled}
+        confirmPassword={{ value: confirmPassword, onChange: setConfirmPassword }}
+        disabled={disabled}
       />
 
-      <PasswordField
-        label="Confirm Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={confirmPassword}
-        onChange={setConfirmPassword}
-        name="confirm-password"
-        autoComplete="new-password"
-        showPassword={showConfirm}
-        onToggle={() => setShowConfirm((v) => !v)}
-        isDisabled={disabled}
-      />
-
-      <AuthSubmitButton disabled={busy || disabled}>
+      <KeepLoggedInSubmit choice={keep} disabled={busy || disabled}>
         {busy ? "Creating…" : "Create Owner"}
-      </AuthSubmitButton>
+      </KeepLoggedInSubmit>
 
       <div className="mt-auto">
         <AuthErrorFooter error={error} className="h-16" />

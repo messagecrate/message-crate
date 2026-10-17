@@ -4,7 +4,7 @@
 //! Reading a conversation's participants is in `db::participant_names`, and
 //! an import writes them through `db::staging`.
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 use crate::db::account_profile::is_account_identity_sql;
@@ -28,19 +28,23 @@ pub async fn set_aside_identity_participants(
                            WHERE h.account_id = $1 AND {})",
         is_account_identity_sql("h", "$1"),
     );
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
          SELECT conversation_id, handle_id, name_alias FROM participants
          WHERE {at_identity}
          ON CONFLICT (conversation_id, handle_id) DO UPDATE SET name_alias = excluded.name_alias"
-    ))
+    )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
-    sqlx::query(&format!("DELETE FROM participants WHERE {at_identity}"))
-        .bind(account_id)
-        .execute(&mut *conn)
-        .await?;
+    .await
+    .context("set aside the participants at the account's identities")?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DELETE FROM participants WHERE {at_identity}"
+    )))
+    .bind(account_id)
+    .execute(&mut *conn)
+    .await
+    .context("delete the participants at the account's identities")?;
     Ok(())
 }
 
@@ -63,21 +67,23 @@ pub async fn restore_set_aside_participants(
                            WHERE h.account_id = $1 AND NOT {})",
         is_account_identity_sql("h", "$1"),
     );
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          SELECT conversation_id, handle_id, name_alias FROM participants_set_aside
          WHERE {released}
          ON CONFLICT (conversation_id, handle_id) DO NOTHING"
-    ))
+    )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
-    sqlx::query(&format!(
+    .await
+    .context("move back the participants set aside at former identities")?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM participants_set_aside WHERE {released}"
-    ))
+    )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the set-aside rows moved back to participants")?;
     Ok(())
 }
 
@@ -109,6 +115,7 @@ pub async fn add_chat_handle_participant(
     .bind(conversation_id)
     .bind(handle_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("add a conversation's chat handle as its participant")?;
     Ok(())
 }

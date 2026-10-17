@@ -4,15 +4,12 @@
 //! Nothing here talks to the network. It is the Upload's read-only view of
 //! the directory.
 
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use message_ir::ConversationHeader;
 
 use crate::journal;
-use crate::project;
 
 /// The directory an Upload works from. A conversation file path is accepted too and
 /// resolved to its parent, because the desktop app hands over whichever the
@@ -35,7 +32,7 @@ pub(crate) fn input_directory(input: &Path) -> Result<PathBuf> {
     Ok(directory)
 }
 
-/// True for files message-crate-import itself writes (journal/report/log), not conversations.
+/// True for files the `import` crate itself writes (journal/report/log), not conversations.
 fn is_import_artifact(name: &str) -> bool {
     name.eq_ignore_ascii_case(journal::JOURNAL_NAME)
         || name.eq_ignore_ascii_case(journal::REPORT_NAME)
@@ -62,8 +59,8 @@ fn is_conversation_jsonl(path: &Path, exclude: &[&Path]) -> bool {
 
 /// List conversation JSON Lines (`.jsonl`) files in `dir`, sorted, skipping journal/report/log.
 ///
-/// `exclude` names extra files to leave out, such as a custom report path
-/// that happens to end in `.jsonl`.
+/// `exclude` names extra files to leave out, such as a log path the caller
+/// set that happens to end in `.jsonl`.
 ///
 /// # Errors
 ///
@@ -109,33 +106,6 @@ pub(crate) fn file_label(path: &Path) -> String {
         .to_string()
 }
 
-/// Read the first conversation file's header and return its `export.source` string.
-///
-/// The Upload labels the Import Run with it (for example `imessage`).
-///
-/// # Errors
-///
-/// Returns an error when the directory cannot be listed, the file cannot be read,
-/// or the header is invalid.
-pub fn detect_source(input: &Path) -> Result<Option<String>> {
-    let dir = if input.is_file() {
-        input.parent().unwrap_or(input)
-    } else {
-        input
-    };
-    let files = list_jsonl_files(dir, &[])?;
-    let Some(path) = files.first() else {
-        return Ok(None);
-    };
-    let file = File::open(path)?;
-    let mut lines = BufReader::new(file).lines();
-    let header_line = lines
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("empty JSONL"))??;
-    let header: ConversationHeader = serde_json::from_str(&header_line)?;
-    Ok(Some(project::validate_header(&header)?))
-}
-
 /// Turn an attachment path from a JSON Lines file into a real file path under
 /// the export directory. `None` means the path is safe but no file is there.
 ///
@@ -143,7 +113,7 @@ pub fn detect_source(input: &Path) -> Result<Option<String>> {
 ///
 /// Returns an error when the path could escape the export directory.
 pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option<PathBuf>> {
-    let under = message_ir::safe_attachment_path(export_root, rel)?;
+    let under = ir::safe_attachment_path(export_root, rel)?;
     Ok(under.is_file().then_some(under))
 }
 
@@ -151,10 +121,11 @@ pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option
 ///
 /// Falls back to the position in the message so two pathless attachments in one
 /// conversation stay distinguishable.
-pub(crate) fn attachment_label(att: &message_ir::IrAttachment, index: usize) -> String {
-    att.original_name
+pub(crate) fn attachment_label(attachment: &ir::Attachment, index: usize) -> String {
+    attachment
+        .original_name
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .map_or_else(|| format!("attachment {index}"), str::to_string)
 }
 
@@ -194,59 +165,5 @@ mod tests {
         let message = format!("{error:#}");
         assert!(message.contains("/staging/run-1"), "{message}");
         assert!(message.contains("stale file handle"), "{message}");
-    }
-
-    /// A conversation header whose `export.source` is `source`.
-    fn header_line(source: &str) -> String {
-        serde_json::json!({
-            "schema_version": message_ir::SCHEMA_VERSION,
-            "export": {
-                "source": source,
-                "tool": "test",
-                "tool_version": "1",
-            },
-            "conversation": {
-                "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
-                "participants": [],
-                "stats": { "message_count": 0, "attachment_count": 0 },
-            },
-        })
-        .to_string()
-    }
-
-    /// The source comes from the first conversation file in name order,
-    /// whether the directory or a file inside it is given.
-    #[test]
-    fn detect_source_reads_the_first_conversation_header() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("a.jsonl"), header_line("imessage") + "\n").unwrap();
-        fs::write(dir.path().join("b.jsonl"), header_line("whatsapp") + "\n").unwrap();
-
-        assert_eq!(
-            detect_source(dir.path()).unwrap().as_deref(),
-            Some("imessage")
-        );
-        assert_eq!(
-            detect_source(&dir.path().join("b.jsonl"))
-                .unwrap()
-                .as_deref(),
-            Some("imessage")
-        );
-    }
-
-    #[test]
-    fn detect_source_is_none_without_a_conversation_file() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("notes.txt"), "not a conversation").unwrap();
-        assert_eq!(detect_source(dir.path()).unwrap(), None);
-    }
-
-    #[test]
-    fn detect_source_refuses_an_empty_conversation_file() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("a.jsonl"), "").unwrap();
-        let error = detect_source(dir.path()).unwrap_err();
-        assert!(error.to_string().contains("empty JSONL"), "{error}");
     }
 }

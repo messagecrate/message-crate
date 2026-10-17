@@ -1,15 +1,13 @@
 [package]
-name = "message-csv"
+name = "message-crate-csv"
 version = "0.1.0"
 edition = "2024"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
 anyhow = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
 csv = { workspace = true }
-message-ir = { path = "../ir" }
+ir = { path = "../ir" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

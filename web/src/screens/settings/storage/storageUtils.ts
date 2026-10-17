@@ -1,5 +1,6 @@
 import type { ImportSummaryView } from "../../../components/import/ImportSummaryPanel";
 import { formatDateTime } from "../../../lib/formatDate";
+import { countOf } from "../../../lib/plural";
 import type { components } from "../../../lib/serverApi.types";
 
 export const ATTACHMENT_PAGE_SIZE = 20;
@@ -7,12 +8,12 @@ export const ATTACHMENT_PAGE_SIZE = 20;
 /** Import Runs or Export Runs on one page of a history table, and the `limit` each request sends. */
 export const RUN_PAGE_SIZE = 50;
 
-export const sectionTitle = "m-0 text-[0.938rem] font-semibold text-text";
-export const sectionHint = "mt-1 text-[0.813rem] text-muted";
-export const tableCard = "overflow-hidden rounded-lg";
-export const thStyle =
+export const sectionTitleClass = "m-0 text-[0.938rem] font-semibold text-text";
+export const sectionHintClass = "mt-1 text-[0.813rem] text-muted";
+export const tableCardClass = "overflow-hidden rounded-lg";
+export const thClass =
   "border-b border-border bg-elevated p-2 px-3 text-left text-[0.813rem] font-medium text-muted";
-export const tdStyle = "border-b border-border p-2 px-3 text-[0.813rem] text-text";
+export const tdClass = "border-b border-border p-2 px-3 text-[0.813rem] text-text";
 
 /*
  * These three shapes come from the server, so they are generated rather than
@@ -27,13 +28,13 @@ type Schema = components["schemas"];
  * held. Both carry how many issues the run recorded; opening the run reads
  * them, and its notes.
  */
-export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRun"];
+export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRunSummary"];
 
 /**
  * One Export Run as the history table lists it: in full to the account
  * itself, and to the owner without what the run asked for.
  */
-export type ExportRow = Schema["ExportRun"] | Schema["OwnerExportRun"];
+export type ListedExportRun = Schema["ExportRun"] | Schema["OwnerExportRun"];
 
 /** One large attachment in the storage breakdown. */
 export type TopAttachment = Schema["TopAttachment"];
@@ -43,7 +44,7 @@ export type TopAttachment = Schema["TopAttachment"];
  * in full ({@link describeExportScope}); the owner is told only which of the
  * three forms the scope took, because the search is the account's own.
  */
-export function describeExportRun(run: ExportRow): string {
+export function describeExportRun(run: ListedExportRun): string {
   if (!("scope_kind" in run)) return describeExportScope(run.scope);
   switch (run.scope_kind) {
     case "everything":
@@ -76,10 +77,10 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
       const conversations = scope.conversation_ids?.length ?? 0;
       const messages = scope.message_ids?.length ?? 0;
       if (conversations > 0) {
-        parts.push(`${conversations} conversation${conversations === 1 ? "" : "s"}`);
+        parts.push(countOf(conversations, "conversation"));
       }
       if (messages > 0) {
-        parts.push(`${messages} message${messages === 1 ? "" : "s"}`);
+        parts.push(countOf(messages, "message"));
       }
       return `Picked: ${parts.join(", ")}`;
     }
@@ -88,7 +89,8 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
 
 /**
  * One Import Run: in full, with its summary, issues and notes, to the account
- * itself; to the owner with the summary's counts and how many issues.
+ * itself; to the owner with the summary's counts, how many issues, and the
+ * attachments whose Thumbnail or Preview could not be made.
  */
 export type AccountImportRun = Schema["AccountImportRun"];
 
@@ -108,25 +110,6 @@ export function importBackup(
       ? fingerprint.path
       : null;
   return { file: typeof path === "string" && path ? path : null, takenAt: run.backup_taken_at };
-}
-
-/** Human-readable file size (for example "1.2 MB"). */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = value >= 10 || unit === 0 ? 0 : 1;
-  return `${value.toFixed(digits)} ${units[unit]}`;
-}
-
-/** A count with its noun, pluralised by adding `s`: "1 message", "1,234 messages". */
-export function countOf(n: number, noun: string): string {
-  return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 /** Import start/finish time for table rows, or an em dash when missing. */
@@ -153,8 +136,8 @@ function toSummaryStatus(status: Schema["ImportStatus"]): ImportSummaryView["sta
       return "completed";
     case "completed_with_issues":
       return "completed_with_issues";
-    case "cancelled":
-      return "cancelled";
+    case "canceled":
+      return "canceled";
     case "running":
       return "running";
     case "failed":
@@ -179,8 +162,8 @@ export function importStatusLabel(status: Schema["ImportStatus"]): string {
       return "Completed with issues";
     case "failed":
       return "Failed";
-    case "cancelled":
-      return "Cancelled";
+    case "canceled":
+      return "Canceled";
     default:
       status satisfies never;
       return status;

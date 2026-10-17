@@ -63,49 +63,56 @@ fn a_stored_name_gives_its_fingerprint_and_any_other_name_gives_none() {
     }
 }
 
+/// `[server] body_stall_secs` at its default, the limit the sweep tests
+/// hold uploads to.
+pub(crate) const STALL: Duration = Duration::from_secs(60);
+
+/// Abandonment at `now` after [`STALL`].
+pub(crate) fn abandoned_at(now: SystemTime) -> Abandonment {
+    Abandonment { now, stall: STALL }
+}
+
+/// Set `path`'s modified time, a file's or a directory's, to `at`.
+pub(crate) fn written_at(path: &Path, at: SystemTime) {
+    fs::File::options()
+        .read(true)
+        .write(path.is_file())
+        .open(path)
+        .unwrap()
+        .set_modified(at)
+        .unwrap();
+}
+
+/// #2652: an upload nothing was written to for the stall limit is
+/// abandoned, by its manifest's time, or its directory's when it has no
+/// manifest yet. One written to a second inside the limit is not.
 #[test]
-fn an_upload_session_is_stale_after_a_day_by_its_manifest_or_its_directory() {
+fn an_upload_session_is_abandoned_once_nothing_was_written_for_the_stall_limit() {
     let dir = tempfile::tempdir().unwrap();
     let with_manifest = dir.path().join("with-manifest");
     fs::create_dir_all(&with_manifest).unwrap();
     fs::write(with_manifest.join("manifest.json"), b"{}").unwrap();
     let without_manifest = dir.path().join("without-manifest");
     fs::create_dir_all(&without_manifest).unwrap();
-    let now = SystemTime::now();
-    let limit = Duration::from_secs(STALE_UPLOAD_SECS);
+    let written = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    written_at(&with_manifest.join("manifest.json"), written);
+    written_at(&without_manifest, written);
+    let second = Duration::from_secs(1);
 
-    assert!(!upload_session_is_stale(&with_manifest, now).unwrap());
-    assert!(!upload_session_is_stale(&without_manifest, now).unwrap());
-    assert!(upload_session_is_stale(&with_manifest, now + limit).unwrap());
-    assert!(upload_session_is_stale(&without_manifest, now + limit).unwrap());
-    assert!(!upload_session_is_stale(&with_manifest, now + limit / 2).unwrap());
+    for session in [&with_manifest, &without_manifest] {
+        assert!(!upload_session_is_stale(session, abandoned_at(written)).unwrap());
+        assert!(!upload_session_is_stale(session, abandoned_at(written + STALL - second)).unwrap());
+        assert!(upload_session_is_stale(session, abandoned_at(written + STALL)).unwrap());
+    }
 }
 
-/// The limit is a day on the clock: an upload left alone for 23 hours may
-/// still be resumed, and one left for 25 hours is abandoned.
-#[test]
-fn an_upload_session_idle_for_23_hours_is_kept_and_one_idle_for_25_is_stale() {
-    let dir = tempfile::tempdir().unwrap();
-    let session = dir.path().join("upload");
-    fs::create_dir_all(&session).unwrap();
-    fs::write(session.join("manifest.json"), b"{}").unwrap();
-    let now = SystemTime::now();
-    let hours = |n: u64| Duration::from_secs(n * 3600);
-
-    assert!(!upload_session_is_stale(&session, now + hours(23)).unwrap());
-    assert!(upload_session_is_stale(&session, now + hours(25)).unwrap());
-}
-
-/// Set `path`'s modified time to two days ago, twice the upload age limit,
-/// so the `.incoming/` sweep treats it as abandoned.
+/// Set `path`'s modified time to two days ago, past every age limit a sweep
+/// holds a file to, so every sweep treats it as abandoned.
 pub(crate) fn make_abandoned(path: &Path) {
-    let two_days_ago = SystemTime::now() - Duration::from_secs(2 * STALE_UPLOAD_SECS);
-    fs::File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_modified(two_days_ago)
-        .unwrap();
+    written_at(
+        path,
+        SystemTime::now() - Duration::from_secs(2 * 24 * 60 * 60),
+    );
 }
 
 /// `process-assets` writes a Preview before the row that names it. The
@@ -210,7 +217,7 @@ async fn another_writer_is_not_blocked_while_removed_files_are_deleted() {
     let original = stored_original(&paths);
     let (delete, deletion_started, finish) = paused_deletion();
 
-    let removal = tokio::spawn({
+    let removal = crate::request_id::spawn_in_current_span({
         let (pool, paths, original) = (pool.clone(), paths.clone(), original.clone());
         async move {
             unless_import_running_then(
@@ -248,7 +255,7 @@ async fn another_writer_is_not_blocked_while_swept_files_are_deleted() {
     let original = stored_original(&paths);
     let (delete, deletion_started, finish) = paused_deletion();
 
-    let sweep = tokio::spawn({
+    let sweep = crate::request_id::spawn_in_current_span({
         let (pool, paths) = (pool.clone(), paths.clone());
         async move { sweep_unreferenced_then(&pool, &paths, ACCOUNT, delete).await }
     });
@@ -289,6 +296,62 @@ async fn a_removal_with_nothing_to_move_leaves_nothing_on_disk() {
     assert!(
         !account_dir(&paths, ACCOUNT).exists(),
         "nothing is made on disk"
+    );
+}
+
+/// #2186: a warning written while a request's removal runs in a task of its
+/// own, and on the blocking pool, carries the request's id, so the log line
+/// can be tied to the request that caused it.
+#[tokio::test]
+async fn a_warning_from_a_removal_carries_the_request_id() {
+    use crate::logging::{LogFiles, LogLevel, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+    use tracing::Instrument;
+
+    let fixture = fixture_with_removal_account().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let log_dir = tempfile::tempdir().unwrap();
+    let files = LogFiles::open(log_dir.path(), SERVER_LOG_LIMITS).unwrap();
+    // At `info`, as the server logs by default: the request's span is an
+    // `info` span, and a filter that drops it drops the id with it.
+    let _subscriber =
+        tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+    // A thread with no subscriber reaches the warning first, as another
+    // test's thread can in a full run. This test still reads its line
+    // (#2824).
+    {
+        let paths = paths.clone();
+        std::thread::spawn(move || {
+            let mut removal = RemovalDir::new(&paths, ACCOUNT);
+            assert!(removal.make_or_reuse().is_none());
+        })
+        .join()
+        .unwrap();
+    }
+
+    // The account has no directory on disk, so `.removing/` cannot be made
+    // and the removal warns.
+    unless_import_running(&fixture.state.db, &paths, ACCOUNT, |removal| {
+        assert!(removal.make_or_reuse().is_none());
+    })
+    .instrument(tracing::info_span!("request", request_id = "the-request"))
+    .await;
+
+    let (lines, _) = read_lines(
+        log_dir.path(),
+        &LogLinesQuery {
+            limit: 10,
+            level: Some(LogLevel::Warn),
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0]
+            .text
+            .contains(r#"request{request_id="the-request"}"#),
+        "{}",
+        lines[0].text
     );
 }
 
@@ -339,9 +402,11 @@ async fn the_sweep_deletes_a_removing_directory_a_crash_left() {
 /// An assets directory whose `.incoming/` holds one of each thing the sweep
 /// meets: a `.part` temp two days old, a `.part` temp a live upload is
 /// still writing, a file that is not a `.part`, a multipart session two
-/// days old, and one still being uploaded.
+/// days old, and one still being uploaded. `began` is when the live
+/// upload's files were written, for the sweep to run at.
 struct Incoming {
     _dir: tempfile::TempDir,
+    began: SystemTime,
     assets: PathBuf,
     stale_part: PathBuf,
     live_part: PathBuf,
@@ -352,6 +417,7 @@ struct Incoming {
 
 fn incoming_with_leftovers() -> Incoming {
     let dir = tempfile::tempdir().unwrap();
+    let began = SystemTime::now();
     let assets = dir.path().join("assets");
     let incoming = assets.join(".incoming");
     fs::create_dir_all(&incoming).unwrap();
@@ -373,8 +439,14 @@ fn incoming_with_leftovers() -> Incoming {
     fs::create_dir_all(&fresh_session).unwrap();
     fs::write(fresh_session.join("manifest.json"), b"{}").unwrap();
 
+    // A live upload's files were written as the sweep runs.
+    for live in [&live_part, &fresh_session.join("manifest.json")] {
+        written_at(live, began);
+    }
+
     Incoming {
         _dir: dir,
+        began,
         assets,
         stale_part,
         live_part,
@@ -388,7 +460,7 @@ fn incoming_with_leftovers() -> Incoming {
 fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     let incoming = incoming_with_leftovers();
 
-    let removed = sweep_incoming(&incoming.assets, false);
+    let removed = sweep_incoming(&incoming.assets, abandoned_at(incoming.began));
 
     assert_eq!(removed, 2, "the abandoned .part temp and the stale session");
     assert!(!incoming.stale_part.exists());
@@ -400,7 +472,7 @@ fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     assert!(incoming.other_file.exists(), "only .part files are temps");
     assert!(
         incoming.live_part.exists(),
-        "a .part file younger than a day may be a live upload's, so it is kept"
+        "a .part file written inside the stall limit may be a live upload's, so it is kept"
     );
     assert!(
         incoming.fresh_session.join("manifest.json").exists(),
@@ -408,27 +480,84 @@ fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     );
 }
 
-/// A `.part` file is abandoned after a day on the clock, the same limit a
-/// multipart session has.
+/// An abandoned `.part` temp and a live one in the `.incoming/` of
+/// `account_id`, returned in that order.
+fn abandoned_and_live_part(paths: &PathsConfig, account_id: i64) -> (PathBuf, PathBuf) {
+    let incoming = paths.assets_dir_for_account(account_id).join(".incoming");
+    fs::create_dir_all(&incoming).unwrap();
+    let abandoned = incoming.join(format!("{SHA}-1.part"));
+    fs::write(&abandoned, b"half an upload").unwrap();
+    make_abandoned(&abandoned);
+    let live = incoming.join(format!("{SHA}-2.part"));
+    fs::write(&live, b"an upload in progress").unwrap();
+    // Ahead of any time the sweep reads the clock at, so the file is young
+    // however long the test takes to reach the sweep.
+    written_at(&live, SystemTime::now() + Duration::from_secs(24 * 60 * 60));
+    (abandoned, live)
+}
+
+/// #2261: an upload start no longer sweeps `.incoming/`, so the end of an
+/// Import Run does, and the uploads it left abandoned go then.
+#[tokio::test]
+async fn the_sweep_after_a_run_removes_abandoned_uploads() {
+    let fixture = fixture_with_removal_account().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let (abandoned, live) = abandoned_and_live_part(&paths, ACCOUNT);
+
+    sweep_after_run(&fixture.state.db, &paths, ACCOUNT, STALL).await;
+
+    assert!(!abandoned.exists());
+    assert!(live.is_file());
+}
+
+/// #2261: a server that stopped with uploads open sweeps them as it next
+/// starts, for every account, even when no Import Run ends after it.
+#[tokio::test]
+async fn the_sweep_as_the_server_starts_removes_every_accounts_abandoned_uploads() {
+    let fixture = fixture_with_removal_account().await;
+    fixture.account_with_id(ACCOUNT + 1, "another").await;
+    let paths = fixture.state.cfg.paths.clone();
+    let (abandoned, live) = abandoned_and_live_part(&paths, ACCOUNT);
+    let (other_abandoned, other_live) = abandoned_and_live_part(&paths, ACCOUNT + 1);
+
+    sweep_incoming_at_start(&fixture.state.db, &paths, STALL).await;
+
+    assert!(!abandoned.exists());
+    assert!(!other_abandoned.exists());
+    assert!(live.is_file());
+    assert!(other_live.is_file());
+}
+
+/// #2652: a `.part` file is abandoned once nothing was written to it for
+/// the stall limit, the same limit a multipart session has.
 #[test]
-fn a_part_file_idle_for_23_hours_is_kept_and_one_idle_for_25_is_removed() {
+fn a_part_file_written_inside_the_stall_limit_is_kept_and_one_past_it_is_removed() {
     let dir = tempfile::tempdir().unwrap();
     let part = dir.path().join(format!("{SHA}-1.part"));
     fs::write(&part, b"half").unwrap();
+    let written = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    written_at(&part, written);
     let listed = [part.clone()];
-    let now = SystemTime::now();
-    let hours = |n: u64| Duration::from_secs(n * 3600);
+    let limit = STALL.as_secs();
 
     assert_eq!(
-        remove_stale_files(&listed, now + hours(23), STALE_UPLOAD_SECS, false),
+        remove_stale_files(
+            &listed,
+            written + STALL - Duration::from_secs(1),
+            limit,
+            false
+        ),
         0
     );
-    assert!(part.exists(), "a .part file 23 hours old is kept");
+    assert!(
+        part.exists(),
+        "a .part file written inside the limit is kept"
+    );
     assert_eq!(
-        remove_stale_files(&listed, now + hours(25), STALE_UPLOAD_SECS, false),
+        remove_stale_files(&listed, written + STALL, limit, false),
         1
     );
-    assert!(!part.exists(), "a .part file 25 hours old is removed");
+    assert!(!part.exists(), "a .part file idle for the limit is removed");
 }
 
 /// The server removes a `.part` file itself when its upload finishes or
@@ -446,26 +575,50 @@ fn a_part_file_gone_between_the_listing_and_the_removal_does_not_stop_the_sweep(
     let listed = [gone.clone(), left.clone()];
     fs::remove_file(&gone).unwrap();
 
-    let removed = remove_stale_files(&listed, SystemTime::now(), STALE_UPLOAD_SECS, false);
+    let removed = remove_stale_files(&listed, SystemTime::now(), STALL.as_secs(), false);
 
     assert_eq!(removed, 1, "only the file still there counts");
     assert!(!left.exists(), "the sweep went on past the missing file");
 }
 
+/// #2652: a request using an upload keeps it, however long ago its
+/// manifest was written: a part arriving writes only its own temp and a
+/// completion writes no manifest, so a slow part or a long completion would
+/// otherwise look abandoned. Once the request ends, the upload is the
+/// sweep's again.
 #[test]
-fn a_dry_run_of_the_incoming_sweep_counts_what_it_would_remove_and_removes_nothing() {
+fn the_incoming_sweep_leaves_an_upload_a_request_is_using() {
     let incoming = incoming_with_leftovers();
+    let session_use = crate::asset_uploads::hold(&incoming.stale_session);
+    let part_use = crate::asset_uploads::hold(&incoming.stale_part);
 
-    let removed = sweep_incoming(&incoming.assets, true);
+    assert_eq!(
+        sweep_incoming(&incoming.assets, abandoned_at(incoming.began)),
+        0
+    );
+    assert!(incoming.stale_session.join("manifest.json").exists());
+    assert!(incoming.stale_part.exists());
 
-    assert_eq!(removed, 2, "the abandoned .part temp and the stale session");
-    for kept in [
-        &incoming.stale_part,
-        &incoming.live_part,
-        &incoming.other_file,
-        &incoming.stale_session.join("manifest.json"),
-        &incoming.fresh_session.join("manifest.json"),
-    ] {
-        assert!(kept.exists(), "a dry run removed {}", kept.display());
-    }
+    drop((session_use, part_use));
+    assert_eq!(
+        sweep_incoming(&incoming.assets, abandoned_at(incoming.began)),
+        2
+    );
+}
+
+/// #2652: the sweep sets an abandoned upload's directory aside under a
+/// `.removing-` name before deleting it. One a stopped sweep left there is
+/// deleted by the next.
+#[test]
+fn the_incoming_sweep_deletes_a_directory_a_stopped_sweep_set_aside() {
+    let incoming = incoming_with_leftovers();
+    let aside = incoming.assets.join(".incoming").join(".removing-abc123");
+    fs::create_dir_all(&aside).unwrap();
+    fs::write(aside.join("manifest.json"), b"{}").unwrap();
+    fs::write(aside.join("part-0001"), b"half").unwrap();
+
+    sweep_incoming(&incoming.assets, abandoned_at(incoming.began));
+
+    assert!(!aside.exists());
+    assert!(incoming.fresh_session.join("manifest.json").exists());
 }

@@ -9,7 +9,8 @@
 //! on the success of a `HEAD`, one-sentence summaries, declared tags,
 //! kebab-case paths and the nesting depth. The rest calls every operation
 //! through the router, on the credential matrix's fixture: with no credential
-//! it must answer `401`, with a query parameter it does not declare `422`, with
+//! it must answer `401` with a `WWW-Authenticate` challenge, and so must a
+//! token the server never issued, with a query parameter it does not declare `422`, with
 //! a body that has no `Content-Type` or one the route does not take `415`, with
 //! a JSON body that is not JSON `400`, and a list with `limit`, or an `offset`
 //! past the ceiling its description states, out of range `422`. Each answer
@@ -36,8 +37,10 @@ use super::credential_matrix::{self, Operation, Shared, World};
 use super::dump_openapi_json;
 use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
+use crate::api_error::{BEARER_CHALLENGE, REFUSED_TOKEN_CHALLENGE};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
+use crate::test_support::{self, http_client};
 
 /// The one route nested three deep (`docs/architecture/http-api.md`,
 /// "Naming a route").
@@ -276,7 +279,7 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
 /// document and any reading of it come from the same code in `shared_parts`.
 async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Value) -> Vec<String> {
     let mut broken = Vec::new();
-    if !op.path.starts_with("/v1/") {
+    if !crate::middleware::is_api_path(&op.path) {
         return broken;
     }
     let path = world.path_for(op);
@@ -307,6 +310,17 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
             ProblemType::AuthenticationRequired,
             "no credential",
         ));
+        broken.extend(answer.challenge_rule("no credential", BEARER_CHALLENGE));
+        let answer = call(world, op, &path, Some(NEVER_ISSUED_TOKEN), sent()).await;
+        broken.extend(answer.problem_rule(
+            op,
+            spec,
+            ProblemType::AuthenticationRequired,
+            "a token the server never issued",
+        ));
+        broken.extend(
+            answer.challenge_rule("a token the server never issued", REFUSED_TOKEN_CHALLENGE),
+        );
     }
 
     // Every call below carries a credential the operation admits, so the
@@ -423,6 +437,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
                     method: "get".to_string(),
                     path: location.clone(),
                     security: None,
+                    declares_cache_control: false,
                 };
                 let followed = call(world, &read, location, token, None).await;
                 if followed.status != StatusCode::OK {
@@ -453,7 +468,10 @@ enum DemoAnswer {
 /// server answers `demo-account-protected`, the document must list it. A
 /// `HEAD` answer has no body to tell the problem type by, so it is skipped.
 async fn demo_account_rule(world: &World<'_>, op: &Operation, spec: &Value) -> DemoAnswer {
-    if !op.path.starts_with("/v1/") || op.method == "head" || !takes_a_credential_only(op) {
+    if !crate::middleware::is_api_path(&op.path)
+        || op.method == "head"
+        || !takes_a_credential_only(op)
+    {
         return DemoAnswer::Other;
     }
     let path = world.path_for(op);
@@ -482,10 +500,26 @@ struct Answer {
     status: StatusCode,
     content_type: String,
     location: Option<String>,
+    /// The `WWW-Authenticate` header, when the answer carries one.
+    www_authenticate: Option<String>,
     text: String,
 }
 
+/// A Bearer token in the form of a Session token that no account holds.
+const NEVER_ISSUED_TOKEN: &str = "mc-user-never-issued";
+
 impl Answer {
+    /// What is wrong with this `401`'s `WWW-Authenticate` header, if
+    /// anything: RFC 9110, section 15.5.2, requires one on every `401`.
+    fn challenge_rule(&self, asked: &str, expected: &str) -> Option<String> {
+        (self.www_authenticate.as_deref() != Some(expected)).then(|| {
+            format!(
+                "{asked} answered WWW-Authenticate {:?}, not {expected:?}",
+                self.www_authenticate
+            )
+        })
+    }
+
     /// What is wrong with this answer as the problem `kind`, if anything:
     /// another status or type, a body that is not a problem document, or a
     /// status and type the operation's document does not list.
@@ -593,7 +627,7 @@ async fn call_with(
     headers: &[(&str, &str)],
 ) -> Answer {
     let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
-    let mut request = reqwest::Client::new().request(method, world.url(path));
+    let mut request = http_client().request(method, world.url(path));
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
@@ -614,9 +648,10 @@ async fn call_with(
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default()
         .to_string();
-    let location = response
+    let location = test_support::location(&response);
+    let www_authenticate = response
         .headers()
-        .get(reqwest::header::LOCATION)
+        .get(reqwest::header::WWW_AUTHENTICATE)
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
     let text = response.text().await.unwrap_or_default();
@@ -624,6 +659,7 @@ async fn call_with(
         status,
         content_type,
         location,
+        www_authenticate,
         text,
     }
 }

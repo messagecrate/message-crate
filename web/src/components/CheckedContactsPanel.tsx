@@ -1,13 +1,15 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { useOrphanedColumn } from "../hooks/useOrphanedColumn";
+import { useRouteCache, useRouteQuery } from "../hooks/useRouteQuery";
+import { useTimeZone } from "../hooks/useTimeZone";
+import { errorLine } from "../lib/apiErrorMessage";
 import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
+import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { getContactSummaries } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
-import { useTimeZone } from "../lib/timeZone";
 import Button from "./Button";
 import ContactLabel from "./ContactLabel";
 import { type ContactPreview, contactTotals } from "./contactDrawer/contactDrawerTypes";
@@ -22,7 +24,6 @@ import {
 } from "./contactDrawer/handleTableStyles";
 import DataCard, { dataCardHeaderRowClass } from "./DataCard";
 import { conversationTotal } from "./identityRows";
-import { useOrphanedColumn } from "./useOrphanedColumn";
 
 type ContactTotals = ReturnType<typeof contactTotals>;
 
@@ -74,11 +75,11 @@ type ContactRow = {
 function totalsFromSummary(summary: ContactSelectionSummary): ContactTotals {
   return {
     conversations: conversationTotal(
-      summary.individual_conversations,
+      summary.one_to_one_conversations,
       summary.group_conversations,
       summary.orphaned_conversations,
     ),
-    direct_messages: summary.individual_message_count,
+    one_to_one_messages: summary.one_to_one_message_count,
     group_messages: summary.group_message_count,
     orphaned_messages: summary.orphaned_message_count,
     start_date: summary.start_date ?? null,
@@ -105,8 +106,8 @@ function sortValue(row: ContactRow, col: string): string | number {
       return totals?.end_date ?? "";
     case "conversations":
       return totals?.conversations ?? -1;
-    case "direct_messages":
-      return totals?.direct_messages ?? -1;
+    case "one_to_one_messages":
+      return totals?.one_to_one_messages ?? -1;
     case "group_messages":
       return totals?.group_messages ?? -1;
     case "orphaned_messages":
@@ -133,8 +134,7 @@ export default function CheckedContactsPanel({
 }) {
   const cache = useRouteCache();
   const zone = useTimeZone();
-  const heading =
-    contacts.length === 1 ? "1 contact selected" : `${contacts.length} contacts selected`;
+  const heading = `${countOf(contacts.length, "contact")} selected`;
   const ids = useMemo(() => contacts.map((c) => c.id), [contacts]);
   // The figures come from `POST /v1/contacts/summaries`. A contact whose
   // drawer was opened in this session already has its own figures in the
@@ -202,9 +202,7 @@ export default function CheckedContactsPanel({
         >
           <div className="min-w-0">
             <p className="m-0 font-semibold">The figures for these contacts could not be loaded.</p>
-            <p className="m-0 mt-1">
-              {apiErrorMessage(summaries.error, "The server did not answer.")}
-            </p>
+            <p className="m-0 mt-1">{errorLine(summaries.error, "The server did not answer.")}</p>
           </div>
           <Button variant="secondary" size="chip" onClick={() => void summaries.refetch()}>
             Try again
@@ -251,8 +249,8 @@ export default function CheckedContactsPanel({
             <SortableColumn id="conversations" widthClass="w-[14%]" align="right">
               Conversations
             </SortableColumn>
-            <SortableColumn id="direct_messages" widthClass="w-[15%]" align="right">
-              Direct
+            <SortableColumn id="one_to_one_messages" widthClass="w-[15%]" align="right">
+              One-to-one
               <br />
               Messages
             </SortableColumn>
@@ -301,7 +299,7 @@ export default function CheckedContactsPanel({
                 </Cell>
                 <Cell className={tdRightClass}>
                   <MetricCell loaded={row.totals != null}>
-                    <CountCell value={row.totals?.direct_messages ?? 0} />
+                    <CountCell value={row.totals?.one_to_one_messages ?? 0} />
                   </MetricCell>
                 </Cell>
                 <Cell className={tdRightClass}>

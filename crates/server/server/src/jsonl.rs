@@ -1,18 +1,18 @@
-//! Read message-ir JSONL files (one JSON object per line) into import records.
+//! Read JSONL conversation files (one JSON object per line) into import records.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::imports_api::ImportFailure;
-use crate::models::{self, ExportRecord};
+use crate::imports_api::records::{self, ExportRecord};
 
 /// Why [`read_records`] could not read a file: a line the sender can fix, or
 /// a file the server cannot read.
 #[derive(Debug, thiserror::Error)]
 pub enum ReadRecordsError {
-    /// A line breaks a rule of message-ir, or is not text at all.
-    #[error("failed to parse message-ir JSONL in {}: {failure}", path.display())]
+    /// A line breaks a rule of the conversation file, or is not text at all.
+    #[error("failed to parse the JSONL conversation file {}: {failure}", path.display())]
     Rejected {
         path: PathBuf,
         failure: ImportFailure,
@@ -38,7 +38,7 @@ fn unreadable_message(path: &Path, line: Option<usize>) -> String {
     }
 }
 
-/// Read a message-ir JSON Lines conversation file (one JSON object per line)
+/// Read a JSON Lines conversation file (one JSON object per line)
 /// into import records.
 ///
 /// Parses line-by-line so the full file is not held as a second string buffer
@@ -47,7 +47,7 @@ fn unreadable_message(path: &Path, line: Option<usize>) -> String {
 /// # Errors
 ///
 /// Returns [`ReadRecordsError::Rejected`] when a line is not valid
-/// message-ir JSON, and [`ReadRecordsError::Unreadable`] when the file cannot
+/// conversation file JSON, and [`ReadRecordsError::Unreadable`] when the file cannot
 /// be opened or a line cannot be read.
 pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> {
     let unreadable = |line, source| ReadRecordsError::Unreadable {
@@ -61,25 +61,36 @@ pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> 
     };
     let file = File::open(path).map_err(|source| unreadable(None, source))?;
     let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-    for (line_no, line) in reader.lines().enumerate() {
-        let line = match line {
-            Ok(line) => line,
+    // Each line is parsed as it is read, so the file's text is never held
+    // whole beside its records (#2075). A line that cannot be read ends the
+    // lines early, and its error, kept here, is the answer.
+    let mut read_error = None;
+    let lines = reader
+        .lines()
+        .enumerate()
+        .map_while(|(line_no, line)| match line {
+            Ok(line) => Some(line),
             // Bytes that are not UTF-8 are not text, so not JSON: the
             // sender's to fix, like any other line that cannot be read.
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-                return Err(rejected(ImportFailure::NotJson {
+                read_error = Some(rejected(ImportFailure::NotJson {
                     line: line_no + 1,
                     detail: "the line is not valid UTF-8".into(),
                 }));
+                None
             }
-            Err(err) => return Err(unreadable(Some(line_no + 1), err)),
-        };
-        // A blank line is kept: `parse_ir_lines` skips it but still counts
-        // it, so a failure names the line as it is numbered in the file.
-        lines.push(line);
+            Err(err) => {
+                read_error = Some(unreadable(Some(line_no + 1), err));
+                None
+            }
+        });
+    // A blank line is passed on: `parse_ir_lines` skips it but still counts
+    // it, so a failure names the line as it is numbered in the file.
+    let parsed = records::parse_ir_lines(lines);
+    match read_error {
+        Some(error) => Err(error),
+        None => parsed.map_err(rejected),
     }
-    models::parse_ir_lines(lines).map_err(rejected)
 }
 
 #[cfg(test)]

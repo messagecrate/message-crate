@@ -1,5 +1,5 @@
 [package]
-name = "message-staging"
+name = "staging"
 version = "0.1.0"
 edition = "2024"
 description = "The resumable write path: the write queue, the transcode pass, the staging summary, and the ExportWriter that drives them"
@@ -8,19 +8,24 @@ license = "LicenseRef-FCL-1.0-ALv2"
 [dependencies]
 anyhow = { workspace = true }
 fs2 = "0.4.3"
-hex = { workspace = true }
 media = { path = "../media" }
-message-ir = { path = "../ir" }
-message-ir-format = { path = "../ir-format" }
+file-io = { workspace = true }
+ir = { path = "../ir" }
+ir-format = { path = "../ir-format" }
 message-crate-core = { path = "../../core/message-crate-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
+
+# `GetVolumePathNameW`, which names the volume a directory is on, so the
+# Import form's low-space line tells a volume mounted in a directory of a
+# drive from the drive itself.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 media = { path = "../media", features = ["testutil"] }
-message-ir = { path = "../ir", features = ["testutil"] }
+ir = { path = "../ir", features = ["testutil"] }
 tempfile = { workspace = true }
 
 [lints]
