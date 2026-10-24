@@ -5,8 +5,9 @@
 # docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.
 
 [graph]
-# The desktop app and the workspace are checked for the host only; the
-# release matrix is all native builds.
+# No `targets` are set, so cargo-deny checks the dependencies of every
+# platform in each lockfile, which covers each platform the release matrix
+# builds.
 all-features = false
 
 [advisories]
@@ -21,10 +22,11 @@ ignore = [
     # holds it, through glib-macros and gtk3-macros 0.18, the macros of the
     # GTK 3 bindings Tauri builds on Linux. glib-macros dropped it in 0.19,
     # but Tauri stays on GTK 3. It runs at compile time only.
-    # The workspace's run always warns that this entry was not encountered,
-    # because that graph never holds the crate, and that warning means
-    # nothing. Remove the entry when the desktop app's run warns the same,
-    # which happens once Tauri leaves GTK 3.
+    # The workspace's run always warns that this entry was not encountered
+    # (`advisory-not-detected`), because that graph never holds the crate.
+    # That warning is expected and needs no action. Remove the entry when
+    # the desktop app's run warns `advisory-not-detected` too, which happens
+    # once Tauri leaves GTK 3.
     { id = "RUSTSEC-2024-0370", reason = "unmaintained, reached only through Tauri's GTK 3 bindings on Linux" },
 ]
 
