@@ -20,10 +20,11 @@ ignore = [
     # proc-macro-error 1.0.4 is unmaintained. Only the desktop app's graph
     # holds it, through glib-macros and gtk3-macros 0.18, the macros of the
     # GTK 3 bindings Tauri builds on Linux. glib-macros dropped it in 0.19,
-    # but Tauri stays on GTK 3. It runs at compile time only. Remove this
-    # entry when Tauri leaves GTK 3: the workspace's run warns that it was
-    # not encountered, and the desktop app's run will warn too once it is
-    # stale.
+    # but Tauri stays on GTK 3. It runs at compile time only.
+    # The workspace's run always warns that this entry was not encountered,
+    # because that graph never holds the crate, and that warning means
+    # nothing. Remove the entry when the desktop app's run warns the same,
+    # which happens once Tauri leaves GTK 3.
     { id = "RUSTSEC-2024-0370", reason = "unmaintained, reached only through Tauri's GTK 3 bindings on Linux" },
 ]
 
