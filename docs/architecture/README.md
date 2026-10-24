@@ -34,7 +34,7 @@ words; both kinds of document use them and redefine none.
 | [How contacts are made and changed](how-contacts-are-made-and-changed.md) | | What an import of a backup does to contacts and identities, what an address book load does, and how the two differ |
 | | [Import Run logs](rules/import-run-logs.md) | The desktop app's log of each Import Run and of itself: where they are kept, who reads them, and what a line holds |
 | | [Media](rules/media.md) | An attachment's Thumbnail, Preview and original: when the server makes them, which one a screen loads, and how a video streams |
-| | [The HTTP interface](rules/http-api.md) | Every rule the `/v1` routes follow: identifiers, naming, methods, status codes, lists, failures, credentials, runs, the generated reference, and how the server code is layered |
+| [The HTTP interface](http-api.md) | [rules](rules/http-api.md) | A request's path through the server, the three shapes every route shares, what each status code and credential means, runs, and how the reference is generated |
 | | [Outbound connections](rules/outbound-connections.md) | The two hosts Message Crate ever connects to, and no telemetry |
 
 Two documents are not yet split into the two kinds. Each holds its
