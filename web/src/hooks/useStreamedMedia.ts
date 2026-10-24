@@ -22,7 +22,7 @@ export const CANNOT_PLAY_HERE = "This browser cannot play the file. Download it 
 
 /**
  * A video or recording that streams once play is pressed
- * (`docs/architecture/rules/media.md`, rules 1, 2 and 5). `play` makes a Media
+ * (`docs/architecture/rules/media.md`, MEDIA-1, MEDIA-2 and MEDIA-5). `play` makes a Media
  * Link; `src` is then its URL for the original or the Preview, as the
  * server's `shown_as_is` decides, for a `<video>` or `<audio>` that loads it
  * a range at a time.

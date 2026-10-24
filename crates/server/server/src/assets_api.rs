@@ -535,7 +535,7 @@ fn read_mime_metadata(assets_root: &Path, sha: &Sha256) -> Option<String> {
 }
 
 /// Decide the media type of the Asset stored as `sha`, record it in its
-/// MIME sidecar, and answer it (`docs/architecture/rules/media.md`, rule 2).
+/// MIME sidecar, and answer it (`docs/architecture/rules/media.md`, MEDIA-2).
 ///
 /// The stored bytes decide when they match a signature
 /// ([`media::media_type_in_file`]). A recorded type the bytes allow stays,

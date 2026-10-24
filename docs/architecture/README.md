@@ -33,9 +33,9 @@ words; both kinds of document use them and redefine none.
 | [The server's log](server-log.md) | [rules](rules/server-log.md) | What the server records about its own work, how a line travels to the owner's screen, and what never reaches it |
 | [How contacts are made and changed](how-contacts-are-made-and-changed.md) | | What an import of a backup does to contacts and identities, what an address book load does, and how the two differ |
 | [Import Run logs](import-run-logs.md) | [rules](rules/import-run-logs.md) | The desktop app's log of each Import Run and of itself: the account line, where they are kept, who reads them, and what a line holds |
-| | [Media](rules/media.md) | An attachment's Thumbnail, Preview and original: when the server makes them, which one a screen loads, and how a video streams |
+| [Media](media.md) | [rules](rules/media.md) | The life of an attachment from the import to the screen: the original, the Thumbnail and the Preview, the pass that makes them, which one a screen loads, and how a video streams |
 | [The HTTP interface](http-api.md) | [rules](rules/http-api.md) | A request's path through the server, the three shapes every route shares, what each status code and credential means, runs, and how the reference is generated |
-| | [Outbound connections](rules/outbound-connections.md) | The two hosts Message Crate ever connects to, and no telemetry |
+| [Outbound connections](outbound-connections.md) | [rules](rules/outbound-connections.md) | The two hosts Message Crate ever connects to, how the program download works, and no telemetry |
 
 Two documents are not yet split into the two kinds. Each holds its
 architecture and its rules in one file, with the rules under a `Rules`

@@ -1,6 +1,6 @@
 /**
  * Which of an attachment's versions to read (`docs/architecture/rules/media.md`,
- * rule 3): the original as it was imported, the Preview a browser can show,
+ * MEDIA-3): the original as it was imported, the Preview a browser can show,
  * or the small Thumbnail a conversation shows.
  */
 export type AssetVersion = "original" | "preview" | "thumbnail";

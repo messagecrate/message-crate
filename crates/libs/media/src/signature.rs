@@ -6,7 +6,7 @@
 //! of a file name its type, or the few types one container carries. The
 //! server stores and serves an Asset under the type its bytes show, and the
 //! media pass plans its Thumbnail and Preview from it
-//! (`docs/architecture/rules/media.md`, rule 2).
+//! (`docs/architecture/rules/media.md`, MEDIA-2).
 
 use std::io::Read;
 use std::path::Path;
