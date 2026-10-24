@@ -33,7 +33,7 @@ asks for the file a range at a time, starts playing on the first range, and
 asks for another range to seek.
 
 How the server answers a range, and why, is a rule of the HTTP interface:
-`docs/architecture/rules/http-api.md`, "Status codes".
+`docs/architecture/rules/http-api.md`, API-37.
 
 A media element cannot send the Session's `Authorization` header, so the web
 app puts a Media Link in `src`: `POST /v1/assets/{sha256}/media-links`

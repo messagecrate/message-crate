@@ -12,7 +12,7 @@ not reopened by accident. Each rule gets an id, `API-n`, which code comments,
 tests and reviews cite. The numbers run through the sections in document order.
 Until #3209 is closed, the sections get their ids one at a time, and a rule in a
 section that has none yet is cited by the section's title in quotes:
-`` `docs/architecture/rules/http-api.md`, "Status codes" ``. A rule's id never
+`` `docs/architecture/rules/http-api.md`, "Versioning and change" ``. A rule's id never
 changes. A rule that stops holding is removed, and its id is not reused.
 
 This file states what every route must do. The generated reference (see
@@ -240,159 +240,208 @@ current one, because that account reaches every other.
 
 ## Status codes
 
-- A creation answers `201 Created` with a `Location` header naming the new
-  resource, whatever the method that made it: a `PUT` that stores an asset the
-  database did not hold, and a claim that makes the owner's Session
-  (`Location: /v1/session`), both answer `201 Created`. A create that takes a
-  batch answers `200 OK` with a summary of what was created, updated and
-  skipped, because no single resource was made. A Media Link is made though
-  nothing is stored: `POST /v1/assets/{sha256}/media-links` answers
-  `201 Created` with the link's own URL in `Location`, which the Session that
-  made it can `GET`.
-- A write with nothing to return answers `204 No Content`.
-- A write the server finishes after it answers is `202 Accepted`, with the
-  resource in its body and a `status` that says the work is under way. The
-  client reads the resource with `GET` until `status` changes; a second write
-  while the first is under way answers `409 Conflict`.
-  `PUT /v1/server/demo-account` is the one such route: it removes the Demo
-  Account and builds it again, which takes from seconds to a minute, and
-  answers with `status` `building`.
-  Why: an answer held for a minute is lost to a closed tab or a proxy's
-  timeout while the work carries on unseen, and `200 OK` would say the Demo
-  Account is there when it is not yet.
-- A name collision answers `409 Conflict`. So does an action on a resource in
-  the wrong state: deleting before trashing, claiming a claimed Message Crate, a batch
-  or a `complete` on a finished run. So does an action asked of the wrong
-  resource, `state-conflict` with `detail` naming the right one: a country
-  picked on a contact for a number whose `+` form is one of the account's own
-  identities answers it from `PATCH /v1/contacts/{id}`. Why: the merge makes
-  the number the account's own, so it belongs to `PATCH /v1/accounts/{id}`,
-  which runs the with-yourself rule and takes the number off its contact.
-  `state-conflict` fits because the contact's number is in a state, held by
-  the account, that this route does not change; `422 Unprocessable Entity`
-  would say the request broke a rule the client could fix by rewriting it, and
-  no body sent to this route can do the merge.
-- A request that would join two records into one, and so cannot be undone,
-  answers `409 Conflict` with nothing changed the first time, and the client
-  confirms by sending the same request again with `merge: true`. The problem
-  names the other record, in `detail` and in an extension such as
-  `identity-exists`'s `holder`, so the client can ask the person. A country
-  picked for a phone number whose `+` form another identity holds is the one
-  such request (`set_identity_country` in `PATCH /v1/contacts/{id}` and
-  `PATCH /v1/accounts/{id}`). Why: the server is the only party that knows the
-  two are one record, and only once it has worked out the `+` form, so a
-  client cannot ask before it sends. Rejected: merging without asking,
-  because a merge moves conversations and messages and cannot be undone; and
-  a separate preview route, which would work the same form out twice while
-  another request between the two could change the answer.
-- A failed credential answers `401 Unauthorized`. A refused one, including a
-  token without the needed scope and a disabled account, answers
-  `403 Forbidden`. A login is the exception: every refused login, a
-  disabled account's included, answers the same `401 Unauthorized`
-  (`invalid-credentials`).
-  Why: a disabled account's own answer would come only after the right
-  password, so a guesser would learn which guess was right, and the password
-  works again once the owner enables the account. The Audit Trail records the
-  real reason.
-- Disabling an account ends its Session, so the Session token it held
-  answers `401 Unauthorized` from then on, after the account is enabled
-  again too; only its API tokens answer `403 Forbidden` (`account-disabled`)
-  while it stays disabled. A login whose password check the disable
-  overtook opens no Session.
-  Why: an owner who learns that someone else holds the Session token can
-  shut it out and give the account back to its holder, and enabling the
-  account brings back neither the token nor the Media Links signed under it
-  (#2074).
-- A `Content-Type` that is absent or unaccepted answers
-  `415 Unsupported Media Type`, on every route that takes a body. On a route
-  whose body is optional, a request with no body is read as no body, and a
-  body sent without a `Content-Type` is still `415 Unsupported Media Type`.
-- A request that cannot be read is `400 Bad Request` (`malformed-body`): JSON
-  that does not parse, a body of the wrong type, or a body whose connection
-  broke before it arrived. Nothing else is `400 Bad Request`. A broken
-  connection is this type and not one of its own because the server has no
-  request to judge: the client that sent it has usually gone, and one that
-  is still there sends the body again, as it would after any broken
-  connection.
-- A body that the server stopped reading because it took too long is
-  `408 Request Timeout` (`body-stalled`): a body that went `[server]
-  body_stall_secs` (60) with no byte arriving, or was still arriving
-  `body_total_secs` (300) after the read started. Every body is held to
-  the limits ([Connections](#connections)). Why: the connection failed, not the data, and
-  `malformed-body` told the person their data was bad. The client is still
-  there to read the answer, so the answer says that running the import
-  again continues it. The desktop app shows it and does not send the piece
-  again by itself, as it does not for any `4xx`
-  ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
-- A request that was read and broke a rule is `422 Unprocessable Entity`,
-  whether the rule was on a query parameter, a path segment or a body field: a
-  field or parameter missing or blank, a value out of range, an id that names
-  no row the caller holds in a list of ids to add, a body that does not match
-  the hash it is addressed by, and a search query that uses a word its list
-  does not have. Axum's own rejections follow the same line. A missing
-  parameter is one entry in `validation-failed`'s `errors`, not a problem type
-  of its own. A search that does not parse keeps its own type,
-  `search-query-invalid`, because the client's remedy differs (rewrite the
-  query), and answers `422 Unprocessable Entity` like every other.
-- A request that was read, broke no rule, and completed answers a `2xx` even
-  when it changed nothing. The status code says whether the action ran or
-  failed; what the action found or changed is the body's job. An id in the
-  `remove` list of a `{add, remove}` membership patch that names no member is
-  ignored: the set is already in the state the caller asked for, so the route
-  answers `200 OK` with `{added, removed}`, `removed` counts only the rows
-  deleted, and a retried request succeeds. An id in `add` that names no row
-  the caller holds stays `422 Unprocessable Entity`, because adding a row the
-  caller does not hold breaks a rule rather than completing with an empty
-  result.
-- A request the database was too busy to take in time answers
-  `503 Service Unavailable` (`database-busy`) with `Retry-After`: SQLite
-  answered `SQLITE_BUSY` once the busy timeout ran out, or no pool connection
-  came free within the pool's acquire timeout (sqlx's `PoolTimedOut`). Why:
-  neither is a bug in the server, and the same request succeeds once the
-  import batch or the requests holding the database finish, so the remedy is
-  to wait and send it again, not to report a fault
-  ([#2084](https://github.com/messagecrate/message-crate/issues/2084)).
-  `/health` is the exception, below ([Failures](#failures)).
-- Every `401 Unauthorized` carries `WWW-Authenticate: Bearer
-  realm="message-crate"`, whichever problem type it answers:
-  `authentication-required`, `invalid-credentials` or `media-link-invalid`.
-  When the request sent a Bearer token and the server refused it (unknown,
-  expired, or its account gone), the challenge adds `error="invalid_token"`.
-  A request that sent no token, or an `Authorization` header that is not
-  `Bearer <token>`, gets no error code. Why: RFC 9110, section 15.5.2,
-  requires the header on every `401`, and RFC 6750, section 3.1, gives the
-  error code and says a request that carried no token gets none. The
-  OpenAPI document declares Bearer schemes, so generic HTTP tooling reads
-  the challenge. The web app and the desktop app read the problem `type`
-  instead. A refused Media Link gets the plain challenge, because a Media
-  Link is not a Bearer token and the challenge names the way to send one.
-- The three routes that answer an asset's bytes, `GET /v1/assets/{sha256}`,
-  `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
-  answer a `Range` of one byte range
-  (`bytes=0-499`, `bytes=500-`, `bytes=-500`) with `206 Partial Content`,
-  those bytes, and `Content-Range: bytes <first>-<last>/<length>`. A range
-  that selects no byte of the file answers `416 Range Not Satisfiable`
-  (`range-not-satisfiable`) with `Content-Range: bytes */<length>`. Any other
-  `Range` answers `200 OK` with the whole file, as RFC 9110 allows: another
-  unit, several ranges, a range that cannot be read, or an `If-Range` that
-  does not name this file. Every answer carries `Accept-Ranges: bytes`. The
-  original's `ETag` is its fingerprint, which `If-Range` may name; a Preview
-  and a Thumbnail have none, so a `Range` sent with `If-Range` gets the whole
-  file.
-  Why: a video plays from a media element that asks for the file a range at
-  a time and seeks by asking for another (`docs/architecture/rules/media.md`).
-  Rejected: answering several ranges as `multipart/byteranges`. No media
-  element sends several, and the whole file is a correct answer to them.
-- An unknown `/v1` path answers `404 Not Found` as a problem document, and a
-  wrong method `405 Method Not Allowed`, never Axum's plain text.
+### API-23 A creation answers `201 Created` with a `Location` naming the new resource
 
-There is no `ok` flag on any success, and none in any request: the status
-carries the meaning, and a run's outcome is its `status`.
+A creation answers `201 Created` with a `Location` header naming the new
+resource, whatever the method that made it: a `PUT` that stores an asset the
+database did not hold, and a claim that makes the owner's Session
+(`Location: /v1/session`), both answer `201 Created`. A create that takes a
+batch answers `200 OK` with a summary of what was created, updated and
+skipped, because no single resource was made. A Media Link is made though
+nothing is stored: `POST /v1/assets/{sha256}/media-links` answers
+`201 Created` with the link's own URL in `Location`, which the Session that
+made it can `GET`.
+
+### API-24 A write with nothing to return answers `204 No Content`
+
+A write with nothing to return answers `204 No Content`.
+
+### API-25 A write the server finishes after it answers is `202 Accepted`
+
+A write the server finishes after it answers is `202 Accepted`, with the
+resource in its body and a `status` that says the work is under way. The
+client reads the resource with `GET` until `status` changes; a second write
+while the first is under way answers `409 Conflict`.
+`PUT /v1/server/demo-account` is the one such route: it removes the Demo
+Account and builds it again, which takes from seconds to a minute, and
+answers with `status` `building`.
+Why: an answer held for a minute is lost to a closed tab or a proxy's
+timeout while the work carries on unseen, and `200 OK` would say the Demo
+Account is there when it is not yet.
+
+### API-26 A name collision, a wrong state, or the wrong resource answers `409 Conflict`
+
+A name collision answers `409 Conflict`. So does an action on a resource in
+the wrong state: deleting before trashing, claiming a claimed Message Crate, a batch
+or a `complete` on a finished run. So does an action asked of the wrong
+resource, `state-conflict` with `detail` naming the right one: a country
+picked on a contact for a number whose `+` form is one of the account's own
+identities answers it from `PATCH /v1/contacts/{id}`. Why: the merge makes
+the number the account's own, so it belongs to `PATCH /v1/accounts/{id}`,
+which runs the with-yourself rule and takes the number off its contact.
+`state-conflict` fits because the contact's number is in a state, held by
+the account, that this route does not change; `422 Unprocessable Entity`
+would say the request broke a rule the client could fix by rewriting it, and
+no body sent to this route can do the merge.
+
+### API-27 A request that would join two records answers `409 Conflict` until the client confirms with `merge: true`
+
+A request that would join two records into one, and so cannot be undone,
+answers `409 Conflict` with nothing changed the first time, and the client
+confirms by sending the same request again with `merge: true`. The problem
+names the other record, in `detail` and in an extension such as
+`identity-exists`'s `holder`, so the client can ask the person. A country
+picked for a phone number whose `+` form another identity holds is the one
+such request (`set_identity_country` in `PATCH /v1/contacts/{id}` and
+`PATCH /v1/accounts/{id}`). Why: the server is the only party that knows the
+two are one record, and only once it has worked out the `+` form, so a
+client cannot ask before it sends. Rejected: merging without asking,
+because a merge moves conversations and messages and cannot be undone; and
+a separate preview route, which would work the same form out twice while
+another request between the two could change the answer.
+
+### API-28 A failed credential is `401 Unauthorized`, a refused one `403 Forbidden`, and every refused login `401 Unauthorized`
+
+A failed credential answers `401 Unauthorized`. A refused one, including a
+token without the needed scope and a disabled account, answers
+`403 Forbidden`. A login is the exception: every refused login, a
+disabled account's included, answers the same `401 Unauthorized`
+(`invalid-credentials`).
+Why: a disabled account's own answer would come only after the right
+password, so a guesser would learn which guess was right, and the password
+works again once the owner enables the account. The Audit Trail records the
+real reason.
+
+### API-29 Disabling an account ends its Session
+
+Disabling an account ends its Session, so the Session token it held
+answers `401 Unauthorized` from then on, after the account is enabled
+again too; only its API tokens answer `403 Forbidden` (`account-disabled`)
+while it stays disabled. A login whose password check the disable
+overtook opens no Session.
+Why: an owner who learns that someone else holds the Session token can
+shut it out and give the account back to its holder, and enabling the
+account brings back neither the token nor the Media Links signed under it
+(#2074).
+
+### API-30 An absent or unaccepted `Content-Type` is `415 Unsupported Media Type`
+
+A `Content-Type` that is absent or unaccepted answers
+`415 Unsupported Media Type`, on every route that takes a body. On a route
+whose body is optional, a request with no body is read as no body, and a
+body sent without a `Content-Type` is still `415 Unsupported Media Type`.
+
+### API-31 A request that cannot be read is `400 Bad Request`, and nothing else is
+
+A request that cannot be read is `400 Bad Request` (`malformed-body`): JSON
+that does not parse, a body of the wrong type, or a body whose connection
+broke before it arrived. Nothing else is `400 Bad Request`. A broken
+connection is this type and not one of its own because the server has no
+request to judge: the client that sent it has usually gone, and one that
+is still there sends the body again, as it would after any broken
+connection.
+
+### API-32 A body the server stopped reading because it took too long is `408 Request Timeout`
+
+A body that the server stopped reading because it took too long is
+`408 Request Timeout` (`body-stalled`): a body that went `[server]
+body_stall_secs` (60) with no byte arriving, or was still arriving
+`body_total_secs` (300) after the read started. Every body is held to
+the limits ([Connections](#connections)). Why: the connection failed, not the data, and
+`malformed-body` told the person their data was bad. The client is still
+there to read the answer, so the answer says that running the import
+again continues it. The desktop app shows it and does not send the piece
+again by itself, as it does not for any `4xx`
+([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
+
+### API-33 A request that was read and broke a rule is `422 Unprocessable Entity`
+
+A request that was read and broke a rule is `422 Unprocessable Entity`,
+whether the rule was on a query parameter, a path segment or a body field: a
+field or parameter missing or blank, a value out of range, an id that names
+no row the caller holds in a list of ids to add, a body that does not match
+the hash it is addressed by, and a search query that uses a word its list
+does not have. Axum's own rejections follow the same line. A missing
+parameter is one entry in `validation-failed`'s `errors`, not a problem type
+of its own. A search that does not parse keeps its own type,
+`search-query-invalid`, because the client's remedy differs (rewrite the
+query), and answers `422 Unprocessable Entity` like every other.
 
 Rejected: a search query that does not parse as `400 Bad Request`, "the query
 could not be read". The request was read; the query is a value that broke the
 rules of the search language, which is what `422 Unprocessable Entity` means.
 One line with no exception is easier to hold than a line with one.
+
+### API-34 A request that was read, broke no rule, and completed answers a `2xx`, even when it changed nothing
+
+A request that was read, broke no rule, and completed answers a `2xx` even
+when it changed nothing. The status code says whether the action ran or
+failed; what the action found or changed is the body's job. An id in the
+`remove` list of a `{add, remove}` membership patch that names no member is
+ignored: the set is already in the state the caller asked for, so the route
+answers `200 OK` with `{added, removed}`, `removed` counts only the rows
+deleted, and a retried request succeeds. An id in `add` that names no row
+the caller holds stays `422 Unprocessable Entity`, because adding a row the
+caller does not hold breaks a rule rather than completing with an empty
+result.
+
+### API-35 A database too busy to take the request answers `503 Service Unavailable` with `Retry-After`
+
+A request the database was too busy to take in time answers
+`503 Service Unavailable` (`database-busy`) with `Retry-After`: SQLite
+answered `SQLITE_BUSY` once the busy timeout ran out, or no pool connection
+came free within the pool's acquire timeout (sqlx's `PoolTimedOut`). Why:
+neither is a bug in the server, and the same request succeeds once the
+import batch or the requests holding the database finish, so the remedy is
+to wait and send it again, not to report a fault
+([#2084](https://github.com/messagecrate/message-crate/issues/2084)).
+`/health` is the exception, below ([Failures](#failures)).
+
+### API-36 Every `401 Unauthorized` carries a Bearer challenge
+
+Every `401 Unauthorized` carries `WWW-Authenticate: Bearer
+realm="message-crate"`, whichever problem type it answers:
+`authentication-required`, `invalid-credentials` or `media-link-invalid`.
+When the request sent a Bearer token and the server refused it (unknown,
+expired, or its account gone), the challenge adds `error="invalid_token"`.
+A request that sent no token, or an `Authorization` header that is not
+`Bearer <token>`, gets no error code. Why: RFC 9110, section 15.5.2,
+requires the header on every `401`, and RFC 6750, section 3.1, gives the
+error code and says a request that carried no token gets none. The
+OpenAPI document declares Bearer schemes, so generic HTTP tooling reads
+the challenge. The web app and the desktop app read the problem `type`
+instead. A refused Media Link gets the plain challenge, because a Media
+Link is not a Bearer token and the challenge names the way to send one.
+
+### API-37 The asset routes answer one byte range with `206 Partial Content`
+
+The three routes that answer an asset's bytes, `GET /v1/assets/{sha256}`,
+`GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
+answer a `Range` of one byte range
+(`bytes=0-499`, `bytes=500-`, `bytes=-500`) with `206 Partial Content`,
+those bytes, and `Content-Range: bytes <first>-<last>/<length>`. A range
+that selects no byte of the file answers `416 Range Not Satisfiable`
+(`range-not-satisfiable`) with `Content-Range: bytes */<length>`. Any other
+`Range` answers `200 OK` with the whole file, as RFC 9110 allows: another
+unit, several ranges, a range that cannot be read, or an `If-Range` that
+does not name this file. Every answer carries `Accept-Ranges: bytes`. The
+original's `ETag` is its fingerprint, which `If-Range` may name; a Preview
+and a Thumbnail have none, so a `Range` sent with `If-Range` gets the whole
+file.
+Why: a video plays from a media element that asks for the file a range at
+a time and seeks by asking for another (`docs/architecture/rules/media.md`).
+Rejected: answering several ranges as `multipart/byteranges`. No media
+element sends several, and the whole file is a correct answer to them.
+
+### API-38 An unknown `/v1` path (`404 Not Found`) and a wrong method (`405 Method Not Allowed`) answer a problem document
+
+An unknown `/v1` path answers `404 Not Found` as a problem document, and a
+wrong method `405 Method Not Allowed`, never Axum's plain text.
+
+### API-39 Neither a success nor a request carries an `ok` flag
+
+There is no `ok` flag on any success, and none in any request: the status
+carries the meaning, and a run's outcome is its `status`.
 
 ## Lists
 

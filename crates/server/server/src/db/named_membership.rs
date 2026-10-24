@@ -648,8 +648,8 @@ pub async fn patch_members(
         )));
     }
     // An id to add that names no row the caller holds is a body that broke a
-    // rule, `422`, not an address that is missing (`docs/architecture/rules/http-api.md`,
-    // "Status codes").
+    // rule, `422 Unprocessable Entity`, not an address that is missing
+    // (`docs/architecture/rules/http-api.md`, API-33).
     for member in &add {
         if !member_exists(spec, conn, account_id, *member).await? {
             return Err(MembershipError::BadRequest(format!(
@@ -661,7 +661,7 @@ pub async fn patch_members(
     // An id to remove is not checked: `delete_member_sql` deletes only a row
     // the caller holds, and a member that was never in the set is already in
     // the state the caller asked for (`docs/architecture/rules/http-api.md`,
-    // "Status codes").
+    // API-34).
 
     let insert_sql = insert_member_sql(spec);
     let delete_sql = delete_member_sql(spec);

@@ -479,7 +479,7 @@ impl From<crate::db::imports::StartImportError> for ApiError {
 }
 
 /// The one place an asset store failure gets its status
-/// (`docs/architecture/rules/http-api.md`, "Status codes").
+/// (`docs/architecture/rules/http-api.md`, API-26 and API-33).
 impl From<crate::assets_api::AssetError> for ApiError {
     fn from(e: crate::assets_api::AssetError) -> Self {
         use crate::assets_api::AssetError;
