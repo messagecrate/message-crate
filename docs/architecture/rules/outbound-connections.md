@@ -1,10 +1,15 @@
-# Outbound connections
+# Outbound connections: rules
 
-What Message Crate connects to beyond the computer it runs on. The published
-statement is on [What Message Crate is](../../src/content/docs/docs/user/try/what-is-message-crate.md),
-"What leaves the computer"; this document is the rule behind it (#2273).
+The constraints on what Message Crate connects to beyond the computer it
+runs on. Who connects to what, and how the download works, is in
+[Outbound connections](../outbound-connections.md). The published statement
+is on [What Message Crate is](../../src/content/docs/docs/user/try/what-is-message-crate.md),
+"What leaves the computer". This document is the rule behind both (#2273).
+Each rule has an id, `NET-n`, which code comments, tests and reviews cite. A
+rule's id never changes; a rule that stops holding is removed, and its id is
+not reused.
 
-## The rule
+## NET-1 Exactly two outbound connections, both from the desktop app
 
 Message Crate sends no telemetry, crash reports, or usage data. Exactly two
 outbound connections exist, both from the desktop app:
@@ -32,7 +37,7 @@ trust it asks. A rule written here turns any new outbound connection, whether
 a crash reporter, an update check, or a dependency that phones home, into a
 visible change to this document instead of a side effect nobody noticed.
 
-## Changing the rule
+## NET-2 A new host changes this document and the published statement
 
 A change that adds an outbound host, or makes an existing one carry more than
 a file request, changes this document and the published section in the same

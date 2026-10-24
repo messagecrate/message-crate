@@ -35,7 +35,7 @@ words; both kinds of document use them and redefine none.
 | | [Import Run logs](rules/import-run-logs.md) | The desktop app's log of each Import Run and of itself: where they are kept, who reads them, and what a line holds |
 | | [Media](rules/media.md) | An attachment's Thumbnail, Preview and original: when the server makes them, which one a screen loads, and how a video streams |
 | [The HTTP interface](http-api.md) | [rules](rules/http-api.md) | A request's path through the server, the three shapes every route shares, what each status code and credential means, runs, and how the reference is generated |
-| | [Outbound connections](rules/outbound-connections.md) | The two hosts Message Crate ever connects to, and no telemetry |
+| [Outbound connections](outbound-connections.md) | [rules](rules/outbound-connections.md) | The two hosts Message Crate ever connects to, how the program download works, and no telemetry |
 
 Two documents are not yet split into the two kinds. Each holds its
 architecture and its rules in one file, with the rules under a `Rules`
