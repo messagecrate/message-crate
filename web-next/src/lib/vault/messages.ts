@@ -63,6 +63,7 @@ export function toAttachment(
     previewMimeType: preview ? a.preview_mime_type : null,
     previewAssetsPath: preview,
     previewSha256: null,
+    previewNotMadeReason: a.preview_not_made_reason ?? null,
     thumbnailMimeType: thumbnail ? a.thumbnail_mime_type : null,
     thumbnailAssetsPath: thumbnail,
     shownAsIs: a.shown_as_is,

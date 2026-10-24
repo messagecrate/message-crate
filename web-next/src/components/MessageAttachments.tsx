@@ -60,22 +60,12 @@ function MissingMediaPlaceholder({
   );
 }
 
-/** Formats a browser cannot show from the original bytes. */
-const NEEDS_TRANSCODE = new Set([
-  "image/heic",
-  "image/heif",
-  "video/quicktime",
-  "video/x-msvideo",
-  "audio/amr",
-  "audio/x-caf",
-]);
-
-function needsTranscode(mime: string | null): boolean {
-  return Boolean(mime && NEEDS_TRANSCODE.has(mime.toLowerCase()));
-}
-
-/** The server holds no Preview of the attachment yet; the raw file is offered instead. */
-function NoTranscodeNotice({
+/**
+ * The attachment opens in no version: the original is not one every browser
+ * shows, and the server holds no Preview of it (`docs/architecture/rules/media.md`,
+ * MEDIA-2). Says why, and offers the original as a download.
+ */
+function NoPreviewNotice({
   attachment,
   url,
 }: {
@@ -83,17 +73,19 @@ function NoTranscodeNotice({
   url: string;
 }) {
   const label = attachment.originalName?.trim() || "Attachment";
+  const reason = attachment.previewNotMadeReason;
   return (
     <div
       role="note"
       className="flex max-w-xs flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
     >
       <div className="text-[11px] font-medium tracking-wide uppercase opacity-70">
-        No Preview
+        {reason ? "No Preview could be made" : "No Preview yet"}
       </div>
+      {reason ? <div className="opacity-80">{reason}</div> : null}
       <div className="opacity-80">
-        {attachment.mimeType ?? "This format"} is not playable here. Raw file:{" "}
-        <a href={url} className="underline" target="_blank" rel="noreferrer">
+        Download the original:{" "}
+        <a href={url} className="underline" download>
           {label}
         </a>
       </div>
@@ -115,11 +107,14 @@ export function MessageAttachments({
   return (
     <div className={`${hasBody ? "mt-2" : ""} space-y-1.5`}>
       {attachments.map((a) => {
-        const { url, mimeType, thumbnailUrl } = attachmentMedia(
+        const { full, url, mimeType, thumbnailUrl } = attachmentMedia(
           source,
           a,
           mediaVariant(),
         );
+        if (url && full === "none") {
+          return <NoPreviewNotice key={a.id} attachment={a} url={url} />;
+        }
         if (url && thumbnailUrl) {
           return (
             <a
@@ -139,9 +134,6 @@ export function MessageAttachments({
               />
             </a>
           );
-        }
-        if (url && needsTranscode(mimeType)) {
-          return <NoTranscodeNotice key={a.id} attachment={a} url={url} />;
         }
         if (url && isImageMime(mimeType)) {
           return (

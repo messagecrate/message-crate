@@ -16,6 +16,7 @@ function row(over: Partial<AttachmentRow> = {}): AttachmentRow {
     previewMimeType: null,
     previewAssetsPath: null,
     previewSha256: null,
+    previewNotMadeReason: null,
     thumbnailMimeType: null,
     thumbnailAssetsPath: null,
     shownAsIs: true,
@@ -30,6 +31,7 @@ describe("attachmentMedia", () => {
       row({ thumbnailMimeType: "image/jpeg", thumbnailAssetsPath: SHA }),
       "converted",
     );
+    assert.equal(media.full, "original");
     assert.equal(media.url, `/api/assets/imessage/${SHA}`);
     assert.equal(media.mimeType, "image/jpeg");
     assert.equal(media.thumbnailUrl, `/api/assets_thumbnail/imessage/${SHA}`);
@@ -46,19 +48,35 @@ describe("attachmentMedia", () => {
       }),
       "converted",
     );
+    assert.equal(media.full, "preview");
     assert.equal(media.url, `/api/assets_converted/sms/${SHA}`);
     assert.equal(media.mimeType, "audio/mpeg");
     assert.equal(media.thumbnailUrl, null);
   });
 
-  it("opens the original when the server has made no Preview yet", () => {
+  it("opens neither when the server has made no Preview, though it has a Thumbnail", () => {
     const media = attachmentMedia(
       "sms",
-      row({ mimeType: "image/heic", shownAsIs: false }),
+      row({
+        mimeType: "image/heic",
+        shownAsIs: false,
+        thumbnailMimeType: "image/jpeg",
+        thumbnailAssetsPath: SHA,
+      }),
       "converted",
     );
+    assert.equal(media.full, "none");
     assert.equal(media.url, `/api/assets/sms/${SHA}`);
-    assert.equal(media.mimeType, "image/heic");
+  });
+
+  it("opens a file that is not a picture, video or sound as the original", () => {
+    const media = attachmentMedia(
+      "sms",
+      row({ mimeType: "application/pdf", shownAsIs: false }),
+      "converted",
+    );
+    assert.equal(media.full, "original");
+    assert.equal(media.url, `/api/assets/sms/${SHA}`);
   });
 
   it("uses only the original with the original variant", () => {
@@ -73,6 +91,7 @@ describe("attachmentMedia", () => {
       }),
       "original",
     );
+    assert.equal(media.full, "original");
     assert.equal(media.url, `/api/assets/sms/${SHA}`);
     assert.equal(media.thumbnailUrl, null);
   });

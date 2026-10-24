@@ -121,6 +121,8 @@ export type AttachmentRow = {
   previewMimeType: string | null;
   previewAssetsPath: string | null;
   previewSha256: string | null;
+  /** Why the server could not make the Preview, when its last try failed. */
+  previewNotMadeReason: string | null;
   /** The Thumbnail's type, once the server has made one. */
   thumbnailMimeType: string | null;
   /** Carries the sha256 the Thumbnail is read by, when there is one. */
