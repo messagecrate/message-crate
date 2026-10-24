@@ -32,8 +32,9 @@
 # message-crate-compose-check-<host-port>, on its own volume, published on
 # 127.0.0.1:<host-port> (18080 unless given), so it never touches a running
 # Message Crate or its data, and two checks on different ports never share a
-# stack. It is removed, volume and all, on exit. Runs in CI's "Docker image
-# builds" job and in nightly.yml.
+# stack. It is removed, volume and all, on exit. Runs in nightly.yml, and in
+# ci.yml's docker job before it pushes the image (a release, or a manual run
+# that pushes one).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

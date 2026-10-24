@@ -1,3 +1,8 @@
+import {
+  attachmentMedia,
+  type MediaVariant,
+  noPreviewNote,
+} from "@/lib/attachmentMedia";
 import type { AttachmentRow } from "@/lib/types";
 
 function isImageMime(mime: string | null): boolean {
@@ -8,7 +13,7 @@ function isVideoMime(mime: string | null): boolean {
   return Boolean(mime?.startsWith("video/"));
 }
 
-function mediaVariant(): "converted" | "original" {
+function mediaVariant(): MediaVariant {
   const raw = (
     process.env.NEXT_PUBLIC_MEDIA_VARIANT ??
     process.env.MEDIA_VARIANT ??
@@ -18,29 +23,6 @@ function mediaVariant(): "converted" | "original" {
     .toLowerCase();
   if (raw === "original") return "original";
   return "converted";
-}
-
-function resolveAttachmentMedia(
-  source: string,
-  a: AttachmentRow,
-): {
-  url: string | null;
-  mimeType: string | null;
-} {
-  const preferConverted = mediaVariant() === "converted";
-  if (preferConverted && a.previewAssetsPath) {
-    return {
-      url: `/api/assets_converted/${encodeURIComponent(source)}/${a.previewAssetsPath}`,
-      mimeType: a.previewMimeType ?? a.mimeType,
-    };
-  }
-  if (a.assetsPath) {
-    return {
-      url: `/api/assets/${encodeURIComponent(source)}/${a.assetsPath}`,
-      mimeType: a.mimeType,
-    };
-  }
-  return { url: null, mimeType: a.mimeType };
 }
 
 function MissingMediaPlaceholder({
@@ -82,42 +64,47 @@ function MissingMediaPlaceholder({
   );
 }
 
-/** Formats the old `assets_converted/` transcode used to make playable. */
-const NEEDS_TRANSCODE = new Set([
-  "image/heic",
-  "image/heif",
-  "video/quicktime",
-  "video/x-msvideo",
-  "audio/amr",
-  "audio/x-caf",
-]);
-
-function needsTranscode(mime: string | null): boolean {
-  return Boolean(mime && NEEDS_TRANSCODE.has(mime.toLowerCase()));
-}
-
-/** The vault has no route for transcoded media; the raw file is offered instead. */
-function NoTranscodeNotice({
+/**
+ * The attachment opens in no version: the original is not one every browser
+ * shows, and the server holds no Preview of it (`docs/architecture/rules/media.md`,
+ * MEDIA-2). Says why, and offers the original as a download.
+ */
+function NoPreviewNotice({
   attachment,
   url,
+  thumbnailUrl,
 }: {
   attachment: AttachmentRow;
   url: string;
+  thumbnailUrl: string | null;
 }) {
   const label = attachment.originalName?.trim() || "Attachment";
+  const note = noPreviewNote(attachment);
   return (
-    <div
-      role="note"
-      className="flex max-w-xs flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
-    >
-      <div className="text-[11px] font-medium tracking-wide uppercase opacity-70">
-        No /v1 route for converted media
-      </div>
-      <div className="opacity-80">
-        {attachment.mimeType ?? "This format"} is not playable here. Raw file:{" "}
-        <a href={url} className="underline" target="_blank" rel="noreferrer">
-          {label}
-        </a>
+    <div className="flex max-w-xs flex-col gap-1.5">
+      {thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbnailUrl}
+          alt={label}
+          loading="lazy"
+          decoding="async"
+          className="max-h-64 max-w-full rounded-lg"
+        />
+      ) : null}
+      <div
+        role="note"
+        className="flex flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
+      >
+        <div className="opacity-80">
+          {note ?? "This attachment has no copy a browser can show yet."}
+        </div>
+        <div className="opacity-80">
+          Download it to open the original:{" "}
+          <a href={url} className="underline" download={label}>
+            {label}
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -137,9 +124,40 @@ export function MessageAttachments({
   return (
     <div className={`${hasBody ? "mt-2" : ""} space-y-1.5`}>
       {attachments.map((a) => {
-        const { url, mimeType } = resolveAttachmentMedia(source, a);
-        if (url && needsTranscode(mimeType)) {
-          return <NoTranscodeNotice key={a.id} attachment={a} url={url} />;
+        const { full, url, mimeType, thumbnailUrl } = attachmentMedia(
+          source,
+          a,
+          mediaVariant(),
+        );
+        if (url && full === "none") {
+          return (
+            <NoPreviewNotice
+              key={a.id}
+              attachment={a}
+              url={url}
+              thumbnailUrl={thumbnailUrl}
+            />
+          );
+        }
+        if (url && thumbnailUrl) {
+          return (
+            <a
+              key={a.id}
+              href={url}
+              className="block w-fit"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={thumbnailUrl}
+                alt={a.originalName ?? "attachment"}
+                loading="lazy"
+                decoding="async"
+                className="max-h-64 max-w-full rounded-lg"
+              />
+            </a>
+          );
         }
         if (url && isImageMime(mimeType)) {
           return (

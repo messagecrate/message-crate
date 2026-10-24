@@ -41,18 +41,32 @@ export type MessagePage = {
 
 const POOL = 6;
 
-function toAttachment(a: Schemas["Attachment"], index: number): AttachmentRow {
-  // `assetsPath` carries the sha256 so `/api/assets/{source}/{sha256}` can
-  // proxy `GET /v1/assets/{sha256}`. The vault has no transcoded variant.
+export function toAttachment(
+  a: Schemas["Attachment"],
+  index: number,
+): AttachmentRow {
+  // The path fields carry the sha256: `/api/assets/{source}/{sha256}` proxies
+  // `GET /v1/assets/{sha256}`, `/api/assets_converted/…` its `/preview` and
+  // `/api/assets_thumbnail/…` its `/thumbnail` (`lib/vault/assets.ts`). A
+  // Preview or Thumbnail is offered only when the attachment says the server
+  // holds one. The API reads a Preview by the original's sha256 and does not
+  // give the Preview's own, so `previewSha256` stays null.
+  const sha256 = a.sha256 ?? null;
+  const preview = sha256 && a.preview_mime_type ? sha256 : null;
+  const thumbnail = sha256 && a.thumbnail_mime_type ? sha256 : null;
   return {
     id: index,
     mimeType: a.mime_type ?? null,
     originalName: a.original_name ?? null,
-    assetsPath: a.sha256 ?? null,
-    sha256: a.sha256 ?? null,
-    previewMimeType: null,
-    previewAssetsPath: null,
+    assetsPath: sha256,
+    sha256,
+    previewMimeType: preview ? a.preview_mime_type : null,
+    previewAssetsPath: preview,
     previewSha256: null,
+    previewNotMadeReason: a.preview_not_made_reason ?? null,
+    thumbnailMimeType: thumbnail ? a.thumbnail_mime_type : null,
+    thumbnailAssetsPath: thumbnail,
+    shownAsIs: a.shown_as_is,
   };
 }
 
