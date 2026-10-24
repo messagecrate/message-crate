@@ -527,7 +527,7 @@ throwing away the diagnostics the run exists to keep.
 ### API-45 An Import Run's attachments without a Thumbnail or Preview are only on the owner's read of the run
 
 The attachments an Import Run wrote whose Thumbnail or Preview could not be
-made are such a collection too. The owner's
+made are such a collection too (API-44). The owner's
 `GET /v1/accounts/{id}/imports/{import_id}` answers an `OwnerImportRun`,
 which adds them (`not_made_attachments`) and their count by kind of failure
 (`not_made_counts`). The owner's list carries neither, not even a count.
@@ -558,8 +558,8 @@ message (a search result, a Find match, the first message of a year) does not
 know the message's offset, and a screen that scrolls from there reads the next
 page from the message at its edge rather than from a number that an import
 or a deletion in between would shift. This is not the cursor paging rejected
-under API-40: the page keeps `total` and `offset`, and the parameters name a message,
-not an opaque token.
+under API-40: the page keeps `total` and `offset`, and the parameters name a
+message, not an opaque token.
 
 ### API-48 Sorting is `sort=-field,field`
 
@@ -609,8 +609,8 @@ pages from a line instead: `{items, limit, has_more}`, newest first, and
 `after={id}` reads the lines older than the line with that id. It takes no
 `offset` and answers no `total`. Why: the server writes lines while the owner
 reads them, its answers to the reading included, so the reason cursor paging is
-rejected under API-40 does not hold for it, and a `total` would mean counting up to 250 MB of files for every
-page. The id names a line, as `around`, `before` and `after` name a message,
+rejected under API-40 does not hold for it, and a `total` would mean counting
+up to 250 MB of files for every page. The id names a line, as `around`, `before` and `after` name a message,
 and is not an opaque token (`docs/architecture/rules/server-log.md`).
 
 ## Failures
