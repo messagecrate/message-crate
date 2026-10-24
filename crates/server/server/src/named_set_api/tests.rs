@@ -322,7 +322,7 @@ async fn members_patch_with_a_foreign_member_writes_nothing() {
 
 /// An id in `remove` that names no member is not an error: the action ran
 /// and the set is in the state the caller asked for, so the route answers
-/// 200 with `removed: 0` (`docs/architecture/http-api.md`, "Status codes").
+/// 200 with `removed: 0` (`docs/architecture/rules/http-api.md`, "Status codes").
 #[tokio::test]
 async fn members_patch_ignores_an_unknown_id_in_remove() {
     for kind in [Kind::Groups, Kind::Tags] {

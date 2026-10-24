@@ -86,7 +86,7 @@ async fn every_response_carries_a_server_made_request_id_and_a_problem_repeats_i
 
 /// Every `/v1` operation in the document refuses a query parameter it does
 /// not declare, and accepts the ones it does: walked over the whole document
-/// once, as `docs/architecture/http-api.md` asks of a rule every route
+/// once, as `docs/architecture/rules/http-api.md` asks of a rule every route
 /// follows, so a new route is covered without anyone remembering it.
 #[tokio::test]
 async fn every_operation_refuses_a_query_parameter_it_does_not_declare() {

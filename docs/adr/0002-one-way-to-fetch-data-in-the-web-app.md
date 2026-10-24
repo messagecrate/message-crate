@@ -27,7 +27,7 @@ attachment, its Preview or its Thumbnail, through `fetchAssetObjectUrl` in
 `serverApi.ts` and turns the bytes into an object URL. The download button
 reads the original through `fetchAsset` the same way and hands it to the save.
 A video or a recording reads neither: it streams through a Media Link, which
-`createMediaLink` makes inside TanStack Query (`docs/architecture/media.md`,
+`createMediaLink` makes inside TanStack Query (`docs/architecture/rules/media.md`,
 rule 1). An object URL holds the bytes in memory
 until something revokes it, and the component that shows the attachment is the
 only thing that knows when the URL is no longer on screen. So the hook belongs

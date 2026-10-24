@@ -133,8 +133,8 @@ Each line starts with its time in UTC (RFC 3339, microseconds) and its level,
 one viewer reads both and the level filter means the same in each. Text that
 holds a line break, such as the Upload's summary, is written as one line per
 part, each with its time and level. Every other control character is
-escaped as in the server's log, such as ESC as `\x1b` (`server-log.md`, "One
-line per event"): a file name or a tool's output can carry one, and a person
+escaped as in the server's log, such as ESC as `\x1b` (`server-log.md`,
+LOG-7): a file name or a tool's output can carry one, and a person
 reading the log in a terminal would otherwise have it act on the screen.
 
 - `ERROR`: what stopped, a stage that failed, a conversation not sent, an
@@ -184,7 +184,7 @@ the server keeps one account's Import Runs from another.
 
 ## What a line holds
 
-Like a line of the server's log (`server-log.md`, "What a line never holds"),
+Like a line of the server's log (`server-log.md`, LOG-18),
 a run log's line never holds a password, a Session token or an API token,
 message text, or attachment bytes. Unlike a line of the server's log, it may
 carry a conversation's identities in the file names it gives (below).

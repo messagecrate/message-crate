@@ -2136,7 +2136,7 @@
           "Accounts"
         ],
         "summary": "Destroy one account's conversations, messages, and attachments.",
-        "description": "The account itself, its contacts, and its login survive.\n\nThe rows go in one transaction, between two batches of a running Import\nRun and never inside one. The attachment files go after it. While the\naccount has a running Import Run, the originals stay: that run may have\nuploaded files for a batch it has not sent yet. The run's end removes\nthe ones no batch named.\n\nThe owner may, on any account. The account itself may with a\nsession that carries the `delete` permission, and confirms in the body.\nAn API token is refused whatever its scopes: permanent deletion is a\nperson's act (`docs/architecture/http-api.md`, \"Credentials and reach\").",
+        "description": "The account itself, its contacts, and its login survive.\n\nThe rows go in one transaction, between two batches of a running Import\nRun and never inside one. The attachment files go after it. While the\naccount has a running Import Run, the originals stay: that run may have\nuploaded files for a batch it has not sent yet. The run's end removes\nthe ones no batch named.\n\nThe owner may, on any account. The account itself may with a\nsession that carries the `delete` permission, and confirms in the body.\nAn API token is refused whatever its scopes: permanent deletion is a\nperson's act (`docs/architecture/rules/http-api.md`, \"Credentials and reach\").",
         "operationId": "delete_account_messages",
         "parameters": [
           {
@@ -9005,7 +9005,7 @@
           "Import"
         ],
         "summary": "Move a running Import Run to another stage.",
-        "description": "A run moves to the next stage, from the Staging Review straight to\nUpload (the move made when the import has no Media Stage), or to the stage\nit is already at. Any other move is a state conflict naming both stages,\nand the run is left as it was.\n\nThe stage is a field of the run, so moving it is a `PATCH` of the run\nrather than a `POST` to a `stage` sub-resource: a path segment names a\nresource, and `stage` is not one (`docs/architecture/http-api.md`,\n\"Naming a route\"). The answer is the run itself, the same shape\n`GET /v1/imports/{id}` returns, so a caller reads one record wherever it\nasks.",
+        "description": "A run moves to the next stage, from the Staging Review straight to\nUpload (the move made when the import has no Media Stage), or to the stage\nit is already at. Any other move is a state conflict naming both stages,\nand the run is left as it was.\n\nThe stage is a field of the run, so moving it is a `PATCH` of the run\nrather than a `POST` to a `stage` sub-resource: a path segment names a\nresource, and `stage` is not one (`docs/architecture/rules/http-api.md`,\n\"Naming a route\"). The answer is the run itself, the same shape\n`GET /v1/imports/{id}` returns, so a caller reads one record wherever it\nasks.",
         "operationId": "update_import",
         "parameters": [
           {
@@ -10972,7 +10972,7 @@
           "Messages"
         ],
         "summary": "One message by id, in the shape the Messages list gives each row.",
-        "description": "Read-only. A message is never written through this route: an import\nwrites messages, and trashing is a conversation operation\n(`docs/architecture/http-api.md`, \"Methods\"). The id is enough: an id\nnames one message, and a lookup by id does not depend on how it was\nfound, so the route returns any message of the caller's account, one in\na trashed conversation and a duplicate included, and takes no `q`.\nAnother account's message is `404`.",
+        "description": "Read-only. A message is never written through this route: an import\nwrites messages, and trashing is a conversation operation\n(`docs/architecture/rules/http-api.md`, \"Methods\"). The id is enough: an id\nnames one message, and a lookup by id does not depend on how it was\nfound, so the route returns any message of the caller's account, one in\na trashed conversation and a duplicate included, and takes no `q`.\nAnother account's message is `404`.",
         "operationId": "get_message",
         "parameters": [
           {
@@ -15600,7 +15600,7 @@
       },
       "ExportQueryList": {
         "type": "string",
-        "description": "Which list an Export Run's query is for (`docs/architecture/http-api.md`,\n\"Runs\"). The list decides which search words the query may use and what\nthe run hands over.",
+        "description": "Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,\n\"Runs\"). The list decides which search words the query may use and what\nthe run hands over.",
         "enum": [
           "conversations",
           "messages"
@@ -15758,7 +15758,7 @@
             }
           }
         ],
-        "description": "What an Export Run asked for, stored as given (`docs/architecture/http-api.md`,\n\"Runs\"). One of three forms: everything the account holds, a query in the\nsearch language, or conversations and messages picked by hand."
+        "description": "What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,\n\"Runs\"). One of three forms: everything the account holds, a query in the\nsearch language, or conversations and messages picked by hand."
       },
       "ExportScopeKind": {
         "type": "string",
@@ -16293,7 +16293,7 @@
       },
       "ImportRunSummary": {
         "type": "object",
-        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/rules/http-api.md`, \"Lists\").",
         "required": [
           "id",
           "source",
@@ -16575,7 +16575,7 @@
       },
       "ListLogLinesResponse": {
         "type": "object",
-        "description": "A page of the server's log lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a line's id saves\n(`docs/architecture/http-api.md`, \"Lists\").",
+        "description": "A page of the server's log lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a line's id saves\n(`docs/architecture/rules/http-api.md`, \"Lists\").",
         "required": [
           "items",
           "limit",
@@ -16602,7 +16602,7 @@
       },
       "ListMessagesResponse": {
         "type": "object",
-        "description": "One page of the Messages list and how the server read its search: the\nfour keys of every page, and `search`, the one key a page carries beside\nthem (`docs/architecture/http-api.md`, \"Lists\").",
+        "description": "One page of the Messages list and how the server read its search: the\nfour keys of every page, and `search`, the one key a page carries beside\nthem (`docs/architecture/rules/http-api.md`, \"Lists\").",
         "required": [
           "items",
           "total",
@@ -17250,7 +17250,7 @@
             }
           }
         ],
-        "description": "One Import Run as the owner reads it under another account: everything\nthe list answers for it, and the attachments the run wrote whose\nThumbnail or Preview the server's media pass could not make, with why. A\nrun may write any number of them, so the list leaves them out\n(`docs/architecture/http-api.md`, \"Lists\"). Each is named by its file\nname, type and size, which the owner may read\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"); never by its message, its conversation, or its bytes."
+        "description": "One Import Run as the owner reads it under another account: everything\nthe list answers for it, and the attachments the run wrote whose\nThumbnail or Preview the server's media pass could not make, with why. A\nrun may write any number of them, so the list leaves them out\n(`docs/architecture/rules/http-api.md`, \"Lists\"). Each is named by its file\nname, type and size, which the owner may read\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"); never by its message, its conversation, or its bytes."
       },
       "OwnerImportRunSummary": {
         "type": "object",
@@ -18770,7 +18770,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/rules/http-api.md`, \"Lists\").",
               "required": [
                 "id",
                 "source",
@@ -19838,7 +19838,7 @@
       },
       "Problem": {
         "type": "object",
-        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to\n`database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
+        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/rules/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to\n`database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
         "required": [
           "type",
           "title",

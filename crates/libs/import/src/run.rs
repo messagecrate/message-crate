@@ -73,7 +73,7 @@ pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// Bigger files use multipart upload (many smaller pieces), which proxies
 /// accept more reliably than one huge body. The largest import batch, so an
 /// attachment arrives at the speed a batch does
-/// (`docs/architecture/http-api.md`, "Credentials and reach").
+/// (`docs/architecture/rules/http-api.md`, "Credentials and reach").
 pub const MAX_PROXY_BODY_BYTES: usize = api_types::MAX_IMPORT_BATCH_BYTES;
 /// What a server's attachment size limit reads as until its owner sets one.
 /// A caller that uploads to a real server reads the limit from `GET /v1/server`

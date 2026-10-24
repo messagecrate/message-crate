@@ -239,7 +239,7 @@ type LogFile = Schema["LogFile"];
 /**
  * A page of the server's log, newest first: the lines at `level` and more
  * severe, holding `text`, older than the line whose id is `after`. The
- * owner's alone (`docs/architecture/server-log.md`).
+ * owner's alone (`docs/architecture/rules/server-log.md`).
  */
 export function listServerLogLines(
   params: { level?: LogLevel; text?: string; after?: number; limit?: number },
@@ -250,7 +250,7 @@ export function listServerLogLines(
 
 /**
  * The files of the server's log, newest first. The server keeps at most five
- * (`docs/architecture/server-log.md`), so one page holds them all.
+ * (`docs/architecture/rules/server-log.md`), so one page holds them all.
  */
 export async function listServerLogFiles(opts?: RequestOptions): Promise<LogFile[]> {
   const page = await apiClient.get<Schema["Page_LogFile"]>("/v1/server/log-files", opts);
@@ -501,7 +501,7 @@ export async function fetchAssetObjectUrl(
 /**
  * Make a Media Link for one attachment: URLs a `<video>` or `<audio>` element
  * loads with no header, so it streams the file a range at a time
- * (`docs/architecture/media.md`, rule 1). The server answers paths; they come
+ * (`docs/architecture/rules/media.md`, rule 1). The server answers paths; they come
  * back here resolved against the server's address, ready for `src`.
  */
 export async function createMediaLink(sha256: string): Promise<Schema["MediaLink"]> {

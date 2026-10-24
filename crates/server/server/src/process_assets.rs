@@ -1,5 +1,5 @@
 //! Make the Thumbnail and the Preview of stored attachments under
-//! `assets_converted/` (`docs/architecture/media.md`, rules 3 and 4).
+//! `assets_converted/` (`docs/architecture/rules/media.md`, rules 3 and 4).
 //!
 //! Every image and video gets a Thumbnail, and every image, video or audio
 //! file of a type a browser often cannot show gets a Preview

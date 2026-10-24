@@ -7,7 +7,7 @@
 //! through `tracing`, as every other runtime message of the server is
 //! written (`crate::logging`), so it reaches the server's log and the owner's
 //! Logs panel, and a standard output nobody reads any more cannot stop it
-//! (`docs/architecture/server-log.md`). The caller picks one and passes it
+//! (`docs/architecture/rules/server-log.md`). The caller picks one and passes it
 //! down, and the work writes its progress through it.
 
 use std::fmt;

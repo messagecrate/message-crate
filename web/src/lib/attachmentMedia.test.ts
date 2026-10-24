@@ -3,7 +3,7 @@ import { attachment } from "../test/apiShapes";
 import { attachmentKind, fullVersion, noPreviewNote, noThumbnailNote } from "./attachmentMedia";
 
 /**
- * The viewer's rule (`docs/architecture/media.md`, rule 2), as the server
+ * The viewer's rule (`docs/architecture/rules/media.md`, rule 2), as the server
  * answers it in `shown_as_is`: a wrong answer either opens bytes the browser
  * cannot draw or sends a JPEG to a Preview that will never exist.
  */

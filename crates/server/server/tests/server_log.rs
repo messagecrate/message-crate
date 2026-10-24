@@ -3,7 +3,7 @@
 //! link, searches and refused requests: the requests and the problem types
 //! they were refused with, and never a password, a session or API
 //! token (hashed or not), message text, attachment bytes, or a contact's
-//! name or identities (`docs/architecture/server-log.md`, ADR 0008).
+//! name or identities (`docs/architecture/rules/server-log.md`, LOG-18).
 //!
 //! It runs the binary, as Docker and the desktop app do, so the log is the
 //! one the process-wide subscriber writes, at `RUST_LOG=trace`, the most a

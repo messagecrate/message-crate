@@ -1,5 +1,5 @@
 //! Refuse a query parameter the route does not declare
-//! (`docs/architecture/http-api.md`, "Lists").
+//! (`docs/architecture/rules/http-api.md`, "Lists").
 //!
 //! A typo (`limt=10`) or a guess at a convention the interface rejects
 //! (`order=`, `fields=`, `year=`) would otherwise be answered as though it

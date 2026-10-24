@@ -50,7 +50,7 @@ product, no migration.
   names.
 - `schema_version` of the shared conversation model stays `4`.
 - The `/v1` route shapes, status codes, and the rules in
-  `docs/architecture/http-api.md` stay as they are; only the four routes
+  `docs/architecture/rules/http-api.md` stay as they are; only the four routes
   named below move.
 - The Docker Hub account stays `bitrealm`, so the release job's credentials
   stay the same.
@@ -109,7 +109,7 @@ Every reader-facing and agent-facing sentence. No identifiers.
   `0008-the-vault-owner-holds-no-messages.md`, which become
   `0001-no-command-line-except-the-server.md` and
   `0008-the-owner-holds-no-messages.md`. Links to them follow.
-- **Architecture docs.** `docs/architecture/http-api.md` and
+- **Architecture docs.** `docs/architecture/rules/http-api.md` and
   `contacts-identities-and-messages.md` are reworded; the route names in
   them change in PR (c).
 - **Changelog.** Past entries keep "Message Vault". A new entry under the
@@ -140,7 +140,7 @@ schema fingerprint changes with the table names.
 `/v1/settings` would read as the logged-in account's settings, and the
 http-api rules already describe this group as the one singleton per
 installation. The route group file `vault_api.rs` becomes `server_api.rs`.
-`docs/architecture/http-api.md` is updated to match, and the OpenAPI
+`docs/architecture/rules/http-api.md` is updated to match, and the OpenAPI
 document and generated web types are regenerated.
 
 ### Tables and indexes

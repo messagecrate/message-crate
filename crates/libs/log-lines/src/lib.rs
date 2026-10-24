@@ -1,7 +1,7 @@
 //! The line format of Message Crate's logs, defined once for the server,
-//! which reads its own log back (`docs/architecture/server-log.md`), and the
+//! which reads its own log back (`docs/architecture/rules/server-log.md`), and the
 //! desktop app, which writes and reads each Import Run's log
-//! (`docs/architecture/import-run-logs.md`).
+//! (`docs/architecture/rules/import-run-logs.md`).
 //!
 //! A line is its time in UTC (RFC 3339, microseconds), its level padded to
 //! five characters, and its text, separated by spaces:

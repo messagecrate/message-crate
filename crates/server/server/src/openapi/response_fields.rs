@@ -1,5 +1,5 @@
 //! Every field of a success answer is required in the reference
-//! (`docs/architecture/http-api.md`, "Fields").
+//! (`docs/architecture/rules/http-api.md`, "Fields").
 //!
 //! The server sends every field of a success answer, as `null` when it has no
 //! value, so every property of a schema a success answer holds is required.

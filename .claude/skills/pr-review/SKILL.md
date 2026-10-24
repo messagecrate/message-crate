@@ -96,7 +96,8 @@ Then gather, once (AGENTS.md step 1):
   commits. With none, the Spec review is skipped and the summary says so.
 - **The standards**: always `CLAUDE.md`, `AGENTS.md`,
   `docs/agents/writing-style.md` and `CONTEXT.md`. Add each
-  `docs/architecture/` doc and `docs/adr/` record whose area the diff touches.
+  `docs/architecture/rules/` document and `docs/adr/` record whose area the
+  diff touches, and the architecture page beside the rules for orientation.
   `CLAUDE.md` names the doc for each area (contacts and identities, `/v1`
   routes, data fetching in `web/`, and so on).
 - **Open threads** already on the PR, each marked agent or user.

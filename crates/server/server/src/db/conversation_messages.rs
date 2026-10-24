@@ -897,7 +897,7 @@ pub(crate) fn selection_where(
 /// conversation itself, the account scope, and Export's not-duplicate filter
 /// (`ListKind::Messages`'s default in `search::emit::compile`). There is no
 /// other filter: a read by id takes none, and narrowing a conversation is a
-/// search, `GET /v1/messages?q=in:#{id} …` (`docs/architecture/http-api.md`,
+/// search, `GET /v1/messages?q=in:#{id} …` (`docs/architecture/rules/http-api.md`,
 /// "Methods"). Trash plays no part here: reading one conversation's messages
 /// is not gated by trash, the same rule
 /// [`get_conversation_summary`](crate::db::conversations::get_conversation_summary)
@@ -912,7 +912,7 @@ fn conversation_messages_where(conversation_id: i64, account_id: i64) -> (String
 /// Where a page of one conversation's messages sits in the conversation, in
 /// the order the page is sorted. A screen that jumps to a message does not
 /// know its offset, so it names the message and the answer's `offset` says
-/// where the page landed (`docs/architecture/http-api.md`, "Lists").
+/// where the page landed (`docs/architecture/rules/http-api.md`, "Lists").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageWindow {
     /// Starting at the page's `offset`.

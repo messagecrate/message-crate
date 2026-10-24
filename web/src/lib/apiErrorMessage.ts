@@ -45,7 +45,7 @@ function sentenceCase(text: string): string {
  * fallback is given, so a desktop command's string rejection is shown too.
  *
  * The server writes each `detail` in lowercase with no final period
- * (`docs/architecture/http-api.md`, "Failures"), and a sentence on a screen
+ * (`docs/architecture/rules/http-api.md`, "Failures"), and a sentence on a screen
  * starts with a capital, so the first letter is capitalized. A sentence that
  * starts with a name a capital would change is kept as it is: a
  * `search-query-invalid` refusal about one search word starts with that word

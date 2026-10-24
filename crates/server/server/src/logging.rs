@@ -12,7 +12,7 @@
 //! Data Directory's `logs` directory ([`write_files_in`], [`LogFiles`]), which
 //! the owner reads through `GET /v1/server/log-lines` and
 //! `GET /v1/server/log-files`. Why files, why 5 of 50 MB and why the owner:
-//! `docs/architecture/server-log.md`.
+//! `docs/architecture/rules/server-log.md`.
 
 mod files;
 mod read;

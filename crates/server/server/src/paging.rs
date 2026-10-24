@@ -1,4 +1,4 @@
-//! One shape for every paged list on the HTTP interface (`docs/architecture/http-api.md`).
+//! One shape for every paged list on the HTTP interface (`docs/architecture/rules/http-api.md`).
 //!
 //! A list takes `?offset=&limit=` and answers `{items, total, limit, offset}`.
 //! A `limit` above the cap or a zero `limit` is a 422, never a silent clamp,
@@ -126,7 +126,7 @@ pub struct SortKey<K> {
     pub direction: Direction,
 }
 
-/// Parse `sort=-field,field` against the keys a list accepts (`docs/architecture/http-api.md`):
+/// Parse `sort=-field,field` against the keys a list accepts (`docs/architecture/rules/http-api.md`):
 /// comma-separated keys, a leading `-` for descending. Absent or blank is
 /// `default`. An unknown or repeated key is `validation-failed`, naming the
 /// key and the accepted set, the way the search language refuses an unknown

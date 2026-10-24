@@ -85,7 +85,7 @@ const heic = attachment({
  * A conversation holds thousands of photos, and a phone photo is megabytes.
  * A photo fetches nothing until its message comes near the screen, and then
  * only its Thumbnail, never the original or the Preview
- * (`docs/architecture/media.md`, rule 5).
+ * (`docs/architecture/rules/media.md`, rule 5).
  */
 describe("a photo in the conversation", () => {
   it("fetches nothing until its message comes near the screen, then only its Thumbnail", async () => {
@@ -179,7 +179,7 @@ describe("a photo in the conversation", () => {
 
 /**
  * Downloading always gives the original, the record of what was sent, never
- * the Preview (`docs/architecture/media.md`, rule 2).
+ * the Preview (`docs/architecture/rules/media.md`, rule 2).
  */
 describe("downloading an attachment", () => {
   it("fetches the original of a photo that has a Preview and saves it under its own name", async () => {
@@ -236,7 +236,7 @@ describe("downloading an attachment", () => {
  * Most videos in a conversation are scrolled past and never played, so a
  * video shows its Thumbnail and loads nothing of itself until play is
  * pressed. Then it streams through a Media Link, the Preview or the original
- * as its type decides (`docs/architecture/media.md`, rules 1, 2 and 5).
+ * as its type decides (`docs/architecture/rules/media.md`, rules 1, 2 and 5).
  */
 describe("a video in the conversation", () => {
   const mov = attachment({

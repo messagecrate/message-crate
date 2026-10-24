@@ -23,7 +23,7 @@ pub struct LogLimits {
 }
 
 /// The server's log limits: at most 5 files of 50 MB (50,000,000 bytes),
-/// 250 MB in all (`docs/architecture/server-log.md`, "Trimmed by size only").
+/// 250 MB in all (`docs/architecture/rules/server-log.md`, LOG-15).
 pub const SERVER_LOG_LIMITS: LogLimits = LogLimits {
     file_bytes: 50_000_000,
     files: 5,

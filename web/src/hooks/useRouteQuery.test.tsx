@@ -133,7 +133,7 @@ describe("useRoutePagedList", () => {
   });
 
   it("stops at the server's offset ceiling, however many rows the total names", async () => {
-    // A browse list refuses an `offset` past 50,000 (`docs/architecture/http-api.md`,
+    // A browse list refuses an `offset` past 50,000 (`docs/architecture/rules/http-api.md`,
     // "Lists"), so the list ends where the next page would start past it.
     const fetchPage = vi.fn(async ({ offset }: { offset: number }) => page(offset, 2, 100));
     const { result } = renderHook(

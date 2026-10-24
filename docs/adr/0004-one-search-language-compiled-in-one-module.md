@@ -20,7 +20,7 @@ current.
   Contact Group" wherever it is accepted. Each list says which words it
   accepts.
 - **A word that does not belong to the list is refused.** The answer is a
-  400 (now `422 Unprocessable Entity`, by `docs/architecture/http-api.md`)
+  400 (now `422 Unprocessable Entity`, by `docs/architecture/rules/http-api.md`)
   that names the word and the list, with a "did you mean" only when the
   current word list has something close. Nothing is silently searched as
   text or dropped, and the module knows nothing about spellings that came

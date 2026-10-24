@@ -19,7 +19,7 @@
 //! shape here.
 //!
 //! The server sends every field of these shapes, as `null` when it has no
-//! value, and never leaves one out (`docs/architecture/http-api.md`,
+//! value, and never leaves one out (`docs/architecture/rules/http-api.md`,
 //! "Fields"), so none carries `#[serde(skip_serializing_if = ...)]`. The one
 //! exception is [`Problem`], whose members follow RFC 7807: `detail` is a
 //! string when it is there, and each extension member belongs to the problem
@@ -399,7 +399,7 @@ macro_rules! api_shape {
     };
 }
 
-/// Which list an Export Run's query is for (`docs/architecture/http-api.md`,
+/// Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,
 /// "Runs"). The list decides which search words the query may use and what
 /// the run hands over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -432,7 +432,7 @@ impl ExportQueryList {
     }
 }
 
-/// What an Export Run asked for, stored as given (`docs/architecture/http-api.md`,
+/// What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,
 /// "Runs"). One of three forms: everything the account holds, a query in the
 /// search language, or conversations and messages picked by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -464,7 +464,7 @@ pub enum ExportScope {
     },
 }
 
-// Every list route answers this shape (`docs/architecture/http-api.md`), and
+// Every list route answers this shape (`docs/architecture/rules/http-api.md`), and
 // `GET /v1/exports/{id}/messages` answers a `Page<Message>`, which the OpenAPI
 // document names `Page_Message`. The doc comment is the schema description,
 // so it stays one line.
@@ -1092,7 +1092,7 @@ mod export_scope_tests {
 }
 
 /// An RFC 7807 problem document: the body of every failure the server answers,
-/// served as `application/problem+json` (`docs/architecture/http-api.md`).
+/// served as `application/problem+json` (`docs/architecture/rules/http-api.md`).
 ///
 /// `type` is the URL of the page describing this kind of failure, one page per
 /// type, or `about:blank` for an internal error. A validation failure carries

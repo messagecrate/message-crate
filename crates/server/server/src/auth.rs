@@ -138,7 +138,7 @@ pub fn require_logged_in(auth: &AuthIdentity) -> Result<(), ApiError> {
 ///
 /// Returns `demo-account-protected` when `target` is the Demo Account. `what`
 /// finishes the `detail` "the Demo Account's ...", one sentence in lowercase
-/// with no final period (`docs/architecture/http-api.md`, "Failures"). What
+/// with no final period (`docs/architecture/rules/http-api.md`, "Failures"). What
 /// a caller can do about it is on the problem type's page.
 ///
 /// One refusal of the Demo Account is not built here: `delete_account`
@@ -661,7 +661,7 @@ pub(crate) async fn require_account_row(
 /// A route never takes an `account=` parameter. A session or an API token
 /// belongs to exactly one account, so a parameter could only repeat it or
 /// contradict it, and the rules document says the credential names the
-/// account (`docs/architecture/http-api.md`, "Credentials and reach").
+/// account (`docs/architecture/rules/http-api.md`, "Credentials and reach").
 pub(crate) fn resolve_import_account(auth: &AuthIdentity) -> i64 {
     auth.account_id
 }

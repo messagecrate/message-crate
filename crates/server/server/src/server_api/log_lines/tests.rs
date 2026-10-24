@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-lines` through the router: the owner reads the
 //! newest lines first, filters them by level and text, and pages older ones
-//! from a line's id (`docs/architecture/server-log.md`). Who may call it is
+//! from a line's id (`docs/architecture/rules/server-log.md`). Who may call it is
 //! the credential matrix's to check.
 
 use serde_json::Value;

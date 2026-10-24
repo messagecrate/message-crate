@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 
 use crate::problem::{Problem, ProblemType};
 
-/// A failure, as one of the registered problem types (`docs/architecture/http-api.md`).
+/// A failure, as one of the registered problem types (`docs/architecture/rules/http-api.md`).
 ///
 /// A variant names what went wrong, never a status: the status, the `type`
 /// URL and the title come from the type's declaration in [`crate::problem`],
@@ -129,7 +129,7 @@ impl ApiError {
     }
 
     /// `Ok` when a check that gathers every broken rule found none, else
-    /// `validation-failed` listing them all (`docs/architecture/http-api.md`,
+    /// `validation-failed` listing them all (`docs/architecture/rules/http-api.md`,
     /// "Failures").
     ///
     /// # Errors
@@ -302,7 +302,7 @@ impl ApiError {
 /// `INFO` otherwise. The problem's
 /// `detail` is never written: it can repeat what a person typed, and a log
 /// line holds only ids, counts, routes and outcomes
-/// (`docs/architecture/server-log.md`). A refusal whose `cause` is an
+/// (`docs/architecture/rules/server-log.md`). A refusal whose `cause` is an
 /// internal error (a busy database) also carries that error's chain as
 /// `error`, as the `ERROR` line of a `500` does, so a lock that never clears
 /// names the step that met it.
@@ -479,7 +479,7 @@ impl From<crate::db::imports::StartImportError> for ApiError {
 }
 
 /// The one place an asset store failure gets its status
-/// (`docs/architecture/http-api.md`, "Status codes").
+/// (`docs/architecture/rules/http-api.md`, "Status codes").
 impl From<crate::assets_api::AssetError> for ApiError {
     fn from(e: crate::assets_api::AssetError) -> Self {
         use crate::assets_api::AssetError;

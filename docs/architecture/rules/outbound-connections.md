@@ -1,7 +1,7 @@
 # Outbound connections
 
 What Message Crate connects to beyond the computer it runs on. The published
-statement is on [What Message Crate is](../src/content/docs/docs/user/try/what-is-message-crate.md),
+statement is on [What Message Crate is](../../src/content/docs/docs/user/try/what-is-message-crate.md),
 "What leaves the computer"; this document is the rule behind it (#2273).
 
 ## The rule
@@ -20,7 +20,7 @@ outbound connections exist, both from the desktop app:
   against a SHA-256 carried in `tool_downloads/pins.rs`, which takes
   wtsexporter's from the WhatsApp exporter's `wtsexporter/pin.rs`. The rules for that
   download are in
-  [ADR 0019](../adr/0019-the-desktop-app-downloads-the-programs-it-needs.md).
+  [ADR 0019](../../adr/0019-the-desktop-app-downloads-the-programs-it-needs.md).
 
 The server and the website make no outbound connections. The website's links
 to messagecrate.app and GitHub are links: nothing is fetched from those hosts

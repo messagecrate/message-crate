@@ -636,7 +636,7 @@ fn a_logged_uri_hides_the_media_link() {
 
 /// A search is a question about what the messages say, and the log never
 /// holds message text or a contact's name
-/// (`docs/architecture/server-log.md`). So a logged URI keeps the value of a
+/// (`docs/architecture/rules/server-log.md`). So a logged URI keeps the value of a
 /// parameter only when it is a number or a fixed word (`limit`, `offset`,
 /// `sort`, `status` and the like), and hides every other value: `q`, the
 /// `text` filter of the log lines route, and a parameter the server does not

@@ -1,4 +1,4 @@
-//! Generate the docs-site pages for the HTTP problem types (`docs/architecture/http-api.md`).
+//! Generate the docs-site pages for the HTTP problem types (`docs/architecture/rules/http-api.md`).
 //!
 //! One page per [`ProblemType`] plus an index, under
 //! `docs/src/content/docs/docs/developer/reference/errors/`, regenerated with

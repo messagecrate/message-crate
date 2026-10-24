@@ -176,7 +176,7 @@ describe("AttachmentLightbox buttons", () => {
 
 /**
  * The viewer chooses the version before it fetches a byte, never by a load
- * that failed (`docs/architecture/media.md`, rule 2), from the server's
+ * that failed (`docs/architecture/rules/media.md`, rule 2), from the server's
  * `shown_as_is`: the original when every browser shows it, else the Preview,
  * and neither while that Preview is not made yet.
  */
@@ -269,7 +269,7 @@ describe("AttachmentLightbox and the type rule", () => {
 /**
  * The viewer never shows an empty frame, and stepping through a
  * conversation's photos does not wait on each one
- * (`docs/architecture/media.md`, rule 5).
+ * (`docs/architecture/rules/media.md`, rule 5).
  */
 describe("AttachmentLightbox while it loads", () => {
   it("keeps the Thumbnail on screen until the full version is ready", async () => {

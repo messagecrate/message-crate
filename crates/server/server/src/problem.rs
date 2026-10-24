@@ -1,5 +1,5 @@
 //! The registry of problem types: what each kind of failure is, the status it
-//! answers, the page that describes it (`docs/architecture/http-api.md`).
+//! answers, the page that describes it (`docs/architecture/rules/http-api.md`).
 //!
 //! This is the one place a type is declared. Each declaration names the
 //! [`crate::api_error::ApiError`] variants that answer the type, and
@@ -183,7 +183,7 @@ pub const DATABASE_BUSY_RETRY_AFTER_SECS: u64 = 5;
 
 impl ProblemType {
     /// Whether the line a request refused with this type leaves in the
-    /// server's log is a warning (`docs/architecture/server-log.md`): true
+    /// server's log is a warning (`docs/architecture/rules/server-log.md`): true
     /// for the types that answer `401 Unauthorized` and `403 Forbidden`,
     /// because a run of them is what a password guesser or an API token that
     /// lost its rights looks like, and for `database-busy`, because a run of
@@ -265,7 +265,7 @@ Any route that reads or writes the database can answer this, so no route in the 
 /// or `415` for one that takes a body, are added by
 /// `crate::openapi::shared_parts`, which also files each type named here
 /// under its status and builds the one problem response for it
-/// (`docs/architecture/http-api.md`, "The reference").
+/// (`docs/architecture/rules/http-api.md`, "The reference").
 pub mod openapi {
     use std::collections::BTreeMap;
 

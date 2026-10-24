@@ -213,14 +213,14 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- it tried: what ffmpeg said about the file, with the paths it named
     -- made relative to the account's originals directory and the pass's
     -- work directory, or a phrase of the server's when ffmpeg did not read
-    -- the file (`docs/architecture/media.md` rule 4). Never written beside
+    -- the file (`docs/architecture/rules/media.md` rule 4). Never written beside
     -- a Preview that works. NULL while the row names a Preview that works,
     -- once the original is decided to be shown as it is, and until a try has
     -- failed.
     preview_not_made_reason TEXT,
     -- The kind of failure `preview_not_made_reason` describes, so the owner's
     -- view of an Import Run can count the failures by kind without reading
-    -- ffmpeg's words. `docs/architecture/media.md` says what each kind means.
+    -- ffmpeg's words. `docs/architecture/rules/media.md` says what each kind means.
     -- Set and cleared with the reason.
     preview_not_made_kind TEXT CHECK (preview_not_made_kind IN (
         'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     )),
     -- 1 when every browser shows the stored original as it is, so a viewer
     -- opens it and it gets no Preview (`media::browser_shows`,
-    -- `docs/architecture/media.md` rule 2). The server's media pass decides
+    -- `docs/architecture/rules/media.md` rule 2). The server's media pass decides
     -- it, and only an MP4 is opened to read its codec. 0 when it is not
     -- shown as it is. NULL until the pass has decided, which the `/v1`
     -- Attachment answers as not shown as it is; the pass plans an original

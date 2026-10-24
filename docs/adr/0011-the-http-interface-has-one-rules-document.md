@@ -1,7 +1,7 @@
 # The HTTP interface has one rules document
 
 The rules for the server's `/v1` interface live in one standing document,
-`docs/architecture/http-api.md`. That file states what the interface is today:
+`docs/architecture/rules/http-api.md`. That file states what the interface is today:
 every rule, its reason, and the alternatives turned down. A pull request that
 touches a route is graded against it, and a change to a rule is made there in
 the same pull request that changes the code. No ADR is written for a decision
@@ -40,7 +40,7 @@ fifth document a reader had to merge by hand.
 - ADR-0003, ADR-0005, ADR-0009 and ADR-0010 are deleted, and the closed audit
   `docs/agents/http-api-audit.md` with them. Their numbers are not reused.
 - A decision about the HTTP interface is a rule in
-  `docs/architecture/http-api.md`, not an ADR. ADRs continue for every other
+  `docs/architecture/rules/http-api.md`, not an ADR. ADRs continue for every other
   kind of decision.
 - The document is what every future audit grades against.
 
@@ -57,3 +57,12 @@ not held in whoever last worked on the server; a route that breaks one is a
 bug, and an open issue names the routes still to change. "States what the
 interface is today" above now means what every route must do; what each route
 does today is the generated OpenAPI reference.
+
+## Amended 2026-10-24
+
+The rules document moved again, to `docs/architecture/rules/http-api.md`.
+`docs/architecture/` now holds two kinds of document: an architecture page,
+which shows the current shape of an area for a person learning it, and a
+rules document, which holds the constraints a change must keep. The HTTP
+rules were already the second kind, so only their path changed. The
+distinction is in `docs/architecture/README.md`.

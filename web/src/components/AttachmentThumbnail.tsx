@@ -8,7 +8,7 @@ import { ThumbnailPicture, ThumbnailTile } from "./ThumbnailTile";
 
 /**
  * A photo in the conversation: its Thumbnail, fetched once its message comes
- * near the screen, never the original (`docs/architecture/media.md`, rule 5).
+ * near the screen, never the original (`docs/architecture/rules/media.md`, rule 5).
  * Pressing it opens the viewer.
  */
 export default function AttachmentThumbnail({

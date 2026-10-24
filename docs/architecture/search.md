@@ -86,7 +86,7 @@ Each rule holds on every list, and each has its reason.
   with a positive free-text word is ranked best match first, and a query
   with none, field words only or nothing, lists the newest message first.
   Every page says which order it applied and which terms it ranks by, in
-  `search` (`docs/architecture/http-api.md`, "Lists"), from
+  `search` (`docs/architecture/rules/http-api.md`, "Lists"), from
   `Expr::positive_text_terms`. A `sort` the request names is applied as it
   is. Why: a search for words is looking for the messages that hold them,
   and a search by fields alone is browsing, where the latest come first. The

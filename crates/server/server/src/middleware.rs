@@ -188,7 +188,7 @@ pub(crate) fn is_api_path(path: &str) -> bool {
 }
 
 /// Mark every `/v1` answer `Cache-Control: no-store` unless the route set its
-/// own (`docs/architecture/http-api.md`, "Caching"). The answers carry a
+/// own (`docs/architecture/rules/http-api.md`, "Caching"). The answers carry a
 /// Session token, message text, contacts or attachments, and no cache should
 /// keep them. An asset read sets `private` itself and keeps it. Only `/v1`
 /// is marked: the website served by the fallback, `/health` and the OpenAPI
@@ -210,7 +210,7 @@ pub(crate) async fn no_store_unless_set(
 }
 
 /// Refuse a request whose `Accept` names nothing this route can produce
-/// (`docs/architecture/http-api.md`). Narrow on purpose: only when the header is present and none of
+/// (`docs/architecture/rules/http-api.md`). Narrow on purpose: only when the header is present and none of
 /// its members is `application/json`, `application/problem+json`,
 /// `application/*` or `*/*`. A missing `Accept` is a request for JSON, which
 /// is what every one of the server's own clients sends.
@@ -369,7 +369,7 @@ fn decoded_query_name(raw_name: &str) -> Option<String> {
 /// every value hidden but those of [`LOGGED_QUERY_VALUES`]. A `media_link` is
 /// a credential that travels in the URL, because a media element can send it
 /// nowhere else, and `q` is a search over what the messages say; the log
-/// holds neither (`docs/architecture/server-log.md`). A parameter added
+/// holds neither (`docs/architecture/rules/server-log.md`). A parameter added
 /// later is hidden until it is added to the list.
 ///
 /// A URI longer than [`LOGGED_URI_BYTES`] is cut there and ends in
@@ -416,7 +416,7 @@ fn uri_with_hidden_values(uri: &axum::http::Uri) -> String {
 }
 
 /// The `Content-Security-Policy` on every answer (#2073). Each directive's
-/// reason is in `docs/architecture/http-api.md`, "Protective headers".
+/// reason is in `docs/architecture/rules/http-api.md`, "Protective headers".
 pub(crate) const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; \
      style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; \
      media-src 'self' blob: http: https:; connect-src 'self' http: https:; \

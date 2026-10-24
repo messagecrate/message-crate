@@ -1,4 +1,4 @@
-//! A field's description sits on the field (`docs/architecture/http-api.md`,
+//! A field's description sits on the field (`docs/architecture/rules/http-api.md`,
 //! "The reference").
 //!
 //! utoipa writes the doc comment of a field typed by a schema of its own

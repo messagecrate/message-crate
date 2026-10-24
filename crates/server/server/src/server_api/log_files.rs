@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`: the
 //! server's log files, listed and downloaded whole, the owner's alone
-//! (`docs/architecture/server-log.md`).
+//! (`docs/architecture/rules/server-log.md`).
 
 use std::sync::Arc;
 

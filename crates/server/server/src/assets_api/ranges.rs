@@ -1,6 +1,6 @@
 //! Byte ranges (RFC 9110, section 14) on the two routes that answer an
 //! asset's bytes, so a media element streams a video and seeks in it rather
-//! than loading the whole file first (`docs/architecture/media.md`).
+//! than loading the whole file first (`docs/architecture/rules/media.md`).
 //!
 //! One range is served. A `Range` the server does not serve as one range
 //! (another unit, several ranges, a range that cannot be read) is ignored and

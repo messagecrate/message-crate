@@ -348,7 +348,7 @@ pub(super) fn capped_json_string(
 
 /// `GET /v1/imports`: a page, narrowed to one `status` when given. One of the
 /// two lists with a filter parameter, beside the Export Run list
-/// (`docs/architecture/http-api.md`): it has no search language.
+/// (`docs/architecture/rules/http-api.md`): it has no search language.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListImportsQuery {
     #[serde(default)]
@@ -409,7 +409,7 @@ pub(crate) struct ImportRun {
 /// its issues and notes. A run may record any number of either, so a page
 /// that carried them would have no bound on its size; `GET /v1/imports/{id}`
 /// answers them (#1559,
-/// `docs/architecture/http-api.md`, "Lists").
+/// `docs/architecture/rules/http-api.md`, "Lists").
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRunSummary {
     /// Import Run id.
@@ -574,7 +574,7 @@ pub(crate) struct OwnerImportRunSummary {
 /// the list answers for it, and the attachments the run wrote whose
 /// Thumbnail or Preview the server's media pass could not make, with why. A
 /// run may write any number of them, so the list leaves them out
-/// (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
+/// (`docs/architecture/rules/http-api.md`, "Lists"). Each is named by its file
 /// name, type and size, which the owner may read
 /// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
 /// see"); never by its message, its conversation, or its bytes.
