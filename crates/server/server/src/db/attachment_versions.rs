@@ -1,6 +1,6 @@
 //! The versions the server makes of an attachment's original, as the
 //! `attachments` rows name them: the Preview in `preview_*` and the
-//! Thumbnail in `thumbnail_*` (`docs/architecture/rules/media.md`, rule 3). Every
+//! Thumbnail in `thumbnail_*` (`docs/architecture/rules/media.md`, MEDIA-3). Every
 //! row of the account that names the original carries the same versions.
 //! The column names live here and nowhere else.
 

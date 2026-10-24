@@ -1,5 +1,5 @@
 //! The two versions the server makes of an attachment beside its original,
-//! which it never changes (`docs/architecture/rules/media.md`, rule 3):
+//! which it never changes (`docs/architecture/rules/media.md`, MEDIA-3):
 //!
 //! - a **Thumbnail**, a JPEG at most [`THUMBNAIL_LONG_EDGE`] pixels on its
 //!   long side: the image scaled down, or a video's first frame. Every image

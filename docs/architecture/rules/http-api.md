@@ -897,7 +897,7 @@ security scheme with its scopes, so every route says which it accepts.
   remedy is a new link rather than a new login.
   Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
   and cannot send a header, and a video that streams must be loaded by the
-  element itself (`docs/architecture/rules/media.md`, rule 1). The desktop app's
+  element itself (`docs/architecture/rules/media.md`, MEDIA-1). The desktop app's
   download of an original takes one too. The app copies the answer to the
   file the person chose as it arrives, so a video of hundreds of megabytes is
   never held whole in the window or sent to the app as bytes. The window holds

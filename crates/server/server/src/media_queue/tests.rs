@@ -1,6 +1,6 @@
 //! The background pass as an Upload meets it: an Import Run of a photo, an
 //! H.264 MP4 and a HEVC `.mov` ends, and the server makes their versions
-//! afterwards (`docs/architecture/rules/media.md`, rule 4).
+//! afterwards (`docs/architecture/rules/media.md`, MEDIA-4).
 
 use std::future::Future;
 use std::path::Path;
@@ -319,7 +319,7 @@ fn shown_as_is(attachments: &[serde_json::Value], sha256: &str) -> serde_json::V
 }
 
 /// The pass decides whether every browser shows each original as it is
-/// (`docs/architecture/rules/media.md`, rule 2), and the conversation answers it
+/// (`docs/architecture/rules/media.md`, MEDIA-2), and the conversation answers it
 /// in `shown_as_is`, so the web app never repeats the list of types and a
 /// read never runs ffprobe. A PNG and an H.264 MP4 are shown as they are. A
 /// HEVC video is not, in an `.mp4` as in a `.mov`, because only the file can
@@ -1038,7 +1038,7 @@ fn a_file_a_later_run_fills_in_gets_its_thumbnail() {
 }
 
 /// A file ffmpeg cannot read gets no Thumbnail and no Preview, and the
-/// conversation answers why for each (`docs/architecture/rules/media.md`, rule 4),
+/// conversation answers why for each (`docs/architecture/rules/media.md`, MEDIA-4),
 /// in ffmpeg's words, so the viewer can say it rather than the owner
 /// searching the server's log. The words name no path outside the data
 /// directory: the original's and the work file's paths are made relative.

@@ -83,7 +83,7 @@ export function fullVersion(attachment: MessageAttachment): FullVersion {
  * What a screen says about an attachment that opens in no version because the
  * server tried to make its Preview and could not: "No Preview could be made"
  * and the server's `preview_not_made_reason`, what ffmpeg said about the file
- * (`docs/architecture/rules/media.md`, rule 4). `null` when it opens in a version,
+ * (`docs/architecture/rules/media.md`, MEDIA-4). `null` when it opens in a version,
  * or no try has failed, as while the Preview is still to be made.
  */
 export function noPreviewNote(attachment: MessageAttachment): string | null {
@@ -96,7 +96,7 @@ export function noPreviewNote(attachment: MessageAttachment): string | null {
  * What a screen says about an attachment whose Thumbnail the server tried to
  * make and could not: "No Thumbnail could be made" and the server's
  * `thumbnail_not_made_reason`, as `noPreviewNote` says for the Preview
- * (`docs/architecture/rules/media.md`, rule 4). `null` while no try has failed.
+ * (`docs/architecture/rules/media.md`, MEDIA-4). `null` while no try has failed.
  * The caller says it only where no Thumbnail is drawn.
  */
 export function noThumbnailNote(attachment: MessageAttachment): string | null {
