@@ -108,9 +108,9 @@ back on the run, and the server sends both of its lists.
 ### API-8 A failure is not a success answer
 
 A failure is not a success answer. A problem document carries the members
-API-52 gives it and leaves out the rest, because RFC 7807
-defines `detail` as a string, and an extension member such as `retry_after`
-belongs to the problem types that carry it.
+API-52 gives it and leaves out the rest, because RFC 7807 defines `detail` as a
+string, and an extension member such as `retry_after` belongs to the problem
+types that carry it.
 
 ## Naming a route
 
@@ -676,7 +676,7 @@ under a request carries it, work the request spawns included
 because it is defined as a URI reference and a bare id is not one.
 
 Rejected: a request id on `5xx` only. A body whose members vary by status is
-the drift the one-shape rule exists to stop.
+the drift the one-shape rule (API-52) exists to stop.
 
 ### API-56 A handler that panics answers a `500 Internal Server Error` problem document
 
@@ -754,24 +754,27 @@ tries a read that failed with a `5xx` once more (`retry` in
 was busy because another request, such as an import batch, held the write
 lock, or because every database connection stayed in use, and either way a
 second try at once meets the same busy database. It never tries a write
-again: it shows the write's failure with its `detail`. The pool
-(`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
-batches and the sweep of unreferenced files after an Import Run
+again: it shows the write's failure with its `detail`.
+
+### API-60 The database pool holds 8 connections
+
+The pool (`crates/server/server/src/db/engine.rs`) holds 8 connections: two
+import batches and the sweep of unreferenced files after an Import Run
 (`asset_store::sweep_after_run`) can each hold one for a whole run. The
-background move of a Session's expiry (`auth::ExpiryMoves`, under
-[Credentials and reach](#credentials-and-reach)) holds one more for up to
-the busy timeout while an import holds the write lock. Under write-ahead
-logging the rest serve reads side by side. A request waits
-10 seconds for a connection, and a write waits SQLite's 15-second busy
-timeout for the write lock. Why: with 4 connections, two imports and a sweep
-left one for every other request, and a request waited sqlx's default 30
-seconds for it before answering `500 Internal Server Error`
+background move of a Session's expiry (`auth::ExpiryMoves`, under [Credentials
+and reach](#credentials-and-reach)) holds one more for up to the busy timeout
+while an import holds the write lock. Under write-ahead logging the rest serve
+reads side by side. A request waits 10 seconds for a connection, and a write
+waits SQLite's 15-second busy timeout for the write lock. Why: with 4
+connections, two imports and a sweep left one for every other request, and a
+request waited sqlx's default 30 seconds for it before answering
+`500 Internal Server Error`
 ([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Each
-connection's page cache is capped at about 100 MB, half what it was, so the
-8 hold no more memory in all than the 4 did. Not more than 8, because more
+connection's page cache is capped at about 100 MB, half what it was, so the 8
+hold no more memory in all than the 4 did. Not more than 8, because more
 connections would raise that total, or shrink each cache further.
 
-### API-60 A server told to stop refuses an import batch that has not started
+### API-61 A server told to stop refuses an import batch that has not started
 
 A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
@@ -794,11 +797,12 @@ once an earlier batch ended and import in full, so the stop waited for a
 whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)).
 
-### API-61 A stop waits up to 30 seconds for the requests in flight
+### API-62 A stop waits up to 30 seconds for the requests in flight
 
-The stop then waits for the requests in flight, every route alike, and for
-the stop of a Demo Account build and of the Thumbnail and Preview pass, for
-up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
+The stop then (after API-61) waits for the requests in flight, every route
+alike, and for the stop of a Demo Account build and of the Thumbnail and
+Preview pass, for up to 30 seconds (`STOP_DRAIN_LIMIT` in
+`crates/server/server/src/startup.rs`).
 A request still running then is cut off, and the server exits after one
 `WARN` line naming each such request by its id, method and path
 (`crate::in_flight` tracks every request until its answer's body is sent).
