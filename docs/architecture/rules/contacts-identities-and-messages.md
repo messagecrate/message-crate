@@ -598,8 +598,8 @@ nameless contact a load empties is deleted; when Edit takes off an identity
 that a conversation, message or reaction still uses, the identity goes to a
 new contact with no name; and a phone number is read with its `+` back when
 the spreadsheet dropped it without showing, which the load's notes say. Where
-a rule elsewhere in this document does more for an import, such as CONTACT-15, a load does only what its rows say.
-Why: the person edited the file to say what they want, and a load that
+CONTACT-15 does more for an import, a load does only what its rows say. Why:
+the person edited the file to say what they want, and a load that
 second-guessed it would change things no row shows, which the person can
 neither see in the sheet nor undo from it. A row the load cannot carry out
 refuses the load (CONTACT-32) rather than being guessed at.
@@ -1089,7 +1089,7 @@ counts without a re-import.
 When an import meets an identity of a trashed contact, it makes a new contact
 from the backup, as a first import would, holding that identity and the same
 number on the other service, and discards the trashed contact. Each other
-identity the trashed contact had leaves it as the first rule says: to a new
+identity the trashed contact had leaves it as CONTACT-1 says: to a new
 contact with no name when a conversation or a message uses it. See [ADR
 0013](../../adr/0013-an-import-replaces-a-trashed-contact.md). An import never
 looks a contact up by name, so a trashed contact that shares a name with

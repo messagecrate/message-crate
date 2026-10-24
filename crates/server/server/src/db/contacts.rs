@@ -466,13 +466,13 @@ pub enum IdentityMoved {
 /// given, or taken off.
 ///
 /// An identity in a conversation is a person, and every person is a contact
-/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-1), so one that is
-/// taken off goes to a new contact with no name and the person is Unknown
-/// again. "In a conversation" means a participant, the sender of a message or
-/// a reaction, or a one-to-one conversation's chat handle, in the promoted
-/// tables or in staging. An identity nothing refers to is deleted, because on
-/// no contact it would appear in no list. One that only the holder's side
-/// uses comes off and stays, because the holder's identities are on no
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-1),
+/// so one that is taken off goes to a new contact with no name and the person
+/// is Unknown again. "In a conversation" means a participant, the sender of a
+/// message or a reaction, or a one-to-one conversation's chat handle, in the
+/// promoted tables or in staging. An identity nothing refers to is deleted,
+/// because on no contact it would appear in no list. One that only the holder's
+/// side uses comes off and stays, because the holder's identities are on no
 /// contact.
 ///
 /// The identity's sibling on another service (the same number on WhatsApp)

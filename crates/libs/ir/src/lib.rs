@@ -1201,9 +1201,10 @@ mod pending_message_tests {
     }
 }
 
-/// Which identity types each service carries, and the type an address of
-/// each shape takes there
-/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-9 and CONTACT-10).
+/// Which identity types each service carries, and the type an address of each
+/// shape takes there
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-9
+/// and CONTACT-10).
 #[cfg(test)]
 mod service_carries_tests {
     use super::{IdentityService, IdentityType};
