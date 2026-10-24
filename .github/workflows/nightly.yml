@@ -2,8 +2,8 @@ name: Nightly
 
 # Once a night, the release Dockerfile is built from main. No pull request
 # builds the image, so this is where a change that breaks it shows before a
-# release tag, whose docker job in ci.yml builds it again, without starting
-# it, before it pushes.
+# release tag, whose docker job in ci.yml builds it again and starts it with
+# the same check before it pushes.
 # This run builds it, starts it with docker/compose.release.yml, and never
 # publishes it: publishing stays with a v* tag in ci.yml.
 #

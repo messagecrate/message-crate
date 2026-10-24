@@ -44,7 +44,7 @@ It then claims the Message Crate, creates an account, and imports one conversati
 It waits for the media pass to make the video's Thumbnail and Preview, and runs an Export of everything the account holds, so a write made during an import, the media pass or an export fails it too.
 The conversation is `tests/fixtures/docker-compose-check/conversation.jsonl`, and the video is the server's test fixture `crates/server/server/tests/fixtures/media/hevc.mov`.
 Last, it stops the stack and fails when the server did not exit on its own, so a server that outlives the `stop_grace_period` and is killed by Docker fails it.
-The nightly build of `main` runs it; no pull request builds the image, so a change that breaks the image shows in that night's run, not on the pull request.
+The nightly build of `main` runs it, and a release runs it on the image it built before it pushes that image; no pull request builds the image, so a change that breaks the image shows in that night's run, not on the pull request.
 The stack runs under its own Compose project, `message-crate-compose-check-<host-port>`, and its own volume, so it never touches a running Message Crate, and the script removes it on exit.
 
 `--website` adds a check of the website the container serves, because the web app's tests mock the server and the server's tests never load the website.
@@ -53,7 +53,7 @@ The search term is a word from a conversation name on the list, chosen by `scrip
 
 The check fails when the search finds nothing, finds no fewer conversations than the whole list, or opens a conversation it did not find.
 It also fails when a screen does not appear, when the browser logs a console error or an uncaught exception, or when the server answers any request with a 5xx server error status.
-The nightly build passes `--website`, and CI's job leaves it out, because every run would pull the Playwright image, `mcr.microsoft.com/playwright`, which is about 2.5 GB unpacked.
+The nightly build passes `--website`, and the release leaves it out, because every run would pull the Playwright image, `mcr.microsoft.com/playwright`, which is about 2.5 GB unpacked.
 
 The script takes a built image, an optional host port (18080 unless given), and `--website` before, between, or after those two.
 It refuses any other argument that starts with `-`, so a mistyped option is never taken for the image or the port.
@@ -137,7 +137,7 @@ CI builds `docker/Dockerfile` from the repository root. It does not use Compose.
 docker build -f docker/Dockerfile -t bitrealm/message-crate:local .
 ```
 
-CI uses Buildx and then pushes to Docker Hub. Locally, omit the push. To include the same optional build argument CI passes:
+CI uses Buildx, starts the image with `scripts/check-docker-compose.sh`, and then pushes to Docker Hub. Locally, omit the push. To include the same optional build argument CI passes:
 
 ```bash title="Build with Buildx, load onto this machine"
 docker buildx build \
