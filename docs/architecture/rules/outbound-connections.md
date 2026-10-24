@@ -9,7 +9,7 @@ Each rule has an id, `NET-n`, which code comments, tests and reviews cite. A
 rule's id never changes. A rule that stops holding is removed, and its id is
 not reused.
 
-## NET-1 Connect only to the server in use and to GitHub, and only from the desktop app
+## NET-1 Connect only to the server in use and to GitHub's download hosts, and only from the desktop app
 
 Message Crate sends no telemetry, crash reports, or usage data. Exactly two
 outbound connections exist, both from the desktop app:
@@ -19,9 +19,8 @@ outbound connections exist, both from the desktop app:
   no other host.
 - **GitHub, for the Tools Directory.** `src-tauri/src/tool_downloads.rs`
   downloads ffmpeg, ffprobe, and wtsexporter from `GITHUB`
-  (`https://github.com`), the one outbound host written in the code. GitHub
-  answers a release download with a redirect to a `githubusercontent.com`
-  host, which the client follows, so the bytes come from that host. The check
+  (`https://github.com`), the one outbound host written in the code, and the
+  `githubusercontent.com` host GitHub's release downloads redirect to. The check
   runs in the background at every start and downloads a program only when it
   is missing or different from the pinned release, and each file is checked
   against a SHA-256 carried in `tool_downloads/pins.rs`, which takes

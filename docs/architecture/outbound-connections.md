@@ -29,9 +29,10 @@ flowchart LR
 
 The check runs in the background at every start and never holds up login or
 browsing. A program that is missing or not the pinned release is fetched
-from its GitHub release URL. GitHub answers that URL with a redirect to a
-`githubusercontent.com` host, and the client follows it, so the bytes come
-from there. The file is written under a temporary name in the Tools
+from its GitHub release URL. ffmpeg and ffprobe are not downloaded when
+both are already on `PATH`, because a person who installed ffmpeg chose it.
+GitHub answers a release URL with a redirect to a `githubusercontent.com`
+host, and the client follows it, so the file is downloaded from that host. The file is written under a temporary name in the Tools
 Directory, checked against the SHA-256 carried in the app, and only then
 renamed over the old one, so a failed download leaves the old program in
 use. Why the app downloads these programs rather than shipping them is
@@ -42,7 +43,7 @@ use. Why the app downloads these programs rather than shipping them is
 | Piece | Code |
 |---|---|
 | The check at start, and what it decides to fetch | `src-tauri/src/tool_downloads.rs` |
-| The download itself: the request, the redirect, the temporary file and the checksum | `src-tauri/src/tool_downloads/fetch.rs` |
+| The download itself: the request, whose client follows redirects by reqwest's default, the temporary file and the checksum | `src-tauri/src/tool_downloads/fetch.rs` |
 | The pinned releases and checksums | `src-tauri/src/tool_downloads/pins.rs` |
 | wtsexporter's pin, shared with the WhatsApp exporter | `crates/exporters/whatsapp-exporter/src/wtsexporter/pin.rs` |
 | The HTTP client `import` and `export` use to reach the server | `crates/libs/http/` |
