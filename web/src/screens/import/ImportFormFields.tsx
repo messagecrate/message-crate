@@ -242,12 +242,11 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const canImport =
     blockedBy === null && !wtsexporterBlocked && readiness.enabled && !props.running;
 
+  // The Encryption password shows only for a backup known to be encrypted.
   // A password typed for an earlier backup stays in the form while the field
   // is hidden, and is not sent: an unencrypted backup refuses one.
-  const backupPassword =
-    source.backupEncrypted({ ...readinessInput, ownerPhoneEntry }) === true
-      ? form.backupPassword
-      : "";
+  const passwordShown = source.backupEncrypted({ ...readinessInput, ownerPhoneEntry }) === true;
+  const backupPassword = passwordShown ? form.backupPassword : "";
 
   function handleImport(): void {
     if (!asksOwnerPhones) {
@@ -367,6 +366,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
             errors={readiness.errors}
             attachmentFields={attachmentFields}
             defaultCountryField={defaultCountryField}
+            passwordShown={passwordShown}
           />
         ) : (
           defaultCountryField

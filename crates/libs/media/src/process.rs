@@ -971,9 +971,8 @@ fn h264_follows(hevc_err: &anyhow::Error) -> bool {
 /// form promises that for an empty Max FPS.
 fn frame_rate_cap(source_fps: Option<f32>, max_fps: Option<u32>) -> Option<u32> {
     let max = max_fps?;
-    #[allow(clippy::cast_precision_loss)] // at most 240, which f32 holds exactly
     match source_fps {
-        Some(source) if source <= max as f32 => None,
+        Some(source) if f64::from(source) <= f64::from(max) => None,
         _ => Some(max),
     }
 }

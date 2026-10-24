@@ -179,13 +179,13 @@ describe("useWhatsappPathStats", () => {
 });
 
 describe("useBackupPathStats", () => {
-  type AndroidProps = { source: string; backupPath: string };
+  type BackupPathProps = { source: string; backupPath: string };
 
   // SMS Backup & Restore takes a file and the other Android sources a
   // directory, so the form needs to know which one the path is (#2029).
   it("checks an Android SMS backup path, and asks nothing for another source", async () => {
     desktop.paths.set("/sms", "directory");
-    const view = renderHook((paths: AndroidProps) => useBackupPathStats(paths), {
+    const view = renderHook((paths: BackupPathProps) => useBackupPathStats(paths), {
       initialProps: { source: "sms-backup-restore", backupPath: "/sms" },
       wrapper: Providers,
     });
@@ -202,7 +202,7 @@ describe("useBackupPathStats", () => {
   // #3167: a mistyped iMazing or OpenExtract path made a failed run.
   it.each(["imazing", "openextract"])("checks the %s backup path", async (source) => {
     desktop.paths.set("/export", "directory");
-    const view = renderHook((paths: AndroidProps) => useBackupPathStats(paths), {
+    const view = renderHook((paths: BackupPathProps) => useBackupPathStats(paths), {
       initialProps: { source, backupPath: "/export" },
       wrapper: Providers,
     });
@@ -215,7 +215,7 @@ describe("useBackupPathStats", () => {
   it("empties at once when the path changes", async () => {
     desktop.paths.set("/sms.xml", "file");
     desktop.paths.set("/sms", "directory");
-    const view = renderHook((paths: AndroidProps) => useBackupPathStats(paths), {
+    const view = renderHook((paths: BackupPathProps) => useBackupPathStats(paths), {
       initialProps: { source: "sms-backup-restore", backupPath: "/sms.xml" },
       wrapper: Providers,
     });

@@ -1,14 +1,10 @@
 import PasswordField from "../../../components/PasswordField";
 import PathPicker from "../../../components/PathPicker";
-import {
-  ENCRYPTED_BACKUP_PASSWORD_HINT,
-  encryptionPasswordShown,
-} from "../../../lib/encryptedBackup";
+import { ENCRYPTED_BACKUP_PASSWORD_HINT } from "../../../lib/encryptedBackup";
 import {
   imessageAttachmentRootRequired,
   imessageShowsAppleContacts,
   imessageShowsAttachmentRoot,
-  imessageShowsPassword,
   isImessageMethod,
 } from "../../../lib/imessageImport";
 import { hintClass, StackedField } from "../ImportFormUi";
@@ -36,7 +32,7 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
   if (!isImessageMethod(method)) return null;
   return (
     <>
-      {imessageShowsPassword(method) && encryptionPasswordShown(props.pathStats.backupEncrypted) ? (
+      {props.passwordShown ? (
         <StackedField label="Encryption password" required>
           <PasswordField
             aria-label="Encryption password"

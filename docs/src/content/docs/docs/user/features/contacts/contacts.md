@@ -312,7 +312,7 @@ Nothing goes into Message Crate until the file is loaded.
 **Default country for contacts** is the country a number like `(555) 555-0100` is in, the same field the Import form offers.
 Such a number is written with its `+` in that country, `+15555550100` for the United States.
 A number saved with its `+`, and one that isn't a valid number in that country, is written exactly as the card has it.
-With **Not stated**, every number is written as the card has it.
+With **None**, every number is written as the card has it.
 
 The file has one row for each phone number and each email address on each card:
 

@@ -166,9 +166,9 @@ export function useWhatsappPathStats(paths: WhatsappPathsKey): WhatsappPathStats
 /**
  * What the backup path of an Android SMS source, iMazing or OpenExtract
  * points at: one `.xml` file for SMS Backup & Restore, a directory for the
- * others. Any change empties
- * it until the new path is checked, so the old path's kind never lets Import
- * start on the new one.
+ * other Android sources, and either for iMazing and OpenExtract. Any change
+ * empties it until the new path is checked, so the old path's kind never
+ * lets Import start on the new one.
  */
 export function useBackupPathStats(paths: BackupPathKey): BackupPathStats {
   return useSettledPathProbe<BackupPathKey, BackupPathStats>(paths, {

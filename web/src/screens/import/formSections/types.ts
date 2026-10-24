@@ -32,7 +32,7 @@ export type ImportFormFieldsProps = {
   onPathChange: (field: ImportPathField, path: string) => void;
   pathStats: ImessagePathStats;
   whatsappStats: WhatsappPathStats;
-  /** What the Android SMS backup path points at. */
+  /** What the backup path points at, for the Android SMS sources, iMazing and OpenExtract. */
   backupPathStats: BackupPathStats;
   profilePhones: ProfilePhones;
   /** The account's IANA zone, which iMazing dates are read in unless another is picked. */
@@ -72,6 +72,12 @@ export type ImportFormSectionProps = Pick<
   errors: Partial<Record<string, string>>;
   /** The Attachments field, for a section whose source shows it to place. */
   attachmentFields: ReactNode;
+  /**
+   * True when the section shows the Encryption password: the descriptor's
+   * `backupEncrypted` is true. The form reads the same answer to decide
+   * whether the password is sent, so the two never disagree.
+   */
+  passwordShown: boolean;
   /**
    * Default country for contacts, which every section places after its
    * backup's own fields (path, password or key) and the owner fields its

@@ -2,10 +2,7 @@ import Checkbox from "../../../components/Checkbox";
 import PasswordField from "../../../components/PasswordField";
 import PathPicker from "../../../components/PathPicker";
 import { textInputClass } from "../../../components/TextField";
-import {
-  ENCRYPTED_BACKUP_PASSWORD_HINT,
-  encryptionPasswordShown,
-} from "../../../lib/encryptedBackup";
+import { ENCRYPTED_BACKUP_PASSWORD_HINT } from "../../../lib/encryptedBackup";
 import {
   isWhatsappMethod,
   whatsappCryptRequired,
@@ -15,7 +12,6 @@ import {
   whatsappShowsDb,
   whatsappShowsKey,
   whatsappShowsMedia,
-  whatsappShowsPassword,
 } from "../../../lib/whatsappImport";
 import { hintClass, StackedField } from "../ImportFormUi";
 import { FieldStatus } from "./FieldStatus";
@@ -69,8 +65,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
         </StackedField>
       ) : null}
 
-      {whatsappShowsPassword(method) &&
-      encryptionPasswordShown(props.whatsappStats.backupEncrypted) ? (
+      {props.passwordShown ? (
         <StackedField label="Encryption password" required>
           <PasswordField
             aria-label="Encryption password"

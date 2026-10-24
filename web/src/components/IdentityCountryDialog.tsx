@@ -91,7 +91,7 @@ export default function IdentityCountryDialog({
           countries={countries}
           onChange={setCountry}
           label="Country"
-          placeholder={loading ? "Loading countries…" : "Search by name or code"}
+          placeholder={loading ? "Loading countries…" : "Pick a country"}
           isDisabled={busy || loading || question !== null}
           popoverClassName={Z_POPOVER_IN_MODAL}
         />
