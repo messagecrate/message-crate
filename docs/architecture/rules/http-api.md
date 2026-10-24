@@ -195,9 +195,13 @@ snake_case.
 
 ## Methods
 
+### API-19 Each method means one thing, and a read is a `GET`
+
 `PATCH` updates part of a resource. `PUT` replaces one. `POST` creates, or
 runs an action named by a verb sub-resource. `DELETE` removes. A read is a
-`GET`, except the large-selector `POST` above.
+`GET`, except the large-selector `POST` of API-14.
+
+### API-20 A read by id takes no filter
 
 A read by id takes no filter. `GET /v1/conversations/{id}/messages` opens a
 conversation; searching inside one is `GET /v1/messages?q=in:#{id} …`.
@@ -206,6 +210,8 @@ Why: opening and searching answer different questions. The read by id answers
 the trash; a search answers an empty page and leaves the trash out. A filter on
 the read by id is a second search that can drift from the first, as `?year=`
 beside `date:` did.
+
+### API-21 A file is the request body, and a file the server writes is answered by a `POST` named for it
 
 A file the server reads is the request body, with `Content-Type` naming its
 format, and anything about how to apply it is a declared query parameter.
@@ -223,6 +229,8 @@ around a file base64-encodes it for nothing. Rejected: `?format=csv` on
 `GET /v1/contacts`, which cannot carry the checked ids and is the `fields=`
 idea in another coat; `Accept: text/csv` on the list, which makes one list
 negotiate where every other answers JSON.
+
+### API-22 Behavior that differs by caller lives inside one handler
 
 Behavior that differs by caller lives inside one handler, not in two routes.
 `PUT /v1/accounts/{id}/password` is one route: the owner sets another
