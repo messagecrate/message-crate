@@ -20,7 +20,7 @@
 //!
 //! The server sends every field of these shapes, as `null` when it has no
 //! value, and never leaves one out (`docs/architecture/rules/http-api.md`,
-//! "Fields"), so none carries `#[serde(skip_serializing_if = ...)]`. The one
+//! API-6), so none carries `#[serde(skip_serializing_if = ...)]`. The one
 //! exception is [`Problem`], whose members follow RFC 7807: `detail` is a
 //! string when it is there, and each extension member belongs to the problem
 //! types that carry it.
