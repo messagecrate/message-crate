@@ -3386,7 +3386,7 @@ export interface components {
          *     its issues and notes. A run may record any number of either, so a page
          *     that carried them would have no bound on its size; `GET /v1/imports/{id}`
          *     answers them (#1559,
-         *     `docs/architecture/rules/http-api.md`, "Lists").
+         *     `docs/architecture/rules/http-api.md`, API-44).
          */
         ImportRunSummary: {
             /**
@@ -3562,7 +3562,7 @@ export interface components {
          *     Not a `Page`: the log is written while it is read, so a count and an
          *     offset from the newest line would move under the reader, and counting a
          *     250 MB log for every page is the cost a line's id saves
-         *     (`docs/architecture/rules/http-api.md`, "Lists").
+         *     (`docs/architecture/rules/http-api.md`, API-51).
          */
         ListLogLinesResponse: {
             /**
@@ -3578,7 +3578,7 @@ export interface components {
         /**
          * @description One page of the Messages list and how the server read its search: the
          *     four keys of every page, and `search`, the one key a page carries beside
-         *     them (`docs/architecture/rules/http-api.md`, "Lists").
+         *     them (`docs/architecture/rules/http-api.md`, API-41).
          */
         ListMessagesResponse: {
             /** @description The rows on this page. */
@@ -3978,7 +3978,7 @@ export interface components {
          *     the list answers for it, and the attachments the run wrote whose
          *     Thumbnail or Preview the server's media pass could not make, with why. A
          *     run may write any number of them, so the list leaves them out
-         *     (`docs/architecture/rules/http-api.md`, "Lists"). Each is named by its file
+         *     (`docs/architecture/rules/http-api.md`, API-45). Each is named by its file
          *     name, type and size, which the owner may read
          *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"); never by its message, its conversation, or its bytes.

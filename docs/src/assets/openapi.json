@@ -16293,7 +16293,7 @@
       },
       "ImportRunSummary": {
         "type": "object",
-        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/rules/http-api.md`, \"Lists\").",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/rules/http-api.md`, API-44).",
         "required": [
           "id",
           "source",
@@ -16575,7 +16575,7 @@
       },
       "ListLogLinesResponse": {
         "type": "object",
-        "description": "A page of the server's log lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a line's id saves\n(`docs/architecture/rules/http-api.md`, \"Lists\").",
+        "description": "A page of the server's log lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a line's id saves\n(`docs/architecture/rules/http-api.md`, API-51).",
         "required": [
           "items",
           "limit",
@@ -16602,7 +16602,7 @@
       },
       "ListMessagesResponse": {
         "type": "object",
-        "description": "One page of the Messages list and how the server read its search: the\nfour keys of every page, and `search`, the one key a page carries beside\nthem (`docs/architecture/rules/http-api.md`, \"Lists\").",
+        "description": "One page of the Messages list and how the server read its search: the\nfour keys of every page, and `search`, the one key a page carries beside\nthem (`docs/architecture/rules/http-api.md`, API-41).",
         "required": [
           "items",
           "total",
@@ -17250,7 +17250,7 @@
             }
           }
         ],
-        "description": "One Import Run as the owner reads it under another account: everything\nthe list answers for it, and the attachments the run wrote whose\nThumbnail or Preview the server's media pass could not make, with why. A\nrun may write any number of them, so the list leaves them out\n(`docs/architecture/rules/http-api.md`, \"Lists\"). Each is named by its file\nname, type and size, which the owner may read\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"); never by its message, its conversation, or its bytes."
+        "description": "One Import Run as the owner reads it under another account: everything\nthe list answers for it, and the attachments the run wrote whose\nThumbnail or Preview the server's media pass could not make, with why. A\nrun may write any number of them, so the list leaves them out\n(`docs/architecture/rules/http-api.md`, API-45). Each is named by its file\nname, type and size, which the owner may read\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"); never by its message, its conversation, or its bytes."
       },
       "OwnerImportRunSummary": {
         "type": "object",
@@ -18770,7 +18770,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/rules/http-api.md`, \"Lists\").",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/rules/http-api.md`, API-44).",
               "required": [
                 "id",
                 "source",

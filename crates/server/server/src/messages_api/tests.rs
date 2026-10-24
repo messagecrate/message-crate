@@ -102,7 +102,7 @@ async fn the_messages_route_is_a_page_across_every_conversation() {
     assert_eq!(page["limit"], serde_json::json!(40));
     assert_eq!(page["offset"], serde_json::json!(0));
     assert_eq!(page["items"].as_array().unwrap().len(), 3);
-    // `docs/architecture/rules/http-api.md`, "Lists": a list is {items, total,
+    // `docs/architecture/rules/http-api.md`, API-40 and API-41: a list is {items, total,
     // limit, offset}, and the Messages list adds `search`, its one exception.
     let keys: Vec<&str> = page
         .as_object()

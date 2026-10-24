@@ -912,7 +912,7 @@ fn conversation_messages_where(conversation_id: i64, account_id: i64) -> (String
 /// Where a page of one conversation's messages sits in the conversation, in
 /// the order the page is sorted. A screen that jumps to a message does not
 /// know its offset, so it names the message and the answer's `offset` says
-/// where the page landed (`docs/architecture/rules/http-api.md`, "Lists").
+/// where the page landed (`docs/architecture/rules/http-api.md`, API-47).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageWindow {
     /// Starting at the page's `offset`.

@@ -51,7 +51,7 @@ const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
 
 /// The one page with a key beside the four, and the one route that answers
 /// it: `GET /v1/messages` says how it read its search in `search`
-/// (`docs/architecture/rules/http-api.md`, "Lists"). Named here, route and schema
+/// (`docs/architecture/rules/http-api.md`, API-41). Named here, route and schema
 /// both. Any other schema with the four keys is a page too, whatever its
 /// name ([`page_schemas`]), so a second page with a fifth key fails the
 /// rules.
@@ -255,11 +255,11 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
         }
         for key in properties.difference(&keys) {
             broken.push(format!(
-                "the page it answers has {key} beside its four keys (\"Lists\")"
+                "the page it answers has {key} beside its four keys (API-41)"
             ));
         }
         // A POST that reads the rows its body names answers the whole body
-        // as one page, and takes no paging ("Lists").
+        // as one page, and takes no paging (API-42).
         if op.method == "get" {
             let query = query_parameters(spec);
             for key in ["limit", "offset"] {

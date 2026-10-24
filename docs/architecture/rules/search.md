@@ -93,7 +93,7 @@ to date would show an order the person did not pick.
 A query with a positive free-text word is ranked best match first, and a
 query with none, field words only or nothing, lists the newest message first.
 Every page says which order it applied and which terms it ranks by, in
-`search` ([Lists](http-api.md#lists)), from `Expr::positive_text_terms`. A
+`search` (`http-api.md`, API-41), from `Expr::positive_text_terms`. A
 `sort` the request names is applied as it is. Why: a search for words is
 looking for the messages that hold them, and a search by fields alone is
 browsing, where the latest come first. The choice depends on which words
