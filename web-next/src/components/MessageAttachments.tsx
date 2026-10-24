@@ -1,4 +1,8 @@
-import { attachmentMedia, type MediaVariant } from "@/lib/attachmentMedia";
+import {
+  attachmentMedia,
+  type MediaVariant,
+  noPreviewNote,
+} from "@/lib/attachmentMedia";
 import type { AttachmentRow } from "@/lib/types";
 
 function isImageMime(mime: string | null): boolean {
@@ -68,26 +72,39 @@ function MissingMediaPlaceholder({
 function NoPreviewNotice({
   attachment,
   url,
+  thumbnailUrl,
 }: {
   attachment: AttachmentRow;
   url: string;
+  thumbnailUrl: string | null;
 }) {
   const label = attachment.originalName?.trim() || "Attachment";
-  const reason = attachment.previewNotMadeReason;
+  const note = noPreviewNote(attachment);
   return (
-    <div
-      role="note"
-      className="flex max-w-xs flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
-    >
-      <div className="text-[11px] font-medium tracking-wide uppercase opacity-70">
-        {reason ? "No Preview could be made" : "No Preview yet"}
-      </div>
-      {reason ? <div className="opacity-80">{reason}</div> : null}
-      <div className="opacity-80">
-        Download the original:{" "}
-        <a href={url} className="underline" download>
-          {label}
-        </a>
+    <div className="flex max-w-xs flex-col gap-1.5">
+      {thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbnailUrl}
+          alt={label}
+          loading="lazy"
+          decoding="async"
+          className="max-h-64 max-w-full rounded-lg"
+        />
+      ) : null}
+      <div
+        role="note"
+        className="flex flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
+      >
+        <div className="opacity-80">
+          {note ?? "This attachment has no copy a browser can show yet."}
+        </div>
+        <div className="opacity-80">
+          Download it to open the original:{" "}
+          <a href={url} className="underline" download={label}>
+            {label}
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -113,7 +130,14 @@ export function MessageAttachments({
           mediaVariant(),
         );
         if (url && full === "none") {
-          return <NoPreviewNotice key={a.id} attachment={a} url={url} />;
+          return (
+            <NoPreviewNotice
+              key={a.id}
+              attachment={a}
+              url={url}
+              thumbnailUrl={thumbnailUrl}
+            />
+          );
         }
         if (url && thumbnailUrl) {
           return (

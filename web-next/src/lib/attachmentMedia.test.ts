@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { attachmentMedia } from "./attachmentMedia";
+import { attachmentMedia, noPreviewNote } from "./attachmentMedia";
 import type { AttachmentRow } from "./types";
 
 const SHA = "a".repeat(64);
@@ -79,6 +79,24 @@ describe("attachmentMedia", () => {
     assert.equal(media.url, `/api/assets/sms/${SHA}`);
   });
 
+  it("opens a HEIC in no version with the original variant", () => {
+    const media = attachmentMedia(
+      "sms",
+      row({ mimeType: "image/heic", shownAsIs: false }),
+      "original",
+    );
+    assert.equal(media.full, "none");
+    assert.equal(media.url, `/api/assets/sms/${SHA}`);
+  });
+
+  it("says why no Preview could be made, in web's words", () => {
+    assert.equal(
+      noPreviewNote(row({ previewNotMadeReason: "Invalid data" })),
+      "No Preview could be made: Invalid data",
+    );
+    assert.equal(noPreviewNote(row()), null);
+  });
+
   it("uses only the original with the original variant", () => {
     const media = attachmentMedia(
       "sms",
@@ -87,7 +105,7 @@ describe("attachmentMedia", () => {
         previewAssetsPath: SHA,
         thumbnailMimeType: "image/jpeg",
         thumbnailAssetsPath: SHA,
-        shownAsIs: false,
+        shownAsIs: true,
       }),
       "original",
     );

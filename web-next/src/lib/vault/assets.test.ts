@@ -58,6 +58,21 @@ describe("proxyAsset", () => {
     assert.deepEqual(asked, [`/v1/assets/${SHA}/thumbnail`]);
   });
 
+  it("keeps the file's length on a range the file cannot satisfy", async () => {
+    const res = await proxyAsset(
+      SHA,
+      "preview",
+      new Headers({ range: "bytes=10-" }),
+      async () =>
+        new Response("{}", {
+          status: 416,
+          headers: { "content-range": "bytes */10" },
+        }),
+    );
+    assert.equal(res.status, 416);
+    assert.equal(res.headers.get("content-range"), "bytes */10");
+  });
+
   it("answers 401 when the server refuses the Session", async () => {
     const res = await proxyAsset(
       SHA,

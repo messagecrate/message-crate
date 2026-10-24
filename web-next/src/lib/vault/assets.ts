@@ -78,9 +78,15 @@ export async function proxyAsset(
     // Next.js route handler, `body.cancel()` never settled and the request
     // hung, though plain Node.js settles it at once.
     await upstream.arrayBuffer();
+    // A `416 Range Not Satisfiable` carries the file's length in
+    // `Content-Range` (`bytes */<length>`), so a media element can ask again.
+    const range = upstream.headers.get("content-range");
     return NextResponse.json(
       { error: upstream.status === 404 ? "not found" : "asset failed" },
-      { status: upstream.status },
+      {
+        status: upstream.status,
+        headers: range ? { "Content-Range": range } : undefined,
+      },
     );
   }
   const headers = new Headers();

@@ -34,12 +34,15 @@ function isMedia(a: AttachmentRow): boolean {
 }
 
 /**
- * Pick the URLs of one attachment by the server's answer, as `fullVersion` in
- * `web/src/lib/attachmentMedia.ts` does (`docs/architecture/rules/media.md`,
- * MEDIA-2): the original when `shownAsIs`, else the Preview when the server
- * made one, else neither. A file that is not a picture, a video or a sound
- * always opens as the original. The Thumbnail is drawn in the thread whenever
- * there is one. With the `original` variant only the original is used.
+ * Pick the URLs of one attachment by the server's answer
+ * (`docs/architecture/rules/media.md`, MEDIA-2). A picture, video or sound
+ * opens as `fullVersion` in `web/src/lib/attachmentMedia.ts` decides: the
+ * original when `shownAsIs`, else the Preview when the server made one, else
+ * neither. Any other file opens as the original, as `web/`'s
+ * `MessageAttachments` offers it as a download whatever its version. The
+ * Thumbnail is drawn in the thread whenever there is one. The `original`
+ * variant never reads a Preview or Thumbnail, so there a picture, video or
+ * sound that is not shown as it is opens in no version.
  */
 export function attachmentMedia(
   source: string,
@@ -48,20 +51,19 @@ export function attachmentMedia(
 ): AttachmentMedia {
   const s = encodeURIComponent(source);
   const original = a.assetsPath ? `/api/assets/${s}/${a.assetsPath}` : null;
+  if (a.shownAsIs || !isMedia(a)) {
+    const thumbnailUrl =
+      variant === "converted" && a.thumbnailAssetsPath
+        ? `/api/assets_thumbnail/${s}/${a.thumbnailAssetsPath}`
+        : null;
+    return { full: "original", url: original, mimeType: a.mimeType, thumbnailUrl };
+  }
   if (variant === "original") {
-    return {
-      full: "original",
-      url: original,
-      mimeType: a.mimeType,
-      thumbnailUrl: null,
-    };
+    return { full: "none", url: original, mimeType: a.mimeType, thumbnailUrl: null };
   }
   const thumbnailUrl = a.thumbnailAssetsPath
     ? `/api/assets_thumbnail/${s}/${a.thumbnailAssetsPath}`
     : null;
-  if (a.shownAsIs || !isMedia(a)) {
-    return { full: "original", url: original, mimeType: a.mimeType, thumbnailUrl };
-  }
   if (a.previewAssetsPath) {
     return {
       full: "preview",
@@ -71,4 +73,15 @@ export function attachmentMedia(
     };
   }
   return { full: "none", url: original, mimeType: a.mimeType, thumbnailUrl };
+}
+
+/**
+ * What the thread says about an attachment that opens in no version because
+ * the server tried to make its Preview and could not, in the words of
+ * `noPreviewNote` in `web/src/lib/attachmentMedia.ts` (MEDIA-4). `null` while
+ * no try has failed.
+ */
+export function noPreviewNote(a: AttachmentRow): string | null {
+  const reason = a.previewNotMadeReason;
+  return reason ? `No Preview could be made: ${reason}` : null;
 }
