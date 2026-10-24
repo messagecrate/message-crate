@@ -186,11 +186,11 @@ pub(crate) async fn list_messages(
 /// One message by id, in the shape the Messages list gives each row.
 ///
 /// Read-only. A message is never written through this route: an import
-/// writes messages, and trashing is a conversation operation
-/// (`docs/architecture/rules/http-api.md`, "Methods"). The id is enough: an id
-/// names one message, and a lookup by id does not depend on how it was
-/// found, so the route returns any message of the caller's account, one in
-/// a trashed conversation and a duplicate included, and takes no `q`.
+/// writes messages, and trashing is a conversation operation. The id is
+/// enough: an id names one message, and a lookup by id does not depend on how
+/// it was found, so the route returns any message of the caller's account,
+/// one in a trashed conversation and a duplicate included, and takes no `q`
+/// (`docs/architecture/rules/http-api.md`, API-20).
 /// Another account's message is `404`.
 #[utoipa::path(
     get,

@@ -898,7 +898,7 @@ pub(crate) fn selection_where(
 /// (`ListKind::Messages`'s default in `search::emit::compile`). There is no
 /// other filter: a read by id takes none, and narrowing a conversation is a
 /// search, `GET /v1/messages?q=in:#{id} …` (`docs/architecture/rules/http-api.md`,
-/// "Methods"). Trash plays no part here: reading one conversation's messages
+/// API-20). Trash plays no part here: reading one conversation's messages
 /// is not gated by trash, the same rule
 /// [`get_conversation_summary`](crate::db::conversations::get_conversation_summary)
 /// follows for the conversation itself.

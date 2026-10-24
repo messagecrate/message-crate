@@ -46,7 +46,7 @@ export function conversationYears(
  * Runs on `GET /v1/messages`, so it reaches every message in the
  * conversation, not the pages in hand. Opening a conversation takes no
  * filter; a search inside one is a search (`docs/architecture/rules/http-api.md`,
- * "Methods"). A search leaves the trash out unless asked, and a trashed
+ * API-20). A search leaves the trash out unless asked, and a trashed
  * conversation can still be opened, so the query asks.
  */
 function conversationQueryFor(conversationId: number, date: string | null, term: string): string {
