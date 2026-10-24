@@ -33,31 +33,50 @@ export function sha256FromPath(parts: string[]): string | null {
   return /^[0-9a-f]{64}$/i.test(last) ? last : null;
 }
 
+/** Request headers passed to the server, so a media element can stream and seek. */
+const FORWARDED_REQUEST = ["range", "if-range"];
+
+/** Answer headers passed back to the browser. */
+const FORWARDED_ANSWER = [
+  "content-type",
+  "content-length",
+  "content-range",
+  "accept-ranges",
+  "etag",
+];
+
+/** Reads one `/v1` path with the given request headers. */
+export type FetchPath = (
+  path: string,
+  headers: Record<string, string>,
+) => Promise<Response>;
+
 /**
- * Read one version of an attachment and answer it to the browser.
- *
- * A Preview or Thumbnail the server does not hold answers `404 Not Found`,
- * as when it has not made one yet. The original is answered in its place, so
- * the attachment still shows. That answer is not cached, so the Preview or
- * Thumbnail shows once the server has made it.
+ * Read one version of an attachment and answer it to the browser with the
+ * server's status: `206 Partial Content` for a byte range
+ * (`docs/architecture/rules/media.md`, MEDIA-1), and `404 Not Found` for a
+ * Preview or Thumbnail the server has not made. An attachment is read in
+ * those versions only when its `preview_mime_type` or `thumbnail_mime_type`
+ * says the server holds one (`toAttachment` in `lib/vault/messages.ts`), so
+ * the browser never chooses a version by a failed load (MEDIA-2).
  */
 export async function proxyAsset(
   sha256: string,
   version: AssetVersion,
-  fetchPath: (path: string) => Promise<Response> = (path) => vaultFetch(path),
+  requestHeaders: Headers = new Headers(),
+  fetchPath: FetchPath = (path, headers) => vaultFetch(path, { headers }),
 ): Promise<Response> {
-  let upstream = await fetchPath(assetPath(sha256, version));
-  let fellBack = false;
-  if (upstream.status === 404 && version !== "original") {
-    // Read the small problem body to its end rather than cancel it: inside a
-    // Next.js route handler, `body.cancel()` on this answer never settled and
-    // the request hung, though plain Node.js settles it at once.
-    await upstream.arrayBuffer();
-    upstream = await fetchPath(assetPath(sha256, "original"));
-    fellBack = true;
+  const forward: Record<string, string> = {};
+  for (const name of FORWARDED_REQUEST) {
+    const value = requestHeaders.get(name);
+    if (value) forward[name] = value;
   }
+  const upstream = await fetchPath(assetPath(sha256, version), forward);
   if (upstream.status === 401) return unauthorizedResponse();
   if (!upstream.ok) {
+    // Read the small problem body to its end rather than cancel it: inside a
+    // Next.js route handler, `body.cancel()` never settled and the request
+    // hung, though plain Node.js settles it at once.
     await upstream.arrayBuffer();
     return NextResponse.json(
       { error: upstream.status === 404 ? "not found" : "asset failed" },
@@ -65,22 +84,19 @@ export async function proxyAsset(
     );
   }
   const headers = new Headers();
-  const type = upstream.headers.get("content-type");
-  if (type) headers.set("Content-Type", type);
-  const length = upstream.headers.get("content-length");
-  if (length) headers.set("Content-Length", length);
-  headers.set(
-    "Cache-Control",
-    fellBack ? "private, no-store" : "private, max-age=31536000, immutable",
-  );
-  return new NextResponse(upstream.body, { headers });
+  for (const name of FORWARDED_ANSWER) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  headers.set("Cache-Control", "private, max-age=31536000, immutable");
+  return new NextResponse(upstream.body, { status: upstream.status, headers });
 }
 
 type Params = { params: Promise<{ source: string; path: string[] }> };
 
 /** The `GET` handler of an `app/api/assets*` route for one version. */
 export function assetRoute(version: AssetVersion) {
-  return async function GET(_req: Request, { params }: Params) {
+  return async function GET(req: Request, { params }: Params) {
     const { path: parts } = await params;
     const sha256 = sha256FromPath(parts);
     if (!sha256) {
@@ -90,7 +106,9 @@ export function assetRoute(version: AssetVersion) {
       );
     }
     try {
-      return await withAccountHandler(() => proxyAsset(sha256, version));
+      return await withAccountHandler(() =>
+        proxyAsset(sha256, version, req.headers),
+      );
     } catch (err) {
       if (err instanceof Error && err.message === "Not signed in") {
         return unauthorizedResponse();

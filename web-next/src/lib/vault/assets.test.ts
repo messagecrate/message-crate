@@ -1,60 +1,70 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { proxyAsset, sha256FromPath } from "./assets";
+import { type FetchPath, proxyAsset, sha256FromPath } from "./assets";
 
 const SHA = "b".repeat(64);
 
-function answer(status: number, body: string, type = "image/jpeg"): Response {
-  return new Response(status === 200 ? body : null, {
-    status,
-    headers: status === 200 ? { "content-type": type } : {},
-  });
-}
-
-/** A fake server holding the given bodies by `/v1` path. */
-function server(bodies: Record<string, string>) {
-  const asked: string[] = [];
-  const fetchPath = async (path: string) => {
-    asked.push(path);
-    const body = bodies[path];
-    return body === undefined ? answer(404, "") : answer(200, body);
-  };
-  return { asked, fetchPath };
-}
-
 describe("proxyAsset", () => {
-  it("answers the Preview the server holds, cached", async () => {
-    const { asked, fetchPath } = server({
-      [`/v1/assets/${SHA}/preview`]: "preview",
-    });
-    const res = await proxyAsset(SHA, "preview", fetchPath);
+  it("answers the version asked for, cached", async () => {
+    const asked: string[] = [];
+    const fetchPath: FetchPath = async (path) => {
+      asked.push(path);
+      return new Response("preview", {
+        headers: { "content-type": "audio/mpeg" },
+      });
+    };
+    const res = await proxyAsset(SHA, "preview", new Headers(), fetchPath);
     assert.equal(res.status, 200);
     assert.equal(await res.text(), "preview");
+    assert.equal(res.headers.get("content-type"), "audio/mpeg");
     assert.deepEqual(asked, [`/v1/assets/${SHA}/preview`]);
     assert.match(res.headers.get("cache-control") ?? "", /immutable/);
   });
 
-  it("answers the original, uncached, when the server holds no Thumbnail", async () => {
-    const { asked, fetchPath } = server({ [`/v1/assets/${SHA}`]: "original" });
-    const res = await proxyAsset(SHA, "thumbnail", fetchPath);
-    assert.equal(res.status, 200);
-    assert.equal(await res.text(), "original");
-    assert.deepEqual(asked, [
-      `/v1/assets/${SHA}/thumbnail`,
-      `/v1/assets/${SHA}`,
-    ]);
-    assert.equal(res.headers.get("cache-control"), "private, no-store");
+  it("passes a byte range through, both ways", async () => {
+    let sent: Record<string, string> = {};
+    const fetchPath: FetchPath = async (_path, headers) => {
+      sent = headers;
+      return new Response("ab", {
+        status: 206,
+        headers: {
+          "content-range": "bytes 0-1/10",
+          "accept-ranges": "bytes",
+          "content-type": "video/mp4",
+        },
+      });
+    };
+    const res = await proxyAsset(
+      SHA,
+      "preview",
+      new Headers({ range: "bytes=0-1", cookie: "mv_session=x" }),
+      fetchPath,
+    );
+    assert.deepEqual(sent, { range: "bytes=0-1" });
+    assert.equal(res.status, 206);
+    assert.equal(res.headers.get("content-range"), "bytes 0-1/10");
+    assert.equal(res.headers.get("accept-ranges"), "bytes");
   });
 
-  it("answers 404 when the original is missing too", async () => {
-    const { fetchPath } = server({});
-    const res = await proxyAsset(SHA, "preview", fetchPath);
+  it("answers 404 for a Thumbnail the server has not made", async () => {
+    const asked: string[] = [];
+    const fetchPath: FetchPath = async (path) => {
+      asked.push(path);
+      return new Response('{"status":404}', { status: 404 });
+    };
+    const res = await proxyAsset(SHA, "thumbnail", new Headers(), fetchPath);
     assert.equal(res.status, 404);
+    assert.deepEqual(asked, [`/v1/assets/${SHA}/thumbnail`]);
   });
 
   it("answers 401 when the server refuses the Session", async () => {
-    const res = await proxyAsset(SHA, "original", async () => answer(401, ""));
+    const res = await proxyAsset(
+      SHA,
+      "original",
+      new Headers(),
+      async () => new Response(null, { status: 401 }),
+    );
     assert.equal(res.status, 401);
   });
 });

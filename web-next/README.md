@@ -52,8 +52,7 @@ Sign in with user `demo` and an empty password. The vault host comes from
   go in httpOnly cookies. Logout ends the Session with `DELETE /v1/session`.
 - `src/app/api/assets/[source]/[sha256]` — proxies `GET /v1/assets/{sha256}`;
   `api/assets_converted/…` proxies its `/preview` and `api/assets_thumbnail/…`
-  its `/thumbnail`, answering the original when the server holds no such
-  version (`src/lib/vault/assets.ts`).
+  its `/thumbnail`, byte ranges included (`src/lib/vault/assets.ts`).
 - Display preferences live in a cookie (`src/lib/vault/prefs.ts`): the vault
   has no preferences route.
 
