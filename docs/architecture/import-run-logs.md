@@ -54,8 +54,9 @@ Reading left to right:
    owner sees every log on the computer, and an account sees the logs of
    its own runs on the Message Crate it is signed in to (RUNLOG-3).
 4. **The same line ties a run's directory to its run.** When Import opens,
-   the desktop app finds the directories of the account's closed runs
-   through their logs and deletes them (RUNLOG-3).
+   the desktop app finds the account's run directories through their logs,
+   asks the server how each run stands, and deletes the directories of the
+   closed ones (RUNLOG-3).
 5. **The viewer reads it newest first.** The Logs panel and the run's row in
    Settings → Storage read the log the way the server's log is read, with the
    same code: the newest lines first, walking back a chunk at a time,
