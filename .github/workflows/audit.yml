@@ -58,14 +58,14 @@ jobs:
           command: check advisories licenses bans
 
       # src-tauri is its own workspace, so its graph is checked on its own.
-      # This is the graph the installers ship, and the one that must hold no
-      # GPL code.
+      # This is the graph the installers ship. Its advisories are checked as
+      # the workspace's are, and it must hold no GPL code.
       - name: Desktop app
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           manifest-path: src-tauri/Cargo.toml
           arguments: --config deny.toml
-          command: check licenses bans
+          command: check advisories licenses bans
 
   npm-audit:
     name: Audit npm deps
