@@ -160,12 +160,12 @@ async fn load_participant_rows(
 /// participant, for conversations that have no participants rows at all.
 ///
 /// Only a one-to-one conversation's chat handle is a person
-/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
-/// CONTACT-6). Any other conversation type is left out,
-/// so it has no participants. The type is compared without case, as the import
-/// compares it when it decides whether the chat handle gets a contact. A
-/// conversation with yourself is left out too: its chat handle is one of the
-/// account's identities, and the holder is never a participant (#1094).
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-6).
+/// Any other conversation type is left out, so it has no participants. The
+/// type is compared without case, as the import compares it when it decides
+/// whether the chat handle gets a contact. A conversation with yourself is
+/// left out too: its chat handle is one of the account's identities, and the
+/// holder is never a participant (#1094).
 ///
 /// Same rule, one clause shorter: with no participants row there is no
 /// per-conversation backup name, so it is the Contact's name, else the handle.

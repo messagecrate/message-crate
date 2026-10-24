@@ -186,8 +186,8 @@ The rows of one contact must give the same `display_name` or leave it blank.
 A loaded name replaces the name of an existing contact whenever it differs,
 whatever set the old name: an import, an earlier load, or a person typing.
 A load applies exactly what the file says and never second-guesses it, so a
-typed name has no protection from a different name in the file (see
-[Contacts, identities and messages](contacts-identities-and-messages.md)).
+typed name has no protection from a different name in the file
+([CONTACT-31](rules/contacts-identities-and-messages.md#contact-31-a-load-applies-exactly-what-the-file-says-and-never-second-guesses-it)).
 An exported file carries the typed name, so a load straight back renames
 nobody.
 A rename by a load does not change the contact's `origin`. A contact a load
@@ -306,8 +306,7 @@ service stays where it is, with the contact that holds it, unless a row
 lists it too, and a file that lists the two under different contacts puts
 each where its row says. A load applies exactly what the file says and
 never second-guesses it, so an import's rule that one number is one person on
-every service does not apply here (see
-[Contacts, identities and messages](contacts-identities-and-messages.md)).
+every service does not apply here ([CONTACT-15](rules/contacts-identities-and-messages.md#contact-15-one-number-is-one-person-on-every-service)).
 
 ```mermaid
 flowchart TD

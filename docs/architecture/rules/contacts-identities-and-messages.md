@@ -113,8 +113,8 @@ A source gives a group an id of its own, such as `chat1000000005`. The server
 stores it as the conversation's chat handle (`conversations.chat_handle_id`)
 so the same group is recognized on the next import. It gets no contact and is
 nobody's identity. The same holds for the key of a conversation of orphaned
-messages (CONTACT-49). Only a one-to-one conversation's chat handle is a person's
-address, and only that one gets a contact. Import decides it by the
+messages (CONTACT-49). Only a one-to-one conversation's chat handle is a
+person's address, and only that one gets a contact. Import decides it by the
 conversation's type, never by the name of the file it came in, so the desktop
 app's import path and the HTTP one, where every file is `_import.jsonl`,
 agree ([#1169](https://github.com/messagecrate/message-crate/issues/1169)).
@@ -163,12 +163,12 @@ no WhatsApp identity can be, and the identities list named it `email`
 ## CONTACT-10 Every pair of service and type is decided, and a pair the service does not carry is refused
 
 `IdentityService::carries` lists every pair, and an import stores no other.
-An identity added by hand to an account or a contact is typed by the rule
+An identity added by hand to an account or a contact is typed by CONTACT-9
 above, so it takes a type its service carries. A row of an address book load
-is typed by CONTACT-9 too, and a row whose address its service cannot
-carry, such as an email address on WhatsApp, is refused, naming the service
-and the address (CONTACT-32). Why: the check refused an email address on WhatsApp
-and let every other pair through, so a new service or type would have been
+is typed by CONTACT-9 too, and a row whose address its service cannot carry,
+such as an email address on WhatsApp, is refused, naming the service and the
+address (CONTACT-32). Why: the check refused an email address on WhatsApp and
+let every other pair through, so a new service or type would have been
 carried everywhere without anyone deciding it. Now a new one does not compile
 until someone does
 ([#2212](https://github.com/messagecrate/message-crate/issues/2212)).
@@ -215,7 +215,7 @@ contacts, and the second contact had no name. The first contact's counts left
 the SMS messages out
 ([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
 
-WhatsApp is the other way, as above: its `@` ids are `other`.
+WhatsApp is the other way, as CONTACT-9 says: its `@` ids are `other`.
 
 ## CONTACT-13 A conversation's service is the one its messages came over
 
@@ -270,30 +270,30 @@ the `handles` row, by the entry the contacts book files it under, and by the
 owner's own numbers (`OwnerHandleSet`). A number with a `+` before its first
 digit keeps its country: `+65 5555 0100` is `+6555550100`, and `(+44) 7700
 900123` and `tel:+447700900123` are `+447700900123`. A number without `+` is
-read in the country stated for it, by the rules below, and keeps its digits
-as written when none is: `020 7946 0000` is `02079460000`, never the invented
-`+02079460000`, and `(555) 555-0100` is `5555550100`, never a US number by
-default. Why: a book or owner key that differs from the handle key names
-nobody, or names the wrong person. Stripping the `+` first once filed `+65
-5555 0100` under the US number `+16555550100`.
+read in the country stated for it, by CONTACT-17 to CONTACT-19, and keeps its
+digits as written when none is: `020 7946 0000` is `02079460000`, never the
+invented `+02079460000`, and `(555) 555-0100` is `5555550100`, never a US
+number by default. Why: a book or owner key that differs from the handle key
+names nobody, or names the wrong person. Stripping the `+` first once filed
+`+65 5555 0100` under the US number `+16555550100`.
 
 ## CONTACT-17 A phone number carries its country as a fact
 
 The country lives inside the key: a `handles` row whose `normalized` starts
 with `+` names its calling code, and one without names no country. The key
 starts with `+` when the country is certain: the number was written with its
-`+`, or written without it in a country a source or a person stated (CONTACT-19).
-Matching is on the key alone, so a number whose country is known matches only
-its `+` form, and one whose country is unknown matches only the same digits.
-There is no column for the country beside the key, because it would only
-repeat what the `+` says. The country is the calling code rather than an ISO
-country, because a `+` names only the calling code, which the countries that
-share a numbering plan share (`+1` is the United States, Canada and much of
-the Caribbean). Why: a single string could not say "national number, country
-unknown", and that silence was the bug. A UK archive's `07700900123` and
-`+447700900123` were two keys for one person, read as a US number or as
-nothing, so their one-to-one conversation split in two and SMS Backup+
-counted a group member with one number under
+`+`, or written without it in a country a source or a person stated
+(CONTACT-19). Matching is on the key alone, so a number whose country is
+known matches only its `+` form, and one whose country is unknown matches
+only the same digits. There is no column for the country beside the key,
+because it would only repeat what the `+` says. The country is the calling
+code rather than an ISO country, because a `+` names only the calling code,
+which the countries that share a numbering plan share (`+1` is the United
+States, Canada and much of the Caribbean). Why: a single string could not say
+"national number, country unknown", and that silence was the bug. A UK
+archive's `07700900123` and `+447700900123` were two keys for one person,
+read as a US number or as nothing, so their one-to-one conversation split in
+two and SMS Backup+ counted a group member with one number under
 `group_members_with_several_numbers`
 ([#1676](https://github.com/messagecrate/message-crate/issues/1676)).
 
@@ -302,19 +302,19 @@ counted a group member with one number under
 A number written without `+`, in no country anyone stated, is stored as the
 digits typed, with no `+`. It is never matched to a `+` number until its
 country is known. When a person picks its country, the row is rewritten in
-its `+` form and merges with any identity already in that form (CONTACT-20). Why:
-nothing is guessed into the database as a fact. The split remains only for
-numbers whose country nobody has stated, and the person can see which those
-are (CONTACT-20). A short code (fewer than 7 digits after the trunk prefix,
-`phone::MIN_NATIONAL_DIGITS`) has no `+` form in any country, so it keeps its
-digits whatever country is stated.
+its `+` form and merges with any identity already in that form (CONTACT-20).
+Why: nothing is guessed into the database as a fact. The split remains only
+for numbers whose country nobody has stated, and the person can see which
+those are (CONTACT-20). A short code (fewer than 7 digits after the trunk
+prefix, `phone::MIN_NATIONAL_DIGITS`) has no `+` form in any country, so it
+keeps its digits whatever country is stated.
 
 A run's country rewrites only that run's numbers. A later run that states the
 country keys its own `07700 900123` as `+447700900123`, and an identity an
 earlier run stored as `07700900123` stays as it is, beside it, until the
 person picks its country. Why: a merge moves conversations and messages and
-cannot be undone, so it is asked about first (CONTACT-20), and an import has no
-one to ask. The earlier run may also have been from a phone in another
+cannot be undone, so it is asked about first (CONTACT-20), and an import has
+no one to ask. The earlier run may also have been from a phone in another
 country: the same digits are another number there. The bare identity shows
 "Country unknown", so the person can see it and join the two.
 
@@ -421,25 +421,26 @@ conversations ones with yourself and takes the number off the contact, which
 is an act on the account's identities, and a contact's screen that ended with
 its only identity gone would have nothing left to show.
 
-## CONTACT-21 Existing rows are not touched
+## CONTACT-21 Existing rows are not touched by a stated country
 
 A key takes its `+` when a row is written, from the number's own `+` or a
 stated country, and no pass rewrites the rows already written. A schema
 change rebuilds the database (CLAUDE.md, "No backwards compatibility"), so a
 database from before a country could be stated starts empty. Why: a back-fill
-would need a default country, which is the guess the rules above refuse.
+would need a default country, which is the guess CONTACT-18 and CONTACT-19
+refuse.
 
 ## CONTACT-22 An address is classified once, from the value the backup wrote
 
 `phone::Handle::parse` decides what an address looks like before anything
 else touches it: one with `@` is shaped as an email address, one written as a
-number is a phone number keyed as above, and anything else, such as `AMAZON`,
-is a sender name and becomes an identity of type `other`. The service then
-keeps the shape's type or, for an `@` address it cannot carry, makes it
-`other` (CONTACT-9). The SMS exporters carry the `Handle` from there to the
-sender, the participants and the owner. Why: the SMS exporters once stripped
-every address to its digits first, so `john1985@example.com` became the phone
-identity `1985` and a message from `AMAZON` was dropped.
+number is a phone number keyed by CONTACT-16, and anything else, such as
+`AMAZON`, is a sender name and becomes an identity of type `other`. The
+service then keeps the shape's type or, for an `@` address it cannot carry,
+makes it `other` (CONTACT-9). The SMS exporters carry the `Handle` from there
+to the sender, the participants and the owner. Why: the SMS exporters once
+stripped every address to its digits first, so `john1985@example.com` became
+the phone identity `1985` and a message from `AMAZON` was dropped.
 
 ## CONTACT-23 The server reads an address's shape by `phone::Handle::parse` alone
 
@@ -495,7 +496,7 @@ name has nothing to protect, and a nameless contact a load or the person made
 would otherwise stay Unknown though the backup knows who it is. Rejected:
 naming only a contact an import made, a condition from before the address
 book load existed, when an import's contact was the only nameless kind
-(#1058). See [ADR 0006](../adr/0006-an-import-names-the-contact.md).
+(#1058). See [ADR 0006](../../adr/0006-an-import-names-the-contact.md).
 
 ## CONTACT-27 The address book is a file for editing contacts, not a source of them
 
@@ -575,15 +576,15 @@ delete. A contact absent from the file is left alone in both modes, and no
 mode deletes a contact, except one left with neither a name nor an identity,
 which nothing could ever reach. A loaded name replaces the name the contact
 carried, an imported one and a typed one alike, because a load applies
-exactly what the file says (CONTACT-31) and the file is the person typing; a blank
-name says nothing and leaves the name alone. Rejected: protecting a typed
-name from a load (#1057). An exported file carries the typed name, so a load
-straight back changes nothing either way, and a different name in the file is
-the person saying so. A group name that matches no Contact Group creates one.
-Why: the export can be a subset (a search, the checked rows), so a file that
-spoke for the whole account would delete everyone it did not mention, and a
-file that could only add would leave a wrongly linked address unfixable from
-the sheet.
+exactly what the file says (CONTACT-31) and the file is the person typing; a
+blank name says nothing and leaves the name alone. Rejected: protecting a
+typed name from a load (#1057). An exported file carries the typed name, so a
+load straight back changes nothing either way, and a different name in the
+file is the person saying so. A group name that matches no Contact Group
+creates one. Why: the export can be a subset (a search, the checked rows), so
+a file that spoke for the whole account would delete everyone it did not
+mention, and a file that could only add would leave a wrongly linked address
+unfixable from the sheet.
 
 ## CONTACT-31 A load applies exactly what the file says, and never second-guesses it
 
@@ -592,23 +593,22 @@ they give, and the identities and Contact Group memberships they list, and in
 Edit it takes off what a listed contact's rows leave out. It never corrects,
 infers or protects anything the file does not say to make the result closer
 to what the person may have meant, even when the file looks like a mistake.
-The consequences the rules below spell out are not corrections: a nameless
-contact a load empties is deleted; when Edit takes off an identity that a
-conversation, message or reaction still uses, the identity goes to a new
-contact with no name; and a phone number is read with its `+` back when the
-spreadsheet dropped it without showing, which the load's notes say. Where a
-rule elsewhere in this document does more for an import, such as "one number
-is one person on every service", a load does only what its rows say. Why: the
-person edited the file to say what they want, and a load that second-guessed
-it would change things no row shows, which the person can neither see in the
-sheet nor undo from it. A row the load cannot carry out refuses the load
-(CONTACT-32) rather than being guessed at.
+The consequences CONTACT-32 to CONTACT-34 spell out are not corrections: a
+nameless contact a load empties is deleted; when Edit takes off an identity
+that a conversation, message or reaction still uses, the identity goes to a
+new contact with no name; and a phone number is read with its `+` back when
+the spreadsheet dropped it without showing, which the load's notes say. Where
+a rule elsewhere in this document does more for an import, such as CONTACT-15, a load does only what its rows say.
+Why: the person edited the file to say what they want, and a load that
+second-guessed it would change things no row shows, which the person can
+neither see in the sheet nor undo from it. A row the load cannot carry out
+refuses the load (CONTACT-32) rather than being guessed at.
 
 ## CONTACT-32 A load is strict, and refuses whole
 
-A phone is keyed by CONTACT-16, an email is lowercased and must be
-one `@` with text on both sides, an unknown `service` is an error, so is an
-address the row's service does not carry (CONTACT-10), and so is a row with more
+A phone is keyed by CONTACT-16, an email is lowercased and must be one `@`
+with text on both sides, an unknown `service` is an error, so is an address
+the row's service does not carry (CONTACT-10), and so is a row with more
 fields than the header, whose cells cannot be matched to the columns. A row
 with fewer fields reads its missing trailing cells as blank, because a
 spreadsheet can drop empty cells at the end of a row and no column moves. Any
@@ -630,7 +630,7 @@ each row read with its `+` back, and each value without `+` that became a new
 identity. Export writes the number as `'+6555550100`, so a spreadsheet that
 opens the file keeps the `+`, and the load takes the `'` off again ([A cell a
 spreadsheet would
-run](how-contacts-are-made-and-changed.md#a-cell-a-spreadsheet-would-run)).
+run](../how-contacts-are-made-and-changed.md#a-cell-a-spreadsheet-would-run)).
 This rule covers a file a spreadsheet saved some other way, without the `'`.
 Why: a spreadsheet can save `+6555550100` as the number `6555550100` without
 showing it, and keying that value as written made a new identity, which Edit
@@ -789,8 +789,8 @@ the run's end, so the duplicates a run brings are shown while it is open.
 Why: each dedupe works over the whole account and holds the write lock, so
 one after every batch made an import of many batches into a large account
 rehash the account once per batch, while every other write waited. No dedupe
-scoped to a batch gives the full one's result, because the rank below reads
-the open run's growing message count and the account's source order
+scoped to a batch gives the full one's result, because the rank in CONTACT-41
+reads the open run's growing message count and the account's source order
 ([#2040](https://github.com/messagecrate/message-crate/issues/2040)).
 
 ## CONTACT-41 Which copy is shown
@@ -823,12 +823,12 @@ in whole seconds (`time_precision` in the conversation file,
 duplicate of a message from the same source that matches it in everything
 else and has milliseconds in the same second, so the message is shown once.
 It is shown with its milliseconds unless another source holds it too and that
-source's copy is shown first by the order above, as one with more attachments
-is. The content key stays at whole seconds, so the two share a key, and the
-exact pass sets the whole-second copy aside before it compares sources
-(`content_key_group_flags` in `dedupe.rs`). A source that holds a message
-only in whole seconds, or only with milliseconds, keeps every copy, as
-before. The flag decides, never the time: a millisecond time that ends in
+source's copy is shown first by the order of CONTACT-41, as one with more
+attachments is. The content key stays at whole seconds, so the two share a
+key, and the exact pass sets the whole-second copy aside before it compares
+sources (`content_key_group_flags` in `dedupe.rs`). A source that holds a
+message only in whole seconds, or only with milliseconds, keeps every copy,
+as before. The flag decides, never the time: a millisecond time that ends in
 `.000` is not a whole second. A whole-second copy and a millisecond copy
 whose time ends in `.000` have one guid, so they are one stored message, and
 it says `milliseconds` whichever copy came first, in one import or across
@@ -874,7 +874,7 @@ listing them. Participants are the other people. Which of the holder's
 identities a message used is recorded on the message itself, as the identity
 it is held at, taken from the message when the backup records it per message
 (iMessage) and from the backup's header when the backup has one owner. See
-[ADR 0015](../adr/0015-the-owner-is-recorded-on-the-message.md). Why: a
+[ADR 0015](../../adr/0015-the-owner-is-recorded-on-the-message.md). Why: a
 participant row for the holder would need a contact, a name, and a place in
 every participant count and conversation title, and each reader would then
 have to leave it out again.
@@ -1091,7 +1091,7 @@ from the backup, as a first import would, holding that identity and the same
 number on the other service, and discards the trashed contact. Each other
 identity the trashed contact had leaves it as the first rule says: to a new
 contact with no name when a conversation or a message uses it. See [ADR
-0013](../adr/0013-an-import-replaces-a-trashed-contact.md). An import never
+0013](../../adr/0013-an-import-replaces-a-trashed-contact.md). An import never
 looks a contact up by name, so a trashed contact that shares a name with
 someone the backup names is never matched.
 

@@ -466,7 +466,7 @@ pub enum IdentityMoved {
 /// given, or taken off.
 ///
 /// An identity in a conversation is a person, and every person is a contact
-/// (`docs/architecture/contacts-identities-and-messages.md`), so one that is
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-1), so one that is
 /// taken off goes to a new contact with no name and the person is Unknown
 /// again. "In a conversation" means a participant, the sender of a message or
 /// a reaction, or a one-to-one conversation's chat handle, in the promoted

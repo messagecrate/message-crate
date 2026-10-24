@@ -33,7 +33,7 @@ file is the person typing. The rule for an import, which this record
 decides, changed once (#1058): it names any Contact with no name, not only
 one an import made. The narrower condition dated from before the address
 book load, when an import's Contact was the only nameless kind, and a blank
-name has nothing to protect. See `docs/architecture/contacts-identities-and-messages.md`.
+name has nothing to protect. See `docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-26.
 
 ## Consequences
 

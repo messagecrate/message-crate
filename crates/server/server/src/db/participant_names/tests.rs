@@ -187,9 +187,9 @@ async fn the_chat_handle_falls_back_to_itself() {
 }
 
 /// A group's chat id names the conversation, not a person
-/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
-/// CONTACT-6), so a group with no participants rows has
-/// no participants rather than one named `chat1000000005`.
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-6),
+/// so a group with no participants rows has no participants rather than one
+/// named `chat1000000005`.
 #[tokio::test]
 async fn a_group_with_no_participants_rows_has_no_participants() {
     let (pool, _dir) = crate::db::engine::test_pool().await;

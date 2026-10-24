@@ -133,8 +133,8 @@ Messages Reader passes it on. A reaction's reactor and a one-to-one
 conversation's `chat_identifier` carry no country of their own: the server
 reads them in the country the same conversation names for the same address,
 as a participant or a sender. A code the server does not know refuses the
-file. The rules for a phone number's country are in
-`docs/architecture/contacts-identities-and-messages.md`.
+file. The rules for a phone number's country are CONTACT-17 to CONTACT-20 in
+`docs/architecture/rules/contacts-identities-and-messages.md`.
 
 ### Time precision
 
