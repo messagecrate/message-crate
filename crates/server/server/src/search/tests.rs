@@ -3732,14 +3732,14 @@ mod docs {
         .all(|kind| has(a, kind) == has(b, kind))
     }
 
-    const RULES_PAGE: &str = include_str!("../../../../../docs/architecture/search.md");
+    const WORDS_PAGE: &str = include_str!("../../../../../docs/architecture/search.md");
 
     /// The words `docs/architecture/search.md` describes, each with the
     /// lists its entry gives a meaning for: a `` ### `word:` `` heading, then
     /// one `- **List**:` line per list, up to the next heading.
-    fn rules_page_words() -> Vec<(String, Vec<ListKind>)> {
+    fn documented_words() -> Vec<(String, Vec<ListKind>)> {
         let mut words: Vec<(String, Vec<ListKind>)> = Vec::new();
-        for line in RULES_PAGE.lines() {
+        for line in WORDS_PAGE.lines() {
             if line.starts_with('#') {
                 if let Some(word) = line
                     .strip_prefix("### `")
@@ -3773,8 +3773,8 @@ mod docs {
     /// entry following (#718 moved two), would leave a meaning nobody wrote
     /// down.
     #[test]
-    fn the_rules_page_gives_every_word_a_meaning_on_exactly_its_lists() {
-        let documented = rules_page_words();
+    fn the_words_page_gives_every_word_a_meaning_on_exactly_its_lists() {
+        let documented = documented_words();
         let names: Vec<&str> = documented.iter().map(|(w, _)| w.as_str()).collect();
         let registered: Vec<&str> = FIELDS.iter().map(|f| f.word).collect();
         assert_eq!(

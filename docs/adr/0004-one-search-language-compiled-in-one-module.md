@@ -9,8 +9,9 @@ none of them parses a query string or builds a filter of its own.
 The rules of the language as this decision set them are below. The rules
 as they stand today, each with its reason, the grammar, and what every word
 means on every list, are in
-[The search language](../architecture/search.md), which is the one to keep
-current.
+[The search language: rules](../architecture/rules/search.md) and
+[The search language](../architecture/search.md), which are the ones to
+keep current.
 
 - **One word per concept.** A concept has exactly one spelling, with no
   aliases. Precision lives in the value using conventional notation:
