@@ -1,9 +1,14 @@
-# Import Run logs
+# Import Run logs: rules
 
-Where the desktop app keeps each Import Run's log, and its own log beside
-them, what a line of each holds, and who reads it. The decisions were made
-on #1340, #1665 and #2185; the code is `crates/libs/log-lines` (the line
-format, shared with the server's log),
+The constraints the desktop app's logs must keep satisfying: each Import
+Run's log and the app's own log beside it. How a run's log travels from its
+first line to the Logs panel is in [Import Run logs](../import-run-logs.md);
+this document is what a change must not break. Each rule has an id,
+`RUNLOG-n`, which code comments, tests and reviews cite. A rule's id never
+changes; a rule that stops holding is removed, and its id is not reused.
+
+The decisions were made on #1340, #1665 and #2185; the code is
+`crates/libs/log-lines` (the line format, shared with the server's log),
 `crates/core/message-crate-core/src/run_log.rs` (a run log's lines),
 `src-tauri/src/app_directories.rs` (writing a run log),
 `src-tauri/src/app_log.rs` (writing the desktop app's log) and
@@ -12,7 +17,7 @@ format, shared with the server's log),
 *The server's own log is a separate thing, with its own rules: [The server's
 log](server-log.md).*
 
-## Who reads which log
+## RUNLOG-1 Who reads which log
 
 | Log | Where it is | Who reads it | Where |
 |---|---|---|---|
@@ -25,7 +30,7 @@ computer that ran the import.
 
 Why the owner reads every run log: a run log holds the import's metadata,
 what went wrong, what succeeded, counts, and the names of the files the run
-read ("What a line holds", below). The owner already sees each
+read (RUNLOG-8). The owner already sees each
 account's Import Runs and what each account holds
 (`docs/adr/0008-the-owner-holds-no-messages.md`), so the run's log is the same
 information at finer grain. Decided on #1665, which changed decision 5 on
@@ -34,7 +39,7 @@ information at finer grain. Decided on #1665, which changed decision 5 on
 Why an account reads only its own: one account is not shown another
 account's runs anywhere else either.
 
-## Kept on this computer, never deleted
+## RUNLOG-2 Kept on this computer, never deleted
 
 Staging, Media and Upload each write their lines into one log per run in the
 Logs Directory, named for the run's directory in the Staging Directory:
@@ -50,7 +55,7 @@ of what the run said.
 Why not upload it: a run log is the computer's record of its own work, and
 the server already holds what is worth keeping from it.
 
-## The account line
+## RUNLOG-3 The account line
 
 The first line of a run's log names the run, the account that runs it, the
 server's address and the Message Crate's id, written once the server has
@@ -86,18 +91,17 @@ the id (`GET /v1/server`, `id`) when its database is made and never changes
 it. The address is in the line for a person to read, and one address can be
 written several ways (`localhost` or `127.0.0.1`), so nothing compares it.
 
-## The desktop app's log
+## RUNLOG-4 The desktop app's log
 
-What the desktop app does and fails at outside an Import Run goes to one
-log of its own, `desktop-app.log` in the Logs Directory: an event no window
-received, a program in the Tools Directory whose record could not be
-written, a server whose processes will not end with it, and the warnings
-the Apple Messages Reader writes during the Import screen's identity check,
-which runs before any Import Run exists. Its lines are in the format below,
-at `WARN`, because each is something the app went on without.
-Nothing deletes it, and every start of the app writes on into it. It is
-made when its first line is written, so an app with nothing to say has
-none.
+What the desktop app does and fails at outside an Import Run goes to one log
+of its own, `desktop-app.log` in the Logs Directory: an event no window
+received, a program in the Tools Directory whose record could not be written,
+a server whose processes will not end with it, and the warnings the Apple
+Messages Reader writes during the Import screen's identity check, which runs
+before any Import Run exists. Its lines are in the format of RUNLOG-5, at
+`WARN`, because each is something the app went on without. Nothing deletes
+it, and every start of the app writes on into it. It is made when its first
+line is written, so an app with nothing to say has none.
 
 Why: a desktop starts the app with standard error thrown away, so a line
 written only there was lost. The server's log and each run's log had a
@@ -114,7 +118,7 @@ The owner reads it, in the desktop app on that computer, as **Desktop
 app** in the Logs panel. It names no account, so the listing gives it to
 the owner alone, as it does a run log with no account line. Like a run
 log, it is a plain file that the computer's own user can open with or
-without Message Crate ("A filter, not a guard", below).
+without Message Crate (RUNLOG-7).
 
 A line of it names only paths inside Message Crate's own directories, such
 as the Tools Directory and the Scratch Directory. The path of a backup the
@@ -126,7 +130,7 @@ iPhone". Why: the log is offered to the owner of whichever Message Crate
 the app is signed in to, and a backup's path or a phone's name can name the
 person whose phone it is.
 
-## One line per event, with its time and level
+## RUNLOG-5 One line per event, with its time and level
 
 Each line starts with its time in UTC (RFC 3339, microseconds) and its level,
 `ERROR`, `WARN` or `INFO`, then the text: the format of the server's log, so
@@ -149,7 +153,7 @@ reading the log in a terminal would otherwise have it act on the screen.
   ([#1938](https://github.com/messagecrate/message-crate/issues/1938)).
 - `INFO`: what the run did.
 
-## Reading it
+## RUNLOG-6 Reading it
 
 The desktop app reads a run log the way the server reads its own, with the
 same code (`crates/libs/log-lines`): the newest lines first, walking back
@@ -163,26 +167,26 @@ A log written before its lines carried a time and a level has no line the
 viewer can read. The viewer says so and offers the download, rather than
 saying no line matches the filter.
 
-## A filter, not a guard
+## RUNLOG-7 A filter, not a guard
 
-Who reads which log decides what each screen offers, not who can open a
-file. The window tells the desktop app which account is signed in, on which
-Message Crate, and whether it is the owner, and the desktop app takes its
-word. A run log is a plain file in the Logs Directory, which any program run
-by the computer's user can open. No other user of the computer can: the
-desktop app makes the Logs Directory with mode `0700` and takes group and
-other access off one that has it, each time it opens a run's log, because a
-run log names the phone numbers and email addresses in its file names (below).
-Windows has no such modes, and there the Logs Directory takes the access of
-the Message Crate Directory it is in, which is under the user's own
-profile directory.
+Who reads which log decides what each screen offers, not who can open a file.
+The window tells the desktop app which account is signed in, on which Message
+Crate, and whether it is the owner, and the desktop app takes its word. A run
+log is a plain file in the Logs Directory, which any program run by the
+computer's user can open. No other user of the computer can: the desktop app
+makes the Logs Directory with mode `0700` and takes group and other access
+off one that has it, each time it opens a run's log, because a run log names
+the phone numbers and email addresses in its file names (RUNLOG-8). Windows
+has no such modes, and there the Logs Directory takes the access of the
+Message Crate Directory it is in, which is under the user's own profile
+directory.
 
 Why that is enough: everything on the computer runs as one user of the
 operating system, who can read the Logs Directory with or without Message
 Crate. The rule keeps one account's runs off another account's screens, as
 the server keeps one account's Import Runs from another.
 
-## What a line holds
+## RUNLOG-8 What a line holds
 
 Like a line of the server's log (`server-log.md`, LOG-18),
 a run log's line never holds a password, a Session token or an API token,
@@ -195,8 +199,8 @@ explains a failure. A conversation file is named for the people in it, so its
 name can carry a phone number, an email address or a group's title. The owner
 reads those names with the rest of the log, as ADR 0008 says for run logs.
 Why: the log is a plain file in the Logs Directory. The operating-system user
-who ran the import can open it with or without Message Crate ("A filter, not
-a guard", above), and the owner reads it in the desktop app running as that
-user. While the run lasts, its directory in the Staging Directory holds the
-same names. A neutral name on the owner's screen would protect nothing
+who ran the import can open it with or without Message Crate (RUNLOG-7), and
+the owner reads it in the desktop app running as that user. While the run
+lasts, its directory in the Staging Directory holds the same names. A neutral
+name on the owner's screen would protect nothing
 ([#1990](https://github.com/messagecrate/message-crate/issues/1990)).
