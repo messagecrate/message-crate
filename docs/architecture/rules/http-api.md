@@ -9,9 +9,10 @@ file, a pull request that touches a route is graded against it, and a route
 that breaks a rule here is a bug. Each rule carries its reason, and where an
 alternative was weighed and turned down, one line says so, so the question is
 not reopened by accident. Each rule has an id, `API-n`, which code comments,
-tests and reviews cite. The ids run on through the sections in order. A rule's
-id never changes. A rule that stops holding is removed, and its id is not
-reused.
+tests and reviews cite. The ids are numbered in order through the sections. A
+rule's id never changes. A rule that stops holding is removed, and its id is not
+reused. The sections get their ids one at a time, in order (#3209), so a rule in
+a section that has none yet is cited by the section's title.
 
 This file states what every route must do. The generated reference (see
 [The reference](#the-reference)) states what each route does today. Where the
@@ -49,7 +50,7 @@ contents: `/v1/assets/{sha256}`. Why: the file exists before the database
 does, the client must know the hash before an upload can be deduplicated, and
 two uploads of one file must be one asset.
 
-### API-3 An asset's Preview and Thumbnail are addressed under the original's hash
+### API-3 An Asset's Preview and Thumbnail are addressed under the original's hash
 
 An asset's Preview and Thumbnail have no address of their own. They are
 `/v1/assets/{sha256}/preview` and `/v1/assets/{sha256}/thumbnail`, under the
