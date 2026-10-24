@@ -98,7 +98,7 @@ of its own, `desktop-app.log` in the Logs Directory: an event no window
 received, a program in the Tools Directory whose record could not be written,
 a server whose processes will not end with it, and the warnings the Apple
 Messages Reader writes during the Import screen's identity check, which runs
-before any Import Run exists. Its lines are in the format of RUNLOG 5, at
+before any Import Run exists. Its lines are in the format of RUNLOG-5, at
 `WARN`, because each is something the app went on without. Nothing deletes
 it, and every start of the app writes on into it. It is made when its first
 line is written, so an app with nothing to say has none.
