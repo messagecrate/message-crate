@@ -33,7 +33,7 @@ pub(crate) struct ListLogLinesQuery {
 /// Not a `Page`: the log is written while it is read, so a count and an
 /// offset from the newest line would move under the reader, and counting a
 /// 250 MB log for every page is the cost a line's id saves
-/// (`docs/architecture/rules/http-api.md`, "Lists").
+/// (`docs/architecture/rules/http-api.md`, API-51).
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ListLogLinesResponse {
     /// The lines, newest first.

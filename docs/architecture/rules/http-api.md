@@ -445,14 +445,25 @@ carries the meaning, and a run's outcome is its `status`.
 
 ## Lists
 
+### API-40 Every list answers a page, `{items, total, limit, offset}`
+
 Every list route answers a page, `{items, total, limit, offset}`, and takes
 `offset` and `limit`. A list the person curates by hand (groups, tags, saved
 searches, API tokens), a fixed reference list (`/v1/search-fields/contacts`),
 and a `POST` that reads all answer a page. The one exception is the server's
-log lines, which are written while they are read and page from a line (see
-below). The list key is always `items`.
+log lines, which are written while they are read and page from a line
+(API-51). The list key is always `items`.
 Why: the web app has one paged type and one hook, and a second shape is a
 second convention.
+
+Rejected: cursor paging. Stable under concurrent inserts, but nothing inserts
+rows under a running read on a self-hosted server, and every screen that shows
+"51–100 of 4,213" needs `total`.
+
+Rejected: a bare `{items}` for small lists. One justified exception is still
+two conventions, and a group's member list has no bound the server enforces.
+
+### API-41 The Messages list's page carries `search`, the one key beside the four
 
 The Messages list, `GET /v1/messages`, is the one page with a key beside the
 four: `search`, which says how the server read the request. `search.sort` is
@@ -477,6 +488,8 @@ the right order.
 It knows a page by its four keys, not by its name, so a page under a new
 name is held to the same rule.
 
+### API-42 A `POST` that reads the rows its body names answers the whole body as one page
+
 A `POST` that reads the rows its body names — contact summaries, unmatched
 identities — answers the whole of that body as one page and takes no `offset`
 or `limit`: `total` is the row count, `limit` is the cap the body is held to,
@@ -484,31 +497,37 @@ or `limit`: `total` is the row count, `limit` is the cap the body is held to,
 may name, so a second bound would only let a caller ask for rows it did not
 name, or hide rows it did.
 
+### API-43 A count of the whole set belongs on the resource the set hangs off
+
 A count that describes the whole set rather than the page belongs on the
 resource the set hangs off, not beside `items`. An Import Run's tally of
 contacts created and changed is on the run's own record, and the contacts are
 a page. Why: a page can only count its own rows, and a field beside `items`
 that counts something else is a second shape.
 
-A list's row carries nothing that grows without bound. Where a resource
-holds such a collection, as an Import Run holds its issues and its notes,
-the list answers how many in a count (`issue_count`, `note_count`) and the
-resource's own `GET` answers the collection. `GET /v1/imports` and an
-account's own `GET /v1/accounts/{id}/imports` answer each run as an
-`ImportRunSummary`, with the counts and without the issues or notes. The
-owner's `GET /v1/accounts/{id}/imports` answers each as an
-`OwnerImportRunSummary`, which also counts them and never carries them.
-`GET /v1/imports/{id}` answers the issues and the notes. Each count is
-read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
-inside each row left a page's size to whatever the runs recorded. Forty
-WhatsApp runs of 20,000 skipped files each made one page of Settings →
+### API-44 A list's row carries nothing that grows without bound
+
+A list's row carries nothing that grows without bound. Where a resource holds
+such a collection, as an Import Run holds its issues and its notes, the list
+answers how many in a count (`issue_count`, `note_count`) and the resource's
+own `GET` answers the collection. `GET /v1/imports` and an account's own
+`GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`, with
+the counts and without the issues or notes. The owner's
+`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRunSummary`,
+which also counts them and never carries them. `GET /v1/imports/{id}` answers
+the issues and the notes. Each count is read in the list's own statement, never
+by a statement per row. Why: `limit` bounds a page's rows and nothing else, so
+a collection inside each row left a page's size to whatever the runs recorded.
+Forty WhatsApp runs of 20,000 skipped files each made one page of Settings →
 Storage carry about 800,000 issues, and one statement per row made a page of
 500 runs a thousand statements (#1559).
 Rejected: capping how many issues a run stores. It bounds the list by
 throwing away the diagnostics the run exists to keep.
 
+### API-45 An Import Run's attachments without a Thumbnail or Preview are only on the owner's read of the run
+
 The attachments an Import Run wrote whose Thumbnail or Preview could not be
-made are such a collection too. The owner's
+made are such a collection too (API-44). The owner's
 `GET /v1/accounts/{id}/imports/{import_id}` answers an `OwnerImportRun`,
 which adds them (`not_made_attachments`) and their count by kind of failure
 (`not_made_counts`). The owner's list carries neither, not even a count.
@@ -516,12 +535,16 @@ Why: a count would read every attachment of every run on the page, where
 the issue count reads one small table, and the owner reads the failures on
 the run's record (#2636).
 
+### API-46 `limit` is 1 to 500, `offset` at most 50 000 on a browse list, and a value outside is refused
+
 `limit` is at least 1 and at most 500, default 40, on every list including an
 Export Run's messages. `offset` is at most 50 000 on the browse lists. A value
 outside the range is `validation-failed`, never a silent clamp. One
 conversation's messages, `GET /v1/conversations/{id}/messages`, is not a browse
 list and has no `offset` cap. Why: every message of a long conversation must
 be reachable, and a cap would leave the rest of a long thread out of reach.
+
+### API-47 One conversation's messages can be read beside one message
 
 One conversation's messages can also be read beside one message, in place of
 `offset`: `around={message_id}` answers the page with that message in the
@@ -535,12 +558,16 @@ message (a search result, a Find match, the first message of a year) does not
 know the message's offset, and a screen that scrolls from there reads the next
 page from the message at its edge rather than from a number that an import
 or a deletion in between would shift. This is not the cursor paging rejected
-below: the page keeps `total` and `offset`, and the parameters name a message,
-not an opaque token.
+under API-40: the page keeps `total` and `offset`, and the parameters name a
+message, not an opaque token.
+
+### API-48 Sorting is `sort=-field,field`
 
 Sorting is `sort=-field,field`: comma-separated keys, a leading `-` for
 descending. Each list declares the keys it accepts, and an unlisted key is
 `validation-failed` naming the accepted set. There is no separate `order=`.
+
+### API-49 Filtering is the search language in `q`, and nothing else
 
 Filtering is the search language in `q`, and nothing else. The one exception
 is a list with no search language, which may take a filter parameter whose
@@ -555,6 +582,14 @@ the time and the level, holds it, ignoring case. A log line is text, not a
 row with fields a search language could name, so `text` is the whole of its
 search. There is no `fields=` selection.
 
+Rejected: `fields=`. It turns one resource into many shapes, and the web app's
+generated types could only express that with every field optional.
+
+Rejected: query-parameter filters beside the search language. `?date_gte=2019`
+next to `q=date:>2019` is two ways to ask one question.
+
+### API-50 A query parameter a route does not declare is refused
+
 A query parameter a route does not declare is `validation-failed`, naming the
 parameters the route accepts. The `media_link` of a Media Link is declared by
 its security scheme, an API key in the query, and counts as declared on the
@@ -562,32 +597,22 @@ three routes that take it. Why: a typo (`limt=10`) or a guess at a
 convention this file rejects (`order=`, `fields=`, `year=`) would otherwise be
 answered as though it had been obeyed.
 
-Rejected: cursor paging. Stable under concurrent inserts, but nothing inserts
-rows under a running read on a self-hosted server, and every screen that shows
-"51–100 of 4,213" needs `total`.
-
-The server's log lines, `GET /v1/server/log-lines`, are the one list that
-pages from a line instead: `{items, limit, has_more}`, newest first, and
-`after={id}` reads the lines older than the line with that id. It takes no
-`offset` and answers no `total`. Why: the server writes lines while the owner
-reads them, its answers to the reading included, so the reason above does not
-hold for it, and a `total` would mean counting up to 250 MB of files for every
-page. The id names a line, as `around`, `before` and `after` name a message,
-and is not an opaque token (`docs/architecture/rules/server-log.md`).
-
-Rejected: a bare `{items}` for small lists. One justified exception is still
-two conventions, and a group's member list has no bound the server enforces.
-
-Rejected: `fields=`. It turns one resource into many shapes, and the web app's
-generated types could only express that with every field optional.
-
-Rejected: query-parameter filters beside the search language. `?date_gte=2019`
-next to `q=date:>2019` is two ways to ask one question.
-
 Rejected: ignoring a query parameter the route does not know, the forgiving
 default of most web servers. The server's clients are its own apps and programs
 written against the reference, and a silent wrong answer costs them more than
 a refusal.
+
+### API-51 The server's log lines page from a line
+
+The server's log lines, `GET /v1/server/log-lines`, are the one list that pages
+from a line instead: `{items, limit, has_more}`, newest first, and `after={id}`
+reads the lines older than the line with that id. It takes no `offset` and
+answers no `total`. Why: the server writes lines while the owner reads them,
+its answers to the reading included, so the reason cursor paging is rejected
+under API-40 does not hold for it, and a `total` would mean counting up to 250
+MB of files for every page. The id names a line, as `around`, `before` and
+`after` name a message, and is not an opaque token
+(`docs/architecture/rules/server-log.md`).
 
 ## Failures
 
@@ -1132,7 +1157,7 @@ What each reaches:
   accounts that held one username as one, and takes in the logins refused for
   the username while no account held it.
 - The account reads its own runs in full, a list's rows less what
-  [Lists](#lists) keeps out of a row. The owner reads each run as an
+  API-44 keeps out of a row. The owner reads each run as an
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
@@ -1574,7 +1599,7 @@ from the name:
   part, and is written down here with its reason. `Summary` is the thing as
   a list answers it: `ContactSummary` is a contact's row in the Contacts
   list, and `ImportRunSummary` is an Import Run without its issues and
-  notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
+  notes, which `ImportRun` adds to it (API-44). `Owner` is the
   thing as the owner reads it under another account: `OwnerImportRun` and
   `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)), and
   `OwnerImportRunSummary` is an `OwnerImportRun` as the owner's list answers

@@ -24,7 +24,7 @@ use crate::search::parse::TextTerm;
 
 /// One page of the Messages list and how the server read its search: the
 /// four keys of every page, and `search`, the one key a page carries beside
-/// them (`docs/architecture/rules/http-api.md`, "Lists").
+/// them (`docs/architecture/rules/http-api.md`, API-41).
 // The four keys are written out rather than taken from `Page<Message>` with
 // `#[serde(flatten)]`: utoipa describes a flattened field as an `allOf` of
 // two schemas, which gives the page no `properties` of its own for the page
