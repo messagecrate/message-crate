@@ -110,10 +110,10 @@ release Dockerfile from `main` once a night and starts the image with
 `scripts/check-docker-compose.sh` and `docker/compose.release.yml`. No pull
 request builds the image, so the nightly run is where a change that breaks it
 shows before a release; the release's `docker` job builds it and runs the
-same check before it pushes (see the amendment of 2026-10-14 below). A
-change can break the image, or make the server write outside `/app/data` at
-start, so that it no longer starts under the Compose files' read-only root
-filesystem.
+same check before it pushes (see the amendments of 2026-10-14 and
+2026-10-24 below). A change can break the image, or make the server write
+outside `/app/data` at start, so that it no longer starts under the Compose
+files' read-only root filesystem.
 It then loads the website the image serves in a headless browser
 (`scripts/check-served-website.sh`), logs in to the Demo Account, searches
 and opens a conversation, and fails on a console error or a 5xx: the web
@@ -434,16 +434,26 @@ paid it too.
 
 It is gone (#2904). `nightly.yml` builds the same image from `main` every
 night `main` changed, runs the same Compose check and the website check, and
-opens a `bug` issue when it fails. The release's `docker` job builds the image,
-loads it into the runner's Docker and starts it with `check-docker-compose.sh`
-(without `--website`) before a second build step, served from the cache the
-first wrote, pushes it. An image that does not build, or builds and fails the
-Compose check, fails the release rather than shipping, even when a tag is
-pushed before that night's run (#3000). A broken Dockerfile can now reach
-`main`, and shows within a day; the fix is a commit, not a new tag. The
-nightly run stays a report, not a gate.
+opens a `bug` issue when it fails. The release's `docker` job builds the image
+before it pushes it, so an image that does not build fails the release rather
+than shipping. That job does not start the image, so an image that builds but
+fails the Compose check is caught only by the nightly run; a tag pushed before
+that run can ship it (#3000). A broken Dockerfile can now reach `main`, and
+shows within a day; the fix is a commit, not a new tag. The nightly run stays
+a report, not a gate.
 
 The `docker-context` job stays on every pull request: it takes seconds. It
 was named "Docker rust-builder context", but `check-docker-context.sh` also
 fails any `FROM` in `docker/Dockerfile` that is not pinned by tag and digest,
 so it is now named "Docker build context" (#2664).
+
+## Amended 2026-10-24: the `docker` job starts the image before it pushes
+
+The gap the 2026-10-14 amendment left is closed (#3000). The `docker` job (a
+release, or a manual run that pushes `sha-<commit>`) builds the image, loads
+it into the runner's Docker and starts it with `check-docker-compose.sh`,
+without `--website`, before a second build step on the same builder, served
+from the cache the first wrote, pushes it. An image that builds but fails the
+Compose check now fails the job, and nothing is pushed, even when a tag comes
+before that night's run. The nightly run is still the only one that loads the
+website in a browser.

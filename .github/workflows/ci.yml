@@ -579,6 +579,9 @@ jobs:
 
       # Built into the runner's Docker under a local tag first, so the check
       # below starts this build and never an image pulled from Docker Hub.
+      # The Push step takes the same context, file, labels, build-args and
+      # cache-from: change them in both, or the image pushed is not the one
+      # the check started.
       - name: Build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
