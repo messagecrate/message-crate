@@ -46,7 +46,7 @@ export type ImportFormState = {
   /** Whether the Processing Options section is open. */
   processingOpen: boolean;
   obfuscate: boolean;
-  /** The phone's country as an ISO code, or empty for none. */
+  /** Default country for contacts as an ISO code, or empty for none. */
   phoneCountry: string;
   /**
    * The zone iMazing dates are read in, picked under Processing Options, or

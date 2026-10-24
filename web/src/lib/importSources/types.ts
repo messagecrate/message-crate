@@ -1,9 +1,9 @@
 import type { ImportSourceId } from "../exportSources";
 import type { ImessagePathStats } from "../imessageImport";
+import type { BackupPathStats } from "../pathChecks";
 import type { ImporterExtraField } from "../systemSettings";
 import type { AttachmentChoices, ExtractConfig } from "../types";
 import type { WhatsappPathStats } from "../whatsappImport";
-import type { AndroidSmsPathStats } from "./androidSms";
 
 /**
  * One way Import reads a source's backup, by the id the form and the
@@ -28,10 +28,10 @@ export type BackupField = {
 export type SnapshotSecret = "backupPassword" | "whatsappKey";
 
 /**
- * An option under Processing Options that only some sources have. The
- * phone's country is every source's, so it is not one of these.
+ * An option under Processing Options that only some sources have. A source
+ * with none shows no Processing Options section.
  */
-type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone";
+type ProcessingOption = "obfuscate" | "timeZone";
 
 /**
  * How a run reads an Apple Messages backup's identities before it starts,
@@ -55,10 +55,10 @@ export type ImportJobFormValues = AttachmentChoices & {
    * dates carry no zone of their own. */
   timeZone: string;
   /**
-   * The country of the phone the backup came from, as an ISO code (`GB`), or
-   * empty for none. The Import Run states it, and the server reads every
-   * number the run's files write without its `+` code as a number there
-   * (#1676).
+   * Default country for contacts, as an ISO code (`GB`), or empty for none.
+   * The Import Run states it as its `phone_country`, and the server reads
+   * every number the run's files write without its `+` code as a number
+   * there (#1676).
    */
   phoneCountry: string;
   attachmentRoot: string;
@@ -119,8 +119,10 @@ export type ReadinessInput = {
   /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
   whatsappOwnerPhone: string;
   whatsappStats: WhatsappPathStats;
-  /** What the Android SMS backup path points at. */
-  androidSmsStats: AndroidSmsPathStats;
+  /** What the backup path points at, for the Android SMS sources, iMazing and OpenExtract. */
+  backupPathStats: BackupPathStats;
+  /** The Attachments field and its compress fields, checked for a source that shows them. */
+  attachments: AttachmentChoices;
   ownerPhones: string[];
   /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
   ownerEmails: string;
@@ -142,7 +144,7 @@ type Readiness = {
  * `screens/import/formSections/`, because it renders the source's fields.
  * The exception is the Import screen's path checks, which run as the paths
  * are typed. Each check fills its own source's stats (`pathStats`,
- * `whatsappStats`, `androidSmsStats`), which the source's readiness and form section read. A
+ * `whatsappStats`, `backupPathStats`), which the source's readiness and form section read. A
  * source that checks its paths adds its check and its stats to the Import
  * screen.
  *
@@ -205,4 +207,11 @@ export type ImportSourceDescriptor<M extends string = string> = {
   backupField(method: M): BackupField;
   /** Whether the source's own fields let Import start, and what is wrong with each. */
   readiness(input: ReadinessInput & { source: M }): Readiness;
+  /**
+   * Whether the backup is known to be encrypted, for a method whose backup
+   * takes an Encryption password: true, false, or null while nobody knows.
+   * Null for every other method. The form shows the password only for true,
+   * and sends it only then.
+   */
+  backupEncrypted(input: ReadinessInput & { source: M }): boolean | null;
 };

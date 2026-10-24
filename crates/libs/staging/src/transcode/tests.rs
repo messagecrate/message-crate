@@ -710,7 +710,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
         "the original is still there before the Media Stage runs"
     );
     // Default min_size_bytes is 20 MB; our fixture is a few dozen bytes.
-    assert!(CompressOptions::default().min_size_bytes > 1000);
+    assert!(CompressOptions::default().under_min_size(1000));
 
     let report = transcode_staged(
         dir.path(),
@@ -1572,7 +1572,7 @@ fn staged_video_hevc_fails() -> (
     let options = TranscodeOptions {
         mode: MediaMode::Compress,
         compress: CompressOptions {
-            min_size_bytes: 0,
+            min_size_bytes: None,
             ..CompressOptions::default()
         },
         asset_max_bytes: u64::MAX,

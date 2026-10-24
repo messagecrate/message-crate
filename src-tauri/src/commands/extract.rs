@@ -303,8 +303,9 @@ fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
 ///
 /// # Errors
 ///
-/// Returns an error if `max_fps` is not a positive number or `min_size` is
-/// not a whole number of megabytes.
+/// Returns an error if `max_fps` or `min_size` is neither empty nor a whole
+/// number in its range ([`media::MAX_FPS_RANGE`],
+/// [`media::MIN_VIDEO_SIZE_MB_RANGE`]).
 fn parse_compress_options(
     chosen: MediaMode,
     max_resolution: MaxResolution,

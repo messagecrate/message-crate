@@ -3,6 +3,10 @@ import PasswordField from "../../../components/PasswordField";
 import PathPicker from "../../../components/PathPicker";
 import { textInputClass } from "../../../components/TextField";
 import {
+  ENCRYPTED_BACKUP_PASSWORD_HINT,
+  encryptionPasswordShown,
+} from "../../../lib/encryptedBackup";
+import {
   isWhatsappMethod,
   whatsappCryptRequired,
   whatsappOwnerPhoneRequired,
@@ -28,7 +32,7 @@ const WHATSAPP_MEDIA_HINT =
   "Leave empty if the WhatsApp media directory is in the backup directory.";
 const WHATSAPP_DB_HINT = "Leave empty if msgstore.db is in the backup directory.";
 
-/** The label of the holder's WhatsApp number, in the form and under Processing Options. */
+/** The label of the holder's WhatsApp number, required on Android and a fallback on iPhone. */
 const WHATSAPP_OWNER_PHONE_LABEL = "WhatsApp phone number";
 const WHATSAPP_OWNER_PHONE_HINT_ANDROID =
   "Pre-filled from your profile. The number your WhatsApp account is registered to.";
@@ -36,9 +40,9 @@ const WHATSAPP_OWNER_PHONE_HINT_IPHONE =
   "Fallback, used when the backup does not contain your phone number.";
 
 /**
- * The key, password, owner number, contacts, media, message database,
- * Business choice, and attachments. On iPhone the owner number is a
- * fallback, so it sits under Processing Options instead.
+ * The key or the password, the owner number, Default country for contacts,
+ * the contacts, media and message database paths, the Business choice, and
+ * the attachments. On iPhone the owner number is an optional fallback.
  */
 export default function WhatsappFormSection(props: ImportFormSectionProps) {
   const { form, dispatch, errors } = props;
@@ -65,25 +69,18 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
         </StackedField>
       ) : null}
 
-      {whatsappShowsPassword(method) ? (
-        <StackedField
-          label="Encryption password"
-          required={props.whatsappStats.backupEncrypted === true}
-          optional={props.whatsappStats.backupEncrypted !== true}
-        >
+      {whatsappShowsPassword(method) &&
+      encryptionPasswordShown(props.whatsappStats.backupEncrypted) ? (
+        <StackedField label="Encryption password" required>
           <PasswordField
-            aria-label={
-              props.whatsappStats.backupEncrypted === true
-                ? "Encryption password"
-                : "Encryption password (Optional)"
-            }
+            aria-label="Encryption password"
             value={form.backupPassword}
             onChange={(value) => dispatch({ type: "set", field: "backupPassword", value })}
             autoComplete="new-password"
             showPassword={form.showBackupPassword}
             onToggle={() => dispatch({ type: "toggle", field: "showBackupPassword" })}
           />
-          <FieldStatus message={errors.backupPassword} />
+          <p className={hintClass}>{ENCRYPTED_BACKUP_PASSWORD_HINT}</p>
         </StackedField>
       ) : null}
 
@@ -103,7 +100,14 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
           <p className={hintClass}>{WHATSAPP_OWNER_PHONE_HINT_ANDROID}</p>
           <FieldStatus message={errors.ownerPhone} />
         </StackedField>
-      ) : null}
+      ) : (
+        <WhatsappFallbackPhoneField
+          value={form.whatsappOwnerPhone}
+          onChange={(value) => dispatch({ type: "set", field: "whatsappOwnerPhone", value })}
+        />
+      )}
+
+      {props.defaultCountryField}
 
       {whatsappShowsContactsDb(method) ? (
         <StackedField label="Contacts database" optional>
@@ -160,14 +164,8 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
   );
 }
 
-/**
- * The holder's WhatsApp number as a fallback, for an iPhone backup that may
- * carry it itself. The Import form shows it under Processing Options.
- */
-export function WhatsappFallbackPhoneField(props: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
+/** The holder's WhatsApp number as a fallback, for an iPhone backup that may carry it itself. */
+function WhatsappFallbackPhoneField(props: { value: string; onChange: (value: string) => void }) {
   return (
     <StackedField label={WHATSAPP_OWNER_PHONE_LABEL} optional>
       <input

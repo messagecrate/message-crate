@@ -337,7 +337,7 @@ fn a_file_in_the_band_is_worth_probing_and_a_small_one_is_not() {
 fn a_video_under_the_compress_minimum_is_forecast_unchanged() {
     let opts = CompressOptions::default();
     let size = 11 * 1024 * 1024;
-    assert!(size < opts.min_size_bytes);
+    assert!(opts.under_min_size(size));
     let p = probe("h264", 1920, 1080, Some(60.0), 20_000_000);
     assert_eq!(
         estimate_bytes(size, Some(&p), "mp4", MediaMode::Compress, &opts),
@@ -362,4 +362,25 @@ fn a_video_under_the_compress_minimum_and_over_the_limit_is_too_big() {
         ),
         SizeVerdict::ProbablyTooBig
     );
+}
+
+/// #3167: with no minimum size a small video is re-encoded like a large
+/// one, and with no max fps a 60 fps video keeps its frame rate, so its
+/// forecast is bigger than under a 30 fps cap.
+#[test]
+fn no_minimum_and_no_max_fps_forecast_a_re_encode_at_the_source_rate() {
+    let p = probe("h264", 1920, 1080, Some(60.0), 20_000_000);
+    let size = 11 * 1024 * 1024;
+    let capped = CompressOptions {
+        min_size_bytes: None,
+        ..CompressOptions::default()
+    };
+    let uncapped = CompressOptions {
+        max_fps: None,
+        ..capped.clone()
+    };
+    let at_30 = estimate_bytes(size, Some(&p), "mp4", MediaMode::Compress, &capped);
+    let at_60 = estimate_bytes(size, Some(&p), "mp4", MediaMode::Compress, &uncapped);
+    assert_ne!(at_30, size, "a small video is re-encoded with no minimum");
+    assert!(at_60 > at_30, "{at_60} > {at_30}");
 }

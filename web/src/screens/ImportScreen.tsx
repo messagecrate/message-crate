@@ -60,7 +60,7 @@ import {
 import type { DiscardOutcome } from "./import/run/finish";
 import { parseStoredStagingSummary } from "./import/run/stagingSummary";
 import {
-  useAndroidSmsPathStats,
+  useBackupPathStats,
   useImessagePathStats,
   useWhatsappPathStats,
 } from "./import/useBackupPathStats";
@@ -206,7 +206,7 @@ export default function ImportScreen() {
     media: form.whatsappMedia,
     db: form.whatsappDb,
   });
-  const androidSmsStats = useAndroidSmsPathStats({ source, backupPath });
+  const backupPathStats = useBackupPathStats({ source, backupPath });
   const { countries: phoneCountries } = usePhoneCountries();
   const accountTimeZone = useTimeZone();
   const [profilePhones, setProfilePhones] = useState<ProfilePhones>(PROFILE_PHONES_UNREAD);
@@ -566,15 +566,15 @@ export default function ImportScreen() {
           onPathChange={changePath}
           pathStats={pathStats}
           whatsappStats={whatsappStats}
-          androidSmsStats={androidSmsStats}
+          backupPathStats={backupPathStats}
           profilePhones={profilePhones}
           accountTimeZone={accountTimeZone}
           phoneCountries={phoneCountries}
           running={running}
           startError={startError}
-          onImport={(flushedPhones) =>
+          onImport={({ ownerPhones, backupPassword }) =>
             void startImport(
-              importJobValues(form, accountTimeZone, flushedPhones ?? form.ownerPhones),
+              importJobValues({ ...form, backupPassword }, accountTimeZone, ownerPhones),
             )
           }
         />

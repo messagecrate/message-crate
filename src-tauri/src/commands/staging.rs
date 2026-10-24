@@ -518,7 +518,7 @@ mod tests {
         let recorded = TranscodeOptions {
             mode: MediaMode::Compress,
             compress: media::CompressOptions {
-                max_fps: 24.0,
+                max_fps: Some(24),
                 ..Default::default()
             },
             asset_max_bytes: 123_456_789,

@@ -102,7 +102,8 @@ A backup often writes a phone number the way the phone showed it, without its co
 Nothing in the backup says which country such a number is in, so Message Crate keeps it as the digits typed and never guesses one.
 It matches no number written with its country code, so `07700 900123` and `+44 7700 900123` are two identities, and a person known by both has two one-to-one conversations.
 
-The import form's **Phone's country**, under **Processing Options (Advanced)**, states the country once for a whole import: every number in it written without a country code is read as a number there.
+The import form's **Default country for contacts** states the country once for a whole import: every number in it written without a country code is read as a number there.
+Typing in the field narrows its list by a country's name, calling code or two-letter code, and **Pick country** searches the same way.
 
 An identity whose country nobody stated says **Country unknown** under the number, with **Pick country**.
 Picking the country gives the number its full form, such as `+447700900123`.
@@ -308,7 +309,7 @@ It converts one into the address book instead, to edit and then load.
 It takes one `.vcf` file of at most 64 MB, and saves `address-book.csv` where Export saves it.
 Nothing goes into Message Crate until the file is loaded.
 
-**Country for numbers saved without +** is the country a number like `(555) 555-0100` is in, the same list the Import form offers.
+**Default country for contacts** is the country a number like `(555) 555-0100` is in, the same field the Import form offers.
 Such a number is written with its `+` in that country, `+15555550100` for the United States.
 A number saved with its `+`, and one that isn't a valid number in that country, is written exactly as the card has it.
 With **Not stated**, every number is written as the card has it.

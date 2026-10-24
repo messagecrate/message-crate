@@ -7,17 +7,16 @@ import { hintClass, StackedField } from "../ImportFormUi";
 import type { ImportFormSectionProps } from "./types";
 
 /**
- * The attachments, the backup device's phone numbers, and its email
- * addresses for SMS Backup+. One component for the three sources, so the
- * number being typed stays when the source changes among them.
+ * The backup device's phone numbers, its email addresses for SMS Backup+,
+ * Default country for contacts, and the attachments. One component for the
+ * three sources, so the number being typed stays when the source changes
+ * among them.
  */
 export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
   const { form, dispatch } = props;
   const entry = props.ownerPhoneEntry;
   return (
     <>
-      {props.attachmentFields}
-
       <StackedField label="Backup Device Phone Numbers" required>
         <PhoneTokenField
           ref={entry.fieldRef}
@@ -77,6 +76,10 @@ export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
           </p>
         </StackedField>
       ) : null}
+
+      {props.defaultCountryField}
+
+      {props.attachmentFields}
     </>
   );
 }

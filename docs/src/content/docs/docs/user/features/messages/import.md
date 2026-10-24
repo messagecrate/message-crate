@@ -32,7 +32,7 @@ Leaving the run shows the message above.
 
 ## The form
 
-The form has two sections, **Import Messages** and **Processing Options (Advanced)**, and an **Import** button.
+The form has two sections, **Import Messages** and **Processing Options (Advanced)**, and an **Import** button at its bottom right.
 **Processing Options (Advanced)** is shown only for a source that has a field in it.
 
 The first list in **Import Messages** is the source.
@@ -53,7 +53,9 @@ The fields under it depend on the source.
 A red asterisk marks a field that must be filled.
 **(Optional)** marks a field that may stay empty.
 The **Import** button stays disabled until every needed field is filled and every path exists.
-A path of the wrong kind gets a message under its field, for example `Pick the backup directory.` when a file is chosen where a directory is needed.
+The form checks each field as it is typed, so a value the import would refuse gets a message under its field and keeps the **Import** button disabled.
+A path that doesn't exist gets `This path does not exist.`, and a path of the wrong kind gets its own message, for example `Pick the backup directory.` when a file is chosen where a directory is needed.
+Nothing is shown beside a disabled **Import** button, because the message under the field says what to change.
 
 In the desktop app, the form reads how much space is free on the disk that holds the Staging Directory and the disk that holds the Scratch Directory.
 A disk with less than 10 GB free gets a line above the **Import** button that names the disk, the directory and the space free, for example `4.2 GB is free on /home, the disk that holds the Staging Directory (/home/sam/message-crate). A large backup can need more than that.`
@@ -75,7 +77,8 @@ With **iPhone backup**:
 | Field | What it takes |
 |---|---|
 | **iPhone Backup Directory** | The root directory of a device backup made by Finder or iTunes. Required. |
-| **Encryption password** | The backup's password. The app checks the chosen directory, and marks the field required when the backup is encrypted and **(Optional)** when it is not. |
+| **Encryption password** | The backup's password. The app checks the chosen directory, and shows the field only when the backup is encrypted, marked required. A password typed for an encrypted backup is not sent once the path moves to one that isn't, because that backup would refuse it. |
+| **Default country for contacts (Optional)** | See [Default country for contacts](#default-country-for-contacts). |
 
 [Back up an iPhone](/docs/user/your-messages/back-up-an-iphone/) shows where the backup directory is.
 
@@ -86,6 +89,8 @@ With **Mac Messages**:
 | **Messages database** | The path to `chat.db`. Required. On a Mac that has `~/Library/Messages/chat.db`, the field is filled in with it. |
 | **Attachment directory (Optional)** | The directory that contains `Attachments` and `StickerCache`. Left empty, the directories next to `chat.db` are used. |
 | **Apple Contacts file (Optional)** | `AddressBook-v22.abcddb` or `AddressBook.sqlitedb`. Left empty, the Mac's own AddressBook is used. |
+
+**Default country for contacts (Optional)** comes right after **Messages database**, ahead of the two fields above.
 
 [Mac Messages](/docs/user/import-sources/mac-messages/) covers this source.
 
@@ -103,6 +108,7 @@ With **Android**:
 | **Backup directory** | The directory that contains `msgstore.db`, or `msgstore.db.crypt12`, `.crypt14`, or `.crypt15`. Required. |
 | **Decryption key** | A key file path, or a crypt15 key as hex. Required when the directory holds an encrypted backup and no `msgstore.db`, and **(Optional)** otherwise. |
 | **WhatsApp phone number** | The number the WhatsApp account is registered to. Required, because an Android backup doesn't record it. Filled in from the first phone number on the account's profile. |
+| **Default country for contacts (Optional)** | See [Default country for contacts](#default-country-for-contacts). |
 | **Contacts database (Optional)** | `wa.db`. Left empty, the one in the backup directory is used. |
 | **Media directory (Optional)** | The WhatsApp media directory. Left empty, the one in the backup directory is used. |
 | **Message database (Optional)** | `msgstore.db`. Left empty, the one in the backup directory is used. |
@@ -112,9 +118,11 @@ With **iPhone**:
 | Field | What it takes |
 |---|---|
 | **Backup directory** | The root directory of a device backup. Required. |
+| **Encryption password** | Shown only when the backup is encrypted, as for an iMessage iPhone backup. |
+| **WhatsApp phone number (Optional)** | A fallback, filled in from the profile. An iPhone backup records the number itself, and Import reads it from there. |
+| **Default country for contacts (Optional)** | See [Default country for contacts](#default-country-for-contacts). |
 | **Contacts database (Optional)** | `ContactsV2.sqlite`. Left empty, the one in the backup is used. |
 | **WhatsApp Business** | A checkbox, off by default, for a backup of the WhatsApp Business app. |
-| **WhatsApp phone number (Optional)** | Under **Processing Options (Advanced)**. A fallback, filled in from the profile. An iPhone backup records the number itself, and Import reads it from there. |
 
 When an iPhone backup doesn't record the number and the fallback field is empty, the run stops with `the backup does not contain your WhatsApp phone number; enter it on the import form`.
 
@@ -130,11 +138,12 @@ The three Android SMS sources share one form.
 |---|---|
 | **Backup File** | **SMS Backup & Restore** only. The backup's one `.xml` file, not a ZIP. An encrypted backup must be unlocked first. One import reads one backup, so each further `.xml` file is an import of its own. |
 | **Backup Directory** | **GO SMS Pro** and **SMS Backup+**. The directory that holds the backup files. |
-| **Attachments** | Described under [Attachments](#attachments). |
 | **Backup Device Phone Numbers** | Every phone number the backup's phone had. Filled in from the account's profile. A number from another SIM can be added. |
 | **Backup Device Email Addresses** | **SMS Backup+** only. The Gmail or IMAP account SMS Backup+ synced to, filled in from the profile. Commas separate several addresses. |
+| **Default country for contacts (Optional)** | See [Default country for contacts](#default-country-for-contacts). |
+| **Attachments** | Described under [Attachments](#attachments). |
 
-Every field here except **Attachments** carries an asterisk.
+Every field here except **Default country for contacts** and **Attachments** carries an asterisk.
 The **Import** button stays disabled until the directory is chosen and at least one phone number is entered.
 SMS Backup+ also needs at least one email address.
 
@@ -148,20 +157,32 @@ The notice says what ticking it accepts: the imported messages will not be linke
 
 ### iMazing and OpenExtract fields
 
-Both sources have one field in **Import Messages**, **Backup path**, which takes the directory that holds the export.
-It carries an asterisk, and the **Import** button stays disabled until the directory is chosen.
+Both sources have **Backup path**, which takes the directory that holds the export, and **Default country for contacts (Optional)** under it.
+**Backup path** carries an asterisk, and the **Import** button stays disabled until it names a path that exists.
 Neither has an **Attachments** setting.
 
 **iMazing** adds **Time zone of the messages** under **Processing Options (Advanced)**.
 iMazing writes each message time without a zone, so Import needs the zone the phone was in.
 The field is filled in with the account's Time Zone.
 
+### Default country for contacts
+
+Every source has **Default country for contacts (Optional)**, right after the backup's own fields and the fields that say whose phone the backup is, and before **Attachments**.
+It is the country a contact's phone number is read in when the backup wrote it without a country code: usually the country of the phone's own number.
+Typing in the field narrows its list by a country's name (`ger`), its calling code (`+49` or `49`), or its two-letter code (`DE`).
+Leaving the field without picking a row puts back the country it held.
+**None**, the first row, leaves each such number as the digits typed, and the number's country can be picked later on the contact.
+[Contacts](/docs/user/features/contacts/contacts/) says what the country changes.
+
 ### Attachments
 
 **Attachments** has four choices: **Copy**, **Convert media**, **Convert & Compress media**, and **Skip**.
 It starts on **Copy**.
 
-**Convert & Compress media** adds three fields: **Target resolution**, **Max FPS**, and **Minimum Video File Size (Megabytes)**.
+**Convert & Compress media** adds three fields: **Target resolution**, **Max FPS (1–240)**, and **Minimum Video File Size (Megabytes)**.
+**Max FPS** takes a whole number from 1 to 240, and **Minimum Video File Size** one from 1 to 1,048,576, which is 1 TB.
+Either may stay empty: an empty **Max FPS** keeps each video's frame rate, and an empty **Minimum Video File Size** re-encodes every video, whatever its size.
+Any other value, such as `20aaa`, `0` or `29.97`, gets `Max FPS must be 1–240.` or `Minimum Video File Size must be 1–1,048,576.` under its field.
 
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) describes what each choice produces.
 
@@ -174,7 +195,6 @@ A source with none of the fields below has no such section.
 |---|---|---|
 | **Obfuscate** | iMessage with **iPhone backup**, and the three Android SMS sources | Replaces names, numbers, message text, and attachments with made-up substitutes. See [Obfuscate](/docs/user/features/messages/attachments-and-media/#obfuscate). |
 | **Time zone of the messages** | iMazing | See above. |
-| **WhatsApp phone number (Optional)** | WhatsApp with **iPhone** | See above. |
 
 ## The identity check for iMessage
 

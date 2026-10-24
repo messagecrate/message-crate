@@ -1,6 +1,10 @@
 import PasswordField from "../../../components/PasswordField";
 import PathPicker from "../../../components/PathPicker";
 import {
+  ENCRYPTED_BACKUP_PASSWORD_HINT,
+  encryptionPasswordShown,
+} from "../../../lib/encryptedBackup";
+import {
   imessageAttachmentRootRequired,
   imessageShowsAppleContacts,
   imessageShowsAttachmentRoot,
@@ -21,34 +25,32 @@ const APPLE_CONTACTS_HINT_MAC =
 const APPLE_CONTACTS_HINT_JAILBREAK =
   "AddressBook-v22.abcddb or AddressBook.sqlitedb. A local Mac AddressBook scan will not find a phone copy.";
 
-/** The encryption password, attachment directory, Apple Contacts file, and attachments. */
+/**
+ * The encryption password for an encrypted iPhone backup, Default country for
+ * contacts, the attachment directory, the Apple Contacts file, and the
+ * attachments.
+ */
 export default function ImessageFormSection(props: ImportFormSectionProps) {
   const { form, dispatch, errors } = props;
   const method = form.source;
   if (!isImessageMethod(method)) return null;
   return (
     <>
-      {imessageShowsPassword(method) ? (
-        <StackedField
-          label="Encryption password"
-          required={props.pathStats.backupEncrypted === true}
-          optional={props.pathStats.backupEncrypted !== true}
-        >
+      {imessageShowsPassword(method) && encryptionPasswordShown(props.pathStats.backupEncrypted) ? (
+        <StackedField label="Encryption password" required>
           <PasswordField
-            aria-label={
-              props.pathStats.backupEncrypted === true
-                ? "Encryption password"
-                : "Encryption password (Optional)"
-            }
+            aria-label="Encryption password"
             value={form.backupPassword}
             onChange={(value) => dispatch({ type: "set", field: "backupPassword", value })}
             autoComplete="new-password"
             showPassword={form.showBackupPassword}
             onToggle={() => dispatch({ type: "toggle", field: "showBackupPassword" })}
           />
-          <FieldStatus message={errors.backupPassword} />
+          <p className={hintClass}>{ENCRYPTED_BACKUP_PASSWORD_HINT}</p>
         </StackedField>
       ) : null}
+
+      {props.defaultCountryField}
 
       {imessageShowsAttachmentRoot(method) ? (
         <StackedField

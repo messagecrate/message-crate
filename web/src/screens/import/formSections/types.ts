@@ -1,8 +1,8 @@
 import type { Dispatch, ReactNode, RefObject } from "react";
 import type { PhoneTokenFieldHandle } from "../../../components/PhoneTokenField";
 import type { ImessagePathStats } from "../../../lib/imessageImport";
-import type { AndroidSmsPathStats } from "../../../lib/importSources/androidSms";
 import type { ImportSourceDescriptor, OwnerPhoneState } from "../../../lib/importSources/types";
+import type { BackupPathStats } from "../../../lib/pathChecks";
 import type { PhoneCountryChoice } from "../../../lib/phoneCountries";
 import type { WhatsappPathStats } from "../../../lib/whatsappImport";
 import type { ImportFormFieldAction, ImportFormState, ImportPathField } from "../importForm";
@@ -33,7 +33,7 @@ export type ImportFormFieldsProps = {
   pathStats: ImessagePathStats;
   whatsappStats: WhatsappPathStats;
   /** What the Android SMS backup path points at. */
-  androidSmsStats: AndroidSmsPathStats;
+  backupPathStats: BackupPathStats;
   profilePhones: ProfilePhones;
   /** The account's IANA zone, which iMazing dates are read in unless another is picked. */
   accountTimeZone: string;
@@ -42,8 +42,12 @@ export type ImportFormFieldsProps = {
   running: boolean;
   /** Why the last Import could not start, or null. */
   startError: string | null;
-  /** Optional flushed owner phones (SBR commits draft before import). */
-  onImport: (ownerPhones?: string[]) => void;
+  /**
+   * Import was pressed on a ready form: with the owner phones, a number
+   * still being typed committed, and the Encryption password the run is
+   * sent, which is empty while the field is hidden.
+   */
+  onImport: (start: { ownerPhones: string[]; backupPassword: string }) => void;
 };
 
 /**
@@ -68,6 +72,12 @@ export type ImportFormSectionProps = Pick<
   errors: Partial<Record<string, string>>;
   /** The Attachments field, for a section whose source shows it to place. */
   attachmentFields: ReactNode;
+  /**
+   * Default country for contacts, which every section places after its
+   * backup's own fields (path, password or key) and the owner fields its
+   * source asks for, and before the rest.
+   */
+  defaultCountryField: ReactNode;
   /** True when the account's phones were read and it has none. */
   showMissingAccountPhoneWarning: boolean;
 };

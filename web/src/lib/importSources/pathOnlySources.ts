@@ -1,7 +1,31 @@
 import { IMAZING_SOURCE_ID, type ImportSourceId, sourceLabel } from "../exportSources";
-import type { BackupField, ImportSourceDescriptor } from "./types";
+import { PATH_MISSING, unknownPathMessage } from "../pathChecks";
+import type { BackupField, ImportSourceDescriptor, ReadinessInput } from "./types";
 
 export const OPENEXTRACT_SOURCE_ID = "openextract";
+
+/** True for iMazing and OpenExtract, whose form is the backup path alone. */
+export function isPathOnlySource(source: string): boolean {
+  return source === IMAZING_SOURCE_ID || source === OPENEXTRACT_SOURCE_ID;
+}
+
+/**
+ * Import can start once the backup path is checked and is there. The
+ * exporter reads one CSV file or every one under a directory, so either
+ * kind is taken. A path not checked yet keeps Import off with nothing said,
+ * as an empty one does, and a missing one says so under the field.
+ */
+function pathOnlyReadiness(input: ReadinessInput): {
+  enabled: boolean;
+  errors: Partial<Record<"backupPath", string>>;
+} {
+  const errors: Partial<Record<"backupPath", string>> = {};
+  const stat = input.backupPathStats.backup;
+  if (input.backupPath.trim() === "" || stat === null) return { enabled: false, errors };
+  if (stat.unreadable) errors.backupPath = unknownPathMessage(stat.unreadable);
+  else if (!stat.exists) errors.backupPath = PATH_MISSING;
+  return { enabled: errors.backupPath === undefined, errors };
+}
 
 const BACKUP_PATH_FIELD: BackupField = { label: "Backup path", directory: true };
 
@@ -30,7 +54,8 @@ function pathOnlySource(
     appleIdentityRead: () => null,
     snapshotSecret: () => null,
     backupField: () => BACKUP_PATH_FIELD,
-    readiness: (input) => ({ enabled: Boolean(input.backupPath), errors: {} }),
+    readiness: pathOnlyReadiness,
+    backupEncrypted: () => null,
     ...rest,
   };
 }
