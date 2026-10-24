@@ -93,16 +93,15 @@ written several ways (`localhost` or `127.0.0.1`), so nothing compares it.
 
 ## RUNLOG-4 The desktop app's log
 
-What the desktop app does and fails at outside an Import Run goes to one
-log of its own, `desktop-app.log` in the Logs Directory: an event no window
-received, a program in the Tools Directory whose record could not be
-written, a server whose processes will not end with it, and the warnings
-the Apple Messages Reader writes during the Import screen's identity check,
-which runs before any Import Run exists. Its lines are in the format of RUNLOG-5,
-at `WARN`, because each is something the app went on without.
-Nothing deletes it, and every start of the app writes on into it. It is
-made when its first line is written, so an app with nothing to say has
-none.
+What the desktop app does and fails at outside an Import Run goes to one log
+of its own, `desktop-app.log` in the Logs Directory: an event no window
+received, a program in the Tools Directory whose record could not be written,
+a server whose processes will not end with it, and the warnings the Apple
+Messages Reader writes during the Import screen's identity check, which runs
+before any Import Run exists. Its lines are in the format of RUNLOG 5, at
+`WARN`, because each is something the app went on without. Nothing deletes
+it, and every start of the app writes on into it. It is made when its first
+line is written, so an app with nothing to say has none.
 
 Why: a desktop starts the app with standard error thrown away, so a line
 written only there was lost. The server's log and each run's log had a
@@ -170,18 +169,17 @@ saying no line matches the filter.
 
 ## RUNLOG-7 A filter, not a guard
 
-Who reads which log decides what each screen offers, not who can open a
-file. The window tells the desktop app which account is signed in, on which
-Message Crate, and whether it is the owner, and the desktop app takes its
-word. A run log is a plain file in the Logs Directory, which any program run
-by the computer's user can open. No other user of the computer can: the
-desktop app makes the Logs Directory with mode `0700` and takes group and
-other access off one that has it, each time it opens a run's log, because a
-run log names the phone numbers and email addresses in its file names
-(RUNLOG-8).
-Windows has no such modes, and there the Logs Directory takes the access of
-the Message Crate Directory it is in, which is under the user's own
-profile directory.
+Who reads which log decides what each screen offers, not who can open a file.
+The window tells the desktop app which account is signed in, on which Message
+Crate, and whether it is the owner, and the desktop app takes its word. A run
+log is a plain file in the Logs Directory, which any program run by the
+computer's user can open. No other user of the computer can: the desktop app
+makes the Logs Directory with mode `0700` and takes group and other access
+off one that has it, each time it opens a run's log, because a run log names
+the phone numbers and email addresses in its file names (RUNLOG-8). Windows
+has no such modes, and there the Logs Directory takes the access of the
+Message Crate Directory it is in, which is under the user's own profile
+directory.
 
 Why that is enough: everything on the computer runs as one user of the
 operating system, who can read the Logs Directory with or without Message

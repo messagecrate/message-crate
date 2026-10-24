@@ -48,15 +48,17 @@ Reading left to right:
 2. **Every stage writes into the same file.** Staging, Media and Upload each
    add their lines to one log per run in the Logs Directory, named for the
    run's directory in the Staging Directory. A resumed run writes on into the
-   same log. The run's directory is deleted when the run ends. Its log is
-   not (RUNLOG-2).
+   same log. The run's directory is deleted when the run ends, and its
+   log is kept ([RUNLOG-2](rules/import-run-logs.md#runlog-2-kept-on-this-computer-never-deleted)).
 3. **The listing reads the account line to decide who sees the log.** The
    owner sees every log on the computer, and an account sees the logs of
-   its own runs on the Message Crate it is signed in to (RUNLOG-3).
-4. **The same line ties a run's directory to its run.** When Import opens,
-   the desktop app finds the account's run directories through their logs,
-   asks the server how each run stands, and deletes the directories of the
-   closed ones (RUNLOG-3).
+   its own runs on the Message Crate it is signed in to
+   ([RUNLOG-3](rules/import-run-logs.md#runlog-3-the-account-line)).
+4. **The same line ties a run's directory to its run.** When an account opens
+   Import, the desktop app finds that account's run directories through
+   their logs, asks the server which of those runs are closed, and deletes
+   their directories
+   ([RUNLOG-3](rules/import-run-logs.md#runlog-3-the-account-line)).
 5. **The viewer reads it newest first.** The Logs panel and the run's row in
    Settings → Storage read the log the way the server's log is read, with the
    same code: the newest lines first, walking back a chunk at a time,
@@ -99,7 +101,8 @@ log.
 
 The listing decides what each screen offers, not who can open a file: a run
 log is a plain file in the Logs Directory, readable by any program the
-computer's user runs and by no other user of the computer (RUNLOG-7).
+computer's user runs and by no other user of the computer
+([RUNLOG-7](rules/import-run-logs.md#runlog-7-a-filter-not-a-guard)).
 
 ## Where it lives
 
