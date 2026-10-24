@@ -3737,7 +3737,7 @@ mod docs {
     /// The words `docs/architecture/search.md` describes, each with the
     /// lists its entry gives a meaning for: a `` ### `word:` `` heading, then
     /// one `- **List**:` line per list, up to the next heading.
-    fn words_page_words() -> Vec<(String, Vec<ListKind>)> {
+    fn documented_words() -> Vec<(String, Vec<ListKind>)> {
         let mut words: Vec<(String, Vec<ListKind>)> = Vec::new();
         for line in WORDS_PAGE.lines() {
             if line.starts_with('#') {
@@ -3774,7 +3774,7 @@ mod docs {
     /// down.
     #[test]
     fn the_words_page_gives_every_word_a_meaning_on_exactly_its_lists() {
-        let documented = words_page_words();
+        let documented = documented_words();
         let names: Vec<&str> = documented.iter().map(|(w, _)| w.as_str()).collect();
         let registered: Vec<&str> = FIELDS.iter().map(|f| f.word).collect();
         assert_eq!(
