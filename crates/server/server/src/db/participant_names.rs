@@ -160,8 +160,8 @@ async fn load_participant_rows(
 /// participant, for conversations that have no participants rows at all.
 ///
 /// Only a one-to-one conversation's chat handle is a person
-/// (`docs/architecture/contacts-identities-and-messages.md`, "A group
-/// conversation is not a person"). Any other conversation type is left out,
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-6). Any other conversation type is left out,
 /// so it has no participants. The type is compared without case, as the import
 /// compares it when it decides whether the chat handle gets a contact. A
 /// conversation with yourself is left out too: its chat handle is one of the

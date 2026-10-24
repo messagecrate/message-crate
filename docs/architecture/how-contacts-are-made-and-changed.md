@@ -6,7 +6,9 @@ This document follows each one step by step and then sets them side by side.
 
 The words and the relationships are in
 [Contacts, identities and messages](contacts-identities-and-messages.md),
-which also holds the reason for each rule. This document is the data flow.
+and each rule with its reason is in
+[its rules document](rules/contacts-identities-and-messages.md). This
+document is the data flow.
 
 The intended order is import first, then the address book. An import brings
 the people in, many of them with no name. The person exports the address

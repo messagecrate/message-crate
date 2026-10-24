@@ -3,9 +3,8 @@
 //!
 //! [`export_csv`] writes it and [`load`] reads it back, and [`from_vcard`]
 //! writes one from a vCard file for a person to edit. The rules are in
-//! `docs/architecture/contacts-identities-and-messages.md`, the five starting
-//! at "The address book is a file for editing contacts, not a source of
-//! them": a load is Append or Edit, touches only the contacts in the file, is
+//! `docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-27
+//! to CONTACT-34: a load is Append or Edit, touches only the contacts in the file, is
 //! strict, refuses whole, and moves an identity only from a contact the load
 //! may change.
 //!
@@ -40,7 +39,7 @@ pub const COLUMNS: [&str; 5] = [
 /// the screen where an identity is added offers (`OFFERED_SERVICE_OPTIONS`
 /// in `web/src/lib/offeredService.ts`). The file states no type: the service
 /// decides which types are valid and the address's shape picks among them
-/// (`docs/architecture/contacts-identities-and-messages.md`).
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FileService {
     /// `Text Message`: a phone number, an email address, or any other name,

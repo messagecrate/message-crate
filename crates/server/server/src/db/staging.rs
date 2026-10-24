@@ -69,8 +69,8 @@ pub struct StagingConversation<'a> {
 /// staged row's. The merged row keeps the title of the copy whose latest
 /// message is later; a copy with no title never clears one, and on a tie
 /// the staged title stays, as in [`upsert_conversations`]
-/// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
-/// one conversation take the later copy's title").
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-37).
 ///
 /// # Errors
 ///
@@ -82,8 +82,8 @@ pub async fn insert_conversation(
     // `group_title_at` is the latest message time of the copy that gave the
     // title, so a later copy with no title cannot hide a titled one that is
     // newer than the title held. Both columns take the same condition.
-    // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
-    // under Two copies of one conversation take the later copy's title.
+    // The rule and its reason: docs/architecture/rules/contacts-identities-and-messages.md,
+    // CONTACT-37.
     sqlx::query_scalar(
         r"
         INSERT INTO staging_conversations (
@@ -977,8 +977,8 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 /// title when the copy that gave it ends later than the copy that gave its
 /// own, or when it has no title; a staged row with no title never clears
 /// one, and on a tie the stored title stays, as in [`insert_conversation`]
-/// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
-/// one conversation take the later copy's title").
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-37).
 ///
 /// # Errors
 ///
@@ -986,8 +986,8 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
     // `group_title_at` is the latest message time of the copy that gave the
     // title, as in `insert_conversation`. Both columns take the same condition.
-    // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
-    // under Two copies of one conversation take the later copy's title.
+    // The rule and its reason: docs/architecture/rules/contacts-identities-and-messages.md,
+    // CONTACT-37.
     sqlx::query(
         r"
         INSERT INTO conversations (
