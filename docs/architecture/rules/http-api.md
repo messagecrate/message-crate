@@ -178,12 +178,20 @@ A choice between two different lists is a path segment, never a parameter:
 `?list=`. Why: a parameter narrows a list;
 choosing which list to read is choosing a resource, and the path does that.
 
-### API-16 Two levels of nesting, kebab-case paths, and snake_case on the wire
+### API-16 Two levels of nesting
 
 Two levels of nesting. The multipart upload,
 `/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}`, is the one exception at
-three. `/health` is the only route outside `/v1`. Path segments are
-kebab-case; every field and query parameter on the wire is snake_case.
+three.
+
+### API-17 `/health` is the only route outside `/v1`
+
+`/health` is the only route outside `/v1`.
+
+### API-18 Path segments are kebab-case, and the wire is snake_case
+
+Path segments are kebab-case; every field and query parameter on the wire is
+snake_case.
 
 ## Methods
 
