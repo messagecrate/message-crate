@@ -35,7 +35,7 @@ function viewerRequests(items: MessageAttachment[], currentIndex: number): Asset
 
 /**
  * The photo viewer. It opens the original or the Preview by the photo's type,
- * never by a load that failed (`docs/architecture/rules/media.md`, rule 2), keeps
+ * never by a load that failed (`docs/architecture/rules/media.md`, MEDIA-2), keeps
  * the Thumbnail on screen until the full version has loaded, and offers the
  * original as a download.
  */

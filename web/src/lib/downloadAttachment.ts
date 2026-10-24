@@ -8,7 +8,7 @@ import type { MessageAttachment } from "./types";
 /**
  * Save an attachment's original under the name the export gave it. A
  * download is always the original, never the Preview: the original is the
- * record of what was sent (`docs/architecture/rules/media.md`, rule 2).
+ * record of what was sent (`docs/architecture/rules/media.md`, MEDIA-2).
  *
  * In the desktop app the window makes a Media Link and the app downloads the
  * original to the file the person chose, a buffer at a time, so a large video

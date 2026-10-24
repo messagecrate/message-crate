@@ -501,7 +501,7 @@ export async function fetchAssetObjectUrl(
 /**
  * Make a Media Link for one attachment: URLs a `<video>` or `<audio>` element
  * loads with no header, so it streams the file a range at a time
- * (`docs/architecture/rules/media.md`, rule 1). The server answers paths; they come
+ * (`docs/architecture/rules/media.md`, MEDIA-1). The server answers paths; they come
  * back here resolved against the server's address, ready for `src`.
  */
 export async function createMediaLink(sha256: string): Promise<Schema["MediaLink"]> {

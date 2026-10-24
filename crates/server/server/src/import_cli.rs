@@ -216,7 +216,7 @@ async fn import_under_session(
     let import_id = import_run.id;
     import_run.finish(conn, &result).await;
     // No server runs the background pass here, so the Assets wait in the
-    // queue for the next `serve` (`docs/architecture/rules/media.md`, rule 4).
+    // queue for the next `serve` (`docs/architecture/rules/media.md`, MEDIA-4).
     crate::media_queue::queue_without_waking(conn, account_id, import_id, chrono::Utc::now()).await;
     result
 }

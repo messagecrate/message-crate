@@ -1,5 +1,5 @@
 //! The background pass that makes Thumbnails and Previews after each Import
-//! Run (`docs/architecture/rules/media.md`, rule 4).
+//! Run (`docs/architecture/rules/media.md`, MEDIA-4).
 //!
 //! When an Import Run ends, [`queue_import_run`] adds the Assets of the
 //! attachment rows it wrote to the `media_queue` table and wakes the pass; the run's

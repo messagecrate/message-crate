@@ -1,20 +1,25 @@
-# Media
+# Media: rules
 
-How an attachment is kept, served and shown: which versions of it exist, when
-the server makes them, which one a screen loads, and how a video or a voice
-note reaches its player. The words Asset, Preview, Thumbnail and Media Link
-are defined in `CONTEXT.md`. The maintainer decided the five rules below on
-#1029, on 2026-10-04; each carries its reason.
+The constraints an attachment's storage, conversion and display must keep
+satisfying. How an attachment travels from the import to the screen is in
+[Media](../media.md); this document is what a change must not break. Each
+rule has an id, `MEDIA-n`, which code comments, tests and reviews cite. A
+rule's id never changes; a rule that stops holding is removed, and its id is
+not reused.
 
-The server side of rule 1 is built (#1658), and so are rules 3 and 4, the
+The words Asset, Preview, Thumbnail and Media Link are defined in
+`CONTEXT.md`. The maintainer decided the five rules on #1029, on 2026-10-04;
+each carries its reason.
+
+The server side of MEDIA-1 is built (#1658), and so are MEDIA-3 and MEDIA-4, the
 Thumbnails and Previews the server makes after each import (#1659), and the
-web app's half of rules 1, 2 and 5 (#1660).
+web app's half of MEDIA-1, MEDIA-2 and MEDIA-5 (#1660).
 
 Every rule holds for the server in Docker and for the server the desktop app
 starts alike. They are one binary, and no rule here depends on which one
 answers.
 
-## 1. A video or a voice note streams
+## MEDIA-1 A video or a voice note streams
 
 The three routes that answer an attachment's bytes, `GET /v1/assets/{sha256}`,
 `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
@@ -38,7 +43,7 @@ Link is, why it was chosen over a cookie or the Session token in the URL, and
 what it reaches is in `docs/architecture/rules/http-api.md`, "Credentials and
 reach".
 
-## 2. The viewer chooses by the server's answer, never by a failed load
+## MEDIA-2 The viewer chooses by the server's answer, never by a failed load
 
 Opening an attachment shows the original when the server says every browser
 shows it as it is: a JPEG, PNG, GIF or WebP image, an MP3, or an MP4 with
@@ -85,7 +90,7 @@ little.
 
 The `/v1` Attachment's `shown_as_is` is the one place a client reads the
 decision.
-The server's media pass (rule 4) decides it with `media::browser_shows`, the same call that spares the Asset a Preview.
+The server's media pass (MEDIA-4) decides it with `media::browser_shows`, the same call that spares the Asset a Preview.
 It stores the answer on the Asset's attachment rows (`attachments.shown_as_is`), so a read never runs ffprobe.
 Before each conversion, the pass decides every Asset queued since it last looked, so a photo queued behind a long video opens at once.
 It is false until the pass has looked at the file.
@@ -116,15 +121,15 @@ there, again as the bytes sent to the app, and again in the request the app
 received (#1739). A browser has its own downloads, so the web app in a browser
 still fetches the original and hands it over.
 
-## 3. An attachment has up to three versions
+## MEDIA-3 An attachment has up to three versions
 
 - The **Thumbnail**, a JPEG at most 560 pixels on its long side and tens of
   kilobytes: the image scaled down, never enlarged, or a video's first frame.
   Every image and video has one, a GIF included. The conversation shows it.
 - The **Preview**, a copy a browser can play or show: a JPEG of an image, an
   MP4 of a video with H.264 video at most 1080p and AAC audio, an MP3 of
-  audio. Only an attachment of a type in rule 2 that browsers often cannot
-  show has one, or one whose bytes are not its type's (rule 2). A real GIF
+  audio. Only an attachment of a type in MEDIA-2 that browsers often cannot
+  show has one, or one whose bytes are not its type's (MEDIA-2). A real GIF
   has none, because a still copy of an animation is not the animation.
 - The **original**, as it was imported, never changed.
 
@@ -150,10 +155,10 @@ Why a Preview only where it is needed: an original every browser shows is
 already the best copy there is. Converting it as well would cost disk space
 and give a copy no better than the original.
 
-## 4. The server makes them after each import
+## MEDIA-4 The server makes them after each import
 
 After each import, the server makes a Thumbnail for every image and video the
-import brought, and a Preview for each that rule 2 says needs one. It works
+import brought, and a Preview for each that MEDIA-2 says needs one. It works
 in the background, so the Import Run finishes without waiting for it. The
 server in Docker and the server the desktop app starts both do it.
 `process-assets` stays, for rebuilding the Thumbnails and Previews and for
@@ -302,7 +307,7 @@ Import Run to replay.
 Without ffmpeg the pass makes nothing and leaves the queue as it is, so the
 Assets wait for a server that has it, at its next start or after the next
 Import Run. It still records whether each queued original is shown as it is
-(rule 2). The Docker image has ffmpeg. The desktop app's server looks for
+(MEDIA-2). The Docker image has ffmpeg. The desktop app's server looks for
 it where the `media` crate does: on `PATH`, then in the Tools Directory the
 app passes with `serve --tools-dir`, and nowhere else
 (`docs/adr/0019-the-desktop-app-downloads-the-programs-it-needs.md` is the
@@ -325,11 +330,11 @@ Why in the background: converting a video takes far longer than importing
 its message, and an Import Run held open for it would keep the person
 waiting for work they can do without.
 
-## 5. Each screen loads only what it shows
+## MEDIA-5 Each screen loads only what it shows
 
 - A conversation fetches a Thumbnail only when its message scrolls near the
   screen, and never fetches an original while scrolling.
-- Opening an image loads the original or the Preview by rule 2, and keeps the
+- Opening an image loads the original or the Preview by MEDIA-2, and keeps the
   Thumbnail on screen until it is ready. The viewer also fetches the next and
   the previous attachment.
 - A video in a conversation shows its Thumbnail with a play button, and
