@@ -2,11 +2,11 @@
 
 An attachment arrives as whatever the phone held: a HEIC photo, an HEVC
 video, an AMR voice note, or a plain JPEG. Message Crate keeps that original
-untouched and makes a small Thumbnail beside it and, where needed, a copy
-every browser can show, so a conversation scrolls fast and a photo opens in
-any browser. This page follows
-an attachment from the import that brings it to the screen that shows it. The
-constraints a change must keep are in [Media: rules](rules/media.md).
+untouched and makes a small Thumbnail of each photo and video and, where
+needed, a copy every browser can show, so a conversation scrolls fast and a
+photo opens in any browser. This page follows an attachment from the import
+that brings it to the screen that shows it. The constraints a change must
+keep are in [Media: rules](rules/media.md).
 
 The words Asset, Preview, Thumbnail and Media Link are defined in
 `CONTEXT.md`.
