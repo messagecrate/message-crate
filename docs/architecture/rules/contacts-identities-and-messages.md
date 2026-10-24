@@ -593,16 +593,16 @@ they give, and the identities and Contact Group memberships they list, and in
 Edit it takes off what a listed contact's rows leave out. It never corrects,
 infers or protects anything the file does not say to make the result closer
 to what the person may have meant, even when the file looks like a mistake.
-The consequences CONTACT-32 to CONTACT-34 spell out are not corrections: a
-nameless contact a load empties is deleted; when Edit takes off an identity
-that a conversation, message or reaction still uses, the identity goes to a
-new contact with no name; and a phone number is read with its `+` back when
-the spreadsheet dropped it without showing, which the load's notes say. Where
-CONTACT-15 does more for an import, a load does only what its rows say. Why:
-the person edited the file to say what they want, and a load that
-second-guessed it would change things no row shows, which the person can
-neither see in the sheet nor undo from it. A row the load cannot carry out
-refuses the load (CONTACT-32) rather than being guessed at.
+The consequences CONTACT-1, CONTACT-30 and CONTACT-33 spell out are not
+corrections: a nameless contact a load empties is deleted; when Edit takes
+off an identity that a conversation, message or reaction still uses, the
+identity goes to a new contact with no name; and a phone number is read with
+its `+` back when the spreadsheet dropped it without showing, which the
+load's notes say. Where CONTACT-15 does more for an import, a load does only
+what its rows say. Why: the person edited the file to say what they want, and
+a load that second-guessed it would change things no row shows, which the
+person can neither see in the sheet nor undo from it. A row the load cannot
+carry out refuses the load (CONTACT-32) rather than being guessed at.
 
 ## CONTACT-32 A load is strict, and refuses whole
 
