@@ -6,7 +6,7 @@ description: Import Runs, Export Runs, and the search language, for people writi
 Three places describe the server's `/v1` interface, and this page is the smallest of them:
 
 - The generated [HTTP API reference](/docs/developer/rustdoc/http/) states what each route takes and answers today: paths, JSON fields, status codes, and which credential and scope each route accepts.
-- The [HTTP interface rules](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/http-api.md) state what every route must do, each rule with its reason: route shape, lists and paging, failures as problem documents, credentials and what each reaches, and runs.
+- The [HTTP interface rules](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/rules/http-api.md) state what every route must do, each rule with its reason: route shape, lists and paging, failures as problem documents, credentials and what each reaches, and runs.
 - This page walks through an Import Run and an Export Run from start to finish, and lists the words of the search language.
 
 Day-to-day import uses the desktop [Import](/docs/user/features/messages/import/) screen and download uses [Export](/docs/user/features/messages/export/). Both call this API with [JSONL](/docs/developer/reference/export-structure/) and attachment bytes keyed by SHA-256, through the `import` and `export` libraries.

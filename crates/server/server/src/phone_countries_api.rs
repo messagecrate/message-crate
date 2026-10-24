@@ -1,7 +1,7 @@
 //! `GET /v1/phone-countries`: the countries a phone number written without
 //! its `+` code can be read in, for the import form's country and the
 //! country picked for one identity (#1676). A fixed reference list, so it
-//! answers a page like every other list (`docs/architecture/http-api.md`,
+//! answers a page like every other list (`docs/architecture/rules/http-api.md`,
 //! "Lists"). The table is `phone::COUNTRIES`, the one the server keys
 //! numbers by, so the list never offers a country the server would refuse.
 

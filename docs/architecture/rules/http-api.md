@@ -325,7 +325,7 @@ current one, because that account reaches every other.
   and a Thumbnail have none, so a `Range` sent with `If-Range` gets the whole
   file.
   Why: a video plays from a media element that asks for the file a range at
-  a time and seeks by asking for another (`docs/architecture/media.md`).
+  a time and seeks by asking for another (`docs/architecture/rules/media.md`).
   Rejected: answering several ranges as `multipart/byteranges`. No media
   element sends several, and the whole file is a correct answer to them.
 - An unknown `/v1` path answers `404 Not Found` as a problem document, and a
@@ -469,7 +469,7 @@ pages from a line instead: `{items, limit, has_more}`, newest first, and
 reads them, its answers to the reading included, so the reason above does not
 hold for it, and a `total` would mean counting up to 250 MB of files for every
 page. The id names a line, as `around`, `before` and `after` name a message,
-and is not an opaque token (`docs/architecture/server-log.md`).
+and is not an opaque token (`docs/architecture/rules/server-log.md`).
 
 Rejected: a bare `{items}` for small lists. One justified exception is still
 two conventions, and a group's member list has no bound the server enforces.
@@ -515,7 +515,7 @@ For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
 `internal server error (request 4f3c…)` (`problemFromBody` in
 `web/src/lib/api.ts`). Why: a `5xx` names no cause to the client, so the id is
 what a person can quote to find the failure's line in the server's log
-([The server's log, "A request's lines carry its id, spawned work included"](server-log.md#a-requests-lines-carry-its-id-spawned-work-included)).
+([The server's log, LOG-13](server-log.md#log-13-every-line-carries-its-requests-id-spawned-work-included)).
 
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
@@ -600,7 +600,7 @@ the error's chain is searched for sqlx's `PoolTimedOut` or a SQLite
 `SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/api_error.rs`),
 so no handler has to map it. The refusal leaves one `WARN` line naming the
 type and carrying the chain, and no `ERROR` line
-([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
+([The server's log, LOG-9](server-log.md#log-9-a-refused-request-names-its-problem-type-never-its-detail)).
 The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
 retries a `5xx`, so it retries this with no change of its own. The web app
 tries a read that failed with a `5xx` once more (`retry` in
@@ -897,7 +897,7 @@ security scheme with its scopes, so every route says which it accepts.
   remedy is a new link rather than a new login.
   Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
   and cannot send a header, and a video that streams must be loaded by the
-  element itself (`docs/architecture/media.md`, rule 1). The desktop app's
+  element itself (`docs/architecture/rules/media.md`, rule 1). The desktop app's
   download of an original takes one too. The app copies the answer to the
   file the person chose as it arrives, so a video of hundreds of megabytes is
   never held whole in the window or sent to the app as bytes. The window holds
@@ -1057,7 +1057,7 @@ What each reaches:
   and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
   account's requests in one stream, about the installation the owner runs,
   and a line never holds content, so the owner may read all of it
-  (`docs/architecture/server-log.md`).
+  (`docs/architecture/rules/server-log.md`).
 - The attachment size limit is a server setting, `asset_max_bytes` in bytes,
   and the settings row is the only place it lives. The owner reads and
   changes it at `/v1/server/settings`; `GET /v1/server` reports it to any

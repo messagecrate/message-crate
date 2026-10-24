@@ -22,7 +22,7 @@ type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
 ///
 /// A line is something the run did. A warning is something the run went on
 /// without, such as an attachment it could not read or a record it skipped
-/// (`docs/architecture/import-run-logs.md`). The desktop app writes a line
+/// (`docs/architecture/rules/import-run-logs.md`). The desktop app writes a line
 /// into the Import Run's log at `INFO` and a warning at `WARN`. A sink with
 /// no warning callback takes a warning as a line.
 #[derive(Clone)]

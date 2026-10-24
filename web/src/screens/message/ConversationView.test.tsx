@@ -157,7 +157,7 @@ describe("ConversationView landing on a message", () => {
 /**
  * Scrolling a long conversation loads only the Thumbnails of the messages
  * that come near the screen, measured against the conversation's own scroll area
- * (`docs/architecture/media.md`, rule 5). Measured against the window, the
+ * (`docs/architecture/rules/media.md`, rule 5). Measured against the window, the
  * margin would not reach past the conversation's edge, and a Thumbnail would start
  * loading only once it was already on screen.
  */

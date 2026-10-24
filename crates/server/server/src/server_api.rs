@@ -255,7 +255,7 @@ pub async fn claim_server(
 /// The server settings the owner controls, with the database's journal
 /// beside them, which the owner reads and cannot change.
 // The settings are the `db/` read's own struct, flattened in whole, so its
-// fields are written once (`docs/architecture/http-api.md`, "Code"). Inline,
+// fields are written once (`docs/architecture/rules/http-api.md`, "Code"). Inline,
 // and `Api` in Rust, because the `db/` struct has the wire name too.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(as = ServerSettings)]

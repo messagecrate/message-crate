@@ -1,4 +1,4 @@
-//! Every rule of `docs/architecture/http-api.md` that can be checked by
+//! Every rule of `docs/architecture/rules/http-api.md` that can be checked by
 //! walking the OpenAPI document, checked over every operation in it
 //! ("The reference": a rule checked one route at a time is checked on the
 //! routes someone remembered).
@@ -42,7 +42,7 @@ use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
 use crate::test_support::{self, http_client};
 
-/// The one route nested three deep (`docs/architecture/http-api.md`,
+/// The one route nested three deep (`docs/architecture/rules/http-api.md`,
 /// "Naming a route").
 const MULTIPART_PART: &str = "/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}";
 
@@ -51,7 +51,7 @@ const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
 
 /// The one page with a key beside the four, and the one route that answers
 /// it: `GET /v1/messages` says how it read its search in `search`
-/// (`docs/architecture/http-api.md`, "Lists"). Named here, route and schema
+/// (`docs/architecture/rules/http-api.md`, "Lists"). Named here, route and schema
 /// both. Any other schema with the four keys is a page too, whatever its
 /// name ([`page_schemas`]), so a second page with a fifth key fails the
 /// rules.

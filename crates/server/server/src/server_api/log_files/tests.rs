@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}` through
 //! the router: the owner lists the files and downloads one whole
-//! (`docs/architecture/server-log.md`). Who may call them is the credential
+//! (`docs/architecture/rules/server-log.md`). Who may call them is the credential
 //! matrix's to check.
 
 use axum::http::StatusCode;

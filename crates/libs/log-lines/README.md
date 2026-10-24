@@ -35,8 +35,8 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 ## Docs
 
-The rules: `docs/architecture/server-log.md` and
-`docs/architecture/import-run-logs.md`. This crate is a library shared by the
+The rules: `docs/architecture/rules/server-log.md` and
+`docs/architecture/rules/import-run-logs.md`. This crate is a library shared by the
 server, `message-crate-core` (and through it `import`) and the
 desktop app. It builds no binary.
 

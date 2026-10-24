@@ -69,7 +69,7 @@ An audio conversion has a time limit instead: twenty times the file's length, at
 A conversion that passes the length the file states is given at least that hour.
 Reading a file's details, reading the one frame of a Thumbnail or of an image's Preview, and the check that finds ffmpeg have a fixed limit of 15 seconds that no key changes, because each takes well under a second on a working file.
 `serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
-Why the rules: `docs/architecture/media.md`.
+Why the rules: `docs/architecture/rules/media.md`.
 
 ### Server upload and body limits
 
@@ -120,7 +120,7 @@ A working client sends its headers at once and opens far fewer connections, so n
 With the two body limits above, they keep one slow or broken client from holding the server: one that connects and sends nothing, sends its request a byte at a time, or stops part-way through a body.
 They do not make the server safe to reach from the internet.
 Nothing limits how long an answer takes to send, so an export download or a large attachment takes as long as the link needs.
-Why the rules: "Connections" in `docs/architecture/http-api.md` in the repository.
+Why the rules: "Connections" in `docs/architecture/rules/http-api.md` in the repository.
 
 ### Stopping the server
 
@@ -139,7 +139,7 @@ The desktop app kills the server it started when it closes, without this wait, b
 
 The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency (at `DEBUG` for a successful `GET /health` or file of the website), one `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.
 
-`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in `~/message-crate/data`. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/server-log.md` in the repository.
+`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in `~/message-crate/data`. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/rules/server-log.md` in the repository.
 
 ## Per-account asset files
 

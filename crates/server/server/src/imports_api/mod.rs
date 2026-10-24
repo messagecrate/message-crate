@@ -462,7 +462,7 @@ pub(crate) async fn import_run(
 ///
 /// The stage is a field of the run, so moving it is a `PATCH` of the run
 /// rather than a `POST` to a `stage` sub-resource: a path segment names a
-/// resource, and `stage` is not one (`docs/architecture/http-api.md`,
+/// resource, and `stage` is not one (`docs/architecture/rules/http-api.md`,
 /// "Naming a route"). The answer is the run itself, the same shape
 /// `GET /v1/imports/{id}` returns, so a caller reads one record wherever it
 /// asks.

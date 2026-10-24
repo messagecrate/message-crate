@@ -9,7 +9,7 @@
 //! moment it is registered.
 //!
 //! The expected answer comes from the operation's declared `security` and from
-//! `docs/architecture/http-api.md` ("Credentials and reach") and
+//! `docs/architecture/rules/http-api.md` ("Credentials and reach") and
 //! `docs/adr/0008-the-owner-holds-no-messages.md`. The test asks only
 //! whether the credential was accepted or refused as declared, not whether the
 //! call succeeded: `401` and `403` are a refusal, anything else is past the
@@ -277,7 +277,7 @@ impl Operation {
     }
 
     /// Whether an answer with `status` may carry `cache_control`
-    /// (`docs/architecture/http-api.md`, "Caching"): `no-store` on every `/v1`
+    /// (`docs/architecture/rules/http-api.md`, "Caching"): `no-store` on every `/v1`
     /// answer, except that an operation whose document lists a
     /// `Cache-Control` of its own, such as an asset read, may send `private`,
     /// or `private, no-store` under a Media Link, once the credential is

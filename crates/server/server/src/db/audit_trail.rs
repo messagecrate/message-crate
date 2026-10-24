@@ -957,7 +957,7 @@ pub async fn record_refused_login(
     // The owner's Logs panel shows what the Audit Trail shows one account at
     // a time. The line names the account by its id, never the username
     // typed: the log holds ids and outcomes only
-    // (`docs/architecture/server-log.md`).
+    // (`docs/architecture/rules/server-log.md`).
     tracing::warn!(
         account_id = account.map(|(id, _)| id),
         reason = reason.as_str(),

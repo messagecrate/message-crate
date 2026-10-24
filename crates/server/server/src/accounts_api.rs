@@ -5,7 +5,7 @@
 //! One collection serves the owner and every account. Who may call a
 //! route is decided here, per handler, never by the path: the owner reaches
 //! every row, an account reaches its own, and a stranger may create one while
-//! the server is open. `docs/architecture/http-api.md` records the rule and the
+//! the server is open. `docs/architecture/rules/http-api.md` records the rule and the
 //! role prefix it replaced.
 //!
 //! The owner manages accounts, not the contents of other people's accounts, so
@@ -1245,7 +1245,7 @@ pub struct DeleteMessagesResponse {
 /// The owner may, on any account. The account itself may with a
 /// session that carries the `delete` permission, and confirms in the body.
 /// An API token is refused whatever its scopes: permanent deletion is a
-/// person's act (`docs/architecture/http-api.md`, "Credentials and reach").
+/// person's act (`docs/architecture/rules/http-api.md`, "Credentials and reach").
 #[utoipa::path(
     delete,
     path = "/v1/accounts/{id}/messages",

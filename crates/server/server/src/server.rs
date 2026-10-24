@@ -46,7 +46,7 @@ use crate::request_body::BodyTimeLimits;
 /// `State<SqlitePool>`, `State<Arc<Config>>`, or one of the sub-states the
 /// [`FromRef`] implementations below cut from it, so a handler that reads
 /// only the database does not depend on the Demo Account build or the media
-/// queue (`docs/architecture/http-api.md`, "Code").
+/// queue (`docs/architecture/rules/http-api.md`, "Code").
 #[derive(Debug, Clone)]
 pub struct AppState {
     /// Loaded configuration.
@@ -72,7 +72,7 @@ pub struct AppState {
     pub(crate) demo: DemoState,
     /// The key media links are signed with, made when the process starts and
     /// never written anywhere, so a restart ends every media link
-    /// (`docs/architecture/http-api.md`, "Credentials and reach").
+    /// (`docs/architecture/rules/http-api.md`, "Credentials and reach").
     pub(crate) media_link_key: MediaLinkKey,
     /// Wakes the background pass that makes Thumbnails and Previews after
     /// each Import Run. `serve` starts the pass; the test harness does not,
@@ -273,7 +273,7 @@ impl AppState {
 /// The answer to a request that made one new resource: `201 Created`, a
 /// `Location` header naming it, and the JSON body the route documents.
 ///
-/// A create that takes a batch is the exception `docs/architecture/http-api.md` records: it makes no
+/// A create that takes a batch is the exception `docs/architecture/rules/http-api.md` records: it makes no
 /// single resource, names no URL, and answers `200 OK` with a summary.
 #[derive(Debug)]
 pub struct Created<T> {
@@ -469,7 +469,7 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
 /// gives each address it asks, and `SELECT 1` reads no table, so it never
 /// waits on a writer's lock. Why a pool that writers fill reads as down, and
 /// why that is accepted:
-/// `docs/architecture/http-api.md`, "Failures".
+/// `docs/architecture/rules/http-api.md`, "Failures".
 const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// Report whether the server can answer.

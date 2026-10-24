@@ -46,7 +46,7 @@ export function getBaseUrl(): string {
 
 /**
  * The body of every failure the server answers: an RFC 7807 problem document
- * (`docs/architecture/http-api.md`). `type` is the URL of the page describing the kind of failure,
+ * (`docs/architecture/rules/http-api.md`). `type` is the URL of the page describing the kind of failure,
  * or `about:blank` for an internal error.
  */
 type Problem = {
@@ -149,8 +149,7 @@ function parseProblem(text: string): Problem | null {
  * not the status code and not the envelope around it. A `5xx` hides its cause
  * from the client, so its sentence ends with the problem's request id, which
  * a person can quote to find the matching line in the server's log
- * (`docs/architecture/server-log.md`, "A request's lines carry its id,
- * spawned work included"). Anything else (a proxy's HTML error page, an
+ * (`docs/architecture/rules/server-log.md`, LOG-13). Anything else (a proxy's HTML error page, an
  * empty body) falls back to the raw text — clamped
  * to `RAW_BODY_FALLBACK_LIMIT` characters, since a reverse proxy or other
  * host can answer with a whole HTML page — then to a generic sentence.
@@ -177,7 +176,7 @@ export function problemFromBody(status: number, text: string): ApiError {
 
 /**
  * How every call that carries the Session's header treats a redirect: as a
- * network error. `/v1` never redirects (`docs/architecture/http-api.md`,
+ * network error. `/v1` never redirects (`docs/architecture/rules/http-api.md`,
  * "Credentials and reach"), so a redirect comes from something in front of
  * the server, such as a misconfigured proxy, and following it could send
  * the Session token to another host in a WebView that keeps `Authorization`

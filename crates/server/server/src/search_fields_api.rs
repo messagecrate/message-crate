@@ -4,7 +4,7 @@
 //! server's own table.
 //!
 //! Three fixed lists, so three paths: choosing which list to read is choosing a
-//! resource, and a parameter only narrows one (`docs/architecture/http-api.md`,
+//! resource, and a parameter only narrows one (`docs/architecture/rules/http-api.md`,
 //! "Naming a route").
 
 use crate::extract::{Json, Query};

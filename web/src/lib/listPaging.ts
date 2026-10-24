@@ -11,7 +11,7 @@ export const PAGE_SIZE_FIRST = 40;
 /** Rows in each page loaded as the person scrolls. */
 export const PAGE_SIZE_FILL = 100;
 /**
- * The largest `offset` a browse list accepts (`docs/architecture/http-api.md`,
+ * The largest `offset` a browse list accepts (`docs/architecture/rules/http-api.md`,
  * "Lists"). A list that pages past it ends there. It mirrors the server's
  * `MAX_LIST_OFFSET` in `crates/server/server/src/paging.rs`, which the
  * OpenAPI reference states only in prose, so change the two together.

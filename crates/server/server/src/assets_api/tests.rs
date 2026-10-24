@@ -669,7 +669,7 @@ async fn an_asset_get_for_an_unknown_sha_is_a_json_404() {
 
 /// A part body past the part size its upload started with is a 413, and the
 /// sentence names that part size. The layer lets a part through uncapped, so
-/// the handler's own check is what answers. `docs/architecture/http-api.md`:
+/// the handler's own check is what answers. `docs/architecture/rules/http-api.md`:
 /// the status carries the meaning.
 #[tokio::test]
 async fn an_upload_part_over_the_part_size_is_a_json_413() {
@@ -2597,7 +2597,7 @@ pub(crate) async fn fetch(
 }
 
 /// A video plays from a media element that asks for the file a range at a
-/// time and seeks by asking for another (`docs/architecture/media.md`), so
+/// time and seeks by asking for another (`docs/architecture/rules/media.md`), so
 /// both routes that answer an attachment's bytes answer a byte range: a
 /// closed one, an open-ended one and a suffix, each as `206` with the bytes
 /// and a `Content-Range` that places them.

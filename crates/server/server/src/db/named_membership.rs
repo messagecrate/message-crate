@@ -648,7 +648,7 @@ pub async fn patch_members(
         )));
     }
     // An id to add that names no row the caller holds is a body that broke a
-    // rule, `422`, not an address that is missing (`docs/architecture/http-api.md`,
+    // rule, `422`, not an address that is missing (`docs/architecture/rules/http-api.md`,
     // "Status codes").
     for member in &add {
         if !member_exists(spec, conn, account_id, *member).await? {
@@ -660,7 +660,7 @@ pub async fn patch_members(
     }
     // An id to remove is not checked: `delete_member_sql` deletes only a row
     // the caller holds, and a member that was never in the set is already in
-    // the state the caller asked for (`docs/architecture/http-api.md`,
+    // the state the caller asked for (`docs/architecture/rules/http-api.md`,
     // "Status codes").
 
     let insert_sql = insert_member_sql(spec);

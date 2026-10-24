@@ -18,7 +18,7 @@ use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 
 /// Default part size advertised to clients: the largest import batch, so an
 /// attachment arrives at the speed a batch does
-/// (`docs/architecture/http-api.md`, "Credentials and reach").
+/// (`docs/architecture/rules/http-api.md`, "Credentials and reach").
 pub const DEFAULT_PART_SIZE: usize = api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// How many multipart uploads one account may have open at once. An open

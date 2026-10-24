@@ -16,7 +16,7 @@
 //! which logs each screen offers, not who can read a file.
 //!
 //! The lines are read the way the server's log is read
-//! (`docs/architecture/server-log.md`), with the same reader
+//! (`docs/architecture/rules/server-log.md`), with the same reader
 //! (`log-lines`): newest first, walking back from the id of the
 //! last line held a chunk at a time, filtered by level and text. A line's id
 //! is its byte offset in the file, which never moves, because a log is only

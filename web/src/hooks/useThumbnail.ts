@@ -14,7 +14,7 @@ export type Thumbnail = AssetObjectUrl & { note: string | null };
 
 /**
  * An attachment's Thumbnail, fetched only once the element given to the
- * returned ref comes near the screen (`docs/architecture/media.md`, rule 5).
+ * returned ref comes near the screen (`docs/architecture/rules/media.md`, rule 5).
  * An attachment with no Thumbnail yet fetches nothing, and its caller shows a
  * placeholder.
  */

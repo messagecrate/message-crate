@@ -1,7 +1,7 @@
 // The theme's first paint: runs before the page draws, so the page is never
 // the wrong colors for a frame before React starts. It is a file of its own
 // because the server's Content-Security-Policy refuses inline script
-// (docs/architecture/http-api.md, "Protective headers"). The keys and
+// (docs/architecture/rules/http-api.md, "Protective headers"). The keys and
 // defaults are those of src/lib/theme.ts: change the two together.
 (() => {
   try {

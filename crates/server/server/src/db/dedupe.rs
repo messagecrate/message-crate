@@ -6,7 +6,7 @@
 //!
 //! `crate::dedupe` sequences these statements, hashes the content keys,
 //! picks the copy shown, says how far it is and keeps the counts, and holds
-//! no SQL (`docs/architecture/http-api.md`, "Code").
+//! no SQL (`docs/architecture/rules/http-api.md`, "Code").
 
 use std::collections::HashMap;
 use std::fmt::Write as _;

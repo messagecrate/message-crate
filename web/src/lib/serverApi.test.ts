@@ -399,7 +399,7 @@ describe("accounts are one collection", () => {
 
 /**
  * An attachment's versions, and the Media Link a player streams through
- * (`docs/architecture/media.md`). A Thumbnail asked for at the original's
+ * (`docs/architecture/rules/media.md`). A Thumbnail asked for at the original's
  * address would load the whole photo into a conversation that scrolls past
  * hundreds of them.
  */

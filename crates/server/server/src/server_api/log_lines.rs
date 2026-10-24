@@ -1,7 +1,7 @@
 //! `GET /v1/server/log-lines`: the server's log lines, newest first, the
 //! owner's alone. The files are written by `crate::logging`, and read here
 //! a page at a time from the id of the last line the client holds
-//! (`docs/architecture/server-log.md`).
+//! (`docs/architecture/rules/server-log.md`).
 
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ pub(crate) struct ListLogLinesQuery {
 /// Not a `Page`: the log is written while it is read, so a count and an
 /// offset from the newest line would move under the reader, and counting a
 /// 250 MB log for every page is the cost a line's id saves
-/// (`docs/architecture/http-api.md`, "Lists").
+/// (`docs/architecture/rules/http-api.md`, "Lists").
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ListLogLinesResponse {
     /// The lines, newest first.

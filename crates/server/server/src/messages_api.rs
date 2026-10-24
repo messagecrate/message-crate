@@ -24,7 +24,7 @@ use crate::search::parse::TextTerm;
 
 /// One page of the Messages list and how the server read its search: the
 /// four keys of every page, and `search`, the one key a page carries beside
-/// them (`docs/architecture/http-api.md`, "Lists").
+/// them (`docs/architecture/rules/http-api.md`, "Lists").
 // The four keys are written out rather than taken from `Page<Message>` with
 // `#[serde(flatten)]`: utoipa describes a flattened field as an `allOf` of
 // two schemas, which gives the page no `properties` of its own for the page
@@ -187,7 +187,7 @@ pub(crate) async fn list_messages(
 ///
 /// Read-only. A message is never written through this route: an import
 /// writes messages, and trashing is a conversation operation
-/// (`docs/architecture/http-api.md`, "Methods"). The id is enough: an id
+/// (`docs/architecture/rules/http-api.md`, "Methods"). The id is enough: an id
 /// names one message, and a lookup by id does not depend on how it was
 /// found, so the route returns any message of the caller's account, one in
 /// a trashed conversation and a duplicate included, and takes no `q`.

@@ -265,7 +265,7 @@ export interface paths {
          *     The owner may, on any account. The account itself may with a
          *     session that carries the `delete` permission, and confirms in the body.
          *     An API token is refused whatever its scopes: permanent deletion is a
-         *     person's act (`docs/architecture/http-api.md`, "Credentials and reach").
+         *     person's act (`docs/architecture/rules/http-api.md`, "Credentials and reach").
          */
         delete: operations["delete_account_messages"];
         options?: never;
@@ -1112,7 +1112,7 @@ export interface paths {
          *
          *     The stage is a field of the run, so moving it is a `PATCH` of the run
          *     rather than a `POST` to a `stage` sub-resource: a path segment names a
-         *     resource, and `stage` is not one (`docs/architecture/http-api.md`,
+         *     resource, and `stage` is not one (`docs/architecture/rules/http-api.md`,
          *     "Naming a route"). The answer is the run itself, the same shape
          *     `GET /v1/imports/{id}` returns, so a caller reads one record wherever it
          *     asks.
@@ -1320,7 +1320,7 @@ export interface paths {
          * One message by id, in the shape the Messages list gives each row.
          * @description Read-only. A message is never written through this route: an import
          *     writes messages, and trashing is a conversation operation
-         *     (`docs/architecture/http-api.md`, "Methods"). The id is enough: an id
+         *     (`docs/architecture/rules/http-api.md`, "Methods"). The id is enough: an id
          *     names one message, and a lookup by id does not depend on how it was
          *     found, so the route returns any message of the caller's account, one in
          *     a trashed conversation and a duplicate included, and takes no `q`.
@@ -2943,7 +2943,7 @@ export interface components {
             text: string | null;
         };
         /**
-         * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
+         * @description Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,
          *     "Runs"). The list decides which search words the query may use and what
          *     the run hands over.
          * @enum {string}
@@ -3000,7 +3000,7 @@ export interface components {
             total_bytes: number;
         };
         /**
-         * @description What an Export Run asked for, stored as given (`docs/architecture/http-api.md`,
+         * @description What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,
          *     "Runs"). One of three forms: everything the account holds, a query in the
          *     search language, or conversations and messages picked by hand.
          */
@@ -3386,7 +3386,7 @@ export interface components {
          *     its issues and notes. A run may record any number of either, so a page
          *     that carried them would have no bound on its size; `GET /v1/imports/{id}`
          *     answers them (#1559,
-         *     `docs/architecture/http-api.md`, "Lists").
+         *     `docs/architecture/rules/http-api.md`, "Lists").
          */
         ImportRunSummary: {
             /**
@@ -3562,7 +3562,7 @@ export interface components {
          *     Not a `Page`: the log is written while it is read, so a count and an
          *     offset from the newest line would move under the reader, and counting a
          *     250 MB log for every page is the cost a line's id saves
-         *     (`docs/architecture/http-api.md`, "Lists").
+         *     (`docs/architecture/rules/http-api.md`, "Lists").
          */
         ListLogLinesResponse: {
             /**
@@ -3578,7 +3578,7 @@ export interface components {
         /**
          * @description One page of the Messages list and how the server read its search: the
          *     four keys of every page, and `search`, the one key a page carries beside
-         *     them (`docs/architecture/http-api.md`, "Lists").
+         *     them (`docs/architecture/rules/http-api.md`, "Lists").
          */
         ListMessagesResponse: {
             /** @description The rows on this page. */
@@ -3978,7 +3978,7 @@ export interface components {
          *     the list answers for it, and the attachments the run wrote whose
          *     Thumbnail or Preview the server's media pass could not make, with why. A
          *     run may write any number of them, so the list leaves them out
-         *     (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
+         *     (`docs/architecture/rules/http-api.md`, "Lists"). Each is named by its file
          *     name, type and size, which the owner may read
          *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"); never by its message, its conversation, or its bytes.
@@ -5371,7 +5371,7 @@ export interface components {
         };
         /**
          * @description An RFC 7807 problem document: the body of every failure the server answers,
-         *     served as `application/problem+json` (`docs/architecture/http-api.md`).
+         *     served as `application/problem+json` (`docs/architecture/rules/http-api.md`).
          *
          *     `type` is the URL of the page describing this kind of failure, one page per
          *     type, or `about:blank` for an internal error. A validation failure carries

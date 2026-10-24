@@ -1,7 +1,7 @@
 //! Export Runs: `POST /v1/exports` records what was asked for, lists the
 //! messages it matches and counts them, `GET /v1/exports/{id}/messages` pages
 //! that list, and `complete` (as `completed` or `failed`) or `cancel` closes
-//! the run and drops the list (`docs/architecture/http-api.md`, "Runs").
+//! the run and drops the list (`docs/architecture/rules/http-api.md`, "Runs").
 //! An account has one running run: a new start, or an hour with no page
 //! read, closes it as `canceled`.
 //!

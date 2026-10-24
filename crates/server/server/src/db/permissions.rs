@@ -1,7 +1,7 @@
 //! What a credential may do. One set for accounts and API tokens, so an
 //! account's grant and a token's grant intersect field by field rather than
 //! through a translation. A token stores only `import` and `export`: it never
-//! carries `delete` (`docs/architecture/http-api.md`, "Credentials and reach").
+//! carries `delete` (`docs/architecture/rules/http-api.md`, "Credentials and reach").
 
 use serde::{Deserialize, Serialize};
 

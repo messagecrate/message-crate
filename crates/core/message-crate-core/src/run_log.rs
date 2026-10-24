@@ -2,7 +2,7 @@
 //! Logs Directory and reads them back.
 //!
 //! Each line is written and read in the format of the server's own log
-//! (`docs/architecture/server-log.md`), defined once in
+//! (`docs/architecture/rules/server-log.md`), defined once in
 //! `log-lines`, so one viewer reads both and the level filter
 //! means the same thing in each. A run log uses three of its levels.
 //!

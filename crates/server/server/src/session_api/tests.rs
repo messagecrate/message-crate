@@ -480,7 +480,7 @@ async fn an_expired_api_token_is_refused_on_an_export_route() {
 }
 
 /// A Session is one per logged-in account (`CONTEXT.md`, and "Credentials and
-/// reach" in `docs/architecture/http-api.md`), so logging in again replaces
+/// reach" in `docs/architecture/rules/http-api.md`), so logging in again replaces
 /// it: the newer token works and the older one, on whatever device holds it,
 /// is refused.
 #[tokio::test]
