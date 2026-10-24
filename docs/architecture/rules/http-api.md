@@ -8,11 +8,12 @@ are decided, not when the code catches up: a design is argued against this
 file, a pull request that touches a route is graded against it, and a route
 that breaks a rule here is a bug. Each rule carries its reason, and where an
 alternative was weighed and turned down, one line says so, so the question is
-not reopened by accident. Each rule has an id, `API-n`, which code comments,
-tests and reviews cite. The ids are numbered in order through the sections. A
-rule's id never changes. A rule that stops holding is removed, and its id is not
-reused. The sections get their ids one at a time, in order (#3209), so a rule in
-a section that has none yet is cited by the section's title.
+not reopened by accident. Each rule gets an id, `API-n`, which code comments,
+tests and reviews cite. The numbers run through the sections in document order.
+Until #3209 is closed, the sections get their ids one at a time, and a rule in a
+section that has none yet is cited by the section's title in quotes:
+`` `docs/architecture/rules/http-api.md`, "Status codes" ``. A rule's id never
+changes. A rule that stops holding is removed, and its id is not reused.
 
 This file states what every route must do. The generated reference (see
 [The reference](#the-reference)) states what each route does today. Where the
