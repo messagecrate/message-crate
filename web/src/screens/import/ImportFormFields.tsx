@@ -12,6 +12,7 @@ import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { MAX_FPS_RANGE } from "../../lib/compressFields";
 import { toolUsable } from "../../lib/desktop/tools";
 import { desktopJobRunningText } from "../../lib/desktopJob";
+import { encryptionPasswordShown } from "../../lib/encryptedBackup";
 import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
 import {
   DEFAULT_COUNTRY_HINT,
@@ -245,7 +246,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   // The Encryption password shows only for a backup known to be encrypted.
   // A password typed for an earlier backup stays in the form while the field
   // is hidden, and is not sent: an unencrypted backup refuses one.
-  const passwordShown = source.backupEncrypted({ ...readinessInput, ownerPhoneEntry }) === true;
+  const passwordShown = encryptionPasswordShown(
+    source.backupEncrypted({ ...readinessInput, ownerPhoneEntry }),
+  );
   const backupPassword = passwordShown ? form.backupPassword : "";
 
   function handleImport(): void {

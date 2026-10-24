@@ -13,6 +13,16 @@ export const ENCRYPTED_BACKUP_PASSWORD_REQUIRED =
 export const ENCRYPTED_BACKUP_PASSWORD_HINT = "This backup is encrypted. Enter its password.";
 
 /**
+ * True when the Import form shows the Encryption password for an iPhone
+ * backup, and sends it: only when the backup is known to be encrypted. A
+ * backup that is not, or whose state is unknown, takes no password, and the
+ * unencrypted one would refuse a password sent with it.
+ */
+export function encryptionPasswordShown(backupEncrypted: boolean | null): boolean {
+  return backupEncrypted === true;
+}
+
+/**
  * The Encryption password field's error for an iPhone backup: required when
  * the backup is known to be encrypted, and nothing when it is not or when
  * whether it is encrypted is unknown.
@@ -21,7 +31,7 @@ export function encryptedBackupPasswordError(
   backupEncrypted: boolean | null,
   backupPassword: string,
 ): string | null {
-  return backupEncrypted === true && backupPassword.trim() === ""
+  return encryptionPasswordShown(backupEncrypted) && backupPassword.trim() === ""
     ? ENCRYPTED_BACKUP_PASSWORD_REQUIRED
     : null;
 }
