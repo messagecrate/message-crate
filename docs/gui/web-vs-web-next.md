@@ -158,7 +158,7 @@ screen as the thread scrolls (`BrowseThreadPane.tsx:350-380`). Web's
 web-next shows a trashed conversation's messages beside the Trash list
 (`web-next/src/components/TrashShell.tsx:640`). Web shows the trashed
 conversation's facts but not its messages. Both delete forever. Web has
-Delete per item and Empty Trash (`web/src/screens/TrashScreen.tsx:275,447`).
+Delete per item and Empty Trash (`web/src/screens/TrashScreen.tsx:275,421,527`).
 
 ### Date and time formats
 
