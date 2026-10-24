@@ -31,16 +31,10 @@ Reading left to right:
    dies, `serve` as it starts up. Each call is one event with a level and a
    message.
 2. **The span it happened under.** A span is the context an event is
-   recorded in. Every request runs under one named `request`, which the
-   middleware opens before any handler runs and which carries three fields:
-   the method, the URI with sensitive query values already hidden, and the
-   request id, a UUID the server made for this request and also returns in
-   the `x-request-id` header. Every event recorded while that request is
-   answered is tagged with those fields without the recording code doing
-   anything. Work the request hands to another task or to the blocking pool
-   is started through helpers that carry the span along, so a line written
-   while hashing an import's messages still names the request that asked.
-   Start-up and shutdown lines have no span: nothing asked for them.
+   recorded in. Each request runs under a `request` span carrying its
+   method, its URI and a request id the server made, and every event
+   recorded while the request is answered is tagged with them, including
+   events from work the request spawned. Start-up lines have no span.
 3. **One subscriber.** A single `tracing` subscriber, installed once at
    start, receives every event with its span and formats it as one line.
    `RUST_LOG` decides which levels it keeps.
