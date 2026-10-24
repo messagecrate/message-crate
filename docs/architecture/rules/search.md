@@ -7,8 +7,8 @@ not break. Each rule has an id, `SEARCH-n`, which code comments, tests and
 reviews cite. A rule's id never changes. A rule that stops holding is
 removed, and its id is not reused.
 
-Each rule holds on every list, and each has its reason. Why the language is
-one module with one registry is
+Each rule carries its reason. Why the language is one module with one
+registry is
 [ADR 0004](../../adr/0004-one-search-language-compiled-in-one-module.md).
 
 ## SEARCH-1 One word per concept
@@ -49,10 +49,10 @@ the web app sends the list the query without it (#1561). It is the only place
 a word is left out, and the person sees it left out, so it is not ignored
 silently. Until both lists' words are known, a list with a `word:` in its
 query waits rather than send a word the server would refuse. Leaving the word
-out is the one rewrite of a query outside this module: `dropTokens` in
-`web/src/lib/searchQuery.ts` also drops a `not` that negated the word and an
-`or`, `and` or pair of parentheses it leaves with nothing to join, and keeps
-one that joined nothing before. Its results are in
+out is the one rewrite of a query outside `crates/server/server/src/search/`:
+`dropTokens` in `web/src/lib/searchQuery.ts` also drops a `not` that negated
+the word and an `or`, `and` or pair of parentheses it leaves with nothing to
+join, and keeps one that joined nothing before. Its results are in
 `tests/fixtures/search/web-queries.txt`, which the server's tests parse, so a
 change to the grammar that breaks the rewrite fails a test.
 
@@ -93,12 +93,13 @@ to date would show an order the person did not pick.
 A query with a positive free-text word is ranked best match first, and a
 query with none, field words only or nothing, lists the newest message first.
 Every page says which order it applied and which terms it ranks by, in
-`search` (`docs/architecture/rules/http-api.md`, "Lists"), from
-`Expr::positive_text_terms`. A `sort` the request names is applied as it is.
-Why: a search for words is looking for the messages that hold them, and a
-search by fields alone is browsing, where the latest come first. The choice
-depends on which words rank, which only this module knows, so the server
-makes it and the client reads it back rather than parsing `q` itself (#1538).
+`search` ([Lists](http-api.md#lists)), from `Expr::positive_text_terms`. A
+`sort` the request names is applied as it is. Why: a search for words is
+looking for the messages that hold them, and a search by fields alone is
+browsing, where the latest come first. The choice depends on which words
+rank, which only the search module, `crates/server/server/src/search/`,
+knows, so the server makes it and the client reads it back rather than
+parsing `q` itself (#1538).
 
 ## SEARCH-9 Compile is pure
 
@@ -113,10 +114,10 @@ parsed.
 `-q` is every row of the list that `q` does not match. A row with no value
 for the word does not match `q`, so it matches `-q`: `-last-message:>=2022`
 on Contacts includes the contacts who never sent a message. The one exception
-is a word that lifts a default ([Lists](../search.md#lists)), where `q` and `-q` together cover the
-lifted list. Positive words stay strict: a date word matches only rows that
-have that date. Why: a row missing from both answers is invisible to every
-search and cannot be explained (#698).
+is a word that lifts a default ([Lists](../search.md#lists)), where `q` and
+`-q` together cover the lifted list. Positive words stay strict: a date word
+matches only rows that have that date. Why: a row missing from both answers
+is invisible to every search and cannot be explained (#698).
 
 ## SEARCH-11 An id that names nothing matches nothing, and is not refused
 

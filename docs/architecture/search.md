@@ -519,9 +519,10 @@ Flag: `yes`, `no`, `any`. Any use lifts the list's trash default.
 
 A word is one entry in `FIELDS` (`fields.rs`) and one arm in `emit.rs`. Its
 entry here states the question it answers on each list before its SQL is
-written, and the rules above are the review: one concept, the same question on
-every list it is on, and `q` and `-q` splitting every list. The test
-`every_word_compiles_and_runs_on_every_list_it_claims` checks the split on the
-seeded database for every word, value shape, and list, so a new word inherits it.
-The user guide's word table and this section must name the new word on the
-same lists, or the `docs` tests fail.
+written, and the rules in [The search language: rules](rules/search.md) are
+the review: one concept, the same question on every list it is on, and `q`
+and `-q` splitting every list. The test
+`every_word_compiles_and_runs_on_every_list_it_claims` checks the split on
+the seeded database for every word, value shape, and list, so a new word
+inherits it. The user guide's word table and this section must name the new
+word on the same lists, or the `docs` tests fail.
