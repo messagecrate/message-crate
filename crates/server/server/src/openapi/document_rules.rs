@@ -43,7 +43,7 @@ use crate::problem::{Problem, ProblemType};
 use crate::test_support::{self, http_client};
 
 /// The one route nested three deep (`docs/architecture/rules/http-api.md`,
-/// "Naming a route").
+/// API-16).
 const MULTIPART_PART: &str = "/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}";
 
 /// The four keys of every page.

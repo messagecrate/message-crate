@@ -114,9 +114,18 @@ belongs to the problem types that carry it.
 
 ## Naming a route
 
+### API-9 A collection is plural, and a singular path names a singleton
+
 A collection is plural, and a member is `/{collection}/{id}`. A singular path
 is legal only for a singleton: one per installation (`/v1/server`), or one per logged-in
 credential (`/v1/session`). `/v1/trash` is a singleton by the same rule.
+
+Rejected: `/v1/auth/login` and its siblings. `/v1/auth` was neither a
+collection nor a singleton, so the verb rule could not reach it. A Session is
+one per logged-in credential, which makes it a singleton, and login, logout and
+check are its `POST`, `DELETE` and `GET`.
+
+### API-10 The Demo Account is a singleton of the server
 
 The Demo Account is managed as a singleton of the server,
 `/v1/server/demo-account`: `GET` says whether it exists, is being built, or
@@ -125,10 +134,17 @@ account is, `DELETE /v1/accounts/{id}`. Why: adding it cannot be a verb on
 `/v1/accounts/{id}`, because there is no member to address until it exists,
 and there is at most one per Message Crate.
 
+### API-11 A path segment names a resource, never a caller's role
+
 A path segment names a resource, never a caller's role. Who may call a route is
 decided in its handler, so a change to permissions never renames a URL.
 `/v1/accounts` is one collection for the owner and for the account itself;
 there is no `/v1/owner/` and no `/v1/account`.
+
+Rejected: a role prefix such as `/v1/owner/`. It reads well until permissions
+change and a URL has to be renamed to match.
+
+### API-12 A verb is a sub-resource of a member, and only for an action that is not a field write
 
 A verb is legal only as a sub-resource of a member, and only when the action is
 not a field write: it crosses a state machine, touches rows other than the
@@ -137,14 +153,24 @@ addressed one, or has no field to write. `claim`, `complete`, `cancel`,
 not; that is `PATCH /v1/imports/{id} {stage}`. A verb that merely spells an
 HTTP method never passes: deleting an account is `DELETE /v1/accounts/{id}`.
 
+Rejected: no verbs at all. Modeling every action as a field write turns
+trashing into `PATCH {"trashed": true}`, and trash is the only door to
+permanent deletion, which `POST .../trash` says and a field write does not.
+
+### API-13 Membership lives under the collection that owns it
+
 Membership lives under the collection that owns it:
 `GET` and `PATCH /v1/contact-groups/{id}/members`, with `{add, remove}` id
 lists.
+
+### API-14 A read whose selector is too large for a query string is a `POST` named for what it returns
 
 A read whose selector is too large for a query string is a `POST` named for
 what it returns, never for the verb that computes it:
 `POST /v1/contacts/summaries`, `POST /v1/contacts/unmatched-identities`,
 `POST /v1/contacts/address-book`.
+
+### API-15 A choice between two lists is a path segment, never a parameter
 
 A choice between two different lists is a path segment, never a parameter:
 `/v1/search-fields/contacts`, `/v1/search-fields/conversations` and
@@ -152,22 +178,12 @@ A choice between two different lists is a path segment, never a parameter:
 `?list=`. Why: a parameter narrows a list;
 choosing which list to read is choosing a resource, and the path does that.
 
+### API-16 Two levels of nesting, kebab-case paths, and snake_case on the wire
+
 Two levels of nesting. The multipart upload,
 `/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}`, is the one exception at
 three. `/health` is the only route outside `/v1`. Path segments are
 kebab-case; every field and query parameter on the wire is snake_case.
-
-Rejected: no verbs at all. Modeling every action as a field write turns
-trashing into `PATCH {"trashed": true}`, and trash is the only door to
-permanent deletion, which `POST .../trash` says and a field write does not.
-
-Rejected: a role prefix such as `/v1/owner/`. It reads well until permissions
-change and a URL has to be renamed to match.
-
-Rejected: `/v1/auth/login` and its siblings. `/v1/auth` was neither a
-collection nor a singleton, so the verb rule could not reach it. A Session is
-one per logged-in credential, which makes it a singleton, and login, logout and
-check are its `POST`, `DELETE` and `GET`.
 
 ## Methods
 
@@ -1348,10 +1364,10 @@ Why: each list has words the other does not (`messages:` on Conversations,
 whole conversations where the Messages list shows single messages. A person
 who exports the conversation list they are looking at expects those
 conversations, so the scope must say which list was meant.
-Why a field, when [Naming a route](#naming-a-route) makes a choice between two
-lists a path segment: that rule is about which resource a route reads. Here
-the resource is one, the Export Run, and the list is part of what the run was
-asked for, stored with it and read back.
+Why a field, when API-15 makes a choice between two lists a path segment:
+that rule is about which resource a route reads. Here the resource is one, the
+Export Run, and the list is part of what the run was asked for, stored with it
+and read back.
 
 Rejected: guessing the list from the words in the query. A query made of
 words both lists have compiles on either and means something different on

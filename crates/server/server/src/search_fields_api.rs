@@ -5,7 +5,7 @@
 //!
 //! Three fixed lists, so three paths: choosing which list to read is choosing a
 //! resource, and a parameter only narrows one (`docs/architecture/rules/http-api.md`,
-//! "Naming a route").
+//! API-15).
 
 use crate::extract::{Json, Query};
 use serde::Deserialize;
