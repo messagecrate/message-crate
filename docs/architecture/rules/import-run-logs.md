@@ -98,7 +98,7 @@ log of its own, `desktop-app.log` in the Logs Directory: an event no window
 received, a program in the Tools Directory whose record could not be
 written, a server whose processes will not end with it, and the warnings
 the Apple Messages Reader writes during the Import screen's identity check,
-which runs before any Import Run exists. Its lines are in the format below,
+which runs before any Import Run exists. Its lines are in the format of RUNLOG-5,
 at `WARN`, because each is something the app went on without.
 Nothing deletes it, and every start of the app writes on into it. It is
 made when its first line is written, so an app with nothing to say has
@@ -177,7 +177,8 @@ word. A run log is a plain file in the Logs Directory, which any program run
 by the computer's user can open. No other user of the computer can: the
 desktop app makes the Logs Directory with mode `0700` and takes group and
 other access off one that has it, each time it opens a run's log, because a
-run log names the phone numbers and email addresses in its file names (below).
+run log names the phone numbers and email addresses in its file names
+(RUNLOG-8).
 Windows has no such modes, and there the Logs Directory takes the access of
 the Message Crate Directory it is in, which is under the user's own
 profile directory.
@@ -200,7 +201,8 @@ explains a failure. A conversation file is named for the people in it, so its
 name can carry a phone number, an email address or a group's title. The owner
 reads those names with the rest of the log, as ADR 0008 says for run logs.
 Why: the log is a plain file in the Logs Directory. The operating-system user
-who ran the import can open it with or without Message Crate (RUNLOG-7), and the owner reads it in the desktop app running as that
-user. While the run lasts, its directory in the Staging Directory holds the
-same names. A neutral name on the owner's screen would protect nothing
+who ran the import can open it with or without Message Crate (RUNLOG-7), and
+the owner reads it in the desktop app running as that user. While the run
+lasts, its directory in the Staging Directory holds the same names. A neutral
+name on the owner's screen would protect nothing
 ([#1990](https://github.com/messagecrate/message-crate/issues/1990)).

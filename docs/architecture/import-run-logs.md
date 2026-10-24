@@ -48,17 +48,14 @@ Reading left to right:
 2. **Every stage writes into the same file.** Staging, Media and Upload each
    add their lines to one log per run in the Logs Directory, named for the
    run's directory in the Staging Directory. A resumed run writes on into the
-   same log. The run's directory is deleted when the run ends, but its log is
-   not, so the log is what explains the run afterwards.
+   same log. The run's directory is deleted when the run ends. Its log is
+   not (RUNLOG-2).
 3. **The listing reads the account line to decide who sees the log.** The
-   owner sees every log on the computer. An account sees a log whose line
-   names its own id and the id of the Message Crate it is signed in to,
-   because account 7 of another Message Crate is another person. A log with
-   no account line is the owner's alone.
-4. **The same line ties a run's directory to its run.** When an account
-   opens Import, the desktop app lists the run directories whose log names
-   that account and Message Crate, asks the server how each run stands, and
-   deletes the directory of every run the server reports as closed.
+   owner sees every log on the computer, and an account sees the logs of
+   its own runs on the Message Crate it is signed in to (RUNLOG-3).
+4. **The same line ties a run's directory to its run.** When Import opens,
+   the desktop app finds the directories of the account's closed runs
+   through their logs and deletes them (RUNLOG-3).
 5. **The viewer reads it newest first.** The Logs panel and the run's row in
    Settings → Storage read the log the way the server's log is read, with the
    same code: the newest lines first, walking back a chunk at a time,
@@ -99,12 +96,9 @@ log.
 
 ## A filter, not a guard
 
-Who reads which log decides what each screen offers, not who can open a
-file. The window tells the desktop app which account is signed in, on which
-Message Crate, and whether it is the owner, and the app takes its word. A
-run log is a plain file in the Logs Directory, which any program run by the
-computer's user can open. No other user of the computer can: the app makes
-the Logs Directory with mode `0700`, as the server does its Data Directory.
+The listing decides what each screen offers, not who can open a file: a run
+log is a plain file in the Logs Directory, readable by any program the
+computer's user runs and by no other user of the computer (RUNLOG-7).
 
 ## Where it lives
 
@@ -116,4 +110,4 @@ the Logs Directory with mode `0700`, as the server does its Data Directory.
 | The desktop app's own log | `src-tauri/src/app_log.rs` |
 | Listing and reading both, for the Logs panel and Settings → Storage | `src-tauri/src/run_logs.rs` |
 | The viewer, one for every log | `web/src/components/logs/LogViewer.tsx`, `logSource.ts` |
-| Closing a finished run's directory from its log's account line | `src-tauri/src/commands/paths.rs` |
+| Finding a closed run's directory through its log's account line, and deleting it | `src-tauri/src/run_directories.rs`, `delete_closed_run_dir` in `src-tauri/src/commands/staging.rs`, `web/src/screens/import/closedRunDirectories.ts` |
