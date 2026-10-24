@@ -55,7 +55,7 @@ files the same way.
 ## A line
 
 ```text
-2026-10-08T12:00:00.123456Z  WARN request{method=GET uri=/v1/contacts request_id=3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70}: The server refused a request problem=invalid-credentials status=401
+2026-10-08T12:00:00.123456Z  WARN request{method=POST uri=/v1/session request_id=3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70}: The server refused a request problem=invalid-credentials status=401
 ```
 
 A line is one event: the time in UTC to the microsecond, the level, the span
@@ -80,8 +80,8 @@ warnings and up.
 |---|---|
 | `ERROR` | A `500 Internal Server Error`, with the failing step and the error's whole chain. A panic on any thread. A start-up failure. A response body that failed after its status was sent. |
 | `WARN` | A refused request that looks like someone probing: `401 Unauthorized`, `403 Forbidden`, and a database too busy to answer. A refused login, with the account's id and the reason. |
-| `INFO` | Every other request: its method, path, status and latency. Every other refusal, with its problem type. What `serve` did at start-up. |
-| `DEBUG` | A successful health probe and a successful file of the website, which otherwise bury everything else. |
+| `INFO` | Every other request: its method, path, status and latency. Every other refusal, with its problem type. What `serve` did at start-up. A connection the server closed because its client stalled. |
+| `DEBUG` | A successful health probe and a successful file of the website, which otherwise bury everything else. A connection that closed with an error. |
 | `TRACE` | An accepted connection. |
 
 A failed database statement names the step it was doing, in a fixed phrase

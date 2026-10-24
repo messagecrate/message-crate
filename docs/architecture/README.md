@@ -21,7 +21,8 @@ them.
 
 Rules carry their own reasons, so a routine decision needs no ADR. An ADR in
 `docs/adr/` records one change on one date; a later change is added under a
-dated "Amended" heading, and the original text is not rewritten. A rule
+dated "Amended" heading, and the original text is not rewritten, except
+that a path it names follows the file when the file moves. A rule
 references the ADR behind it when there is one. `CONTEXT.md` defines the
 words; both kinds of document use them and redefine none.
 

@@ -95,14 +95,14 @@ Code: `crates/server/server/src/progress.rs`.
 
 ## LOG-6 A panic is written as an `ERROR` line under its span
 
-A panic on any thread of the server must leave one `ERROR` line, `A thread
-of the server panicked`, with the panic's message and the file and line it
-happened at, under the span the panic happened in, so a handler's panic
-carries its request's id. Rust's own hook, which writes to stderr alone,
-runs as well only when `RUST_BACKTRACE` asks for a backtrace or `RUST_LOG`
-leaves out `ERROR`. A handler that panics is answered with `500 Internal
-Server Error`, which writes its own `ERROR` line (LOG-11), so such a request
-leaves two.
+A panic on any thread of the server must leave one `ERROR` line,
+`A thread of the server panicked`, with the panic's message and the file and
+line it happened at, under the span the panic happened in, so a handler's
+panic carries its request's id. Rust's own hook, which writes to stderr
+alone, runs as well only when `RUST_BACKTRACE` asks for a backtrace or
+`RUST_LOG` leaves out `ERROR`. A handler that panics is answered with
+`500 Internal Server Error`, which writes its own `ERROR` line (LOG-11), so
+such a request leaves two.
 
 The panic's message is written as Rust gives it. A panic inside the
 standard library can quote a value, such as the text a string was sliced
@@ -155,16 +155,16 @@ Code: `crates/server/server/src/middleware.rs`.
 
 ## LOG-9 A refused request names its problem type, never its detail
 
-A request refused with a registered problem type (a `4xx`, or one of the
-two `503 Service Unavailable` types, `server-stopping` and `database-busy`)
-must leave one more line, written where its problem document is built, with
-the problem type's slug and the status
+A request refused with a registered problem type (a `4xx`, or one of the two
+`503 Service Unavailable` types, `server-stopping` and `database-busy`) must
+leave one more line, written where its problem document is built, with the
+problem type's slug and the status
 (`problem=invalid-credentials status=401`). It must be at `WARN` for
 `401 Unauthorized`, `403 Forbidden` and `database-busy`, and at `INFO` for
 every other refusal; the level follows from the problem type where it is
-declared. The problem's `detail`
-must never be written. A `database-busy` line also carries the error's
-chain as `error`, as the `ERROR` line of a `500` does.
+declared. The problem's `detail` must never be written. A `database-busy`
+line also carries the error's chain as `error`, as the `ERROR` line of a
+`500` does.
 
 Why `WARN` for those three: a run of `401` or `403` is what a password
 guesser or an API token that lost its rights looks like, and the owner's
@@ -257,13 +257,12 @@ Code: `crates/server/server/src/request_id.rs`.
 
 ## LOG-14 An Audit Trail entry keeps the id of the request that wrote it
 
-An Audit Trail entry must keep its request's id in
-`audit_entries.request_id` and hand it out as `request_id`, including an
-entry written by work the request started: the two spawn helpers of LOG-13
-carry the id as well as the span. An entry written outside a
-request has none: a server command, the Demo Account build `serve` runs on
-a new database, and the rows Import Runs, Export Runs and a Session that ran
-out are read from.
+An Audit Trail entry must keep its request's id in `audit_entries.request_id`
+and hand it out as `request_id`, including an entry written by work the
+request started: the two spawn helpers of LOG-13 carry the id as well as the
+span. An entry written outside a request has none: a server command, the Demo
+Account build `serve` runs on a new database, and the rows Import Runs,
+Export Runs and a Session that ran out are read from.
 
 Why: an entry says who did what and when, and a line says which request did
 it and how it went, and with no key shared between them the owner matched
@@ -333,19 +332,18 @@ Code: `crates/server/server/src/server_api/`.
 
 ## LOG-18 A line never holds a secret or content
 
-A line must never hold a password, a Session token or an API token, hashed
-or not, message text, attachment bytes, or a contact's name or identities.
-It may hold only what the owner may see: ids, counts, sizes, times, routes
-and outcomes. The line each request writes names its path and query, and
-the query keeps a parameter's value only when it is a number, an id or a
-fixed word (`after`, `around`, `before`, `deleted_account_id`, `level`,
-`limit`, `mode`, `offset`, `sort`, `status`); every other value is
-written as `[hidden]` until someone adds it to the list: `q`, a search over
-what the messages say; `media_link`, a credential; the log's own `text`
-filter; and any parameter added later. The path and query
-are cut at 2,048 bytes, on a character boundary, ending in `...[cut]`.
-Every event the server writes is held to the same rule by whoever writes
-it.
+A line must never hold a password, a Session token or an API token, hashed or
+not, message text, attachment bytes, or a contact's name or identities. It
+may hold only what the owner may see: ids, counts, sizes, times, routes and
+outcomes. The line each request writes names its path and query, and the
+query keeps a parameter's value only when it is a number, an id or a fixed
+word (`after`, `around`, `before`, `deleted_account_id`, `level`, `limit`,
+`mode`, `offset`, `sort`, `status`); every other value is written as
+`[hidden]` until someone adds it to the list: `q`, a search over what the
+messages say; `media_link`, a credential; the log's own `text` filter; and
+any parameter added later. The path and query are cut at 2,048 bytes, on a
+character boundary, ending in `...[cut]`. Every event the server writes is
+held to the same rule by whoever writes it.
 
 Why: the owner reads the log, and the owner never reads content
 (`docs/adr/0008-the-owner-holds-no-messages.md`). Why the cut: a request
