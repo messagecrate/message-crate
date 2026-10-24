@@ -48,7 +48,7 @@ Message Crate sends no telemetry, crash reports, or usage data, to its makers or
 The desktop app connects to two places:
 
 - **The Message Crate server it uses.** That is the one it starts on the same computer at `127.0.0.1:8080`, or another server it is set to use. Messages go there and nowhere else.
-- **GitHub, to download ffmpeg, ffprobe, and wtsexporter.** At every start the app checks its Tools Directory in the background and downloads any of the three that is missing or is not the exact release this version of the app names. ffmpeg and ffprobe aren't downloaded when both are already installed. Each download is checked against a SHA-256 checksum carried in the app. GitHub sees what any download shows it: the computer's IP address and which file was asked for.
+- **GitHub, to download ffmpeg, ffprobe, and wtsexporter.** At every start the app checks its Tools Directory in the background and downloads any of the three that is missing or is not the exact release this version of the app names. ffmpeg and ffprobe aren't downloaded when both are already installed. Each download is checked against a SHA-256 checksum carried in the app. GitHub answers a release download with a redirect to a `githubusercontent.com` host, so the file itself comes from there. Both hosts see what any download shows them: the computer's IP address and which file was asked for.
 
 The server and the website make no outbound connections of their own.
 Links to this guide and to GitHub open only when clicked.
