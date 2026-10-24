@@ -20,7 +20,8 @@ disagreement between an architecture page and the code is a bug in one of
 them.
 
 Rules carry their own reasons, so a routine decision needs no ADR. An ADR in
-`docs/adr/` records one change on one date and is never edited; a rule
+`docs/adr/` records one change on one date; a later change is added under a
+dated "Amended" heading, and the original text is not rewritten. A rule
 references the ADR behind it when there is one. `CONTEXT.md` defines the
 words; both kinds of document use them and redefine none.
 

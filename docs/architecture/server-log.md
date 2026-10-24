@@ -55,7 +55,7 @@ files the same way.
 ## A line
 
 ```text
-2026-10-08T12:00:00.123456Z  WARN request{method=GET uri=/v1/contacts request_id=3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70}: problem=invalid-credentials status=401
+2026-10-08T12:00:00.123456Z  WARN request{method=GET uri=/v1/contacts request_id=3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70}: The server refused a request problem=invalid-credentials status=401
 ```
 
 A line is one event: the time in UTC to the microsecond, the level, the span
@@ -73,7 +73,7 @@ share, so one viewer reads both.
 
 ## What reaches the log
 
-The server writes at four levels, and the owner's Logs panel opens at
+The server writes at five levels, and the owner's Logs panel opens at
 warnings and up.
 
 | Level | What is written there |
@@ -82,6 +82,7 @@ warnings and up.
 | `WARN` | A refused request that looks like someone probing: `401 Unauthorized`, `403 Forbidden`, and a database too busy to answer. A refused login, with the account's id and the reason. |
 | `INFO` | Every other request: its method, path, status and latency. Every other refusal, with its problem type. What `serve` did at start-up. |
 | `DEBUG` | A successful health probe and a successful file of the website, which otherwise bury everything else. |
+| `TRACE` | An accepted connection. |
 
 A failed database statement names the step it was doing, in a fixed phrase
 such as `read the attachments of a page of messages`, so a `500` line reads
@@ -135,7 +136,8 @@ The panel shows the log as it was when it was read; nothing streams.
 | Writing and rotating the files | `crates/server/server/src/logging/files.rs` |
 | Line ids and reading pages back | `crates/server/server/src/logging/read.rs` |
 | The line format, shared with Import Run logs | `crates/libs/log-lines` |
-| The request span and spawning under it | `crates/server/server/src/request_id.rs` |
+| The request span | `make_span_with` in `crates/server/server/src/server.rs` |
+| The request id and spawning under the span | `crates/server/server/src/request_id.rs` |
 | What a request's line keeps of its URI, and body failures | `crates/server/server/src/middleware.rs` |
 | The problem-type and `500` lines | `crates/server/server/src/problem.rs`, `api_error.rs` |
 | The three routes | `crates/server/server/src/server_api/log_lines.rs`, `log_files.rs` |

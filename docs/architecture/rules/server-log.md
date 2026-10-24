@@ -158,9 +158,11 @@ Code: `crates/server/server/src/middleware.rs`.
 A request refused with a registered problem type (a `4xx`, or one of the
 two `503 Service Unavailable` types, `server-stopping` and `database-busy`)
 must leave one more line, written where its problem document is built, with
-the problem type's slug and the status (`problem=invalid-credentials status=401`). It must be at `WARN` for `401 Unauthorized`, `403 Forbidden`
-and `database-busy`, and at `INFO` for every other refusal; the level
-follows from the problem type where it is declared. The problem's `detail`
+the problem type's slug and the status
+(`problem=invalid-credentials status=401`). It must be at `WARN` for
+`401 Unauthorized`, `403 Forbidden` and `database-busy`, and at `INFO` for
+every other refusal; the level follows from the problem type where it is
+declared. The problem's `detail`
 must never be written. A `database-busy` line also carries the error's
 chain as `error`, as the `ERROR` line of a `500` does.
 
@@ -257,7 +259,8 @@ Code: `crates/server/server/src/request_id.rs`.
 
 An Audit Trail entry must keep its request's id in
 `audit_entries.request_id` and hand it out as `request_id`, including an
-entry written by work the request started. An entry written outside a
+entry written by work the request started: the two spawn helpers of LOG-13
+carry the id as well as the span. An entry written outside a
 request has none: a server command, the Demo Account build `serve` runs on
 a new database, and the rows Import Runs, Export Runs and a Session that ran
 out are read from.
@@ -336,9 +339,10 @@ It may hold only what the owner may see: ids, counts, sizes, times, routes
 and outcomes. The line each request writes names its path and query, and
 the query keeps a parameter's value only when it is a number, an id or a
 fixed word (`after`, `around`, `before`, `deleted_account_id`, `level`,
-`limit`, `mode`, `offset`, `sort`, `status`); every other value, `q`,
-`media_link`, the log's own `text`, and any parameter added later, is
-written as `[hidden]` until someone adds it to the list. The path and query
+`limit`, `mode`, `offset`, `sort`, `status`); every other value is
+written as `[hidden]` until someone adds it to the list: `q`, a search over
+what the messages say; `media_link`, a credential; the log's own `text`
+filter; and any parameter added later. The path and query
 are cut at 2,048 bytes, on a character boundary, ending in `...[cut]`.
 Every event the server writes is held to the same rule by whoever writes
 it.

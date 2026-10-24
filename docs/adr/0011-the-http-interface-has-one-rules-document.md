@@ -47,7 +47,7 @@ fifth document a reader had to merge by hand.
 ## Amended 2026-09-23
 
 The rules document moved from `docs/agents/http-api-rules.md` to
-`docs/architecture/rules/http-api.md`. The interface is part of the architecture, and
+`docs/architecture/http-api.md`. The interface is part of the architecture, and
 `docs/agents/` read as notes for agents, which hid the rules from the people
 designing against them.
 
