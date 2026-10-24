@@ -1,12 +1,13 @@
 # cargo-deny configuration. The Audit workflow (.github/workflows/audit.yml)
-# runs `cargo deny check advisories licenses bans` on the workspace and
-# `licenses bans` on src-tauri whenever a lockfile or this file changes, and
-# weekly. The policy these sections enforce is
+# runs `cargo deny check advisories licenses bans` on the workspace and on
+# src-tauri whenever a lockfile or this file changes, and weekly. The policy
+# these sections enforce is
 # docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.
 
 [graph]
-# The desktop app and the workspace are checked for the host only; the
-# release matrix is all native builds.
+# No `targets` are set, so cargo-deny checks the dependencies of every
+# platform in each lockfile, which covers each platform the release matrix
+# builds.
 all-features = false
 
 [advisories]
@@ -16,7 +17,18 @@ all-features = false
 # deliberate and carry its reason; a new advisory still fails the gate until
 # it is fixed or added to `ignore`.
 
-ignore = []
+ignore = [
+    # proc-macro-error 1.0.4 is unmaintained. Only the desktop app's graph
+    # holds it, through glib-macros and gtk3-macros 0.18, the macros of the
+    # GTK 3 bindings Tauri builds on Linux. glib-macros dropped it in 0.19,
+    # but Tauri stays on GTK 3. It runs at compile time only.
+    # The workspace's run always warns that this entry was not encountered
+    # (`advisory-not-detected`), because that graph never holds the crate.
+    # That warning is expected and needs no action. Remove the entry when
+    # the desktop app's run warns `advisory-not-detected` too, which happens
+    # once Tauri leaves GTK 3.
+    { id = "RUSTSEC-2024-0370", reason = "unmaintained, reached only through Tauri's GTK 3 bindings on Linux" },
+]
 
 [licenses]
 # One file serves two graphs (the workspace and src-tauri), and the desktop

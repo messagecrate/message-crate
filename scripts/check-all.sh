@@ -8,9 +8,9 @@
 # Stops on the first failure. Starts with ./scripts/check-pr.sh (format and
 # lint), then builds and tests the workspace and src-tauri, and runs the
 # license, Docker-context, secret-scan, version-lockstep and generated-API-type
-# checks, cargo-deny (advisories, licenses and bans on the workspace, licenses
-# and bans on src-tauri), and the web and docs test/build/audit steps. CI runs
-# the same set in parallel; this exists so nobody types nine commands by hand.
+# checks, cargo-deny (advisories, licenses and bans on the workspace and on
+# src-tauri), and the web and docs test/build/audit steps. CI runs the same
+# set in parallel; this exists so nobody types nine commands by hand.
 # Why the split from check-pr.sh: docs/adr/0007-ci-is-the-only-gate.md.
 # Runs npm ci in web/ and docs/ only when that tree has no node_modules yet.
 set -euo pipefail
@@ -40,7 +40,7 @@ echo "==> product version lockstep"
 echo "==> cargo deny check advisories licenses bans"
 if cargo deny --version >/dev/null 2>&1; then
   cargo deny check advisories licenses bans
-  cargo deny --manifest-path src-tauri/Cargo.toml --config deny.toml check licenses bans
+  cargo deny --manifest-path src-tauri/Cargo.toml --config deny.toml check advisories licenses bans
 else
   echo "cargo-deny not installed; skipping advisory and license checks (CI enforces them)" >&2
 fi
