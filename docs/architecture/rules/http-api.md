@@ -71,6 +71,8 @@ counted, and a client only ever compares it.
 
 ## Words on the wire
 
+### API-5 The interface uses the words `CONTEXT.md` defines
+
 Paths, fields, parameters, summaries and problem details use the words
 `CONTEXT.md` defines, and never the words it lists under _Avoid_: an
 Identity, never a handle (`/v1/contacts/unmatched-identities`); a
