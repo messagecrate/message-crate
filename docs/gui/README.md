@@ -4,6 +4,8 @@ This directory holds records of Message Crate's browser and desktop user
 interfaces: what each screen shows, captured as screenshots, and comparisons
 between the product UI in `web/` and the legacy browse UI in `web-next/`.
 
+The directory holds two records:
+
 - [`web-vs-web-next.md`](web-vs-web-next.md) lists each function web-next
   offers that web does not, as of 2026-10-24, with screenshots of both apps
   in [`2026-10-24/`](2026-10-24/).

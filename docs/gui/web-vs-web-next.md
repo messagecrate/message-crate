@@ -17,8 +17,8 @@ The screenshots are of both apps running against one server, logged in as
 `demo2`, an ordinary account holding a copy of the Demo Data (83 contacts,
 104 conversations, 63,225 messages), in headless Chrome at 1360 × 860 with
 the dark theme. They live in [`2026-10-24/web/`](2026-10-24/web/) and
-[`2026-10-24/web-next/`](2026-10-24/web-next/), and a screen both apps have
-carries the same file name in each. The Demo Account itself refuses
+[`2026-10-24/web-next/`](2026-10-24/web-next/), named as
+[`README.md`](README.md) describes. The Demo Account itself refuses
 imports and deletes, which is why the screenshots use `demo2`.
 
 Each finding was checked against the current source of both trees, and the
@@ -107,9 +107,9 @@ attachment, file type, file name, larger than and smaller than, sort, and
 context. Its contacts tab adds group and direct message counts
 (`AdvancedSearchForm.tsx:306-311`). Web's contacts tab already has the
 Identity, first message and last message fields
-(`web/src/components/advancedSearch/ContactsSearchFields.tsx:121,173,179`). A "contacts with matching conversations"
-result mode, a contact row that expands to its matching conversations, has
-no web counterpart. Web's Messages tab does give one row per matching
+(`web/src/components/advancedSearch/ContactsSearchFields.tsx:121,173,179`).
+A "contacts with matching conversations" result mode, a contact row that
+expands to its matching conversations, has no web counterpart. Web's Messages tab does give one row per matching
 message, which web-next spells `group:none`.
 
 This document does not establish whether the server's search words already
