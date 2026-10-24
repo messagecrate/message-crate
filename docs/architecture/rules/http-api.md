@@ -1454,8 +1454,8 @@ without an accepted `Content-Type`, `400 Bad Request` for a JSON body that is
 not JSON, `406 Not Acceptable` exactly where the document lists it, a
 successful `GET` in a media type its document declares, every property of a
 success answer required and every one of them in what the route answers
-([API-6](#api-6-a-success-answer-sends-every-field-its-type-has-null-when-it-has-no-value)), no body on a `HEAD` answer, `Cache-Control: no-store` on
-every answer but those of an operation that lists its own
+(API-6), no body on a `HEAD` answer, `Cache-Control: no-store` on every
+answer but those of an operation that lists its own
 ([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule
 checked one route at a time is checked on the routes someone remembered.
 
