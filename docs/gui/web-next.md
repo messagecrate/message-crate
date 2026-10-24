@@ -7,6 +7,10 @@ exists so the two can be compared feature by feature. The comparison at the end
 records what each app offers today. A feature present in one and absent from
 the other is a fact about the two trees, not a verdict on either.
 
+The comparison at the end is from 2026-09-05 and no longer describes `web/`.
+[`web-vs-web-next.md`](web-vs-web-next.md) holds the comparison as of
+2026-10-24.
+
 The screenshots are of the running app against the demo data
 (`./scripts/run-dev.sh --reset-demo`: 442 contacts, 382 conversations,
 609,436 messages, no Contact Groups), in Chromium at 1360 × 860 with the
