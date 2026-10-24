@@ -22,7 +22,7 @@ carries the same file name in each. The Demo Account itself refuses
 imports and deletes, which is why the screenshots use `demo2`.
 
 Each finding was checked against the current source of both trees, and the
-paths are given. Every write in web-next answers 501 (Not Implemented), as
+paths are given. Every write in web-next answers `501 Not Implemented`, as
 `web-next.md` describes, so a web-next feature here is what its screen
 offers, not something that works end to end.
 
@@ -35,7 +35,7 @@ The list runs from the most useful to the least.
 Web's conversation list has a checkbox on every row and a select-all
 (`web/src/screens/ConversationList.tsx:203`), and a selection feeds one
 action, the Message Tags menu (`ConversationList.tsx:147`). Shift-click does
-not select a range there: the shift-click below checked the two rows clicked
+not select a range there. The shift-click below checked the two rows clicked
 and nothing between them. Ctrl-click and cmd-click do not toggle a row
 anywhere in web. A selection of conversations cannot be moved to Trash in
 one step either: Trash is in each conversation's own "⋯" menu.
@@ -78,7 +78,7 @@ web-next opens a menu on right-click for a contact (New contact, Edit,
 Merge into…, Labels, Delete contact), a search result (Delete message), and a
 Trash row (Restore, Delete forever), in `BrowseContactRow.tsx:82`,
 `SearchResultsList.tsx:187` and `TrashUnifiedList.tsx:120`. Web has no
-right-click menu anywhere: right-clicking a conversation or a contact shows
+right-click menu anywhere. Right-clicking a conversation or a contact shows
 the browser's own menu.
 
 ![web-next contact menu on right-click](2026-10-24/web-next/menu-contact-right-click.png)
@@ -104,8 +104,10 @@ messages each source holds and does not filter the thread
 web-next's advanced form (`web-next/src/components/AdvancedSearchForm.tsx:384-519`)
 has fields web's form lacks: doesn't have the words, subject, has an
 attachment, file type, file name, larger than and smaller than, sort, and
-context. Its contacts tab adds handle, first and last message dates, and
-group and direct message counts. A "contacts with matching conversations"
+context. Its contacts tab adds group and direct message counts
+(`AdvancedSearchForm.tsx:306-311`). Web's contacts tab already has the
+Identity, first message and last message fields
+(`web/src/components/advancedSearch/ContactsSearchFields.tsx:121,173,179`). A "contacts with matching conversations"
 result mode, a contact row that expands to its matching conversations, has
 no web counterpart. Web's Messages tab does give one row per matching
 message, which web-next spells `group:none`.
@@ -132,8 +134,8 @@ own.
 
 ### Year filter and activity by year for group conversations
 
-web-next's Group Messages list has a year filter and sorts by start, end,
-people or message count (`SortByMenu.tsx:223-257`). Its details panel
+web-next's Group Messages list has a year filter and sorts by date, message
+count or people (`SortByMenu.tsx:254-257`). Its details panel
 shows a conversation's messages per year
 (`web-next/src/components/BrowseDetailsInspector.tsx:169`). In web, group
 conversations are in the one conversation list, and the conversation type
@@ -155,8 +157,8 @@ screen as the thread scrolls (`BrowseThreadPane.tsx:350-380`). Web's
 
 web-next shows a trashed conversation's messages beside the Trash list
 (`web-next/src/components/TrashShell.tsx:640`). Web shows the trashed
-conversation's facts but not its messages. Both delete forever: web has
-Delete per item and Empty Trash (`web/src/screens/TrashScreen.tsx:28-33`).
+conversation's facts but not its messages. Both delete forever. Web has
+Delete per item and Empty Trash (`web/src/screens/TrashScreen.tsx:275,447`).
 
 ### Date and time formats
 
@@ -220,12 +222,12 @@ The menus each app opens from a button, as found in the source.
 
 | web | web-next |
 |---|---|
-| Sort conversations: Date or Messages, ascending or descending | Sort group conversations: start, end, people, messages |
+| Sort conversations: Date or Messages, ascending or descending | Sort group conversations: Date, Message Count, People |
 | Sort contacts: first name, last name, Last Heard From | Sort contacts: first name, last name, phone, message count, group count |
 | Message Tags on a selection of conversations | Year filter on the contact and group lists |
 | Contact Groups on a selection of contacts | "⋯" list actions: New, Import VCF, Export contacts CSV, Edit, Labels, Delete group messages, Delete contact |
 | "Jump to": Newest and each year | Label options: Rename, Delete |
-| Conversation "⋯": Sources, Move to trash, Make a Contact Group | Title menu: Logout, Reset demo |
+| Conversation "⋯": each participant (opens the contact), Sources, Move to trash, and Make a Contact Group in a group conversation | Title menu: Logout, Reset demo |
 | Contact Group, Message Tag and Saved Search options: Rename, Delete | |
 | Account: Settings, Log out | |
 
