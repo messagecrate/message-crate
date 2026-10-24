@@ -121,6 +121,15 @@ export type AttachmentRow = {
   previewMimeType: string | null;
   previewAssetsPath: string | null;
   previewSha256: string | null;
+  /** The Thumbnail's type, once the server has made one. */
+  thumbnailMimeType: string | null;
+  /** Carries the sha256 the Thumbnail is read by, when there is one. */
+  thumbnailAssetsPath: string | null;
+  /**
+   * True when every browser shows the original as it is, so the original
+   * opens; false when the Preview opens instead (the server's `shown_as_is`).
+   */
+  shownAsIs: boolean;
 };
 
 export type MessageRow = {

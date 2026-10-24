@@ -50,7 +50,10 @@ Sign in with user `demo` and an empty password. The vault host comes from
   the modules above.
 - `src/app/api/auth/login` — `POST /v1/session`; the token and account id
   go in httpOnly cookies. Logout ends the Session with `DELETE /v1/session`.
-- `src/app/api/assets/[source]/[sha256]` — proxies `GET /v1/assets/{sha256}`.
+- `src/app/api/assets/[source]/[sha256]` — proxies `GET /v1/assets/{sha256}`;
+  `api/assets_converted/…` proxies its `/preview` and `api/assets_thumbnail/…`
+  its `/thumbnail`, answering the original when the server holds no such
+  version (`src/lib/vault/assets.ts`).
 - Display preferences live in a cookie (`src/lib/vault/prefs.ts`): the vault
   has no preferences route.
 
@@ -60,7 +63,7 @@ The SQL implementation the app used before (`src/lib/*Read.ts`, `dbCore.ts`,
 `vaultSchema.generated.ts`, the `*Write.ts` modules and their tests) is still
 in the tree and no longer called from the read path. Undo and redo are not
 features of this app; the history engine under `src/components/history/`
-is unwired. Screens whose data the API does not expose (transcoded media,
-display preferences, unassigned handles, contact CSV export, demo reset)
-show a "no /v1 route" notice or answer 501. The gap list lives in
-the repository's issue tracker.
+is unwired. Screens whose data the API does not expose (display
+preferences, unassigned handles, contact CSV export, demo reset) show a
+"no /v1 route" notice or answer 501. The gap list lives in the
+repository's issue tracker.

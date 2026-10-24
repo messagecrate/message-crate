@@ -1,11 +1,10 @@
-import { noRoute } from "@/lib/vault/writes";
+import { assetRoute } from "@/lib/vault/assets";
 
 export const runtime = "nodejs";
 
 /**
- * Transcoded media (`assets_converted/`) has no `/v1` route. Attachments
- * use the raw bytes from `/api/assets/…` instead.
+ * An attachment's Preview, proxied from `GET /v1/assets/{sha256}/preview`:
+ * the JPEG, MP4 or MP3 the server made for a browser to show. Without one it
+ * answers the original.
  */
-export async function GET() {
-  return noRoute("transcoded media; the raw file is at /api/assets");
-}
+export const GET = assetRoute("preview");

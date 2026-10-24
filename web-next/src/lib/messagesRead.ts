@@ -205,6 +205,9 @@ function loadConversationMessages(
       previewMimeType: string | null;
       previewAssetsPath: string | null;
       previewSha256: string | null;
+      thumbnailMimeType: string | null;
+      thumbnailAssetsPath: string | null;
+      shownAsIs: boolean;
     }>
   >();
   if (rows.length) {
@@ -243,6 +246,9 @@ function loadConversationMessages(
           previewMimeType: a.preview_mime_type,
           previewAssetsPath: a.preview_assets_path,
           previewSha256: a.preview_sha256,
+          thumbnailMimeType: null,
+          thumbnailAssetsPath: null,
+          shownAsIs: false,
         });
         attsByMsg.set(a.message_id, list);
       }
