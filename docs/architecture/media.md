@@ -2,8 +2,9 @@
 
 An attachment arrives as whatever the phone held: a HEIC photo, an HEVC
 video, an AMR voice note, or a plain JPEG. Message Crate keeps that original
-untouched and makes small, browser-friendly copies beside it, so a
-conversation scrolls fast and a photo opens in any browser. This page follows
+untouched and makes a small Thumbnail beside it and, where needed, a copy
+every browser can show, so a conversation scrolls fast and a photo opens in
+any browser. This page follows
 an attachment from the import that brings it to the screen that shows it. The
 constraints a change must keep are in [Media: rules](rules/media.md).
 
@@ -59,7 +60,7 @@ Reading left to right:
    directory, each named by the SHA-256 of its own bytes, and the original's
    attachment rows name them. When a version could not be made, the rows
    record why, in ffmpeg's words or a fixed phrase of the server's, and
-   which kind of failure it was. The queue row is removed either way;
+   which kind of failure it was. The queue row is removed either way.
    `process-assets` tries failed ones again by hand.
 7. **The routes.** A client addresses every version by the original's
    fingerprint: `GET /v1/assets/{sha256}` for the original, and
@@ -108,9 +109,10 @@ way, copying the server's answer to the chosen file as it arrives.
 
 Without ffmpeg the pass still decides `shown_as_is` for every type but MP4
 and leaves the queue as it is, so the Assets wait for a server that has it.
-The Docker image carries ffmpeg; the desktop app's server finds it in the
-Tools Directory the app downloads to; a server started by hand finds it on
-`PATH` or makes nothing.
+Every server looks for ffmpeg and ffprobe on `PATH` first, then in the
+Tools Directory it is given with `--tools-dir`, which is where the desktop
+app downloads them to. The Docker image carries them. A server started by
+hand with neither makes nothing.
 
 An ffmpeg that hangs is stopped: a short step such as reading one frame
 gets 15 seconds, a video conversion is stopped when its reported position
@@ -127,7 +129,8 @@ pass.
 |---|---|
 | Deciding the type and whether a browser shows it | `crates/libs/media/src/signature.rs`, `versions.rs` (`browser_shows`) |
 | Making a Thumbnail and a Preview | `crates/libs/media/src/versions.rs` |
-| Running ffmpeg and ffprobe, stopping a hung one | `crates/libs/media/src/tools.rs`, `process.rs` |
+| Running ffmpeg and ffprobe, stopping a hung one | `crates/libs/media/src/tools.rs`, `probe.rs` |
+| The reason recorded when a version is not made | `crates/libs/media/src/process.rs` |
 | The queue and the pass | `crates/server/server/src/media_queue.rs`, `process_assets.rs` |
 | The attachment rows' versions and reasons | `crates/server/server/src/db/attachment_versions.rs`, `schema/sql/messages.sql` |
 | The three asset routes and range answers | `crates/server/server/src/assets_api.rs`, `assets_api/ranges.rs`, `assets_api/media_links.rs` |

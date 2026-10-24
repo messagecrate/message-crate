@@ -27,7 +27,8 @@ pub const THUMBNAIL_LONG_EDGE: u32 = 560;
 /// The longest side of a video Preview, in pixels: 1080p.
 const PREVIEW_VIDEO_LONG_EDGE: u32 = 1920;
 
-/// The media types every browser shows as they are (rule 2): JPEG, PNG, GIF
+/// The media types every browser shows as they are
+/// (`docs/architecture/rules/media.md`, MEDIA-2): JPEG, PNG, GIF
 /// and WebP images, and MP3 audio. A file declared one of them is shown as
 /// it is only when its first bytes are that type's signature
 /// ([`media_type_from_bytes`]). MP4 is one too, but only with H.264 video,

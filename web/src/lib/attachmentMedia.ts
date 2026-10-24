@@ -8,7 +8,7 @@ type AttachmentKind = "image" | "video" | "audio" | "file";
 
 /**
  * Which version opens an attachment in full (`docs/architecture/rules/media.md`,
- * rule 2): the original, the Preview, or neither, when the original is not
+ * MEDIA-2): the original, the Preview, or neither, when the original is not
  * one every browser shows and the server has not made its Preview yet.
  */
 type FullVersion = "original" | "preview" | "none";
