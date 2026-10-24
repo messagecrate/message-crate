@@ -1,14 +1,14 @@
 # The HTTP interface
 
 Every rule the server's `/v1` interface follows, in one place. How a request
-travels through the server and the shapes every route shares are in
-[The HTTP interface](../http-api.md); this document is what a change must not
-break. The interface is part of the architecture, so its rules are written down when they are decided,
-not when the code catches up: a design is argued against this file, a pull
-request that touches a route is graded against it, and a route that breaks a
-rule here is a bug. Each rule carries its reason, and where an alternative was
-weighed and turned down, one line says so, so the question is not reopened by
-accident.
+travels through the server and the shapes every route shares are in [The HTTP
+interface](../http-api.md). This document is what a change must not break. The
+interface is part of the architecture, so its rules are written down when they
+are decided, not when the code catches up: a design is argued against this
+file, a pull request that touches a route is graded against it, and a route
+that breaks a rule here is a bug. Each rule carries its reason, and where an
+alternative was weighed and turned down, one line says so, so the question is
+not reopened by accident.
 
 This file states what every route must do. The generated reference (see
 [The reference](#the-reference)) states what each route does today. Where the

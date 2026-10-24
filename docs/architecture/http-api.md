@@ -7,9 +7,10 @@ server and shows the shapes every route shares, so a reader can predict what
 a route they have not seen will look like. The constraints a change must keep
 are in [The HTTP interface: rules](rules/http-api.md).
 
-The interface has 72 paths and 103 operations, described by a generated
-OpenAPI document that the server serves at `/openapi.json` and that is
-checked into the repository.
+The interface is described by a generated OpenAPI document that the server
+serves at `/openapi.json` and that is checked into the repository as
+`docs/src/assets/openapi.json`. Its paths and operations are counted there,
+not here.
 
 ## A request's path
 
@@ -19,7 +20,7 @@ flowchart TB
     subgraph layers["Layers every request passes, outermost first"]
         direction TB
         ID["Request id: a UUID made here,<br/>returned as x-request-id"]
-        TR["Trace span: request{method uri request_id};<br/>writes the INFO line when the answer leaves"]
+        TR["Trace span: request{method uri request_id}.<br/>Writes the request line when the answer leaves"]
         IF["In-flight tracking, for a clean stop"]
         HD["Protective headers, Cache-Control: no-store, CORS"]
         BL["Body limits: size and the two time limits"]
@@ -47,15 +48,18 @@ Reading top to bottom:
    can quote it and find the request in the server's log.
 2. **The trace span.** The request runs under a `request` span carrying its
    method, its URI with sensitive query values already hidden, and the id.
-   When the answer leaves, this layer writes one `INFO` line with the
-   status and latency. [The server's log](server-log.md) follows that line.
+   When the answer leaves, this layer writes one line with the status and
+   latency, at `INFO` for every answer but a successful routine one, such
+   as a health probe, which is `DEBUG`. [The server's log](server-log.md)
+   follows that line.
 3. **In-flight tracking.** Every request is counted until its answer's body
    is sent, so a server told to stop can wait for the ones still running,
    up to 30 seconds, and name any it had to cut off.
 4. **Headers and CORS.** Three protective headers go on every answer, and
    `Cache-Control: no-store` on every `/v1` answer that did not set its own,
    so nothing in a browser or a proxy keeps message text or a token. The
-   CORS layer sits inside them so a browser can read even a refusal.
+   CORS layer sits outside the body limits, so a browser can read even a
+   refusal they answer.
 5. **Body limits.** A JSON body is held to a fixed cap, and every body to
    the two time limits: a body that sends nothing for 60 seconds or is still
    arriving after 300 is answered `408 Request Timeout`. Attachment and
@@ -77,14 +81,14 @@ Reading top to bottom:
    reader sees its dependencies without reading its body.
 9. **The database module.** Every query lives in `db/`, in the module for
    the table it is chiefly about, written for SQLite. A `db/` function
-   returns a plain or typed error and never an HTTP one; the handler layer
+   returns a plain or typed error and never an HTTP one. The handler layer
    turns an outcome into a status.
 
 ## Three shapes every route shares
 
 **An address is an integer id.** `/v1/contacts/{id}`, `/v1/accounts/{id}`,
 and under a member its collections, `/v1/accounts/{id}/api-tokens/{id}`. A
-collection is plural; a singular path is a singleton such as `/v1/server` or
+collection is plural. A singular path is a singleton such as `/v1/server` or
 `/v1/session`. An asset is the one resource addressed by content: the
 SHA-256 of its bytes, because the file exists before any row does. A verb
 appears only as a sub-resource of a member for an action that is not a field
@@ -113,36 +117,44 @@ handler, is an RFC 7807 body served as `application/problem+json`:
   "type": "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
   "title": "Validation failed",
   "status": 422,
-  "errors": ["limit must be at least 1", "sort: unknown key 'year'; accepted keys are date, name"],
+  "errors": ["sort: unknown key 'year'; accepted keys are date, name"],
   "request_id": "3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70"
 }
 ```
 
-Each `type` is a page on the docs site, one per problem type, and there are
-26 of them. The registry is `problem.rs`; the pages are generated from it, so
-they cannot drift. A client branches on `type`, never on the sentence. The
-sentence in `detail`, or each entry of `errors`, is lowercase with no final
-period, and the client decides how it starts and ends on its screen.
+Each `type` is a page on the docs site, one per problem type, with one
+exception: a `500 Internal Server Error` carries `about:blank`, because no
+page could say anything a reader could act on. The registry is `problem.rs`,
+and the pages are generated from it, so they cannot drift. A client reads
+`type` to tell one failure from another. The sentence in `detail`, or each
+entry of `errors`, reads like `asset not found`: lowercase, no final period,
+naming the thing and what is wrong with it, so a screen can show it alone or
+join it with others. The form is a rule, with its reason, under "Failures"
+in the rules document.
 
 ## What a status code means
 
 | Answer | When |
 |---|---|
 | `200 OK` | A read, or a write that completed and has something to return, even when it changed nothing |
-| `201 Created` | A resource was made; `Location` names it |
-| `202 Accepted` | The write finishes after the answer; only the Demo Account rebuild |
+| `201 Created` | A resource was made, and `Location` names it |
+| `202 Accepted` | The write finishes after the answer. Only the Demo Account rebuild answers it |
 | `204 No Content` | A write with nothing to return |
+| `206 Partial Content` | One byte range of an asset, Preview or Thumbnail, for a player that streams |
 | `400 Bad Request` | The body could not be read at all: not JSON, or the connection broke |
 | `401 Unauthorized` | The credential failed, or the login was refused |
 | `403 Forbidden` | The credential is valid but may not do this |
 | `404 Not Found` | The row is not there, or the caller does not hold it |
+| `405 Method Not Allowed` | The path exists and the method does not |
+| `406 Not Acceptable` | An `Accept` header that names nothing JSON, on a route that answers JSON |
 | `408 Request Timeout` | The body stalled or took too long |
 | `409 Conflict` | A name collision, a wrong state, or a merge the client must confirm |
 | `413 Payload Too Large` | A body over its cap |
 | `415 Unsupported Media Type` | No or a wrong `Content-Type` on a body |
-| `422 Unprocessable Entity` | The request was read and broke a rule; `errors` lists every one |
-| `500 Internal Server Error` | A bug; the request id finds its `ERROR` line in the log |
-| `503 Service Unavailable` | The database was busy, or the server is stopping; `Retry-After` says when to try again |
+| `416 Range Not Satisfiable` | A `Range` that selects no byte of the file |
+| `422 Unprocessable Entity` | The request was read and broke a rule. A validation failure lists every rule it broke in `errors` |
+| `500 Internal Server Error` | A bug. The request id finds its `ERROR` line in the log |
+| `503 Service Unavailable` | The database was busy, which carries `Retry-After`, or the server is stopping, which does not. Either way the same request succeeds later |
 
 ## Who may call what
 
@@ -153,9 +165,9 @@ security scheme, so every operation says which it accepts.
 |---|---|---|
 | **Session** | `POST /v1/session` with a username and password | Everything the account may do: browse, import, export, delete, as its permissions allow. The owner's Session reaches accounts, server settings and the log, and no messages. |
 | **API token** | The account, with `import` or `export` scopes capped by its own | The Import and Export pipelines, and asset reads under `export`. Never browsing, never deletion, never the owner. |
-| **Media Link** | `POST /v1/assets/{sha256}/media-links` from a Session | One asset, its Preview and Thumbnail, for an hour, without a header, so a media element can stream it. |
+| **Media Link** | `POST /v1/assets/{sha256}/media-links` from a Session | One asset, its Preview and Thumbnail, for an hour or until its Session ends, without a header, so a media element can stream it. |
 
-The credential names the account; no route takes an account parameter. The
+The credential names the account. No route takes an account parameter. The
 owner holds no messages ([ADR 0008](../adr/0008-the-owner-holds-no-messages.md)),
 so routes split along that line: `/v1/accounts/{id}/...` is what the owner
 and the account both read, such as an account's import history as a record
@@ -197,6 +209,7 @@ and a rename stops compiling rather than failing at run time.
 |---|---|
 | The router and the layer order | `with_server_layers` and `http_app` in `crates/server/server/src/server.rs` |
 | Request id, body limits, headers, panic catch | `crates/server/server/src/request_id.rs`, `middleware.rs`, `limits.rs` |
+| In-flight tracking for a clean stop | `crates/server/server/src/in_flight.rs` |
 | Connection limits | `crates/server/server/src/connections.rs` |
 | Credential extractors | `crates/server/server/src/auth.rs`, `credentials.rs` |
 | Route groups, one module per first path segment | `crates/server/server/src/*_api.rs` and their directories; Contact Groups and Message Tags share `named_set_api.rs` |
@@ -205,5 +218,6 @@ and a rename stops compiling rather than failing at run time.
 | The SQL | `crates/server/server/src/db/` |
 | Shared wire types | `crates/libs/api-types/` |
 | The OpenAPI document and its rules | `crates/server/server/src/openapi.rs`, `openapi/` |
+| The generated problem-type pages | `crates/server/server/src/error_docs.rs` |
 | The web app's client | `web/src/lib/api.ts`, `serverApi.ts`, `serverApi.types.ts` |
 | The desktop app's client | `crates/libs/http/`, `crates/libs/import/`, `crates/libs/export/` |
