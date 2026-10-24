@@ -2,15 +2,15 @@
 //! number takes its `+` form, and when an identity already holds that form
 //! the two become one (#1676).
 //!
-//! A number whose country nobody stated is stored as the digits typed, with
-//! no `+`, and matches no `+` number (`docs/architecture/
-//! contacts-identities-and-messages.md`, "A phone number carries its
-//! country"). Once a person picks the country, the number is the `+` form
+//! A number whose country nobody stated is stored as the digits typed, with no
+//! `+`, and matches no `+` number
+//! (`docs/architecture/rules/contacts-identities-and-messages.md`,
+//! CONTACT-17). Once a person picks the country, the number is the `+` form
 //! that country gives it. The identity is rewritten in place when no other
-//! identity holds that form. When one does, everything that names the
-//! number written without its `+` (conversations, participants, messages,
-//! reactions, the account's own identities and the contact link) moves to
-//! the identity that holds the `+` form, and the first identity goes.
+//! identity holds that form. When one does, everything that names the number
+//! written without its `+` (conversations, participants, messages, reactions,
+//! the account's own identities and the contact link) moves to the identity
+//! that holds the `+` form, and the first identity goes.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};

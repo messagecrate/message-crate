@@ -181,8 +181,8 @@ and its shape, and keeps the stored type of an identity written exactly as
 `POST /v1/contacts/vcard-address-book` writes one from a vCard file and
 stores nothing. `crates/server/server/src/db/address_book.rs` holds every
 direction. The
-rules of a load are in
-[`docs/architecture/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md).
+rules of a load are CONTACT-27 to CONTACT-34 in
+[`docs/architecture/rules/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/rules/contacts-identities-and-messages.md).
 
 ### `contact_groups` / `contact_group_members`
 
@@ -226,8 +226,8 @@ deleting underlying rows.
 `contact_group_members_set_aside` keep what linking an identity after an
 import takes away: the holder's participant rows, and the Import Run records
 and Import Run Contact Group memberships of the holder's deleted contact.
-Removing the identity again puts them back. The rules are in
-[`docs/architecture/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md).
+Removing the identity again puts them back. The rule is CONTACT-48 in
+[`docs/architecture/rules/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/rules/contacts-identities-and-messages.md).
 
 ## How storage sizes are measured
 

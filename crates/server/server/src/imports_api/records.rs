@@ -464,12 +464,12 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 /// One header participant as a record, or `None` for one that gives neither
 /// an address nor a name and so says nothing.
 ///
-/// Every participant is an identity. A person the source names with no
-/// address gets an identity of type `other` whose value is the name, so the
-/// same name on one service is one identity and one contact on every import
-/// (`docs/architecture/contacts-identities-and-messages.md`). The file
-/// states no type: staging types an address by its service and shape
-/// (`db::handles::handle_type_on`).
+/// Every participant is an identity. A person the source names with no address
+/// gets an identity of type `other` whose value is the name, so the same name
+/// on one service is one identity and one contact on every import
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`, CONTACT-2
+/// and CONTACT-11). The file states no type: staging types an address by its
+/// service and shape (`db::handles::handle_type_on`).
 ///
 /// # Errors
 ///

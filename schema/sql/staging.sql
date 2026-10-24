@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     -- The latest message time of the copy that gave group_title, in the form
     -- staging_messages.timestamp holds; NULL with no title, or when that copy had no
     -- messages. A merge compares an incoming copy's latest message with it
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-37).
     group_title_at TEXT,
     -- Path or name of the source file this thread came from.
     source_file TEXT NOT NULL,
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     -- the form timestamp holds; NULL when no copy's file said. Between two
     -- copies of one message from one source, the copy from the later backup
     -- decides its deletion mark and text
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-38).
     backup_taken_at TEXT,
     -- The mark a copy from a file without a backup date gave this row, as
     -- `messages.undated_deletion`; NULL for none (#1989).

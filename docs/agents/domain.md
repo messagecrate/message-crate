@@ -7,7 +7,7 @@ How the engineering skills should consume this repo's domain documentation when 
 - **`CONTEXT.md`** at the repo root: the glossary.
 - **`docs/adr/`**: read ADRs that touch the area you're about to work in.
 - **`docs/architecture/rules/http-api.md`** when the work touches a `/v1` route. The HTTP interface has no ADRs; that one file holds every rule, its reason, and what was rejected. A rule is written there when it is decided, and a route that breaks it is a bug with an open issue (`docs/adr/0011-the-http-interface-has-one-rules-document.md`).
-- **`docs/architecture/rules/`** when the work touches an area it covers: the constraints a change must keep, one entry per rule with a stable id, its reason and what was rejected. The architecture page beside it (`docs/architecture/<topic>.md`) shows the current shape for orientation and is not what a diff is graded against. `contacts-identities-and-messages.md` still holds its rules in the same file, under "Rules". A rule is written when it is decided; where the code does not follow it yet, an open issue says so.
+- **`docs/architecture/rules/`** when the work touches an area it covers: the constraints a change must keep, one entry per rule with a stable id, its reason and what was rejected. The architecture page beside it (`docs/architecture/<topic>.md`) shows the current shape for orientation and is not what a diff is graded against. A rule is written when it is decided; where the code does not follow it yet, an open issue says so.
 
 ## Use the glossary's vocabulary
 

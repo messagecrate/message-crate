@@ -31,19 +31,19 @@ words; both kinds of document use them and redefine none.
 | Architecture | Rules | Covers |
 |---|---|---|
 | [The server's log](server-log.md) | [rules](rules/server-log.md) | What the server records about its own work, how a line travels to the owner's screen, and what never reaches it |
+| [Contacts, identities and messages](contacts-identities-and-messages.md) | [rules](rules/contacts-identities-and-messages.md) | The people model: what a contact and an identity are, how conversations and messages attach to them, one group chat drawn out, and where each piece lives |
 | [How contacts are made and changed](how-contacts-are-made-and-changed.md) | | What an import of a backup does to contacts and identities, what an address book load does, and how the two differ |
 | [Import Run logs](import-run-logs.md) | [rules](rules/import-run-logs.md) | The desktop app's log of each Import Run and of itself: the account line, where they are kept, who reads them, and what a line holds |
 | [Media](media.md) | [rules](rules/media.md) | The life of an attachment from the import to the screen: the original, the Thumbnail and the Preview, the pass that makes them, which one a screen loads, and how a video streams |
 | [The HTTP interface](http-api.md) | [rules](rules/http-api.md) | A request's path through the server, the three shapes every route shares, what each status code and credential means, runs, and how the reference is generated |
 | [Outbound connections](outbound-connections.md) | [rules](rules/outbound-connections.md) | The two hosts Message Crate ever connects to, how the program download works, and no telemetry |
 
-Two documents are not yet split into the two kinds. Each holds its
+One document is not yet split into the two kinds. It holds its
 architecture and its rules in one file, with the rules under a `Rules`
 heading, until its own pull request separates them:
 
 | Document | Covers |
 |---|---|
-| [Contacts, identities and messages](contacts-identities-and-messages.md) | The people model: what a contact and an identity are, how conversations and messages attach to them, and what an import creates |
 | [The search language](search.md) | The language typed on the Contacts, Conversations and Messages lists: its grammar, values, each list's defaults, and what every word means on every list |
 
 A rules document with no architecture page beside it gets one when someone
