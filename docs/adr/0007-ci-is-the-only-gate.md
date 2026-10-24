@@ -107,12 +107,14 @@ mutant never fails anything.
 
 The nightly run lives in `nightly.yml` for the same reason. It builds the
 release Dockerfile from `main` once a night and starts the image with
-`scripts/check-docker-compose.sh` and `docker/compose.release.yml`. It is the
-only run that starts the image before a release: no pull request builds it,
-and the release's `docker` job builds it without starting it (see the
-amendment of 2026-10-14 below). A change can break the image, or make
-the server write outside `/app/data` at start, so that it no longer starts
-under the Compose files' read-only root filesystem.
+`scripts/check-docker-compose.sh` and `docker/compose.release.yml`. No pull
+request builds the image, so the nightly run is where a change that breaks it
+shows before a release; the `docker` job in `ci.yml` (a release, or a manual
+run that pushes `sha-<commit>`) builds it and runs the same check before it
+pushes (see the amendments of 2026-10-14 and 2026-10-24 below). A change
+can break the image, or make the server write outside `/app/data` at start,
+so that it no longer starts under the Compose files' read-only root
+filesystem.
 It then loads the website the image serves in a headless browser
 (`scripts/check-served-website.sh`), logs in to the Demo Account, searches
 and opens a conversation, and fails on a console error or a 5xx: the web
@@ -445,3 +447,14 @@ The `docker-context` job stays on every pull request: it takes seconds. It
 was named "Docker rust-builder context", but `check-docker-context.sh` also
 fails any `FROM` in `docker/Dockerfile` that is not pinned by tag and digest,
 so it is now named "Docker build context" (#2664).
+
+## Amended 2026-10-24: the `docker` job starts the image before it pushes
+
+The gap the 2026-10-14 amendment left is closed (#3000). The `docker` job (a
+release, or a manual run that pushes `sha-<commit>`) builds the image, loads
+it into the runner's Docker and starts it with `check-docker-compose.sh`,
+without `--website`. A second build step on the same builder then pushes it,
+served from the cache the first step wrote. An image that builds but fails the
+Compose check now fails the job, and nothing is pushed, even when a tag comes
+before that night's run. The nightly run is still the only one that loads the
+website in a browser.

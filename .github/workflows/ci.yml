@@ -505,8 +505,10 @@ jobs:
   # an image built from a branch can never replace the one people pull.
   #
   # No pull request builds the image: nightly.yml builds it from main and
-  # starts it. This job builds it before it pushes, so an image that does
-  # not build fails the release, but it does not start it (#3000). Why:
+  # starts it. This job builds it and starts it with
+  # scripts/check-docker-compose.sh before it pushes, so an image that does
+  # not build, or builds and does not run under the release Compose files,
+  # fails the job and nothing is pushed (#3000). Why:
   # docs/adr/0007-ci-is-the-only-gate.md.
   docker:
     name: Docker image
@@ -575,7 +577,36 @@ jobs:
             echo "metadata=${GITHUB_SHA:0:SHORT_SHA_LENGTH}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push
+      # Built into the runner's Docker under a local tag first, so the check
+      # below starts this build and never an image pulled from Docker Hub.
+      # The Push step takes the same context, file, labels, build-args and
+      # cache-from: change them in both, or the image pushed is not the one
+      # the check started.
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: false
+          load: true
+          tags: message-crate-server:check
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_METADATA=${{ steps.build.outputs.metadata }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The check nightly.yml runs, less --website: the release Compose
+      # files' read-only root filesystem, the Demo Account, an import with a
+      # video, the media pass and an export. An image that fails it is never
+      # pushed.
+      - name: Start the release Compose stack on the image
+        run: ./scripts/check-docker-compose.sh message-crate-server:check
+
+      # The same build again, on the same builder and inputs, so every layer
+      # comes from the cache the Build step just wrote and the image pushed
+      # holds the layers the check started.
+      - name: Push
         id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -587,7 +618,6 @@ jobs:
           build-args: |
             BUILD_METADATA=${{ steps.build.outputs.metadata }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       # Ties the pushed image, by its digest, to this workflow run, so
       # `gh attestation verify oci://docker.io/bitrealm/message-crate:<tag>
