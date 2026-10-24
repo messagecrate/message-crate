@@ -7,14 +7,11 @@ import {
   type ImessagePathStats,
   isImessageMethod,
 } from "../../lib/imessageImport";
+import { isAndroidSmsSource } from "../../lib/importSources/androidSms";
+import { isPathOnlySource } from "../../lib/importSources/pathOnlySources";
+import { type BackupPathStats, NO_BACKUP_PATH_STATS, probePath } from "../../lib/pathChecks";
 import {
-  ANDROID_SMS_NO_STATS,
-  type AndroidSmsPathStats,
-  isAndroidSmsSource,
-} from "../../lib/importSources/androidSms";
-import { probePath } from "../../lib/pathChecks";
-import {
-  type AndroidSmsPathsKey,
+  type BackupPathKey,
   type ImessagePathsKey,
   keys,
   type WhatsappPathsKey,
@@ -167,17 +164,18 @@ export function useWhatsappPathStats(paths: WhatsappPathsKey): WhatsappPathStats
 }
 
 /**
- * What the backup path of an Android SMS source points at: one `.xml` file
- * for SMS Backup & Restore, a directory for the others. Any change empties
- * it until the new path is checked, so the old path's kind never lets Import
- * start on the new one.
+ * What the backup path of an Android SMS source, iMazing or OpenExtract
+ * points at: one `.xml` file for SMS Backup & Restore, a directory for the
+ * other Android sources, and either for iMazing and OpenExtract. Any change
+ * empties it until the new path is checked, so the old path's kind never
+ * lets Import start on the new one.
  */
-export function useAndroidSmsPathStats(paths: AndroidSmsPathsKey): AndroidSmsPathStats {
-  return useSettledPathProbe<AndroidSmsPathsKey, AndroidSmsPathStats>(paths, {
-    key: keys.desktopAndroidSmsPaths.of,
-    isMethod: isAndroidSmsSource,
+export function useBackupPathStats(paths: BackupPathKey): BackupPathStats {
+  return useSettledPathProbe<BackupPathKey, BackupPathStats>(paths, {
+    key: keys.desktopBackupPath.of,
+    isMethod: (source) => isAndroidSmsSource(source) || isPathOnlySource(source),
     probe: async (settled) => ({ backup: await probePath(settled.backupPath) }),
-    empty: ANDROID_SMS_NO_STATS,
+    empty: NO_BACKUP_PATH_STATS,
     keepWhileTyping: false,
   });
 }

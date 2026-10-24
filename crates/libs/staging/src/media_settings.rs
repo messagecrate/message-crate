@@ -61,8 +61,8 @@ mod tests {
             mode: MediaMode::Compress,
             compress: CompressOptions {
                 max_resolution: MaxResolution::P720,
-                max_fps: 24.0,
-                min_size_bytes: 5 * 1024 * 1024,
+                max_fps: Some(24),
+                min_size_bytes: Some(5 * 1024 * 1024),
                 skip_efficient: true,
             },
             asset_max_bytes: 123_456_789,

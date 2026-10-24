@@ -186,7 +186,7 @@ fn only_remuxed_by_compress(
     ) {
         return false;
     }
-    if size_bytes < compress.min_size_bytes {
+    if compress.under_min_size(size_bytes) {
         return true;
     }
     if !compress.skip_efficient {
@@ -215,17 +215,16 @@ fn pixel_ratio(probe: &MediaProbe, compress: &CompressOptions) -> f64 {
     ratio * ratio
 }
 
-/// Output frame rate over source frame rate after the fps cap, for the size estimate.
+/// Output frame rate over source frame rate after the fps cap, for the size
+/// estimate. With no cap, the video keeps its frame rate.
 fn fps_ratio(probe: &MediaProbe, compress: &CompressOptions) -> f64 {
     let Some(source) = probe.fps.filter(|f| *f > 0.0) else {
         return 1.0;
     };
-    let target = if compress.max_fps > 0.0 {
-        compress.max_fps
-    } else {
-        30.0
+    let Some(target) = compress.max_fps else {
+        return 1.0;
     };
-    f64::from(target / source).min(1.0)
+    (f64::from(target) / f64::from(source)).min(1.0)
 }
 
 /// Size change from the format alone, holding pixels and frame rate fixed.

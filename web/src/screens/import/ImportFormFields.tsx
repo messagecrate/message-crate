@@ -1,25 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
+import CountryField from "../../components/CountryField";
 import PathPicker from "../../components/PathPicker";
-import PhoneCountrySelect from "../../components/PhoneCountrySelect";
 import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { useDesktopJob } from "../../hooks/useDesktopJob";
 import { useToolsStatus } from "../../hooks/useToolsStatus";
+import { MAX_FPS_RANGE } from "../../lib/compressFields";
 import { toolUsable } from "../../lib/desktop/tools";
 import { desktopJobRunningText } from "../../lib/desktopJob";
+import { encryptionPasswordShown } from "../../lib/encryptedBackup";
 import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
-import type { PhoneCountryChoice } from "../../lib/phoneCountries";
+import {
+  DEFAULT_COUNTRY_HINT,
+  DEFAULT_COUNTRY_LABEL,
+  type PhoneCountryChoice,
+} from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import { IMPORT_FORM_SECTIONS } from "./formSections";
 import { FieldStatus } from "./formSections/FieldStatus";
 import type { ImportFormFieldsProps, OwnerPhoneEntry } from "./formSections/types";
-import { WhatsappFallbackPhoneField } from "./formSections/WhatsappFormSection";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,
@@ -34,14 +39,15 @@ import { mediaJobVerb } from "./reviewForecast";
 import { useLowDiskSpace } from "./useLowDiskSpace";
 
 /**
- * The country of the phone the backup came from. A backup writes many numbers
- * without their `+` code, as the phone showed them, and nothing in it says
- * which country they are in. With a country picked, each is read as a number
- * there, so `07700 900123` and `+44 7700 900123` are one person. With none,
- * such a number keeps its digits and can be given its country later on the
- * Contacts screen (#1676).
+ * Default country for contacts: the country a contact's number written
+ * without its `+` code is read in. A backup writes many numbers that way, as
+ * the phone showed them, and nothing in it says which country they are in.
+ * With a country picked, each is read as a number there, so `07700 900123`
+ * and `+44 7700 900123` are one person. With none, such a number keeps its
+ * digits and can be given its country later on the contact (#1676). It is
+ * sent as the Import Run's `phone_country`.
  */
-function PhoneCountryField({
+function DefaultCountryField({
   value,
   countries,
   onChange,
@@ -51,18 +57,15 @@ function PhoneCountryField({
   onChange: (code: string) => void;
 }) {
   return (
-    <StackedField label="Phone's country" optional>
-      <PhoneCountrySelect
+    <StackedField label={DEFAULT_COUNTRY_LABEL} optional>
+      <CountryField
         value={value}
         countries={countries}
         onChange={onChange}
-        label="Phone's country"
-        triggerClassName="!bg-bg"
+        label={DEFAULT_COUNTRY_LABEL}
+        allowsNone
       />
-      <p className={hintClass}>
-        Numbers written without a country code are read as numbers in this country. Leave it unset
-        when the backup holds numbers from more than one country written that way.
-      </p>
+      <p className={hintClass}>{DEFAULT_COUNTRY_HINT}</p>
     </StackedField>
   );
 }
@@ -78,6 +81,8 @@ function AttachmentFields(props: {
   attachments: AttachmentChoices;
   onAttachmentsChange: (attachments: AttachmentChoices) => void;
   showCompress: boolean;
+  /** The readiness's problems with Max FPS (`maxFps`) and Minimum Video File Size (`minSizeMb`). */
+  errors: Partial<Record<string, string>>;
 }) {
   const { attachments, onAttachmentsChange } = props;
   return (
@@ -120,28 +125,35 @@ function AttachmentFields(props: {
             </Select>
             <p className={hintClass}>Maximum video resolution; videos are not upscaled.</p>
           </StackedField>
-          {/* The desktop app's refusals name Max FPS and Minimum Video File Size by
-              these labels (media::compress_options_from_form in crates/libs/media), so
-              a renamed label is renamed there too. */}
-          <StackedField label="Max FPS">
+          {/* The checks' messages under these two fields (lib/compressFields.ts) and
+              the desktop app's refusals (media::compress_options_from_form in
+              crates/libs/media) name Max FPS and Minimum Video File Size by these
+              labels, so a renamed label is renamed in both. */}
+          <StackedField label={`Max FPS (${MAX_FPS_RANGE.min}–${MAX_FPS_RANGE.max})`}>
             <input
               type="text"
+              inputMode="numeric"
               value={attachments.maxFps}
               onChange={(e) => onAttachmentsChange({ ...attachments, maxFps: e.target.value })}
+              placeholder="Keeps each video's frame rate"
               className={textInputClass}
             />
+            <FieldStatus message={props.errors.maxFps} />
             <p className={hintClass}>
-              Maximum video frame rate; a video with a lower frame rate keeps it.
+              Maximum video frame rate. A video with a lower frame rate is unchanged.
             </p>
           </StackedField>
           <StackedField label="Minimum Video File Size (Megabytes)">
             <input
               type="text"
+              inputMode="numeric"
               value={attachments.minSizeMb}
               onChange={(e) => onAttachmentsChange({ ...attachments, minSizeMb: e.target.value })}
+              placeholder="All videos, regardless of size"
               className={textInputClass}
             />
-            <p className={hintClass}>Only re-encode videos above this size.</p>
+            <FieldStatus message={props.errors.minSizeMb} />
+            <p className={hintClass}>Videos smaller than this are not re-encoded.</p>
           </StackedField>
         </div>
       )}
@@ -200,7 +212,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     ...form,
     pathStats: props.pathStats,
     whatsappStats: props.whatsappStats,
-    androidSmsStats: props.androidSmsStats,
+    backupPathStats: props.backupPathStats,
     profilePhonesReady: profilePhones.ready,
   };
   // The asterisks and the Import button both read the source's readiness,
@@ -231,9 +243,17 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const canImport =
     blockedBy === null && !wtsexporterBlocked && readiness.enabled && !props.running;
 
+  // The Encryption password shows only for a backup known to be encrypted.
+  // A password typed for an earlier backup stays in the form while the field
+  // is hidden, and is not sent: an unencrypted backup refuses one.
+  const passwordShown = encryptionPasswordShown(
+    source.backupEncrypted({ ...readinessInput, ownerPhoneEntry }),
+  );
+  const backupPassword = passwordShown ? form.backupPassword : "";
+
   function handleImport(): void {
     if (!asksOwnerPhones) {
-      props.onImport();
+      props.onImport({ ownerPhones: form.ownerPhones, backupPassword });
       return;
     }
     // Commit the number being typed, then ask the source again with the
@@ -250,7 +270,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
       ownerPhones: phones,
       ownerPhoneEntry: committed,
     });
-    if (ready.enabled) props.onImport(phones);
+    if (ready.enabled) props.onImport({ ownerPhones: phones, backupPassword });
   }
 
   const attachmentFields = (
@@ -260,6 +280,17 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         dispatch({ type: "set", field: "attachments", value: attachments })
       }
       showCompress={showCompress}
+      errors={readiness.errors}
+    />
+  );
+
+  // Every source shows it after its backup's own fields, with the owner
+  // fields the source asks for just above it.
+  const defaultCountryField = (
+    <DefaultCountryField
+      value={form.phoneCountry}
+      countries={props.phoneCountries}
+      onChange={(code) => dispatch({ type: "set", field: "phoneCountry", value: code })}
     />
   );
 
@@ -337,51 +368,46 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
             ownerPhoneEntry={ownerPhoneEntry}
             errors={readiness.errors}
             attachmentFields={attachmentFields}
+            defaultCountryField={defaultCountryField}
+            passwordShown={passwordShown}
           />
-        ) : null}
+        ) : (
+          defaultCountryField
+        )}
       </CollapsibleSection>
 
-      <CollapsibleSection
-        title="Processing Options (Advanced)"
-        open={form.processingOpen}
-        onToggle={() => dispatch({ type: "toggle", field: "processingOpen" })}
-      >
-        <div className="mb-2 flex flex-col items-start gap-3">
-          {processingOptions.includes("obfuscate") ? (
-            <Checkbox
-              labelClassName="text-[0.875rem]"
-              checked={form.obfuscate}
-              onChange={(value) => dispatch({ type: "set", field: "obfuscate", value })}
-            >
-              Obfuscate - All message data is anonymized.
-            </Checkbox>
-          ) : null}
-          {processingOptions.includes("timeZone") ? (
-            <div className="w-full max-w-[28rem]">
-              <TimeZoneField
-                label="Time zone of the messages"
-                value={formTimeZone(form, props.accountTimeZone)}
-                onChange={(zone) => dispatch({ type: "set", field: "timeZone", value: zone })}
-              />
-              <p className={hintClass}>
-                Pre-filled from your profile. iMazing writes each message time without a zone, so
-                pick the one the phone was in.
-              </p>
-            </div>
-          ) : null}
-        </div>
-        <PhoneCountryField
-          value={form.phoneCountry}
-          countries={props.phoneCountries}
-          onChange={(code) => dispatch({ type: "set", field: "phoneCountry", value: code })}
-        />
-        {processingOptions.includes("whatsappFallbackPhone") ? (
-          <WhatsappFallbackPhoneField
-            value={form.whatsappOwnerPhone}
-            onChange={(value) => dispatch({ type: "set", field: "whatsappOwnerPhone", value })}
-          />
-        ) : null}
-      </CollapsibleSection>
+      {processingOptions.length > 0 ? (
+        <CollapsibleSection
+          title="Processing Options (Advanced)"
+          open={form.processingOpen}
+          onToggle={() => dispatch({ type: "toggle", field: "processingOpen" })}
+        >
+          <div className="mb-2 flex flex-col items-start gap-3">
+            {processingOptions.includes("obfuscate") ? (
+              <Checkbox
+                labelClassName="text-[0.875rem]"
+                checked={form.obfuscate}
+                onChange={(value) => dispatch({ type: "set", field: "obfuscate", value })}
+              >
+                Obfuscate - All message data is anonymized.
+              </Checkbox>
+            ) : null}
+            {processingOptions.includes("timeZone") ? (
+              <div className="w-full max-w-[28rem]">
+                <TimeZoneField
+                  label="Time zone of the messages"
+                  value={formTimeZone(form, props.accountTimeZone)}
+                  onChange={(zone) => dispatch({ type: "set", field: "timeZone", value: zone })}
+                />
+                <p className={hintClass}>
+                  Pre-filled from your profile. iMazing writes each message time without a zone, so
+                  pick the one the phone was in.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </CollapsibleSection>
+      ) : null}
 
       {blockedBy ? (
         <p role="status" className="mt-2 mb-0 text-[0.813rem] text-muted">
@@ -408,7 +434,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         </p>
       ) : null}
 
-      <div className="mt-2 flex gap-3">
+      <div className="mt-2 flex justify-end gap-3">
         <Button
           variant="primary"
           onClick={handleImport}

@@ -1,6 +1,7 @@
 import { attachmentChoicesOf } from "../attachmentChoices";
+import { withCompressFieldChecks } from "../compressFields";
 import { type ImportSourceId, sourceLabel } from "../exportSources";
-import { checkOptionalPath, type ImportPathStat, type PathRequirement } from "../pathChecks";
+import { checkOptionalPath, type PathRequirement } from "../pathChecks";
 import { sbrExtractFields } from "../sbrExtractFields";
 import type { BackupField, ImportSourceDescriptor, ReadinessInput } from "./types";
 
@@ -27,11 +28,6 @@ export function isAndroidSmsSource(source: string): boolean {
   return ANDROID_SMS_SOURCE_IDS.has(source);
 }
 
-/** What the Android SMS backup path points at: null until it is checked, and always in the browser. */
-export type AndroidSmsPathStats = { backup: ImportPathStat | null };
-
-export const ANDROID_SMS_NO_STATS: AndroidSmsPathStats = { backup: null };
-
 export const SMS_BACKUP_RESTORE_ERR_NOT_FILE = "Pick the SMS Backup & Restore .xml file.";
 export const ANDROID_SMS_ERR_NOT_DIRECTORY = "Pick the backup directory.";
 
@@ -56,7 +52,7 @@ function androidSmsReadiness(
   requirement: PathRequirement,
 ): { enabled: boolean; errors: Partial<Record<"backupPath", string>> } {
   const errors: Partial<Record<"backupPath", string>> = {};
-  const stat = input.androidSmsStats.backup;
+  const stat = input.backupPathStats.backup;
   // The backup path is required, but the check says nothing about a path
   // that is empty or not checked yet, which is what checkOptionalPath skips.
   // `enabled` below keeps Import off for both.
@@ -106,12 +102,16 @@ function androidSmsSource(args: {
     snapshotSecret: () => null,
     backupField: () => args.backupField,
     readiness: (input) =>
-      androidSmsReadiness(input, args.asksOwnerEmails, {
-        expected: args.backupField.directory ? "directory" : "file",
-        kindError: args.backupField.directory
-          ? ANDROID_SMS_ERR_NOT_DIRECTORY
-          : SMS_BACKUP_RESTORE_ERR_NOT_FILE,
-      }),
+      withCompressFieldChecks(
+        androidSmsReadiness(input, args.asksOwnerEmails, {
+          expected: args.backupField.directory ? "directory" : "file",
+          kindError: args.backupField.directory
+            ? ANDROID_SMS_ERR_NOT_DIRECTORY
+            : SMS_BACKUP_RESTORE_ERR_NOT_FILE,
+        }),
+        input.attachments,
+      ),
+    backupEncrypted: () => null,
   };
 }
 

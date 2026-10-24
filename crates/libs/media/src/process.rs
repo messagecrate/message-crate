@@ -862,7 +862,7 @@ fn compress_video(
     hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
     let meta = fs::metadata(path)?;
-    if meta.len() < opts.min_size_bytes {
+    if opts.under_min_size(meta.len()) {
         // Still remux non-mp4 small files for container consistency.
         return keep_or_remux(tools, path, dest, stop);
     }
@@ -965,13 +965,14 @@ fn h264_follows(hevc_err: &anyhow::Error) -> bool {
 /// The frame rate to bring a video down to, or `None` to leave its rate alone.
 ///
 /// The maximum is a ceiling: a video at or under it keeps its frame rate, so
-/// a 24 fps video is not raised to 30. A maximum of zero means none was given
-/// and stands for 30. A video whose rate ffprobe could not read gets the
-/// maximum, because nothing shows it is under it.
-fn frame_rate_cap(source_fps: Option<f32>, max_fps: f32) -> Option<f32> {
-    let max = if max_fps > 0.0 { max_fps } else { 30.0 };
+/// a 24 fps video is not raised to 30. A video whose rate ffprobe could not
+/// read gets the maximum, because nothing shows it is under it. With no
+/// maximum, every video keeps its frame rate, read or not, because the Import
+/// form promises that for an empty Max FPS.
+fn frame_rate_cap(source_fps: Option<f32>, max_fps: Option<u32>) -> Option<u32> {
+    let max = max_fps?;
     match source_fps {
-        Some(source) if source <= max => None,
+        Some(source) if f64::from(source) <= f64::from(max) => None,
         _ => Some(max),
     }
 }
