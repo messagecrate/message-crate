@@ -476,6 +476,12 @@ apart.
 _Avoid_: Transcode (the mechanism, which a person who has not met ffmpeg will
 not know), Process attachments, Media conversion
 
+**Default country for contacts**:
+The country a contact's phone number is read in when the number was written
+without a country code. A person states it for an Import or a vCard file
+conversion. It says nothing about where the backup's own phone is.
+_Avoid_: Phone's country, Default phone country, Phone country
+
 **Stage**:
 One of the three parts of an Import Run, in order: **Staging** reads the
 backup and copies its messages and original attachments into the Staging

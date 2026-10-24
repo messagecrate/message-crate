@@ -109,10 +109,7 @@ fn compress_validates_the_minimum_size_before_staging() {
     options.attachment_media = MediaMode::Compress;
     options.media_min_size = "banana".into();
     let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
-    assert!(
-        err.contains("banana"),
-        "expected the malformed min-size value to be named: {err}"
-    );
+    assert_eq!(err, media::MIN_VIDEO_SIZE_INVALID);
 }
 
 #[test]
@@ -123,51 +120,30 @@ fn compress_reads_the_minimum_size_as_megabytes() {
     options.attachment_media = MediaMode::Compress;
     options.media_min_size = "20".into();
     let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
-    assert_eq!(settings.compress.min_size_bytes, 20 * 1024 * 1024);
+    assert_eq!(settings.compress.min_size_bytes, Some(20 * 1024 * 1024));
 }
 
 #[test]
-fn compress_refuses_a_minimum_size_with_a_unit_saying_what_to_type() {
-    // #1469: `20MB` used to reach the parser as `20MBM` and fail with "is
-    // not a size", naming a value the person never typed.
-    for typed in ["20MB", "20M", "1.5"] {
-        let mut options = test_options(Vec::new());
-        options.attachment_media = MediaMode::Compress;
-        options.media_min_size = typed.into();
-        let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
-        assert_eq!(
-            err,
-            format!(
-                "Minimum Video File Size must be a number of megabytes, such as 20, not '{typed}'."
-            )
-        );
-    }
+fn compress_reads_empty_fields_as_no_limit() {
+    // #3167: the form's placeholders say an empty Max FPS keeps each video's
+    // frame rate and an empty Minimum Video File Size takes every video.
+    let mut options = test_options(Vec::new());
+    options.attachment_media = MediaMode::Compress;
+    options.media_max_fps = " ".into();
+    options.media_min_size = String::new();
+    let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
+    assert_eq!(settings.compress.max_fps, None);
+    assert_eq!(settings.compress.min_size_bytes, None);
 }
 
 #[test]
-fn compress_refuses_an_empty_minimum_size_in_its_own_words() {
-    for typed in ["", "  "] {
-        let mut options = test_options(Vec::new());
-        options.attachment_media = MediaMode::Compress;
-        options.media_min_size = typed.into();
-        let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
-        assert_eq!(
-            err,
-            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
-        );
-    }
-}
-
-#[test]
-fn compress_with_an_empty_max_fps_is_refused_naming_the_field() {
-    // #1153: the form's Max FPS is free text, and a cleared field used to
-    // fail only after hours of Staging, at the summary.
-    for fps in ["", "  ", "fast", "0", "-5", "NaN", "inf"] {
+fn compress_refuses_a_bad_max_fps_in_the_forms_words() {
+    for fps in ["fast", "0", "-5", "241", "29.97"] {
         let mut options = test_options(Vec::new());
         options.attachment_media = MediaMode::Compress;
         options.media_max_fps = fps.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
-        assert!(err.contains("Max FPS"), "{fps:?}: {err}");
+        assert_eq!(err, media::MAX_FPS_INVALID, "{fps:?}");
     }
 }
 
@@ -195,8 +171,8 @@ fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
 
     assert_eq!(settings.mode, MediaMode::Compress);
     assert_eq!(settings.compress.max_resolution, MaxResolution::P720);
-    assert_eq!(settings.compress.max_fps, 24.0);
-    assert_eq!(settings.compress.min_size_bytes, 5 * 1024 * 1024);
+    assert_eq!(settings.compress.max_fps, Some(24));
+    assert_eq!(settings.compress.min_size_bytes, Some(5 * 1024 * 1024));
     // The server's limit, passed in. The desktop app has no number of its own.
     assert_eq!(settings.asset_max_bytes, 123_456_789);
 }

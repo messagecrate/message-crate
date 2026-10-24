@@ -4,8 +4,10 @@ import { cleanup, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../hooks/useToolsStatus";
+import { MAX_FPS_INVALID, MIN_VIDEO_SIZE_INVALID } from "../../lib/compressFields";
 import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED } from "../../lib/encryptedBackup";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
 import { IMPORT_SOURCES } from "../../lib/importSources";
@@ -102,7 +104,7 @@ function formProps(override: FormOverride = {}): ImportFormFieldsProps {
       backupEncrypted: false,
     },
     whatsappStats = emptyWhatsappPathStats(),
-    androidSmsStats = { backup: null },
+    backupPathStats = { backup: null },
     profilePhones = {},
     accountTimeZone = "America/New_York",
     phoneCountries = [],
@@ -123,7 +125,7 @@ function formProps(override: FormOverride = {}): ImportFormFieldsProps {
     onPathChange,
     pathStats,
     whatsappStats,
-    androidSmsStats,
+    backupPathStats,
     profilePhones: { phones: [], ready: true, error: false, ...profilePhones },
     accountTimeZone,
     phoneCountries,
@@ -204,25 +206,75 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.getByRole("option", { name: "Jailbroken iPhone" })).toBeTruthy();
   });
 
-  it("marks the iPhone backup directory required and encryption password optional", () => {
+  it("marks the iPhone backup directory required", () => {
     renderForm();
     const backupLabel = screen.getByText("iPhone Backup Directory").closest("label");
     expect(backupLabel?.textContent).toContain("*");
-    expect(screen.getByLabelText("Encryption password (Optional)")).toBeTruthy();
   });
 
-  it("marks encryption password required when the backup is encrypted", () => {
+  /**
+   * #3167: a password typed for a backup that is not encrypted made the run
+   * fail, so the field shows only for a backup known to be encrypted, and
+   * then as required, with its help text and no red line under it.
+   */
+  it.each([
+    ["imessage-ios", true, true],
+    ["imessage-ios", false, false],
+    ["imessage-ios", null, false],
+    ["whatsapp-ios", true, true],
+    ["whatsapp-ios", false, false],
+    ["whatsapp-ios", null, false],
+  ] as const)(
+    "on %s, a backup whose encryption is %s shows the password: %s",
+    (source, encrypted, shown) => {
+      renderForm({
+        source,
+        pathStats: {
+          backup: DIRECTORY_STAT,
+          attachmentRoot: null,
+          appleContacts: null,
+          backupEncrypted: encrypted,
+        },
+        whatsappStats: {
+          ...emptyWhatsappPathStats(),
+          backup: DIRECTORY_STAT,
+          backupEncrypted: encrypted,
+        },
+      });
+      const field = screen.queryByLabelText("Encryption password");
+      expect(field !== null).toBe(shown);
+      expect(screen.queryByLabelText("Encryption password (Optional)")).toBeNull();
+      if (shown) {
+        const passwordLabel = screen.getByText("Encryption password").closest("label");
+        expect(passwordLabel?.textContent).toContain("*");
+        expect(screen.getByText("This backup is encrypted. Enter its password.")).toBeTruthy();
+        expect(screen.queryByText(ENCRYPTED_BACKUP_PASSWORD_REQUIRED)).toBeNull();
+        expect(importButton()).toBeDisabled();
+      }
+    },
+  );
+
+  it.each([
+    [true, "secret"],
+    [false, ""],
+    [null, ""],
+  ] as const)("with the backup's encryption %s, sends the password %j", async (encrypted, sent) => {
+    // A password typed for an encrypted backup stays in the form when the
+    // path moves to one that is not, and the run must not be sent it.
+    const user = setupUser();
+    const onImport = vi.fn();
     renderForm({
+      onImport,
+      backupPassword: "secret",
       pathStats: {
         backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
-        backupEncrypted: true,
+        backupEncrypted: encrypted,
       },
     });
-    const passwordLabel = screen.getByText("Encryption password").closest("label");
-    expect(passwordLabel?.textContent).toContain("*");
-    expect(screen.queryByLabelText("Encryption password (Optional)")).toBeNull();
+    await user.click(importButton());
+    expect(onImport).toHaveBeenCalledWith({ ownerPhones: [], backupPassword: sent });
   });
 
   it("does not start an Import Run while another desktop job runs, and names that job", () => {
@@ -238,9 +290,8 @@ describe("ImportFormFields iMessage methods", () => {
     }
   });
 
-  it("shows password and hides attachment directory on iPhone backup", () => {
+  it("hides the attachment directory on an iPhone backup", () => {
     renderForm({ source: "imessage-ios" });
-    expect(screen.getByLabelText("Encryption password (Optional)")).toBeTruthy();
     expect(screen.queryByLabelText("Attachment directory")).toBeNull();
     expect(screen.queryByLabelText("Apple Contacts file")).toBeNull();
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
@@ -269,7 +320,7 @@ describe("ImportFormFields iMessage methods", () => {
       setAttachments({ ...compress, maxResolution: "1080p" }),
     );
 
-    await user.type(screen.getByLabelText("Max FPS"), "6");
+    await user.type(screen.getByLabelText("Max FPS (1–240)"), "6");
     expect(dispatch).toHaveBeenLastCalledWith(setAttachments({ ...compress, maxFps: "306" }));
 
     await user.type(screen.getByLabelText("Minimum Video File Size (Megabytes)"), "5");
@@ -573,7 +624,7 @@ describe("ImportFormFields Import button", () => {
       onImport,
       source: "sms-backup-restore",
       backupPath: "/backups/sms.xml",
-      androidSmsStats: { backup: FILE_STAT },
+      backupPathStats: { backup: FILE_STAT },
       ownerPhones: ["+15555550100"],
       // The same number is on the account profile, so there is no mismatch to
       // acknowledge and the form is ready.
@@ -584,7 +635,7 @@ describe("ImportFormFields Import button", () => {
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(onImport).toHaveBeenCalledTimes(1);
-    expect(onImport).toHaveBeenCalledWith(["+15555550100"]);
+    expect(onImport).toHaveBeenCalledWith({ ownerPhones: ["+15555550100"], backupPassword: "" });
   });
 
   it("offers the time zone picker for iMazing alone, under Processing Options", () => {
@@ -599,34 +650,111 @@ describe("ImportFormFields Import button", () => {
     expect(screen.queryByRole("combobox", { name: "Time zone of the messages" })).toBeNull();
   });
 
-  // The section holds a field only for some sources. For the rest it would
-  // open on nothing.
-  // Every source has the phone's country (#1676), so every source has the section.
-  it("shows Processing Options with the phone's country for every source", () => {
-    for (const source of ["imessage-ios", "whatsapp-android", "sms-backup-plus"]) {
-      const { unmount } = renderForm({ source, processingOpen: true });
-      expect(screen.getByText("Processing Options (Advanced)")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Phone's country/ })).toBeInTheDocument();
-      unmount();
+  /**
+   * #3167: Default country for contacts decides which contact a message
+   * lands on, so every source shows it with the fields that say whose phone
+   * the backup is, after the backup's own fields and before Attachments, not
+   * under Processing Options.
+   */
+  it.each([
+    ["imessage-ios", null],
+    ["imessage-macos", null],
+    ["whatsapp-android", "WhatsApp phone number"],
+    ["whatsapp-ios", "WhatsApp phone number (Optional)"],
+    ["sms-backup-restore", "Backup Device Phone Numbers"],
+    ["sms-backup-plus", "Backup Device Email Addresses"],
+    ["imazing", null],
+    ["openextract", null],
+  ] as const)("on %s, shows Default country for contacts after %s", (source, owner) => {
+    renderForm({ source, processingOpen: false });
+    const country = screen.getByRole("combobox", { name: "Default country for contacts" });
+    if (owner !== null) {
+      const ownerField = screen.getByLabelText(owner);
+      expect(ownerField.compareDocumentPosition(country)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    const attachments = screen.queryByLabelText("Attachments");
+    if (attachments !== null) {
+      expect(country.compareDocumentPosition(attachments)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     }
   });
 
-  it("states the picked country as the phone's country", async () => {
+  it("keeps only Obfuscate and the time zone under Processing Options, and hides it with neither", () => {
+    const { unmount } = renderForm({ source: "whatsapp-ios", processingOpen: true });
+    expect(screen.queryByText("Processing Options (Advanced)")).toBeNull();
+    unmount();
+    renderForm({ source: "sms-backup-plus", processingOpen: true });
+    expect(screen.getByText("Processing Options (Advanced)")).toBeInTheDocument();
+    expect(screen.getByText(/Obfuscate/)).toBeInTheDocument();
+  });
+
+  it("states the picked country as the Import Run's phone country", async () => {
     const user = setupUser();
     const dispatch = vi.fn();
     renderForm({
       source: "sms-backup-plus",
-      processingOpen: true,
       phoneCountries: [
         { code: "GB", calling_code: "44", name: "United Kingdom" },
         { code: "US", calling_code: "1", name: "United States" },
       ],
       dispatch,
     });
-    await user.click(screen.getByRole("button", { name: /Phone's country/ }));
+    const field = screen.getByRole("combobox", { name: "Default country for contacts" });
+    expect(field).toHaveAttribute("placeholder", "None");
+    await user.click(field);
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "None",
+      "United Kingdom (+44)",
+      "United States (+1)",
+    ]);
     await user.click(screen.getByRole("option", { name: "United Kingdom (+44)" }));
     expect(dispatch).toHaveBeenCalledWith({ type: "set", field: "phoneCountry", value: "GB" });
   });
+
+  /**
+   * #3167: Max FPS and Minimum Video File Size are checked as they are
+   * typed, so a value the desktop app would refuse never starts a run.
+   */
+  it.each([
+    ["maxFps", "Max FPS (1–240)", "20aaa", MAX_FPS_INVALID],
+    ["minSizeMb", "Minimum Video File Size (Megabytes)", "1048577", MIN_VIDEO_SIZE_INVALID],
+  ] as const)(
+    "says what %s takes under the field and keeps Import off",
+    (field, label, typed, message) => {
+      const compress: AttachmentChoices = {
+        ...copyAttachments,
+        attachmentMedia: "compress",
+        [field]: typed,
+      };
+      renderForm({ attachments: compress });
+      expect(screen.getByRole("status").textContent).toBe(message);
+      expect(screen.getByLabelText(label)).toBeTruthy();
+      expect(importButton()).toBeDisabled();
+    },
+  );
+
+  it("starts with both compress fields empty, as no limits", () => {
+    renderForm({
+      attachments: { ...copyAttachments, attachmentMedia: "compress", maxFps: "", minSizeMb: "" },
+    });
+    expect(screen.getByPlaceholderText("Keeps each video's frame rate")).toBeTruthy();
+    expect(screen.getByPlaceholderText("All videos, regardless of size")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(importButton()).not.toBeDisabled();
+  });
+
+  /** #3167: iMazing and OpenExtract check the path like every other source. */
+  it.each(["imazing", "openextract"])(
+    "says a missing %s path is missing and keeps Import off",
+    (source) => {
+      renderForm({
+        source,
+        backupPath: "/backups/gone",
+        backupPathStats: { backup: MISSING_STAT },
+      });
+      expect(screen.getByRole("status").textContent).toBe(PATH_MISSING);
+      expect(importButton()).toBeDisabled();
+    },
+  );
 
   it("names each Android SMS source's own backup files in the backup placeholder", () => {
     const placeholders: [string, string][] = [
@@ -672,7 +800,7 @@ describe("ImportFormFields Import button", () => {
       onImport,
       source: "sms-backup-restore",
       backupPath: "/backups/sms.xml",
-      androidSmsStats: { backup: FILE_STAT },
+      backupPathStats: { backup: FILE_STAT },
       ownerPhones: [],
       profilePhones: { phones: ["+15555550100"] },
       ownerEmails: "me@example.com",
@@ -699,7 +827,7 @@ describe("ImportFormFields Import button", () => {
       ...androidReady,
       source: "sms-backup-restore",
       backupPath: "/backups/sms",
-      androidSmsStats: { backup: DIRECTORY_STAT },
+      backupPathStats: { backup: DIRECTORY_STAT },
     });
     expect(screen.getByText(SMS_BACKUP_RESTORE_ERR_NOT_FILE)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
@@ -712,7 +840,7 @@ describe("ImportFormFields Import button", () => {
         ...androidReady,
         source,
         backupPath: "/backups/sms.xml",
-        androidSmsStats: { backup: FILE_STAT },
+        backupPathStats: { backup: FILE_STAT },
       });
       expect(screen.getByText(ANDROID_SMS_ERR_NOT_DIRECTORY)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
@@ -724,7 +852,7 @@ describe("ImportFormFields Import button", () => {
       ...androidReady,
       source: "sms-backup-restore",
       backupPath: "/backups/gone.xml",
-      androidSmsStats: { backup: MISSING_STAT },
+      backupPathStats: { backup: MISSING_STAT },
     });
     expect(screen.getByText(PATH_MISSING)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
@@ -737,7 +865,7 @@ describe("ImportFormFields Import button", () => {
       ...androidReady,
       source: "go-sms-pro",
       backupPath: "/backups/sms",
-      androidSmsStats: { backup: null },
+      backupPathStats: { backup: null },
     });
     expect(screen.queryByText(ANDROID_SMS_ERR_NOT_DIRECTORY)).toBeNull();
     expect(screen.queryByText(PATH_MISSING)).toBeNull();
@@ -828,7 +956,7 @@ const messagesDbFields: FormCase["fields"] = [
 ];
 const androidSmsProps: FormOverride = {
   backupPath: "/backups/sms",
-  androidSmsStats: { backup: DIRECTORY_STAT },
+  backupPathStats: { backup: DIRECTORY_STAT },
   ownerPhones: ["+15555550100"],
   profilePhones: { phones: ["+15555550100"] },
   ownerEmails: "me@example.com",
@@ -896,7 +1024,7 @@ const FORM_CASES: FormCase[] = [
       source: "sms-backup-restore",
       ...androidSmsProps,
       backupPath: "/backups/sms-20261009.xml",
-      androidSmsStats: { backup: FILE_STAT },
+      backupPathStats: { backup: FILE_STAT },
     },
     fields: [
       { label: "Backup File", empty: { backupPath: "" } },
@@ -918,12 +1046,20 @@ const FORM_CASES: FormCase[] = [
   },
   {
     name: "iMazing",
-    props: { source: "imazing", backupPath: "/backups/imazing" },
+    props: {
+      source: "imazing",
+      backupPath: "/backups/imazing",
+      backupPathStats: { backup: DIRECTORY_STAT },
+    },
     fields: [{ label: "Backup path", empty: { backupPath: "" } }],
   },
   {
     name: "OpenExtract",
-    props: { source: "openextract", backupPath: "/backups/openextract" },
+    props: {
+      source: "openextract",
+      backupPath: "/backups/openextract",
+      backupPathStats: { backup: DIRECTORY_STAT },
+    },
     fields: [{ label: "Backup path", empty: { backupPath: "" } }],
   },
 ];

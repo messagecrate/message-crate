@@ -12,8 +12,9 @@ const FLAG_FILE: i64 = 1;
 /// Whether `backup_root/Manifest.plist` is marked encrypted.
 ///
 /// Returns `None` when the file is missing or cannot be parsed. That is
-/// intentional: Import then leaves the password optional and the converter
-/// still fails after start if the backup turns out to be encrypted.
+/// intentional: the Import form then hides the Encryption password, as it
+/// does for a backup that is not encrypted, and the converter still fails
+/// after start if the backup turns out to be encrypted (#3167).
 pub fn ios_backup_encrypted_flag(backup_root: &Path) -> Option<bool> {
     let path = backup_root.join("Manifest.plist");
     let file = File::open(path).ok()?;

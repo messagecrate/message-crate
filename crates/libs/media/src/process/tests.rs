@@ -295,13 +295,19 @@ fn is_efficient_accepts_only_hevc_within_the_resolution_and_bitrate_caps() {
 
 #[test]
 fn frame_rate_cap_applies_the_maximum_when_the_source_rate_is_unknown() {
-    assert_eq!(frame_rate_cap(None, 30.0), Some(30.0));
-    assert_eq!(frame_rate_cap(Some(60.0), 30.0), Some(30.0));
-    assert_eq!(frame_rate_cap(Some(30.0), 30.0), None);
-    assert_eq!(frame_rate_cap(Some(24.0), 30.0), None);
-    // Zero means no maximum was given, and stands for 30.
-    assert_eq!(frame_rate_cap(Some(60.0), 0.0), Some(30.0));
-    assert_eq!(frame_rate_cap(None, 0.0), Some(30.0));
+    assert_eq!(frame_rate_cap(None, Some(30)), Some(30));
+    assert_eq!(frame_rate_cap(Some(60.0), Some(30)), Some(30));
+    assert_eq!(frame_rate_cap(Some(30.0), Some(30)), None);
+    assert_eq!(frame_rate_cap(Some(24.0), Some(30)), None);
+}
+
+/// #3167: an empty Max FPS keeps each video's frame rate, so with no
+/// maximum no video is capped, even one whose rate ffprobe could not read.
+#[test]
+fn frame_rate_cap_leaves_the_frame_rate_alone_with_no_maximum() {
+    assert_eq!(frame_rate_cap(Some(60.0), None), None);
+    assert_eq!(frame_rate_cap(Some(240.0), None), None);
+    assert_eq!(frame_rate_cap(None, None), None);
 }
 
 /// Write a one-second 320x240 test pattern at 10 fps with the given video codec.
@@ -373,7 +379,7 @@ fn compress_only_remuxes_a_video_under_the_minimum_size() {
     let mp4 = dir.path().join("other.mp4");
     fs::write(&mp4, b"a small mp4").unwrap();
     let opts = CompressOptions {
-        min_size_bytes: 100 * 1024 * 1024,
+        min_size_bytes: Some(100 * 1024 * 1024),
         ..CompressOptions::default()
     };
     let tools = FakeTools::new().writing("the remuxed mp4");
@@ -405,8 +411,8 @@ fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
     let avc = dir.path().join("avc.mp4");
     write_test_video(&avc, &["-c:v", "libx264"]);
     let opts = CompressOptions {
-        min_size_bytes: 0,
-        max_fps: 5.0,
+        min_size_bytes: None,
+        max_fps: Some(5),
         ..CompressOptions::default()
     };
 
@@ -428,7 +434,7 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
     fs::write(&hevc, b"a small, low-bitrate hevc video").unwrap();
     let efficient = video_probe("hevc", 10.0);
     let opts = CompressOptions {
-        min_size_bytes: fs::metadata(&hevc).unwrap().len(),
+        min_size_bytes: Some(fs::metadata(&hevc).unwrap().len()),
         ..CompressOptions::default()
     };
     let tools = FakeTools::new()
@@ -454,13 +460,13 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
         .expect("a video over the resolution cap is re-encoded");
     fs::remove_file(produced).unwrap();
 
-    // With the skip turned off, the efficient file is re-encoded too. A max
-    // fps of zero means no cap was given, and the pass uses 30, which this
-    // 10 fps video is already under, so the filter adds no fps step.
+    // With the skip turned off, the efficient file is re-encoded too. With
+    // no max fps the video keeps its frame rate, so the filter adds no fps
+    // step.
     let tools = FakeTools::new().probing(efficient).writing("the re-encode");
     let opts = CompressOptions {
         skip_efficient: false,
-        max_fps: 0.0,
+        max_fps: None,
         ..opts
     };
     let produced = transcode_single(&tools, &hevc, MediaMode::Compress, &opts)
@@ -483,8 +489,8 @@ fn compress_caps_the_frame_rate_and_falls_back_to_h264() {
         .failing_on("libx265")
         .writing("the h264 re-encode");
     let opts = CompressOptions {
-        min_size_bytes: 0,
-        max_fps: 30.0,
+        min_size_bytes: None,
+        max_fps: Some(30),
         ..CompressOptions::default()
     };
 
@@ -517,7 +523,7 @@ fn two_large_videos(dir: &Path) -> (Vec<PathBuf>, CompressOptions) {
         })
         .collect();
     let opts = CompressOptions {
-        min_size_bytes: 0,
+        min_size_bytes: None,
         ..CompressOptions::default()
     };
     (files, opts)
@@ -876,8 +882,8 @@ fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
     };
     let dir = tempfile::tempdir().unwrap();
     let opts = CompressOptions {
-        min_size_bytes: 0,
-        max_fps: 30.0,
+        min_size_bytes: None,
+        max_fps: Some(30),
         ..CompressOptions::default()
     };
 

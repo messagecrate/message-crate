@@ -4,14 +4,10 @@ import { ApiError } from "../lib/api";
 import { errorLine } from "../lib/apiErrorMessage";
 import { Z_POPOVER_IN_MODAL } from "../lib/zLayers";
 import Button from "./Button";
+import CountryField from "./CountryField";
 import ModalShell, { DialogError, DialogFooter } from "./ModalShell";
-import { phoneCountryItems } from "./phoneCountryItems";
-import Select from "./Select";
 
 const fieldLabelClass = "mb-1 block text-[0.813rem] font-medium text-text";
-const selectTriggerClass =
-  "!box-border !h-9 !min-h-9 !w-full !rounded !px-3 !py-0 !text-[0.875rem] !font-normal !leading-none !bg-elevated";
-const selectValueClass = "!text-[0.875rem] !font-normal !leading-none";
 
 /** The problem type the server answers when another identity holds the `+` form. */
 const IDENTITY_EXISTS = "identity-exists";
@@ -89,22 +85,16 @@ export default function IdentityCountryDialog({
         <label htmlFor={countryId} className={fieldLabelClass}>
           Country
         </label>
-        <Select
+        <CountryField
           id={countryId}
-          selectedKey={country}
-          onSelectionChange={(k) => {
-            if (typeof k === "string") setCountry(k);
-          }}
-          aria-label="Country"
+          value={country ?? ""}
+          countries={countries}
+          onChange={setCountry}
+          label="Country"
           placeholder={loading ? "Loading countries…" : "Pick a country"}
           isDisabled={busy || loading || question !== null}
-          triggerClassName={selectTriggerClass}
-          valueClassName={selectValueClass}
           popoverClassName={Z_POPOVER_IN_MODAL}
-          className="block w-full min-w-0"
-        >
-          {phoneCountryItems(countries)}
-        </Select>
+        />
       </div>
 
       {question ? (

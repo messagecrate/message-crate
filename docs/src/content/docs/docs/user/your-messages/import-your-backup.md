@@ -21,7 +21,7 @@ The Owner's login doesn't show **Import**, because the Owner holds no messages.
 1. The first list is the source. Choose **iMessage**. It covers SMS and MMS as well as iMessage, because an iPhone keeps all three together.
 2. **Platform**: **iPhone backup**.
 3. **iPhone Backup Directory**: select **Browse** and pick the device directory of the backup, the one that contains `Manifest.plist`.
-4. **Encryption password**: the backup's password. The field is marked required when the app finds the backup is encrypted, and optional when it isn't.
+4. **Encryption password**: the backup's password. The field appears only when the app finds the backup is encrypted.
 
 ### For an Android backup
 

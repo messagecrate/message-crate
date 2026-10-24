@@ -33,6 +33,15 @@ export type ImportPathStat = Pick<DesktopPathStat, "exists" | "isFile" | "isDire
   unreadable: ImportPathUnknown | null;
 };
 
+/**
+ * What the backup path of a source whose only checked path is its backup
+ * points at: the Android SMS sources, iMazing and OpenExtract. Null until it
+ * is checked, and always in the browser.
+ */
+export type BackupPathStats = { backup: ImportPathStat | null };
+
+export const NO_BACKUP_PATH_STATS: BackupPathStats = { backup: null };
+
 /** Whether a path field takes a file or a directory. */
 export type PathKind = "file" | "directory";
 

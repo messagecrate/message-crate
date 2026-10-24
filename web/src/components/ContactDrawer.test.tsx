@@ -958,7 +958,7 @@ describe("ContactDrawer", () => {
     expect(screen.getByText(/Country unknown/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Pick the country of 07700900123" }));
     await settle();
-    await user.click(screen.getByRole("button", { name: /Country/ }));
+    await user.click(screen.getByRole("combobox", { name: "Country" }));
     await user.click(screen.getByRole("option", { name: /\(\+44\)/ }));
     await user.click(screen.getByRole("button", { name: "Set country" }));
 

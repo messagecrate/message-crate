@@ -49,6 +49,7 @@ pub use versions::{
 };
 
 use std::fmt;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 
 /// Attachment media handling after export.
@@ -203,55 +204,86 @@ impl FromStr for MaxResolution {
     }
 }
 
-/// Build [`CompressOptions`] from the export form's values: the resolution cap,
-/// the frame-rate cap as the person typed it (`30`), the minimum video size as
-/// the whole number of megabytes the person typed (`20` is 20 MiB), and
-/// whether already-efficient videos are skipped.
+/// The whole numbers Max FPS accepts, in frames per second.
 ///
-/// The Import form labels the size field in megabytes, so the number carries
-/// no unit: `20M` or `20MB` is refused rather than read a second way. The
-/// errors name the form's fields by their labels, Max FPS and Minimum Video
-/// File Size, and say what to type, because the desktop app and the export
-/// form show them to the person as they are.
+/// The Import form checks the same range as the person types
+/// (`web/src/lib/compressFields.ts`), with the same message, so a change
+/// here is made there too.
+pub const MAX_FPS_RANGE: RangeInclusive<u32> = 1..=240;
+
+/// The whole numbers Minimum Video File Size accepts, in megabytes of
+/// 1024 × 1024 bytes: up to 1 TB.
+///
+/// The Import form checks the same range as the person types
+/// (`web/src/lib/compressFields.ts`), with the same message, so a change
+/// here is made there too.
+pub const MIN_VIDEO_SIZE_MB_RANGE: RangeInclusive<u64> = 1..=1_048_576;
+
+/// The refusal for a Max FPS outside [`MAX_FPS_RANGE`], word for word the
+/// Import form's.
+pub const MAX_FPS_INVALID: &str = "Max FPS must be 1–240.";
+
+/// The refusal for a Minimum Video File Size outside
+/// [`MIN_VIDEO_SIZE_MB_RANGE`], word for word the Import form's.
+pub const MIN_VIDEO_SIZE_INVALID: &str = "Minimum Video File Size must be 1–1,048,576.";
+
+/// A typed whole number inside `range`, or `None` for an empty field. Only
+/// digits count, so `+5`, `-5`, `29.97` and `20MB` are refused along with
+/// a number outside the range.
+fn whole_number_in<T>(
+    typed: &str,
+    range: &RangeInclusive<T>,
+    invalid: &str,
+) -> anyhow::Result<Option<T>>
+where
+    T: FromStr + PartialOrd,
+{
+    let typed = typed.trim();
+    if typed.is_empty() {
+        return Ok(None);
+    }
+    typed
+        .bytes()
+        .all(|b| b.is_ascii_digit())
+        .then(|| typed.parse::<T>().ok())
+        .flatten()
+        .filter(|n| range.contains(n))
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("{invalid}"))
+}
+
+/// Build [`CompressOptions`] from the Import form's values: the resolution
+/// cap, the frame-rate cap as the person typed it (`30`), the minimum video
+/// size as the whole number of megabytes the person typed (`20` is 20 MiB),
+/// and whether already-efficient videos are skipped.
+///
+/// An empty field means no limit: an empty Max FPS keeps each video's frame
+/// rate, and an empty Minimum Video File Size re-encodes every video, whatever
+/// its size. Any other value must be a whole number in [`MAX_FPS_RANGE`] or
+/// [`MIN_VIDEO_SIZE_MB_RANGE`].
+///
+/// The Import form checks the same rules as the person types
+/// (`web/src/lib/compressFields.ts`), so these refusals are the last guard.
+/// They name the form's fields by their labels, Max FPS and Minimum Video
+/// File Size, in the form's own words, because the desktop app shows them to
+/// the person as they are.
 ///
 /// # Errors
 ///
-/// Returns an error when `max_fps` is empty or is not a number above 0, or
-/// when `min_size` is empty or is not a whole number such as `20`.
+/// Returns [`MAX_FPS_INVALID`] or [`MIN_VIDEO_SIZE_INVALID`] for a value that
+/// is not empty and not a whole number in its range.
 pub fn compress_options_from_form(
     max_resolution: MaxResolution,
     max_fps: &str,
     min_size: &str,
     skip_efficient: bool,
 ) -> anyhow::Result<CompressOptions> {
-    let typed = max_fps.trim();
-    if typed.is_empty() {
-        anyhow::bail!("Max FPS is empty. It must be a number of frames per second, such as 30.");
-    }
-    let max_fps = typed
-        .parse::<f32>()
-        .ok()
-        .filter(|fps| fps.is_finite() && *fps > 0.0)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Max FPS must be a number of frames per second above 0, such as 30, not '{typed}'."
-            )
-        })?;
-    let typed = min_size.trim();
-    if typed.is_empty() {
-        anyhow::bail!(
-            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
-        );
-    }
-    let megabytes: u64 = typed.parse().map_err(|_| {
-        anyhow::anyhow!(
-            "Minimum Video File Size must be a number of megabytes, such as 20, not '{typed}'."
-        )
-    })?;
+    let max_fps = whole_number_in(max_fps, &MAX_FPS_RANGE, MAX_FPS_INVALID)?;
+    let megabytes = whole_number_in(min_size, &MIN_VIDEO_SIZE_MB_RANGE, MIN_VIDEO_SIZE_INVALID)?;
     Ok(CompressOptions {
         max_resolution,
         max_fps,
-        min_size_bytes: megabytes.saturating_mul(1024 * 1024),
+        min_size_bytes: megabytes.map(|mb| mb * 1024 * 1024),
         skip_efficient,
     })
 }
@@ -261,20 +293,30 @@ pub fn compress_options_from_form(
 pub struct CompressOptions {
     /// Long-edge cap applied when compressing video.
     pub max_resolution: MaxResolution,
-    /// Target frame rate for video compression.
-    pub max_fps: f32,
-    /// Videos smaller than this are not compressed.
-    pub min_size_bytes: u64,
+    /// The highest frame rate a compressed video keeps, or `None` for no
+    /// limit, so each video keeps its own.
+    pub max_fps: Option<u32>,
+    /// Videos smaller than this are not compressed. `None` is no minimum, so
+    /// every video goes on to the efficiency check and the re-encode.
+    pub min_size_bytes: Option<u64>,
     /// Skip already-efficient (HEVC, low bitrate) videos.
     pub skip_efficient: bool,
+}
+
+impl CompressOptions {
+    /// True when a video of `size_bytes` is under the minimum size, so it is
+    /// not re-encoded. With no minimum, no video is under it.
+    pub fn under_min_size(&self, size_bytes: u64) -> bool {
+        self.min_size_bytes.is_some_and(|min| size_bytes < min)
+    }
 }
 
 impl Default for CompressOptions {
     fn default() -> Self {
         Self {
             max_resolution: MaxResolution::P720,
-            max_fps: 30.0,
-            min_size_bytes: 20 * 1024 * 1024,
+            max_fps: Some(30),
+            min_size_bytes: Some(20 * 1024 * 1024),
             skip_efficient: true,
         }
     }
@@ -376,64 +418,78 @@ mod tests {
             options,
             CompressOptions {
                 max_resolution: MaxResolution::P720,
-                max_fps: 24.0,
-                min_size_bytes: 2 * 1024 * 1024 * 1024,
+                max_fps: Some(24),
+                min_size_bytes: Some(2 * 1024 * 1024 * 1024),
                 skip_efficient: false,
             }
         );
-        assert!(compress_options_from_form(MaxResolution::P720, "24", "lots", false).is_err());
     }
 
-    /// #1153: Max FPS is free text, and a value that is not a frame rate
-    /// is refused in a sentence that names the field and what was typed.
+    /// #3167: an empty field is no limit, not a refusal.
     #[test]
-    fn the_max_fps_is_a_number_above_zero() {
+    fn an_empty_field_means_no_limit() {
+        for raw in ["", "  "] {
+            let options = compress_options_from_form(MaxResolution::P720, raw, raw, true).unwrap();
+            assert_eq!(options.max_fps, None, "{raw:?}");
+            assert_eq!(options.min_size_bytes, None, "{raw:?}");
+            assert!(!options.under_min_size(0));
+        }
+    }
+
+    /// #3167: Max FPS is a whole number from 1 to 240, and one message,
+    /// the Import form's, covers every other value.
+    #[test]
+    fn the_max_fps_is_a_whole_number_from_1_to_240() {
         let max_fps = |raw: &str| {
             compress_options_from_form(MaxResolution::P720, raw, "20", true).map(|o| o.max_fps)
         };
-        assert_eq!(max_fps(" 24 ").unwrap(), 24.0);
-        assert_eq!(max_fps("29.97").unwrap(), 29.97);
-        for raw in ["fast", "0", "-5", "NaN", "inf"] {
+        assert_eq!(max_fps("1").unwrap(), Some(1));
+        assert_eq!(max_fps(" 24 ").unwrap(), Some(24));
+        assert_eq!(max_fps("240").unwrap(), Some(240));
+        for raw in [
+            "0", "241", "300", "20aaa", "29.97", "-5", "+5", "fast", "NaN", "inf",
+        ] {
             assert_eq!(
                 format!("{:#}", max_fps(raw).unwrap_err()),
-                format!(
-                    "Max FPS must be a number of frames per second above 0, such as 30, not '{raw}'."
-                )
-            );
-        }
-        for raw in ["", "  "] {
-            assert_eq!(
-                format!("{:#}", max_fps(raw).unwrap_err()),
-                "Max FPS is empty. It must be a number of frames per second, such as 30."
+                "Max FPS must be 1–240.",
+                "{raw:?}"
             );
         }
     }
 
-    /// #1469: the Import form labels the field in megabytes, so `20` is
-    /// 20 MiB and a unit typed after it is refused, not read as bytes or
-    /// as a second unit.
+    /// #1469 and #3167: the Import form labels the field in megabytes, so
+    /// `20` is 20 MiB, a unit typed after it is refused, and the size runs
+    /// from 1 megabyte to 1 TB.
     #[test]
-    fn the_minimum_size_is_a_whole_number_of_megabytes() {
+    fn the_minimum_size_is_a_whole_number_of_megabytes_up_to_1_tb() {
         let min_size = |raw: &str| {
             compress_options_from_form(MaxResolution::P720, "30", raw, true)
                 .map(|o| o.min_size_bytes)
         };
-        assert_eq!(min_size("20").unwrap(), 20 * 1024 * 1024);
-        assert_eq!(min_size(" 5 ").unwrap(), 5 * 1024 * 1024);
-        assert_eq!(min_size("0").unwrap(), 0);
-        for raw in ["20M", "20MB", "20m", "512k", "2g", "1.5", "-1"] {
+        assert_eq!(min_size("1").unwrap(), Some(1024 * 1024));
+        assert_eq!(min_size(" 20 ").unwrap(), Some(20 * 1024 * 1024));
+        assert_eq!(
+            min_size("1048576").unwrap(),
+            Some(1024 * 1024 * 1024 * 1024)
+        );
+        for raw in [
+            "0", "1048577", "20aaa", "29.97", "20M", "20MB", "512k", "-1", "+5",
+        ] {
             assert_eq!(
                 format!("{:#}", min_size(raw).unwrap_err()),
-                format!(
-                    "Minimum Video File Size must be a number of megabytes, such as 20, not '{raw}'."
-                )
+                "Minimum Video File Size must be 1–1,048,576.",
+                "{raw:?}"
             );
         }
-        for raw in ["", "  "] {
-            assert_eq!(
-                format!("{:#}", min_size(raw).unwrap_err()),
-                "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
-            );
-        }
+    }
+
+    #[test]
+    fn a_video_under_the_minimum_is_not_re_encoded() {
+        let options = CompressOptions {
+            min_size_bytes: Some(10),
+            ..CompressOptions::default()
+        };
+        assert!(options.under_min_size(9));
+        assert!(!options.under_min_size(10));
     }
 }

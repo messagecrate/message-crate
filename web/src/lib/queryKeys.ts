@@ -45,8 +45,8 @@ export type WhatsappPathsKey = {
   db: string;
 };
 
-/** The Import form's Android SMS source and backup path, as one path check reads them. */
-export type AndroidSmsPathsKey = {
+/** The Import form's source and backup path, for a source whose only checked path is its backup. */
+export type BackupPathKey = {
   source: string;
   backupPath: string;
 };
@@ -249,9 +249,9 @@ export const keys = {
     all: ["desktop", "whatsapp-paths"] as const,
     of: (paths: WhatsappPathsKey) => ["desktop", "whatsapp-paths", paths] as const,
   },
-  /** What the Android SMS backup path of the Import form points at, one entry per source and path. */
-  desktopAndroidSmsPaths: {
-    all: ["desktop", "android-sms-paths"] as const,
-    of: (paths: AndroidSmsPathsKey) => ["desktop", "android-sms-paths", paths] as const,
+  /** What the backup path of an Android SMS source, iMazing or OpenExtract points at, one entry per source and path. */
+  desktopBackupPath: {
+    all: ["desktop", "backup-path"] as const,
+    of: (paths: BackupPathKey) => ["desktop", "backup-path", paths] as const,
   },
 };

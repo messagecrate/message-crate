@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import Button from "../../components/Button";
-import PhoneCountrySelect from "../../components/PhoneCountrySelect";
+import CountryField from "../../components/CountryField";
 import { usePhoneCountries } from "../../hooks/usePhoneCountries";
 import { errorLine } from "../../lib/apiErrorMessage";
+import { DEFAULT_COUNTRY_HINT, DEFAULT_COUNTRY_LABEL } from "../../lib/phoneCountries";
 import { saveFile } from "../../lib/saveFile";
 import { convertVcardToAddressBook } from "../../lib/serverApi";
 
@@ -17,9 +18,9 @@ const FILE_NAME = "address-book.csv";
  * the address book CSV. The person edits the file in a spreadsheet and loads
  * it with Load beside this. Nothing goes into the account here.
  *
- * The country reads each number written without its `+` code, as the import
- * form's Phone's country does. A number that is not valid there stays as the
- * card has it.
+ * Default country for contacts reads each number written without its `+`
+ * code, as the import form's does. A number that is not valid there stays as
+ * the card has it.
  */
 export function ConvertVcardFile() {
   const { countries } = usePhoneCountries();
@@ -68,15 +69,19 @@ export function ConvertVcardFile() {
         Turn the .vcf file a phone or Google Contacts exports into an address book. Edit it in a
         spreadsheet, then load it above.
       </p>
-      <div className="mb-3 max-w-xs">
-        <p className="m-0 mb-1 text-[0.813rem] font-medium">Country for numbers saved without +</p>
-        <PhoneCountrySelect
+      <div className="mb-3 max-w-sm">
+        <p className="m-0 mb-1 text-[0.813rem] font-medium">
+          {DEFAULT_COUNTRY_LABEL} <span className="font-normal text-muted">(Optional)</span>
+        </p>
+        <CountryField
           value={country}
           countries={countries}
           onChange={setCountry}
-          label="Country for numbers saved without +"
+          label={DEFAULT_COUNTRY_LABEL}
+          allowsNone
           isDisabled={busy}
         />
+        <p className="m-0 mt-1 text-[0.75rem] text-muted">{DEFAULT_COUNTRY_HINT}</p>
       </div>
       <input
         ref={fileRef}

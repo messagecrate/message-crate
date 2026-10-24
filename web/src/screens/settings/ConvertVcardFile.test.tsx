@@ -69,7 +69,7 @@ describe("ConvertVcardFile", () => {
   it("reads numbers without + in the country picked", async () => {
     const user = setupUser();
     render(<ConvertVcardFile />);
-    await user.click(screen.getByRole("button", { name: /Country for numbers saved without/ }));
+    await user.click(screen.getByRole("combobox", { name: "Default country for contacts" }));
     await user.click(screen.getByRole("option", { name: "United States (+1)" }));
     chooseFile("Contacts.VCF", CARD);
 

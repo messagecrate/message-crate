@@ -1,4 +1,5 @@
 import { attachmentChoicesOf } from "../attachmentChoices";
+import { withCompressFieldChecks } from "../compressFields";
 import { sourceLabel } from "../exportSources";
 import { imessageExtractFields } from "../imessageExtractFields";
 import {
@@ -59,12 +60,17 @@ export const IMESSAGE_SOURCE: ImportSourceDescriptor<ImessageMethodId> = {
   snapshotSecret: (method) => (imessageShowsPassword(method) ? "backupPassword" : null),
   backupField: imessageBackupField,
   readiness: (input) =>
-    imessageCanImport({
-      method: input.source,
-      backupPath: input.backupPath,
-      attachmentRoot: input.attachmentRoot,
-      appleContacts: input.appleContacts,
-      backupPassword: input.backupPassword,
-      stats: input.pathStats,
-    }),
+    withCompressFieldChecks(
+      imessageCanImport({
+        method: input.source,
+        backupPath: input.backupPath,
+        attachmentRoot: input.attachmentRoot,
+        appleContacts: input.appleContacts,
+        backupPassword: input.backupPassword,
+        stats: input.pathStats,
+      }),
+      input.attachments,
+    ),
+  backupEncrypted: (input) =>
+    imessageShowsPassword(input.source) ? input.pathStats.backupEncrypted : null,
 };

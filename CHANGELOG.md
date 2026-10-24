@@ -259,6 +259,20 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-24: **The Import form checks its fields as you type.** Max FPS
+  takes a whole number from 1 to 240 and Minimum Video File Size one from 1
+  to 1,048,576 megabytes; either can stay empty, which keeps each video's
+  frame rate or re-encodes every video whatever its size. Any other value is
+  said under the field and keeps **Import** off, where it used to start an
+  Import Run that failed. An iMazing or OpenExtract path that isn't there is
+  said the same way. **Encryption password** shows only for an iPhone backup
+  that is encrypted, and a password typed for an earlier backup isn't sent.
+  **Phone's country** is now **Default country for contacts**: it sits with
+  the fields that say whose phone the backup is, rather than under
+  **Processing Options**, and typing a name, a calling code or a country
+  code narrows its list. Settings' vCard file conversion and the contact's
+  **Pick country** dialog search the same way. **Import** sits at the
+  bottom right (#3167).
 - 2026-10-16: **A password is at most 128 characters.** The server took a
   password up to 1,024 bytes, which is 1,024 letters but only 256 emoji. It
   now counts characters, as it does for a username, and takes up to 128 of

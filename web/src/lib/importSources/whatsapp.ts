@@ -1,4 +1,5 @@
 import { attachmentChoicesOf } from "../attachmentChoices";
+import { withCompressFieldChecks } from "../compressFields";
 import { sourceLabel } from "../exportSources";
 import { whatsappExtractFields } from "../whatsappExtractFields";
 import {
@@ -7,7 +8,6 @@ import {
   WHATSAPP_SOURCE_ID,
   type WhatsappMethodId,
   whatsappCanImport,
-  whatsappOwnerPhoneRequired,
   whatsappShowsKey,
   whatsappShowsPassword,
 } from "../whatsappImport";
@@ -30,8 +30,7 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
   asksWhatsappOwnerPhone: true,
   rememberedPaths: ["whatsappWa", "whatsappMedia", "whatsappDb"],
   needsWtsexporter: true,
-  processingOptions: (method) =>
-    whatsappOwnerPhoneRequired(method) ? [] : ["whatsappFallbackPhone"],
+  processingOptions: () => [],
   extractFields: (form) =>
     whatsappExtractFields({
       source: form.source,
@@ -57,15 +56,20 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
       method === "whatsapp-ios" ? WHATSAPP_DIRECTORY_HINT_IPHONE : WHATSAPP_DIRECTORY_HINT_ANDROID,
   }),
   readiness: (input) =>
-    whatsappCanImport({
-      method: input.source,
-      backupPath: input.backupPath,
-      key: input.whatsappKey,
-      backupPassword: input.backupPassword,
-      contactsDb: input.whatsappWa,
-      media: input.whatsappMedia,
-      db: input.whatsappDb,
-      ownerPhone: input.whatsappOwnerPhone,
-      stats: input.whatsappStats,
-    }),
+    withCompressFieldChecks(
+      whatsappCanImport({
+        method: input.source,
+        backupPath: input.backupPath,
+        key: input.whatsappKey,
+        backupPassword: input.backupPassword,
+        contactsDb: input.whatsappWa,
+        media: input.whatsappMedia,
+        db: input.whatsappDb,
+        ownerPhone: input.whatsappOwnerPhone,
+        stats: input.whatsappStats,
+      }),
+      input.attachments,
+    ),
+  backupEncrypted: (input) =>
+    whatsappShowsPassword(input.source) ? input.whatsappStats.backupEncrypted : null,
 };

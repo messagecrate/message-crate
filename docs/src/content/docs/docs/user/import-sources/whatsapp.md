@@ -95,13 +95,13 @@ A backup that was encrypted for importing iPhone messages is used here as it is,
 1. Open **Import** and choose **WhatsApp** as the source.
 2. **Platform**: **iPhone**.
 3. **Backup directory**: the device directory, the one that contains `Manifest.plist`.
-4. **Encryption password**: the backup's password. It is required when the backup is encrypted, and stays empty when it is not. The app never saves it.
+4. **Encryption password**: the backup's password. The field appears only when the backup is encrypted, and is then required. The app never saves it.
 5. **WhatsApp Business** is turned on only for a WhatsApp Business backup.
 
 For an encrypted backup, Import first decrypts WhatsApp's files into the import's working directory, which takes longer when the backup holds a lot of WhatsApp media. The decrypted files are deleted when the import finishes reading them.
 
 The phone number is read from the backup.
-When the backup doesn't hold it, Import uses **WhatsApp phone number** under **Processing Options (Advanced)**.
+When the backup doesn't hold it, Import uses **WhatsApp phone number**, the optional field under **Encryption password**.
 
 ## Limits
 

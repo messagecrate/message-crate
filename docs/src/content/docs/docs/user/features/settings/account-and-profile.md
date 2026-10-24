@@ -221,7 +221,7 @@ After the load, the section lists each number without `+` that it read with its 
 Contacts the file does not mention stay as they are.
 
 **Convert a vCard file**, below the load, turns the `.vcf` file a phone or Google Contacts exports into an address book to edit and then load.
-**Country for numbers saved without +** reads each number saved without its country code as a number in that country.
+**Default country for contacts** reads each number saved without its country code as a number in that country.
 [Convert a vCard file](/docs/user/features/contacts/contacts/#convert-a-vcard-file) on the Contacts page says what the file holds.
 
 The Demo Account has no **Address book** section, and the server refuses a load into it.
