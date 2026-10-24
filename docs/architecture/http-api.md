@@ -127,7 +127,7 @@ and the pages are generated from it, so they cannot drift. A client reads
 `type` to tell one failure from another. The sentence in `detail`, or each
 entry of `errors`, reads like `asset not found`: lowercase, no final period,
 naming the thing and what is wrong with it. The form and its reason are
-under [Failures](rules/http-api.md#failures) in the rules document.
+API-53 of [the rules document](rules/http-api.md).
 
 ## What a status code means
 

@@ -138,7 +138,7 @@ pub fn require_logged_in(auth: &AuthIdentity) -> Result<(), ApiError> {
 ///
 /// Returns `demo-account-protected` when `target` is the Demo Account. `what`
 /// finishes the `detail` "the Demo Account's ...", one sentence in lowercase
-/// with no final period (`docs/architecture/rules/http-api.md`, "Failures"). What
+/// with no final period (`docs/architecture/rules/http-api.md`, API-53). What
 /// a caller can do about it is on the problem type's page.
 ///
 /// One refusal of the Demo Account is not built here: `delete_account`

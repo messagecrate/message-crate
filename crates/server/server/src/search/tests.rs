@@ -746,7 +746,7 @@ pub(crate) async fn run_filter(
         .await
 }
 
-/// What breaks the form `docs/architecture/rules/http-api.md`, "Failures", gives
+/// What breaks the form `docs/architecture/rules/http-api.md`, API-53, gives
 /// every `detail`, if anything: one sentence, in lowercase, with no final
 /// stop, so the website decides how the line starts and ends (#2816).
 pub(crate) fn detail_form_problem(message: &str) -> Option<String> {
@@ -780,7 +780,7 @@ pub(crate) fn err(list: ListKind, q: &str) -> QueryError {
 }
 
 /// Every refusal is one sentence in lowercase with no final period, the form
-/// `docs/architecture/rules/http-api.md`, "Failures", gives every `detail`, so the
+/// `docs/architecture/rules/http-api.md`, API-53, gives every `detail`, so the
 /// website decides how the line starts and ends (#2816). One query per kind
 /// of refusal, and per sentence the parser writes.
 #[test]
