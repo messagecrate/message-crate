@@ -9,8 +9,7 @@ are in [The HTTP interface: rules](rules/http-api.md).
 
 The interface is described by a generated OpenAPI document that the server
 serves at `/openapi.json` and that is checked into the repository as
-`docs/src/assets/openapi.json`. Its paths and operations are counted there,
-not here.
+`docs/src/assets/openapi.json`.
 
 ## A request's path
 
@@ -49,17 +48,16 @@ Reading top to bottom:
 2. **The trace span.** The request runs under a `request` span carrying its
    method, its URI with sensitive query values already hidden, and the id.
    When the answer leaves, this layer writes one line with the status and
-   latency, at `INFO` for every answer but a successful routine one, such
-   as a health probe, which is `DEBUG`. [The server's log](server-log.md)
-   follows that line.
+   latency, at `INFO`. A successful health probe or website file is written
+   at `DEBUG`. [The server's log](server-log.md) follows that line.
 3. **In-flight tracking.** Every request is counted until its answer's body
    is sent, so a server told to stop can wait for the ones still running,
    up to 30 seconds, and name any it had to cut off.
 4. **Headers and CORS.** Three protective headers go on every answer, and
    `Cache-Control: no-store` on every `/v1` answer that did not set its own,
    so nothing in a browser or a proxy keeps message text or a token. The
-   CORS layer sits outside the body limits, so a browser can read even a
-   refusal they answer.
+   CORS layer sits outside the body limits, so a browser can read a `408`
+   or `413` the body limits answer.
 5. **Body limits.** A JSON body is held to a fixed cap, and every body to
    the two time limits: a body that sends nothing for 60 seconds or is still
    arriving after 300 is answered `408 Request Timeout`. Attachment and
@@ -117,7 +115,7 @@ handler, is an RFC 7807 body served as `application/problem+json`:
   "type": "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
   "title": "Validation failed",
   "status": 422,
-  "errors": ["sort: unknown key 'year'; accepted keys are date, name"],
+  "errors": ["sort: unknown key 'year'; accepted keys are name, last_heard"],
   "request_id": "3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70"
 }
 ```
@@ -128,9 +126,8 @@ page could say anything a reader could act on. The registry is `problem.rs`,
 and the pages are generated from it, so they cannot drift. A client reads
 `type` to tell one failure from another. The sentence in `detail`, or each
 entry of `errors`, reads like `asset not found`: lowercase, no final period,
-naming the thing and what is wrong with it, so a screen can show it alone or
-join it with others. The form is a rule, with its reason, under "Failures"
-in the rules document.
+naming the thing and what is wrong with it. The form and its reason are
+under [Failures](rules/http-api.md#failures) in the rules document.
 
 ## What a status code means
 
@@ -154,7 +151,7 @@ in the rules document.
 | `416 Range Not Satisfiable` | A `Range` that selects no byte of the file |
 | `422 Unprocessable Entity` | The request was read and broke a rule. A validation failure lists every rule it broke in `errors` |
 | `500 Internal Server Error` | A bug. The request id finds its `ERROR` line in the log |
-| `503 Service Unavailable` | The database was busy, which carries `Retry-After`, or the server is stopping, which does not. Either way the same request succeeds later |
+| `503 Service Unavailable` | A busy database, answered with `Retry-After`, or a server that is stopping, answered without it. The request did nothing, so it can be sent again |
 
 ## Who may call what
 
