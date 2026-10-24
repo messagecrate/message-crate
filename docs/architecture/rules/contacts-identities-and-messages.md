@@ -382,7 +382,7 @@ note and a Pick country control. Picking a country sends
 the row is rewritten in place. When one does, the request answers `409
 Conflict` (`identity-exists`) naming who holds it, a contact, the account or
 nobody, in `detail` and in `holder`, and the screen asks before it sends the
-request again with `merge` (`http-api.md`, "Status codes"). A merge moves
+request again with `merge` (`http-api.md`, API-27). A merge moves
 everything that names the national number to the identity holding the `+`
 form: participants (a group that lists both keeps one seat), senders and
 owners of messages and reactions, the account's own identity link, and the

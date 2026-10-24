@@ -402,7 +402,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
     // Last, because it may make, change or remove something: a success
     // answers every field its document declares, `null` when it has no value
     // (API-6), and a creation names the new resource in `Location`, where
-    // the credential that made it can read it ("Status codes"). An operation
+    // the credential that made it can read it (API-23). An operation
     // that answers no JSON and makes nothing is not called, so the owner's
     // `DELETE /v1/session` leaves the shared Session alone.
     let answers_json = success_schemas(spec).next().is_some();
