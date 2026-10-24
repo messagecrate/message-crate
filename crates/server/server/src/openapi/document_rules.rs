@@ -87,7 +87,7 @@ async fn every_operation_keeps_the_rules_the_document_can_show() {
         }
     }
     // Every component a success answer holds, including the ones a page
-    // holds without naming them ("Fields").
+    // holds without naming them (API-6).
     let mut optional = BTreeSet::new();
     for name in response_fields::answer_schemas(&doc) {
         optional_fields(&doc["components"]["schemas"][&name], &name, &mut optional);
@@ -202,7 +202,7 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
     }
 
     // Every field of a success answer is sent, `null` when it has no value
-    // ("Fields"), so the document requires every one. A schema it names is
+    // (API-6), so the document requires every one. A schema it names is
     // checked once, over the whole document.
     let mut optional = BTreeSet::new();
     for schema in success_schemas(spec) {
@@ -401,7 +401,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
 
     // Last, because it may make, change or remove something: a success
     // answers every field its document declares, `null` when it has no value
-    // ("Fields"), and a creation names the new resource in `Location`, where
+    // (API-6), and a creation names the new resource in `Location`, where
     // the credential that made it can read it ("Status codes"). An operation
     // that answers no JSON and makes nothing is not called, so the owner's
     // `DELETE /v1/session` leaves the shared Session alone.

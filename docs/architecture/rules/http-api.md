@@ -83,6 +83,8 @@ generated types carry the interface's words into the web app's code.
 
 ## Fields
 
+### API-6 A success answer sends every field its type has, `null` when it has no value
+
 A success answer sends every field its type has, as `null` when the field has
 no value, and never leaves one out. The reference marks every property of a
 success answer required, and nullable where it can be empty, so the web app's
@@ -92,19 +94,23 @@ forgot to handle is a type error in the generated types rather than an
 `undefined` at run time, and a reader has two states to handle, a value and
 `null`, not a third, absent.
 
+Rejected: leaving out a field that has no value. It makes the answers a little
+smaller, but they are small JSON pages, and every reader would have to handle
+a key that is sometimes there.
+
+### API-7 A schema a request body also names keeps the request's optional fields
+
 A schema that a request body also names keeps the request's optional fields,
 because a request may still leave out a field it has no value for.
 `ExportScope` is the one: it is the body of `POST /v1/exports` and is answered
 back on the run, and the server sends both of its lists.
 
+### API-8 A failure is not a success answer
+
 A failure is not a success answer. A problem document carries the members
 [Failures](#failures) gives it and leaves out the rest, because RFC 7807
 defines `detail` as a string, and an extension member such as `retry_after`
 belongs to the problem types that carry it.
-
-Rejected: leaving out a field that has no value. It makes the answers a little
-smaller, but they are small JSON pages, and every reader would have to handle
-a key that is sometimes there.
 
 ## Naming a route
 
@@ -1448,7 +1454,7 @@ without an accepted `Content-Type`, `400 Bad Request` for a JSON body that is
 not JSON, `406 Not Acceptable` exactly where the document lists it, a
 successful `GET` in a media type its document declares, every property of a
 success answer required and every one of them in what the route answers
-([Fields](#fields)), no body on a `HEAD` answer, `Cache-Control: no-store` on
+([API-6](#api-6-a-success-answer-sends-every-field-its-type-has-null-when-it-has-no-value)), no body on a `HEAD` answer, `Cache-Control: no-store` on
 every answer but those of an operation that lists its own
 ([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule
 checked one route at a time is checked on the routes someone remembered.
