@@ -36,7 +36,7 @@ Every converter takes names from the backup itself.
 The **Contacts** row lists the only contacts files a converter reads: the WhatsApp contacts database and the Apple Messages AddressBook.
 No converter reads a vCard (`.vcf`) or a vendor's contacts CSV.
 Names from outside the backup come from the address book, Message Crate's own CSV that the server loads.
-The rule "The address book is a file for editing contacts, not a source of them" in [contacts, identities and messages](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md#rules) gives the reason.
+The rule CONTACT-27, "The address book is a file for editing contacts, not a source of them", in the [contacts rules](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/rules/contacts-identities-and-messages.md#contact-27-the-address-book-is-a-file-for-editing-contacts-not-a-source-of-them) gives the reason.
 
 ## Deficiencies
 

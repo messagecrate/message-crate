@@ -79,8 +79,8 @@ pub async fn import_ada_conversation(
     .await;
 }
 
-/// Panic unless the people rule of
-/// `docs/architecture/contacts-identities-and-messages.md` holds: every
+/// Panic unless the people rule, CONTACT-1 of
+/// `docs/architecture/rules/contacts-identities-and-messages.md`, holds: every
 /// participant has an identity, and every identity a participant, a message's
 /// sender or a reaction's sender uses is on a contact. `after` names the act
 /// the check follows, for the message.

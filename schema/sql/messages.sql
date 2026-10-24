@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     -- The latest message time of the copy that gave group_title, in the form
     -- messages.timestamp holds; NULL with no title, or when that copy had no
     -- messages. A merge compares an incoming copy's latest message with it
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-37).
     group_title_at TEXT,
     -- Path or name of the source file this thread came from.
     source_file TEXT NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS messages (
     -- the time, decides: a millisecond time can end in .000. Within one
     -- source, a 'seconds' message is the duplicate of one that matches it in
     -- everything else with 'milliseconds' in the same second
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-42).
     time_precision TEXT NOT NULL CHECK (time_precision IN ('seconds', 'milliseconds')),
     -- 1 = sent by the account holder; 0 = received from someone else.
     is_from_me INTEGER NOT NULL,
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS messages (
     -- made, in the form timestamp holds; NULL when no copy's file said. A
     -- later import's copy from a later backup replaces its mark and text;
     -- one from an earlier backup changes neither
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-38).
     backup_taken_at TEXT,
     -- The mark a copy from a file without a backup date gave the message,
     -- as `deletion`; NULL for none. It outlasts every later copy without a

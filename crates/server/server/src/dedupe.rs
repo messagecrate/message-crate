@@ -552,8 +552,8 @@ fn pick_winner(cands: &[Cand], prio: &HashMap<&str, usize>) -> i64 {
 }
 
 /// The order in which copies of one message are shown, the first shown
-/// before the rest (`docs/architecture/contacts-identities-and-messages.md`,
-/// "Which copy is shown"): the copy with more attachments; then the copy
+/// before the rest (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-41): the copy with more attachments; then the copy
 /// timed to the millisecond over one timed to the second; then the copy
 /// from the Import Run that brought more messages; then the copy of the
 /// source imported first (`prio`); then the lower id. The last two only

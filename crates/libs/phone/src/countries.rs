@@ -3,8 +3,8 @@
 //!
 //! A country here is a fact a person or a source states, never a guess: the
 //! import form's country for a run, or the country picked for one identity
-//! (`docs/architecture/contacts-identities-and-messages.md`, "A phone number
-//! carries its country"). Nothing in this crate picks one from the digits.
+//! (`docs/architecture/rules/contacts-identities-and-messages.md`,
+//! CONTACT-17). Nothing in this crate picks one from the digits.
 
 /// One country a phone number can belong to.
 #[derive(Debug, PartialEq, Eq)]
