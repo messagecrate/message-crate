@@ -507,18 +507,18 @@ that counts something else is a second shape.
 
 ### API-44 A list's row carries nothing that grows without bound
 
-A list's row carries nothing that grows without bound. Where a resource
-holds such a collection, as an Import Run holds its issues and its notes,
-the list answers how many in a count (`issue_count`, `note_count`) and the
-resource's own `GET` answers the collection. `GET /v1/imports` and an
-account's own `GET /v1/accounts/{id}/imports` answer each run as an
-`ImportRunSummary`, with the counts and without the issues or notes. The
-owner's `GET /v1/accounts/{id}/imports` answers each as an
-`OwnerImportRunSummary`, which also counts them and never carries them.
-`GET /v1/imports/{id}` answers the issues and the notes. Each count is
-read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
-inside each row left a page's size to whatever the runs recorded. Forty
-WhatsApp runs of 20,000 skipped files each made one page of Settings →
+A list's row carries nothing that grows without bound. Where a resource holds
+such a collection, as an Import Run holds its issues and its notes, the list
+answers how many in a count (`issue_count`, `note_count`) and the resource's
+own `GET` answers the collection. `GET /v1/imports` and an account's own
+`GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`, with
+the counts and without the issues or notes. The owner's
+`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRunSummary`,
+which also counts them and never carries them. `GET /v1/imports/{id}` answers
+the issues and the notes. Each count is read in the list's own statement, never
+by a statement per row. Why: `limit` bounds a page's rows and nothing else, so
+a collection inside each row left a page's size to whatever the runs recorded.
+Forty WhatsApp runs of 20,000 skipped files each made one page of Settings →
 Storage carry about 800,000 issues, and one statement per row made a page of
 500 runs a thousand statements (#1559).
 Rejected: capping how many issues a run stores. It bounds the list by
@@ -604,14 +604,15 @@ a refusal.
 
 ### API-51 The server's log lines page from a line
 
-The server's log lines, `GET /v1/server/log-lines`, are the one list that
-pages from a line instead: `{items, limit, has_more}`, newest first, and
-`after={id}` reads the lines older than the line with that id. It takes no
-`offset` and answers no `total`. Why: the server writes lines while the owner
-reads them, its answers to the reading included, so the reason cursor paging is
-rejected under API-40 does not hold for it, and a `total` would mean counting
-up to 250 MB of files for every page. The id names a line, as `around`, `before` and `after` name a message,
-and is not an opaque token (`docs/architecture/rules/server-log.md`).
+The server's log lines, `GET /v1/server/log-lines`, are the one list that pages
+from a line instead: `{items, limit, has_more}`, newest first, and `after={id}`
+reads the lines older than the line with that id. It takes no `offset` and
+answers no `total`. Why: the server writes lines while the owner reads them,
+its answers to the reading included, so the reason cursor paging is rejected
+under API-40 does not hold for it, and a `total` would mean counting up to 250
+MB of files for every page. The id names a line, as `around`, `before` and
+`after` name a message, and is not an opaque token
+(`docs/architecture/rules/server-log.md`).
 
 ## Failures
 
