@@ -214,7 +214,7 @@ pub async fn imessage_backup_identities(
 /// say how far it got, and one of them, "Decrypted iOS backup", names the
 /// phone, which usually names the person whose phone it is. The desktop
 /// app's log is offered to the owner of every Message Crate the app signs in
-/// to (`docs/architecture/rules/import-run-logs.md`, "The desktop app's log").
+/// to (`docs/architecture/rules/import-run-logs.md`, RUNLOG-4).
 fn identity_check_log(
     backup: String,
     warn: impl Fn(&str) + Send + Sync + 'static,

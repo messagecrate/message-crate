@@ -7,7 +7,7 @@
 //! format of the server's log and the Import Run logs
 //! (`log-lines`), so the Logs panel reads it with the same
 //! viewer, as "Desktop app". Rules: `docs/architecture/rules/import-run-logs.md`,
-//! "The desktop app's log".
+//! RUNLOG-4.
 //!
 //! The log is opened when its first line is written, so a computer where
 //! the app never had anything to say has no file, and the Logs panel lists
