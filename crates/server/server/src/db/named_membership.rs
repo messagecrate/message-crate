@@ -648,8 +648,8 @@ pub async fn patch_members(
         )));
     }
     // An id to add that names no row the caller holds is a body that broke a
-    // rule, `422`, not an address that is missing (`docs/architecture/rules/http-api.md`,
-    // API-33).
+    // rule, `422 Unprocessable Entity`, not an address that is missing
+    // (`docs/architecture/rules/http-api.md`, API-33).
     for member in &add {
         if !member_exists(spec, conn, account_id, *member).await? {
             return Err(MembershipError::BadRequest(format!(

@@ -433,7 +433,7 @@ a time and seeks by asking for another (`docs/architecture/rules/media.md`).
 Rejected: answering several ranges as `multipart/byteranges`. No media
 element sends several, and the whole file is a correct answer to them.
 
-### API-38 An unknown `/v1` path and a wrong method answer a problem document
+### API-38 An unknown `/v1` path (`404 Not Found`) and a wrong method (`405 Method Not Allowed`) answer a problem document
 
 An unknown `/v1` path answers `404 Not Found` as a problem document, and a
 wrong method `405 Method Not Allowed`, never Axum's plain text.
