@@ -10,40 +10,65 @@ why the pieces sit where they do. The constraints a change must keep are in
 
 ```mermaid
 flowchart LR
-    E[An event in the server:\na request answered,\nan error, a panic]
-    T[tracing span\nrequest id, method, path]
-    S[One subscriber]
-    SE[stderr]
-    F[Data Directory / logs\nserver-000001.log …]
-    R["GET /v1/server/log-lines\nGET /v1/server/log-files"]
-    P[Owner Home → Logs]
-    E --> T --> S
-    S --> SE
-    S --> F
-    F --> R --> P
+    subgraph inside["Inside the server process"]
+        direction LR
+        E["Something happens:<br/>a request is answered,<br/>a statement fails,<br/>a thread panics"]
+        T["The span it happened under:<br/>request{method uri request_id}"]
+        S["One tracing subscriber"]
+        E --> T --> S
+    end
+    S --> SE["stderr"]
+    S --> F["Data Directory/logs/<br/>server-000001.log, 000002, …"]
+    F --> R["GET /v1/server/log-lines<br/>GET /v1/server/log-files"]
+    R --> P["Owner Home → Logs"]
 ```
 
-Every line goes two places at once: to stderr, where a terminal or a
-container runtime shows it, and to a set of rotating files in the `logs`
-directory of the Data Directory. The owner reads the files back through
-three routes, which the Logs panel of Owner Home calls. The Message Crate in
-Docker and the one the desktop app starts are the same `serve` program with
-the same Data Directory layout, so both keep the same files the same way.
+Reading left to right:
+
+1. **Something happens.** Code anywhere in the server records it with a
+   `tracing` macro: the trace layer when a response goes out, the problem
+   builder when a request is refused or fails, the panic hook when a thread
+   dies, `serve` as it starts up. Each call is one event with a level and a
+   message.
+2. **The span it happened under.** A span is the context an event is
+   recorded in. Every request runs under one named `request`, which the
+   middleware opens before any handler runs and which carries three fields:
+   the method, the URI with sensitive query values already hidden, and the
+   request id, a UUID the server made for this request and also returns in
+   the `x-request-id` header. Every event recorded while that request is
+   answered is tagged with those fields without the recording code doing
+   anything. Work the request hands to another task or to the blocking pool
+   is started through helpers that carry the span along, so a line written
+   while hashing an import's messages still names the request that asked.
+   Start-up and shutdown lines have no span: nothing asked for them.
+3. **One subscriber.** A single `tracing` subscriber, installed once at
+   start, receives every event with its span and formats it as one line.
+   `RUST_LOG` decides which levels it keeps.
+4. **Two destinations.** The subscriber writes the same line to stderr,
+   where a terminal or Docker shows it, and to the newest file in the
+   `logs` directory of the Data Directory. A write that stderr refuses is
+   dropped; the file still gets the line.
+5. **Three routes.** The owner reads the files back through
+   `GET /v1/server/log-lines`, newest first and a page at a time, and
+   downloads a whole file through the two `log-files` routes.
+6. **The Logs panel.** Owner Home's Logs panel calls those routes and shows
+   the lines, filtered by level and by text.
+
+The Message Crate in Docker and the one the desktop app starts are the same
+`serve` program with the same Data Directory layout, so both keep the same
+files the same way.
 
 ## A line
 
 ```text
-2026-10-08T12:00:00.123456Z  WARN request{id=7f3a method=GET path=/v1/contacts}: problem=invalid-credentials status=401
+2026-10-08T12:00:00.123456Z  WARN request{method=GET uri=/v1/contacts request_id=3f2a9c6e-7b1d-4e58-9a0f-2c4d8b1e6f70}: problem=invalid-credentials status=401
 ```
 
 A line is one event: the time in UTC to the microsecond, the level, the span
 the event happened under, and what it says. The span is what ties lines
-together. A request runs under a span that names its id, method and path,
-and every line written while that request is answered carries it, including
-lines from work the request handed to another task, such as hashing an
-import's messages or removing files. The same id is in the problem document
-the client received, so a person who sees a failure on a screen can quote
-its id and find the matching lines.
+together. The same request id is in the problem document the client
+received, so a person who sees a failure on a screen can quote its id and
+find every line that request wrote.
 
 A line is always whole. A message that itself contains a line break is
 written with the two characters `\n` in its place, and any other control
