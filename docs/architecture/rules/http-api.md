@@ -8,7 +8,10 @@ are decided, not when the code catches up: a design is argued against this
 file, a pull request that touches a route is graded against it, and a route
 that breaks a rule here is a bug. Each rule carries its reason, and where an
 alternative was weighed and turned down, one line says so, so the question is
-not reopened by accident.
+not reopened by accident. Each rule has an id, `API-n`, which code comments,
+tests and reviews cite. The ids run on through the sections in order. A rule's
+id never changes. A rule that stops holding is removed, and its id is not
+reused.
 
 This file states what every route must do. The generated reference (see
 [The reference](#the-reference)) states what each route does today. Where the
@@ -19,6 +22,8 @@ not in `docs/adr/`: `docs/adr/0011-the-http-interface-has-one-rules-document.md`
 
 ## Identifiers
 
+### API-1 Every resource with a row is addressed by its integer id
+
 Every resource with a row is addressed by its integer id in the URL:
 `/v1/contacts/{id}`, `/v1/accounts/{id}`, `/v1/accounts/{id}/api-tokens/{id}`.
 Names are for people: they appear in the web app's routes, in the search
@@ -26,25 +31,6 @@ language, and in the text of a Saved Search, and the web app turns a name into
 an id inside the module that owns the collection, never in a screen.
 Why: a name is mutable, needs URL-encoding, and must be matched
 case-insensitively on every request, and a rename would re-key the resource.
-
-The one exception is an Asset, addressed by the SHA-256 of its contents:
-`/v1/assets/{sha256}`. Why: the file exists before the database does, the client
-must know the hash before an upload can be deduplicated, and two uploads of
-one file must be one asset.
-
-An asset's Preview and Thumbnail have no address of their own. They are
-`/v1/assets/{sha256}/preview` and `/v1/assets/{sha256}/thumbnail`, under the
-hash of the original, and the attachment says whether each exists in
-`preview_mime_type` and `thumbnail_mime_type`.
-Why: the client holds the original's hash and has no use for theirs, and
-another hash on the attachment would be another thing to address by.
-
-The Message Crate's own id, `id` on `GET /v1/server`, is not an address. It
-is an opaque string of 32 hexadecimal digits that the server writes when its
-database is made, and no route takes it in a URL. Why: it exists to tell two
-Message Crates apart, at one address or across a rebuilt database, whose
-integer ids start at the same numbers, so it must be random rather than
-counted, and a client only ever compares it.
 
 Rejected: the name in the path for Contact Groups and Message Tags. It keeps
 every reference to a group the same kind of thing, and it makes the rule
@@ -55,6 +41,31 @@ Rejected: opaque string ids for accounts and API tokens. They were UUIDs from
 the first draft with no reason recorded. An integer in a URL tells a stranger
 nothing they can act on, because every route checks the caller against the
 row.
+
+### API-2 An Asset is addressed by the SHA-256 of its contents
+
+The one exception to API-1 is an Asset, addressed by the SHA-256 of its
+contents: `/v1/assets/{sha256}`. Why: the file exists before the database
+does, the client must know the hash before an upload can be deduplicated, and
+two uploads of one file must be one asset.
+
+### API-3 An asset's Preview and Thumbnail are addressed under the original's hash
+
+An asset's Preview and Thumbnail have no address of their own. They are
+`/v1/assets/{sha256}/preview` and `/v1/assets/{sha256}/thumbnail`, under the
+hash of the original, and the attachment says whether each exists in
+`preview_mime_type` and `thumbnail_mime_type`.
+Why: the client holds the original's hash and has no use for theirs, and
+another hash on the attachment would be another thing to address by.
+
+### API-4 The Message Crate's own id is not an address
+
+The Message Crate's own id, `id` on `GET /v1/server`, is not an address. It
+is an opaque string of 32 hexadecimal digits that the server writes when its
+database is made, and no route takes it in a URL. Why: it exists to tell two
+Message Crates apart, at one address or across a rebuilt database, whose
+integer ids start at the same numbers, so it must be random rather than
+counted, and a client only ever compares it.
 
 ## Words on the wire
 
