@@ -1011,8 +1011,9 @@ under the same policy without change.
 
 ## Credentials and reach
 
-API-71 to API-75 are the credentials, API-76 to API-93 what each reaches, and
-API-94 to API-104 what a request is held to.
+API-71 to API-75 are the credentials, API-76 to API-93 what each reaches,
+API-94 to API-104 what a request is held to, and API-105 to API-108 what holds
+for every credential.
 
 ### API-71 Every route declares which of the three credentials it accepts
 
@@ -1184,7 +1185,7 @@ session: the account's own with the `delete` permission, or, for an
 account's messages and for the account itself, the owner's. A token is
 refused whatever its scopes.
 
-### API-84 The Demo Account is refused imports, permanent deletion, an address book load and API tokens by its id, whatever its permission row says
+### API-84 The Demo Account is refused every route that needs the `import` scope, permanent deletion, an address book load and making an API token by its id, whatever its permission row says
 
 The Demo Account is refused with `403 Forbidden` and
 `demo-account-protected` by its id, whatever its permission row says, on
@@ -1324,7 +1325,7 @@ other route has a body cap fixed in the code. Why: the owner may set any
 limit of 1 byte or more, and a limit that held every body would refuse
 the login and the settings change that raise it again.
 
-### API-96 An import batch body is held to 16 MiB
+### API-96 An import batch body is held to 16 MiB, and a stalled one frees its slot
 
 An import batch body is held to 16 MiB, the most the desktop app's Upload
 packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the
