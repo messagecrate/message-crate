@@ -77,7 +77,8 @@ For a Message Crate in Docker, the command runs inside the container:
 docker exec -it message-crate message-crate-server set-admin-password
 ```
 
-For the Message Crate the desktop app starts, the server program ships with the app, and `--data-dir` names the directory the app keeps that Message Crate in, `data` in the Message Crate Directory:
+The desktop app ships the server program with it.
+For the Message Crate the app starts, `--data-dir` names its Data Directory, `data` in the Message Crate Directory:
 
 | Computer | Command |
 |---|---|

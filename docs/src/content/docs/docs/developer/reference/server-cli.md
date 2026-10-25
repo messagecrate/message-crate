@@ -250,7 +250,7 @@ Set the administrator's password. On a Message Crate in setup this is the first 
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
-* `--data-dir <DATA_DIR>` — Set the password of the Message Crate kept in this directory, as `serve --data-dir` names it, and read no config file. The desktop app's own server keeps its Message Crate in `~/message-crate/data`
+* `--data-dir <DATA_DIR>` — Set the password of the Message Crate kept in this directory, as `serve --data-dir` names it, and read no config file. The desktop app's own server keeps its Message Crate in `~/message-crate/data` (`data-dev` for a dev build)
 
 
 

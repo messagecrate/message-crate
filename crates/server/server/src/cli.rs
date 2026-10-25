@@ -93,6 +93,7 @@ pub struct SetAdminPasswordArgs {
     /// Set the password of the Message Crate kept in this directory, as
     /// `serve --data-dir` names it, and read no config file. The desktop
     /// app's own server keeps its Message Crate in `~/message-crate/data`
+    /// (`data-dev` for a dev build)
     #[arg(long, conflicts_with = "config")]
     pub data_dir: Option<PathBuf>,
 }
