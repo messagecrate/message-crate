@@ -333,6 +333,22 @@ describe("every route function asks for a documented address", () => {
   }
 });
 
+describe("the caps the web app copies", () => {
+  it("sends a Trash move in parts no larger than the server documents", () => {
+    const schemas = (
+      openapi as unknown as {
+        components: {
+          schemas: Record<string, { properties: Record<string, { description: string }> }>;
+        };
+      }
+    ).components.schemas;
+    const remove = schemas.UpdateTrashedContactsRequest?.properties.remove?.description ?? "";
+    expect(remove.replace(/\s+/g, " ")).toMatch(
+      new RegExp(`at most ${serverApi.TRASHED_CONTACT_IDS_MAX}\\b`),
+    );
+  });
+});
+
 describe("the table stays complete", () => {
   it("names every exported route function", () => {
     const exported = Object.entries(serverApi)

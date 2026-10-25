@@ -244,6 +244,35 @@ describe("ContactHistoryProvider", () => {
     expect(screen.getByTestId("undo")).toHaveTextContent("can undo");
   });
 
+  it("keeps one contact deleted since the action out of a redo, and moves the rest", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Delete three" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+
+    // Ada was deleted meanwhile, so the server refuses a move that names her.
+    trashMoveMock.mockImplementation(async (body) => {
+      if (body.add?.includes(2)) {
+        throw new ApiError(422, "contact 2 not found", {
+          type: "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
+          title: "Validation failed",
+          status: 422,
+          errors: ["contact 2 not found"],
+        } as unknown as ConstructorParameters<typeof ApiError>[2]);
+      }
+      return { trashed: body.add ?? [], restored: body.remove ?? [] };
+    });
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await settle();
+
+    expect(trashMoves().slice(2)).toEqual([{ add: [1, 2, 3] }, { add: [1, 3] }]);
+    expect(screen.getByTestId("report")).toHaveTextContent(
+      "Moved 2 contacts to Trash. 1 could not be moved.",
+    );
+  });
+
   it("says so when New Contact's undo could not move the contact to the Trash", async () => {
     const user = setupUser();
     renderHarness();
