@@ -1,5 +1,5 @@
 use super::*;
-use crate::db::conversations::{ConversationSort, display_service_label};
+use crate::db::conversations::{ConversationService, ConversationSort};
 use crate::db::participant_names::Participant;
 use ir::IdentityType;
 use sqlx::SqliteConnection;
@@ -1243,64 +1243,117 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     assert_eq!(all.items[0].id, 4);
 }
 
+/// A conversation's service is the one its messages' transports belong to.
+/// SMS, iMessage and RCS are all Text Message, so a thread that holds the
+/// three is one service; a transport that could not be read, a NULL one, two
+/// services, or no message at all is `unknown` (CONTACT-56).
 #[test]
-fn display_service_label_from_sources() {
-    assert_eq!(display_service_label(&["imessage".into()]), "imessage");
-    assert_eq!(
-        display_service_label(&["sms-backup-restore".into()]),
-        "SMS/MMS"
-    );
-    assert_eq!(
-        display_service_label(&["imessage".into(), "sms-backup-restore".into()]),
-        "SMS/MMS"
-    );
-    assert_eq!(display_service_label(&[]), "unknown");
-    assert_eq!(display_service_label(&["whatsapp".into()]), "WhatsApp");
+fn a_conversations_service_is_the_one_its_transports_belong_to() {
+    use ConversationService as S;
+    let cases: [(&[Option<&str>], S); 9] = [
+        (
+            &[Some("sms"), Some("imessage"), Some("rcs")],
+            S::TextMessage,
+        ),
+        (&[Some("whatsapp")], S::Whatsapp),
+        (&[Some("signal")], S::Signal),
+        (&[Some("SMS")], S::TextMessage),
+        (&[Some("imessage"), Some("unknown")], S::Unknown),
+        (&[Some("imessage"), None], S::Unknown),
+        (&[Some("imessage"), Some("satellite")], S::Unknown),
+        (&[Some("sms"), Some("whatsapp")], S::Unknown),
+        (&[], S::Unknown),
+    ];
+    for (transports, expected) in cases {
+        assert_eq!(
+            ConversationService::of_transports(transports.iter().copied()),
+            expected,
+            "{transports:?}"
+        );
+    }
 }
 
-/// The conversation list labels each thread by the sources its messages
-/// came from: an SMS Backup & Restore thread is "SMS/MMS", an iMessage-only
-/// one "imessage", a WhatsApp one "WhatsApp", and a thread from both
-/// "unknown". A message with a blank source says nothing about the service,
-/// so it doesn't turn an iMessage thread into "unknown".
+/// The name the import warning writes for each service is the one the wire
+/// sends, so a reader can search the log for the value the screen came from.
+#[test]
+fn a_services_log_name_is_its_wire_name() {
+    use ConversationService as S;
+    for service in [
+        S::TextMessage,
+        S::Whatsapp,
+        S::Discord,
+        S::Signal,
+        S::Telegram,
+        S::Slack,
+        S::Unknown,
+    ] {
+        assert_eq!(serde_json::to_value(service).unwrap(), service.as_str());
+    }
+}
+
+/// The conversation list names each thread's service from its messages'
+/// transports, never from the import sources they came from: an iMazing
+/// thread of texts is Text Message, a thread fed by two backups is one
+/// service, and the source id never reaches the answer (#3277).
 #[tokio::test]
-async fn the_conversation_list_labels_each_thread_by_its_sources() {
-    use crate::test_support::{SeedConversation, SeedMessage, get_json, seed_conversation};
+async fn the_conversation_list_names_each_threads_service_from_its_transports() {
+    use crate::test_support::{ConversationRow, MessageRow};
     use std::collections::HashMap;
 
     let (fixture, user) = fixture_with_account().await;
-    let message = |source| SeedMessage {
-        source,
-        timestamp: stored_time("2024-01-01T00:00:00.000Z"),
-        is_from_me: true,
-        body: "hi",
-    };
+    let mut conn = fixture.state.db.acquire().await.unwrap();
     let mut expected = HashMap::new();
-    for (handle, sources, label) in [
-        ("+15555550101", &["sms-backup-restore"][..], "SMS/MMS"),
-        ("+15555550102", &["imessage"][..], "imessage"),
-        ("+15555550103", &["whatsapp"][..], "WhatsApp"),
-        ("+15555550104", &["imessage", ""][..], "imessage"),
-        ("+15555550105", &["imessage", "whatsapp"][..], "unknown"),
+    for (handle, messages, service) in [
+        (
+            "+15555550101",
+            &[("sms-backup-restore", "sms"), ("imessage", "imessage")][..],
+            "text_message",
+        ),
+        (
+            "+15555550102",
+            &[("imazing", "sms"), ("imazing", "rcs")][..],
+            "text_message",
+        ),
+        ("+15555550103", &[("imazing", "whatsapp")][..], "whatsapp"),
+        (
+            "+15555550104",
+            &[("imessage", "imessage"), ("imessage", "unknown")][..],
+            "unknown",
+        ),
+        (
+            "+15555550105",
+            &[("imazing", "sms"), ("whatsapp", "whatsapp")][..],
+            "unknown",
+        ),
     ] {
-        let messages: Vec<SeedMessage> = sources.iter().map(|s| message(*s)).collect();
-        let id = seed_conversation(
-            &fixture.state,
-            &SeedConversation {
-                account_id: user.account_id,
-                handle,
-                conversation_type: "one-to-one",
-                group_title: None,
-                source_file: "t.jsonl",
-                messages: &messages,
-            },
+        let handle_id: i64 = sqlx::query_scalar(
+            "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
+             VALUES ($1, $2, $2, 'phone', 'text_message') RETURNING id",
         )
-        .await;
-        expected.insert(id, label.to_string());
+        .bind(user.account_id)
+        .bind(handle)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        let id = ConversationRow::new(user.account_id, handle_id)
+            .insert(&mut conn)
+            .await;
+        for (source, transport) in messages {
+            MessageRow {
+                source,
+                service: Some(transport),
+                ..MessageRow::new(user.account_id, id)
+            }
+            .insert(&mut conn)
+            .await;
+        }
+        expected.insert(id, service.to_string());
     }
+    drop(conn);
 
-    let page: serde_json::Value = get_json(&fixture.state, "/v1/conversations", &user.token).await;
-    let labels: HashMap<i64, String> = page["items"]
+    let page: serde_json::Value =
+        crate::test_support::get_json(&fixture.state, "/v1/conversations", &user.token).await;
+    let services: HashMap<i64, String> = page["items"]
         .as_array()
         .unwrap()
         .iter()
@@ -1311,7 +1364,7 @@ async fn the_conversation_list_labels_each_thread_by_its_sources() {
             )
         })
         .collect();
-    assert_eq!(labels, expected);
+    assert_eq!(services, expected);
 }
 
 #[tokio::test]

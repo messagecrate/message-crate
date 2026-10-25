@@ -328,7 +328,11 @@ pub enum Transport {
     Telegram,
     /// Slack.
     Slack,
-    /// Unrecognized or unset transport.
+    /// The source names no transport the exporter can read. Never a default
+    /// for one it could read: the server shows a conversation holding such a
+    /// message as Unknown, and the import that promotes it logs a warning
+    /// (docs/architecture/rules/contacts-identities-and-messages.md,
+    /// CONTACT-56).
     Unknown,
 }
 

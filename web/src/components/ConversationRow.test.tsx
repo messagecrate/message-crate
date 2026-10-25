@@ -15,7 +15,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     message_count: 1,
     first_message_at: "2024-06-01T12:00:00Z",
     last_message_at: "2024-06-01T12:00:00Z",
-    service: "imessage",
+    service: "text_message",
     is_group: false,
     shown_title: null,
     tags: [],

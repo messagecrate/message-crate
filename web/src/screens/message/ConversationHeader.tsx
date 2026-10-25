@@ -118,7 +118,7 @@ export default function ConversationHeader({
         <h2 className="m-0 min-w-0 truncate text-[1rem] font-semibold text-text">{title}</h2>
         <div className="flex min-w-0 flex-wrap gap-x-2.5 text-[0.813rem] text-muted">
           {conversation.is_group ? <span>{conversation.participants.length} people</span> : null}
-          {service ? <span>{service}</span> : null}
+          <span>{service}</span>
           {conversation.first_message_at && conversation.last_message_at ? (
             <span>
               {formatMonthYear(conversation.first_message_at, zone)} –{" "}
