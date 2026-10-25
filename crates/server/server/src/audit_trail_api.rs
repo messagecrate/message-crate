@@ -115,10 +115,10 @@ pub(crate) async fn list_audit_trail(
     audit_trail_page(&db, scope, auth.account_id, query.limit, query.offset).await
 }
 
-/// The deleted accounts whose entries the Audit Trail keeps. Listed by
-/// username A to Z, the latest deletion first under one username. Each is one
-/// account: two accounts deleted under one username are two. Admin Home
-/// offers them beside the live accounts, to narrow the Audit Trail to one with
+/// The deleted accounts whose entries the Audit Trail keeps. By username A to
+/// Z, the latest deletion first under one username. Each is one account: two
+/// accounts deleted under one username are two. Admin Home offers them beside
+/// the live accounts, to narrow the Audit Trail to one with
 /// `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.
 #[utoipa::path(
     get,

@@ -4454,7 +4454,7 @@
           "Audit Trail"
         ],
         "summary": "The deleted accounts whose entries the Audit Trail keeps.",
-        "description": "Listed by username A to Z, the latest deletion first under one username. Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.",
+        "description": "By username A to Z, the latest deletion first under one username. Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.",
         "operationId": "list_deleted_accounts",
         "parameters": [
           {
@@ -5757,7 +5757,7 @@
           "Contacts"
         ],
         "summary": "Write the address book.",
-        "description": "It holds the contacts a search matches, the checked ones among them, or every contact when the body names neither.\n\nThe answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `service`, `identity` and `groups`.\n`service` is `Text Message`, `Email` for an email address on Text\nMessage, or `WhatsApp`. A contact's name and its Contact Group names,\nseparated by `;`, repeat on each of its rows. A contact with no name has\na blank `display_name`, and a contact with no identity is one row with\n`service` and `identity` blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
+        "description": "For the contacts a search matches, the checked ones among them, or every contact when the body names neither.\n\nThe answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `service`, `identity` and `groups`.\n`service` is `Text Message`, `Email` for an email address on Text\nMessage, or `WhatsApp`. A contact's name and its Contact Group names,\nseparated by `;`, repeat on each of its rows. A contact with no name has\na blank `display_name`, and a contact with no identity is one row with\n`service` and `identity` blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
         "operationId": "get_address_book",
         "requestBody": {
           "content": {
@@ -8442,7 +8442,7 @@
           "Export"
         ],
         "summary": "The messages a running Export Run matched when it was created.",
-        "description": "They come a page at a time, oldest first unless `sort` says otherwise. An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.",
+        "description": "A page at a time, oldest first unless `sort` says otherwise. An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.",
         "operationId": "list_export_messages",
         "parameters": [
           {

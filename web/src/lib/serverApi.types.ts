@@ -534,7 +534,7 @@ export interface paths {
         };
         /**
          * The deleted accounts whose entries the Audit Trail keeps.
-         * @description Listed by username A to Z, the latest deletion first under one username. Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.
+         * @description By username A to Z, the latest deletion first under one username. Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.
          */
         get: operations["list_deleted_accounts"];
         put?: never;
@@ -674,7 +674,7 @@ export interface paths {
         put?: never;
         /**
          * Write the address book.
-         * @description It holds the contacts a search matches, the checked ones among them, or every contact when the body names neither.
+         * @description For the contacts a search matches, the checked ones among them, or every contact when the body names neither.
          *
          *     The answer is `text/csv`, not JSON: one row per identity, with the
          *     columns `contact_id`, `display_name`, `service`, `identity` and `groups`.
@@ -1054,7 +1054,7 @@ export interface paths {
         };
         /**
          * The messages a running Export Run matched when it was created.
-         * @description They come a page at a time, oldest first unless `sort` says otherwise. An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.
+         * @description A page at a time, oldest first unless `sort` says otherwise. An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.
          */
         get: operations["list_export_messages"];
         put?: never;

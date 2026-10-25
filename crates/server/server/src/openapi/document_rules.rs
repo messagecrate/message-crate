@@ -5,22 +5,21 @@
 //!
 //! Part of it reads the document: the page shape and paging parameters of every
 //! list, every property of a success answer required, a `Location` on every
-//! `201`, a `404` on every path with an id, no body
-//! on the success of a `HEAD`, one-sentence summaries of at most 120 characters
-//! (API-122), declared tags, kebab-case paths and the nesting depth. The rest
-//! calls every operation through the router, on the credential matrix's
-//! fixture: with no credential
+//! `201`, a `404` on every path with an id, no body on the success of a `HEAD`,
+//! one-sentence summaries of at most 120 characters (API-122), declared tags,
+//! kebab-case paths and the nesting depth. The rest calls every operation
+//! through the router, on the credential matrix's fixture: with no credential
 //! it must answer `401` with a `WWW-Authenticate` challenge, and so must a
-//! token the server never issued, with a query parameter it does not declare `422`, with
-//! a body that has no `Content-Type` or one the route does not take `415`, with
-//! a JSON body that is not JSON `400`, and a list with `limit`, or an `offset`
-//! past the ceiling its description states, out of range `422`. Each answer
-//! must be a problem document carrying its `request_id`, of a status and type
-//! the operation's document lists. An `Accept` that names nothing JSON must
-//! answer `406` exactly where the document lists it; a `GET` that succeeds must
-//! answer a media type its document declares; a success must carry every field
-//! its document declares, `null` where it has no value; and a `201` must name
-//! in its `Location` a resource the same credential can `GET`.
+//! token the server never issued, with a query parameter it does not declare
+//! `422`, with a body that has no `Content-Type` or one the route does not take
+//! `415`, with a JSON body that is not JSON `400`, and a list with `limit`, or
+//! an `offset` past the ceiling its description states, out of range `422`.
+//! Each answer must be a problem document carrying its `request_id`, of a
+//! status and type the operation's document lists. An `Accept` that names
+//! nothing JSON must answer `406` exactly where the document lists it; a `GET`
+//! that succeeds must answer a media type its document declares; a success must
+//! carry every field its document declares, `null` where it has no value; and a
+//! `201` must name in its `Location` a resource the same credential can `GET`.
 //!
 //! The failures an operation's shape brings are written into the document
 //! by `shared_parts`, so a check that reads them back from the document

@@ -469,12 +469,12 @@ pub(crate) async fn get_export(
     ))
 }
 
-/// The messages a running Export Run matched when it was created. They come a
-/// page at a time, oldest first unless `sort` says otherwise. An import, a trash or
-/// a new day since creation changes nothing here. A message deleted since
-/// leaves its place empty: `total` stays `message_count`, a page can hold
-/// fewer than `limit` items, and a client advances `offset` by `limit`. Each
-/// page read raises the run's `messages_delivered` to the places reached.
+/// The messages a running Export Run matched when it was created. A page at a
+/// time, oldest first unless `sort` says otherwise. An import, a trash or a new
+/// day since creation changes nothing here. A message deleted since leaves its
+/// place empty: `total` stays `message_count`, a page can hold fewer than
+/// `limit` items, and a client advances `offset` by `limit`. Each page read
+/// raises the run's `messages_delivered` to the places reached.
 #[utoipa::path(
     get,
     path = "/v1/exports/{id}/messages",
