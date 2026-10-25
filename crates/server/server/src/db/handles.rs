@@ -162,12 +162,12 @@ pub fn check_service_carries(
 // (#1630), and `email` lived on as a second name for Text Message (#1631).
 //
 // This is the HTTP API's enum; the OpenAPI reference publishes it as
-// `IdentityService`. `ir::IdentityService` is the conversation file's
-// enum of the same two services, whose `parse` reads every word but
-// `whatsapp` and `wa` as `text_message`; the `From` impls below convert between the
-// two. The `Api` prefix keeps the two apart in Rust, because one bare name
-// would mean either enum depending on a file's imports
-// (docs/architecture/rules/http-api.md, API-130).
+// `IdentityService`. `ir::IdentityService` is the conversation file's enum of
+// the same two services, whose `parse` reads every word but `whatsapp` and `wa`
+// as `text_message`; the `From` impls below convert between the two. The `Api`
+// prefix keeps the two apart in Rust, because one bare name would mean either
+// enum depending on a file's imports (docs/architecture/rules/http-api.md,
+// API-130).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]
@@ -543,12 +543,14 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
         ),
     };
     let country_unknown = country_unknown_sql();
+    let whatsapp = IdentityService::Whatsapp.as_str();
+    let text_message = IdentityService::TextMessage.as_str();
     let sql = format!(
         "WITH linked AS ({linked})
          SELECT h.normalized,
                 CASE WHEN h.handle_type = 'email' THEN 'email'
-                     WHEN h.service = 'whatsapp' THEN 'whatsapp'
-                     ELSE 'text_message' END AS service,
+                     WHEN h.service = '{whatsapp}' THEN '{whatsapp}'
+                     ELSE '{text_message}' END AS service,
                 {country_unknown} AS country_unknown,
                 (SELECT MIN(m.timestamp) {messages}) AS start_date,
                 (SELECT MAX(m.timestamp) {messages}) AS end_date,

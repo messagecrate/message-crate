@@ -190,12 +190,13 @@ pub async fn account_identity_id(
          JOIN handles h ON h.id = ah.handle_id
          WHERE ah.account_id = $1 AND (h.raw = $2 OR h.normalized = $2)
            AND ($3 IS NULL OR h.service = $3)
-         ORDER BY h.normalized = $2 DESC, CASE h.service WHEN 'text_message' THEN 0 ELSE 1 END
+         ORDER BY h.normalized = $2 DESC, CASE h.service WHEN $4 THEN 0 ELSE 1 END
          LIMIT 1",
     )
     .bind(account_id)
     .bind(address.trim())
     .bind(service.map(IdentityService::as_str))
+    .bind(IdentityService::TextMessage.as_str())
     .fetch_optional(&mut *conn)
     .await
     .context("find the account's identity at an address")
