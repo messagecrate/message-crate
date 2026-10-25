@@ -400,7 +400,7 @@ macro_rules! api_shape {
 }
 
 /// Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,
-/// "Runs"). The list decides which search words the query may use and what
+/// API-117). The list decides which search words the query may use and what
 /// the run hands over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -433,7 +433,7 @@ impl ExportQueryList {
 }
 
 /// What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,
-/// "Runs"). One of three forms: everything the account holds, a query in the
+/// API-116). One of three forms: everything the account holds, a query in the
 /// search language, or conversations and messages picked by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
