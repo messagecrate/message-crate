@@ -1252,7 +1252,11 @@ back (CONTACT-57). The route that makes the change
 writes the entry in the change's own transaction, so a change made by Undo
 or Redo is recorded as the same change made by hand. Undo and Redo get no
 entry of their own. A request that changes no contact, such as moving a
-contact already in the Trash there again, writes no entry. Delete Contacts
+contact already in the Trash there again, writes no entry. Neither does an
+undo of a merge that writes no contact back (CONTACT-57), though it still
+takes from the target the Contact Groups and Import Run records only the
+merge gave it, and drops the merge: those are bookkeeping, and no contact
+came or went (#3307). Delete Contacts
 sends its contacts in one request, `PATCH /v1/trash/contacts`, so the trail
 sees one action. That route takes at most 10000 ids in a list, and a larger selection
 is sent, and recorded, in parts of that size. A rename, an identity added, swapped or
