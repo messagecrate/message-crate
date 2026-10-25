@@ -302,7 +302,10 @@ pub(crate) async fn decide_shown_as_is(
 ///
 /// # Errors
 ///
-/// Returns an error when no account is named and the database has none, a
+/// Returns an error when the account named is the administrator, which
+/// holds no messages and so no attachments
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`), when no account
+/// is named and the database has none, a
 /// query fails, or an account's asset directories cannot be prepared. An
 /// original whose Preview or Thumbnail cannot be made is counted in
 /// `not_made`, a damaged version that cannot be dropped in `not_dropped`,
@@ -317,6 +320,13 @@ pub async fn run(
 ) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
     let account_ids = match opts.account {
+        // The administrator holds no attachments: the full walk leaves it
+        // out (`list_account_ids`), and an `account` naming it is refused
+        // rather than walked into a warning that its assets directory is
+        // missing.
+        Some(account_id) if account_profile::is_admin(account_id) => {
+            bail!("the administrator holds no attachments, so there is nothing to process")
+        }
         Some(account_id) => vec![account_id],
         None => list_account_ids(&mut *opened.conn().await?, &cfg.paths.data_dir).await?,
     };
