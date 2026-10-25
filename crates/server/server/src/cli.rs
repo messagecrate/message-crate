@@ -7,7 +7,7 @@
 //! `--db` applied, through `OpenDb`.
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -89,6 +89,12 @@ pub struct SetAdminPasswordArgs {
     /// Path to config.toml
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
+
+    /// Set the password of the Message Crate kept in this directory, as
+    /// `serve --data-dir` names it, and read no config file. The desktop
+    /// app's own server keeps its Message Crate in `~/message-crate/data`
+    #[arg(long, conflicts_with = "config")]
+    pub data_dir: Option<PathBuf>,
 }
 
 /// Options for `import`.
@@ -344,7 +350,7 @@ async fn run_set_admin_password(args: SetAdminPasswordArgs) -> Result<()> {
 
 /// Set the administrator's password and report what happened.
 async fn set_admin_password_with(args: SetAdminPasswordArgs, password: &str) -> Result<()> {
-    let cfg = Config::load(&args.config)?;
+    let (cfg, _) = config_or_data_dir(&args.config, args.data_dir.as_deref())?;
     let opened = OpenDb::open(cfg).await?;
     let outcome = crate::admin_cli::set_admin_password(&opened, password).await?;
     opened.close().await;
@@ -687,23 +693,7 @@ async fn run_serve(args: ServeArgs) -> Result<()> {
 /// `--data-dir`, which reads no config file, that is the working directory,
 /// as for `--data-dir` itself.
 fn serve_config(args: ServeArgs) -> Result<Config> {
-    let (cfg, root) = match &args.data_dir {
-        Some(data_dir) => {
-            // Made absolute so nothing later depends on the directory the
-            // server was started in.
-            let cwd = std::env::current_dir()?;
-            let data_dir = if data_dir.is_absolute() {
-                data_dir.clone()
-            } else {
-                cwd.join(data_dir)
-            };
-            (Config::for_data_dir(&data_dir), cwd)
-        }
-        None => (
-            Config::load(&args.config)?,
-            crate::config::config_root(&args.config)?,
-        ),
-    };
+    let (cfg, root) = config_or_data_dir(&args.config, args.data_dir.as_deref())?;
     Ok(cfg.with_serve_overrides(
         &root,
         ServeFlags {
@@ -713,6 +703,27 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
             tools_dir: args.tools_dir,
         },
     ))
+}
+
+/// The config a command that takes `--data-dir` runs on, and the directory
+/// its relative paths resolve against: the Message Crate in `data_dir` with
+/// every setting at its default, or else the config file at `config`. A
+/// relative `data_dir` resolves against the working directory, which is then
+/// the root, and is made absolute so nothing later depends on the directory
+/// the command was started in.
+fn config_or_data_dir(config: &Path, data_dir: Option<&Path>) -> Result<(Config, PathBuf)> {
+    match data_dir {
+        Some(data_dir) => {
+            let cwd = std::env::current_dir()?;
+            let data_dir = if data_dir.is_absolute() {
+                data_dir.to_path_buf()
+            } else {
+                cwd.join(data_dir)
+            };
+            Ok((Config::for_data_dir(&data_dir), cwd))
+        }
+        None => Ok((Config::load(config)?, crate::config::config_root(config)?)),
+    }
 }
 
 /// Make the Thumbnails and Previews of stored attachments.
