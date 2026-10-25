@@ -1,8 +1,8 @@
 //! Passwords, usernames, and the wait before a refused one is answered.
 //!
 //! Nothing here is a route. The Session routes (`session_api`), the accounts
-//! collection (`accounts_api`), claiming (`server_api`) and the owner's shell
-//! commands (`owner_cli`) all hash, verify and validate through this module,
+//! collection (`accounts_api`), setup (`server_api`) and the administrator's
+//! shell command (`admin_cli`) all hash, verify and validate through this module,
 //! so a password rule is written once.
 
 #[cfg(test)]

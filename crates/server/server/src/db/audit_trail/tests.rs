@@ -297,7 +297,7 @@ async fn a_login_after_a_session_expired_does_not_replace_it() {
 }
 
 /// Revoking an account's Sessions leaves one that already ran out ended at
-/// its expiry: `reset-owner-password` long after the last login does not
+/// its expiry: `set-admin-password` long after the last login does not
 /// record it `revoked`.
 #[tokio::test]
 async fn revoking_leaves_an_expired_session_ended_at_its_expiry() {

@@ -210,7 +210,7 @@ pub enum AuditReason {
     /// `export_run_closed`: a new Export took the account's one running
     /// Export Run.
     Replaced,
-    /// `session_ended`: the server ended it, as `reset-owner-password` does.
+    /// `session_ended`: the server ended it, as `set-admin-password` does.
     Revoked,
     /// `session_ended`: it ran out. Never stored: read from a `logged_in`
     /// entry with no end once its expiry has passed.

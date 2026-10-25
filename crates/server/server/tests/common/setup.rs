@@ -1,10 +1,10 @@
-//! Calls to a running server, and the claim, open registration, register,
-//! and log in sequence that gives a test an owner and an account.
+//! Calls to a running server, and the setup, create account, and log in
+//! sequence that gives a test the administrator and an account.
 
 use serde_json::{Value, json};
 
-/// The owner's password.
-pub const OWNER_PASSWORD: &str = "Owner-Pw-7q2Lx9Vb";
+/// The administrator's password.
+pub const ADMIN_PASSWORD: &str = "Admin-Pw-7q2Lx9Vb";
 /// The account's password.
 pub const ALICE_PASSWORD: &str = "Alice-Pw-3kN8wZr4";
 
@@ -37,52 +37,43 @@ pub fn json_body(value: &Value) -> Option<(&'static str, Vec<u8>)> {
     Some(("application/json", serde_json::to_vec(value).unwrap()))
 }
 
-/// What `claimed_with_account` answers, each named so the two session
+/// What `set_up_with_account` answers, each named so the two session
 /// tokens cannot be swapped.
-pub struct Claimed {
-    /// The owner's session token.
-    pub owner_token: String,
+pub struct SetUp {
+    /// The administrator's session token.
+    pub admin_token: String,
     /// Alice's account id.
     pub alice_id: i64,
     /// Alice's session token.
     pub alice_token: String,
 }
 
-/// Claims the Message Crate as `keeper`, opens public registration,
-/// registers `alice`, and logs her in.
-pub async fn claimed_with_account(base: &str) -> Claimed {
+/// Sets up the Message Crate with the administrator's password, creates
+/// `alice` as the administrator, and logs her in.
+pub async fn set_up_with_account(base: &str) -> SetUp {
     use reqwest::Method;
     use reqwest::StatusCode as S;
 
-    let (status, claimed) = call(
+    let (status, set_up) = call(
         base,
         Method::POST,
-        "/v1/server/claim",
+        "/v1/server/setup",
         None,
-        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
+        json_body(&json!({ "password": ADMIN_PASSWORD })),
     )
     .await;
-    assert_eq!(status, S::CREATED, "{claimed}");
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let (status, _) = call(
-        base,
-        Method::PATCH,
-        "/v1/server/settings",
-        Some(&owner),
-        json_body(&json!({ "public_registration": true })),
-    )
-    .await;
-    assert_eq!(status, S::OK);
-    let (status, registered) = call(
+    assert_eq!(status, S::CREATED, "{set_up}");
+    let admin = set_up["token"].as_str().unwrap().to_string();
+    let (status, created) = call(
         base,
         Method::POST,
         "/v1/accounts",
-        None,
+        Some(&admin),
         json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
     )
     .await;
-    assert_eq!(status, S::CREATED, "{registered}");
-    let alice_id = registered["account_id"].as_i64().unwrap();
+    assert_eq!(status, S::CREATED, "{created}");
+    let alice_id = created["account_id"].as_i64().unwrap();
     let (status, session) = call(
         base,
         Method::POST,
@@ -93,8 +84,8 @@ pub async fn claimed_with_account(base: &str) -> Claimed {
     .await;
     assert_eq!(status, S::CREATED, "{session}");
     let alice = session["token"].as_str().unwrap().to_string();
-    Claimed {
-        owner_token: owner,
+    SetUp {
+        admin_token: admin,
         alice_id,
         alice_token: alice,
     }
