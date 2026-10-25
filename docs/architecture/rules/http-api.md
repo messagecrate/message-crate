@@ -8,12 +8,10 @@ are decided, not when the code catches up: a design is argued against this
 file, a pull request that touches a route is graded against it, and a route
 that breaks a rule here is a bug. Each rule carries its reason, and where an
 alternative was weighed and turned down, one line says so, so the question is
-not reopened by accident. Each rule gets an id, `API-n`, which code comments,
+not reopened by accident. Each rule has an id, `API-n`, which code comments,
 tests and reviews cite. The numbers run through the sections in document order.
-Until #3209 is closed, the sections get their ids one at a time, and a rule in a
-section that has none yet is cited by the section's title in quotes:
-`` `docs/architecture/rules/http-api.md`, "Versioning and change" ``. A rule's id never
-changes. A rule that stops holding is removed, and its id is not reused.
+A rule's id never changes. A rule that stops holding is removed, and its id is
+not reused.
 
 This file states what every route must do. The generated reference (see
 API-120) states what each route does today. Where the two differ, an open issue
@@ -1894,14 +1892,13 @@ answers with the read's own struct. That struct derives `Serialize` and
 `utoipa::ToSchema`, takes its wire name by the rules above (API-129, API-130),
 and the handler hands it on unchanged: `list_saved_searches` answers
 `Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
-reads. A struct that a client crate reads too lives in
-`api-types`, and the `db/` read returns that struct:
-`ExportRun` from `db/exports.rs`, `Message` from `db/conversation_messages.rs`.
-Why: one struct cannot drift from itself, and a copy beside it would be a
-second place to change for every column.
-No client needs the storage shape hidden from it, because no client is kept
-compatible ([Versioning and change](#versioning-and-change)). A column rename
-that reaches the wire costs a rebuild and nothing more.
+reads. A struct that a client crate reads too lives in `api-types`, and the
+`db/` read returns that struct: `ExportRun` from `db/exports.rs`, `Message`
+from `db/conversation_messages.rs`. Why: one struct cannot drift from itself,
+and a copy beside it would be a second place to change for every column. No
+client needs the storage shape hidden from it, because no client is kept
+compatible (API-137). A column rename that reaches the wire costs a rebuild and
+nothing more.
 
 Does a route group then never define a wire type of its own? It does, when the
 answer is not one read's result as it stands. An action's answer is a
@@ -1934,10 +1931,14 @@ A rule every route follows is tested once over the whole document, as above
 
 ## Versioning and change
 
+### API-137 `/v1` is a whole number in the path, with no compatibility promise behind it
+
 `/v1` is a whole number in the path. There is no compatibility promise behind
 it: endpoint names, request and response shapes, and stored formats change
 whenever a better design is found, and breaking a client is an accepted cost.
 No compatibility alias, deprecation window or version handshake is ever added.
+
+### API-138 The server says which code it runs and an app says which code it is, and neither decides anything
 
 The server says which code it runs, and an app says which code it is, and
 neither decides anything. `GET /v1/server` carries the server's Build in

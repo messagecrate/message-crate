@@ -53,7 +53,7 @@ Every command is in AGENTS.md, and nothing is repeated here. Claude Code does no
   users to protect — only developers, who rebuild. Never add a compatibility
   alias, a deprecation window, a version handshake, or a migration path for an
   old client, and never argue against a change on the grounds that something
-  already calls it. `docs/architecture/rules/http-api.md` says this for the HTTP interface; it holds for every
+  already calls it. `docs/architecture/rules/http-api.md`, API-137, says this for the HTTP interface; it holds for every
   interface. Do not raise this as an open question. A version check that only
   refuses a mismatch, and never adapts to the older side, is allowed: it is not
   a handshake, because nothing is negotiated. The refusal of a conversation
