@@ -130,7 +130,7 @@ impl ApiError {
 
     /// `Ok` when a check that gathers every broken rule found none, else
     /// `validation-failed` listing them all (`docs/architecture/rules/http-api.md`,
-    /// "Failures").
+    /// API-52).
     ///
     /// # Errors
     ///

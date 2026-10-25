@@ -491,7 +491,7 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
 }
 
 /// The Demo Account's refusal is one sentence in lowercase with no final
-/// period, the form `docs/architecture/rules/http-api.md`, "Failures", gives every
+/// period, the form `docs/architecture/rules/http-api.md`, API-53, gives every
 /// `detail`, and keeps "Demo Account" capitalized (#2817). Any other account
 /// passes.
 #[test]

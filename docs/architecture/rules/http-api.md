@@ -108,9 +108,9 @@ back on the run, and the server sends both of its lists.
 ### API-8 A failure is not a success answer
 
 A failure is not a success answer. A problem document carries the members
-[Failures](#failures) gives it and leaves out the rest, because RFC 7807
-defines `detail` as a string, and an extension member such as `retry_after`
-belongs to the problem types that carry it.
+API-52 gives it and leaves out the rest, because RFC 7807 defines `detail` as a
+string, and an extension member such as `retry_after` belongs to the problem
+types that carry it.
 
 ## Naming a route
 
@@ -395,7 +395,7 @@ neither is a bug in the server, and the same request succeeds once the
 import batch or the requests holding the database finish, so the remedy is
 to wait and send it again, not to report a fault
 ([#2084](https://github.com/messagecrate/message-crate/issues/2084)).
-`/health` is the exception, below ([Failures](#failures)).
+`/health` is the exception (API-57).
 
 ### API-36 Every `401 Unauthorized` carries a Bearer challenge
 
@@ -616,10 +616,17 @@ MB of files for every page. The id names a line, as `around`, `before` and
 
 ## Failures
 
+### API-52 Every failure answers an RFC 7807 problem document
+
 Every failure answers an RFC 7807 problem document as
 `application/problem+json`, carrying `type`, `title`, `status`, `detail` and
 `request_id`. A validation failure replaces `detail` with `errors`, a list of
 every rule that broke rather than the first.
+
+Rejected: a flat `{error}` body. It gives a client nothing to branch on except
+the sentence.
+
+### API-53 `detail` is one sentence in lowercase with no final period, and the client decides how it starts and ends
 
 `detail`, and each entry of `errors`, is one sentence in lowercase with no
 final period, naming the thing and what is wrong with it: `asset not found`,
@@ -646,6 +653,8 @@ For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
 what a person can quote to find the failure's line in the server's log
 ([The server's log, LOG-13](server-log.md#log-13-every-line-carries-its-requests-id-spawned-work-included)).
 
+### API-54 `type` is the URL of the problem type's page, and the code is the registry
+
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
 The code is the registry: each type is declared once in
@@ -657,6 +666,8 @@ is that a client's remedy differs. A closed registration is its own type,
 because the remedy (ask the owner for an account) is not the remedy for a
 caller who is not the owner.
 
+### API-55 Every response carries an `x-request-id` the server makes
+
 Every response, success or failure, carries an `x-request-id` header, a UUID v4
 the server makes; a request id a client sends is ignored. Problem bodies repeat
 it as `request_id`. The id joins the request's tracing span so every log line
@@ -664,11 +675,10 @@ under a request carries it, work the request spawns included
 ([The server's log](server-log.md)). RFC 7807's `instance` stays unused,
 because it is defined as a URI reference and a bare id is not one.
 
-Rejected: a flat `{error}` body. It gives a client nothing to branch on except
-the sentence.
-
 Rejected: a request id on `5xx` only. A body whose members vary by status is
-the drift the one-shape rule exists to stop.
+the drift the one-shape rule (API-52) exists to stop.
+
+### API-56 A handler that panics answers a `500 Internal Server Error` problem document
 
 A handler that panics answers the same `500 Internal Server Error` problem
 document, with its `request_id`, as any other internal failure: the
@@ -678,6 +688,8 @@ the request's log line included, treats the answer as it treats any `500`.
 Why: an uncaught panic closed the connection with no answer, so the person
 saw a network error with no id to report
 ([#2060](https://github.com/messagecrate/message-crate/issues/2060)).
+
+### API-57 `/health` answers `ok` only when the database answers `SELECT 1` within 1.5 seconds
 
 `/health` answers `ok` only when the server can take a database connection
 and run `SELECT 1` on it within 1.5 seconds (`HEALTH_DATABASE_LIMIT` in
@@ -717,11 +729,15 @@ That holds when every connection is taken too, though a `/v1` call answers
 that with `database-busy`: `/health` is outside `/v1`, and its callers read
 only whether it answered `ok`.
 
+### API-58 Every registered problem type is a `4xx` but `server-stopping` and `database-busy`
+
 Every registered problem type is a `4xx` but two, `server-stopping` and
 `database-busy`, each a `503 Service Unavailable`. Each is its own type
 because the remedy, sending the same request again, is not the remedy for a
 `500 Internal Server Error`, and the request was not the client's mistake, so
 it is not a `4xx`.
+
+### API-59 A busy database answers `database-busy` wherever in the request it refused
 
 A request that reaches a busy database answers `database-busy`, with a
 `Retry-After` of 5 seconds, wherever in the request the database refused it:
@@ -738,22 +754,27 @@ tries a read that failed with a `5xx` once more (`retry` in
 was busy because another request, such as an import batch, held the write
 lock, or because every database connection stayed in use, and either way a
 second try at once meets the same busy database. It never tries a write
-again: it shows the write's failure with its `detail`. The pool
-(`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
-batches and the sweep of unreferenced files after an Import Run
+again: it shows the write's failure with its `detail`.
+
+### API-60 The database pool holds 8 connections, a request waits 10 seconds for one, and a write 15 seconds for the write lock
+
+The pool (`crates/server/server/src/db/engine.rs`) holds 8 connections: two
+import batches and the sweep of unreferenced files after an Import Run
 (`asset_store::sweep_after_run`) can each hold one for a whole run. The
-background move of a Session's expiry (`auth::ExpiryMoves`, under
-[Credentials and reach](#credentials-and-reach)) holds one more for up to
-the busy timeout while an import holds the write lock. Under write-ahead
-logging the rest serve reads side by side. A request waits
-10 seconds for a connection, and a write waits SQLite's 15-second busy
-timeout for the write lock. Why: with 4 connections, two imports and a sweep
-left one for every other request, and a request waited sqlx's default 30
-seconds for it before answering `500 Internal Server Error`
+background move of a Session's expiry (`auth::ExpiryMoves`, under [Credentials
+and reach](#credentials-and-reach)) holds one more for up to the busy timeout
+while an import holds the write lock. Under write-ahead logging the rest serve
+reads side by side. A request waits 10 seconds for a connection, and a write
+waits SQLite's 15-second busy timeout for the write lock. Why: with 4
+connections, two imports and a sweep left one for every other request, and a
+request waited sqlx's default 30 seconds for it before answering
+`500 Internal Server Error`
 ([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Each
-connection's page cache is capped at about 100 MB, half what it was, so the
-8 hold no more memory in all than the 4 did. Not more than 8, because more
+connection's page cache is capped at about 100 MB, half what it was, so the 8
+hold no more memory in all than the 4 did. Not more than 8, because more
 connections would raise that total, or shrink each cache further.
+
+### API-61 A server told to stop refuses an import batch that has not started
 
 A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
@@ -776,9 +797,12 @@ once an earlier batch ended and import in full, so the stop waited for a
 whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)).
 
-The stop then waits for the requests in flight, every route alike, and for
-the stop of a Demo Account build and of the Thumbnail and Preview pass, for
-up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
+### API-62 A stop waits up to 30 seconds for the requests in flight
+
+After a server told to stop closes its import slots (API-61), it waits for the
+requests in flight, every route alike, and for the stop of a Demo Account build
+and of the Thumbnail and Preview pass, for up to 30 seconds (`STOP_DRAIN_LIMIT`
+in `crates/server/server/src/startup.rs`).
 A request still running then is cut off, and the server exits after one
 `WARN` line naming each such request by its id, method and path
 (`crate::in_flight` tracks every request until its answer's body is sent).

@@ -1465,7 +1465,7 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
 /// The checks run in one order, and the first that fails is the only one
 /// reported: the current password, then the two new ones agreeing, then the
 /// new one differing from the current. Each sentence takes the form every
-/// `detail` takes (`docs/architecture/rules/http-api.md`, "Failures").
+/// `detail` takes (`docs/architecture/rules/http-api.md`, API-53).
 #[tokio::test]
 async fn a_password_change_is_checked_in_a_fixed_order() {
     let fixture = test_fixture().await;

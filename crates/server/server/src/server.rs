@@ -469,7 +469,7 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
 /// gives each address it asks, and `SELECT 1` reads no table, so it never
 /// waits on a writer's lock. Why a pool that writers fill reads as down, and
 /// why that is accepted:
-/// `docs/architecture/rules/http-api.md`, "Failures".
+/// `docs/architecture/rules/http-api.md`, API-57.
 const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// Report whether the server can answer.
