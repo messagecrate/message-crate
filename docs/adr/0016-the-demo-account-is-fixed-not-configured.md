@@ -11,9 +11,9 @@ administrator can delete it or reset it and nothing else.
 
 ## Why
 
-An account with no password is open to whoever is at the login card. Its limits
-are what keep a person's real messages out of made-up ones, and what keep one
-visitor from emptying it for the next. If those limits were ordinary
+The Demo Account, having no password, is open to whoever is at the login card.
+Its limits are what keep a person's real messages out of made-up ones, and what
+keep one visitor from emptying it for the next. If those limits were ordinary
 permissions, the administrator could switch Import on and a visitor could then
 put a real backup into an account the user guide tells people to delete.
 

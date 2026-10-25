@@ -63,7 +63,8 @@ Examples:
       Empty Message Crate, log in as admin / admin
   ./scripts/$(basename "$0") --admin
       Set the administrator's password to admin on the existing Message
-      Crate, ending the administrator's sessions if it had one
+      Crate, ending the administrator's sessions if the administrator
+      already had a password
   ./scripts/$(basename "$0") --reset-demo
       Sample inbox in setup: press Explore Demo Account on the login card
   ./scripts/$(basename "$0") --reset-demo --release --sqlweb

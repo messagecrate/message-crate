@@ -166,8 +166,7 @@ export function listAccounts(opts?: RequestOptions): Promise<Schema["Account"][]
 }
 
 /**
- * Create an account, as the administrator. Its holder must replace the
- * password at first login, and no session is opened.
+ * Create an account, as the administrator. No session is opened on it.
  */
 export function createAccount(body: Schema["CreateAccountRequest"]): Promise<Schema["Account"]> {
   return apiClient.post<Schema["Account"]>("/v1/accounts", body);

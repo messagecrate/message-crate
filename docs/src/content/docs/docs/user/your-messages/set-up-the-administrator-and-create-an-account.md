@@ -26,7 +26,7 @@ Real messages never go into the Demo Account. It can't import, so that no backup
 The app opens **Admin Home** on **User Accounts**, which lists `admin` and **demo**, the Demo Account.
 The first screen now shows **Login** in place of **Set Up**, and keeps **Explore Demo Account** while the Demo Account exists.
 
-The administrator's password is the only thing between the network and every account on this Message Crate but the Demo Account, so it must be one that isn't used anywhere else.
+Choose a password that is used nowhere else: the administrator manages every account on this Message Crate.
 
 ## Add an account
 

@@ -16,10 +16,9 @@
 # exited on its own within the stop_grace_period both files set, rather than
 # being killed by Docker (#2122). A server that writes outside /app/data or
 # /tmp at start, during an import, in the media pass or during an export
-# fails here rather than in a self-hoster's container.
-# The conversation is
-# tests/fixtures/docker-compose-check/conversation.jsonl, and its video is
-# the server's own test fixture crates/server/server/tests/fixtures/media/hevc.mov,
+# fails here rather than in a self-hoster's container. The conversation is
+# tests/fixtures/docker-compose-check/conversation.jsonl, and its video is the
+# server's own test fixture crates/server/server/tests/fixtures/media/hevc.mov,
 # an HEVC video, which needs both a Thumbnail and a Preview.
 #
 # --website also runs scripts/check-served-website.sh against the stack: the

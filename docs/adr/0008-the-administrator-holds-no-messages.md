@@ -178,10 +178,10 @@ Whoever reaches a Message Crate in setup first may set the administrator's
 password. It is self-hosted: its operator installs the software, sets the
 password, and publishes the port, in that order and at times of their
 choosing. A race that requires exposing an unconfigured server to a hostile
-network and then walking away is a configuration the operator chose. A
-Message Crate in setup is also empty, so a lost race destroys nothing and
-announces itself immediately — the operator finds they cannot set up their
-own installation. `set-admin-password` on the server takes it back.
+network and then walking away is a configuration the operator chose. The
+administrator holds no messages, and the Demo Account is open to anyone
+already, so a lost race destroys nothing and announces itself at once — the
+operator finds they cannot set up their own installation. `set-admin-password` on the server takes it back.
 
 ## Considered and rejected: a separate administrator table
 

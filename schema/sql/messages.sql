@@ -220,8 +220,8 @@ CREATE TABLE IF NOT EXISTS attachments (
     preview_not_made_reason TEXT,
     -- The kind of failure `preview_not_made_reason` describes, so the
     -- administrator's view of an Import Run can count the failures by kind
-    -- without reading ffmpeg's words. `docs/architecture/rules/media.md` says what each kind means.
-    -- Set and cleared with the reason.
+    -- without reading ffmpeg's words. `docs/architecture/rules/media.md` says
+    -- what each kind means. Set and cleared with the reason.
     preview_not_made_kind TEXT CHECK (preview_not_made_kind IN (
         'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
         'original_missing', 'server_problem'

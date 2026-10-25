@@ -260,8 +260,7 @@ carry their date on the heading.
   Crate has it from the start; the first visit sets its password instead of
   creating an owner, and `set-admin-password` sets or resets it from the
   server. Only the administrator creates accounts: the setting that let
-  anyone create their own is gone, with its Create Account tab. Admin Home
-  is at `/admin`.
+  anyone create their own is gone, with its Create Account tab.
 - 2026-10-24: **Only the Demo Account logs in without a password.** An
   account created without a password, or whose password was cleared, could
   log in with an empty one. It is now refused like any wrong password until
