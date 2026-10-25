@@ -1560,17 +1560,19 @@ with it, so no client is left to close the run, and a record kept as
 
 A run's settings are stated once on creation, never per batch or per page.
 `complete`, `discard` (imports) and `cancel` (exports) are the client's ways
-to close a run. A run is also closed as `canceled` without its client asking.
-Starting an Export Run closes the account's running one, and the server
-closes an Export Run no page of which was read for an hour (API-119).
-Deleting an account closes its running runs of both kinds (API-109). The
-server's `imports discard` command closes an account's running Import Run,
-such as one a killed import left open.
+to close a run. A run is also closed as `canceled` by something other than
+its own `complete`, `discard` or `cancel`. Starting an Export Run closes the
+account's running one, and the server closes an Export Run no page of which
+was read for an hour (API-119). Deleting an account closes each of its
+running Import Runs and Export Runs (API-109). The server's
+`imports discard` command closes an account's running Import Run, such as
+one a killed import left open.
 
-A client still sending to a run that a new Export, the hour without a page
-or `imports discard` closed gets the `409 Conflict` every finished run
-answers (API-112). After its account is deleted, a client's credential is
-refused before the run is read, with `401 Unauthorized`.
+A client still sending to a run closed by a new Export Run, by the server
+after an hour with no page read, or by `imports discard` gets the
+`409 Conflict` every finished run answers (API-112). A request that arrives
+after its account is deleted fails its credential before the run is read,
+and answers `401 Unauthorized` (API-28).
 
 ### API-111 `complete` states the outcome, and a run an error stopped is `failed`, never canceled
 
