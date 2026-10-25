@@ -72,7 +72,7 @@ pub struct AppState {
     pub(crate) demo: DemoState,
     /// The key media links are signed with, made when the process starts and
     /// never written anywhere, so a restart ends every media link
-    /// (`docs/architecture/rules/http-api.md`, "Credentials and reach").
+    /// (`docs/architecture/rules/http-api.md`, API-75).
     pub(crate) media_link_key: MediaLinkKey,
     /// Wakes the background pass that makes Thumbnails and Previews after
     /// each Import Run. `serve` starts the pass; the test harness does not,

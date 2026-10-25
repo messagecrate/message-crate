@@ -40,8 +40,7 @@ app puts a Media Link in `src`: `POST /v1/assets/{sha256}/media-links`
 answers URLs that read the asset, its Preview and its Thumbnail with no
 header. What a Media
 Link is, why it was chosen over a cookie or the Session token in the URL, and
-what it reaches is in `docs/architecture/rules/http-api.md`, "Credentials and
-reach".
+what it reaches is in `docs/architecture/rules/http-api.md`, API-75.
 
 ## MEDIA-2 The viewer chooses by the server's answer, never by a failed load
 
@@ -191,7 +190,7 @@ conversion passed its limit, `original_missing`, or `server_problem` for anythin
 set and cleared with its reason, which a `CHECK` on the table holds. The
 owner's read of one Import Run counts the run's attachments by kind and lists
 them, each by file name, type and size with its reasons
-(`docs/architecture/rules/http-api.md`, "Credentials and reach"), so the owner sees
+(`docs/architecture/rules/http-api.md`, API-91), so the owner sees
 which files of an import were left without a version and why, and can run
 `process-assets` to try again; nothing tries again on its own (#2636).
 The reason is what ffmpeg said about the file, with the paths it named made

@@ -177,7 +177,7 @@ export function problemFromBody(status: number, text: string): ApiError {
 /**
  * How every call that carries the Session's header treats a redirect: as a
  * network error. `/v1` never redirects (`docs/architecture/rules/http-api.md`,
- * "Credentials and reach"), so a redirect comes from something in front of
+ * API-106), so a redirect comes from something in front of
  * the server, such as a misconfigured proxy, and following it could send
  * the Session token to another host in a WebView that keeps `Authorization`
  * across origins. The failure reads as an unreachable server.

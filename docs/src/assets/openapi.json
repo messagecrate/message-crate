@@ -2136,7 +2136,7 @@
           "Accounts"
         ],
         "summary": "Destroy one account's conversations, messages, and attachments.",
-        "description": "The account itself, its contacts, and its login survive.\n\nThe rows go in one transaction, between two batches of a running Import\nRun and never inside one. The attachment files go after it. While the\naccount has a running Import Run, the originals stay: that run may have\nuploaded files for a batch it has not sent yet. The run's end removes\nthe ones no batch named.\n\nThe owner may, on any account. The account itself may with a\nsession that carries the `delete` permission, and confirms in the body.\nAn API token is refused whatever its scopes: permanent deletion is a\nperson's act (`docs/architecture/rules/http-api.md`, \"Credentials and reach\").",
+        "description": "The account itself, its contacts, and its login survive.\n\nThe rows go in one transaction, between two batches of a running Import\nRun and never inside one. The attachment files go after it. While the\naccount has a running Import Run, the originals stay: that run may have\nuploaded files for a batch it has not sent yet. The run's end removes\nthe ones no batch named.\n\nThe owner may, on any account. The account itself may with a\nsession that carries the `delete` permission, and confirms in the body.\nAn API token is refused whatever its scopes: permanent deletion is a\nperson's act (`docs/architecture/rules/http-api.md`, API-83).",
         "operationId": "delete_account_messages",
         "parameters": [
           {

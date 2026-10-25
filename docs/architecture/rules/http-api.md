@@ -761,8 +761,7 @@ again: it shows the write's failure with its `detail`.
 The pool (`crates/server/server/src/db/engine.rs`) holds 8 connections: two
 import batches and the sweep of unreferenced files after an Import Run
 (`asset_store::sweep_after_run`) can each hold one for a whole run. The
-background move of a Session's expiry (`auth::ExpiryMoves`, under [Credentials
-and reach](#credentials-and-reach)) holds one more for up to the busy timeout
+background move of a Session's expiry (`auth::ExpiryMoves`, under API-72) holds one more for up to the busy timeout
 while an import holds the write lock. Under write-ahead logging the rest serve
 reads side by side. A request waits 10 seconds for a connection, and a write
 waits SQLite's 15-second busy timeout for the write lock. Why: with 4
@@ -910,7 +909,7 @@ the body for more, so a timer in the body would never be looked at.
 
 These limits keep a slow or broken client from holding the server. They do
 not make the server safe to reach from the internet: that needs a proxy, as
-[Credentials and reach](#credentials-and-reach) says, and what the server
+API-107 says, and what the server
 itself must do there is
 a separate design
 ([#2894](https://github.com/messagecrate/message-crate/issues/2894)).
@@ -949,8 +948,7 @@ from the credential check, a `405 Method Not Allowed`, a `406 Not Acceptable`,
 a `413 Payload Too Large`, the `404 Not Found` of a path no route matches, and
 the answer to a CORS preflight. The only routes that set their own are the
 three asset reads, which send `private`, or `private, no-store` under a Media
-Link, once the credential is accepted (see [Credentials and
-reach](#credentials-and-reach)). Their refusals before that point take
+Link, once the credential is accepted (see API-75). Their refusals before that point take
 `no-store` from this rule. An asset read's handler reaches the account the
 read opens only through `AssetReadAccess::answer`, which sets the header on
 whatever it answers, so an asset read route added later cannot answer
@@ -1000,7 +998,7 @@ allow other hosts over `http:` and `https:`, because the login card's
 The policy is `CONTENT_SECURITY_POLICY` in `middleware.rs`, and the desktop
 window's own policy in `src-tauri/tauri.conf.json` follows the same lines.
 Why: the website keeps the Session token in browser storage, and a cookie is
-not an option (see [Credentials and reach](#credentials-and-reach)), so any
+not an option (see API-75), so any
 script that runs on the page can read the token and send it anywhere. The
 policy keeps such a script from running at all. No injection is known today.
 How: three `SetResponseHeaderLayer::if_not_present` layers in
@@ -1013,380 +1011,483 @@ under the same policy without change.
 
 ## Credentials and reach
 
+### API-71 Every route declares which of the three credentials it accepts
+
 Three credentials exist, and the OpenAPI document declares each as a
 security scheme with its scopes, so every route says which it accepts.
 
-- A **Session** is one per logged-in account or owner, made by
-  `POST /v1/session` and ended by `DELETE /v1/session`. It carries the
-  account's own permissions: `import`, `export`, `delete`. The owner's session
-  carries none of those and reaches only the accounts collection, the server
-  settings and the installation's storage totals, because the owner holds no
-  messages. It also reads the country list (`GET /v1/phone-countries`),
-  because the owner picks the country of a number on an account it manages.
-  A Session ends after 7 days unused, and after 30 days from the login
-  however much it is used. A login sets its expiry 7 days ahead. A request
-  that the Session serves moves the expiry to 7 days after the request, but
-  never past 30 days after the login, and writes it only when the move is
-  an hour or more, so a Session in use writes at most once an hour. The
-  move is written in the background, one at a time, so a request never
-  waits for the write lock an import holds. A
-  password change renews the Session for 7 days, and starts its 30 days
-  again. Why: a Session forgotten on a shared computer ends within a week,
-  while an account in daily use never sees the shorter limit, and the cap
-  bounds how long one Session token lasts however it is used. The Audit
-  Trail reads a Session's moved expiry from `session_extensions`, because
-  its own entries are never edited.
-- An **API token** is a named credential an account makes for a program, with
-  the scopes the person chose from `import` and `export`, capped by the
-  account's own. The cap holds on every request, when the token is made, and
-  when it is listed, so the list shows what the token may do now: a scope the
-  owner turns off later shows as off. A token never carries `delete`: permanent deletion is a
-  person's act, and a leaked or faulty program must not be able to empty an
-  archive. A token never signs in and never browses. It is ended by the person
-  or the owner revoking it (`DELETE /v1/accounts/{id}/api-tokens/{token_id}`,
-  with a session) or by its expiry, never by the program holding it. The
-  owner makes no token, and a token row on the owner's account, written by
-  hand or restored with a database, answers the same `401 Unauthorized` as a
-  token the server never issued. Why: no token acts as the owner
-  (`docs/adr/0008-the-owner-holds-no-messages.md`), and the refusal sits in
-  the token lookup every route goes through, so a route that forgets to
-  refuse the owner cannot break it.
-- `GET /v1/session` answers whose credential the caller holds — the account's
-  id and username — for a session or a token. Why: a program holding a token
-  needs to know which account it writes to before it starts, and push and export
-  label their work with it. `DELETE /v1/session` refuses a token with
-  `403 Forbidden`, because a token is not a Session and a `204 No Content`
-  would say something ended when nothing did.
-- A **Media Link** reads one asset, its Preview and its Thumbnail, in the
-  account that made it, with no `Authorization` header. A Session makes it
-  with `POST /v1/assets/{sha256}/media-links`, which answers the URLs to
-  load: `/v1/assets/{sha256}?media_link=…` and its `/preview` and
-  `/thumbnail` twins. It is open for
-  one hour, and ends sooner when the Session that made it ends: by logout, a
-  new login, a password change, or the Session's expiry. A server restart
-  ends every Media Link too. Only `GET /v1/assets/{sha256}`,
-  `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
-  take one, and a request that sends
-  `Authorization` is judged by the header alone. A link that does not open
-  the asset answers `401 Unauthorized` with `media-link-invalid`, because its
-  remedy is a new link rather than a new login.
-  Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
-  and cannot send a header, and a video that streams must be loaded by the
-  element itself (`docs/architecture/rules/media.md`, MEDIA-1). The desktop app's
-  download of an original takes one too. The app copies the answer to the
-  file the person chose as it arrives, so a video of hundreds of megabytes is
-  never held whole in the window or sent to the app as bytes. The window holds
-  the Session and the app does not, and a link that reads one asset for an
-  hour reaches far less than the Session token would.
-  How: the value is `<account_id>.<expires>.<signature>`, an HMAC-SHA256
-  under a key the server makes when it starts and never writes down, over
-  the account, the asset's fingerprint, the expiry and the hash of the
-  Session token that made it. The server stores nothing: it checks a link by
-  signing the same terms with the Session the account holds now, so a link
-  for another asset, another account, a later expiry or an ended Session
-  fails the same check. The server's log shows `media_link=[hidden]`,
-  because a credential is never logged. Every answer the three asset
-  routes give once the credential is accepted carries
-  `Cache-Control: private`, because the bytes are one account's
-  attachment, and one read with a Media Link carries `private, no-store`:
-  that request sends no `Authorization` header, so a shared cache in front
-  of the server would otherwise keep the answer under the link's URL and
-  serve it after the hour or the Session has ended. A problem such as
-  `404 Not Found` or `416 Range Not Satisfiable` carries it too, because a
-  cache may keep a `404 Not Found` and hide a Preview made later.
-  Why an hour: a phone video is watched and sought in within minutes, and an
-  hour leaves room for a long one; a link copied out of the page stops
-  working soon after. The web app makes a new link whenever it opens an
-  attachment again.
-  Rejected: the Session token in the query string. It would write the
-  credential that reaches every message into URLs, the page and any log on
-  the way, where a Media Link reaches one asset for an hour.
-  Rejected: a cookie. The desktop app's page is served from
-  `tauri://localhost` and its server answers at `http://127.0.0.1:8080`, so
-  every request is cross-site, and a browser sends a cookie on a cross-site
-  request only with `SameSite=None; Secure`, which needs HTTPS. Docker and
-  the desktop app must work one way.
-  Rejected: fetching the file with the header and handing the element a
-  blob. The whole file loads before the first frame, which is what streaming
-  removes.
-  Rejected: a stored link, a row per link. It is a row for every attachment
-  opened and a table to prune, and the check reads the Session row either
-  way.
-  Rejected: one link per account for all its assets. A link copied out of
-  the page would read every attachment the account holds.
+### API-72 A Session carries the account's own permissions and ends after 7 days unused or 30 days from the login
 
-What each reaches:
+A **Session** is one per logged-in account or owner, made by
+`POST /v1/session` and ended by `DELETE /v1/session`. It carries the
+account's own permissions: `import`, `export`, `delete`. The owner's session
+carries none of those and reaches only the accounts collection, the server
+settings and the installation's storage totals, because the owner holds no
+messages. It also reads the country list (`GET /v1/phone-countries`),
+because the owner picks the country of a number on an account it manages.
+A Session ends after 7 days unused, and after 30 days from the login
+however much it is used. A login sets its expiry 7 days ahead. A request
+that the Session serves moves the expiry to 7 days after the request, but
+never past 30 days after the login, and writes it only when the move is
+an hour or more, so a Session in use writes at most once an hour. The
+move is written in the background, one at a time, so a request never
+waits for the write lock an import holds. A
+password change renews the Session for 7 days, and starts its 30 days
+again. Why: a Session forgotten on a shared computer ends within a week,
+while an account in daily use never sees the shorter limit, and the cap
+bounds how long one Session token lasts however it is used. The Audit
+Trail reads a Session's moved expiry from `session_extensions`, because
+its own entries are never edited.
 
-- Browse routes (conversations, messages, contacts, groups, tags, saved
-  searches, search fields) take a session only. A token is refused.
-- `POST /v1/imports` and everything under a run, and every asset write, need
-  the `import` scope on either credential.
-- `POST /v1/exports` and everything under a run, and
-  `HEAD /v1/assets/{sha256}`, need the `export` scope on either credential. A
-  program with an export token reads messages only through an Export Run it
-  started, so every read of message data by a program leaves a record.
-- `GET /v1/assets/{sha256}` takes any session, a token with the `export`
-  scope, or a Media Link for that asset. Why: a person looking at a photo in their own conversation is not
-  exporting it, so an account whose `export` permission is off still sees its
-  attachments, as it still reads its messages. A token has no screen to show
-  bytes on; fetching them with one is taking them out, which is what the
-  `export` scope decides.
-- `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
-  are read under the same rule as the asset they were made from, by the same
-  account and nobody else. Why: a Preview and a Thumbnail are the
-  attachment's content as much as the original is, so a caller who may not
-  read one may not read the others, and the owner reads none.
-- `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
-  Why: only a screen has a media element to put a link in, or a download for
-  the desktop app to make, and a program sends its token in the header. The
-  owner holds no attachment to read.
-- `HEAD /v1/assets/{sha256}` also accepts the `import` scope: a program that
-  can only push may ask whether an asset exists, and may not read it.
-- Permanent deletion (`DELETE /v1/conversations/{id}`,
-  `DELETE /v1/contacts/{id}`, `DELETE /v1/trash`,
-  `DELETE /v1/accounts/{id}/messages`, `DELETE /v1/accounts/{id}`) needs a
-  session: the account's own with the `delete` permission, or, for an
-  account's messages and for the account itself, the owner's. A token is
-  refused whatever its scopes.
-- The Demo Account is refused with `403 Forbidden` and
-  `demo-account-protected` by its id, whatever its permission row says, on
-  every route that needs the `import` scope or the `delete` permission, on
-  `POST /v1/contacts`, and on `POST /v1/accounts/{id}/api-tokens`. Its
-  profile reports `export` and neither `import` nor `delete`, from the same
-  id. Why: it has no password, so its limits must not rest on a row
-  (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
-- An account may do everything with its own messages, deleting them and
-  itself included, unless the owner limits it. Deleting an account deletes
-  every message it owns, so an account whose `delete` permission is off
-  cannot delete itself either: it is refused with `403 Forbidden` and asks the
-  owner, who can. No separate permission for closing an account exists,
-  because one that allowed it without `delete` would undo the owner's limit.
-- `/v1/accounts/{id}` and everything under it is read and written by the owner
-  or by that account; a `Location` handed to a newly registered account names a
-  row it may read.
-- An account's API tokens are listed and revoked by the account and by the
-  owner, and made and renamed by the account alone. The owner's list holds
-  each token's id, label, permissions, creation, last use, expiry and state,
-  and leaves out `token_hint`. Why: the owner must be able to end a
-  credential that has leaked, and a token's label and permissions are not
-  message content (`docs/adr/0008-the-owner-holds-no-messages.md`). The
-  masked hint is part of the secret, and the owner never reads a secret.
-  Making a token answers with its secret, so the owner makes none, and a
-  token is the account's own name for its program, so the owner renames none.
-- An account's history is read under the account:
-  `GET /v1/accounts/{id}/imports`, `GET /v1/accounts/{id}/imports/{import_id}`
-  and `GET /v1/accounts/{id}/exports`, beside `GET /v1/accounts/{id}/storage`.
-  They ask who is calling and no permission, so the owner reads them, and so
-  does an account whose `import` or `export` permission is off. `/v1/imports`
-  and `/v1/exports` are the pipelines' routes: they ask for the permission,
-  which the owner's session never carries, and a program's token reaches only
-  them. Each pair answers from one function, so the two lists cannot differ.
-  Which contacts a run created is content, so `/v1/imports/{id}/contacts` has
-  no twin under the account.
-- The Audit Trail is read at `GET /v1/audit-trail`, every account's entries,
-  which is the owner's alone, and at `GET /v1/accounts/{id}/audit-trail`, the
-  entries about one account, which the owner and that account read. Both answer
-  from one function, so the two lists cannot differ. No route writes, changes
-  or deletes an entry: the server writes one as part of the act it records.
-  Why: an account holder reads what the owner did to their account, and a
-  record its subject or the owner could edit would be no check on either
-  (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
-- A deleted account's entries and runs lose its account id, and each keeps
-  the id of the account's `account_deleted` entry, which is the deleted
-  account's id on the wire. `GET /v1/audit-trail/deleted-accounts` lists the
-  deleted accounts with those ids and usernames, and
-  `GET /v1/audit-trail?deleted_account_id=` narrows the owner's list to one.
-  Both are the owner's alone. Why: the account's own id names nothing once it
-  is gone, and the Demo Account is deleted and made again under one id, while
-  a username passes to a later account, deleted or live.
-  Rejected: narrowing by the username the entries keep, which reads two
-  accounts that held one username as one, and takes in the logins refused for
-  the username while no account held it.
-- The account reads its own runs in full, a list's rows less what
-  API-44 keeps out of a row. The owner reads each run as an
-  `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
-  outcome and counts, with the counts an import's summary reported and how
-  many issues it recorded, and for an export only which form its scope took.
-  The times are the run's own, when it started and ended; the owner reads
-  nothing of the backup an import read, neither the file the desktop app
-  recorded (`source_fingerprint`) nor when the backup was made
-  (`backup_taken_at`), because both say when and from what the account's
-  phone was backed up. The owner's read of one run adds the attachments it
-  wrote whose Thumbnail or Preview the media pass could not make, each by
-  its file name, type and size with why each version was not made, and their
-  count by kind of failure: an attachment's name, type and size are what
-  ADR 0008 lets the owner read, and the reason is what ffmpeg said about the
-  file or a phrase of the server's. Nothing of the message or conversation
-  the attachment belongs to comes with it (#2636).
-  Why: a staging summary lists the addresses of everyone in the backup, an
-  issue names its conversation's file, a note names a file or an address, and
-  an export's query is a search over
-  the account's messages, all content under
-  `docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
-  of its own rather than the account's with fields removed, so a field added
-  to a run reaches the owner only when someone adds it to that type.
-- `GET /v1/server` and `POST /v1/server/claim` take no credential.
-  `/v1/server/settings` and `GET /v1/server/storage` are the owner's: the
-  storage totals sum every account, and no account holds more than its own.
-- The server's log, `GET /v1/server/log-lines`, `GET /v1/server/log-files`
-  and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
-  account's requests in one stream, about the installation the owner runs,
-  and a line never holds content, so the owner may read all of it
-  (`docs/architecture/rules/server-log.md`).
-- The attachment size limit is a server setting, `asset_max_bytes` in bytes,
-  and the settings row is the only place it lives. The owner reads and
-  changes it at `/v1/server/settings`; `GET /v1/server` reports it to any
-  client. Why: a program that uploads has to know the limit before it
-  prepares attachments, and it holds an account's credential, never the
-  owner's. A change is `422 Unprocessable Entity` only when it is zero or
-  more than the database can hold, and an accepted one holds from the next
-  upload, because every upload reads the setting. The part size a multipart
-  upload is told is the configured one or the limit, whichever is smaller,
-  worked out when the upload starts. Why: the limit is the owner's to set,
-  and no value of it, and no edit to the config file, may leave a server
-  that refuses to start or an upload that cannot complete. Rejected:
-  refusing a limit below the configured part size, and stopping `serve`
-  when the config file's part size is above a stored limit.
-- The attachment size limit holds the attachment uploads only:
-  `PUT /v1/assets/{sha256}` and the start of a multipart upload. Every
-  other route has a body cap fixed in the code. Why: the owner may set any
-  limit of 1 byte or more, and a limit that held every body would refuse
-  the login and the settings change that raise it again.
-- An import batch body is held to 16 MiB, the most the desktop app's Upload
-  packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the
-  one figure both sides read), and a larger one answers
-  `413 Payload Too Large`. Why 16 MiB: the server saves a batch in one write
-  transaction, and every other writer, a login included, waits 15 seconds
-  for the write lock before it answers `database-busy`. A full 16 MiB batch
-  saved in under 5 seconds in a timed release build. A 64 MiB batch held
-  the lock four times as long
-  ([#2062](https://github.com/messagecrate/message-crate/issues/2062)).
-  A batch takes its import slot before it reads its
-  body, and writes the body under the Data Directory
-  (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
-  that goes `[server] body_stall_secs` (60) with no byte arriving, or is
-  still arriving `body_total_secs` (300) after the read started, ends the
-  read with `408 Request Timeout` (`body-stalled`), which frees the slot.
-  An attachment body and a part of one are held to the same two limits,
-  though they take no slot, because each holds a connection and a file
-  while it reads, and so is every other body
-  (API-65). At 16 MiB, a full batch arrives inside 5 minutes at about
-  0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
-  asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
-  (`MAX_PROXY_BODY_BYTES` in `import`), so an attachment
-  arrives at the same speed a batch does. Why: the server accepted eight
-  times what its client sends, and held a batch's whole text in memory
-  beside its parsed records (#2075); every batch waiting for a slot held its
-  body on disk (#2095); and that disk was the operating system's temporary
-  directory, often small or held in memory, where nothing removed what a
-  stopped server left (#2123). Only two slots exist, so without the bounds
-  two clients that went to sleep part-way through a body, or sent a byte
-  now and then, would stop every import on the server. A 10-minute limit for
-  a whole body held a slot that long
-  ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
-- `GET /v1/server` states the two body time limits, in seconds, as
-  `body_stall_secs` and `body_total_secs`, to any client. The desktop
-  app's Upload reads them once it has logged in, and waits for the answer to
-  each batch, attachment or part for `body_total_secs` plus 5 minutes for
-  the server's wait for a slot and its save. Why: the limits are config
-  keys, and an Upload that kept its own copy, as it once kept a 10-minute
-  timeout written beside the server's, drifts from them. They are stated
-  there, not in the answer that starts an Import Run, because the desktop
-  app's web screens start the run and the Upload only posts into it, often
-  after a restart.
-- `/v1/server/settings` reports the database's journal as `journal`: the
-  journal mode SQLite runs the database in, `mode`, read when the request
-  is answered, and `wal_error`, the error SQLite gave when the server asked
-  for write-ahead logging as it started, in SQLite's words. `journal` is not
-  a setting, so it sits in an object of its own beside the settings, and
-  the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
-  a change replaces the one the screen read without losing it. Owner Home
-  says so when the mode is not `wal`, or it cannot be read and SQLite gave
-  an error, and names that error. A `wal` mode hides the notice whatever
-  `wal_error` says, because the error is from the start and the file may
-  have been switched to write-ahead logging since. `mode` is `null` when it cannot be read, and the route still
-  answers. `wal_error` is `null` when SQLite gave no error: it turned
-  write-ahead logging on, or kept another mode without one. Why:
-  in any other mode every page waits while an import writes, and a warning
-  in the server's log was the only sign of it (#2201). Neither is on
-  `GET /v1/server`, which answers anyone: that route carries only what a
-  client needs before it logs in, and how the database is stored is not
-  that (#2703). SQLite's error goes to the owner alone, as the server's log
-  does (#2691).
-- Free text a route stores has a cap of its own, stated in the field's
-  OpenAPI description: a name a person types (an account's display name, a
-  contact's name) at most 200 characters, an identity address it links at
-  most 320, an Import Error's `item` and `reason` and an Import Run note's
-  `item` and `text` at most 2,000 each, the `tool` and `device_id` a new
-  Import Run names at most 64 each, its `run_dir` at most 4,096, the
-  `PATH_MAX` of Linux, and each JSON value an Import Run stores as it is
-  created at most 65,536 bytes. The value is trimmed first, except a path,
-  whose spaces at either end are part of its name, and one over its cap is
-  `validation-failed`, never cut short. Why: the value is stored, shown on
-  every list that holds it, and written into the Audit Trail and the
-  server's log, so the 32 MiB body cap is no bound on it (#2183). An address
-  given to unlink or to find a row is not held to the cap, because it names
-  something already stored, and neither is an address book load, because a
-  file Export wrote must load back whatever an import stored.
-- A password is at most 128 characters wherever a request sends one: a new
-  account's, a login's, a new or current password on a change, and the
-  owner's on a claim. It is counted in characters, as a username is, never
-  trimmed, and has no minimum length but the owner's one character. One
-  over the cap is `validation-failed`, and the OpenAPI description and
-  `maxLength` state it. Why: people count characters, not bytes; Argon2
-  reduces a password to a fixed size before its costly work, so the cap only
-  keeps a client from sending a huge body as a password, and 128 leaves
-  room for any generated password or passphrase, over the 64 NIST SP 800-63B
-  asks a verifier to allow (#2996).
-- Each part of a multipart upload is held to the part size its upload was
-  told when it started, which the upload's manifest records, and not to the
-  limit as it is now. Why: an upload in progress keeps the limit it started
-  with. Lowering the limit mid-upload otherwise refused every remaining part
-  with `413 Payload Too Large`, and the push failed the conversation (#1179).
-- A part's body is written to a temp file in its upload's directory as it
-  arrives, and the server holds one buffer of it at a time, as the HTTP
-  library hands the body over, never the whole part. Once all of it is in,
-  a part of exactly its size takes the part's name and the manifest
-  records it; a part of any other size is refused and its temp file
-  removed. Why: a part read whole into memory held a whole part size
-  (`[server] asset_part_size`) of the server's memory per request, and
-  nothing limited how many requests one account with the import permission
-  sent at once, so it could take the server's memory from every other
-  account (#2114). With the parts on disk, a part request costs the server
-  the memory of one buffer of the body as the HTTP library hands it over,
-  whatever the client sends. The part size no longer sets it, so the server
-  sets no limit of its own on parts in flight, and the desktop app's 64
-  uploads at once cost 64 such buffers.
-- An account may have at most 128 multipart uploads open at once. The start
-  of one more answers `409 Conflict` (`state-conflict`), with `detail`
-  naming the limit, until one of them is completed, aborted, or abandoned.
-  Why: an open upload keeps its parts on the disk every account shares, and
-  with no cap one account could leave enough of them to fill it (#2176). It
-  is `409 Conflict` and not `422 Unprocessable Entity` because the account's
-  state refuses the start, and no rewrite of the request gets past it. The
-  number is twice the uploads the desktop app runs at once, 16 attachments in
-  each of 4 conversations, so an import goes as fast as the app can send it.
-- An upload, multipart or a single-request body, is abandoned once nothing
-  has been written to it for `[server] body_stall_secs` (60) and no request
-  to it is running. A start that finds the account at the limit removes the
-  account's abandoned uploads first and counts again, and `serve` removes
-  every account's as it starts and each account's when its Import Run ends.
-  Why: an Upload the app's close or a crash stopped leaves up to 64 uploads
-  open, which nothing resumes, because the client keeps an upload's id in
-  memory only. With a day as the limit, two such stops held the account at
-  the limit, and the next Upload failed every attachment sent in parts for up
-  to a day (#2652). The stall limit is safe because a live upload never goes
-  that long between requests: the app sends each part as soon as the one
-  before it is answered. A request still running keeps its upload however
-  old its manifest is, because a part streams into a temp file of its own
-  and the manifest records it only once all of it has arrived, and a
-  completion writes no manifest. Only `serve` removes them,
-  not `process-assets` or `imports discard`: those commands may run beside
-  `serve` and cannot see its requests.
+### API-73 An API token carries `import` and `export` capped by the account's, never `delete`, and never signs in
+
+An **API token** is a named credential an account makes for a program, with
+the scopes the person chose from `import` and `export`, capped by the
+account's own. The cap holds on every request, when the token is made, and
+when it is listed, so the list shows what the token may do now: a scope the
+owner turns off later shows as off. A token never carries `delete`: permanent deletion is a
+person's act, and a leaked or faulty program must not be able to empty an
+archive. A token never signs in and never browses. It is ended by the person
+or the owner revoking it (`DELETE /v1/accounts/{id}/api-tokens/{token_id}`,
+with a session) or by its expiry, never by the program holding it. The
+owner makes no token, and a token row on the owner's account, written by
+hand or restored with a database, answers the same `401 Unauthorized` as a
+token the server never issued. Why: no token acts as the owner
+(`docs/adr/0008-the-owner-holds-no-messages.md`), and the refusal sits in
+the token lookup every route goes through, so a route that forgets to
+refuse the owner cannot break it.
+
+### API-74 `GET /v1/session` answers whose credential the caller holds
+
+`GET /v1/session` answers whose credential the caller holds — the account's
+id and username — for a session or a token. Why: a program holding a token
+needs to know which account it writes to before it starts, and push and export
+label their work with it. `DELETE /v1/session` refuses a token with
+`403 Forbidden`, because a token is not a Session and a `204 No Content`
+would say something ended when nothing did.
+
+### API-75 A Media Link reads one asset, its Preview and its Thumbnail for an hour, with no header
+
+A **Media Link** reads one asset, its Preview and its Thumbnail, in the
+account that made it, with no `Authorization` header. A Session makes it
+with `POST /v1/assets/{sha256}/media-links`, which answers the URLs to
+load: `/v1/assets/{sha256}?media_link=…` and its `/preview` and
+`/thumbnail` twins. It is open for
+one hour, and ends sooner when the Session that made it ends: by logout, a
+new login, a password change, or the Session's expiry. A server restart
+ends every Media Link too. Only `GET /v1/assets/{sha256}`,
+`GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
+take one, and a request that sends
+`Authorization` is judged by the header alone. A link that does not open
+the asset answers `401 Unauthorized` with `media-link-invalid`, because its
+remedy is a new link rather than a new login.
+Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
+and cannot send a header, and a video that streams must be loaded by the
+element itself (`docs/architecture/rules/media.md`, MEDIA-1). The desktop app's
+download of an original takes one too. The app copies the answer to the
+file the person chose as it arrives, so a video of hundreds of megabytes is
+never held whole in the window or sent to the app as bytes. The window holds
+the Session and the app does not, and a link that reads one asset for an
+hour reaches far less than the Session token would.
+How: the value is `<account_id>.<expires>.<signature>`, an HMAC-SHA256
+under a key the server makes when it starts and never writes down, over
+the account, the asset's fingerprint, the expiry and the hash of the
+Session token that made it. The server stores nothing: it checks a link by
+signing the same terms with the Session the account holds now, so a link
+for another asset, another account, a later expiry or an ended Session
+fails the same check. The server's log shows `media_link=[hidden]`,
+because a credential is never logged. Every answer the three asset
+routes give once the credential is accepted carries
+`Cache-Control: private`, because the bytes are one account's
+attachment, and one read with a Media Link carries `private, no-store`:
+that request sends no `Authorization` header, so a shared cache in front
+of the server would otherwise keep the answer under the link's URL and
+serve it after the hour or the Session has ended. A problem such as
+`404 Not Found` or `416 Range Not Satisfiable` carries it too, because a
+cache may keep a `404 Not Found` and hide a Preview made later.
+Why an hour: a phone video is watched and sought in within minutes, and an
+hour leaves room for a long one; a link copied out of the page stops
+working soon after. The web app makes a new link whenever it opens an
+attachment again.
+Rejected: the Session token in the query string. It would write the
+credential that reaches every message into URLs, the page and any log on
+the way, where a Media Link reaches one asset for an hour.
+Rejected: a cookie. The desktop app's page is served from
+`tauri://localhost` and its server answers at `http://127.0.0.1:8080`, so
+every request is cross-site, and a browser sends a cookie on a cross-site
+request only with `SameSite=None; Secure`, which needs HTTPS. Docker and
+the desktop app must work one way.
+Rejected: fetching the file with the header and handing the element a
+blob. The whole file loads before the first frame, which is what streaming
+removes.
+Rejected: a stored link, a row per link. It is a row for every attachment
+opened and a table to prune, and the check reads the Session row either
+way.
+Rejected: one link per account for all its assets. A link copied out of
+the page would read every attachment the account holds.
+
+What each reaches, and the limits a request is held to, are API-76 to API-104.
+
+### API-76 Browse routes take a Session only
+
+Browse routes (conversations, messages, contacts, groups, tags, saved
+searches, search fields) take a session only. A token is refused.
+
+### API-77 Imports and asset writes need the `import` scope
+
+`POST /v1/imports` and everything under a run, and every asset write, need
+the `import` scope on either credential.
+
+### API-78 Exports and `HEAD /v1/assets/{sha256}` need the `export` scope
+
+`POST /v1/exports` and everything under a run, and
+`HEAD /v1/assets/{sha256}`, need the `export` scope on either credential. A
+program with an export token reads messages only through an Export Run it
+started, so every read of message data by a program leaves a record.
+
+### API-79 `GET /v1/assets/{sha256}` takes any Session, a token with `export`, or a Media Link for that asset
+
+`GET /v1/assets/{sha256}` takes any session, a token with the `export`
+scope, or a Media Link for that asset. Why: a person looking at a photo in their own conversation is not
+exporting it, so an account whose `export` permission is off still sees its
+attachments, as it still reads its messages. A token has no screen to show
+bytes on; fetching them with one is taking them out, which is what the
+`export` scope decides.
+
+### API-80 A Preview and a Thumbnail are read under the same rule as their asset
+
+`GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail` are
+read under the same rule as the asset they were made from (API-79), by the same
+account and nobody else. Why: a Preview and a Thumbnail are the attachment's
+content as much as the original is, so a caller who may not read one may not
+read the others, and the owner reads none.
+
+### API-81 Only an account's Session makes a Media Link
+
+`POST /v1/assets/{sha256}/media-links` takes an account's Session only.
+Why: only a screen has a media element to put a link in, or a download for
+the desktop app to make, and a program sends its token in the header. The
+owner holds no attachment to read.
+
+### API-82 `HEAD /v1/assets/{sha256}` also accepts the `import` scope
+
+`HEAD /v1/assets/{sha256}` also accepts the `import` scope: a program that
+can only push may ask whether an asset exists, and may not read it.
+
+### API-83 Permanent deletion needs a Session, never a token
+
+Permanent deletion (`DELETE /v1/conversations/{id}`,
+`DELETE /v1/contacts/{id}`, `DELETE /v1/trash`,
+`DELETE /v1/accounts/{id}/messages`, `DELETE /v1/accounts/{id}`) needs a
+session: the account's own with the `delete` permission, or, for an
+account's messages and for the account itself, the owner's. A token is
+refused whatever its scopes.
+
+### API-84 The Demo Account is refused by its id, whatever its permission row says
+
+The Demo Account is refused with `403 Forbidden` and
+`demo-account-protected` by its id, whatever its permission row says, on
+every route that needs the `import` scope or the `delete` permission, on
+`POST /v1/contacts`, and on `POST /v1/accounts/{id}/api-tokens`. Its
+profile reports `export` and neither `import` nor `delete`, from the same
+id. Why: it has no password, so its limits must not rest on a row
+(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+
+### API-85 An account may do everything with its own messages unless the owner limits it
+
+An account may do everything with its own messages, deleting them and
+itself included, unless the owner limits it. Deleting an account deletes
+every message it owns, so an account whose `delete` permission is off
+cannot delete itself either: it is refused with `403 Forbidden` and asks the
+owner, who can. No separate permission for closing an account exists,
+because one that allowed it without `delete` would undo the owner's limit.
+
+### API-86 `/v1/accounts/{id}` is read and written by the owner or by that account
+
+`/v1/accounts/{id}` and everything under it is read and written by the owner
+or by that account; a `Location` handed to a newly registered account names a
+row it may read.
+
+### API-87 An account's API tokens are listed and revoked by the account and the owner, and made and renamed by the account alone
+
+An account's API tokens are listed and revoked by the account and by the
+owner, and made and renamed by the account alone. The owner's list holds
+each token's id, label, permissions, creation, last use, expiry and state,
+and leaves out `token_hint`. Why: the owner must be able to end a
+credential that has leaked, and a token's label and permissions are not
+message content (`docs/adr/0008-the-owner-holds-no-messages.md`). The
+masked hint is part of the secret, and the owner never reads a secret.
+Making a token answers with its secret, so the owner makes none, and a
+token is the account's own name for its program, so the owner renames none.
+
+### API-88 An account's history is read under the account, with no permission asked
+
+An account's history is read under the account:
+`GET /v1/accounts/{id}/imports`, `GET /v1/accounts/{id}/imports/{import_id}`
+and `GET /v1/accounts/{id}/exports`, beside `GET /v1/accounts/{id}/storage`.
+They ask who is calling and no permission, so the owner reads them, and so
+does an account whose `import` or `export` permission is off. `/v1/imports`
+and `/v1/exports` are the pipelines' routes: they ask for the permission,
+which the owner's session never carries, and a program's token reaches only
+them. Each pair answers from one function, so the two lists cannot differ.
+Which contacts a run created is content, so `/v1/imports/{id}/contacts` has
+no twin under the account.
+
+### API-89 The Audit Trail is read, never written, through a route
+
+The Audit Trail is read at `GET /v1/audit-trail`, every account's entries,
+which is the owner's alone, and at `GET /v1/accounts/{id}/audit-trail`, the
+entries about one account, which the owner and that account read. Both answer
+from one function, so the two lists cannot differ. No route writes, changes
+or deletes an entry: the server writes one as part of the act it records.
+Why: an account holder reads what the owner did to their account, and a
+record its subject or the owner could edit would be no check on either
+(`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+
+### API-90 A deleted account's entries and runs keep the id of its `account_deleted` entry
+
+A deleted account's entries and runs lose its account id, and each keeps
+the id of the account's `account_deleted` entry, which is the deleted
+account's id on the wire. `GET /v1/audit-trail/deleted-accounts` lists the
+deleted accounts with those ids and usernames, and
+`GET /v1/audit-trail?deleted_account_id=` narrows the owner's list to one.
+Both are the owner's alone. Why: the account's own id names nothing once it
+is gone, and the Demo Account is deleted and made again under one id, while
+a username passes to a later account, deleted or live.
+Rejected: narrowing by the username the entries keep, which reads two
+accounts that held one username as one, and takes in the logins refused for
+the username while no account held it.
+
+### API-91 The account reads its own runs in full, and the owner reads a type of its own
+
+The account reads its own runs in full, a list's rows less what
+API-44 keeps out of a row. The owner reads each run as an
+`OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
+outcome and counts, with the counts an import's summary reported and how
+many issues it recorded, and for an export only which form its scope took.
+The times are the run's own, when it started and ended; the owner reads
+nothing of the backup an import read, neither the file the desktop app
+recorded (`source_fingerprint`) nor when the backup was made
+(`backup_taken_at`), because both say when and from what the account's
+phone was backed up. The owner's read of one run adds the attachments it
+wrote whose Thumbnail or Preview the media pass could not make, each by
+its file name, type and size with why each version was not made, and their
+count by kind of failure: an attachment's name, type and size are what
+ADR 0008 lets the owner read, and the reason is what ffmpeg said about the
+file or a phrase of the server's. Nothing of the message or conversation
+the attachment belongs to comes with it (#2636).
+Why: a staging summary lists the addresses of everyone in the backup, an
+issue names its conversation's file, a note names a file or an address, and
+an export's query is a search over
+the account's messages, all content under
+`docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
+of its own rather than the account's with fields removed, so a field added
+to a run reaches the owner only when someone adds it to that type.
+
+### API-92 `GET /v1/server` and `POST /v1/server/claim` take no credential, and the settings and storage are the owner's
+
+`GET /v1/server` and `POST /v1/server/claim` take no credential.
+`/v1/server/settings` and `GET /v1/server/storage` are the owner's: the
+storage totals sum every account, and no account holds more than its own.
+
+### API-93 The server's log is the owner's alone
+
+The server's log, `GET /v1/server/log-lines`, `GET /v1/server/log-files`
+and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
+account's requests in one stream, about the installation the owner runs,
+and a line never holds content, so the owner may read all of it
+(`docs/architecture/rules/server-log.md`).
+
+### API-94 The attachment size limit is a server setting the owner may set to any value of 1 byte or more
+
+The attachment size limit is a server setting, `asset_max_bytes` in bytes,
+and the settings row is the only place it lives. The owner reads and
+changes it at `/v1/server/settings`; `GET /v1/server` reports it to any
+client. Why: a program that uploads has to know the limit before it
+prepares attachments, and it holds an account's credential, never the
+owner's. A change is `422 Unprocessable Entity` only when it is zero or
+more than the database can hold, and an accepted one holds from the next
+upload, because every upload reads the setting. The part size a multipart
+upload is told is the configured one or the limit, whichever is smaller,
+worked out when the upload starts. Why: the limit is the owner's to set,
+and no value of it, and no edit to the config file, may leave a server
+that refuses to start or an upload that cannot complete. Rejected:
+refusing a limit below the configured part size, and stopping `serve`
+when the config file's part size is above a stored limit.
+
+### API-95 The attachment size limit holds the attachment uploads only
+
+The attachment size limit holds the attachment uploads only:
+`PUT /v1/assets/{sha256}` and the start of a multipart upload. Every
+other route has a body cap fixed in the code. Why: the owner may set any
+limit of 1 byte or more, and a limit that held every body would refuse
+the login and the settings change that raise it again.
+
+### API-96 An import batch body is held to 16 MiB, and every body to the body time limits
+
+An import batch body is held to 16 MiB, the most the desktop app's Upload
+packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the
+one figure both sides read), and a larger one answers
+`413 Payload Too Large`. Why 16 MiB: the server saves a batch in one write
+transaction, and every other writer, a login included, waits 15 seconds
+for the write lock before it answers `database-busy`. A full 16 MiB batch
+saved in under 5 seconds in a timed release build. A 64 MiB batch held
+the lock four times as long
+([#2062](https://github.com/messagecrate/message-crate/issues/2062)).
+A batch takes its import slot before it reads its
+body, and writes the body under the Data Directory
+(`data_dir/.import-batches/`), which `serve` empties as it starts. A body
+that goes `[server] body_stall_secs` (60) with no byte arriving, or is
+still arriving `body_total_secs` (300) after the read started, ends the
+read with `408 Request Timeout` (`body-stalled`), which frees the slot.
+An attachment body and a part of one are held to the same two limits,
+though they take no slot, because each holds a connection and a file
+while it reads, and so is every other body
+(API-65). At 16 MiB, a full batch arrives inside 5 minutes at about
+0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
+asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
+(`MAX_PROXY_BODY_BYTES` in `import`), so an attachment
+arrives at the same speed a batch does. Why: the server accepted eight
+times what its client sends, and held a batch's whole text in memory
+beside its parsed records (#2075); every batch waiting for a slot held its
+body on disk (#2095); and that disk was the operating system's temporary
+directory, often small or held in memory, where nothing removed what a
+stopped server left (#2123). Only two slots exist, so without the bounds
+two clients that went to sleep part-way through a body, or sent a byte
+now and then, would stop every import on the server. A 10-minute limit for
+a whole body held a slot that long
+([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
+
+### API-97 `GET /v1/server` states the two body time limits
+
+`GET /v1/server` states the two body time limits, in seconds, as
+`body_stall_secs` and `body_total_secs`, to any client. The desktop
+app's Upload reads them once it has logged in, and waits for the answer to
+each batch, attachment or part for `body_total_secs` plus 5 minutes for
+the server's wait for a slot and its save. Why: the limits are config
+keys, and an Upload that kept its own copy, as it once kept a 10-minute
+timeout written beside the server's, drifts from them. They are stated
+there, not in the answer that starts an Import Run, because the desktop
+app's web screens start the run and the Upload only posts into it, often
+after a restart.
+
+### API-98 `/v1/server/settings` reports the database's journal mode
+
+`/v1/server/settings` reports the database's journal as `journal`: the
+journal mode SQLite runs the database in, `mode`, read when the request
+is answered, and `wal_error`, the error SQLite gave when the server asked
+for write-ahead logging as it started, in SQLite's words. `journal` is not
+a setting, so it sits in an object of its own beside the settings, and
+the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
+a change replaces the one the screen read without losing it. Owner Home
+says so when the mode is not `wal`, or it cannot be read and SQLite gave
+an error, and names that error. A `wal` mode hides the notice whatever
+`wal_error` says, because the error is from the start and the file may
+have been switched to write-ahead logging since. `mode` is `null` when it cannot be read, and the route still
+answers. `wal_error` is `null` when SQLite gave no error: it turned
+write-ahead logging on, or kept another mode without one. Why:
+in any other mode every page waits while an import writes, and a warning
+in the server's log was the only sign of it (#2201). Neither is on
+`GET /v1/server`, which answers anyone: that route carries only what a
+client needs before it logs in, and how the database is stored is not
+that (#2703). SQLite's error goes to the owner alone, as the server's log
+does (#2691).
+
+### API-99 Free text a route stores has a cap of its own
+
+Free text a route stores has a cap of its own, stated in the field's
+OpenAPI description: a name a person types (an account's display name, a
+contact's name) at most 200 characters, an identity address it links at
+most 320, an Import Error's `item` and `reason` and an Import Run note's
+`item` and `text` at most 2,000 each, the `tool` and `device_id` a new
+Import Run names at most 64 each, its `run_dir` at most 4,096, the
+`PATH_MAX` of Linux, and each JSON value an Import Run stores as it is
+created at most 65,536 bytes. The value is trimmed first, except a path,
+whose spaces at either end are part of its name, and one over its cap is
+`validation-failed`, never cut short. Why: the value is stored, shown on
+every list that holds it, and written into the Audit Trail and the
+server's log, so the 32 MiB body cap is no bound on it (#2183). An address
+given to unlink or to find a row is not held to the cap, because it names
+something already stored, and neither is an address book load, because a
+file Export wrote must load back whatever an import stored.
+
+### API-100 A password is at most 128 characters
+
+A password is at most 128 characters wherever a request sends one: a new
+account's, a login's, a new or current password on a change, and the
+owner's on a claim. It is counted in characters, as a username is, never
+trimmed, and has no minimum length but the owner's one character. One
+over the cap is `validation-failed`, and the OpenAPI description and
+`maxLength` state it. Why: people count characters, not bytes; Argon2
+reduces a password to a fixed size before its costly work, so the cap only
+keeps a client from sending a huge body as a password, and 128 leaves
+room for any generated password or passphrase, over the 64 NIST SP 800-63B
+asks a verifier to allow (#2996).
+
+### API-101 A multipart part is held to the part size its upload was told
+
+Each part of a multipart upload is held to the part size its upload was
+told when it started, which the upload's manifest records, and not to the
+limit as it is now. Why: an upload in progress keeps the limit it started
+with. Lowering the limit mid-upload otherwise refused every remaining part
+with `413 Payload Too Large`, and the push failed the conversation (#1179).
+
+### API-102 A part's body is written to disk as it arrives, never held whole
+
+A part's body is written to a temp file in its upload's directory as it
+arrives, and the server holds one buffer of it at a time, as the HTTP
+library hands the body over, never the whole part. Once all of it is in,
+a part of exactly its size takes the part's name and the manifest
+records it; a part of any other size is refused and its temp file
+removed. Why: a part read whole into memory held a whole part size
+(`[server] asset_part_size`) of the server's memory per request, and
+nothing limited how many requests one account with the import permission
+sent at once, so it could take the server's memory from every other
+account (#2114). With the parts on disk, a part request costs the server
+the memory of one buffer of the body as the HTTP library hands it over,
+whatever the client sends. The part size no longer sets it, so the server
+sets no limit of its own on parts in flight, and the desktop app's 64
+uploads at once cost 64 such buffers.
+
+### API-103 An account may have at most 128 multipart uploads open at once
+
+An account may have at most 128 multipart uploads open at once. The start
+of one more answers `409 Conflict` (`state-conflict`), with `detail`
+naming the limit, until one of them is completed, aborted, or abandoned.
+Why: an open upload keeps its parts on the disk every account shares, and
+with no cap one account could leave enough of them to fill it (#2176). It
+is `409 Conflict` and not `422 Unprocessable Entity` because the account's
+state refuses the start, and no rewrite of the request gets past it. The
+number is twice the uploads the desktop app runs at once, 16 attachments in
+each of 4 conversations, so an import goes as fast as the app can send it.
+
+### API-104 An upload is abandoned once nothing has been written to it for the body stall time
+
+An upload, multipart or a single-request body, is abandoned once nothing
+has been written to it for `[server] body_stall_secs` (60) and no request
+to it is running. A start that finds the account at the limit removes the
+account's abandoned uploads first and counts again, and `serve` removes
+every account's as it starts and each account's when its Import Run ends.
+Why: an Upload the app's close or a crash stopped leaves up to 64 uploads
+open, which nothing resumes, because the client keeps an upload's id in
+memory only. With a day as the limit, two such stops held the account at
+the limit, and the next Upload failed every attachment sent in parts for up
+to a day (#2652). The stall limit is safe because a live upload never goes
+that long between requests: the app sends each part as soon as the one
+before it is answered. A request still running keeps its upload however
+old its manifest is, because a part streams into a temp file of its own
+and the manifest records it only once all of it has arrived, and a
+completion writes no manifest. Only `serve` removes them,
+not `process-assets` or `imports discard`: those commands may run beside
+`serve` and cannot see its requests.
+
+### API-105 The credential names the account, and no route takes an `account=` parameter
 
 The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account
 inside its signed value and is not a parameter of that kind.
+
+### API-106 No `/v1` route answers with a redirect, and the web app follows none
 
 No `/v1` route answers with a redirect, and the web app refuses to follow
 one: every call it makes with the `Authorization` header passes
@@ -1402,6 +1503,8 @@ redirect, but the Fetch standard gained that rule only in November 2022
 desktop app runs in whichever WebView the system has (WebKitGTK, WKWebView,
 WebView2). A visible failure is better than a token sent somewhere else. The desktop app's own Rust client drops the
 header on a change of host already.
+
+### API-107 A refused credential waits a short, fixed time, and nothing counts attempts
 
 A refused credential waits a short, fixed time before the server answers. A
 refused login (`POST /v1/session`) and a wrong `current_password` sent to
@@ -1428,6 +1531,8 @@ sending wrong passwords. A count per username needed timing machinery so
 that it would not tell a stranger which usernames name an account, and kept
 a count for every username tried, so a script trying new names grew it
 without end (#2885).
+
+### API-108 A refused login writes a warning naming the account, never the username typed
 
 Each refused login writes a warning to the server's log with the account's id
 (none for an unknown username), the reason and the connecting app. The
@@ -1647,7 +1752,7 @@ from the name:
   list, and `ImportRunSummary` is an Import Run without its issues and
   notes, which `ImportRun` adds to it (API-44). `Owner` is the
   thing as the owner reads it under another account: `OwnerImportRun` and
-  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)), and
+  `OwnerExportRun` (API-91), and
   `OwnerImportRunSummary` is an `OwnerImportRun` as the owner's list answers
   it, without the attachments whose versions were not made. `NotMade` is a
   Thumbnail or Preview the server could not make, as the owner reads it:
