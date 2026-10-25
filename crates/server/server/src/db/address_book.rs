@@ -159,7 +159,7 @@ impl LoadCounts {
 
 /// Whether [`load`] records the load in the Audit Trail, and as whose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Record {
+pub enum Recorded {
     /// Record it as `actor`'s, in the load's own transaction.
     As(AuditActor),
     /// Record nothing: the Demo Data build, and tests about the load alone.
@@ -953,12 +953,12 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
 /// whole, with one sentence for each bad row, and nothing is written. Each
 /// contact the load changes is stamped `now`.
 ///
-/// With [`Record::As`], the load writes its `address_book_loaded` Audit
+/// With [`Recorded::As`], the load writes its `address_book_loaded` Audit
 /// Trail entry, as that actor's, in the same transaction, so the load and
 /// its entry commit together or not at all. A load that creates, changes
 /// and deletes no contact writes no entry
 /// (`docs/architecture/rules/contacts-identities-and-messages.md`,
-/// CONTACT-59). With [`Record::Not`], as the Demo Data build loads its
+/// CONTACT-59). With [`Recorded::Not`], as the Demo Data build loads its
 /// address book, nothing is recorded.
 ///
 /// An Edit load deletes for good the identities the file no longer lists
@@ -978,7 +978,7 @@ pub async fn load(
     account_id: i64,
     csv_text: &str,
     mode: LoadMode,
-    record: Record,
+    recorded: Recorded,
     now: DateTime<Utc>,
 ) -> Result<LoadCounts, LoadError> {
     let rows = read_rows(csv_text).map_err(LoadError::Refused)?;
@@ -991,7 +991,7 @@ pub async fn load(
     let snapshot = Snapshot::read(&mut tx, account_id).await?;
     let file = plan(&rows, &snapshot).map_err(LoadError::Refused)?;
     let counts = apply(&mut tx, account_id, &snapshot, &file, mode, now).await?;
-    if let Record::As(actor) = record
+    if let Recorded::As(actor) = recorded
         && counts.contacts_changed() + counts.contacts_deleted > 0
     {
         let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));

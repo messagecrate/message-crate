@@ -85,7 +85,8 @@ impl TestFixture {
     }
 
     /// The Audit Trail entries about `account_id` whose action is one of
-    /// `actions`, oldest first.
+    /// `actions`, oldest first, among the account's newest 100 entries of
+    /// any action: enough for a test that writes fewer than that.
     pub async fn audit_entries(
         &self,
         account_id: i64,
