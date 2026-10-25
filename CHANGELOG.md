@@ -123,12 +123,11 @@ carry their date on the heading.
   copy existed yet, as if one were still coming, and the reason was in the
   server's log alone. The reason goes away once a later try makes the
   Preview (#2170).
-- 2026-10-10: **User Accounts shows which accounts have no password.** In
-  Admin Home, the Status of an account that has no password now reads
-  **No password** under it. Such an account cannot log in until the
-  administrator sets a password for it, and the list used to give no sign of
-  which accounts those were. The Demo
-  Account has no password by design and is not marked (#2146).
+- 2026-10-10: **User Accounts shows which accounts have no password.** In Admin
+  Home, the Status of an account that has no password now reads **No password**
+  under it. Such an account cannot log in until the administrator sets a
+  password for it, and the list used to give no sign of which accounts those
+  were. The Demo Account has no password by design and is not marked (#2146).
 - 2026-10-10: **Docker reports whether the server answers.** The Docker image
   asks the server every 30 seconds whether it is up. `docker ps` adds
   `(healthy)` after `Up` while the server answers and `(unhealthy)` after
@@ -750,8 +749,7 @@ carry their date on the heading.
   size limit in Server Settings, the Audit Trail now says so and names the new
   limit; saving the limit it already had records nothing. Adding or resetting
   the Demo Account is recorded too, with the set of Demo Data asked for. Before,
-  neither left an entry, though opening or closing Message Crate to new accounts
-  did (#2187).
+  neither left an entry (#2187).
 - 2026-10-11: **An import's notes and details have a length limit too.**
   Each part of a note an import records may be up to 2,000 characters, the
   name of the program that ran the import and the id of the copy of the
@@ -1718,14 +1716,13 @@ carry their date on the heading.
   a server was serving it, and the server went on showing the empty
   database until it restarted. The command now stops, names the database
   and asks for the server to be stopped first (#2920).
-- 2026-10-14: **The Compose files publish the server to this computer
-  only.** Both Compose files published port 8080 on every network the
-  computer is on, unlike the `docker run` command in Run Message Crate
-  with Docker. Any device on that network could reach a new Message Crate
-  over plain HTTP, and set its administrator's password before its
-  installer did. Both
-  now publish it on `127.0.0.1`, and Run on another machine says how to
-  open it to the network (#2063).
+- 2026-10-14: **The Compose files publish the server to this computer only.**
+  Both Compose files published port 8080 on every network the computer is on,
+  unlike the `docker run` command in Run Message Crate with Docker. Any device
+  on that network could reach a new Message Crate over plain HTTP, and set its
+  administrator's password before its installer did. Both now publish it on
+  `127.0.0.1`, and Run on another machine says how to open it to the network
+  (#2063).
 - 2026-10-14: **A Demo Data backup left behind is in the server's log.**
   When the server writes new Demo Data, it removes its backup of the files
   they replace. When that removal failed, the warning went only to the
@@ -2012,9 +2009,6 @@ carry their date on the heading.
   command; run `set-admin-password`. It reads the password from its input,
   for example `printf '%s\n' "$PASSWORD" | message-crate-server
   set-admin-password`; with `docker exec`, add `-it` to type it when asked.
-- 2026-10-24: An account with no password no longer logs in with an empty
-  one. Before handing such an account to its holder, set a password for it
-  under its Settings on Admin Home.
 - 2026-10-16: A conversation file written by an earlier build is refused
   when you import it. Read the backup again with this build to write a file
   the import takes (#3094).

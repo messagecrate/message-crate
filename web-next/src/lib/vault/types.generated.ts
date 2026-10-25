@@ -309,7 +309,7 @@ export interface paths {
         };
         /**
          * What an account holds: attachment bytes, the attachment, conversation and contact counts, and the 100 largest files.
-         * @description The owner reads any account's; an account reads its own. The owner is told each file's name, type and size and not the conversation it is in, which says who the account talks to (`docs/adr/0008-the-administrator-holds-no-messages.md`).
+         * @description The owner reads any account's; an account reads its own. The owner is told each file's name, type and size and not the conversation it is in, which says who the account talks to (`docs/adr/0008-the-owner-holds-no-messages.md`).
          */
         get: operations["get_account_storage"];
         put?: never;
@@ -1631,7 +1631,7 @@ export interface paths {
         };
         /**
          * Read what the database holds.
-         * @description The counts and the attachment bytes are summed over every account. The database, messages and full-text search sizes are measured on disk. Each account's share of message storage is an estimate from its share of text. Counts and totals only, never a name or a line of text (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the owner may see"). The owner's, because the owner administers this Message Crate and nobody else holds more than their own account.
+         * @description The counts and the attachment bytes are summed over every account. The database, messages and full-text search sizes are measured on disk. Each account's share of message storage is an estimate from its share of text. Counts and totals only, never a name or a line of text (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may see"). The owner's, because the owner administers this Message Crate and nobody else holds more than their own account.
          */
         get: operations["get_server_storage"];
         put?: never;
@@ -3854,7 +3854,7 @@ export interface components {
         /**
          * @description One attachment an Import Run wrote that has no Thumbnail or no Preview,
          *     because the media pass could not make it: the file's name, type and size,
-         *     which the owner may read (`docs/adr/0008-the-administrator-holds-no-messages.md`),
+         *     which the owner may read (`docs/adr/0008-the-owner-holds-no-messages.md`),
          *     and why each version was not made. Never its message, its conversation,
          *     or its bytes.
          */
@@ -3926,7 +3926,7 @@ export interface components {
         /**
          * @description An Export Run as the owner reads it under another account: the form of
          *     its scope, its tool, times, outcome and counts
-         *     (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the owner may
+         *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"). A query's text is a search over the account's messages, and a
          *     selection names its conversations, so neither is here, and a field
          *     reaches the owner only by being added here.
@@ -3980,7 +3980,7 @@ export interface components {
          *     run may write any number of them, so the list leaves them out
          *     (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
          *     name, type and size, which the owner may read
-         *     (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the owner may
+         *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"); never by its message, its conversation, or its bytes.
          */
         OwnerImportRun: components["schemas"]["OwnerImportRunSummary"] & {
@@ -4008,7 +4008,7 @@ export interface components {
          * @description An Import Run as the owner's list of another account's runs answers it:
          *     its source, mode, times, outcome and counts, and nothing of what the
          *     backup held
-         *     (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the owner may
+         *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"). The run's summary, its issues, its notes and its form say whom the
          *     account talks to, so they stay out, and a field reaches the owner only by
          *     being added here.

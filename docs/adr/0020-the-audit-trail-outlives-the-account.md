@@ -20,10 +20,10 @@ already loses them; the Audit Trail ends that.
 
 A record the administrator can clear is no check on the administrator. The
 administrator manages other people's accounts (ADR 0008): sets their
-passwords, changes their permissions, deletes their messages. The person hosted can already read their
-status and permissions; the Audit Trail lets them read when those changed and
-who changed them. "Delete messages" remains the way to clear an account's
-data while its record stays.
+passwords, changes their permissions, deletes their messages. The person
+hosted can already read their status and permissions; the Audit Trail lets
+them read when those changed and who changed them. "Delete messages" remains
+the way to clear an account's data while its record stays.
 
 ## Considered and rejected
 

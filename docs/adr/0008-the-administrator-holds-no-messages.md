@@ -234,8 +234,9 @@ ceremony than a self-hosted product needs.)
 ## Consequences
 
 - Only the administrator creates accounts; there is no self-service
-  registration (its former design is recorded in #3248). `POST /v1/accounts`
-  takes the administrator's Session and nothing else.
+  registration (its former design is recorded in
+  [#3248](https://github.com/messagecrate/message-crate/issues/3248)).
+  `POST /v1/accounts` takes the administrator's Session and nothing else.
 - The administrator must have a password, of one character or more, and
   cannot clear it. A user account has no minimum and may have no password,
   but an account with no password cannot log in until the administrator sets
@@ -305,4 +306,5 @@ ceremony than a self-hosted product needs.)
 The owner became the administrator, `admin`, a fixed username on the fixed id,
 made with the database instead of by a claim; setup replaced claiming; and
 public registration was removed. The design of registration as it was is
-recorded in #3248.
+recorded in
+[#3248](https://github.com/messagecrate/message-crate/issues/3248).

@@ -179,15 +179,15 @@ the Demo Account.
 _Avoid_: Test data, Sample data, Demo mode
 
 **Demo Account**:
-The account that holds Demo Data, with the username `demo`. It has no
-password and can never be given one, so anyone who reaches the Message Crate
-can enter it. It may export, and move things to the trash and restore them; it
-may not import, delete for good, or load an address book, so a person's own
-messages and contacts never land in it and one visitor cannot empty it for the
-next. It may not make an API Token, which would outlive the visit. Its status,
-its permissions, its own identities, its display name and its time zone are
-fixed; the names, groups, tags and searches a visitor makes in it stay until
-it is reset. The administrator can delete it, or reset it to how it started, and
+The account that holds Demo Data, with the username `demo`. It has no password
+and can never be given one, so anyone who reaches the Message Crate can enter
+it. It may export, and move things to the trash and restore them; it may not
+import, delete for good, or load an address book, so a person's own messages and
+contacts never land in it and one visitor cannot empty it for the next. It may
+not make an API Token, which would outlive the visit. Its status, its
+permissions, its own identities, its display name and its time zone are fixed;
+the names, groups, tags and searches a visitor makes in it stay until it is
+reset. The administrator can delete it, or reset it to how it started, and
 change nothing else about it.
 _Avoid_: Demo user, Guest, Sample account
 
@@ -340,29 +340,31 @@ prose the role is "the administrator"; the account and the login are `admin`.
 _Avoid_: Owner, Vault Owner, Superuser, Root
 
 **Admin Home**:
-The screen the administrator lands on at login and works from, the way any
-other account lands in Messages. It has the frame every account sees: the
-product name, a search bar, the username and the account button across the top, over a
+The screen the administrator lands on at login and works from, the way any other
+account lands in Messages. It has the frame every account sees: the product
+name, a search bar, the username and the account button across the top, over a
 side panel and a content pane. The side panel lists Dashboard, Server Settings,
-User Accounts, Audit Trail and Logs; Dashboard shows what the whole Message Crate
-holds, Audit Trail what each user did and when, and Logs is named and holds nothing yet. The search bar narrows User Accounts by username or
-preferred name. User Accounts lists every account, the administrator's own first,
-each by username with its preferred name, its status and its last login. The
-status of an account that has no password reads No password under it, except
-for the Demo Account. There the administrator adds
-accounts. An account's name opens that account's Settings, the screen its
-holder sees, where the administrator sets its password, its status (active or
-disabled) and its permissions (import, export, delete), reads on Account its
-last login and the app it connects with, and deletes its messages or the
-account. The account holder reads the same status and permissions under
-Settings, Account, and changes none. The administrator sets the account's display
-name, time zone and identities on Profile as the holder does, which is not the
-holder's own profile setup. On the Demo Account its display name, time zone and
-identities are fixed, for the administrator as for the holder. The administrator reads the
-Storage tab as the holder sees it, without seeing inside it. The administrator's own
-row opens the administrator's own Settings, which is also where the account button's
-Settings goes. The administrator's password reset sets the password and nothing more:
-it does not end the person's session and does not make them choose a new one.
+User Accounts, Audit Trail and Logs; Dashboard shows what the whole Message
+Crate holds, Audit Trail what each user did and when, and Logs the server's log
+and, in the desktop app, the Import Run logs and the desktop app's own log on
+that computer. The search bar narrows User Accounts by username or preferred
+name. User Accounts lists every account, the administrator's own first, each by
+username with its preferred name, its status and its last login. The status of
+an account that has no password reads No password under it, except for the Demo
+Account. There the administrator adds accounts. An account's name opens that
+account's Settings, the screen its holder sees, where the administrator sets its
+password, its status (active or disabled) and its permissions (import, export,
+delete), reads on Account its last login and the app it connects with, and
+deletes its messages or the account. The account holder reads the same status
+and permissions under Settings, Account, and changes none. The administrator
+sets the account's display name, time zone and identities on Profile as the
+holder does, which is not the holder's own profile setup. On the Demo Account
+its display name, time zone and identities are fixed, for the administrator as
+for the holder. The administrator reads the Storage tab as the holder sees it,
+without seeing inside it. The administrator's own row opens the administrator's
+own Settings, which is also where the account button's Settings goes. A password
+the administrator sets for an account sets the password and nothing more: it
+does not end the person's session and does not make them choose a new one.
 _Avoid_: Owner Home, Console, Dashboard, Admin panel
 
 **Audit Trail**:
