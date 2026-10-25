@@ -1,5 +1,7 @@
-//! The address book routes: `POST /v1/contacts` loads Message Crate's own
-//! CSV into the account, `POST /v1/contacts/address-book` writes it, and
+//! The address book routes: `POST /v1/contacts` with a `text/csv` body
+//! loads Message Crate's own CSV into the account (`super::create` reads the
+//! body's type and hands it here), `POST /v1/contacts/address-book` writes
+//! it, and
 //! `POST /v1/contacts/vcard-address-book` writes it from a vCard file for a
 //! person to edit. The file's rules and every direction are in
 //! `db::address_book`; this module checks the request and hands it over.
@@ -81,91 +83,16 @@ pub(crate) const MAX_VCARD_BYTES: usize = 64 * 1024 * 1024;
 /// The file name Export gives the address book.
 const EXPORT_FILE_NAME: &str = "address-book.csv";
 
-/// The query of `POST /v1/contacts`.
-#[derive(Debug, Deserialize)]
-pub(crate) struct CreateContactsQuery {
-    #[serde(default)]
+/// Load the address book `request` carries into `account_id`, in `mode`,
+/// and record the load in the Audit Trail. `super::create::create_contacts`
+/// documents the file and the load, as the route's reference does.
+pub(super) async fn load_address_book(
+    db: &SqlitePool,
+    account_id: i64,
     mode: LoadMode,
-}
-
-/// Load an address book into this account. The body is the file itself:
-/// Message Crate's own CSV, one row per identity, with the columns
-/// `contact_id`, `display_name`, `service`, `identity` and `groups`, as
-/// `POST /v1/contacts/address-book` writes it.
-///
-/// `service` is `Text Message`, `Email` or `WhatsApp`, the words the screen
-/// where an identity is added offers, ignoring case. The file states no
-/// type: the service decides which types are valid and the address's shape
-/// picks among them, as adding an identity does. `Text Message` carries a
-/// phone number, an email address or any other name; `Email` is an email
-/// address on Text Message; `WhatsApp` carries a phone number or one of
-/// WhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),
-/// which are `other`. An identity written exactly as the account keys it on
-/// that service is that identity, whatever its type, so an exported file
-/// loads back as it was. A row whose address the service cannot carry, such
-/// as an email address on `WhatsApp` (an `@` address at any other domain),
-/// is refused, where adding an identity stores it as `other`.
-///
-/// Rows that share a `contact_id` are one contact. An id the account holds
-/// names that contact, a blank id makes a new contact for that row, and any
-/// other text groups its rows into one new contact. `append` creates and
-/// renames contacts and adds the identities and Contact Group memberships
-/// the rows list. `edit` does the same and then takes off each contact in
-/// the file every identity and membership its rows do not list. A contact
-/// the file does not mention is left alone in both modes.
-///
-/// A phone number written without `+`, which a spreadsheet can save in place
-/// of `+6555550100`, names the identity `+` and its digits when the row's
-/// contact holds that key. Otherwise it is keyed as written: ten digits as a
-/// US number, any other count as bare digits. `notes` names each row read
-/// with its `+` back, and each such number that became a new identity.
-///
-/// One `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a
-/// carriage return is taken off, in any column, which undoes the `'` the
-/// export writes there.
-///
-/// The load is one transaction. A file that breaks a rule is refused whole
-/// with `422 Unprocessable Entity`, and `errors` holds one sentence for each
-/// bad row, starting with its row number.
-///
-/// The Demo Account is refused with `demo-account-protected`, in both modes,
-/// by its id: an Edit load deletes contacts for good and an Append load
-/// stores real people's names and numbers in an account anyone can enter
-/// (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,
-/// export and delete permissions are not asked for; they govern messages and
-/// imports, and any other account loads its address book with a session.
-#[utoipa::path(
-    post,
-    path = "/v1/contacts",
-    tag = "Contacts",
-    security(("session" = [])),
-    params(
-        ("mode" = Option<LoadMode>, Query, description = "How the file is applied: `append` (the default) removes nothing; `edit` makes each contact in the file hold exactly the identities and Contact Group memberships its rows list.")
-    ),
-    request_body(
-        content_type = "text/csv",
-        content = String,
-        description = "The address book: Message Crate's own CSV, one row per identity."
-    ),
-    responses(
-        (status = 200, body = CreateContactsResponse),
-        crate::problem::openapi::DemoAccountProtected,
-    )
-)]
-pub(crate) async fn create_contacts(
-    State(db): State<SqlitePool>,
-    FullAccess(auth): FullAccess,
-    Query(query): Query<CreateContactsQuery>,
     request: Request,
-) -> Result<Json<CreateContactsResponse>, ApiError> {
-    refuse_for_demo_account(auth.account_id, "address book cannot be loaded")?;
-    if !content_type_base(request.headers())
-        .is_some_and(|base| base.eq_ignore_ascii_case("text/csv"))
-    {
-        return Err(ApiError::UnsupportedMediaType(
-            "Content-Type must be text/csv".into(),
-        ));
-    }
+) -> Result<CreateContactsResponse, ApiError> {
+    refuse_for_demo_account(account_id, "address book cannot be loaded")?;
     let body = read_body_limited(request.into_body(), MAX_ADDRESS_BOOK_BYTES).await?;
     let content = std::str::from_utf8(&body)
         .map_err(|_| ApiError::MalformedBody("address book is not UTF-8 text".into()))?;
@@ -174,10 +101,10 @@ pub(crate) async fn create_contacts(
     }
     let mut conn = db.acquire().await?;
     let now = chrono::Utc::now();
-    let counts = address_book::load(&mut conn, auth.account_id, content, query.mode, now).await?;
+    let counts = address_book::load(&mut conn, account_id, content, mode, now).await?;
     let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));
     let details = Details {
-        mode: Some(query.mode),
+        mode: Some(mode),
         contacts_created: count(counts.contacts_created),
         contacts_updated: count(counts.contacts_updated),
         contacts_deleted: count(counts.contacts_deleted),
@@ -187,12 +114,12 @@ pub(crate) async fn create_contacts(
         &mut conn,
         AuditAction::AddressBookLoaded,
         AuditActor::Holder,
-        auth.account_id,
+        account_id,
         details,
         now,
     )
     .await?;
-    Ok(Json(counts.into()))
+    Ok(counts.into())
 }
 
 /// Which contacts `POST /v1/contacts/address-book` writes: the Contacts

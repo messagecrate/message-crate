@@ -13,6 +13,7 @@ use sqlx::SqlitePool;
 use super::{Contact, get_contact_detail};
 use crate::api_error::ApiError;
 use crate::auth::{FullAccess, FullDeleteAccess};
+use crate::db::audit_trail::{self, AuditAction, ContactChange};
 use crate::db::contact_merges::{self, MAX_MERGED_CONTACTS, MergeRefusal, UnmergeRefusal};
 
 /// Body for `POST /v1/contacts/{id}/merge`.
@@ -72,7 +73,8 @@ fn check_from(target_id: i64, from: &[i64]) -> Result<(), ApiError> {
 /// message changes, because they are kept by identity. The merge can be
 /// undone with `POST /v1/contacts/{id}/unmerge` until the account's next
 /// merge, which deletes the contacts this one merged for good, so a merge
-/// needs the `delete` permission. A contact in the Trash, or one holding one
+/// needs the `delete` permission. The Audit Trail records it as a
+/// `contacts_merged` entry naming this contact and the ones in `from`. A contact in the Trash, or one holding one
 /// of the account's own identities, answers `409 Conflict`. A contact the
 /// last merge took is no contact of the account's: in the path it is
 /// `404 Not Found`, and in `from` `422 Unprocessable Entity`.
@@ -97,15 +99,8 @@ pub(crate) async fn merge_contact(
     check_from(target_id, &body.from)?;
     let mut conn = db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    match contact_merges::merge(
-        &mut tx,
-        auth.account_id,
-        target_id,
-        &body.from,
-        chrono::Utc::now(),
-    )
-    .await?
-    {
+    let now = chrono::Utc::now();
+    match contact_merges::merge(&mut tx, auth.account_id, target_id, &body.from, now).await? {
         Ok(()) => {}
         Err(MergeRefusal::TargetMissing) => return Err(ApiError::not_found("contact")),
         Err(MergeRefusal::SourceMissing(id)) => {
@@ -122,6 +117,19 @@ pub(crate) async fn merge_contact(
             )));
         }
     }
+    // In the merge's own transaction, so the two land together (CONTACT-59).
+    let merged = ContactChange {
+        contact_id: Some(target_id),
+        contact_ids: &body.from,
+    };
+    audit_trail::record_contact_change(
+        &mut tx,
+        AuditAction::ContactsMerged,
+        auth.account_id,
+        merged,
+        now,
+    )
+    .await?;
     let contact = get_contact_detail(&mut tx, auth.account_id, target_id)
         .await?
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("contact missing after a merge")))?;
@@ -136,7 +144,8 @@ pub(crate) async fn merge_contact(
 /// that is still on this contact; one moved elsewhere since stays there.
 /// This contact keeps what was its own before the merge. A contact that was
 /// not the target of the account's most recent merge answers
-/// `409 Conflict`. `restored` names the contacts written back.
+/// `409 Conflict`. `restored` names the contacts written back, and the Audit
+/// Trail records them as a `contacts_unmerged` entry with this contact.
 #[utoipa::path(
     post,
     path = "/v1/contacts/{id}/unmerge",
@@ -155,18 +164,29 @@ pub(crate) async fn unmerge_contact(
 ) -> Result<Json<UnmergeContactResponse>, ApiError> {
     let mut conn = db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    let restored =
-        match contact_merges::unmerge(&mut tx, auth.account_id, target_id, chrono::Utc::now())
-            .await?
-        {
-            Ok(restored) => restored,
-            Err(UnmergeRefusal::TargetMissing) => return Err(ApiError::not_found("contact")),
-            Err(UnmergeRefusal::NotTheLastMerge) => {
-                return Err(ApiError::StateConflict(
-                    "the account's most recent merge did not merge into this contact".into(),
-                ));
-            }
-        };
+    let now = chrono::Utc::now();
+    let restored = match contact_merges::unmerge(&mut tx, auth.account_id, target_id, now).await? {
+        Ok(restored) => restored,
+        Err(UnmergeRefusal::TargetMissing) => return Err(ApiError::not_found("contact")),
+        Err(UnmergeRefusal::NotTheLastMerge) => {
+            return Err(ApiError::StateConflict(
+                "the account's most recent merge did not merge into this contact".into(),
+            ));
+        }
+    };
+    // The contacts written back, in the unmerge's own transaction (CONTACT-59).
+    let unmerged = ContactChange {
+        contact_id: Some(target_id),
+        contact_ids: &restored,
+    };
+    audit_trail::record_contact_change(
+        &mut tx,
+        AuditAction::ContactsUnmerged,
+        auth.account_id,
+        unmerged,
+        now,
+    )
+    .await?;
     let contact = get_contact_detail(&mut tx, auth.account_id, target_id)
         .await?
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("contact missing after an unmerge")))?;

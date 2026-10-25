@@ -8,10 +8,9 @@ import { ApiError, noAnswerError } from "../lib/api";
 import {
   listContactGroups,
   mergeContacts,
-  restoreContact,
-  trashContact,
   unmergeContacts,
   updateContactGroupMembers,
+  updateTrashedContacts,
 } from "../lib/serverApi";
 import { act } from "../test/act";
 import { deferred } from "../test/deferred";
@@ -27,8 +26,8 @@ vi.mock("../hooks/useAuth", async () =>
 );
 
 vi.mock("../lib/serverApi", () => ({
-  trashContact: vi.fn(),
-  restoreContact: vi.fn(),
+  TRASHED_CONTACT_IDS_MAX: 10_000,
+  updateTrashedContacts: vi.fn(),
   listContactGroups: vi.fn(),
   createContactGroup: vi.fn(),
   updateContactGroup: vi.fn(),
@@ -38,8 +37,10 @@ vi.mock("../lib/serverApi", () => ({
   unmergeContacts: vi.fn(),
 }));
 
-const trashMock = vi.mocked(trashContact);
-const restoreMock = vi.mocked(restoreContact);
+const trashMoveMock = vi.mocked(updateTrashedContacts);
+type TrashMoveAnswer = Awaited<ReturnType<typeof updateTrashedContacts>>;
+/** The bodies the Trash moves were sent with, in order. */
+const trashMoves = () => trashMoveMock.mock.calls.map(([body]) => body);
 const listGroupsMock = vi.mocked(listContactGroups);
 const updateMembersMock = vi.mocked(updateContactGroupMembers);
 const mergeMock = vi.mocked(mergeContacts);
@@ -74,6 +75,9 @@ function Harness() {
       </button>
       <button type="button" onClick={() => void history.deleteContacts([mother])}>
         Delete Mother
+      </button>
+      <button type="button" onClick={() => history.push({ kind: "create", contact: mother })}>
+        Add Mother
       </button>
       <button type="button" onClick={() => void history.redo()}>
         Redo
@@ -144,8 +148,11 @@ beforeEach(() => {
   startFakeClock();
   vi.clearAllMocks();
   auth.accountId = 7;
-  trashMock.mockResolvedValue(undefined);
-  restoreMock.mockResolvedValue(undefined);
+  // The server moves every contact it is sent, as it does when each is still where it was.
+  trashMoveMock.mockImplementation(async (body) => ({
+    trashed: body.add ?? [],
+    restored: body.remove ?? [],
+  }));
 });
 
 afterEach(() => {
@@ -154,13 +161,13 @@ afterEach(() => {
 });
 
 describe("ContactHistoryProvider", () => {
-  it("trashes each contact, then shows a toast with Undo that goes after 20 seconds", async () => {
+  it("trashes the contacts in one request, then shows a toast with Undo that goes after 20 seconds", async () => {
     const user = setupUser();
     renderHarness();
     await user.click(screen.getByRole("button", { name: "Delete three" }));
     await settle();
 
-    expect(trashMock.mock.calls.map(([id]) => id)).toEqual([1, 2, 3]);
+    expect(trashMoves()).toEqual([{ add: [1, 2, 3] }]);
     expect(toast()).toHaveTextContent("Moved 3 contacts to Trash");
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
 
@@ -206,39 +213,91 @@ describe("ContactHistoryProvider", () => {
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await settle();
-    expect(restoreMock.mock.calls.map(([id]) => id)).toEqual([1, 2, 3]);
+    expect(trashMoves()).toEqual([{ add: [1, 2, 3] }, { remove: [1, 2, 3] }]);
     expect(toast()).toHaveTextContent("Restored 3 contacts");
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
     expect(screen.getByTestId("redo")).toHaveTextContent("can redo");
 
     await user.click(screen.getByRole("button", { name: "Redo" }));
     await settle();
-    expect(trashMock).toHaveBeenCalledTimes(6);
+    expect(trashMoves().at(-1)).toEqual({ add: [1, 2, 3] });
     expect(toast()).toHaveTextContent("Moved 3 contacts to Trash");
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
     expect(screen.getByTestId("undo")).toHaveTextContent("can undo");
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
   });
 
-  it("keeps going past a refused restore, says what happened, and drops the entry", async () => {
+  it("says which contacts a restore no longer found in the Trash, and drops the entry", async () => {
     const user = setupUser();
     renderHarness();
     await user.click(screen.getByRole("button", { name: "Delete three" }));
     await settle();
 
-    restoreMock.mockImplementation(async (id) => {
-      if (id === 2) throw new ApiError(404, "not found");
-    });
+    // Ada left the Trash meanwhile, so the server restores the other two.
+    trashMoveMock.mockResolvedValueOnce({ trashed: [], restored: [1, 3] });
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await settle();
 
-    expect(restoreMock).toHaveBeenCalledTimes(3);
+    expect(trashMoves().at(-1)).toEqual({ remove: [1, 2, 3] });
     expect(screen.getByTestId("report")).toHaveTextContent(
       "Restored 2 contacts. 1 is no longer in the Trash.",
     );
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
     expect(toast()).toBeNull();
+  });
+
+  it("undoes New Contact by moving the contact to the Trash, and redoes it by restoring it", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Add Mother" }));
+    expect(toast()).toHaveTextContent("Added Mother");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(trashMoves()).toEqual([{ add: [1] }]);
+    expect(toast()).toHaveTextContent("Moved Mother to Trash");
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await settle();
+    expect(trashMoves()).toEqual([{ add: [1] }, { remove: [1] }]);
+    expect(toast()).toHaveTextContent("Added Mother");
+    expect(screen.getByTestId("undo")).toHaveTextContent("can undo");
+  });
+
+  it("keeps one contact deleted since the action out of a redo, and moves the rest", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Delete three" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+
+    // Ada was deleted meanwhile, so the server skips her and moves the rest.
+    trashMoveMock.mockImplementation(async (body) => ({
+      trashed: (body.add ?? []).filter((id) => id !== 2),
+      restored: body.remove ?? [],
+    }));
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await settle();
+
+    expect(trashMoves().slice(2)).toEqual([{ add: [1, 2, 3] }]);
+    expect(screen.getByTestId("report")).toHaveTextContent(
+      "Moved 2 contacts to Trash. 1 could not be moved.",
+    );
+  });
+
+  it("says so when New Contact's undo could not move the contact to the Trash", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Add Mother" }));
+    trashMoveMock.mockRejectedValueOnce(new ApiError(422, "contact 1 not found"));
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+
+    expect(screen.getByTestId("report")).toHaveTextContent("Could not move 1 contact to Trash.");
+    expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
+    expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
   });
 
   it("names each Contact Group that refused an undo, with the server's reason", async () => {
@@ -388,7 +447,7 @@ describe("ContactHistoryProvider", () => {
 
     await user.click(screen.getByRole("button", { name: "Undo twice" }));
     await settle();
-    expect(restoreMock.mock.calls.map(([id]) => id)).toEqual([1, 1, 2, 3]);
+    expect(trashMoves().slice(2)).toEqual([{ remove: [1] }, { remove: [1, 2, 3] }]);
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
   });
 
@@ -398,11 +457,11 @@ describe("ContactHistoryProvider", () => {
     await user.click(screen.getByRole("button", { name: "Delete Mother" }));
     await settle();
 
-    const restored = deferred<void>();
-    restoreMock.mockReturnValue(restored.promise);
+    const restored = deferred<TrashMoveAnswer>();
+    trashMoveMock.mockReturnValueOnce(restored.promise);
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await user.click(screen.getByRole("button", { name: "Add Ada to Family" }));
-    await act(async () => restored.resolve());
+    await act(async () => restored.resolve({ trashed: [], restored: [1] }));
     await settle();
 
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
@@ -416,11 +475,11 @@ describe("ContactHistoryProvider", () => {
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await settle();
 
-    const trashed = deferred<void>();
-    trashMock.mockReturnValue(trashed.promise);
+    const trashed = deferred<TrashMoveAnswer>();
+    trashMoveMock.mockReturnValueOnce(trashed.promise);
     await user.click(screen.getByRole("button", { name: "Redo" }));
     await user.click(screen.getByRole("button", { name: "Add Ada to Family" }));
-    await act(async () => trashed.resolve());
+    await act(async () => trashed.resolve({ trashed: [1], restored: [] }));
     await settle();
 
     expect(screen.getByTestId("undo")).toHaveTextContent("can undo");

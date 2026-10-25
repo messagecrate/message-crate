@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- messages.sql. Only its changes mean anything: the dedupe reads it
     -- before it works out the flags and again once it holds the write lock
     -- (docs/architecture/rules/contacts-identities-and-messages.md,
-    -- CONTACT-58).
+    -- CONTACT-60).
     dedupe_input_writes INTEGER NOT NULL DEFAULT 0
 );
 
@@ -940,7 +940,7 @@ CREATE INDEX IF NOT EXISTS ix_export_messages_message
 -- flags without the write lock, then takes the lock and applies them only
 -- when the count is the one it read before it started, so no write it did
 -- not see has landed in between
--- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-58).
+-- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-60).
 -- The dedupe reads messages, their conversations, participants and
 -- attachments, the identities (handles) they name, and the account's own
 -- identities (account_handles). An UPDATE trigger names the columns it

@@ -5,8 +5,8 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     LoggedInAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
     attach_stored_file, attachment, conversation_header, delete_raw, delete_status, expect_problem,
-    fake_sha256, fixture_with_account, get_json, get_raw, get_status, message_line,
-    seed_conversation, stored_time,
+    fake_sha256, fixture_with_account, get_json, get_raw, get_status, message_line, patch_json,
+    patch_json_raw, post_status, seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -623,4 +623,214 @@ async fn a_file_imported_from_two_sources_counts_once_in_storage() {
     .unwrap();
 
     assert_eq!(stored, i64::try_from(bytes.len()).unwrap());
+}
+
+/// The Audit Trail entries about `account` that record a change to its
+/// contacts, oldest first.
+async fn contact_entries(
+    fixture: &TestFixture,
+    account: &LoggedInAccount,
+) -> Vec<crate::db::audit_trail::AuditEntry> {
+    use crate::db::audit_trail::{AuditAction, Scope, page};
+    let mut conn = fixture.conn().await;
+    let (mut items, _) = page(
+        &mut conn,
+        Scope::Account(account.account_id),
+        100,
+        0,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
+    items.retain(|e| {
+        matches!(
+            e.action,
+            AuditAction::ContactsTrashed
+                | AuditAction::ContactsRestored
+                | AuditAction::ContactDeleted
+        )
+    });
+    items.reverse();
+    items
+}
+
+/// Delete Contacts and its Undo are one request each, and each is one
+/// Audit Trail entry with the count and the ids of the contacts it moved. A
+/// request that moves nothing records nothing (CONTACT-59).
+#[tokio::test]
+async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
+    use crate::db::audit_trail::AuditAction;
+    let (fixture, alice) = fixture_with_account().await;
+    let ada = seed_named_contact(&fixture, &alice, "Ada").await;
+    let grace = seed_named_contact(&fixture, &alice, "Grace").await;
+
+    let moved: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "add": [ada, grace] }),
+    )
+    .await;
+    assert_eq!(
+        moved,
+        serde_json::json!({ "trashed": [ada, grace], "restored": [] })
+    );
+    // Again: both are already there, so the answer names them and nothing
+    // is recorded.
+    let again: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "add": [grace, ada] }),
+    )
+    .await;
+    assert_eq!(
+        again,
+        serde_json::json!({ "trashed": [grace, ada], "restored": [] })
+    );
+    let back: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "remove": [grace, ada, 999_999] }),
+    )
+    .await;
+    assert_eq!(
+        back,
+        serde_json::json!({ "trashed": [], "restored": [grace, ada] })
+    );
+
+    let entries = contact_entries(&fixture, &alice).await;
+    let recorded: Vec<_> = entries
+        .iter()
+        .map(|e| (e.action, e.contacts, e.contact_ids.clone()))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![
+            (
+                AuditAction::ContactsTrashed,
+                Some(2),
+                Some(vec![ada, grace])
+            ),
+            (
+                AuditAction::ContactsRestored,
+                Some(2),
+                Some(vec![grace, ada])
+            ),
+        ]
+    );
+    assert!(entries.iter().all(|e| e.request_id.is_some()));
+}
+
+/// A contact the account does not hold, such as one deleted since it was
+/// chosen, is skipped, and the others still move: one gone contact keeps no
+/// other out of the Trash. An empty request and an id in both lists are
+/// refused.
+#[tokio::test]
+async fn a_contact_the_account_does_not_hold_is_skipped_and_the_rest_move() {
+    use crate::db::audit_trail::AuditAction;
+    let (fixture, alice) = fixture_with_account().await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
+    let ada = seed_named_contact(&fixture, &alice, "Ada").await;
+    let bobs = seed_named_contact(&fixture, &bob, "Bob's").await;
+
+    let moved: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "add": [bobs, ada, 999_999] }),
+    )
+    .await;
+    assert_eq!(
+        moved,
+        serde_json::json!({ "trashed": [ada], "restored": [] })
+    );
+    let recorded: Vec<_> = contact_entries(&fixture, &alice)
+        .await
+        .into_iter()
+        .map(|e| (e.action, e.contact_ids))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![(AuditAction::ContactsTrashed, Some(vec![ada]))]
+    );
+    let mut conn = fixture.conn().await;
+    let bobs_trashed: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM trashed_contacts WHERE contact_id = $1")
+            .bind(bobs)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(bobs_trashed, 0);
+    drop(conn);
+
+    for body in [
+        serde_json::json!({}),
+        serde_json::json!({ "add": [ada], "remove": [ada] }),
+    ] {
+        let (status, text) =
+            patch_json_raw(&fixture.state, "/v1/trash/contacts", &alice.token, body).await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
+    }
+}
+
+/// The reference states the cap the handler keeps on each list, so the web
+/// app's copy of it can be checked against the reference.
+#[test]
+fn the_reference_states_the_trash_move_cap() {
+    let doc: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let request = &doc["components"]["schemas"]["UpdateTrashedContactsRequest"]["properties"];
+    for list in ["add", "remove"] {
+        assert_eq!(
+            request[list]["maxItems"],
+            super::MAX_TRASHED_CONTACT_IDS,
+            "{list}: {request}"
+        );
+    }
+}
+
+/// The one-contact routes record the same entries as the list's, and a
+/// contact deleted for good is recorded by its id.
+#[tokio::test]
+async fn one_contact_moved_restored_and_deleted_for_good_is_recorded_by_id() {
+    use crate::db::audit_trail::AuditAction;
+    let (fixture, alice) = fixture_with_account().await;
+    let ada = seed_named_contact(&fixture, &alice, "Ada").await;
+    let trash_path = format!("/v1/contacts/{ada}/trash");
+    let restore_path = format!("/v1/contacts/{ada}/restore");
+    for path in [&trash_path, &restore_path, &trash_path, &trash_path] {
+        let status = post_status(&fixture.state, path, &alice.token, serde_json::json!({})).await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{path}");
+    }
+    assert_eq!(
+        post_status(
+            &fixture.state,
+            "/v1/contacts/999999/restore",
+            &alice.token,
+            serde_json::json!({}),
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        delete_status(&fixture.state, &format!("/v1/contacts/{ada}"), &alice.token).await,
+        StatusCode::NO_CONTENT
+    );
+
+    let recorded: Vec<_> = contact_entries(&fixture, &alice)
+        .await
+        .into_iter()
+        .map(|e| (e.action, e.contact_id, e.contact_ids))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![
+            (AuditAction::ContactsTrashed, None, Some(vec![ada])),
+            (AuditAction::ContactsRestored, None, Some(vec![ada])),
+            (AuditAction::ContactsTrashed, None, Some(vec![ada])),
+            (AuditAction::ContactDeleted, Some(ada), None),
+        ]
+    );
 }

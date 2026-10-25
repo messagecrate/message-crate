@@ -198,6 +198,36 @@ impl From<ApiIdentityService> for IdentityService {
     }
 }
 
+/// The `handles` row for an identity the person adds by hand, `raw` on
+/// `service`: the row the account already holds, with the type it was stored
+/// with, or a new one typed by the service and the address's shape
+/// ([`handle_type_on`], CONTACT-9), so every type it takes is one the service
+/// carries. The row is not linked to anything. Adding an identity in the
+/// contact drawer and New Contact both find it here.
+///
+/// A row the account holds is taken as it is: a WhatsApp internal id such as
+/// `123456789012345@lid` is `other` there, as every import types it (#1671),
+/// and a new `@` address on WhatsApp is `other` too (#2709).
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn identity_handle_id(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    raw: &str,
+    service: IdentityService,
+) -> Result<i64> {
+    let raw = raw.trim();
+    if let Some(id) = existing_handle_id(conn, account_id, raw, service).await? {
+        return Ok(id);
+    }
+    let handle_type = handle_type_on(raw, service);
+    let (id, _) =
+        upsert_handle_row(conn, account_id, raw, handle_type, Some(service.as_str())).await?;
+    Ok(id)
+}
+
 /// What an identity is: a phone number, an email address, a username, or
 /// something else.
 // Published as `IdentityType`. The shared `ir::IdentityType` carries no

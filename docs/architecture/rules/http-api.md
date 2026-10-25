@@ -161,7 +161,19 @@ permanent deletion, which `POST .../trash` says and a field write does not.
 
 Membership lives under the collection that owns it:
 `GET` and `PATCH /v1/contact-groups/{id}/members`, with `{add, remove}` id
-lists.
+lists. The Trash owns the contacts in it, so moving several contacts to the
+Trash and out of it at once is `PATCH /v1/trash/contacts`, with the same
+`{add, remove}` lists of at most 10000 ids each. It answers the contacts of
+`add` now in the Trash as `trashed` and the ones it took out as
+`restored`. Why: Delete Contacts is one action, and the Audit Trail records
+it as one entry only when one request carries it ([CONTACT-59](contacts-identities-and-messages.md#contact-59-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
+Unlike a Contact Group's `add`, which API-34 refuses for an id the caller
+does not hold, an id the account does not hold is skipped in either list.
+Why: an Undo or Redo replays contacts chosen earlier, and one deleted since
+must not keep every other contact of the action where it was.
+`POST /v1/contacts/{id}/trash` and `/restore` stay for one contact.
+Rejected: `POST /v1/contacts/trash` with an id list, a verb on a collection
+that API-12 does not allow.
 
 ### API-14 A read whose selector is too large for a query string is a `POST` named for what it returns
 
@@ -216,7 +228,16 @@ beside `date:` did.
 A file the server reads is the request body, with `Content-Type` naming its
 format, and anything about how to apply it is a declared query parameter.
 `POST /v1/contacts` takes the address book as a `text/csv` body and
-`mode=append|edit`; any other `Content-Type` is `415 Unsupported Media Type`.
+`mode=append|edit`. The same route takes one contact typed by hand as an
+`application/json` body, answered `201 Created` with the contact
+([CONTACT-58](contacts-identities-and-messages.md#contact-58-new-contact-refuses-an-identity-another-contact-holds-and-offers-no-merge)),
+and refuses `mode` with it. Any other `Content-Type` is
+`415 Unsupported Media Type`. Why: both bodies add contacts to the
+collection, which `POST` on the collection does (API-19), and the
+`Content-Type` already says which format the body is. Rejected: a second
+path for New Contact, such as `/v1/contacts/new`, which is a verb on the
+collection; and moving the address book load to a path of its own, which
+names no resource.
 The file the server writes is answered by a `POST` named for it,
 `POST /v1/contacts/address-book`, whose body `{q, ids}` selects the contacts
 and whose answer is `text/csv` with a `Content-Disposition` filename.
@@ -1202,7 +1223,8 @@ refused whatever its scopes.
 The Demo Account is refused with `403 Forbidden` and
 `demo-account-protected` by its id, whatever its permission row says, on
 every route that needs the `import` scope or the `delete` permission, on
-`POST /v1/contacts`, and on `POST /v1/accounts/{id}/api-tokens`. Its
+`POST /v1/contacts` with either body, an address book load or New Contact,
+and on `POST /v1/accounts/{id}/api-tokens`. Its
 profile reports `export` and neither `import` nor `delete`, from the same
 id. Why: it has no password, so its limits must not rest on a row
 (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).

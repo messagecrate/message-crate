@@ -516,7 +516,7 @@ pub(crate) const DUPLICATE_FLAGS_SQL: &str = r"
 /// messages.
 ///
 /// The full dedupe reads them with the write lock held, to write only the
-/// flags that changed (CONTACT-58), so the read must not cost a pass over
+/// flags that changed (CONTACT-60), so the read must not cost a pass over
 /// the account. `INDEXED BY` holds SQLite to `ix_messages_duplicate_of`,
 /// which indexes only the flagged rows, so the statement finds them without
 /// reading the rest (#3256). Without it, a database with no `ANALYZE`

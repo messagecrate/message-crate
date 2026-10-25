@@ -3,6 +3,7 @@ import {
   EllipsisIcon,
   ExportIcon,
   MergeIcon,
+  PlusIcon,
   RedoIcon,
   TrashIcon,
   UndoIcon,
@@ -15,9 +16,10 @@ import { focusRingClass, menuItemClass, menuPopoverClass } from "../../lib/uiSty
 const sectionHeaderClass = "px-3 pb-1.5 text-[0.75rem] font-semibold text-text";
 
 /**
- * The ⋯ menu beside the Contacts list's sort button (#3244): Export Contacts
- * and Delete Contacts under a header that names what they act on, then Undo
- * and Redo (#3234).
+ * The ⋯ menu beside the Contacts list's sort button (#3244): New Contact
+ * (#3245), then Export Contacts and Delete Contacts under a header that names
+ * what they act on, then Undo and Redo (#3234). New Contact acts on no
+ * selection, so it sits above the header.
  *
  * Delete Contacts moves the checked contacts to the Trash, where Restore
  * brings them back, so nothing on this menu deletes for good. Merge Contacts
@@ -27,7 +29,9 @@ const sectionHeaderClass = "px-3 pb-1.5 text-[0.75rem] font-semibold text-text";
 export default function ContactActionsMenu({
   scope,
   canDelete,
+  canCreate,
   exporting,
+  onNewContact,
   onExport,
   onDelete,
   canMerge,
@@ -38,7 +42,10 @@ export default function ContactActionsMenu({
   scope: string;
   /** Some rows are checked. */
   canDelete: boolean;
+  /** The account may add contacts: every account but the Demo Account. */
+  canCreate: boolean;
   exporting: boolean;
+  onNewContact: () => void;
   onExport: () => void;
   onDelete: () => void;
   /** Two to ten rows are checked, and the account may delete. */
@@ -67,6 +74,18 @@ export default function ContactActionsMenu({
         className={`${menuPopoverClass} min-w-[13rem] rounded-xl py-2`}
       >
         <Menu aria-label="Contact actions" shouldFocusWrap className="outline-none">
+          <MenuSection className="mb-1.5 block border-b border-border pb-1.5">
+            <MenuItem
+              id="new"
+              textValue="New Contact"
+              isDisabled={!canCreate}
+              onAction={onNewContact}
+              className={`${menuItemClass} text-text`}
+            >
+              <PlusIcon size={14} />
+              New Contact
+            </MenuItem>
+          </MenuSection>
           <MenuSection>
             <Header className={sectionHeaderClass}>{scope}</Header>
             <MenuItem

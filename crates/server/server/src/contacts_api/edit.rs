@@ -233,7 +233,8 @@ impl ContactEditor<'_> {
         let platform = add
             .service
             .map_or(IdentityService::TextMessage, IdentityService::from);
-        let handle_id = self.handle_row(raw, platform).await?;
+        let handle_id =
+            handles::identity_handle_id(&mut *self.conn, self.account_id, raw, platform).await?;
         match self.claim(handle_id).await? {
             // Already linked: no address-book change.
             Claim::Here => Ok(true),
@@ -272,7 +273,9 @@ impl ContactEditor<'_> {
         // With no service named, the new identity stays on the replaced
         // one's service: a WhatsApp number swapped for another is still on
         // WhatsApp, and its conversations still find the contact.
-        let new_id = self.handle_row(next, named.unwrap_or(old_service)).await?;
+        let service = named.unwrap_or(old_service);
+        let new_id =
+            handles::identity_handle_id(&mut *self.conn, self.account_id, next, service).await?;
         if old_id == new_id {
             // Both lookups keyed the row on the same platform, so the edit
             // names the handle the contact already has: nothing changes.
@@ -316,40 +319,6 @@ impl ContactEditor<'_> {
         on: OnService,
     ) -> AnyResult<Option<(i64, IdentityService)>> {
         contacts::linked_handle_id(&mut *self.conn, self.account_id, self.contact_id, raw, on).await
-    }
-
-    /// Find or insert the handle row for `raw` on `platform`, without
-    /// linking it to the account owner: contact-owned handles must never
-    /// become owner identities.
-    ///
-    /// A row the account already holds for the address on `platform` is
-    /// taken as it is, with the type its import gave it: a WhatsApp internal
-    /// id such as `123456789012345@lid` is `other` there, as every import
-    /// types it (#1671). A new row is typed the same way, by `platform` and
-    /// then the address's shape ([`handles::handle_type_on`]), so a new `@`
-    /// address on WhatsApp is `other` too (#2709), and every type it takes
-    /// is one `platform` carries.
-    async fn handle_row(
-        &mut self,
-        raw: &str,
-        platform: IdentityService,
-    ) -> Result<i64, ContactEditError> {
-        let raw = raw.trim();
-        if let Some(id) =
-            handles::existing_handle_id(&mut *self.conn, self.account_id, raw, platform).await?
-        {
-            return Ok(id);
-        }
-        let handle_type = handles::handle_type_on(raw, platform);
-        let (id, _) = handles::upsert_handle_row(
-            &mut *self.conn,
-            self.account_id,
-            raw,
-            handle_type,
-            Some(platform.as_str()),
-        )
-        .await?;
-        Ok(id)
     }
 
     /// Whether the handle may come to this contact. A handle belongs to one

@@ -152,7 +152,7 @@ const UNLOCKED_ATTEMPTS: usize = 3;
 /// the pass work them out again; after [`UNLOCKED_ATTEMPTS`] such attempts
 /// it works them out with the lock held, so it always ends
 /// (`docs/architecture/rules/contacts-identities-and-messages.md`,
-/// CONTACT-58).
+/// CONTACT-60).
 ///
 /// The copy shown is the first by [`rank`]. Optional `source_priority`
 /// overrides the order of the sources (tests); `None` loads it from the DB.

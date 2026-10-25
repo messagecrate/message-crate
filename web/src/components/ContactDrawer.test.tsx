@@ -9,6 +9,7 @@ import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRingClass } from "../lib/uiStyles";
+import { act } from "../test/act";
 import { advanceToNextFrame, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { nth } from "../test/nth";
 import { authModule, testQueryClient } from "../test/providers";
@@ -292,6 +293,22 @@ describe("ContactDrawer", () => {
     expect(screen.getByText("Group-26")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("says a contact on screen is gone when its refetch answers 404 Not Found", async () => {
+    seed(detail(6, { name: "Grace", groups: [] }));
+    render(<ContactDrawer variant="docked" contactId="6" preview={null} onClose={() => {}} />);
+    await settle();
+    expect(screen.getByRole("heading", { name: "Grace" })).toBeInTheDocument();
+
+    // Undo of New Contact, or another window, moved it to the Trash.
+    get.mockRejectedValue(new ApiError(404, "contact not found"));
+    await act(() => client.refetchQueries());
+    await settle();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This contact is no longer in your contacts.",
+    );
   });
 
   it("says plainly that a contact no longer exists when the server answers 404 Not Found", async () => {
