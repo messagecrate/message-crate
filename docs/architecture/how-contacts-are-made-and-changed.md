@@ -3,6 +3,9 @@
 Two things write contacts and identities in bulk: an import of a backup, and
 an address book load. They write to the same tables under different rules.
 This document follows each one step by step and then sets them side by side.
+After them come the changes a person makes on the Contacts list one action at
+a time: New Contact, Merge Contacts and its Undo, and Delete Contacts. Last is
+what the Audit Trail records of all of these.
 
 The words and the relationships are in
 [Contacts, identities and messages](contacts-identities-and-messages.md),
@@ -420,3 +423,167 @@ identity (step 4). Each sentence starts with its row number.
   number on the other service where it is. An import never splits one.
 - **A contact the file does not list can still be deleted.** A nameless
   contact that gives up its last identity to a file contact is removed.
+
+## New Contact
+
+The code is `create_contact` in
+`crates/server/server/src/contacts_api/create.rs`, behind
+`POST /v1/contacts` with a JSON body. The same route takes a `text/csv` body
+as an address book load, and the body's `Content-Type` says which.
+
+New Contact adds one contact with a name and zero or more identities. It
+never moves an identity. Each identity is typed by its service and its
+shape, as an identity added in the contact drawer is, and is then found or
+created. One that another contact holds, named or nameless, in the Trash or
+not, or one of the account's own identities, refuses the request, and
+nothing is created
+([CONTACT-58](rules/contacts-identities-and-messages.md#contact-58-new-contact-refuses-an-identity-another-contact-holds-and-offers-no-merge)).
+Every identity is checked before the contact is written, so one refusal
+names every identity held elsewhere, each with the contact that holds it.
+
+```mermaid
+flowchart TD
+  A["A name and zero or more identities, each on its service"] --> B{"Name blank or too long, or more than 100 identities?"}
+  B -- yes --> R1{{"Refused. Nothing created."}}
+  B -- no --> C["Type each identity by its service and its shape, and find it or create it"]
+  C --> D{"Is any identity on a contact, or one of the account's own?"}
+  D -- yes --> R2{{"Refused: one sentence per identity, naming the contact that holds it. Nothing created."}}
+  D -- no --> E["New contact with origin user, holding every identity"]
+  E --> F["A contact_added Audit Trail entry, in the same transaction"]
+```
+
+The checks and the writes are one write transaction, so a refusal also
+rolls back the identity rows the checks created, and no other request can
+put an identity on a contact between its check and the link. A contact with
+a name and no identity is Unknown, because nothing reaches it yet. Undo on
+the Contacts list moves the new contact to the Trash, and Redo restores it.
+
+## Merge Contacts and its Undo
+
+The code is `merge` and `unmerge` in
+`crates/server/server/src/db/contact_merges.rs`, behind
+`POST /v1/contacts/{id}/merge` and `POST /v1/contacts/{id}/unmerge` in
+`crates/server/server/src/contacts_api/merge.rs`. The rules are
+[CONTACT-57](rules/contacts-identities-and-messages.md#contact-57-a-contact-merge-can-be-undone-until-the-next-merge).
+
+### A merge
+
+Merge Contacts makes two to ten contacts one. The contact in the path is the
+target, the one that owns the name the person picked, and the contacts in
+`from` go into it. The target keeps its id, name and origin.
+
+```mermaid
+flowchart TD
+  A["The target and the contacts in from"] --> B{"Is any of them missing, in the Trash, or holding one of the account's own identities?"}
+  B -- yes --> R1{{"Refused. Nothing changes."}}
+  B -- no --> C["Drop the account's previous merge: the contacts it took are gone for good"]
+  C --> D["Record the new merge, and the Contact Groups and Import Run records the target holds"]
+  D --> E["For each contact in from: copy its row, identities, Contact Groups and Import Run records to the contact_merge tables"]
+  E --> F["Move its identities, memberships and Import Run records to the target"]
+  F --> G["Delete its row from contacts"]
+  G --> H["A contacts_merged Audit Trail entry, in the same transaction"]
+```
+
+- Each identity moves to the target as it is, with its origin. No identity
+  is joined to another, so no conversation, participant, message, reaction
+  or content key changes, and no duplicate pass runs.
+- A Contact Group both contacts were in stays one membership.
+- An Import Run with a record of both contacts keeps the more consequential
+  reason on the target.
+- The merged contact's row is deleted, not marked, so it is in no list,
+  search or export, and its page answers `404 Not Found`.
+
+### Why the next merge makes the previous one permanent
+
+An account keeps one merge record, its most recent. The `contact_merge_*`
+tables hold the merged contacts' rows as they were, so that an undo can
+write them back. Each new merge first deletes the previous record, and with
+it the only copy of the contacts that merge took. By then those contacts
+hold nothing but their names, because their identities, memberships and
+Import Run records are on the target. A person merges and checks the result
+in one sitting, so one merge that can be undone is enough, and the server
+does not keep every merged contact for good.
+
+So a merge can delete contacts for good without going through the Trash,
+and it needs the `delete` permission. The Demo Account is refused every
+merge.
+
+### The Undo
+
+The undo writes each merged contact back under its own id. It can, because
+`contacts.id` is `AUTOINCREMENT`: a merged contact's id is never given to
+another contact.
+
+```mermaid
+flowchart TD
+  A["Undo for the target"] --> B{"Was the account's most recent merge into this contact?"}
+  B -- no --> R1{{"Refused. Nothing changes."}}
+  B -- yes --> C["Write each merged contact's row back under its own id"]
+  C --> D["Give back each identity it held that is still on the target"]
+  D --> E["Give back its Contact Groups and Import Run records. Take from the target what only the merge gave it."]
+  E --> F["Drop the merge record"]
+  F --> G{"Is a contact written back nameless, with no identity?"}
+  G -- yes --> G1["Deleted again: nothing could reach it"]
+  G -- no --> G2["Back on the Contacts list, and named in restored"]
+  G1 --> H
+  G2 --> H{"Did any contact come back?"}
+  H -- yes --> I["A contacts_unmerged Audit Trail entry naming them, in the same transaction"]
+  H -- no --> J["No Audit Trail entry"]
+```
+
+- An identity the person moved off the target since the merge stays where
+  it is, and the merged contact comes back without it.
+- The target keeps what was its own before the merge.
+- The answer names the contacts written back, in `restored`, so the toast
+  says which came back and Redo merges only those.
+
+Undo Merge Contacts is on the Contacts list's menu, with the toast's Undo
+and Ctrl+Z, in the browser session that made the merge. The contact page
+offers no unmerge.
+
+## Delete Contacts
+
+Delete Contacts on the Contacts list moves the checked contacts to the Trash
+in one request, `PATCH /v1/trash/contacts`, with their ids in `add`. Its
+Undo sends the same ids in `remove`. The code is `update_trashed_contacts`
+in `crates/server/server/src/db/trash.rs`. A contact the account no longer
+holds is skipped, a contact already in the Trash stays there, and one list
+holds at most 10000 ids, so the web app sends a larger selection in parts of
+that size.
+
+Moving a contact to the Trash changes none of its identities. An import that
+meets one of them makes a new contact and discards the trashed one
+([CONTACT-54](rules/contacts-identities-and-messages.md#contact-54-an-import-replaces-a-trashed-contact)),
+as the first diagram on this page shows. Deleting a contact for good, from
+the Trash, removes its name and its Contact Group memberships and keeps its
+identities and conversations
+([CONTACT-45](rules/contacts-identities-and-messages.md#contact-45-deleting-a-contact-keeps-its-conversations)).
+
+## What the Audit Trail records
+
+The Audit Trail records each change on this page that adds, removes or
+replaces contacts, one entry per action the person took, with a count and
+contact ids and never a name
+([CONTACT-59](rules/contacts-identities-and-messages.md#contact-59-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
+The route that makes the change writes the entry in the change's own
+transaction, so the two land together or not at all. Most contact entries go
+through `record_contact_change` in
+`crates/server/server/src/db/audit_trail.rs`.
+
+| Entry | Written by | Holds |
+|---|---|---|
+| `address_book_loaded` | An address book load | The mode, and the counts of contacts made, changed and removed |
+| `contact_added` | New Contact | The new contact |
+| `contacts_trashed` | Delete Contacts, and the Undo of New Contact | The contacts moved to the Trash |
+| `contacts_restored` | The Undo of Delete Contacts, and the Redo of New Contact | The contacts taken out of the Trash |
+| `contact_deleted` | Deleting a contact for good, from the Trash | The contact |
+| `trash_emptied` | Empty Trash | The counts of conversations and contacts |
+| `contacts_merged` | Merge Contacts | The target, and the contacts merged into it |
+| `contacts_unmerged` | The Undo of Merge Contacts, when a contact comes back | The target, and the contacts written back |
+
+A request that changes no contact writes no entry: moving a contact to the
+Trash that is already there, or an undo of a merge that brings no contact
+back. Undo and Redo write no entry of their own, so each is recorded as the
+same change made by hand. An import of a backup is recorded as its Import
+Run, with no contact entry, and an edit in the contact drawer or a Contact
+Group change writes no entry.

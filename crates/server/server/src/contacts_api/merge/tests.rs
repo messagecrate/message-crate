@@ -685,3 +685,48 @@ async fn a_merge_and_its_undo_are_each_one_audit_trail_entry() {
         ]
     );
 }
+
+/// An undo that brings no contact back writes no Audit Trail entry: the
+/// trail records contacts coming and going, and none came (CONTACT-59).
+#[tokio::test]
+async fn an_undo_that_brings_no_contact_back_writes_no_audit_trail_entry() {
+    use crate::db::audit_trail::{AuditAction, Scope, page};
+    let (fixture, account) = fixture_with_account().await;
+    let a = account.account_id;
+    let mut conn = fixture.conn().await;
+    let ada = contact(&mut conn, a, "Ada", "+15555550100", IdentityType::Phone).await;
+    let nameless = contact(&mut conn, a, "", "+15555550101", IdentityType::Phone).await;
+    let grace = contact(&mut conn, a, "Grace", "+15555550102", IdentityType::Phone).await;
+    drop(conn);
+
+    merge(&fixture, &account, ada, &[nameless]).await;
+    let mut conn = fixture.conn().await;
+    sqlx::query(
+        "UPDATE contact_handles SET contact_id = $1
+         WHERE handle_id = (SELECT id FROM handles WHERE normalized = '+15555550101')",
+    )
+    .bind(grace)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    drop(conn);
+
+    let answer = unmerge(&fixture, &account, ada).await;
+    assert_eq!(answer["restored"], serde_json::json!([]));
+
+    let mut conn = fixture.conn().await;
+    let (entries, _) = page(&mut conn, Scope::Account(a), 100, 0, chrono::Utc::now())
+        .await
+        .unwrap();
+    let recorded: Vec<_> = entries
+        .into_iter()
+        .filter(|e| {
+            matches!(
+                e.action,
+                AuditAction::ContactsMerged | AuditAction::ContactsUnmerged
+            )
+        })
+        .map(|e| e.action)
+        .collect();
+    assert_eq!(recorded, vec![AuditAction::ContactsMerged]);
+}

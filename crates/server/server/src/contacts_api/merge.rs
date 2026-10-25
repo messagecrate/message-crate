@@ -145,7 +145,8 @@ pub(crate) async fn merge_contact(
 /// This contact keeps what was its own before the merge. A contact that was
 /// not the target of the account's most recent merge answers
 /// `409 Conflict`. `restored` names the contacts written back, and the Audit
-/// Trail records them as a `contacts_unmerged` entry with this contact.
+/// Trail records them as a `contacts_unmerged` entry with this contact; an
+/// undo that writes no contact back writes no entry.
 #[utoipa::path(
     post,
     path = "/v1/contacts/{id}/unmerge",
@@ -174,19 +175,22 @@ pub(crate) async fn unmerge_contact(
             ));
         }
     };
-    // The contacts written back, in the unmerge's own transaction (CONTACT-59).
-    let unmerged = ContactChange {
-        contact_id: Some(target_id),
-        contact_ids: &restored,
-    };
-    audit_trail::record_contact_change(
-        &mut tx,
-        AuditAction::ContactsUnmerged,
-        auth.account_id,
-        unmerged,
-        now,
-    )
-    .await?;
+    // The contacts written back, in the unmerge's own transaction. An undo
+    // that brings no contact back writes no entry (CONTACT-59).
+    if !restored.is_empty() {
+        let unmerged = ContactChange {
+            contact_id: Some(target_id),
+            contact_ids: &restored,
+        };
+        audit_trail::record_contact_change(
+            &mut tx,
+            AuditAction::ContactsUnmerged,
+            auth.account_id,
+            unmerged,
+            now,
+        )
+        .await?;
+    }
     let contact = get_contact_detail(&mut tx, auth.account_id, target_id)
         .await?
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("contact missing after an unmerge")))?;

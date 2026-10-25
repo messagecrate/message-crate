@@ -7122,7 +7122,7 @@
           "Contacts"
         ],
         "summary": "Undo the account's most recent contact merge, which merged into this contact.",
-        "description": "Each merged contact comes back under its own id with its name, its\nContact Groups and its Import Run records, and with each identity it held\nthat is still on this contact; one moved elsewhere since stays there.\nThis contact keeps what was its own before the merge. A contact that was\nnot the target of the account's most recent merge answers\n`409 Conflict`. `restored` names the contacts written back, and the Audit\nTrail records them as a `contacts_unmerged` entry with this contact.",
+        "description": "Each merged contact comes back under its own id with its name, its\nContact Groups and its Import Run records, and with each identity it held\nthat is still on this contact; one moved elsewhere since stays there.\nThis contact keeps what was its own before the merge. A contact that was\nnot the target of the account's most recent merge answers\n`409 Conflict`. `restored` names the contacts written back, and the Audit\nTrail records them as a `contacts_unmerged` entry with this contact; an\nundo that writes no contact back writes no entry.",
         "operationId": "unmerge_contact",
         "parameters": [
           {
