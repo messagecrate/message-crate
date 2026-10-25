@@ -210,8 +210,8 @@ describe("message tags are wired to the lists that show a tag name", () => {
 describe("the two collections stay distinct", () => {
   it("keeps separate keys, labels and route sets", () => {
     expect(contactGroups.key).not.toEqual(messageTags.key);
-    expect(contactGroups.label).toBe("group");
-    expect(messageTags.label).toBe("tag");
+    expect(contactGroups.label).toBe("Contact Group");
+    expect(messageTags.label).toBe("Message Tag");
     expect(contactGroups.routes.list).toBe(serverApi.listContactGroups);
     expect(messageTags.routes.list).toBe(serverApi.listMessageTags);
   });

@@ -227,7 +227,7 @@ describe("ContactHistoryProvider", () => {
       { id: 12, name: "Club" },
     ] as unknown as Awaited<ReturnType<typeof listContactGroups>>);
     updateMembersMock.mockImplementation(async (id) => {
-      if (id === 10) throw new ApiError(404, "contact group not found");
+      if (id === 10) throw new ApiError(404, "Contact Group not found");
       // A lost connection, as the client reports a request no server answered.
       if (id === 12) throw noAnswerError();
       return { added: 1, removed: 0 };
@@ -242,7 +242,7 @@ describe("ContactHistoryProvider", () => {
     expect(noAnswerError().message).toMatch(/^The server at .* didn't answer\.$/);
     expect(screen.getByTestId("report").textContent?.split("\n")).toEqual([
       "Added Ada to 1 of 3 Contact Groups.",
-      "Could not add Ada to Family: contact group not found",
+      "Could not add Ada to Family: Contact Group not found",
       `Could not add Ada to Club: ${noAnswerError().message}`,
     ]);
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");

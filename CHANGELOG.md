@@ -1527,6 +1527,11 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-25: **The conversation list names WhatsApp as the identities
+  table does.** A one-to-one WhatsApp conversation imported from two
+  sources showed the word `whatsapp` in lower case where the identities
+  table said WhatsApp. Both screens now read one list of service names
+  (#3262).
 - 2026-10-16: **WhatsApp, Instagram and SMS messages show their
   reactions.** Only Apple Messages and Discord messages drew the reactions
   left on them. A WhatsApp, Instagram or SMS message, and an iMazing message
@@ -1633,6 +1638,12 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-25: **A Contact Group or Message Tag that is gone is named in
+  full.** A change to a Contact Group deleted meanwhile was refused as
+  "Group not found", and one to a Message Tag as "Tag not found". They now
+  read "Contact Group not found" and "Message Tag not found". A name already
+  taken reads "Contact Group already exists" or "Message Tag already
+  exists" the same way (#3264).
 - 2026-10-24: **Undo of a Contact Group change says why it was refused.**
   When Undo or Redo of a Contact Group change on the Contacts list was
   refused for some Contact Groups, the line above the list said only how

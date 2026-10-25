@@ -42,7 +42,6 @@ describe("useNameCollection", () => {
       },
       key: keys.contactGroups.all,
       chips: [],
-      label: "group",
       forName: (name) => `group:${name}`,
       reserved: { label: "Contact Group", reserved: [], special: [] },
     });
