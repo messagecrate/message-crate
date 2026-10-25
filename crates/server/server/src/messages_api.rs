@@ -105,7 +105,7 @@ pub(crate) fn message_filter(
     })?)
 }
 
-/// Messages matching `q`: the same rows an Export Run with a `query` scope
+/// Messages matching `q`. The same rows an Export Run with a `query` scope
 /// would hand over, behind a logged-in session with the list defaults and the
 /// list's offset ceiling.
 ///

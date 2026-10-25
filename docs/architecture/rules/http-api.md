@@ -1592,6 +1592,15 @@ after an hour with no page read, or by `imports discard` gets the
 after its account is deleted fails its credential before the run is read,
 and answers `401 Unauthorized` (API-28).
 
+Why: the person starts the import or export from the client, states what it
+is once, and knows when it is complete from what the client and the server
+show them. So the settings are given when the run is created, and the client
+closes the run: `complete` when the person has what they asked for, `discard`
+or `cancel` when they give it up. The server's own closings exist only for a
+run no client is going to close: one replaced by a new Export Run, one no page
+of which was read for an hour, one whose account was deleted, or one a killed
+import left open.
+
 ### API-111 `complete` states the outcome, and a run an error stopped is `failed`, never canceled
 
 `complete` states the outcome in its body, as `status`: `completed`,
@@ -1749,7 +1758,8 @@ Why: every mismatch between the reference and the handlers that the September
 ### API-122 An operation's summary is the first sentence of its handler's doc comment
 
 The first sentence of a handler's doc comment is the operation's summary, and
-the rest is its description.
+the rest is its description. A summary is at most 120 characters, and a
+document rule fails on a longer one.
 Why: the summary is the operation's title in the reference's operation list
 and in the generated client types, so it has to read as one line; everything
 past the first sentence is description, and the cut keeps handler doc comments

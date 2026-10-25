@@ -571,6 +571,13 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-25: **A lost administrator password can be set again on the
+  desktop app's own Message Crate.** The server's `set-admin-password`
+  command reached only a Message Crate with a config file, such as one in
+  Docker, and the desktop app starts its server with none. The command now
+  takes `--data-dir`, which names the directory the app keeps its Message
+  Crate in, and the troubleshooting page gives the command for each
+  computer (#3272).
 - 2026-10-16: **The desktop app notices its own server stop answering on
   any screen.** The app checked whether its own server still answered only
   while the login card was open, so a server that hung while you browsed

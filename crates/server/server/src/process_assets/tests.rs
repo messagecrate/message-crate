@@ -1117,6 +1117,32 @@ async fn a_database_without_accounts_is_an_error() {
     );
 }
 
+/// Naming the administrator is refused, as the full walk leaves it out,
+/// rather than walking it into a warning that `data/1/assets` is missing
+/// (#3273).
+#[tokio::test]
+async fn naming_the_administrator_is_refused() {
+    let (opened, _dir) = open_db().await;
+
+    let err = run(
+        &opened,
+        &ON_PATH,
+        &ProcessAssetsOptions {
+            account: Some(account_profile::ADMIN_ACCOUNT_ID),
+            ..ProcessAssetsOptions::default()
+        },
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "the administrator holds no attachments, so there is nothing to process"
+    );
+}
+
 #[tokio::test]
 async fn an_account_without_an_assets_directory_is_passed_over() {
     let (opened, _dir) = open_db().await;

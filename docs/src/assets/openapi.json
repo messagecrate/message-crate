@@ -1477,8 +1477,8 @@
         "tags": [
           "Audit Trail"
         ],
-        "summary": "An account's Audit Trail, newest first: every entry about the account, whoever acted, the administrator's changes to it and the logins refused for its username included, with its Import and Export Runs.",
-        "description": "The administrator reads any account's; an account reads its own.",
+        "summary": "An account's Audit Trail, newest first.",
+        "description": "Every entry about the account, whoever acted, the administrator's changes to it and the logins refused for its username included, with its Import and Export Runs. The administrator reads any account's; an account reads its own.",
         "operationId": "list_account_audit_trail",
         "parameters": [
           {
@@ -3364,8 +3364,8 @@
         "tags": [
           "Assets"
         ],
-        "summary": "Download the thumbnail of a stored image or video: a JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.",
-        "description": "The server makes it in the background after the Import Run that brought\nthe asset, and `process-assets` makes any that are missing. The URL is\nthe SHA-256 fingerprint of the original. An asset with no thumbnail yet\nanswers `404 Not Found`; the attachment's `thumbnail_mime_type` says\nwhether it has one. A `Range` of one byte range answers\n`206 Partial Content` with those bytes. The thumbnail has no `ETag`, so a\n`Range` sent with `If-Range` answers the whole thumbnail. A media element\nreads with the `media_link` a media link put in the URL.",
+        "summary": "Download the thumbnail of a stored image or video.",
+        "description": "A JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.\n\nThe server makes it in the background after the Import Run that brought\nthe asset, and `process-assets` makes any that are missing. The URL is\nthe SHA-256 fingerprint of the original. An asset with no thumbnail yet\nanswers `404 Not Found`; the attachment's `thumbnail_mime_type` says\nwhether it has one. A `Range` of one byte range answers\n`206 Partial Content` with those bytes. The thumbnail has no `ETag`, so a\n`Range` sent with `If-Range` answers the whole thumbnail. A media element\nreads with the `media_link` a media link put in the URL.",
         "operationId": "get_asset_thumbnail",
         "parameters": [
           {
@@ -4338,8 +4338,8 @@
         "tags": [
           "Audit Trail"
         ],
-        "summary": "Every account's Audit Trail, newest first: logins, sessions ending, refused logins, Import Runs, Export Runs, and the administrator's and holders' changes to accounts, including those of deleted accounts under their old usernames.",
-        "description": "The administrator's alone.\n\n`deleted_account_id` narrows the list to one deleted account's entries\nand runs, which no longer carry an account id. The ids are listed by\n`GET /v1/audit-trail/deleted-accounts`; an id that names no deleted\naccount answers an empty page. A live account's entries are read at\n`GET /v1/accounts/{id}/audit-trail`.",
+        "summary": "Every account's Audit Trail, newest first.",
+        "description": "Logins, sessions ending, refused logins, Import Runs, Export Runs, and the administrator's and holders' changes to accounts, including those of deleted accounts under their old usernames. The administrator's alone.\n\n`deleted_account_id` narrows the list to one deleted account's entries\nand runs, which no longer carry an account id. The ids are listed by\n`GET /v1/audit-trail/deleted-accounts`; an id that names no deleted\naccount answers an empty page. A live account's entries are read at\n`GET /v1/accounts/{id}/audit-trail`.",
         "operationId": "list_audit_trail",
         "parameters": [
           {
@@ -4453,8 +4453,8 @@
         "tags": [
           "Audit Trail"
         ],
-        "summary": "The deleted accounts whose entries the Audit Trail keeps, by username A to Z, the latest deletion first under one username.",
-        "description": "Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.",
+        "summary": "The deleted accounts whose entries the Audit Trail keeps.",
+        "description": "By username A to Z, the latest deletion first under one username. Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.",
         "operationId": "list_deleted_accounts",
         "parameters": [
           {
@@ -5756,8 +5756,8 @@
         "tags": [
           "Contacts"
         ],
-        "summary": "Write the address book for the contacts a search matches, the checked ones among them, or every contact when the body names neither.",
-        "description": "The answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `service`, `identity` and `groups`.\n`service` is `Text Message`, `Email` for an email address on Text\nMessage, or `WhatsApp`. A contact's name and its Contact Group names,\nseparated by `;`, repeat on each of its rows. A contact with no name has\na blank `display_name`, and a contact with no identity is one row with\n`service` and `identity` blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
+        "summary": "Write the address book.",
+        "description": "For the contacts a search matches, the checked ones among them, or every contact when the body names neither.\n\nThe answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `service`, `identity` and `groups`.\n`service` is `Text Message`, `Email` for an email address on Text\nMessage, or `WhatsApp`. A contact's name and its Contact Group names,\nseparated by `;`, repeat on each of its rows. A contact with no name has\na blank `display_name`, and a contact with no identity is one row with\n`service` and `identity` blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
         "operationId": "get_address_book",
         "requestBody": {
           "content": {
@@ -6427,8 +6427,8 @@
         "tags": [
           "Contacts"
         ],
-        "summary": "Delete a trashed contact the way a phone's Delete Contact does: the name and the person's edits go, the contact becomes Unknown again and leaves the trash, and every conversation it was in stays as it is, showing the identity.",
-        "description": "Conversations are never deleted with a contact. A contact that is not in the trash answers 409.",
+        "summary": "Delete a trashed contact the way a phone's Delete Contact does.",
+        "description": "The name and the person's edits go, the contact becomes Unknown again and leaves the trash, and every conversation it was in stays as it is, showing the identity. Conversations are never deleted with a contact. A contact that is not in the trash answers 409.",
         "operationId": "delete_contact",
         "parameters": [
           {
@@ -7335,8 +7335,8 @@
         "tags": [
           "Conversations"
         ],
-        "summary": "One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.",
-        "description": "Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.",
+        "summary": "One conversation, in the same shape a list row already has.",
+        "description": "So a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary. Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.",
         "operationId": "get_conversation",
         "parameters": [
           {
@@ -7438,8 +7438,8 @@
         "tags": [
           "Conversations"
         ],
-        "summary": "Permanently delete a trashed conversation: the conversation, its messages, and any attachment file no other message still uses.",
-        "description": "Trash is the only door to deletion, so a conversation that is not in the trash answers 409 rather than being deleted from wherever it was.",
+        "summary": "Permanently delete a trashed conversation.",
+        "description": "The conversation, its messages, and any attachment file no other message still uses. Trash is the only door to deletion, so a conversation that is not in the trash answers 409 rather than being deleted from wherever it was.",
         "operationId": "delete_conversation",
         "parameters": [
           {
@@ -8740,8 +8740,8 @@
         "tags": [
           "Export"
         ],
-        "summary": "The messages a running Export Run matched when it was created, a page at a time, oldest first unless `sort` says otherwise.",
-        "description": "An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.",
+        "summary": "The messages a running Export Run matched when it was created.",
+        "description": "A page at a time, oldest first unless `sort` says otherwise. An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.",
         "operationId": "list_export_messages",
         "parameters": [
           {
@@ -11147,8 +11147,8 @@
         "tags": [
           "Messages"
         ],
-        "summary": "Messages matching `q`: the same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.",
-        "description": "With no `sort`, the best match comes first when `q` has a free-text word\nto rank by, and the newest message first when it has none. The page's\n`search` says which order it applied and which terms it ranks by, so a\nclient never parses `q` itself.\n\n`sort=relevance` puts the best match first, ranked by the full-text\nindex's `bm25()` on the query's free-text words: the words not behind `-`\nor `not`. A query with no such word has nothing to rank by, and\n`relevance` is then `validation-failed`. Ties, and a message found only by\nan attachment's file name, which the index does not rank, follow by date,\nnewest first.",
+        "summary": "Messages matching `q`.",
+        "description": "The same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.\n\nWith no `sort`, the best match comes first when `q` has a free-text word\nto rank by, and the newest message first when it has none. The page's\n`search` says which order it applied and which terms it ranks by, so a\nclient never parses `q` itself.\n\n`sort=relevance` puts the best match first, ranked by the full-text\nindex's `bm25()` on the query's free-text words: the words not behind `-`\nor `not`. A query with no such word has nothing to rank by, and\n`relevance` is then `validation-failed`. Ties, and a message found only by\nan attachment's file name, which the index does not rank, follow by date,\nnewest first.",
         "operationId": "list_messages",
         "parameters": [
           {
@@ -13078,7 +13078,8 @@
         "tags": [
           "Server"
         ],
-        "summary": "Read the server settings, and how the database is stored: its journal mode, and the error SQLite gave when the server asked for write-ahead logging.",
+        "summary": "Read the server settings, and how the database is stored.",
+        "description": "Its journal mode, and the error SQLite gave when the server asked for write-ahead logging.",
         "operationId": "get_server_settings",
         "responses": {
           "200": {
@@ -13598,8 +13599,8 @@
         "tags": [
           "Session"
         ],
-        "summary": "Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.",
-        "description": "A refused login waits about a second, then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong password, an empty password for the administrator before setup, a\ndisabled account. An account other than the administrator that has no\npassword logs in with an empty one. A login with the right password does\nnot wait.",
+        "summary": "Log in.",
+        "description": "Verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.\n\nA refused login waits about a second, then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong password, an empty password for the administrator before setup, a\ndisabled account. An account other than the administrator that has no\npassword logs in with an empty one. A login with the right password does\nnot wait.",
         "operationId": "create_session",
         "requestBody": {
           "content": {
@@ -13800,8 +13801,8 @@
         "tags": [
           "Trash"
         ],
-        "summary": "Empty the trash: every trashed conversation is deleted for good, with its messages and any attachment file no other message uses, and every trashed contact loses its name and details and becomes Unknown, its conversations untouched.",
-        "description": "Trash is the only door to permanent deletion; this is the door for everything in it at once.",
+        "summary": "Empty the trash.",
+        "description": "Every trashed conversation is deleted for good, with its messages and any attachment file no other message uses, and every trashed contact loses its name and details and becomes Unknown, its conversations untouched. Trash is the only door to permanent deletion; this is the door for everything in it at once.",
         "operationId": "delete_trash",
         "responses": {
           "204": {

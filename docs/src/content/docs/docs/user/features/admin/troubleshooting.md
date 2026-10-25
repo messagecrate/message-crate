@@ -69,11 +69,25 @@ The administrator doesn't need the old password.
 ### The administrator's password is lost
 
 Nothing in the browser or the desktop app can set the administrator's password, because no account stands above the administrator.
-The server program sets it from a command line on the computer that runs Docker.
+The server program sets it from a command line on the computer that runs the server.
 
-```bash title="Set a new administrator password"
+For a Message Crate in Docker, the command runs inside the container:
+
+```bash title="Set a new administrator password (Docker)"
 docker exec -it message-crate message-crate-server set-admin-password
 ```
+
+The desktop app ships the server program with it.
+For the Message Crate the app starts, `--data-dir` names its Data Directory, `data` in the Message Crate Directory:
+
+| Computer | Command |
+|---|---|
+| Linux, `.deb` | `/usr/bin/message-crate-server set-admin-password --data-dir ~/message-crate/data` |
+| macOS | `"/Applications/Message Crate.app/Contents/MacOS/message-crate-server" set-admin-password --data-dir ~/message-crate/data` |
+| Windows, in PowerShell | `& "C:\Program Files\Message Crate\message-crate-server.exe" set-admin-password --data-dir "$HOME\message-crate\data"` |
+
+The AppImage carries the server program inside it.
+`./<file>.AppImage --appimage-extract usr/bin/message-crate-server` copies it out to `squashfs-root/usr/bin/message-crate-server`, which then runs the Linux command above in place of `/usr/bin/message-crate-server`.
 
 The command asks for the new password and doesn't show it as it's typed.
 It takes the password that way, not on the command line, because a command line is visible to everyone signed in to the computer while the command runs, and stays in the shell's history afterwards.

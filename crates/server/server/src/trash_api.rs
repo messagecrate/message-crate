@@ -17,7 +17,7 @@ use crate::config::Config;
 use crate::db::audit_trail::AuditActor;
 use crate::db::trash;
 
-/// Empty the trash: every trashed conversation is deleted for good, with
+/// Empty the trash. Every trashed conversation is deleted for good, with
 /// its messages and any attachment file no other message uses, and every
 /// trashed contact loses its name and details and becomes Unknown, its
 /// conversations untouched. Trash is the only door to permanent deletion;

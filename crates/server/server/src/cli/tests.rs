@@ -108,6 +108,7 @@ async fn set_admin_password_sets_the_first_password_and_then_replaces_it() {
         set_admin_password_with(
             SetAdminPasswordArgs {
                 config: config.clone(),
+                data_dir: None,
             },
             password,
         )
@@ -128,6 +129,59 @@ async fn set_admin_password_sets_the_first_password_and_then_replaces_it() {
         drop(conn);
         opened.close().await;
     }
+}
+
+/// `set-admin-password --data-dir` sets the password in the Message Crate
+/// kept in that directory, the way `serve --data-dir` keeps it, with no
+/// config file. That is how the desktop app's own server, which runs with
+/// `--data-dir`, gets its administrator back (#3272).
+#[tokio::test]
+async fn set_admin_password_reaches_the_message_crate_in_a_data_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    OpenDb::create_or_open(Config::for_data_dir(&data_dir))
+        .await
+        .unwrap()
+        .close()
+        .await;
+
+    set_admin_password_with(
+        SetAdminPasswordArgs {
+            config: PathBuf::from("no/such/config.toml"),
+            data_dir: Some(data_dir.clone()),
+        },
+        "correct horse battery staple",
+    )
+    .await
+    .unwrap();
+
+    let opened = OpenDb::open(Config::for_data_dir(&data_dir)).await.unwrap();
+    let mut conn = opened.conn().await.unwrap();
+    let hash = account_profile::load_password_hash(&mut conn, account_profile::ADMIN_ACCOUNT_ID)
+        .await
+        .unwrap()
+        .expect("the administrator has a password");
+    assert!(crate::credentials::verify_password(
+        &hash,
+        "correct horse battery staple"
+    ));
+    drop(conn);
+    opened.close().await;
+}
+
+/// `--data-dir` reads no config file, so naming both is refused rather than
+/// one of them silently winning.
+#[test]
+fn set_admin_password_takes_a_data_directory_or_a_config_file_not_both() {
+    let argv = [
+        "message-crate-server",
+        "set-admin-password",
+        "--config",
+        "c.toml",
+        "--data-dir",
+        "d",
+    ];
+    assert!(Cli::try_parse_from(argv).is_err());
 }
 
 #[tokio::test]
