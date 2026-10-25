@@ -811,7 +811,7 @@ describe("ContactList", () => {
         { id: 11, name: "Work" },
       ]);
       updateMembersMock.mockImplementation(async (_id, patch) => {
-        if (patch.remove.length > 0) {
+        if ((patch.remove ?? []).length > 0) {
           aliceGroups = [];
           return { added: 0, removed: 1 };
         }
