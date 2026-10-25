@@ -12,8 +12,8 @@ The Message Crate SQLite database falls into four groups:
 
 Conversations and people are **not** joined by a shared person ID. They meet through
 the **`handles`** table: every phone number, email, or username appears once
-per account **per platform** (`text_message` or `whatsapp`) as a typed handle, and
-conversations, participants, messages, and contacts all point at the same
+per account **per platform** (`text_message` or `whatsapp`) as a typed handle,
+and conversations, participants, messages, and contacts all point at the same
 handle rows.
 
 ```mermaid
@@ -127,8 +127,8 @@ required `service` (`text_message` | `whatsapp` — UI labels “Text Message”
 account by `(account_id, normalized, handle_type, service)`, so the same phone
 number on Text Message and WhatsApp is two rows. SMS / iMessage / RCS are
 **not** handle platforms; those are per-message transport values on
-`messages.service`. Everywhere else in the schema, identities are referenced by
-`handle_id` — never by text.
+`messages.service`. Everywhere else in the schema, identities are referenced
+by `handle_id` — never by text.
 
 `normalized_note` is the needs-review flag: phone numbers are written as
 E.164 only when unambiguous. Ambiguous values (e.g. a trunk-zero national

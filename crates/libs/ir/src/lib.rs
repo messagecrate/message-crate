@@ -370,7 +370,8 @@ impl Transport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentityService {
-    /// Text Message: SMS, MMS, iMessage and RCS are its transports, not services.
+    /// Text Message. SMS, MMS, iMessage and RCS are its transports, not
+    /// services.
     TextMessage,
     /// WhatsApp platform.
     Whatsapp,

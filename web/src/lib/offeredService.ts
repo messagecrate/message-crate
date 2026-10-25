@@ -48,8 +48,9 @@ export const EXAMPLE_PHONE = "+1 555-555-0119";
 /**
  * The services an identity can be on, offered wherever one is added: setup,
  * the account profile, and the contact drawer. Each carries the example shown
- * in an empty field, on the same line as its service. Text Message and WhatsApp take
- * `EXAMPLE_PHONE`, the web app's one phone example; change it there.
+ * in an empty field, on the same line as its service. Text Message and
+ * WhatsApp take `EXAMPLE_PHONE`, the web app's one phone example; change it
+ * there.
  */
 export const OFFERED_SERVICE_OPTIONS = [
   { value: "text_message", label: "Text Message", placeholder: EXAMPLE_PHONE },

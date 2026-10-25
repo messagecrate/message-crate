@@ -204,15 +204,15 @@ SMS, MMS, RCS and iMessage are transports. Each message records the one that
 carried it in `messages.service`, such as `sms`, `rcs` or `imessage`. An MMS
 is recorded as `sms`, and a message whose source names no transport is
 recorded as `unknown` and stays on Text Message. The transport says how that
-one message traveled, not what its address is. So an address with an `@` is
-an `email` identity on Text Message whatever transport carried it. An
-email-to-text gateway such as `alerts@example.com` that writes over SMS is
-one `email` row on `text_message`, on one contact. Why: one conversation holds both
-transports, and identities of one address are linked only when their types
-are equal. Typed by transport, an address became `email` from a header or an
-iMessage and `other` from an SMS message. That made two identities on two
-contacts, and the second contact had no name. The first contact's counts left
-the SMS messages out
+one message traveled, not what its address is. So an address with an `@` is an
+`email` identity on Text Message whatever transport carried it. An
+email-to-text gateway such as `alerts@example.com` that writes over SMS is one
+`email` row on `text_message`, on one contact. Why: one conversation holds
+both transports, and identities of one address are linked only when their
+types are equal. Typed by transport, an address became `email` from a header
+or an iMessage and `other` from an SMS message. That made two identities on
+two contacts, and the second contact had no name. The first contact's counts
+left the SMS messages out
 ([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
 
 WhatsApp is the other way, as CONTACT-9 says: its `@` ids are `other`.
@@ -244,9 +244,9 @@ name, and the real contact's counts left the message out
 ## CONTACT-15 One number is one person on every service
 
 iMessage, SMS, MMS and RCS are all text messages, so a phone number that
-arrives over any of them is one `handles` row with the service `text_message`. The
-same number on WhatsApp is a second row with the service `whatsapp`. When one
-of the two is on a contact, the other joins the same contact
+arrives over any of them is one `handles` row with the service `text_message`.
+The same number on WhatsApp is a second row with the service `whatsapp`. When
+one of the two is on a contact, the other joins the same contact
 (`contact_id_of_sibling_handle`). Why: the rows differ only by service, and
 splitting them would show one person twice.
 
