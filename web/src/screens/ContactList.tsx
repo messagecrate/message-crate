@@ -42,6 +42,7 @@ import { exportAddressBook, listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
 import ContactActionsMenu from "./contacts/ContactActionsMenu";
+import MergeContactsDialog, { MAX_MERGED_CONTACTS } from "./contacts/MergeContactsDialog";
 import NewContactDialog from "./contacts/NewContactDialog";
 import { useUndoShortcuts } from "./contacts/useUndoShortcuts";
 
@@ -182,6 +183,7 @@ export default function ContactList({
   const { profile } = useAccountProfile();
   // The Demo Account is refused a new contact, so it is not offered one.
   const canCreate = profile !== null && !profile.is_demo;
+  const [mergeOpen, setMergeOpen] = useState(false);
   useUndoShortcuts(history.undo, history.redo);
 
   const groupActive = Boolean(groupFilter);
@@ -510,6 +512,34 @@ export default function ContactList({
       ? "Move 1 contact to Trash?"
       : `Move ${deleteTargets.length} contacts to Trash?`;
 
+  const mergeTargets = checkedContacts;
+  // A merge deletes the previous merge's contacts for good, so the server
+  // asks for the delete permission (the Demo Account has none); the item says
+  // so up front. Until the profile loads the server is the only gate.
+  const mayDelete = profile?.can_delete ?? true;
+  const canMerge =
+    mayDelete && mergeTargets.length >= 2 && mergeTargets.length <= MAX_MERGED_CONTACTS;
+  const mergeCandidates = useMemo(
+    () =>
+      mergeTargets.map((c) => ({ id: Number(c.id), name: c.name, addresses: c.addresses ?? [] })),
+    [mergeTargets],
+  );
+  /** Merge the checked contacts into `targetId`, then open it with nothing checked. */
+  const mergeContacts = async (targetId: number): Promise<Error | null> => {
+    const target = mergeTargets.find((c) => Number(c.id) === targetId);
+    if (!target) return null;
+    const merged = mergeTargets
+      .filter((c) => c !== target)
+      .map((c) => ({ ...historyContact(c), named: c.name.trim() !== "" }));
+    const refusal = await history.mergeContacts(historyContact(target), merged);
+    if (refusal) return refusal;
+    setMergeOpen(false);
+    setRangeAnchor(null);
+    setCheckedIds(new Set());
+    onSelect(target);
+    return null;
+  };
+
   const scope =
     checkedContacts.length > 0
       ? `${checkedContacts.length} selected`
@@ -580,11 +610,21 @@ export default function ContactList({
             onNewContact={() => setNewContactOpen(true)}
             onExport={() => void exportContacts()}
             onDelete={() => setDeleteOpen(true)}
+            canMerge={canMerge}
+            mergeHint={mayDelete ? undefined : "Merging is not permitted for this account"}
+            onMerge={() => setMergeOpen(true)}
           />
           <ContactSortMenu state={sortState} onChange={onSortChange} />
           {newContactOpen ? (
             <NewContactDialog onClose={() => setNewContactOpen(false)} onCreated={contactCreated} />
           ) : null}
+          <MergeContactsDialog
+            open={mergeOpen}
+            contacts={mergeCandidates}
+            busy={history.busy}
+            onMerge={mergeContacts}
+            onClose={() => setMergeOpen(false)}
+          />
           <ConfirmDialog
             open={deleteOpen}
             title={deleteTitle}

@@ -833,6 +833,36 @@ export interface paths {
         patch: operations["update_contact"];
         trace?: never;
     };
+    "/v1/contacts/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge other contacts into this one.
+         * @description The contact in the path keeps its id, name and origin, and every contact
+         *     in `from` moves into it: its identities, Contact Groups and Import Run
+         *     records go to this contact, and it leaves every list. No conversation or
+         *     message changes, because they are kept by identity. The merge can be
+         *     undone with `POST /v1/contacts/{id}/unmerge` until the account's next
+         *     merge, which deletes the contacts this one merged for good, so a merge
+         *     needs the `delete` permission. The Audit Trail records it as a
+         *     `contacts_merged` entry naming this contact and the ones in `from`. A contact in the Trash, or one holding one
+         *     of the account's own identities, answers `409 Conflict`. A contact the
+         *     last merge took is no contact of the account's: in the path it is
+         *     `404 Not Found`, and in `from` `422 Unprocessable Entity`.
+         */
+        post: operations["merge_contact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/contacts/{id}/restore": {
         parameters: {
             query?: never;
@@ -867,6 +897,32 @@ export interface paths {
          * @description Idempotent: trashing an already-trashed contact still answers 204. The Audit Trail records the move as a `contacts_trashed` entry naming the contact, and records nothing for a contact that was already there.
          */
         post: operations["trash_contact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/contacts/{id}/unmerge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo the account's most recent contact merge, which merged into this contact.
+         * @description Each merged contact comes back under its own id with its name, its
+         *     Contact Groups and its Import Run records, and with each identity it held
+         *     that is still on this contact; one moved elsewhere since stays there.
+         *     This contact keeps what was its own before the merge. A contact that was
+         *     not the target of the account's most recent merge answers
+         *     `409 Conflict`. `restored` names the contacts written back, and the Audit
+         *     Trail records them as a `contacts_unmerged` entry with this contact.
+         */
+        post: operations["unmerge_contact"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3390,6 +3446,8 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
+            /** @description The identity's type. */
+            identity_type: components["schemas"]["IdentityType"];
             /**
              * Format: int64
              * @description The identity's messages in one-to-one conversations, trashed
@@ -3450,6 +3508,12 @@ export interface components {
          * @enum {string}
          */
         IdentityService: "text_message" | "whatsapp";
+        /**
+         * @description What an identity is: a phone number, an email address, a username, or
+         *     something else.
+         * @enum {string}
+         */
+        IdentityType: "phone" | "email" | "username" | "other";
         /** @description One contact an import run touched, and what the run did to it. */
         ImportContact: {
             /**
@@ -3941,6 +4005,17 @@ export interface components {
             thumbnail_url: string;
             /** @description `/v1/assets/{sha256}?media_link=…`: the asset's own bytes. */
             url: string;
+        };
+        /** @description Body for `POST /v1/contacts/{id}/merge`. */
+        MergeContactRequest: {
+            /**
+             * @description The contacts to merge into the one in the path: at least one, none
+             *     of them that contact or named twice, and at most 9, so that one
+             *     merge takes at most 10 contacts. Anything else is refused with
+             *     `422 Unprocessable Entity`, and so is an id that names no contact of
+             *     the account.
+             */
+            from: number[];
         };
         /** @description One exported message. */
         Message: {
@@ -4982,6 +5057,8 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
+                /** @description The identity's type. */
+                identity_type: components["schemas"]["IdentityType"];
                 /**
                  * Format: int64
                  * @description The identity's messages in one-to-one conversations, trashed
@@ -5897,6 +5974,17 @@ export interface components {
              */
             service: components["schemas"]["IdentityService"];
         };
+        /** @description The answer to `POST /v1/contacts/{id}/unmerge`. */
+        UnmergeContactResponse: {
+            /** @description The contact the others were merged into, as it now stands. */
+            contact: components["schemas"]["Contact"];
+            /**
+             * @description The merged contacts written back, by id. A contact with no name
+             *     whose identities all moved elsewhere since the merge is left out:
+             *     nothing could reach it, so it was not written back.
+             */
+            restored: number[];
+        };
         /**
          * @description Body for changing an account. Omitted fields are left alone. The name,
          *     zone and identities are set by the account or by the administrator; the
@@ -6474,7 +6562,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8488,7 +8576,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8671,7 +8759,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8770,7 +8858,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8882,7 +8970,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10406,7 +10494,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10510,6 +10598,129 @@ export interface operations {
                 };
             };
             /** @description [`identity-exists`](https://messagecrate.app/docs/developer/reference/errors/identity-exists): The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    merge_contact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact the others merge into */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeContactRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contact"];
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed.
+             *
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the administrator has disabled it, so an API token it already has may not act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10669,6 +10880,87 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    unmerge_contact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact the others were merged into */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnmergeContactResponse"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the administrator has disabled it, so an API token it already has may not act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10893,7 +11185,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11523,7 +11815,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11626,7 +11918,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11732,7 +12024,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11898,7 +12190,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12095,7 +12387,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12220,7 +12512,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12352,7 +12644,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12563,7 +12855,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14263,7 +14555,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14730,7 +15022,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
+            /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. */
             409: {
                 headers: {
                     [name: string]: unknown;

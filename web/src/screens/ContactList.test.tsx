@@ -41,6 +41,9 @@ vi.mock("../lib/serverApi", () => ({
   createContact: vi.fn(),
   TRASHED_CONTACT_IDS_MAX: 10_000,
   updateTrashedContacts: vi.fn(),
+  getContact: vi.fn(),
+  mergeContacts: vi.fn(),
+  unmergeContacts: vi.fn(),
 }));
 
 vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn().mockResolvedValue(true) }));
@@ -64,8 +67,11 @@ import {
   createContactGroup,
   exportAddressBook,
   getAccountProfile,
+  getContact,
   listContactGroups,
   listContacts,
+  mergeContacts,
+  unmergeContacts,
   updateContactGroupMembers,
   updateTrashedContacts,
 } from "../lib/serverApi";
@@ -945,6 +951,107 @@ describe("ContactList", () => {
         "The search has a word Contacts does not know",
       );
       expect(saveFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Merge Contacts", () => {
+    const people = [
+      { id: 1, name: "Nicholas Koch", addresses: ["+12155550112"] },
+      { id: 2, name: "Nick Koch", addresses: ["nick.koch@example.com"] },
+      { id: 3, name: "", addresses: ["+12155550113"] },
+    ];
+
+    beforeEach(() => {
+      listContactsMock.mockImplementation(
+        async () =>
+          ({
+            items: people.map((p) => ({ ...p, identity_count: 1, groups: [] })),
+            total: people.length,
+            limit: 200,
+            offset: 0,
+          }) as unknown as Awaited<ReturnType<typeof listContacts>>,
+      );
+      vi.mocked(getAccountProfile).mockResolvedValue({ can_delete: true } as Awaited<
+        ReturnType<typeof getAccountProfile>
+      >);
+      vi.mocked(getContact).mockImplementation(
+        async (id) =>
+          ({
+            id: Number(id),
+            name: people.find((p) => p.id === Number(id))?.name ?? "",
+            identities: [],
+            total_messages: 1,
+          }) as unknown as Awaited<ReturnType<typeof getContact>>,
+      );
+      vi.mocked(mergeContacts).mockResolvedValue({} as Awaited<ReturnType<typeof mergeContacts>>);
+      vi.mocked(unmergeContacts).mockResolvedValue({ restored: [2, 3] } as Awaited<
+        ReturnType<typeof unmergeContacts>
+      >);
+    });
+
+    it("is offered for two or more checked contacts", async () => {
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Nicholas Koch" }));
+      await user.click(screen.getByRole("button", { name: "Contact actions" }));
+      expect(screen.getByRole("menuitem", { name: "Merge Contacts" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      await user.keyboard("{Escape}");
+      await user.click(screen.getByRole("checkbox", { name: "Select Nick Koch" }));
+      await user.click(screen.getByRole("button", { name: "Contact actions" }));
+      expect(screen.getByRole("menuitem", { name: "Merge Contacts" })).not.toHaveAttribute(
+        "aria-disabled",
+      );
+    });
+
+    it("is off for an account that may not delete", async () => {
+      vi.mocked(getAccountProfile).mockResolvedValue({ can_delete: false } as Awaited<
+        ReturnType<typeof getAccountProfile>
+      >);
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Nicholas Koch" }));
+      await user.click(screen.getByRole("checkbox", { name: "Select Nick Koch" }));
+      await user.click(screen.getByRole("button", { name: "Contact actions" }));
+      expect(screen.getByRole("menuitem", { name: "Merge Contacts" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+
+    it("merges into the contact whose name is kept, opens it, and Undo unmerges", async () => {
+      const user = setupUser();
+      const onSelect = vi.fn();
+      renderList({ onSelect });
+      await settle();
+      for (const name of ["Nicholas Koch", "Nick Koch", "+12155550113"]) {
+        await user.click(screen.getByRole("checkbox", { name: `Select ${name}` }));
+      }
+      await chooseAction("Merge Contacts");
+      await settle();
+      expect(screen.getByRole("dialog", { name: "Merge 3 contacts" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Name to keep/ }));
+      await user.click(screen.getByRole("option", { name: /^Nicholas Koch/ }));
+      await user.click(screen.getByRole("button", { name: "Merge" }));
+      await settle();
+
+      // In the order the list shows them, the nameless one first.
+      expect(mergeContacts).toHaveBeenCalledWith(1, [3, 2]);
+      expect(screen.queryByRole("dialog", { name: "Merge 3 contacts" })).toBeNull();
+      expect(screen.getByRole("status")).toHaveTextContent("Merged 3 contacts into Nicholas Koch");
+      expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "1" }));
+      expect(screen.getByRole("checkbox", { name: "Select Nick Koch" })).not.toBeChecked();
+
+      await chooseAction("Undo Merge Contacts");
+      await settle();
+      expect(unmergeContacts).toHaveBeenCalledWith(1);
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Unmerged Nick Koch and 1 contact with no name",
+      );
     });
   });
 });

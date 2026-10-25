@@ -214,7 +214,7 @@ pub struct TrashedContactsChange {
 /// names out of it, in one write transaction, and record each half that
 /// changed a contact in the Audit Trail at `now`: one `contacts_trashed`
 /// entry and one `contacts_restored` entry, each with the count and the ids
-/// of the contacts it changed (CONTACT-58).
+/// of the contacts it changed (CONTACT-59).
 ///
 /// An id the account does not hold is skipped in either list, so one contact
 /// deleted since the person chose it never keeps the others where they were
@@ -449,7 +449,7 @@ pub async fn delete_trashed(
         Trashable::Contact(id) => {
             forget_contacts(&mut tx, account_id, &[id], now).await?;
             // The contact's id, as the Audit Trail names every contact it
-            // records (CONTACT-58), in the delete's own transaction.
+            // records (CONTACT-59), in the delete's own transaction.
             let deleted = ContactChange {
                 contact_id: Some(id),
                 contact_ids: &[],

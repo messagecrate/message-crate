@@ -391,6 +391,17 @@ export function ExportIcon({ size, className, ...rest }: IconProps) {
   );
 }
 
+/** Two lines joining into one — Merge Contacts. */
+export function MergeIcon({ size, className, ...rest }: IconProps) {
+  return (
+    <IconShell size={size} className={className} {...rest}>
+      <path d="m8 6 4-4 4 4" />
+      <path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22" />
+      <path d="m20 22-5-5" />
+    </IconShell>
+  );
+}
+
 /** Arrow curving back to the left — undo. */
 export function UndoIcon({ size, className, ...rest }: IconProps) {
   return (

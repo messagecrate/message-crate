@@ -33,6 +33,7 @@ const profile = {
 const identities: Identity[] = [
   {
     address: "+15555550100",
+    identity_type: "phone",
     service: "text_message",
     start_date: "2020-01-01T12:00:00Z",
     end_date: "2020-02-03T12:00:00Z",
@@ -44,6 +45,7 @@ const identities: Identity[] = [
   },
   {
     address: "bob@example.com",
+    identity_type: "email",
     service: "email",
     start_date: "2021-06-01T12:00:00Z",
     end_date: "2021-06-01T12:00:00Z",
@@ -55,6 +57,7 @@ const identities: Identity[] = [
   },
   {
     address: "archer@example.com",
+    identity_type: "email",
     service: "email",
     start_date: null,
     end_date: null,

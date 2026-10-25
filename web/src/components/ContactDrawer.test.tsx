@@ -62,6 +62,7 @@ function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDeta
     identities: [
       {
         address: `+155501${String(id).padStart(2, "0")}`,
+        identity_type: "phone",
         service: "text_message",
         start_date: "2020-01-01T00:00:00Z",
         end_date: "2024-01-01T00:00:00Z",
@@ -167,6 +168,7 @@ describe("ContactDrawer", () => {
       identities: [
         {
           address: "+15550112",
+          identity_type: "phone",
           service: "text_message",
           start_date: "2021-06-01T00:00:00Z",
           end_date: "2025-01-01T00:00:00Z",
@@ -385,6 +387,7 @@ describe("ContactDrawer", () => {
         identities: [
           {
             address: "+1555000b",
+            identity_type: "phone",
             service: "text_message",
             start_date: "2020-01-01T00:00:00Z",
             end_date: "2024-01-01T00:00:00Z",
@@ -436,6 +439,7 @@ describe("ContactDrawer", () => {
         identities: [
           {
             address: "+1555000b",
+            identity_type: "phone",
             service: "text_message",
             start_date: "2020-01-01T00:00:00Z",
             end_date: "2024-01-01T00:00:00Z",
@@ -521,6 +525,7 @@ describe("ContactDrawer", () => {
         identities: [
           {
             address: "+15550101",
+            identity_type: "phone",
             service: "text_message",
             start_date: "2020-01-01T00:00:00Z",
             end_date: "2024-01-01T00:00:00Z",
@@ -532,6 +537,7 @@ describe("ContactDrawer", () => {
           },
           {
             address: "+15550102",
+            identity_type: "phone",
             service: "text_message",
             start_date: "2020-01-01T00:00:00Z",
             end_date: "2024-01-01T00:00:00Z",
@@ -737,8 +743,8 @@ describe("ContactDrawer", () => {
     get.mockResolvedValue(
       detail(1, {
         identities: [
-          { ...shared, address: "+15550101", service: "text_message" },
-          { ...shared, address: "sam@example.com", service: "email" },
+          { ...shared, address: "+15550101", identity_type: "phone", service: "text_message" },
+          { ...shared, address: "sam@example.com", identity_type: "email", service: "email" },
         ],
         one_to_one_conversations: 0,
         group_conversations: 1,
@@ -939,6 +945,7 @@ describe("ContactDrawer", () => {
       identities: [
         {
           address: "07700900123",
+          identity_type: "phone",
           service: "text_message",
           country_unknown: true,
           start_date: null,

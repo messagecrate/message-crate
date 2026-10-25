@@ -2,6 +2,7 @@ import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react
 import {
   EllipsisIcon,
   ExportIcon,
+  MergeIcon,
   PlusIcon,
   RedoIcon,
   TrashIcon,
@@ -21,7 +22,9 @@ const sectionHeaderClass = "px-3 pb-1.5 text-[0.75rem] font-semibold text-text";
  * selection, so it sits above the header.
  *
  * Delete Contacts moves the checked contacts to the Trash, where Restore
- * brings them back, so nothing on this menu deletes for good.
+ * brings them back, so nothing on this menu deletes for good. Merge Contacts
+ * (#3237) makes the checked contacts one; Undo takes it back until the next
+ * merge.
  */
 export default function ContactActionsMenu({
   scope,
@@ -31,6 +34,9 @@ export default function ContactActionsMenu({
   onNewContact,
   onExport,
   onDelete,
+  canMerge,
+  mergeHint,
+  onMerge,
 }: {
   /** "2 selected", "This list" or "All contacts". */
   scope: string;
@@ -42,6 +48,11 @@ export default function ContactActionsMenu({
   onNewContact: () => void;
   onExport: () => void;
   onDelete: () => void;
+  /** Two to ten rows are checked, and the account may delete. */
+  canMerge: boolean;
+  /** Why Merge Contacts is off when the account may not merge, shown on hover. */
+  mergeHint?: string;
+  onMerge: () => void;
 }) {
   const history = useContactHistory();
   const undoLabel = history.undoEntry ? `Undo ${actionMenuName(history.undoEntry.action)}` : "Undo";
@@ -86,6 +97,16 @@ export default function ContactActionsMenu({
             >
               <ExportIcon size={14} />
               Export Contacts
+            </MenuItem>
+            <MenuItem
+              id="merge"
+              textValue="Merge Contacts"
+              isDisabled={!canMerge || history.busy}
+              onAction={onMerge}
+              className={`${menuItemClass} text-text`}
+            >
+              <MergeIcon size={14} />
+              <span title={mergeHint}>Merge Contacts</span>
             </MenuItem>
             <MenuItem
               id="delete"

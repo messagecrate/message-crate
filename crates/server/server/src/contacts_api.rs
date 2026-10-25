@@ -2,8 +2,8 @@
 //! `GET /v1/contacts/{id}` and `PATCH /v1/contacts/{id}`, `POST /v1/contacts/summaries`,
 //! and `POST /v1/contacts/unmatched-identities`. `POST /v1/contacts` is in
 //! `create`, which adds a contact typed by hand. Loading an address book is
-//! in `address_book`, the edits a `PATCH` makes in `edit`, and the queries in
-//! `db::contacts`.
+//! in `address_book`, the edits a `PATCH` makes in `edit`, merging contacts
+//! and undoing it in `merge`, and the queries in `db::contacts`.
 
 use crate::extract::{Json, Path as AxumPath, Query};
 use axum::extract::State;
@@ -26,6 +26,7 @@ use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole
 pub(crate) mod address_book;
 pub(crate) mod create;
 mod edit;
+pub(crate) mod merge;
 
 pub(crate) use edit::ContactEditError;
 use edit::mutate_contact;

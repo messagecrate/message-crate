@@ -250,6 +250,8 @@ const EXERCISED: Record<string, () => unknown> = {
   updateTrashedContacts: () => serverApi.updateTrashedContacts({ add: [1, 2], remove: [3] }),
   trashContact: () => serverApi.trashContact(42),
   restoreContact: () => serverApi.restoreContact(42),
+  mergeContacts: () => serverApi.mergeContacts(42, [43]),
+  unmergeContacts: () => serverApi.unmergeContacts(42),
   deleteContact: () => serverApi.deleteContact(42),
 
   // Contact groups

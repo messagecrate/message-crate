@@ -71,6 +71,22 @@ describe("historyReducer", () => {
     expect(s).toEqual(EMPTY_HISTORY);
   });
 
+  it("keeps one merge entry, because the server keeps only the latest merge", () => {
+    const merge = (id: number): HistoryEntry => ({
+      id,
+      action: { kind: "merge", target: mother, merged: [{ id: 10 + id, label: "x", named: true }] },
+    });
+    let s = historyReducer(EMPTY_HISTORY, { type: "push", entry: merge(1) });
+    s = pushAll([2], s);
+    s = historyReducer(s, { type: "push", entry: merge(3) });
+    expect(ids(s.undo)).toEqual([2, 3]);
+    // A redo that lands after a newer merge is a merge too, and drops it.
+    s = historyReducer(s, { type: "undone", id: 3 });
+    s = historyReducer(s, { type: "push", entry: merge(4) });
+    s = historyReducer(s, { type: "redone", entry: merge(3) });
+    expect(ids(s.undo)).toEqual([2, 3]);
+  });
+
   it("clears both stacks, as a delete for good does", () => {
     let s = pushAll([1, 2]);
     s = historyReducer(s, { type: "undone", id: 2 });
@@ -116,6 +132,45 @@ describe("the words", () => {
       "Removed Mother from 2 Contact Groups",
       "Undo Remove from Contact Group",
       "Added Mother to 2 Contact Groups",
+    ],
+    [
+      {
+        kind: "merge",
+        target: mother,
+        merged: [
+          { id: 2, label: "Nick Koch", named: true },
+          { id: 3, label: "+12155550112", named: false },
+        ],
+      },
+      "Merged 3 contacts into Mother",
+      "Undo Merge Contacts",
+      "Unmerged Nick Koch and 1 contact with no name",
+    ],
+    [
+      {
+        kind: "merge",
+        target: mother,
+        merged: [
+          { id: 2, label: "+12155550112", named: false },
+          { id: 3, label: "+12155550113", named: false },
+        ],
+      },
+      "Merged 3 contacts into Mother",
+      "Undo Merge Contacts",
+      "Unmerged 2 contacts with no name",
+    ],
+    [
+      {
+        kind: "merge",
+        target: mother,
+        merged: [
+          { id: 2, label: "Nick", named: true },
+          { id: 3, label: "Nicky", named: true },
+        ],
+      },
+      "Merged 3 contacts into Mother",
+      "Undo Merge Contacts",
+      "Unmerged 2 contacts",
     ],
   ];
 

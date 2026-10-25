@@ -324,7 +324,9 @@ one of its identities: the import then discards the trashed contact together
 with every identity it had and makes a new contact from the backup, as a first
 import would. The trash is the only door to permanent
 deletion; something must be trashed before it can be deleted, one item at a
-time or all at once with Empty Trash. The Trash exists so that trashing can
+time or all at once with Empty Trash. The one exception is a contact merge:
+the next merge deletes the contacts the one before merged, which by then hold
+nothing but their names. The Trash exists so that trashing can
 be reversed, and Undo and Redo on the Contacts list are built on that.
 _Avoid_: Deleted, Archive, Hidden, Bin
 
@@ -385,10 +387,9 @@ The permanent record of what each user did on a Message Crate, and when:
 logging in, sessions ending, logins refused, Import Runs, Export Runs, the
 administrator's changes to accounts, every build of the Demo Account, and
 what adds, removes or replaces contacts: address book loads, contacts added
-by hand, Delete Contacts and Restore, and deletes for good, each by count
-and contact id. Merge Contacts and its undo will be recorded the same way
-once Merge Contacts exists. Edits to a contact and Contact Group changes are
-not recorded. Each entry
+by hand, Delete Contacts and Restore, deletes for good, and Merge Contacts
+and its undo, each by count and contact id. Edits to a contact and Contact
+Group changes are not recorded. Each entry
 names who acted: the account holder, the administrator, a server command such as
 `reset-demo`, the server's first start, the server on its own, or someone at
 the login card. The server's first start is the one that adds the Demo
