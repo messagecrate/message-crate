@@ -166,7 +166,7 @@ pub fn check_service_carries(
 // `whatsapp` and `wa` as `phone`; the `From` impls below convert between the
 // two. The `Api` prefix keeps the two apart in Rust, because one bare name
 // would mean either enum depending on a file's imports
-// (docs/architecture/rules/http-api.md, "Code").
+// (docs/architecture/rules/http-api.md, API-130).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]

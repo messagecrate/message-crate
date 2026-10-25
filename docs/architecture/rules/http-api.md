@@ -1764,6 +1764,8 @@ wrote them there from the same inputs the reading would use.
 
 ## Code
 
+### API-127 A route group is one module named for the route's first path segment, with `_api`
+
 A route group is one module named for the route's first path segment, with
 `_api`: `contacts_api`, `conversations_api`, `imports_api`, `exports_api`,
 `assets_api`, `search_fields_api`, `session_api`, `server_api`, `trash_api`.
@@ -1772,6 +1774,8 @@ Contact Groups and Message Tags, one shape served twice, share
 group: `/v1/accounts/{id}/api-tokens` is `accounts_api::api_tokens`.
 Why: a route's code is found from its URL without searching.
 
+### API-128 A handler is named `verb_noun`
+
 A handler is named `verb_noun`, with no `_handler` suffix. The verb is `list`,
 `get`, `create`, `update` (`PATCH`), `replace` (`PUT`) or `delete`, or the
 action's own verb: `list_contacts`, `get_contact`, `update_contact`,
@@ -1779,6 +1783,8 @@ action's own verb: `list_contacts`, `get_contact`, `update_contact`,
 A `HEAD` handler takes the method's own verb, `head`: `head_asset`.
 A `POST` that reads is named for what it returns, as its route is:
 `list_contact_summaries`, `get_address_book`.
+
+### API-129 A wire type is named for what it is, for the part of a thing it answers, or for its action
 
 A type on the wire is named one of three ways, and a reader can tell which
 from the name:
@@ -1812,6 +1818,8 @@ No other endings: no `Body`, `Payload`, `Input`, `Patch`, `Item`, `Info`,
 `Message` next to `MessageResponse` would leave a reader asking whether they
 are one thing or two.
 
+### API-130 A wire type whose Rust name would clash takes the `Api` prefix in Rust and keeps its wire name
+
 A wire type whose Rust name would clash with a shared crate's type, or with
 the `db/` struct it carries whole, takes the `Api` prefix in Rust and keeps
 its wire name through `#[schema(as = …)]`:
@@ -1823,12 +1831,37 @@ journal. Why: two types
 under one bare name mean one or the other depending on a file's imports, and
 those two read the same word differently.
 
+### API-131 A handler holds no SQL, and neither does an import stage: every query lives in `db/`
+
 A handler reads the request, checks the caller and shapes the answer; it holds
 no SQL. Every query lives in `db/`, in the module for the table it is chiefly
 about, and it is written for SQLite, the only database engine
 (`docs/adr/0017-sqlite-is-the-only-database-engine.md` has the rule and its
 reason). Why no SQL in a handler: a query written into a handler gets written
 twice (the identity counts for contacts and for accounts were).
+
+Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
+`imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
+sequences its statements, logs them and keeps the counts, and the statements
+are in `db/staging.rs`, the module for the staging tables. The dedupe every
+Import Run runs as it ends (`dedupe.rs`) is a stage too: it hashes the content
+keys and picks the copy shown, and the statements that read and write
+`messages.content_key` and `messages.duplicate_of` for it are in
+`db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
+found in one place, and a stage that carried its own statements would be a
+second place for its table's SQL: `staging_messages` for the import stages,
+`messages` for the dedupe.
+
+### API-132 A promotion statement belongs with the staging tables
+
+A promotion statement reads a staging table and writes a production one in
+the same `INSERT ... SELECT`, and it belongs with the staging tables rather
+than the production one, because the staging tables have no reader but the
+import while the production tables have many. The messages watermark and
+count a promotion takes before it inserts live there too, for the same
+reason: nothing but a promotion reads them.
+
+### API-133 A handler takes the part of the server's state it reads, never `AppState` whole
 
 A handler takes the part of the server's state it reads, never `AppState`
 whole. The database is `State<SqlitePool>`, the configuration is
@@ -1844,6 +1877,8 @@ reader sees its dependencies without reading its body. A change to the Demo
 Account build or to `Importer` does not touch a handler that never takes
 them.
 
+### API-134 A `db/` function never returns `ApiError`
+
 A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
 errors when a statement is all that can fail, and an error type in `db/` when
 the caller must tell outcomes apart (`SavedSearchError::NameTaken`,
@@ -1852,29 +1887,12 @@ is in `api_error.rs`. Why: the command line import and the Demo Account build
 call `db/` too and speak no HTTP, and the answer a route gives for an outcome
 is the handler's choice, not the storage layer's.
 
-Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
-`imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
-sequences its statements, logs them and keeps the counts, and the statements
-are in `db/staging.rs`, the module for the staging tables. The dedupe every
-Import Run runs as it ends (`dedupe.rs`) is a stage too: it hashes the content
-keys and picks the copy shown, and the statements that read and write
-`messages.content_key` and `messages.duplicate_of` for it are in
-`db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
-found in one place, and a stage that carried its own statements would be a
-second place for its table's SQL: `staging_messages` for the import stages,
-`messages` for the dedupe.
-
-A promotion statement reads a staging table and writes a production one in
-the same `INSERT ... SELECT`, and it belongs with the staging tables rather
-than the production one, because the staging tables have no reader but the
-import while the production tables have many. The messages watermark and
-count a promotion takes before it inserts live there too, for the same
-reason: nothing but a promotion reads them.
+### API-135 A route whose answer is one `db/` read's result answers with the read's own struct
 
 A route whose answer is one `db/` read's result, as the read returns it,
 answers with the read's own struct. That struct derives `Serialize` and
-`utoipa::ToSchema`, takes its wire name by the rules above, and the handler
-hands it on unchanged: `list_saved_searches` answers
+`utoipa::ToSchema`, takes its wire name by the rules above (API-129, API-130),
+and the handler hands it on unchanged: `list_saved_searches` answers
 `Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
 reads. A struct that a client crate reads too lives in
 `api-types`, and the `db/` read returns that struct:
@@ -1901,6 +1919,8 @@ holds in `form_json`, `summary_json`, `source_fingerprint` and
 and is filled from it field by field is none of these, so it is not written:
 the `db/` struct goes on the wire instead.
 
+### API-136 A test of a route's answer goes through the router and the shared fixtures
+
 A test of a route's answer goes through the router, checks a failure with
 `expect_problem` (status, `type` and `request_id`, not only the sentence), and
 takes its database and account from the shared fixtures in `test_support.rs`.
@@ -1909,8 +1929,8 @@ the credential check and the handler's read, say, because the check refuses
 the request first. Such a test serves the handler on a router of its own,
 under `request_id::layer`, hands it the identity the check would have made,
 and reads the answer over HTTP with `expect_problem` like any other.
-A rule every route follows is tested once over the whole document, as above,
-not again per route.
+A rule every route follows is tested once over the whole document, as above
+(API-125), not again per route.
 
 ## Versioning and change
 
