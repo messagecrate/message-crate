@@ -940,6 +940,8 @@ send one, and the rule would refuse the web app on its first request.
 
 ## Caching
 
+### API-69 Every `/v1` answer carries `Cache-Control: no-store` unless its route sets its own
+
 Every `/v1` answer carries `Cache-Control: no-store` unless its route sets a
 `Cache-Control` of its own. The rule covers every status and every answer a
 layer gives before the handler runs: a `401 Unauthorized` or `403 Forbidden`
@@ -1602,10 +1604,10 @@ without an accepted `Content-Type`, `400 Bad Request` for a JSON body that is
 not JSON, `406 Not Acceptable` exactly where the document lists it, a
 successful `GET` in a media type its document declares, every property of a
 success answer required and every one of them in what the route answers
-(API-6), no body on a `HEAD` answer, `Cache-Control: no-store` on every
-answer but those of an operation that lists its own
-([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule
-checked one route at a time is checked on the routes someone remembered.
+(API-6), no body on a `HEAD` answer, `Cache-Control: no-store` on every answer
+but those of an operation that lists its own (API-69), kebab-case paths and the
+nesting depth. Why: a rule checked one route at a time is checked on the routes
+someone remembered.
 
 The shared failures are checked by calling each operation into them, and the
 status and problem type the server answers must be ones the document lists.

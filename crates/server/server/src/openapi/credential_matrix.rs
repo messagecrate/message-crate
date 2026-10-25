@@ -277,7 +277,7 @@ impl Operation {
     }
 
     /// Whether an answer with `status` may carry `cache_control`
-    /// (`docs/architecture/rules/http-api.md`, "Caching"): `no-store` on every `/v1`
+    /// (`docs/architecture/rules/http-api.md`, API-69): `no-store` on every `/v1`
     /// answer, except that an operation whose document lists a
     /// `Cache-Control` of its own, such as an asset read, may send `private`,
     /// or `private, no-store` under a Media Link, once the credential is
