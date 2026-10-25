@@ -58,8 +58,8 @@ fn trail_page_params(limit: Option<usize>, offset: Option<usize>) -> Result<Page
 /// One page of the Audit Trail over `scope`, newest first, as `reader` (the
 /// caller's account) is shown it: an API token's masked hint only on the
 /// entries about the reader's own account. The hint is part of the secret,
-/// and the owner never reads another account's secret (`http-api.md`,
-/// Credentials).
+/// and the owner never reads another account's secret
+/// (`docs/architecture/rules/http-api.md`, API-87).
 pub(crate) async fn audit_trail_page(
     db: &SqlitePool,
     scope: Scope,
