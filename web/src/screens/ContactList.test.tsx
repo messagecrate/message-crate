@@ -464,12 +464,23 @@ describe("ContactList", () => {
     expect(screen.getByText("No contacts match this search")).toBeInTheDocument();
   });
 
-  it("checks a contact from its avatar in the desktop list without opening it", async () => {
-    tauriMock.current = true;
-    // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
-    const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
-    const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
-    try {
+  describe("in the desktop list", () => {
+    let heights: { mockRestore: () => void };
+    let widths: { mockRestore: () => void };
+    beforeEach(() => {
+      tauriMock.current = true;
+      // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
+      heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+      widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    });
+
+    afterEach(() => {
+      heights.mockRestore();
+      widths.mockRestore();
+      tauriMock.current = false;
+    });
+
+    it("checks a contact from its avatar without opening it", async () => {
       const onSelect = vi.fn();
       renderList({ onSelect });
       await settle();
@@ -482,25 +493,17 @@ describe("ContactList", () => {
 
       expect(box).toBeChecked();
       expect(onSelect).not.toHaveBeenCalled();
-    } finally {
-      heights.mockRestore();
-      widths.mockRestore();
-      tauriMock.current = false;
-    }
-  });
+    });
 
-  it("checks a contact from its checkbox input, which lies over the drawn box (#3251)", async () => {
-    tauriMock.current = true;
-    // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
-    const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
-    const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
-    try {
+    it("checks a contact from its checkbox input, which lies over the drawn box (#3251)", async () => {
       const onSelect = vi.fn();
       renderList({ onSelect });
       await settle();
       const box = screen.getByRole("checkbox", { name: "Select Alice" });
       // The input shares the drawn box's frame rather than sitting in a
-      // clipped 1px span, so a press on the box lands on the input.
+      // clipped 1px span, so a press on the box lands on the input. jsdom
+      // does no hit testing, so these two lines are what guard that layout:
+      // the clicks below pass either way.
       expect(box.nextElementSibling).toHaveClass("mc-list-check");
       expect(box.parentElement).toHaveClass("mc-list-check-frame");
 
@@ -510,11 +513,7 @@ describe("ContactList", () => {
       await user.click(box);
       expect(box).not.toBeChecked();
       expect(onSelect).not.toHaveBeenCalled();
-    } finally {
-      heights.mockRestore();
-      widths.mockRestore();
-      tauriMock.current = false;
-    }
+    });
   });
 
   it("marks only the open contact as current while other contacts are checked", async () => {
@@ -677,6 +676,7 @@ describe("ContactList", () => {
 
       await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
       await openMenu();
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
       expect(screen.getByRole("menuitem", { name: "Delete Contacts" })).not.toHaveAttribute(
         "aria-disabled",
       );
