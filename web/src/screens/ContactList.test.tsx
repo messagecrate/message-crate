@@ -11,7 +11,7 @@
  * right away.
  */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import ContactHistoryProvider from "../components/ContactHistoryProvider";
@@ -37,8 +37,10 @@ vi.mock("../lib/serverApi", () => ({
   deleteContactGroup: vi.fn(),
   updateContactGroupMembers: vi.fn(),
   exportAddressBook: vi.fn(),
-  trashContact: vi.fn(),
-  restoreContact: vi.fn(),
+  getAccountProfile: vi.fn(),
+  createContact: vi.fn(),
+  TRASHED_CONTACT_IDS_MAX: 10_000,
+  updateTrashedContacts: vi.fn(),
 }));
 
 vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn().mockResolvedValue(true) }));
@@ -58,13 +60,14 @@ vi.mock("../lib/listPaging", async (importOriginal) => ({
 
 import { saveFile } from "../lib/saveFile";
 import {
+  createContact,
   createContactGroup,
   exportAddressBook,
+  getAccountProfile,
   listContactGroups,
   listContacts,
-  restoreContact,
-  trashContact,
   updateContactGroupMembers,
+  updateTrashedContacts,
 } from "../lib/serverApi";
 import { nth } from "../test/nth";
 import { setupUser } from "../test/user";
@@ -74,8 +77,16 @@ const listContactGroupsMock = vi.mocked(listContactGroups);
 const updateMembersMock = vi.mocked(updateContactGroupMembers);
 const exportMock = vi.mocked(exportAddressBook);
 const createGroupMock = vi.mocked(createContactGroup);
-const trashMock = vi.mocked(trashContact);
-const restoreMock = vi.mocked(restoreContact);
+const trashMoveMock = vi.mocked(updateTrashedContacts);
+const createContactMock = vi.mocked(createContact);
+const profileMock = vi.mocked(getAccountProfile);
+/** The bodies the Trash moves were sent with, in order. */
+const trashMoves = () => trashMoveMock.mock.calls.map(([body]) => body);
+
+/** The profile of an account that may add contacts, or of the Demo Account. */
+function profile(isDemo: boolean): Awaited<ReturnType<typeof getAccountProfile>> {
+  return { is_demo: isDemo } as unknown as Awaited<ReturnType<typeof getAccountProfile>>;
+}
 
 /** True once the server has actually dropped Alice's Family membership. */
 let familyRemoved = false;
@@ -106,6 +117,7 @@ beforeEach(() => {
       }) as unknown as Awaited<ReturnType<typeof listContacts>>,
   );
   listContactGroupsMock.mockResolvedValue([{ id: 10, name: "Family" }]);
+  profileMock.mockResolvedValue(profile(false));
 });
 
 afterEach(() => {
@@ -645,8 +657,10 @@ describe("ContactList", () => {
 
   describe("the ⋯ menu and Undo", () => {
     beforeEach(() => {
-      trashMock.mockResolvedValue(undefined);
-      restoreMock.mockResolvedValue(undefined);
+      trashMoveMock.mockImplementation(async (body) => ({
+        trashed: body.add ?? [],
+        restored: body.remove ?? [],
+      }));
       updateMembersMock.mockResolvedValue({ added: 1, removed: 1 });
     });
 
@@ -697,11 +711,11 @@ describe("ContactList", () => {
       await chooseAction("Delete Contacts");
 
       expect(screen.getByRole("dialog", { name: "Move 1 contact to Trash?" })).toBeInTheDocument();
-      expect(trashMock).not.toHaveBeenCalled();
+      expect(trashMoveMock).not.toHaveBeenCalled();
       await user.click(screen.getByRole("button", { name: "Move to Trash" }));
       await settle();
 
-      expect(trashMock).toHaveBeenCalledWith(1);
+      expect(trashMoves()).toEqual([{ add: [1] }]);
       expect(screen.getByRole("status")).toHaveTextContent("Moved Alice to Trash");
       expect(screen.getByRole("checkbox", { name: "Select Alice" })).not.toBeChecked();
       await openMenu();
@@ -710,12 +724,12 @@ describe("ContactList", () => {
 
       await user.keyboard("{Control>}z{/Control}");
       await settle();
-      expect(restoreMock).toHaveBeenCalledWith(1);
+      expect(trashMoves().at(-1)).toEqual({ remove: [1] });
       expect(screen.getByRole("status")).toHaveTextContent("Restored Alice");
 
       await user.keyboard("{Control>}y{/Control}");
       await settle();
-      expect(trashMock).toHaveBeenCalledTimes(2);
+      expect(trashMoves()).toEqual([{ add: [1] }, { remove: [1] }, { add: [1] }]);
       expect(screen.getByRole("status")).toHaveTextContent("Moved Alice to Trash");
     });
 
@@ -732,7 +746,7 @@ describe("ContactList", () => {
       await user.click(screen.getByRole("textbox", { name: "Search" }));
       await user.keyboard("{Control>}z{/Control}");
       await settle();
-      expect(restoreMock).not.toHaveBeenCalled();
+      expect(trashMoves()).toEqual([{ add: [1] }]);
     });
 
     it("undoes with Ctrl+Z while focus is in the docked contact pane", async () => {
@@ -752,7 +766,7 @@ describe("ContactList", () => {
       await user.click(screen.getByRole("button", { name: "Edit name" }));
       await user.keyboard("{Control>}z{/Control}");
       await settle();
-      expect(restoreMock).toHaveBeenCalledWith(1);
+      expect(trashMoves().at(-1)).toEqual({ remove: [1] });
     });
 
     it("leaves Ctrl+Z alone while the Delete Contacts dialog is open", async () => {
@@ -769,7 +783,91 @@ describe("ContactList", () => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
       await user.keyboard("{Control>}z{/Control}");
       await settle();
-      expect(restoreMock).not.toHaveBeenCalled();
+      expect(trashMoves()).toEqual([{ add: [1] }]);
+    });
+
+    it("offers New Contact first, and not to the Demo Account", async () => {
+      renderList();
+      await settle();
+      await openMenu();
+      const items = screen.getAllByRole("menuitem");
+      expect(items[0]).toHaveAccessibleName("New Contact");
+      expect(items[0]).not.toHaveAttribute("aria-disabled");
+      cleanup();
+
+      profileMock.mockResolvedValue(profile(true));
+      renderList();
+      await settle();
+      await openMenu();
+      expect(screen.getByRole("menuitem", { name: "New Contact" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+
+    it("adds a contact typed by hand, selects it, and Undo moves it to the Trash", async () => {
+      createContactMock.mockResolvedValue({
+        id: 7,
+        name: "Mom",
+        unknown: false,
+        identities: [{ address: "+15555550100", service: "text_message" }],
+        groups: [],
+        last_modified: "2026-10-25 12:00:00",
+      } as unknown as Awaited<ReturnType<typeof createContact>>);
+      const onSelect = vi.fn();
+      const user = setupUser();
+      renderList({ onSelect });
+      await settle();
+      await chooseAction("New Contact");
+
+      const dialog = screen.getByRole("dialog", { name: "New Contact" });
+      await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Mom");
+      await user.type(within(dialog).getByRole("textbox", { name: "Identity 1" }), "+15555550100");
+      await user.click(within(dialog).getByRole("button", { name: "Add identity" }));
+      await user.click(within(dialog).getByRole("button", { name: "Add Contact" }));
+      await settle();
+
+      // The second, empty row is no identity, so it is not sent.
+      expect(createContactMock.mock.calls[0]?.[0]).toEqual({
+        name: "Mom",
+        identities: [{ address: "+15555550100", service: "text_message" }],
+      });
+      expect(screen.queryByRole("dialog", { name: "New Contact" })).toBeNull();
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "7", name: "Mom", addresses: ["+15555550100"] }),
+      );
+      expect(screen.getByRole("status")).toHaveTextContent("Added Mom");
+
+      await chooseAction("Undo New Contact");
+      await settle();
+      expect(trashMoves()).toEqual([{ add: [7] }]);
+      expect(screen.getByRole("status")).toHaveTextContent("Moved Mom to Trash");
+    });
+
+    it("shows under an identity the contact the server says already holds it", async () => {
+      createContactMock.mockRejectedValue(
+        new ApiError(422, "identities[0].address: +15555550100 is already on Sam", {
+          type: "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
+          title: "Validation failed",
+          status: 422,
+          errors: ["identities[0].address: +15555550100 is already on Sam"],
+        } as unknown as ConstructorParameters<typeof ApiError>[2]),
+      );
+      const user = setupUser();
+      renderList();
+      await settle();
+      await chooseAction("New Contact");
+      const dialog = screen.getByRole("dialog", { name: "New Contact" });
+      await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Mom");
+      await user.type(within(dialog).getByRole("textbox", { name: "Identity 1" }), "+15555550100");
+      await user.click(within(dialog).getByRole("button", { name: "Add Contact" }));
+      await settle();
+
+      expect(
+        within(dialog).getByRole("textbox", { name: "Identity 1" }),
+      ).toHaveAccessibleDescription("+15555550100 is already on Sam.");
+      expect(screen.getByRole("dialog", { name: "New Contact" })).toBeInTheDocument();
+      expect(screen.queryByRole("status")).toBeNull();
     });
 
     it("records a Contact Group change made from the list, and Undo sends the opposite", async () => {

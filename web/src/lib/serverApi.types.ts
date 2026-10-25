@@ -613,8 +613,38 @@ export interface paths {
         get: operations["list_contacts"];
         put?: never;
         /**
-         * Load an address book into this account.
-         * @description The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `service`, `identity` and `groups`, as `POST /v1/contacts/address-book` writes it.
+         * Add contacts: one typed by hand, as JSON, or an address book, as CSV.
+         * @description # A contact typed by hand
+         *
+         *     A JSON body, `application/json`, is one new contact: a name and zero or
+         *     more identities. The answer is `201 Created`, with the contact in the
+         *     body and its path in `Location`. A contact with a name and no identity is
+         *     in the Unknown Contact Group, because nothing reaches it yet. Each
+         *     identity is typed as adding one to a contact types it: the service
+         *     decides which types are valid and the address's shape picks among them.
+         *
+         *     An identity that is on another contact, named or not, in the Trash or
+         *     not, is refused with `422 Unprocessable Entity`, and so is one of the
+         *     account's own identities. Each refusal is one entry of `errors`, starting
+         *     with the identity's place in the list, as `identities[0].address: ` and
+         *     then the address and the contact that holds it. Nothing is created. The
+         *     person removes the identity from the new contact, or goes to the contact
+         *     that holds it. No merge is offered, because the new contact does not
+         *     exist yet.
+         *
+         *     The Audit Trail records the new contact as a `contact_added` entry with
+         *     its id. `mode` is refused for a contact typed by hand: it says how an
+         *     address book is applied. The Demo Account is refused with
+         *     `demo-account-protected`, by its id, because anyone can enter it
+         *     (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+         *
+         *     # An address book
+         *
+         *     A `text/csv` body is an address book, loaded into this account, and the
+         *     answer is `200 OK` with what the load changed. The body is the file:
+         *     Message Crate's own CSV, one row per identity, with the columns
+         *     `contact_id`, `display_name`, `service`, `identity` and `groups`, as
+         *     `POST /v1/contacts/address-book` writes it.
          *
          *     `service` is `Text Message`, `Email` or `WhatsApp`, the words the screen
          *     where an identity is added offers, ignoring case. The file states no
@@ -657,6 +687,8 @@ export interface paths {
          *     (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,
          *     export and delete permissions are not asked for; they govern messages and
          *     imports, and any other account loads its address book with a session.
+         *
+         *     Any other `Content-Type` is refused with `415 Unsupported Media Type`.
          */
         post: operations["create_contacts"];
         delete?: never;
@@ -812,7 +844,7 @@ export interface paths {
         put?: never;
         /**
          * Take a contact out of the trash.
-         * @description Idempotent: restoring a contact that was not trashed still answers 204.
+         * @description Idempotent: restoring a contact that was not trashed still answers 204. The Audit Trail records the move as a `contacts_restored` entry naming the contact, and records nothing for a contact that was not there.
          */
         post: operations["restore_contact"];
         delete?: never;
@@ -832,7 +864,7 @@ export interface paths {
         put?: never;
         /**
          * Put a contact in the trash.
-         * @description Idempotent: trashing an already-trashed contact still answers 204.
+         * @description Idempotent: trashing an already-trashed contact still answers 204. The Audit Trail records the move as a `contacts_trashed` entry naming the contact, and records nothing for a contact that was already there.
          */
         post: operations["trash_contact"];
         delete?: never;
@@ -1695,6 +1727,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/trash/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Move contacts to the Trash and take contacts out of it, in one request.
+         * @description Delete Contacts on the Contacts list sends its contacts as `add`, and its
+         *     Undo sends them back as `remove`. One request is one action, and the
+         *     Audit Trail records it as one `contacts_trashed` entry and one
+         *     `contacts_restored` entry, each with the count and ids of the contacts it
+         *     changed; a request that changes no contact records nothing.
+         */
+        patch: operations["update_trashed_contacts"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2005,7 +2061,7 @@ export interface components {
          * @description What an entry records.
          * @enum {string}
          */
-        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "export_run_closed" | "import_run" | "export_run";
+        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "contact_added" | "contacts_trashed" | "contacts_restored" | "contact_deleted" | "contacts_merged" | "contacts_unmerged" | "export_run_closed" | "import_run" | "export_run";
         /**
          * @description Who acted.
          * @enum {string}
@@ -2068,8 +2124,21 @@ export interface components {
             bytes: number | null;
             /**
              * Format: int64
-             * @description Contacts forgotten when the trash was emptied, or written to an
-             *     exported address book.
+             * @description `contact_added` and `contact_deleted`: the contact's id.
+             *     `contacts_merged` and `contacts_unmerged`: the id of the contact kept.
+             *     An id only, never the contact's name.
+             */
+            contact_id: number | null;
+            /**
+             * @description `contacts_trashed` and `contacts_restored`: the ids of the contacts
+             *     moved. `contacts_merged` and `contacts_unmerged`: the ids of the
+             *     contacts merged into the one kept, or taken out of it.
+             */
+            contact_ids: number[] | null;
+            /**
+             * Format: int64
+             * @description Contacts forgotten when the trash was emptied, written to an
+             *     exported address book, moved to or out of the Trash, or merged.
              */
             contacts: number | null;
             /**
@@ -2597,6 +2666,21 @@ export interface components {
              *     no upload.
              */
             upload_id: string | null;
+        };
+        /** @description A contact typed by hand, the JSON body of `POST /v1/contacts`. */
+        CreateContactRequest: {
+            /**
+             * @description The identities the contact is reached at, each with its service; none
+             *     when left out. An identity another contact holds, in the Trash or
+             *     not, or one of the account's own identities, is refused with
+             *     `422 Unprocessable Entity`, and then nothing is created. At most 100.
+             */
+            identities?: components["schemas"]["AddContactIdentityRequest"][];
+            /**
+             * @description The contact's name, trimmed. Blank or over 200 characters is refused
+             *     with `422 Unprocessable Entity`.
+             */
+            name: string;
         };
         /** @description What an address book load changed. */
         CreateContactsResponse: {
@@ -4283,8 +4367,21 @@ export interface components {
                 bytes: number | null;
                 /**
                  * Format: int64
-                 * @description Contacts forgotten when the trash was emptied, or written to an
-                 *     exported address book.
+                 * @description `contact_added` and `contact_deleted`: the contact's id.
+                 *     `contacts_merged` and `contacts_unmerged`: the id of the contact kept.
+                 *     An id only, never the contact's name.
+                 */
+                contact_id: number | null;
+                /**
+                 * @description `contacts_trashed` and `contacts_restored`: the ids of the contacts
+                 *     moved. `contacts_merged` and `contacts_unmerged`: the ids of the
+                 *     contacts merged into the one kept, or taken out of it.
+                 */
+                contact_ids: number[] | null;
+                /**
+                 * Format: int64
+                 * @description Contacts forgotten when the trash was emptied, written to an
+                 *     exported address book, moved to or out of the Trash, or merged.
                  */
                 contacts: number | null;
                 /**
@@ -5953,6 +6050,35 @@ export interface components {
             asset_max_bytes?: number | null;
             /** @description Let anyone reaching the server create their own account, or stop them. */
             public_registration?: boolean | null;
+        };
+        /** @description Body for `PATCH /v1/trash/contacts`. */
+        UpdateTrashedContactsRequest: {
+            /**
+             * @description Contacts to move to the Trash. An id the account does not hold is
+             *     refused with `422 Unprocessable Entity`, and then nothing changes. A
+             *     contact already in the Trash stays there. Empty when left out.
+             */
+            add?: number[];
+            /**
+             * @description Contacts to take out of the Trash. An id that names no contact in the
+             *     account's Trash is ignored. Empty when left out. `add` and `remove`
+             *     together name at least one contact and at most 10000, and no contact
+             *     in both.
+             */
+            remove?: number[];
+        };
+        /** @description What `PATCH /v1/trash/contacts` changed. */
+        UpdateTrashedContactsResponse: {
+            /**
+             * @description Contacts the request took out of the Trash, in the order `remove`
+             *     named them, leaving out those that were not in it.
+             */
+            restored: number[];
+            /**
+             * @description Contacts the request moved to the Trash, in the order `add` named
+             *     them, leaving out those already there.
+             */
+            trashed: number[];
         };
         /**
          * @description What shape of value a word takes.
@@ -9624,27 +9750,39 @@ export interface operations {
     create_contacts: {
         parameters: {
             query?: {
-                /** @description How the file is applied: `append` (the default) removes nothing; `edit` makes each contact in the file hold exactly the identities and Contact Group memberships its rows list. */
+                /** @description How an address book is applied: `append` (the default) removes nothing; `edit` makes each contact in the file hold exactly the identities and Contact Group memberships its rows list. Refused with a JSON body. */
                 mode?: components["schemas"]["LoadMode"];
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** @description The address book: Message Crate's own CSV, one row per identity. */
+        /** @description A contact typed by hand, as JSON, or the address book: Message Crate's own CSV, one row per identity. */
         requestBody: {
             content: {
+                "application/json": components["schemas"]["CreateContactRequest"];
                 "text/csv": string;
             };
         };
         responses: {
-            /** @description OK */
+            /** @description The address book was loaded */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["CreateContactsResponse"];
+                };
+            };
+            /** @description The contact typed by hand was added */
+            201: {
+                headers: {
+                    /** @description Path of the new contact */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contact"];
                 };
             };
             /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
@@ -14931,6 +15069,106 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_trashed_contacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTrashedContactsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateTrashedContactsResponse"];
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

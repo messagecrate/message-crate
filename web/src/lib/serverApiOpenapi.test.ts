@@ -242,6 +242,12 @@ const EXERCISED: Record<string, () => unknown> = {
   exportAddressBook: () => serverApi.exportAddressBook({ q: "group:Family", ids: [1, 2] }),
   convertVcardToAddressBook: () =>
     serverApi.convertVcardToAddressBook("BEGIN:VCARD\nEND:VCARD\n", "US"),
+  createContact: () =>
+    serverApi.createContact({
+      name: "Mom",
+      identities: [{ address: "+15555550100", service: "text_message" }],
+    }),
+  updateTrashedContacts: () => serverApi.updateTrashedContacts({ add: [1, 2], remove: [3] }),
   trashContact: () => serverApi.trashContact(42),
   restoreContact: () => serverApi.restoreContact(42),
   deleteContact: () => serverApi.deleteContact(42),

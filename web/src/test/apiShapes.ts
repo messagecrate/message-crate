@@ -142,6 +142,8 @@ export function auditEntry(
     attachments: null,
     bytes: null,
     contacts: null,
+    contact_id: null,
+    contact_ids: null,
     contacts_created: null,
     contacts_deleted: null,
     contacts_updated: null,

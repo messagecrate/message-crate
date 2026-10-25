@@ -10,6 +10,7 @@ import {
   type HistoryStacks,
   historyReducer,
   trashFailureText,
+  trashMove,
   undoneText,
 } from "./contactHistory";
 
@@ -125,10 +126,43 @@ describe("the words", () => {
   });
 
   it("says what a partial restore did and did not do", () => {
-    expect(trashFailureText("undo", 2, 1)).toBe(
+    expect(trashFailureText("restore", 2, 1)).toBe(
       "Restored 2 contacts. 1 is no longer in the Trash.",
     );
-    expect(trashFailureText("do", 1, 2)).toBe("Moved 1 contact to Trash. 2 could not be moved.");
+    expect(trashFailureText("trash", 1, 2)).toBe("Moved 1 contact to Trash. 2 could not be moved.");
+  });
+
+  it("says plainly when none of a Trash move went through", () => {
+    expect(trashFailureText("restore", 0, 1)).toBe("1 is no longer in the Trash.");
+    expect(trashFailureText("trash", 0, 1)).toBe("Could not move 1 contact to Trash.");
+    expect(trashFailureText("trash", 0, 3)).toBe("Could not move 3 contacts to Trash.");
+  });
+
+  describe("New Contact", () => {
+    const created: HistoryAction = { kind: "create", contact: mother };
+
+    it("is named as an addition, and its undo as a move to the Trash", () => {
+      expect(actionText(created)).toBe("Added Mother");
+      expect(`Undo ${actionMenuName(created)}`).toBe("Undo New Contact");
+      expect(undoneText(created)).toBe("Moved Mother to Trash");
+    });
+
+    it("is undone by moving the contact to the Trash and redone by restoring it", () => {
+      expect(trashMove(created, "undo")).toEqual({ to: "trash", contacts: [mother] });
+      expect(trashMove(created, "do")).toEqual({ to: "restore", contacts: [mother] });
+    });
+
+    it("leaves Delete Contacts moving to the Trash, and a Contact Group change moving nothing", () => {
+      const trashed: HistoryAction = { kind: "trash", contacts: three };
+      expect(trashMove(trashed, "do")).toEqual({ to: "trash", contacts: three });
+      expect(trashMove(trashed, "undo")).toEqual({ to: "restore", contacts: three });
+      expect(
+        trashMove(
+          { kind: "group", op: "add", changes: [{ group: "Family", contacts: [mother] }] },
+          "do",
+        ),
+      ).toBeNull();
+    });
   });
 
   it("names each refused Contact Group on a line of its own, with its reason", () => {

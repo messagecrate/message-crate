@@ -5603,14 +5603,14 @@
         "tags": [
           "Contacts"
         ],
-        "summary": "Load an address book into this account.",
-        "description": "The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `service`, `identity` and `groups`, as `POST /v1/contacts/address-book` writes it.\n\n`service` is `Text Message`, `Email` or `WhatsApp`, the words the screen\nwhere an identity is added offers, ignoring case. The file states no\ntype: the service decides which types are valid and the address's shape\npicks among them, as adding an identity does. `Text Message` carries a\nphone number, an email address or any other name; `Email` is an email\naddress on Text Message; `WhatsApp` carries a phone number or one of\nWhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),\nwhich are `other`. An identity written exactly as the account keys it on\nthat service is that identity, whatever its type, so an exported file\nloads back as it was. A row whose address the service cannot carry, such\nas an email address on `WhatsApp` (an `@` address at any other domain),\nis refused, where adding an identity stores it as `other`.\n\nRows that share a `contact_id` are one contact. An id the account holds\nnames that contact, a blank id makes a new contact for that row, and any\nother text groups its rows into one new contact. `append` creates and\nrenames contacts and adds the identities and Contact Group memberships\nthe rows list. `edit` does the same and then takes off each contact in\nthe file every identity and membership its rows do not list. A contact\nthe file does not mention is left alone in both modes.\n\nA phone number written without `+`, which a spreadsheet can save in place\nof `+6555550100`, names the identity `+` and its digits when the row's\ncontact holds that key. Otherwise it is keyed as written: ten digits as a\nUS number, any other count as bare digits. `notes` names each row read\nwith its `+` back, and each such number that became a new identity.\n\nOne `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a\ncarriage return is taken off, in any column, which undoes the `'` the\nexport writes there.\n\nThe load is one transaction. A file that breaks a rule is refused whole\nwith `422 Unprocessable Entity`, and `errors` holds one sentence for each\nbad row, starting with its row number.\n\nThe Demo Account is refused with `demo-account-protected`, in both modes,\nby its id: an Edit load deletes contacts for good and an Append load\nstores real people's names and numbers in an account anyone can enter\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,\nexport and delete permissions are not asked for; they govern messages and\nimports, and any other account loads its address book with a session.",
+        "summary": "Add contacts: one typed by hand, as JSON, or an address book, as CSV.",
+        "description": "# A contact typed by hand\n\nA JSON body, `application/json`, is one new contact: a name and zero or\nmore identities. The answer is `201 Created`, with the contact in the\nbody and its path in `Location`. A contact with a name and no identity is\nin the Unknown Contact Group, because nothing reaches it yet. Each\nidentity is typed as adding one to a contact types it: the service\ndecides which types are valid and the address's shape picks among them.\n\nAn identity that is on another contact, named or not, in the Trash or\nnot, is refused with `422 Unprocessable Entity`, and so is one of the\naccount's own identities. Each refusal is one entry of `errors`, starting\nwith the identity's place in the list, as `identities[0].address: ` and\nthen the address and the contact that holds it. Nothing is created. The\nperson removes the identity from the new contact, or goes to the contact\nthat holds it. No merge is offered, because the new contact does not\nexist yet.\n\nThe Audit Trail records the new contact as a `contact_added` entry with\nits id. `mode` is refused for a contact typed by hand: it says how an\naddress book is applied. The Demo Account is refused with\n`demo-account-protected`, by its id, because anyone can enter it\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).\n\n# An address book\n\nA `text/csv` body is an address book, loaded into this account, and the\nanswer is `200 OK` with what the load changed. The body is the file:\nMessage Crate's own CSV, one row per identity, with the columns\n`contact_id`, `display_name`, `service`, `identity` and `groups`, as\n`POST /v1/contacts/address-book` writes it.\n\n`service` is `Text Message`, `Email` or `WhatsApp`, the words the screen\nwhere an identity is added offers, ignoring case. The file states no\ntype: the service decides which types are valid and the address's shape\npicks among them, as adding an identity does. `Text Message` carries a\nphone number, an email address or any other name; `Email` is an email\naddress on Text Message; `WhatsApp` carries a phone number or one of\nWhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),\nwhich are `other`. An identity written exactly as the account keys it on\nthat service is that identity, whatever its type, so an exported file\nloads back as it was. A row whose address the service cannot carry, such\nas an email address on `WhatsApp` (an `@` address at any other domain),\nis refused, where adding an identity stores it as `other`.\n\nRows that share a `contact_id` are one contact. An id the account holds\nnames that contact, a blank id makes a new contact for that row, and any\nother text groups its rows into one new contact. `append` creates and\nrenames contacts and adds the identities and Contact Group memberships\nthe rows list. `edit` does the same and then takes off each contact in\nthe file every identity and membership its rows do not list. A contact\nthe file does not mention is left alone in both modes.\n\nA phone number written without `+`, which a spreadsheet can save in place\nof `+6555550100`, names the identity `+` and its digits when the row's\ncontact holds that key. Otherwise it is keyed as written: ten digits as a\nUS number, any other count as bare digits. `notes` names each row read\nwith its `+` back, and each such number that became a new identity.\n\nOne `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a\ncarriage return is taken off, in any column, which undoes the `'` the\nexport writes there.\n\nThe load is one transaction. A file that breaks a rule is refused whole\nwith `422 Unprocessable Entity`, and `errors` holds one sentence for each\nbad row, starting with its row number.\n\nThe Demo Account is refused with `demo-account-protected`, in both modes,\nby its id: an Edit load deletes contacts for good and an Append load\nstores real people's names and numbers in an account anyone can enter\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,\nexport and delete permissions are not asked for; they govern messages and\nimports, and any other account loads its address book with a session.\n\nAny other `Content-Type` is refused with `415 Unsupported Media Type`.",
         "operationId": "create_contacts",
         "parameters": [
           {
             "name": "mode",
             "in": "query",
-            "description": "How the file is applied: `append` (the default) removes nothing; `edit` makes each contact in the file hold exactly the identities and Contact Group memberships its rows list.",
+            "description": "How an address book is applied: `append` (the default) removes nothing; `edit` makes each contact in the file hold exactly the identities and Contact Group memberships its rows list. Refused with a JSON body.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/LoadMode"
@@ -5618,8 +5618,13 @@
           }
         ],
         "requestBody": {
-          "description": "The address book: Message Crate's own CSV, one row per identity.",
+          "description": "A contact typed by hand, as JSON, or the address book: Message Crate's own CSV, one row per identity.",
           "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContactRequest"
+              }
+            },
             "text/csv": {
               "schema": {
                 "type": "string"
@@ -5630,11 +5635,29 @@
         },
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "The address book was loaded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreateContactsResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The contact typed by hand was added",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Path of the new contact"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contact"
                 }
               }
             }
@@ -6722,7 +6745,7 @@
           "Contacts"
         ],
         "summary": "Take a contact out of the trash.",
-        "description": "Idempotent: restoring a contact that was not trashed still answers 204.",
+        "description": "Idempotent: restoring a contact that was not trashed still answers 204. The Audit Trail records the move as a `contacts_restored` entry naming the contact, and records nothing for a contact that was not there.",
         "operationId": "restore_contact",
         "parameters": [
           {
@@ -6820,7 +6843,7 @@
           "Contacts"
         ],
         "summary": "Put a contact in the trash.",
-        "description": "Idempotent: trashing an already-trashed contact still answers 204.",
+        "description": "Idempotent: trashing an already-trashed contact still answers 204. The Audit Trail records the move as a `contacts_trashed` entry naming the contact, and records nothing for a contact that was already there.",
         "operationId": "trash_contact",
         "parameters": [
           {
@@ -13574,6 +13597,148 @@
           }
         ]
       }
+    },
+    "/v1/trash/contacts": {
+      "patch": {
+        "tags": [
+          "Trash"
+        ],
+        "summary": "Move contacts to the Trash and take contacts out of it, in one request.",
+        "description": "Delete Contacts on the Contacts list sends its contacts as `add`, and its\nUndo sends them back as `remove`. One request is one action, and the\nAudit Trail records it as one `contacts_trashed` entry and one\n`contacts_restored` entry, each with the count and ids of the contacts it\nchanged; a request that changes no contact records nothing.",
+        "operationId": "update_trashed_contacts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTrashedContactsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateTrashedContactsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "[`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/malformed-body"
+            ]
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "406": {
+            "description": "[`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "408": {
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
+            ]
+          },
+          "413": {
+            "description": "[`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/payload-too-large"
+            ]
+          },
+          "415": {
+            "description": "[`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -14125,6 +14290,12 @@
           "api_token_deleted",
           "address_book_loaded",
           "address_book_exported",
+          "contact_added",
+          "contacts_trashed",
+          "contacts_restored",
+          "contact_deleted",
+          "contacts_merged",
+          "contacts_unmerged",
           "export_run_closed",
           "import_run",
           "export_run"
@@ -14159,6 +14330,8 @@
           "asset_max_bytes",
           "attachments",
           "bytes",
+          "contact_id",
+          "contact_ids",
           "contacts",
           "contacts_created",
           "contacts_deleted",
@@ -14262,13 +14435,32 @@
             "format": "int64",
             "description": "Bytes an Import Run uploaded, or an Export Run's attachments total."
           },
+          "contact_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`contact_added` and `contact_deleted`: the contact's id.\n`contacts_merged` and `contacts_unmerged`: the id of the contact kept.\nAn id only, never the contact's name."
+          },
+          "contact_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "`contacts_trashed` and `contacts_restored`: the ids of the contacts\nmoved. `contacts_merged` and `contacts_unmerged`: the ids of the\ncontacts merged into the one kept, or taken out of it."
+          },
           "contacts": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "Contacts forgotten when the trash was emptied, or written to an\nexported address book."
+            "description": "Contacts forgotten when the trash was emptied, written to an\nexported address book, moved to or out of the Trash, or merged."
           },
           "contacts_created": {
             "type": [
@@ -15114,6 +15306,26 @@
               "null"
             ],
             "description": "Id of the new upload, which its part and completion routes name in\ntheir path. Null when the server already held the Asset and started\nno upload."
+          }
+        }
+      },
+      "CreateContactRequest": {
+        "type": "object",
+        "description": "A contact typed by hand, the JSON body of `POST /v1/contacts`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddContactIdentityRequest"
+            },
+            "description": "The identities the contact is reached at, each with its service; none\nwhen left out. An identity another contact holds, in the Trash or\nnot, or one of the account's own identities, is refused with\n`422 Unprocessable Entity`, and then nothing is created. At most 100."
+          },
+          "name": {
+            "type": "string",
+            "description": "The contact's name, trimmed. Blank or over 200 characters is refused\nwith `422 Unprocessable Entity`."
           }
         }
       },
@@ -17689,6 +17901,8 @@
                 "asset_max_bytes",
                 "attachments",
                 "bytes",
+                "contact_id",
+                "contact_ids",
                 "contacts",
                 "contacts_created",
                 "contacts_deleted",
@@ -17792,13 +18006,32 @@
                   "format": "int64",
                   "description": "Bytes an Import Run uploaded, or an Export Run's attachments total."
                 },
+                "contact_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64",
+                  "description": "`contact_added` and `contact_deleted`: the contact's id.\n`contacts_merged` and `contacts_unmerged`: the id of the contact kept.\nAn id only, never the contact's name."
+                },
+                "contact_ids": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "description": "`contacts_trashed` and `contacts_restored`: the ids of the contacts\nmoved. `contacts_merged` and `contacts_unmerged`: the ids of the\ncontacts merged into the one kept, or taken out of it."
+                },
                 "contacts": {
                   "type": [
                     "integer",
                     "null"
                   ],
                   "format": "int64",
-                  "description": "Contacts forgotten when the trash was emptied, or written to an\nexported address book."
+                  "description": "Contacts forgotten when the trash was emptied, written to an\nexported address book, moved to or out of the Trash, or merged."
                 },
                 "contacts_created": {
                   "type": [
@@ -20743,6 +20976,54 @@
               "null"
             ],
             "description": "Let anyone reaching the server create their own account, or stop them."
+          }
+        }
+      },
+      "UpdateTrashedContactsRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /v1/trash/contacts`.",
+        "properties": {
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Contacts to move to the Trash. An id the account does not hold is\nrefused with `422 Unprocessable Entity`, and then nothing changes. A\ncontact already in the Trash stays there. Empty when left out."
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Contacts to take out of the Trash. An id that names no contact in the\naccount's Trash is ignored. Empty when left out. `add` and `remove`\ntogether name at least one contact and at most 10000, and no contact\nin both."
+          }
+        }
+      },
+      "UpdateTrashedContactsResponse": {
+        "type": "object",
+        "description": "What `PATCH /v1/trash/contacts` changed.",
+        "required": [
+          "trashed",
+          "restored"
+        ],
+        "properties": {
+          "restored": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Contacts the request took out of the Trash, in the order `remove`\nnamed them, leaving out those that were not in it."
+          },
+          "trashed": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Contacts the request moved to the Trash, in the order `add` named\nthem, leaving out those already there."
           }
         }
       },

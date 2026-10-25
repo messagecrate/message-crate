@@ -18,6 +18,8 @@ export type GroupChange = { group: string; contacts: HistoryContact[] };
 export type HistoryAction =
   /** Delete Contacts: the contacts were moved to the Trash. */
   | { kind: "trash"; contacts: HistoryContact[] }
+  /** New Contact: the contact was added. Undo moves it to the Trash, and Redo restores it. */
+  | { kind: "create"; contact: HistoryContact }
   /**
    * A Contact Group membership change. One change for a toggle on one group;
    * several when one press took the contacts out of several groups.
@@ -122,37 +124,61 @@ function groupText(op: "add" | "remove", changes: readonly GroupChange[]): strin
   return op === "add" ? `Added ${contacts} to ${groups}` : `Removed ${contacts} from ${groups}`;
 }
 
+/** An action that moves contacts to or out of the Trash, and the contacts it moves. */
+export type TrashMove = { to: "trash" | "restore"; contacts: HistoryContact[] };
+
+/**
+ * The Trash move an action makes in `direction`, or null for a Contact Group
+ * change. Delete Contacts moves its contacts to the Trash and its undo takes
+ * them out; New Contact's undo moves the new contact to the Trash and its
+ * redo takes it out.
+ */
+export function trashMove(action: HistoryAction, direction: HistoryDirection): TrashMove | null {
+  if (action.kind === "trash") {
+    return { to: direction === "do" ? "trash" : "restore", contacts: action.contacts };
+  }
+  if (action.kind === "create") {
+    return { to: direction === "do" ? "restore" : "trash", contacts: [action.contact] };
+  }
+  return null;
+}
+
 /** What the toast says after the action, and after a redo of it: "Moved 3 contacts to Trash". */
 export function actionText(action: HistoryAction): string {
   if (action.kind === "trash") return `Moved ${who(action.contacts)} to Trash`;
+  if (action.kind === "create") return `Added ${action.contact.label}`;
   return groupText(action.op, action.changes);
 }
 
 /** What the toast says after an undo: "Restored 3 contacts". */
 export function undoneText(action: HistoryAction): string {
   if (action.kind === "trash") return `Restored ${who(action.contacts)}`;
+  if (action.kind === "create") return `Moved ${action.contact.label} to Trash`;
   return groupText(groupOp(action, "undo"), action.changes);
 }
 
 /** The menu's name for the action, after "Undo" or "Redo". It carries no count. */
 export function actionMenuName(action: HistoryAction): string {
   if (action.kind === "trash") return "Delete Contacts";
+  if (action.kind === "create") return "New Contact";
   return action.op === "add" ? "Add to Contact Group" : "Remove from Contact Group";
 }
 
 /**
- * What the error banner says when some of a trash entry's requests failed.
- * `done` and `failed` count contacts.
+ * What the error banner says when some of a Trash move's contacts did not
+ * move. `done` and `failed` count contacts.
  */
-export function trashFailureText(
-  direction: HistoryDirection,
-  done: number,
-  failed: number,
-): string {
+export function trashFailureText(to: TrashMove["to"], done: number, failed: number): string {
   const doneWords = done === 1 ? "1 contact" : `${done} contacts`;
-  if (direction === "undo") {
+  if (to === "restore") {
     const verb = failed === 1 ? "is" : "are";
-    return `Restored ${doneWords}. ${failed} ${verb} no longer in the Trash.`;
+    const missing = `${failed} ${verb} no longer in the Trash.`;
+    return done === 0 ? missing : `Restored ${doneWords}. ${missing}`;
+  }
+  if (done === 0) {
+    return failed === 1
+      ? "Could not move 1 contact to Trash."
+      : `Could not move ${failed} contacts to Trash.`;
   }
   return `Moved ${doneWords} to Trash. ${failed} could not be moved.`;
 }

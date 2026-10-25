@@ -179,7 +179,7 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::contacts_api::delete_contact))
         .routes(routes!(crate::contacts_api::list_unmatched_identities))
         .routes(routes!(crate::phone_countries_api::list_phone_countries))
-        .routes(routes!(crate::contacts_api::address_book::create_contacts))
+        .routes(routes!(crate::contacts_api::create::create_contacts))
         .routes(routes!(crate::contacts_api::address_book::get_address_book))
         .routes(routes!(
             crate::contacts_api::address_book::get_vcard_address_book
@@ -224,6 +224,7 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::conversations_api::restore_conversation))
         .routes(routes!(crate::conversations_api::delete_conversation))
         .routes(routes!(crate::trash_api::delete_trash))
+        .routes(routes!(crate::trash_api::update_trashed_contacts))
         .routes(routes!(crate::imports_api::list_imports))
         .routes(routes!(crate::imports_api::create_import))
         .routes(routes!(

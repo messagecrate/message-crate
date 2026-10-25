@@ -132,6 +132,28 @@ function permissionsChanged(entry: AuditEntry): string {
   return `Permissions changed: ${parts.join("; ")}`;
 }
 
+/** How many contact ids an entry's line names before it counts the rest. */
+const CONTACT_IDS_SHOWN = 10;
+
+/**
+ * " (ids 3, 5 and 9)", or " (id 3)": the contacts an entry names, by id only,
+ * because the Audit Trail holds no names. Past `CONTACT_IDS_SHOWN`, the rest
+ * are counted: " (ids 1, 2, …, 10 and 40 more)".
+ */
+function contactIds(ids: readonly number[] | null | undefined): string {
+  if (!ids || ids.length === 0) return "";
+  if (ids.length === 1) return ` (id ${ids[0]})`;
+  const shown = ids.slice(0, CONTACT_IDS_SHOWN).map(String);
+  const rest = ids.length - shown.length;
+  const list = rest > 0 ? `${shown.join(", ")} and ${rest} more` : (joinWithAnd(shown) ?? "");
+  return ` (ids ${list})`;
+}
+
+/** "contact 12", or "a contact" when the entry names none. */
+function contactById(id: number | null | undefined): string {
+  return id == null ? "a contact" : `contact ${id}`;
+}
+
 /** The one line that says what an entry records. */
 export function describeAuditEntry(entry: AuditEntry): string {
   switch (entry.action) {
@@ -177,6 +199,18 @@ export function describeAuditEntry(entry: AuditEntry): string {
       return `Address book loaded (${entry.mode ?? "append"}): ${countOrZero(entry.contacts_created, "contact")} added, ${(entry.contacts_updated ?? 0).toLocaleString()} changed, ${(entry.contacts_deleted ?? 0).toLocaleString()} removed`;
     case "address_book_exported":
       return `Address book exported: ${countOrZero(entry.contacts, "contact")}, ${countOrZero(entry.identities, "Identity", "Identities")}`;
+    case "contact_added":
+      return `Contact added by hand${contactIds(entry.contact_id == null ? null : [entry.contact_id])}`;
+    case "contacts_trashed":
+      return `Moved ${countOrZero(entry.contacts, "contact")} to Trash${contactIds(entry.contact_ids)}`;
+    case "contacts_restored":
+      return `Restored ${countOrZero(entry.contacts, "contact")} from Trash${contactIds(entry.contact_ids)}`;
+    case "contact_deleted":
+      return `A contact deleted for good from the Trash${contactIds(entry.contact_id == null ? null : [entry.contact_id])}`;
+    case "contacts_merged":
+      return `Merged ${countOrZero(entry.contacts, "contact")} into ${contactById(entry.contact_id)}${contactIds(entry.contact_ids)}`;
+    case "contacts_unmerged":
+      return `Unmerged ${countOrZero(entry.contacts, "contact")} from ${contactById(entry.contact_id)}${contactIds(entry.contact_ids)}`;
     case "import_run":
       return importRun(entry);
     case "export_run":

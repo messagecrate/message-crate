@@ -1,6 +1,7 @@
 //! Contact list/detail used by `GET /v1/contacts`,
 //! `GET /v1/contacts/{id}` and `PATCH /v1/contacts/{id}`, `POST /v1/contacts/summaries`,
-//! and `POST /v1/contacts/unmatched-identities`. Loading an address book is
+//! and `POST /v1/contacts/unmatched-identities`. `POST /v1/contacts` is in
+//! `create`, which adds a contact typed by hand. Loading an address book is
 //! in `address_book`, the edits a `PATCH` makes in `edit`, and the queries in
 //! `db::contacts`.
 
@@ -18,10 +19,14 @@ use crate::db::contacts::read::{
     unknown_contact_identifiers,
 };
 use crate::db::handles::{self, ApiIdentityService, IdentitiesOf, Identity};
-use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, restore};
+use crate::db::ownership::owns_contact;
+use crate::db::trash::{
+    DeleteOutcome, TrashContactsOutcome, Trashable, delete_trashed, update_trashed_contacts,
+};
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
 
 pub(crate) mod address_book;
+pub(crate) mod create;
 mod edit;
 
 pub(crate) use edit::ContactEditError;
@@ -371,7 +376,9 @@ pub(crate) async fn update_contact(
 }
 
 /// Put a contact in the trash. Idempotent: trashing an already-trashed
-/// contact still answers 204.
+/// contact still answers 204. The Audit Trail records the move as a
+/// `contacts_trashed` entry naming the contact, and records nothing for a
+/// contact that was already there.
 #[utoipa::path(
     post,
     path = "/v1/contacts/{id}/trash",
@@ -388,15 +395,17 @@ pub(crate) async fn trash_contact(
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
     let mut conn = db.acquire().await?;
-    if move_to_trash(&mut conn, auth.account_id, Trashable::Contact(contact_id)).await? {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(ApiError::not_found("contact"))
+    let now = chrono::Utc::now();
+    match update_trashed_contacts(&mut conn, auth.account_id, &[contact_id], &[], now).await? {
+        TrashContactsOutcome::Changed(_) => Ok(StatusCode::NO_CONTENT),
+        TrashContactsOutcome::NotHeld(_) => Err(ApiError::not_found("contact")),
     }
 }
 
 /// Take a contact out of the trash. Idempotent: restoring a contact that
-/// was not trashed still answers 204.
+/// was not trashed still answers 204. The Audit Trail records the move as a
+/// `contacts_restored` entry naming the contact, and records nothing for a
+/// contact that was not there.
 #[utoipa::path(
     post,
     path = "/v1/contacts/{id}/restore",
@@ -413,11 +422,12 @@ pub(crate) async fn restore_contact(
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
     let mut conn = db.acquire().await?;
-    if restore(&mut conn, auth.account_id, Trashable::Contact(contact_id)).await? {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(ApiError::not_found("contact"))
+    if !owns_contact(&mut conn, auth.account_id, contact_id).await? {
+        return Err(ApiError::not_found("contact"));
     }
+    let now = chrono::Utc::now();
+    update_trashed_contacts(&mut conn, auth.account_id, &[], &[contact_id], now).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Delete a trashed contact the way a phone's Delete Contact does: the name

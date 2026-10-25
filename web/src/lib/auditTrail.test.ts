@@ -8,6 +8,40 @@ function entry(fields: Partial<AuditEntry> & Pick<AuditEntry, "action">): AuditE
 }
 
 describe("describeAuditEntry", () => {
+  it("names the contacts a change to contacts records by id, never by name", () => {
+    expect(describeAuditEntry(entry({ action: "contact_added", contact_id: 12 }))).toBe(
+      "Contact added by hand (id 12)",
+    );
+    expect(
+      describeAuditEntry(
+        entry({ action: "contacts_trashed", contacts: 3, contact_ids: [3, 5, 9] }),
+      ),
+    ).toBe("Moved 3 contacts to Trash (ids 3, 5 and 9)");
+    expect(
+      describeAuditEntry(entry({ action: "contacts_restored", contacts: 1, contact_ids: [3] })),
+    ).toBe("Restored 1 contact from Trash (id 3)");
+    expect(describeAuditEntry(entry({ action: "contact_deleted", contact_id: 4 }))).toBe(
+      "A contact deleted for good from the Trash (id 4)",
+    );
+    expect(
+      describeAuditEntry(
+        entry({ action: "contacts_merged", contact_id: 5, contacts: 2, contact_ids: [6, 7] }),
+      ),
+    ).toBe("Merged 2 contacts into contact 5 (ids 6 and 7)");
+    expect(
+      describeAuditEntry(
+        entry({ action: "contacts_unmerged", contact_id: 5, contacts: 2, contact_ids: [6, 7] }),
+      ),
+    ).toBe("Unmerged 2 contacts from contact 5 (ids 6 and 7)");
+  });
+
+  it("names the first ten contacts of a large move and counts the rest", () => {
+    const ids = Array.from({ length: 12 }, (_, i) => i + 1);
+    expect(
+      describeAuditEntry(entry({ action: "contacts_trashed", contacts: 12, contact_ids: ids })),
+    ).toBe("Moved 12 contacts to Trash (ids 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and 2 more)");
+  });
+
   it("says how a Session ended", () => {
     expect(describeAuditEntry(entry({ action: "session_ended", reason: "replaced" }))).toBe(
       "Session ended by a newer login",

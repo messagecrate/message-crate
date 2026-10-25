@@ -6,6 +6,7 @@ import ContactLabel from "../components/ContactLabel";
 import ContactSortMenu from "../components/ContactSortMenu";
 import GroupsMenu from "../components/GroupsMenu";
 import InfiniteOffsetList from "../components/InfiniteOffsetList";
+import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useContactGroupActions } from "../hooks/useContactGroupActions";
 import { useContactGroups } from "../hooks/useContactGroups";
 import { useContactHistory } from "../hooks/useContactHistory";
@@ -41,6 +42,7 @@ import { exportAddressBook, listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
 import ContactActionsMenu from "./contacts/ContactActionsMenu";
+import NewContactDialog from "./contacts/NewContactDialog";
 import { useUndoShortcuts } from "./contacts/useUndoShortcuts";
 
 /** How long the search waits after the last key before it asks the server. */
@@ -116,6 +118,20 @@ function historyContact(c: Contact): HistoryContact {
   return { id: Number(c.id), label: contactLabelText(c.name, c.addresses) };
 }
 
+/** A contact as `GET /v1/contacts/{id}` answers it, as a row of this list. */
+function rowFromContact(c: components["schemas"]["Contact"]): Contact {
+  return {
+    id: String(c.id),
+    name: c.name,
+    addresses: c.identities.map((identity) => identity.address),
+    identity_count: c.identities.length,
+    groups: c.groups,
+    unknown: c.unknown,
+    last_heard_at: null,
+    last_modified: c.last_modified,
+  };
+}
+
 /** Make every contact id a string so list keys stay stable. */
 function normalizeContacts(rows: ContactSummary[]): Contact[] {
   return rows.map((c) => ({
@@ -162,6 +178,10 @@ export default function ContactList({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [newContactOpen, setNewContactOpen] = useState(false);
+  const { profile } = useAccountProfile();
+  // The Demo Account is refused a new contact, so it is not offered one.
+  const canCreate = profile !== null && !profile.is_demo;
   useUndoShortcuts(history.undo, history.redo);
 
   const groupActive = Boolean(groupFilter);
@@ -467,6 +487,17 @@ export default function ContactList({
     }
   };
 
+  /**
+   * The contact New Contact made: the dialog closes, Undo can move it to the
+   * Trash, and the list selects it, which opens it beside the list.
+   */
+  const contactCreated = (created: components["schemas"]["Contact"]) => {
+    setNewContactOpen(false);
+    const row = rowFromContact(created);
+    history.push({ kind: "create", contact: historyContact(row) });
+    onSelect(row);
+  };
+
   const deleteTargets = checkedContacts;
   const deleteContacts = async () => {
     await history.deleteContacts(deleteTargets.map(historyContact));
@@ -544,11 +575,16 @@ export default function ContactList({
           <ContactActionsMenu
             scope={scope}
             canDelete={checkedContacts.length > 0}
+            canCreate={canCreate}
             exporting={exporting}
+            onNewContact={() => setNewContactOpen(true)}
             onExport={() => void exportContacts()}
             onDelete={() => setDeleteOpen(true)}
           />
           <ContactSortMenu state={sortState} onChange={onSortChange} />
+          {newContactOpen ? (
+            <NewContactDialog onClose={() => setNewContactOpen(false)} onCreated={contactCreated} />
+          ) : null}
           <ConfirmDialog
             open={deleteOpen}
             title={deleteTitle}

@@ -5,7 +5,8 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
     conversation_header, delete_raw, delete_status, expect_problem, fake_sha256,
-    fixture_with_account, get_json, get_raw, get_status, message_line, register_via_api,
+    fixture_with_account, get_json, get_raw, get_status, message_line, patch_json, patch_json_raw,
+    post_status, register_via_api,
     seed_conversation, stored_time,
 };
 
@@ -623,4 +624,162 @@ async fn a_file_imported_from_two_sources_counts_once_in_storage() {
     .unwrap();
 
     assert_eq!(stored, i64::try_from(bytes.len()).unwrap());
+}
+
+/// The Audit Trail entries about `account` that record a change to its
+/// contacts, oldest first.
+async fn contact_entries(
+    fixture: &TestFixture,
+    account: &RegisteredAccount,
+) -> Vec<crate::db::audit_trail::AuditEntry> {
+    use crate::db::audit_trail::{AuditAction, Scope, page};
+    let mut conn = fixture.conn().await;
+    let (mut items, _) = page(
+        &mut conn,
+        Scope::Account(account.account_id),
+        100,
+        0,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
+    items.retain(|e| {
+        matches!(
+            e.action,
+            AuditAction::ContactsTrashed
+                | AuditAction::ContactsRestored
+                | AuditAction::ContactDeleted
+        )
+    });
+    items.reverse();
+    items
+}
+
+/// Delete Contacts and its Undo are one request each, and each is one
+/// Audit Trail entry with the count and the ids of the contacts it moved. A
+/// request that moves nothing records nothing (CONTACT-57).
+#[tokio::test]
+async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
+    use crate::db::audit_trail::AuditAction;
+    let (fixture, alice) = fixture_with_account().await;
+    let ada = seed_named_contact(&fixture, &alice, "Ada").await;
+    let grace = seed_named_contact(&fixture, &alice, "Grace").await;
+
+    let moved: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "add": [ada, grace] }),
+    )
+    .await;
+    assert_eq!(
+        moved,
+        serde_json::json!({ "trashed": [ada, grace], "restored": [] })
+    );
+    // Again: both are already there, so nothing moves and nothing is recorded.
+    let again: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "add": [grace, ada] }),
+    )
+    .await;
+    assert_eq!(again, serde_json::json!({ "trashed": [], "restored": [] }));
+    let back: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "remove": [grace, ada, 999_999] }),
+    )
+    .await;
+    assert_eq!(
+        back,
+        serde_json::json!({ "trashed": [], "restored": [grace, ada] })
+    );
+
+    let entries = contact_entries(&fixture, &alice).await;
+    let recorded: Vec<_> = entries
+        .iter()
+        .map(|e| (e.action, e.contacts, e.contact_ids.clone()))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![
+            (AuditAction::ContactsTrashed, Some(2), Some(vec![ada, grace])),
+            (AuditAction::ContactsRestored, Some(2), Some(vec![grace, ada])),
+        ]
+    );
+    assert!(entries.iter().all(|e| e.request_id.is_some()));
+}
+
+/// An id to move to the Trash that the account does not hold refuses the
+/// whole request, and so do an empty request and an id in both lists.
+#[tokio::test]
+async fn a_contact_the_account_does_not_hold_refuses_the_whole_move() {
+    let (fixture, alice) = fixture_with_account().await;
+    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let ada = seed_named_contact(&fixture, &alice, "Ada").await;
+    let bobs = seed_named_contact(&fixture, &bob, "Bob's").await;
+
+    for body in [
+        serde_json::json!({ "add": [ada, bobs] }),
+        serde_json::json!({}),
+        serde_json::json!({ "add": [ada], "remove": [ada] }),
+    ] {
+        let (status, text) =
+            patch_json_raw(&fixture.state, "/v1/trash/contacts", &alice.token, body).await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
+    }
+    let mut conn = fixture.conn().await;
+    let trashed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM trashed_contacts")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(trashed, 0);
+    drop(conn);
+    assert!(contact_entries(&fixture, &alice).await.is_empty());
+}
+
+/// The one-contact routes record the same entries as the list's, and a
+/// contact deleted for good is recorded by its id.
+#[tokio::test]
+async fn one_contact_moved_restored_and_deleted_for_good_is_recorded_by_id() {
+    use crate::db::audit_trail::AuditAction;
+    let (fixture, alice) = fixture_with_account().await;
+    let ada = seed_named_contact(&fixture, &alice, "Ada").await;
+    let trash_path = format!("/v1/contacts/{ada}/trash");
+    let restore_path = format!("/v1/contacts/{ada}/restore");
+    for path in [&trash_path, &restore_path, &trash_path, &trash_path] {
+        let status = post_status(&fixture.state, path, &alice.token, serde_json::json!({})).await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{path}");
+    }
+    assert_eq!(
+        post_status(
+            &fixture.state,
+            "/v1/contacts/999999/restore",
+            &alice.token,
+            serde_json::json!({}),
+        )
+        .await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        delete_status(&fixture.state, &format!("/v1/contacts/{ada}"), &alice.token).await,
+        StatusCode::NO_CONTENT
+    );
+
+    let recorded: Vec<_> = contact_entries(&fixture, &alice)
+        .await
+        .into_iter()
+        .map(|e| (e.action, e.contact_id, e.contact_ids))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![
+            (AuditAction::ContactsTrashed, None, Some(vec![ada])),
+            (AuditAction::ContactsRestored, None, Some(vec![ada])),
+            (AuditAction::ContactsTrashed, None, Some(vec![ada])),
+            (AuditAction::ContactDeleted, Some(ada), None),
+        ]
+    );
 }

@@ -18,10 +18,12 @@ import {
   type HistoryStacks,
   historyReducer,
   type RefusedGroupChange,
+  type TrashMove,
   trashFailureText,
+  trashMove,
   undoneText,
 } from "../lib/contactHistory";
-import { restoreContact, trashContact } from "../lib/serverApi";
+import { TRASHED_CONTACT_IDS_MAX, updateTrashedContacts } from "../lib/serverApi";
 import ContactHistoryToast from "./ContactHistoryToast";
 import {
   type ContactHistory,
@@ -38,6 +40,42 @@ type RunOutcome = {
 };
 
 type RunVars = { action: HistoryAction; direction: HistoryDirection };
+
+/**
+ * Send one Trash move and answer the contacts it moved. All of them go in
+ * one request, which the Audit Trail records as one action; only a move of
+ * more than the server takes at once is sent in parts. A contact already in
+ * the Trash counts as moved there. A restore counts only the contacts the
+ * server took out, so one no longer in the Trash is reported. A refused part
+ * moved none of its contacts, and the parts after it are still sent.
+ */
+async function sendTrashMove(move: TrashMove): Promise<HistoryContact[]> {
+  const went: HistoryContact[] = [];
+  for (let start = 0; start < move.contacts.length; start += TRASHED_CONTACT_IDS_MAX) {
+    const part = move.contacts.slice(start, start + TRASHED_CONTACT_IDS_MAX);
+    const ids = part.map((c) => c.id);
+    try {
+      if (move.to === "trash") {
+        await updateTrashedContacts({ add: ids });
+        went.push(...part);
+      } else {
+        const { restored } = await updateTrashedContacts({ remove: ids });
+        const back = new Set(restored);
+        went.push(...part.filter((c) => back.has(c.id)));
+      }
+    } catch {
+      // Counted by the caller; the parts after it are still sent.
+    }
+  }
+  return went;
+}
+
+/** The part of a Trash move's `action` that went through, or null when none did. */
+function doneTrashAction(action: HistoryAction, went: HistoryContact[]): HistoryAction | null {
+  if (went.length === 0) return null;
+  if (action.kind === "trash") return { kind: "trash", contacts: went };
+  return action;
+}
 
 /**
  * The Undo and Redo stack for actions on the Contacts list, and the toast
@@ -97,23 +135,16 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   // show what the run did.
   const runMutation = useRouteMutation<RunOutcome, Error, RunVars>({
     mutationFn: async ({ action, direction }) => {
-      if (action.kind === "trash") {
-        const send = direction === "do" ? trashContact : restoreContact;
-        const went: HistoryContact[] = [];
-        for (const contact of action.contacts) {
-          try {
-            await send(contact.id);
-            went.push(contact);
-          } catch {
-            // Counted below; the rest are still sent.
-          }
-        }
-        const failed = action.contacts.length - went.length;
+      const move = trashMove(action, direction);
+      if (move) {
+        const went = await sendTrashMove(move);
+        const failed = move.contacts.length - went.length;
         return {
-          done: went.length > 0 ? { kind: "trash", contacts: went } : null,
-          failure: failed > 0 ? trashFailureText(direction, went.length, failed) : null,
+          done: doneTrashAction(action, went),
+          failure: failed > 0 ? trashFailureText(move.to, went.length, failed) : null,
         };
       }
+      if (action.kind !== "group") return { done: null, failure: null };
       const op = groupOp(action, direction);
       const went: GroupChange[] = [];
       const refused: RefusedGroupChange[] = [];

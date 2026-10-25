@@ -371,7 +371,11 @@ _Avoid_: Console, Dashboard, Admin, Admin panel
 **Audit Trail**:
 The permanent record of what each user did on a Message Crate, and when:
 logging in, sessions ending, logins refused, Import Runs, Export Runs, the
-owner's changes to accounts, and every build of the Demo Account. Each entry
+owner's changes to accounts, every build of the Demo Account, and what adds,
+removes or replaces contacts: address book loads, contacts added by hand,
+Delete Contacts and Restore, deletes for good, and Merge Contacts and its
+undo, each by count and contact id. Edits to a contact and Contact Group
+changes are not recorded. Each entry
 names who acted: the account holder, the owner, a server command such as
 `reset-demo`, the server's first start, the server on its own, or someone at
 the login card. The server's first start is the one that adds the Demo

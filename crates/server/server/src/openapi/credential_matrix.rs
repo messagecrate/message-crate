@@ -765,6 +765,7 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
                 .to_vec(),
         )),
         ("post", "/v1/contacts/address-book") => json(json!({})),
+        ("patch", "/v1/trash/contacts") => json(json!({ "add": [], "remove": [] })),
         ("post", "/v1/contacts/vcard-address-book") => Some((
             "text/vcard",
             b"BEGIN:VCARD\nVERSION:3.0\nFN:Robin\nTEL:+15555550199\nEND:VCARD\n".to_vec(),

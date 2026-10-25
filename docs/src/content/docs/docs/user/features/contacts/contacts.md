@@ -143,15 +143,30 @@ The **Contact Groups** button in the toolbar puts the checked contacts, or the o
 ## The actions menu
 
 The ⋯ button beside the sort button above the list opens the list's actions.
-Its first section is headed with what the actions work on: **2 selected** with rows checked, **This list** with a search or a Contact Group open, and **All contacts** otherwise.
+**New Contact** comes first ([Add a contact](#add-a-contact)).
+The section under it is headed with what its actions work on: **2 selected** with rows checked, **This list** with a search or a Contact Group open, and **All contacts** otherwise.
 
 - **Export Contacts** saves the Address Book for those contacts ([Export the file](#export-the-file)).
 - **Delete Contacts** moves the checked contacts to the Trash, after asking, such as **Move 3 contacts to Trash?**. It is gray with no row checked. Nothing is deleted for good: **Restore** in the Trash brings a contact back.
 - **Undo** and **Redo** come last ([Undo and Redo](#undo-and-redo)).
 
+## Add a contact
+
+**New Contact** opens a form with the contact's **Name** and its **Identities**: a phone number, an email address or a WhatsApp number, each with its service.
+**Add identity** adds a row, and the × beside a row takes it away.
+A contact needs a name and may have no identity, which the list shows by its name alone.
+Such a contact is [Unknown](/docs/user/features/contacts/unknown/) until an identity is added to it.
+**Add Contact** adds it, opens it beside the list, and says **Added** and its name at the bottom of the window.
+
+An identity that is already on another contact is refused, and the line under it names that contact, such as **+15555550100 is already on Sam.**
+Nothing is added then.
+The fix is to remove the identity from the form, or to open the contact that has it.
+**New Contact** is gray in the Demo Account.
+
 ## Undo and Redo
 
-Moving contacts to the Trash with **Delete Contacts**, and putting contacts in or out of a Contact Group from the list, can be undone.
+Adding a contact with **New Contact**, moving contacts to the Trash with **Delete Contacts**, and putting contacts in or out of a Contact Group from the list, can be undone.
+Undoing **New Contact** moves the new contact to the Trash, and **Redo** brings it back.
 After each one a message at the bottom of the window says what happened, such as **Moved 3 contacts to Trash**, with an **Undo** button.
 It goes after 20 seconds, on its ×, or when the next action replaces it.
 

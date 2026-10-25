@@ -744,6 +744,30 @@ export function convertVcardToAddressBook(
   );
 }
 
+/**
+ * Add one contact typed by hand (New Contact): a name and zero or more
+ * identities. An identity another contact holds, or one of the account's own,
+ * is refused with every such identity named in the error, as
+ * `identities[0].address: …`, and nothing is created.
+ */
+export function createContact(body: Schema["CreateContactRequest"]): Promise<Schema["Contact"]> {
+  return apiClient.post<Schema["Contact"]>("/v1/contacts", body);
+}
+
+/** The most contact ids one `updateTrashedContacts` may name, `add` and `remove` together. */
+export const TRASHED_CONTACT_IDS_MAX = 10_000;
+
+/**
+ * Move the contacts `add` names to the Trash and take the ones `remove` names
+ * out of it, in one request, which the Audit Trail records as one action. At
+ * most `TRASHED_CONTACT_IDS_MAX` ids in all.
+ */
+export function updateTrashedContacts(
+  body: Schema["UpdateTrashedContactsRequest"],
+): Promise<Schema["UpdateTrashedContactsResponse"]> {
+  return apiClient.patch<Schema["UpdateTrashedContactsResponse"]>("/v1/trash/contacts", body);
+}
+
 /** Put a contact in the trash. Idempotent: trashing an already-trashed one still answers. */
 export function trashContact(contactId: string | number): Promise<void> {
   return apiClient.post<void>(`/v1/contacts/${encodeURIComponent(String(contactId))}/trash`, {});
