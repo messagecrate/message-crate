@@ -123,7 +123,9 @@ describe("attachmentMedia", () => {
 
 describe("threadDrawing", () => {
   function drawing(over: Partial<AttachmentRow>, variant: "converted" | "original" = "converted") {
-    return threadDrawing(attachmentMedia("imessage", row(over), variant), variant);
+    const media = attachmentMedia("imessage", row(over), variant);
+    assert.ok(media.url);
+    return threadDrawing({ ...media, url: media.url });
   }
 
   it("draws a picture's Thumbnail once the server has made one", () => {
@@ -141,8 +143,11 @@ describe("threadDrawing", () => {
     assert.equal(drawing({ thumbnailNotMadeReason: "Invalid data" }), "placeholder");
   });
 
-  it("draws the original picture with the original variant", () => {
-    assert.equal(drawing({}, "original"), "original");
+  it("draws a placeholder, never the original, with the original variant", () => {
+    assert.equal(
+      drawing({ thumbnailMimeType: "image/jpeg", thumbnailAssetsPath: SHA }, "original"),
+      "placeholder",
+    );
   });
 
   it("links a file that is not a picture", () => {
@@ -151,10 +156,6 @@ describe("threadDrawing", () => {
 
   it("says why when the attachment opens in no version", () => {
     assert.equal(drawing({ mimeType: "image/heic", shownAsIs: false }), "notice");
-  });
-
-  it("says the attachment is missing when the server holds no bytes", () => {
-    assert.equal(drawing({ assetsPath: null, sha256: null }), "missing");
   });
 });
 

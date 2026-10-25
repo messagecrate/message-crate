@@ -28,9 +28,9 @@ function redirectTo(pathname: string): NextResponse {
 
 /**
  * Clear both session cookies and send the browser to `/login` when there is
- * no token or the server refuses it (`401`). A token the server still takes
- * is left as it is and the browser goes back to `/`, so a link to this route
- * from another site cannot sign a person out.
+ * no token or the server refuses it (`401 Unauthorized`). A token the server
+ * still takes is left as it is and the browser goes back to `/`, so a link to
+ * this route from another site cannot sign a person out.
  */
 export async function sessionEndedResponse(
   request: NextRequest,

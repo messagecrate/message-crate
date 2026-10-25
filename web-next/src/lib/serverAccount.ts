@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 
-import { NOT_SIGNED_IN, requireAccountId } from "./accountContext";
+import { requireAccountId } from "./accountContext";
 import { runWithAccountAsync } from "./accountScope";
 import { SESSION_ENDED_PATH } from "./sessionEnded";
 import { accountNeedsOnboarding } from "./vault/account";
+import { NOT_SIGNED_IN } from "./vault/client";
 
 /**
  * Run a page's reads, sending the browser to {@link SESSION_ENDED_PATH} when

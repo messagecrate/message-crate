@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 
 import { runWithAccountAsync } from "./accountScope";
 import { getAccountIdFromCookies, getSessionTokenFromCookies } from "./session";
+import { NOT_SIGNED_IN } from "./vault/client";
 
-export const NOT_SIGNED_IN = "Not signed in";
+/** The one "Not signed in" message, which `vaultJson` throws on a 401 too. */
+export { NOT_SIGNED_IN };
 
 /** The signed-in account id. Both session cookies must be present. */
 export async function requireAccountId(): Promise<string> {

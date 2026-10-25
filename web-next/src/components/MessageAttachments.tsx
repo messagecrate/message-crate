@@ -1,15 +1,12 @@
 import {
   attachmentMedia,
+  isImageMime,
   type MediaVariant,
   noPreviewNote,
   noThumbnailNote,
   threadDrawing,
 } from "@/lib/attachmentMedia";
 import type { AttachmentRow } from "@/lib/types";
-
-function isImageMime(mime: string | null): boolean {
-  return Boolean(mime?.startsWith("image/"));
-}
 
 function isVideoMime(mime: string | null): boolean {
   return Boolean(mime?.startsWith("video/"));
@@ -115,9 +112,9 @@ function NoPreviewNotice({
 /**
  * A picture with no Thumbnail yet, or one the server could not make: its name
  * in the Thumbnail's place, with why under it when the server says, opening
- * the original on click, as `web/`'s `AttachmentThumbnail` does. The thread
- * never fetches the original itself (`docs/architecture/rules/media.md`,
- * MEDIA-5).
+ * `url` (the original, or the Preview when that is the version that opens)
+ * on click, as `web/`'s `AttachmentThumbnail` does. The thread never fetches
+ * those bytes itself (`docs/architecture/rules/media.md`, MEDIA-5).
  */
 function ThumbnailPlaceholder({
   attachment,
@@ -162,11 +159,10 @@ export function MessageAttachments({
   return (
     <div className={`${hasBody ? "mt-2" : ""} space-y-1.5`}>
       {attachments.map((a) => {
-        const variant = mediaVariant();
-        const media = attachmentMedia(source, a, variant);
+        const media = attachmentMedia(source, a, mediaVariant());
         const { url, thumbnailUrl } = media;
         if (!url) return <MissingMediaPlaceholder key={a.id} attachment={a} />;
-        switch (threadDrawing(media, variant)) {
+        switch (threadDrawing({ ...media, url })) {
           case "notice":
             return (
               <NoPreviewNotice
@@ -197,18 +193,6 @@ export function MessageAttachments({
             );
           case "placeholder":
             return <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />;
-          case "original":
-            return (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={a.id}
-                src={url}
-                alt={a.originalName ?? "attachment"}
-                loading="lazy"
-                decoding="async"
-                className="max-h-64 max-w-full rounded-lg"
-              />
-            );
           case "link":
             return (
               <a
@@ -221,8 +205,6 @@ export function MessageAttachments({
                 {a.originalName ?? url}
               </a>
             );
-          case "missing":
-            return <MissingMediaPlaceholder key={a.id} attachment={a} />;
         }
       })}
     </div>
