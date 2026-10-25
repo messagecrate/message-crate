@@ -145,7 +145,7 @@ pub(crate) async fn merge_contact(
 /// This contact keeps what was its own before the merge. A contact that was
 /// not the target of the account's most recent merge answers
 /// `409 Conflict`. `restored` names the contacts written back, and the Audit
-/// Trail records them as a `contacts_unmerged` entry with this contact; an
+/// Trail records them as a `contacts_unmerged` entry with this contact. An
 /// undo that writes no contact back writes no entry.
 #[utoipa::path(
     post,

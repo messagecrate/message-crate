@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use ir::IdentityType;
 use sqlx::SqliteConnection;
 
+use crate::db::audit_trail::{AuditAction, AuditEntry, Scope, page};
 use crate::db::contact_merges::MAX_MERGED_CONTACTS;
 use crate::db::handles::upsert_handle_row;
 use crate::problem::ProblemType;
@@ -616,11 +617,36 @@ fn the_documented_cap_is_the_servers() {
     );
 }
 
+/// The account's `contacts_merged` and `contacts_unmerged` Audit Trail
+/// entries, oldest first.
+async fn merge_entries(fixture: &TestFixture, account: i64) -> Vec<AuditEntry> {
+    let mut conn = fixture.conn().await;
+    let (entries, _) = page(
+        &mut conn,
+        Scope::Account(account),
+        100,
+        0,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
+    let mut merges: Vec<_> = entries
+        .into_iter()
+        .filter(|e| {
+            matches!(
+                e.action,
+                AuditAction::ContactsMerged | AuditAction::ContactsUnmerged
+            )
+        })
+        .collect();
+    merges.reverse();
+    merges
+}
+
 /// A merge and its undo are each one Audit Trail entry naming the contact
 /// kept and the contacts merged into it or written back, by id (CONTACT-59).
 #[tokio::test]
 async fn a_merge_and_its_undo_are_each_one_audit_trail_entry() {
-    use crate::db::audit_trail::{AuditAction, Scope, page};
     let (fixture, account) = fixture_with_account().await;
     let a = account.account_id;
     let mut conn = fixture.conn().await;
@@ -646,25 +672,15 @@ async fn a_merge_and_its_undo_are_each_one_audit_trail_entry() {
     merge(&fixture, &account, nicholas, &[nick, koch]).await;
     unmerge(&fixture, &account, nicholas).await;
 
-    let mut conn = fixture.conn().await;
-    let (entries, _) = page(&mut conn, Scope::Account(a), 100, 0, chrono::Utc::now())
+    let recorded: Vec<_> = merge_entries(&fixture, a)
         .await
-        .unwrap();
-    let mut recorded: Vec<_> = entries
         .into_iter()
-        .filter(|e| {
-            matches!(
-                e.action,
-                AuditAction::ContactsMerged | AuditAction::ContactsUnmerged
-            )
-        })
         .map(|e| {
             let mut ids = e.contact_ids.unwrap_or_default();
             ids.sort_unstable();
             (e.action, e.contact_id, e.contacts, ids)
         })
         .collect();
-    recorded.reverse();
     let mut merged = vec![nick, koch];
     merged.sort_unstable();
     assert_eq!(
@@ -690,7 +706,6 @@ async fn a_merge_and_its_undo_are_each_one_audit_trail_entry() {
 /// trail records contacts coming and going, and none came (CONTACT-59).
 #[tokio::test]
 async fn an_undo_that_brings_no_contact_back_writes_no_audit_trail_entry() {
-    use crate::db::audit_trail::{AuditAction, Scope, page};
     let (fixture, account) = fixture_with_account().await;
     let a = account.account_id;
     let mut conn = fixture.conn().await;
@@ -714,18 +729,9 @@ async fn an_undo_that_brings_no_contact_back_writes_no_audit_trail_entry() {
     let answer = unmerge(&fixture, &account, ada).await;
     assert_eq!(answer["restored"], serde_json::json!([]));
 
-    let mut conn = fixture.conn().await;
-    let (entries, _) = page(&mut conn, Scope::Account(a), 100, 0, chrono::Utc::now())
+    let recorded: Vec<_> = merge_entries(&fixture, a)
         .await
-        .unwrap();
-    let recorded: Vec<_> = entries
         .into_iter()
-        .filter(|e| {
-            matches!(
-                e.action,
-                AuditAction::ContactsMerged | AuditAction::ContactsUnmerged
-            )
-        })
         .map(|e| e.action)
         .collect();
     assert_eq!(recorded, vec![AuditAction::ContactsMerged]);
