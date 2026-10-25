@@ -33,9 +33,15 @@ async fn contact_holding(
     )
     .await
     .unwrap();
-    contacts::link_handle_to_contact(&mut conn, account.account_id, handle, contact, Origin::Import)
-        .await
-        .unwrap();
+    contacts::link_handle_to_contact(
+        &mut conn,
+        account.account_id,
+        handle,
+        contact,
+        Origin::Import,
+    )
+    .await
+    .unwrap();
     contact
 }
 
@@ -107,7 +113,12 @@ async fn a_contact_typed_by_hand_is_created_with_its_identities_and_recorded() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|i| (i["address"].as_str().unwrap(), i["service"].as_str().unwrap()))
+        .map(|i| {
+            (
+                i["address"].as_str().unwrap(),
+                i["service"].as_str().unwrap(),
+            )
+        })
         .collect();
     identities.sort_unstable();
     assert_eq!(
@@ -199,8 +210,7 @@ async fn an_identity_another_contact_holds_is_refused_naming_the_holder() {
         vec![
             "identities[1].address: +15555550101 is already on Sam".to_string(),
             "identities[2].address: +15555550102 is already on a contact with no name".to_string(),
-            "identities[3].address: +15555550103 is already on Old Friend in the Trash"
-                .to_string(),
+            "identities[3].address: +15555550103 is already on Old Friend in the Trash".to_string(),
         ]
     );
     assert_eq!(contact_count(&fixture, &account).await, before);
@@ -281,8 +291,13 @@ async fn a_blank_name_or_address_and_a_mode_are_refused() {
 async fn the_demo_account_is_refused_a_new_contact() {
     let (fixture, _) = fixture_with_account().await;
     let (demo, token) = fixture.demo_account_session().await;
-    let (status, text) =
-        post_json_raw(&fixture.state, "/v1/contacts", &token, json!({ "name": "Mom" })).await;
+    let (status, text) = post_json_raw(
+        &fixture.state,
+        "/v1/contacts",
+        &token,
+        json!({ "name": "Mom" }),
+    )
+    .await;
     expect_problem(status, &text, ProblemType::DemoAccountProtected);
     let mut conn = fixture.conn().await;
     let added: i64 = sqlx::query_scalar(

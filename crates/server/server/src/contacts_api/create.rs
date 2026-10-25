@@ -314,7 +314,9 @@ async fn held_elsewhere(
     handle_id: i64,
 ) -> Result<Option<String>, ApiError> {
     if is_account_identity(conn, account_id, handle_id).await? {
-        return Ok(Some(format!("{address} is one of the account's own identities")));
+        return Ok(Some(format!(
+            "{address} is one of the account's own identities"
+        )));
     }
     let Some(holder) = contacts::contact_id_for_handle(conn, account_id, handle_id).await? else {
         return Ok(None);

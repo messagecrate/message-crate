@@ -6,8 +6,7 @@ use crate::test_support::{
     LoggedInAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
     attach_stored_file, attachment, conversation_header, delete_raw, delete_status, expect_problem,
     fake_sha256, fixture_with_account, get_json, get_raw, get_status, message_line, patch_json,
-    patch_json_raw, post_status,
-    seed_conversation, stored_time,
+    patch_json_raw, post_status, seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -705,8 +704,16 @@ async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
     assert_eq!(
         recorded,
         vec![
-            (AuditAction::ContactsTrashed, Some(2), Some(vec![ada, grace])),
-            (AuditAction::ContactsRestored, Some(2), Some(vec![grace, ada])),
+            (
+                AuditAction::ContactsTrashed,
+                Some(2),
+                Some(vec![ada, grace])
+            ),
+            (
+                AuditAction::ContactsRestored,
+                Some(2),
+                Some(vec![grace, ada])
+            ),
         ]
     );
     assert!(entries.iter().all(|e| e.request_id.is_some()));

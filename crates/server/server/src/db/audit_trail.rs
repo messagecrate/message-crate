@@ -790,15 +790,7 @@ pub async fn record_contact_change(
         contact_ids: moved,
         ..Details::default()
     };
-    record_about(
-        conn,
-        action,
-        AuditActor::Holder,
-        account_id,
-        details,
-        now,
-    )
-    .await
+    record_about(conn, action, AuditActor::Holder, account_id, details, now).await
 }
 
 /// Record that `actor` is building the Demo Account with the `size` set of Demo
