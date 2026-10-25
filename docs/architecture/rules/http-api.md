@@ -917,7 +917,7 @@ a separate design
 
 ## Content negotiation
 
-### API-68 `406 Not Acceptable` is answered only when `Accept` names nothing JSON matches
+### API-68 A `/v1` route that answers JSON answers `406 Not Acceptable` only when no member of `Accept` matches JSON
 
 `406 Not Acceptable` is answered only when an `Accept` header is present and no
 member of it matches `application/json`, `application/problem+json`,
