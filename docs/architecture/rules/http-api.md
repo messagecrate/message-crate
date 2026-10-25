@@ -1784,7 +1784,7 @@ A `HEAD` handler takes the method's own verb, `head`: `head_asset`.
 A `POST` that reads is named for what it returns, as its route is:
 `list_contact_summaries`, `get_address_book`.
 
-### API-129 A wire type is named for what it is, for the part of a thing it carries, or for its action
+### API-129 A wire type is named for what it is, for the part of a thing it answers, or for its action
 
 A type on the wire is named one of three ways, and a reader can tell which
 from the name:
