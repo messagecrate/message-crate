@@ -346,7 +346,7 @@ character boundary, ending in `...[cut]`. Every event the server writes is
 held to the same rule by whoever writes it.
 
 Why: the owner reads the log, and the owner never reads content
-(`docs/adr/0008-the-owner-holds-no-messages.md`). Why the cut: a request
+(`docs/adr/0008-the-administrator-holds-no-messages.md`). Why the cut: a request
 needs no credential to leave its line, and a URI can be 64 KiB long, so
 without it anyone who can reach the port could fill the 250 MB the log
 keeps with a few thousand requests and push every other line off the disk

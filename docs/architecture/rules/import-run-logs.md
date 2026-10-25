@@ -32,7 +32,7 @@ Why the owner reads every run log: a run log holds the import's metadata,
 what went wrong, what succeeded, counts, and the names of the files the run
 read (RUNLOG-8). The owner already sees each
 account's Import Runs and what each account holds
-(`docs/adr/0008-the-owner-holds-no-messages.md`), so the run's log is the same
+(`docs/adr/0008-the-administrator-holds-no-messages.md`), so the run's log is the same
 information at finer grain. Decided on #1665, which changed decision 5 on
 #1340 ("a run log, the account that ran the import").
 

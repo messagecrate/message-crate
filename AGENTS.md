@@ -456,15 +456,15 @@ Work from the repository root. The server process must be running before the web
 ./scripts/run-dev.sh                 # keep data/ if present; the server adds the Demo Account if none
 ./scripts/run-dev.sh --reset-demo    # wipe data/, seed the sample inbox, about 54,000 messages (needs ffmpeg)
 ./scripts/run-dev.sh --reset-demo --large  # the same with about 613,000 messages
-./scripts/run-dev.sh --reset         # wipe data/, start empty and unclaimed (UI opens on Create Owner)
-./scripts/run-dev.sh --reset --owner # wipe data/, claim it as admin / admin
+./scripts/run-dev.sh --reset         # wipe data/, start empty and in setup (UI opens on Set Up)
+./scripts/run-dev.sh --reset --admin # wipe data/, set the administrator's password to admin
 ./scripts/run-dev.sh --sqlweb        # also SQLite browser at http://127.0.0.1:8081
 ./scripts/run-dev.sh --release       # optimized build; combines with any flag above
 ```
 
-`serve` adds the Demo Account to a database that does not exist yet, so a plain first start has it too; `--reset` creates the database empty first (`create-database`). `--reset` and `--reset-demo` cannot be combined. Neither claims the Message Crate; add `--owner` to either for that. `--owner` refuses to run unless `[server] bind` in `config/config.toml` is `127.0.0.1`, `localhost` or `[::1]`, because `admin` / `admin` must never be reachable from another machine. It also refuses a bind written other than as one `bind = "..."` line under `[server]`, because the script reads only that form. The check runs before anything is wiped. `./scripts/run-dev.sh --help` lists every flag with examples. The script writes `config/config.toml` from the example (CORS for Vite `:5173` enabled) only when the file is missing. Later sessions omit `--reset-demo` so the existing database stays.
+`serve` adds the Demo Account to a database that does not exist yet, so a plain first start has it too; `--reset` creates the database empty first (`create-database`). `--reset` and `--reset-demo` cannot be combined. Neither sets the administrator's password; add `--admin` to either for that, or to no other flag to keep the existing database. `--admin` runs `message-crate-server set-admin-password`, which replaces any administrator password with `admin`: on a Message Crate in setup it sets the first password, and on one that already has a password it replaces it and ends the administrator's sessions. `set-admin-password` reads the password from standard input and takes only `--config`; it is also the way back in when the administrator's password is lost. `--admin` refuses to run unless `[server] bind` in `config/config.toml` is `127.0.0.1`, `localhost` or `[::1]`, because `admin` / `admin` must never be reachable from another machine. It also refuses a bind written other than as one `bind = "..."` line under `[server]`, because the script reads only that form. The check runs before anything is wiped. `./scripts/run-dev.sh --help` lists every flag with examples. The script writes `config/config.toml` from the example (CORS for Vite `:5173` enabled) only when the file is missing. Later sessions omit `--reset-demo` so the existing database stays.
 
-API: **http://127.0.0.1:8080**. After `--reset-demo`, press **Explore Demo Account** on the login card; the Demo Account has no password. After `--owner`, log in as `admin` / `admin`. Otherwise create the owner in the UI.
+API: **http://127.0.0.1:8080**. After `--reset-demo`, press **Explore Demo Account** on the login card; the Demo Account has no password. After `--admin`, log in as `admin` / `admin`. Otherwise set the password in the UI.
 
 The server is up when `GET http://127.0.0.1:8080/health` answers `200 OK` with `ok`. The address has no `/v1` prefix: `/v1/health` does not exist and answers `404 Not Found`. The host and port are `[server] bind` in `config/config.toml`, `127.0.0.1:8080` when that line is absent or unchanged. The line below uses `127.0.0.1:8080`, so a changed `bind` needs the same address in it.
 
@@ -619,7 +619,7 @@ Three version numbers are easy to mix up:
 | Docker Hub tag  | `0.9.0` (no `v`)    | `bitrealm/message-crate:0.9.0`. Also `0.9`, `latest`. Only manual runs make `sha-…`.   |
 | JSONL schema    | `schema_version: N` | Shared chat file format. `N` is `SCHEMA_VERSION` in `crates/libs/ir/src/lib.rs`, independent of the product version. A file at any other version is refused, never upgraded. |
 | Build           | `0.9.0+343fe0d8`    | The product version plus the commit, which is what a screen shows as "Version". `.dirty` follows the commit when tracked files held uncommitted changes; a build from a `v*` tag is `0.9.0` alone; `0.9.0+unknown` when nothing is known. Nobody writes it: `crates/libs/build-version` works it out for the server and the desktop app, and `web/vite.config.ts` for the SPA, under the same rules. |
-| Schema fingerprint | `1176793189`     | Derived from `schema/sql/*.sql` and stamped into the database. Shown in Owner Home → Server Settings. Never bumped by hand. |
+| Schema fingerprint | `1176793189`     | Derived from `schema/sql/*.sql` and stamped into the database. Shown in Admin Home → Server Settings. Never bumped by hand. |
 
 The Build asks git for the commit. Where there is no `.git`, which is the case inside `docker/Dockerfile`, set `MESSAGE_CRATE_BUILD_METADATA` to the part after the `+` (the Dockerfile takes it as the `BUILD_METADATA` build argument). Set and empty means a release, and is what the tag job passes.
 

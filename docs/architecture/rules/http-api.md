@@ -1057,7 +1057,7 @@ with a session) or by its expiry, never by the program holding it. The
 owner makes no token, and a token row on the owner's account, written by
 hand or restored with a database, answers the same `401 Unauthorized` as a
 token the server never issued. Why: no token acts as the owner
-(`docs/adr/0008-the-owner-holds-no-messages.md`), and the refusal sits in
+(`docs/adr/0008-the-administrator-holds-no-messages.md`), and the refusal sits in
 the token lookup every route goes through, so a route that forgets to
 refuse the owner cannot break it.
 
@@ -1217,7 +1217,7 @@ owner, and made and renamed by the account alone. The owner's list holds
 each token's id, label, permissions, creation, last use, expiry and state,
 and leaves out `token_hint`. Why: the owner must be able to end a
 credential that has leaked, and a token's label and permissions are not
-message content (`docs/adr/0008-the-owner-holds-no-messages.md`). The
+message content (`docs/adr/0008-the-administrator-holds-no-messages.md`). The
 masked hint is part of the secret, and the owner never reads a secret.
 Making a token answers with its secret, so the owner makes none, and a
 token is the account's own name for its program, so the owner renames none.
@@ -1282,7 +1282,7 @@ Why: a staging summary lists the addresses of everyone in the backup, an
 issue names its conversation's file, a note names a file or an address, and
 an export's query is a search over
 the account's messages, all content under
-`docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
+`docs/adr/0008-the-administrator-holds-no-messages.md`. The owner's view is a type
 of its own rather than the account's with fields removed, so a field added
 to a run reaches the owner only when someone adds it to that type.
 

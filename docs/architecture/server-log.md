@@ -91,7 +91,7 @@ as the step and then the database's own message.
 ## What never reaches the log
 
 The owner reads this log, and the owner never reads anyone's messages
-([ADR 0008](../adr/0008-the-owner-holds-no-messages.md)). So a line holds
+([ADR 0008](../adr/0008-the-administrator-holds-no-messages.md)). So a line holds
 outcomes, never content: ids, counts, sizes, times, routes and statuses. A
 search's words, a media link, a password, a token, message text, an
 attachment's bytes and a contact's name or addresses are not written, and a
