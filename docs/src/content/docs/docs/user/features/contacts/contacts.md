@@ -158,7 +158,7 @@ A contact needs a name and may have no identity, which the list shows by its nam
 Such a contact is [Unknown](/docs/user/features/contacts/unknown/) until an identity is added to it.
 **Add Contact** adds it, opens it beside the list, and says **Added** and its name at the bottom of the window.
 
-An identity that is already on another contact is refused, and the line under it names that contact, such as **+15555550100 is already on Sam.**
+An identity that is already on another contact is refused, and the line under it names that contact by its name and its number in Message Crate, such as **+15555550100 is already on Sam (contact 42).**
 Nothing is added then.
 The fix is to remove the identity from the form, or to open the contact that has it.
 **New Contact** is gray in the Demo Account.

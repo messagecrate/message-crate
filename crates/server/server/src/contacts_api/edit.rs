@@ -318,38 +318,16 @@ impl ContactEditor<'_> {
         contacts::linked_handle_id(&mut *self.conn, self.account_id, self.contact_id, raw, on).await
     }
 
-    /// Find or insert the handle row for `raw` on `platform`, without
-    /// linking it to the account owner: contact-owned handles must never
-    /// become owner identities.
-    ///
-    /// A row the account already holds for the address on `platform` is
-    /// taken as it is, with the type its import gave it: a WhatsApp internal
-    /// id such as `123456789012345@lid` is `other` there, as every import
-    /// types it (#1671). A new row is typed the same way, by `platform` and
-    /// then the address's shape ([`handles::handle_type_on`]), so a new `@`
-    /// address on WhatsApp is `other` too (#2709), and every type it takes
-    /// is one `platform` carries.
+    /// Find or insert the handle row for `raw` on `platform`
+    /// ([`handles::identity_handle_id`]), without linking it to the account
+    /// holder: contact-owned handles must never become the account's own
+    /// identities.
     async fn handle_row(
         &mut self,
         raw: &str,
         platform: IdentityService,
     ) -> Result<i64, ContactEditError> {
-        let raw = raw.trim();
-        if let Some(id) =
-            handles::existing_handle_id(&mut *self.conn, self.account_id, raw, platform).await?
-        {
-            return Ok(id);
-        }
-        let handle_type = handles::handle_type_on(raw, platform);
-        let (id, _) = handles::upsert_handle_row(
-            &mut *self.conn,
-            self.account_id,
-            raw,
-            handle_type,
-            Some(platform.as_str()),
-        )
-        .await?;
-        Ok(id)
+        Ok(handles::identity_handle_id(&mut *self.conn, self.account_id, raw, platform).await?)
     }
 
     /// Whether the handle may come to this contact. A handle belongs to one

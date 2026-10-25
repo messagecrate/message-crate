@@ -238,7 +238,7 @@ async fn create_contact(
     let mut checked = Vec::with_capacity(addresses.len());
     for (index, address, service) in addresses {
         let service = service.map_or(IdentityService::TextMessage, IdentityService::from);
-        let handle_id = identity_row(&mut tx, account_id, address, service).await?;
+        let handle_id = handles::identity_handle_id(&mut tx, account_id, address, service).await?;
         if let Some(refusal) = held_elsewhere(&mut tx, account_id, address, handle_id).await? {
             errors.push(format!("identities[{index}].address: {refusal}"));
         }
@@ -278,35 +278,11 @@ async fn create_contact(
     Ok(contact)
 }
 
-/// The `handles` row for `address` on `service`: the one the account holds,
-/// with the type it was stored with, or a new one typed by the service and
-/// the address's shape, as adding an identity to a contact makes it
-/// (CONTACT-9).
-async fn identity_row(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    address: &str,
-    service: IdentityService,
-) -> Result<i64, ApiError> {
-    if let Some(id) = handles::existing_handle_id(conn, account_id, address, service).await? {
-        return Ok(id);
-    }
-    let handle_type = handles::handle_type_on(address, service);
-    let (id, _) = handles::upsert_handle_row(
-        conn,
-        account_id,
-        address,
-        handle_type,
-        Some(service.as_str()),
-    )
-    .await?;
-    Ok(id)
-}
-
 /// Why the identity `handle_id`, typed as `address`, cannot go on a new
 /// contact, or `None` when it can: it is one of the account's own
 /// identities (CONTACT-46), or another contact holds it. The sentence names
-/// that contact, so the person can go to it.
+/// that contact by its name and its id, so the person can find it even when
+/// it has no name or shares its name with another.
 async fn held_elsewhere(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -323,12 +299,12 @@ async fn held_elsewhere(
     };
     let name = contacts::preferred_name(conn, account_id, holder).await?;
     let who = if name.is_empty() {
-        "a contact with no name".to_string()
+        format!("contact {holder}, which has no name")
     } else {
-        name
+        format!("{name} (contact {holder})")
     };
     let trashed = trash::is_contact_trashed(conn, account_id, holder).await?;
-    let place = if trashed { " in the Trash" } else { "" };
+    let place = if trashed { ", in the Trash" } else { "" };
     Ok(Some(format!("{address} is already on {who}{place}")))
 }
 

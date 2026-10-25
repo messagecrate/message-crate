@@ -176,8 +176,8 @@ async fn a_contact_with_a_name_and_no_identity_is_created_and_listed() {
 #[tokio::test]
 async fn an_identity_another_contact_holds_is_refused_naming_the_holder() {
     let (fixture, account) = fixture_with_account().await;
-    contact_holding(&fixture, &account, "Sam", "+15555550101").await;
-    contact_holding(&fixture, &account, "", "+15555550102").await;
+    let sam = contact_holding(&fixture, &account, "Sam", "+15555550101").await;
+    let nameless = contact_holding(&fixture, &account, "", "+15555550102").await;
     let trashed = contact_holding(&fixture, &account, "Old Friend", "+15555550103").await;
     {
         let mut conn = fixture.conn().await;
@@ -208,9 +208,13 @@ async fn an_identity_another_contact_holds_is_refused_naming_the_holder() {
     assert_eq!(
         errors,
         vec![
-            "identities[1].address: +15555550101 is already on Sam".to_string(),
-            "identities[2].address: +15555550102 is already on a contact with no name".to_string(),
-            "identities[3].address: +15555550103 is already on Old Friend in the Trash".to_string(),
+            format!("identities[1].address: +15555550101 is already on Sam (contact {sam})"),
+            format!(
+                "identities[2].address: +15555550102 is already on contact {nameless}, which has no name"
+            ),
+            format!(
+                "identities[3].address: +15555550103 is already on Old Friend (contact {trashed}), in the Trash"
+            ),
         ]
     );
     assert_eq!(contact_count(&fixture, &account).await, before);
