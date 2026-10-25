@@ -334,18 +334,17 @@ describe("every route function asks for a documented address", () => {
 });
 
 describe("the caps the web app copies", () => {
-  it("sends a Trash move in parts no larger than the server documents", () => {
+  it("sends a Trash move in parts no larger than the server takes", () => {
     const schemas = (
       openapi as unknown as {
         components: {
-          schemas: Record<string, { properties: Record<string, { description: string }> }>;
+          schemas: Record<string, { properties: Record<string, { maxItems?: number }> }>;
         };
       }
     ).components.schemas;
-    const remove = schemas.UpdateTrashedContactsRequest?.properties.remove?.description ?? "";
-    expect(remove.replace(/\s+/g, " ")).toMatch(
-      new RegExp(`at most ${serverApi.TRASHED_CONTACT_IDS_MAX}\\b`),
-    );
+    const request = schemas.UpdateTrashedContactsRequest?.properties;
+    expect(request?.add?.maxItems).toBe(serverApi.TRASHED_CONTACT_IDS_MAX);
+    expect(request?.remove?.maxItems).toBe(serverApi.TRASHED_CONTACT_IDS_MAX);
   });
 });
 

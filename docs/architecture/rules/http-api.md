@@ -163,9 +163,14 @@ Membership lives under the collection that owns it:
 `GET` and `PATCH /v1/contact-groups/{id}/members`, with `{add, remove}` id
 lists. The Trash owns the contacts in it, so moving several contacts to the
 Trash and out of it at once is `PATCH /v1/trash/contacts`, with the same
-`{add, remove}` lists, and it answers the ids it moved as `trashed` and
+`{add, remove}` lists of at most 10000 ids each. It answers the contacts of
+`add` now in the Trash as `trashed` and the ones it took out as
 `restored`. Why: Delete Contacts is one action, and the Audit Trail records
 it as one entry only when one request carries it ([CONTACT-57](contacts-identities-and-messages.md#contact-57-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
+Unlike a Contact Group's `add`, which API-34 refuses for an id the caller
+does not hold, an id the account does not hold is skipped in either list.
+Why: an Undo or Redo replays contacts chosen earlier, and one deleted since
+must not keep every other contact of the action where it was.
 `POST /v1/contacts/{id}/trash` and `/restore` stay for one contact.
 Rejected: `POST /v1/contacts/trash` with an id list, a verb on a collection
 that API-12 does not allow.

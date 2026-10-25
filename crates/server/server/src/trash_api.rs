@@ -17,36 +17,41 @@ use crate::asset_store;
 use crate::auth::{FullAccess, FullDeleteAccess};
 use crate::config::Config;
 use crate::db::audit_trail::AuditActor;
-use crate::db::trash::{self, TrashContactsOutcome};
+use crate::db::trash;
 use crate::extract::Json;
 
-/// Most contact ids one `PATCH /v1/trash/contacts` names, `add` and
-/// `remove` together. The Audit Trail entry it writes names each contact it
-/// moved, so the cap bounds the entry. The web app sends a larger Delete
-/// Contacts in parts of this size.
+/// Most contact ids each list of one `PATCH /v1/trash/contacts` names. The
+/// Audit Trail entry it writes names each contact it moved, so the cap bounds
+/// the entry. The web app sends a larger Delete Contacts in parts of this
+/// size. A test holds the schema's `max_items`, which takes only a literal,
+/// to it.
 pub(crate) const MAX_TRASHED_CONTACT_IDS: usize = 10_000;
 
 /// Body for `PATCH /v1/trash/contacts`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct UpdateTrashedContactsRequest {
-    /// Contacts to move to the Trash. An id the account does not hold is
-    /// refused with `422 Unprocessable Entity`, and then nothing changes. A
-    /// contact already in the Trash stays there. Empty when left out.
+    /// Contacts to move to the Trash, at most 10000. An id the account does
+    /// not hold is skipped, so a contact deleted since it was chosen keeps no
+    /// other where it was. A contact already in the Trash stays there. Empty
+    /// when left out.
     #[serde(default)]
+    #[schema(max_items = 10000)]
     pub(crate) add: Vec<i64>,
-    /// Contacts to take out of the Trash. An id that names no contact in the
-    /// account's Trash is ignored. Empty when left out. `add` and `remove`
-    /// together name at least one contact and at most 10000, and no contact
-    /// in both.
+    /// Contacts to take out of the Trash, at most 10000. An id that names no
+    /// contact in the account's Trash is ignored. Empty when left out. `add`
+    /// and `remove` together name at least one contact, and no contact in
+    /// both.
     #[serde(default)]
+    #[schema(max_items = 10000)]
     pub(crate) remove: Vec<i64>,
 }
 
 /// What `PATCH /v1/trash/contacts` changed.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct UpdateTrashedContactsResponse {
-    /// Contacts the request moved to the Trash, in the order `add` named
-    /// them, leaving out those already there.
+    /// Contacts of `add` that are in the Trash now, those already there
+    /// included, in the order `add` named them. A contact the account does
+    /// not hold is left out.
     pub(crate) trashed: Vec<i64>,
     /// Contacts the request took out of the Trash, in the order `remove`
     /// named them, leaving out those that were not in it.
@@ -80,9 +85,9 @@ pub(crate) async fn update_trashed_contacts(
             "add or remove must name at least one contact",
         ));
     }
-    if body.add.len() + body.remove.len() > MAX_TRASHED_CONTACT_IDS {
+    if body.add.len() > MAX_TRASHED_CONTACT_IDS || body.remove.len() > MAX_TRASHED_CONTACT_IDS {
         return Err(ApiError::validation(format!(
-            "at most {MAX_TRASHED_CONTACT_IDS} contact ids"
+            "add and remove may each name at most {MAX_TRASHED_CONTACT_IDS} contacts"
         )));
     }
     let removing: std::collections::HashSet<i64> = body.remove.iter().copied().collect();
@@ -92,23 +97,18 @@ pub(crate) async fn update_trashed_contacts(
         )));
     }
     let mut conn = db.acquire().await?;
-    match trash::update_trashed_contacts(
+    let change = trash::update_trashed_contacts(
         &mut conn,
         auth.account_id,
         &body.add,
         &body.remove,
         chrono::Utc::now(),
     )
-    .await?
-    {
-        TrashContactsOutcome::Changed(change) => Ok(Json(UpdateTrashedContactsResponse {
-            trashed: change.trashed,
-            restored: change.restored,
-        })),
-        TrashContactsOutcome::NotHeld(id) => {
-            Err(ApiError::validation(format!("contact {id} not found")))
-        }
-    }
+    .await?;
+    Ok(Json(UpdateTrashedContactsResponse {
+        trashed: change.in_trash,
+        restored: change.restored,
+    }))
 }
 
 /// Empty the trash. Every trashed conversation is deleted for good, with

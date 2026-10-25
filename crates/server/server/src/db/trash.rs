@@ -196,23 +196,18 @@ pub async fn restore(
     Ok(true)
 }
 
-/// What [`update_trashed_contacts`] changed: the contacts it moved to the
-/// Trash and the ones it took out, each in the order the request named them.
+/// What [`update_trashed_contacts`] did, each list in the order the request
+/// named its contacts.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TrashedContactsChange {
-    /// Contacts that were not in the Trash and now are.
+    /// Contacts of `add` that are in the Trash now, those that were there
+    /// already included. A contact the account does not hold is left out.
+    pub in_trash: Vec<i64>,
+    /// Contacts that were not in the Trash and now are: what the
+    /// `contacts_trashed` entry names.
     pub trashed: Vec<i64>,
     /// Contacts that were in the Trash and now are not.
     pub restored: Vec<i64>,
-}
-
-/// What [`update_trashed_contacts`] did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TrashContactsOutcome {
-    /// The Trash holds every contact of `add` and none of `remove`.
-    Changed(TrashedContactsChange),
-    /// This id of `add` names no contact of the account, so nothing changed.
-    NotHeld(i64),
 }
 
 /// Move the contacts `add` names to the Trash and take the ones `remove`
@@ -221,12 +216,11 @@ pub enum TrashContactsOutcome {
 /// entry and one `contacts_restored` entry, each with the count and the ids
 /// of the contacts it changed (CONTACT-57).
 ///
-/// Every id of `add` is checked before anything is written, so an id the
-/// account does not hold leaves the Trash as it was. A contact already in the
-/// Trash stays there and is not counted. An id of `remove` that names no
-/// trashed contact of the account is ignored: the Trash is already as the
-/// caller asked (`docs/architecture/rules/http-api.md`, API-34). The caller
-/// keeps an id out of both lists at once.
+/// An id the account does not hold is skipped in either list, so one contact
+/// deleted since the person chose it never keeps the others where they were
+/// (`docs/architecture/rules/http-api.md`, API-13). A contact already in the
+/// Trash stays there and is not recorded again, and one not in it is not
+/// restored. The caller keeps an id out of both lists at once.
 ///
 /// # Errors
 ///
@@ -238,20 +232,19 @@ pub async fn update_trashed_contacts(
     add: &[i64],
     remove: &[i64],
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<TrashContactsOutcome> {
+) -> Result<TrashedContactsChange> {
     let mut tx = begin_write(conn)
         .await
         .context("begin a write transaction")?;
-    for &id in add {
-        if !owns_contact(&mut tx, account_id, id)
-            .await
-            .context("check that the account holds the contact")?
-        {
-            return Ok(TrashContactsOutcome::NotHeld(id));
-        }
-    }
     let mut change = TrashedContactsChange::default();
     for &id in add {
+        if change.in_trash.contains(&id)
+            || !owns_contact(&mut tx, account_id, id)
+                .await
+                .context("check that the account holds the contact")?
+        {
+            continue;
+        }
         let inserted = sqlx::query(
             "INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)
              ON CONFLICT DO NOTHING",
@@ -262,6 +255,7 @@ pub async fn update_trashed_contacts(
         .await
         .context("insert a contact's trash marker")?
         .rows_affected();
+        change.in_trash.push(id);
         if inserted > 0 {
             change.trashed.push(id);
         }
@@ -295,7 +289,7 @@ pub async fn update_trashed_contacts(
     tx.commit()
         .await
         .context("commit the contacts' trash markers")?;
-    Ok(TrashContactsOutcome::Changed(change))
+    Ok(change)
 }
 
 /// True when `contact_id` carries `account_id`'s trash marker.

@@ -3,7 +3,6 @@ import { useAuth } from "../hooks/useAuth";
 import { useResetOnChange } from "../hooks/useResetOnChange";
 import { useRouteMutation } from "../hooks/useRouteQuery";
 import { useSetContactGroupMembers } from "../hooks/useSetContactGroupMembers";
-import { ApiError } from "../lib/api";
 import { errorText } from "../lib/apiErrorMessage";
 import {
   actionText,
@@ -45,53 +44,28 @@ type RunVars = { action: HistoryAction; direction: HistoryDirection };
 /**
  * Send one Trash move and answer the contacts it moved. All of them go in
  * one request, which the Audit Trail records as one action; only a move of
- * more than the server takes at once is sent in parts. A contact already in
- * the Trash counts as moved there. A restore counts only the contacts the
- * server took out, so one no longer in the Trash is reported. A refused part
+ * more than the server takes at once is sent in parts. The server answers
+ * the contacts that are in the Trash after a move there, those already there
+ * included, and the contacts it took out after a restore. A contact deleted
+ * since the action is in neither, so it alone is reported. A refused part
  * moved none of its contacts, and the parts after it are still sent.
  */
 async function sendTrashMove(move: TrashMove): Promise<HistoryContact[]> {
   const went: HistoryContact[] = [];
   for (let start = 0; start < move.contacts.length; start += TRASHED_CONTACT_IDS_MAX) {
     const part = move.contacts.slice(start, start + TRASHED_CONTACT_IDS_MAX);
-    went.push(...(await sendTrashPart(move.to, part)));
-  }
-  return went;
-}
-
-/** The server's refusal of a contact to move to the Trash that the account no longer holds. */
-const GONE_CONTACT = /^contact (\d+) not found$/;
-
-/**
- * Send one part of a Trash move and answer the contacts it moved. The server
- * refuses a move to the Trash whole when one contact is gone, deleted since
- * the action, and names it. That contact is counted as not moved and the rest
- * are sent again, so one gone contact keeps only itself out of the Trash.
- */
-async function sendTrashPart(
-  to: TrashMove["to"],
-  part: HistoryContact[],
-): Promise<HistoryContact[]> {
-  let left = part;
-  while (left.length > 0) {
-    const ids = left.map((c) => c.id);
+    const ids = part.map((c) => c.id);
     try {
-      if (to === "trash") {
-        await updateTrashedContacts({ add: ids });
-        return left;
-      }
-      const { restored } = await updateTrashedContacts({ remove: ids });
-      const back = new Set(restored);
-      return left.filter((c) => back.has(c.id));
-    } catch (err) {
-      const found = err instanceof ApiError ? GONE_CONTACT.exec(err.errors[0] ?? "") : null;
-      const gone = found ? Number(found[1]) : null;
-      // Anything else refused the whole part; the caller counts it.
-      if (gone === null || !ids.includes(gone)) return [];
-      left = left.filter((c) => c.id !== gone);
+      const answer = await updateTrashedContacts(
+        move.to === "trash" ? { add: ids } : { remove: ids },
+      );
+      const moved = new Set(move.to === "trash" ? answer.trashed : answer.restored);
+      went.push(...part.filter((c) => moved.has(c.id)));
+    } catch {
+      // Counted by the caller; the parts after it are still sent.
     }
   }
-  return [];
+  return went;
 }
 
 /** The part of a Trash move's `action` that went through, or null when none did. */

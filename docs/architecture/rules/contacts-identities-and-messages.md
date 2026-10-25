@@ -1143,7 +1143,7 @@ or Redo is recorded as the same change made by hand. Undo and Redo get no
 entry of their own. A request that changes no contact, such as moving a
 contact already in the Trash there again, writes no entry. Delete Contacts
 sends its contacts in one request, `PATCH /v1/trash/contacts`, so the trail
-sees one action. That route takes at most 10000 ids, and a larger selection
+sees one action. That route takes at most 10000 ids in a list, and a larger selection
 is sent, and recorded, in parts of that size. A rename, an identity added, swapped or
 taken off in the contact drawer, a country picked, a Contact Group
 membership change, and a Contact Group created, renamed or deleted get no

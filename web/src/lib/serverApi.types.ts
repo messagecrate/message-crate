@@ -6045,16 +6045,17 @@ export interface components {
         /** @description Body for `PATCH /v1/trash/contacts`. */
         UpdateTrashedContactsRequest: {
             /**
-             * @description Contacts to move to the Trash. An id the account does not hold is
-             *     refused with `422 Unprocessable Entity`, and then nothing changes. A
-             *     contact already in the Trash stays there. Empty when left out.
+             * @description Contacts to move to the Trash, at most 10000. An id the account does
+             *     not hold is skipped, so a contact deleted since it was chosen keeps no
+             *     other where it was. A contact already in the Trash stays there. Empty
+             *     when left out.
              */
             add?: number[];
             /**
-             * @description Contacts to take out of the Trash. An id that names no contact in the
-             *     account's Trash is ignored. Empty when left out. `add` and `remove`
-             *     together name at least one contact and at most 10000, and no contact
-             *     in both.
+             * @description Contacts to take out of the Trash, at most 10000. An id that names no
+             *     contact in the account's Trash is ignored. Empty when left out. `add`
+             *     and `remove` together name at least one contact, and no contact in
+             *     both.
              */
             remove?: number[];
         };
@@ -6066,8 +6067,9 @@ export interface components {
              */
             restored: number[];
             /**
-             * @description Contacts the request moved to the Trash, in the order `add` named
-             *     them, leaving out those already there.
+             * @description Contacts of `add` that are in the Trash now, those already there
+             *     included, in the order `add` named them. A contact the account does
+             *     not hold is left out.
              */
             trashed: number[];
         };

@@ -675,7 +675,8 @@ async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
         moved,
         serde_json::json!({ "trashed": [ada, grace], "restored": [] })
     );
-    // Again: both are already there, so nothing moves and nothing is recorded.
+    // Again: both are already there, so the answer names them and nothing
+    // is recorded.
     let again: serde_json::Value = patch_json(
         &fixture.state,
         "/v1/trash/contacts",
@@ -683,7 +684,10 @@ async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
         serde_json::json!({ "add": [grace, ada] }),
     )
     .await;
-    assert_eq!(again, serde_json::json!({ "trashed": [], "restored": [] }));
+    assert_eq!(
+        again,
+        serde_json::json!({ "trashed": [grace, ada], "restored": [] })
+    );
     let back: serde_json::Value = patch_json(
         &fixture.state,
         "/v1/trash/contacts",
@@ -719,17 +723,49 @@ async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
     assert!(entries.iter().all(|e| e.request_id.is_some()));
 }
 
-/// An id to move to the Trash that the account does not hold refuses the
-/// whole request, and so do an empty request and an id in both lists.
+/// A contact the account does not hold, such as one deleted since it was
+/// chosen, is skipped, and the others still move: one gone contact keeps no
+/// other out of the Trash. An empty request and an id in both lists are
+/// refused.
 #[tokio::test]
-async fn a_contact_the_account_does_not_hold_refuses_the_whole_move() {
+async fn a_contact_the_account_does_not_hold_is_skipped_and_the_rest_move() {
+    use crate::db::audit_trail::AuditAction;
     let (fixture, alice) = fixture_with_account().await;
     let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let ada = seed_named_contact(&fixture, &alice, "Ada").await;
     let bobs = seed_named_contact(&fixture, &bob, "Bob's").await;
 
+    let moved: serde_json::Value = patch_json(
+        &fixture.state,
+        "/v1/trash/contacts",
+        &alice.token,
+        serde_json::json!({ "add": [bobs, ada, 999_999] }),
+    )
+    .await;
+    assert_eq!(
+        moved,
+        serde_json::json!({ "trashed": [ada], "restored": [] })
+    );
+    let recorded: Vec<_> = contact_entries(&fixture, &alice)
+        .await
+        .into_iter()
+        .map(|e| (e.action, e.contact_ids))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![(AuditAction::ContactsTrashed, Some(vec![ada]))]
+    );
+    let mut conn = fixture.conn().await;
+    let bobs_trashed: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM trashed_contacts WHERE contact_id = $1")
+            .bind(bobs)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(bobs_trashed, 0);
+    drop(conn);
+
     for body in [
-        serde_json::json!({ "add": [ada, bobs] }),
         serde_json::json!({}),
         serde_json::json!({ "add": [ada], "remove": [ada] }),
     ] {
@@ -737,14 +773,22 @@ async fn a_contact_the_account_does_not_hold_refuses_the_whole_move() {
             patch_json_raw(&fixture.state, "/v1/trash/contacts", &alice.token, body).await;
         expect_problem(status, &text, ProblemType::ValidationFailed);
     }
-    let mut conn = fixture.conn().await;
-    let trashed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM trashed_contacts")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(trashed, 0);
-    drop(conn);
-    assert!(contact_entries(&fixture, &alice).await.is_empty());
+}
+
+/// The reference states the cap the handler keeps on each list, so the web
+/// app's copy of it can be checked against the reference.
+#[test]
+fn the_reference_states_the_trash_move_cap() {
+    let doc: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let request = &doc["components"]["schemas"]["UpdateTrashedContactsRequest"]["properties"];
+    for list in ["add", "remove"] {
+        assert_eq!(
+            request[list]["maxItems"],
+            super::MAX_TRASHED_CONTACT_IDS,
+            "{list}: {request}"
+        );
+    }
 }
 
 /// The one-contact routes record the same entries as the list's, and a

@@ -20,9 +20,7 @@ use crate::db::contacts::read::{
 };
 use crate::db::handles::{self, ApiIdentityService, IdentitiesOf, Identity};
 use crate::db::ownership::owns_contact;
-use crate::db::trash::{
-    DeleteOutcome, TrashContactsOutcome, Trashable, delete_trashed, update_trashed_contacts,
-};
+use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, update_trashed_contacts};
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
 
 pub(crate) mod address_book;
@@ -395,11 +393,12 @@ pub(crate) async fn trash_contact(
     AxumPath(contact_id): AxumPath<i64>,
 ) -> Result<StatusCode, ApiError> {
     let mut conn = db.acquire().await?;
-    let now = chrono::Utc::now();
-    match update_trashed_contacts(&mut conn, auth.account_id, &[contact_id], &[], now).await? {
-        TrashContactsOutcome::Changed(_) => Ok(StatusCode::NO_CONTENT),
-        TrashContactsOutcome::NotHeld(_) => Err(ApiError::not_found("contact")),
+    if !owns_contact(&mut conn, auth.account_id, contact_id).await? {
+        return Err(ApiError::not_found("contact"));
     }
+    let now = chrono::Utc::now();
+    update_trashed_contacts(&mut conn, auth.account_id, &[contact_id], &[], now).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Take a contact out of the trash. Idempotent: restoring a contact that
