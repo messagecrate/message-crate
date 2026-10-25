@@ -1541,7 +1541,7 @@ username typed and the password are never written
 
 ## Runs
 
-### API-109 A run is recorded for good, with what started it
+### API-109 A run is recorded for good, with what started it, and outlives its account
 
 An Import Run and an Export Run are recorded permanently, whether they
 completed, failed or were canceled, and outlive the account that ran them, as
@@ -1549,11 +1549,30 @@ the rest of the Audit Trail does. Each run records what started it: a Session
 with the app it named, or an API token by its label and hint as they were
 then. There is no sessionless import and no unrecorded export.
 
+Deleting an account closes each of its runs still running, Import Run and
+Export Run alike, as `canceled` at the time of the deletion, before the run
+is kept without the account. Why: the account's Sessions and API tokens end
+with it, so no client is left to close the run, and a record kept as
+`running` would say that work is still under way
+(`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+
 ### API-110 A run's settings are stated once on creation, and `complete`, `discard` and `cancel` are the client's ways to close it
 
-The client closes a run: a run's settings are stated once on creation, never
-per batch or per page, and `complete`, `discard` (imports) and `cancel`
-(exports) are the only ways out.
+A run's settings are stated once on creation, never per batch or per page.
+`complete`, `discard` (imports) and `cancel` (exports) are the client's ways
+to close a run. A run is also closed as `canceled` by something other than
+its own `complete`, `discard` or `cancel`. Starting an Export Run closes the
+account's running one, and the server closes an Export Run no page of which
+was read for an hour (API-119). Deleting an account closes each of its
+running Import Runs and Export Runs (API-109). The server's
+`imports discard` command closes an account's running Import Run, such as
+one a killed import left open.
+
+A client still sending to a run closed by a new Export Run, by the server
+after an hour with no page read, or by `imports discard` gets the
+`409 Conflict` every finished run answers (API-112). A request that arrives
+after its account is deleted fails its credential before the run is read,
+and answers `401 Unauthorized` (API-28).
 
 ### API-111 `complete` states the outcome, and a run an error stopped is `failed`, never canceled
 
