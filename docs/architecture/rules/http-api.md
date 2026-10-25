@@ -1011,6 +1011,9 @@ under the same policy without change.
 
 ## Credentials and reach
 
+API-71 to API-75 are the credentials, API-76 to API-93 what each reaches, and
+API-94 to API-104 what a request is held to.
+
 ### API-71 Every route declares which of the three credentials it accepts
 
 Three credentials exist, and the OpenAPI document declares each as a
@@ -1126,8 +1129,6 @@ way.
 Rejected: one link per account for all its assets. A link copied out of
 the page would read every attachment the account holds.
 
-What each reaches, and the limits a request is held to, are API-76 to API-104.
-
 ### API-76 Browse routes take a Session only
 
 Browse routes (conversations, messages, contacts, groups, tags, saved
@@ -1183,7 +1184,7 @@ session: the account's own with the `delete` permission, or, for an
 account's messages and for the account itself, the owner's. A token is
 refused whatever its scopes.
 
-### API-84 The Demo Account is refused by its id, whatever its permission row says
+### API-84 The Demo Account is refused imports, permanent deletion, an address book load and API tokens by its id, whatever its permission row says
 
 The Demo Account is refused with `403 Forbidden` and
 `demo-account-protected` by its id, whatever its permission row says, on
@@ -1258,7 +1259,7 @@ Rejected: narrowing by the username the entries keep, which reads two
 accounts that held one username as one, and takes in the logins refused for
 the username while no account held it.
 
-### API-91 The account reads its own runs in full, and the owner reads a type of its own
+### API-91 The account reads its own runs in full, and the owner reads a run as a type of its own that carries no content
 
 The account reads its own runs in full, a list's rows less what
 API-44 keeps out of a row. The owner reads each run as an
@@ -1323,7 +1324,7 @@ other route has a body cap fixed in the code. Why: the owner may set any
 limit of 1 byte or more, and a limit that held every body would refuse
 the login and the settings change that raise it again.
 
-### API-96 An import batch body is held to 16 MiB, and every body to the body time limits
+### API-96 An import batch body is held to 16 MiB
 
 An import batch body is held to 16 MiB, the most the desktop app's Upload
 packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the

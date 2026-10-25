@@ -21,7 +21,7 @@ Either token travels as a Bearer header:
 Authorization: Bearer <token>
 ```
 
-An API token carries the `import` scope, the `export` scope, or both. It never browses and never deletes, so outside an Export Run it started, a program reads no messages. The full rules are API-71 to API-93 in the HTTP interface rules.
+An API token carries the `import` scope, the `export` scope, or both. It never browses and never deletes, so outside an Export Run it started, a program reads no messages. The full rules are API-71 to API-108 in the HTTP interface rules.
 
 `GET /v1/session` answers which account a token belongs to, which is a quick way to check a new token:
 
