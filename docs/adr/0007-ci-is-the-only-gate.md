@@ -31,10 +31,11 @@ heavy jobs read them:
 | `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires eleven of them: every job but `secrets` and
-`windows-local-server`. The maintainer adds `secrets` to the required checks
-once it has run green (#3093), and `windows-local-server` once it has run
-green, for the reason the ruleset requires `windows-config` (#2788).
+The ruleset requires eleven of them: every job but `docker-context` and
+`windows-local-server`. The maintainer adds `docker-context` under its new
+name once it has run green (#2838), and `windows-local-server` once it has
+run green, for the reason the ruleset requires `windows-config` (#2788).
+`secrets` has been required since 2026-10-24 (#3093).
 GitHub's own secret scanning and push protection are on for the repository
 as well. They block a provider token at `git push`, and the gitleaks job finds what
 their patterns miss, such as a pasted Session or API token. The job runs on
