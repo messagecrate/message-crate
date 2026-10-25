@@ -756,7 +756,7 @@ lock, or because every database connection stayed in use, and either way a
 second try at once meets the same busy database. It never tries a write
 again: it shows the write's failure with its `detail`.
 
-### API-60 The database pool holds 8 connections
+### API-60 The database pool holds 8 connections, a request waits 10 seconds for one, and a write 15 seconds for the write lock
 
 The pool (`crates/server/server/src/db/engine.rs`) holds 8 connections: two
 import batches and the sweep of unreferenced files after an Import Run
@@ -799,10 +799,10 @@ whole batch more
 
 ### API-62 A stop waits up to 30 seconds for the requests in flight
 
-The stop then (after API-61) waits for the requests in flight, every route
-alike, and for the stop of a Demo Account build and of the Thumbnail and
-Preview pass, for up to 30 seconds (`STOP_DRAIN_LIMIT` in
-`crates/server/server/src/startup.rs`).
+After a server told to stop closes its import slots (API-61), it waits for the
+requests in flight, every route alike, and for the stop of a Demo Account build
+and of the Thumbnail and Preview pass, for up to 30 seconds (`STOP_DRAIN_LIMIT`
+in `crates/server/server/src/startup.rs`).
 A request still running then is cut off, and the server exits after one
 `WARN` line naming each such request by its id, method and path
 (`crate::in_flight` tracks every request until its answer's body is sent).
