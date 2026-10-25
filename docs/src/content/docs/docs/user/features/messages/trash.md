@@ -66,7 +66,7 @@ Deleting a contact never deletes a conversation.
 Every conversation in Trash is deleted with its messages, and every contact in Trash becomes Unknown.
 It acts on all of Trash, not only on what a search is showing.
 
-Deleting needs the account's delete permission, which the Owner sets.
+Deleting needs the account's delete permission, which the administrator sets.
 Without it, **Delete** and **Empty Trash** are disabled and show `Deleting is not permitted for this account`.
 Moving to Trash and restoring stay available.
 
@@ -109,10 +109,10 @@ The database's files are not the only place the messages are kept.
 The attachment files, the copies made before the delete, and the sources the messages came from keep what they held.
 
 A deleted attachment's file is removed, but the disk keeps its bytes in free space until something else is written there.
-Full-disk encryption is what keeps them unreadable on a lost or stolen disk, as [Encrypt the disk that holds the volume](/docs/user/features/owner/run-on-another-machine/#encrypt-the-disk-that-holds-the-volume) describes.
+Full-disk encryption is what keeps them unreadable on a lost or stolen disk, as [Encrypt the disk that holds the volume](/docs/user/features/admin/run-on-another-machine/#encrypt-the-disk-that-holds-the-volume) describes.
 
 A backup of the data directory or an export made before the delete holds the messages it was made with until it is deleted.
-So does the copy the server keeps before a schema rebuild, named like `messagecrate.db.before-rebuild-1176793189`, as [Update Message Crate](/docs/user/features/owner/update/) describes.
+So does the copy the server keeps before a schema rebuild, named like `messagecrate.db.before-rebuild-1176793189`, as [Update Message Crate](/docs/user/features/admin/update/) describes.
 
 The phone or app backup the messages were imported from still holds them, and so do the conversation files the desktop app wrote while importing it.
 Deleting from Message Crate leaves both as they are.

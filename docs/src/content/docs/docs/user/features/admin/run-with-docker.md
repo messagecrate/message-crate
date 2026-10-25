@@ -5,10 +5,10 @@ description: One Docker command starts a Message Crate that stays on, for a home
 
 The desktop app starts a Message Crate of its own, which runs while the app is open.
 Docker runs one that stays on: after a restart, with the app closed, and on a computer nobody sits at.
-It is the same server either way, with the same first screen, the same Demo Account, and the same Owner Home.
+It is the same server either way, with the same first screen, the same Demo Account, and the same Admin Home.
 
 The two don't share messages.
-A Message Crate started here begins with demo data only, and the Owner, the accounts, and the imports are made in it as in [Your own messages](/docs/user/your-messages/create-the-owner-and-an-account/).
+A Message Crate started here begins with demo data only, and the administrator's password, the accounts, and the imports are made in it as in [Your own messages](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/).
 
 ## Install Docker
 
@@ -81,9 +81,9 @@ Later starts write nothing and answer at once.
 
 ## Check that it worked
 
-[http://localhost:8080](http://localhost:8080) in a browser shows a card titled **Message Crate**, with the line **Connected to localhost:8080**, a **Create Owner** form, and an **Explore Demo Account** button.
+[http://localhost:8080](http://localhost:8080) in a browser shows a card titled **Message Crate**, with the line **Connected to localhost:8080**, a **Set Up** form, and an **Explore Demo Account** button.
 
-![The first screen of a new Message Crate: Create Owner, and Explore Demo Account](../../../../../../assets/user-guide/login.png)
+![The first screen of a new Message Crate: Set Up, and Explore Demo Account](../../../../../../assets/user-guide/login.png)
 
 Is port 8080 already in use?
 
@@ -95,4 +95,4 @@ Changing the first `8080` in the command to a free port, such as `-p 127.0.0.1:8
 
 Importing needs the desktop app.
 On the same computer the app finds this Message Crate at its usual address and starts no server of its own.
-For a Message Crate on another computer, **Change server address** on the app's first screen takes its address; [Run on another machine](/docs/user/features/owner/run-on-another-machine/) has the steps.
+For a Message Crate on another computer, **Change server address** on the app's first screen takes its address; [Run on another machine](/docs/user/features/admin/run-on-another-machine/) has the steps.

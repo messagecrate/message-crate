@@ -20,7 +20,7 @@ For a Message Crate in Docker:
 3. In the desktop app, **Server Address** must hold the server's address, and **Test** checks it. The app keeps the address after logging out and opens on the login card for it at the next start. It starts its own Message Crate only when the address is its own, `http://127.0.0.1:8080`.
 
 A server on a different computer needs more than the address.
-[Run on another machine](/docs/user/features/owner/run-on-another-machine/) covers it.
+[Run on another machine](/docs/user/features/admin/run-on-another-machine/) covers it.
 
 ### The app says another program is using port 8080
 
@@ -33,17 +33,17 @@ Another program holds port 8080.
 Changing the first `8080` in the `docker run` command to a free port, such as `-p 127.0.0.1:8090:8080`, moves the server to `http://localhost:8090`.
 The desktop app then needs `http://127.0.0.1:8090` under **Change server address**.
 
-### The browser shows Create Owner after an update
+### The browser shows Set Up after an update
 
 The new release changed the database layout, and the server rebuilt the database empty.
-[Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) describes what is gone and the way back.
+[Update Message Crate](/docs/user/features/admin/update/#when-the-database-layout-changes) describes what is gone and the way back.
 
-### Owner Home says the server could not turn on write-ahead logging
+### Admin Home says the server could not turn on write-ahead logging
 
 The server turns on write-ahead logging each time it starts, so pages load while an import writes.
 When it can't, most often because another program has the database file open, the server starts without it, and every page waits for each import batch.
 The notice quotes the error SQLite gave when the server asked for write-ahead logging, such as `database is locked`, when it gave one; otherwise SQLite kept another journal mode without an error.
-The server's log, under **Logs** in Owner Home, holds the same warning from the start.
+The server's log, under **Logs** in Admin Home, holds the same warning from the start.
 Closing any other program that has the database file open, then restarting the server, turns it back on.
 **Server Settings** shows the journal mode, which reads `wal` once it is on.
 
@@ -51,38 +51,39 @@ Closing any other program that has the database file open, then restarting the s
 
 ### "invalid username or password" with the right password
 
-The Owner may have set the account's **Status** to **Disabled**.
+The administrator may have set the account's **Status** to **Disabled**.
 A disabled account's login gets the same answer as a wrong password, so someone guessing passwords can't tell which guess was right.
-The Owner checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), and sets it back to **Active**.
+The administrator checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/admin/admin-home/#account), and sets it back to **Active**.
 
 ### A program reports "this account is disabled"
 
-The Owner set the account's **Status** to **Disabled**, and the program used one of the account's API tokens.
+The administrator set the account's **Status** to **Disabled**, and the program used one of the account's API tokens.
 A person using the account sees the login card instead, because disabling the account logs them out.
-The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
+The administrator sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/admin/admin-home/#account).
 
 ### An account's password is forgotten
 
-The Owner sets a new one under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), with **Change password**.
-The Owner doesn't need the old password.
+The administrator sets a new one under **User Accounts**, in the account's [User Settings](/docs/user/features/admin/admin-home/#account), with **Change password**.
+The administrator doesn't need the old password.
 
-### The Owner's password is forgotten
+### The administrator's password is lost
 
-Nothing in the browser or the desktop app can set the Owner's password, because no account stands above the Owner.
+Nothing in the browser or the desktop app can set the administrator's password, because no account stands above the administrator.
 The server program sets it from a command line on the computer that runs Docker.
 
-```bash title="Set a new Owner password"
-docker exec -it message-crate message-crate-server reset-owner-password
+```bash title="Set a new administrator password"
+docker exec -it message-crate message-crate-server set-admin-password
 ```
 
 The command asks for the new password and doesn't show it as it's typed.
 It takes the password that way, not on the command line, because a command line is visible to everyone signed in to the computer while the command runs, and stays in the shell's history afterwards.
-It prints the Owner's username and ends every Session the Owner had open.
+It prints **Administrator password set. Log in as admin.** and ends every Session the administrator had open.
+On a Message Crate still in setup it sets the first password instead, and prints **Message Crate set up. Log in as admin.**
 
 ### There is no Create Account on the login card
 
-The login card offers **Create Account** only when the Owner has turned on **Let anyone who can reach this server create their own account** under [Server Settings](/docs/user/features/owner/owner-home/#server-settings).
-With it off, the Owner creates every account with **Add account**.
+Only the administrator creates accounts, with **Add account** under [User Accounts](/docs/user/features/admin/admin-home/#add-an-account).
+The login card offers **Login** only, and no setting lets anyone create their own account.
 
 ## Desktop app
 
@@ -96,7 +97,7 @@ The installers are not code-signed yet, so both systems warn that the publisher 
 **Import** and **Export** are in the desktop app only.
 The browser doesn't show them.
 
-The Owner doesn't have them in either, because the Owner holds no messages.
+The administrator doesn't have them in either, because the administrator holds no messages.
 Importing needs an account, and that account needs **Import** on under **Message Permissions**.
 
 ## Import

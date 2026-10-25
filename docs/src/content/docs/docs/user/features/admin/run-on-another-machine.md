@@ -10,13 +10,13 @@ This page covers a server on a second computer, such as a home server, reached o
 
 Three things differ from the first-time path:
 
-- The server must be published on the network. The first-time command, in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#start-the-server), publishes it to its own computer only.
+- The server must be published on the network. The first-time command, in [Run Message Crate with Docker](/docs/user/features/admin/run-with-docker/#start-the-server), publishes it to its own computer only.
 - The browser and the desktop app need the server's address in place of `localhost`.
 - A Message Crate that already holds messages has to be moved, by copying its Docker volume.
 
 ## Publish the server on the network
 
-The command in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/) has `-p 127.0.0.1:8080:8080`.
+The command in [Run Message Crate with Docker](/docs/user/features/admin/run-with-docker/) has `-p 127.0.0.1:8080:8080`.
 The `127.0.0.1` in front means only that computer reaches the server.
 
 Without it, Docker publishes port 8080 on every network the computer is connected to.
@@ -57,15 +57,15 @@ A user account can have no password at all.
 A password has no minimum length.
 Setting up the proxy is outside this guide.
 
-Three things matter more once other computers can reach the server:
+Two things matter more once other computers can reach the server:
 
-- The Owner's password is the only thing between the network and every account but the Demo Account.
-- **Let anyone who can reach this server create their own account**, under [Server Settings](/docs/user/features/owner/owner-home/#server-settings), should stay off, because "anyone" now means every device on the network.
+- The administrator's password is the only thing between the network and every account but the Demo Account.
+  Until it is set, whoever opens the server first chooses it, so it is set before the server is published.
 - The Demo Account has no password, so every device on the network can open it with **Explore Demo Account**.
   It holds made-up conversations and can't import, so no real messages reach it.
   It can't delete messages for good either, so no message a visitor removes is lost.
   A conversation one visitor moves to the Trash stays there for the next to restore.
-  An Owner who doesn't want it open deletes it, as [Demo Account](/docs/user/features/owner/owner-home/#demo-account) on Owner Home describes.
+  An administrator who doesn't want it open deletes it, as [Demo Account](/docs/user/features/admin/admin-home/#demo-account) on Admin Home describes.
 
 ## Open it in a browser
 
@@ -113,7 +113,7 @@ Everything a Message Crate holds is in the Docker volume `message-crate-data`: t
 Moving the Message Crate means copying that volume to the new computer.
 
 Both computers should run the same release.
-A newer server that finds an older database layout rebuilds the database empty, as [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) describes.
+A newer server that finds an older database layout rebuilds the database empty, as [Update Message Crate](/docs/user/features/admin/update/#when-the-database-layout-changes) describes.
 
 ### Save the volume to a file
 
@@ -200,7 +200,7 @@ The `docker run` command under [Publish the server on the network](#publish-the-
 
 ### Check that it worked
 
-1. Open the new address in a browser and log in as the Owner.
+1. Open the new address in a browser and log in as `admin`.
 2. Open **Dashboard**. **Contents** shows the same counts of messages, attachments, conversations, and contacts as on the old computer.
 
 The old computer's container stays stopped from here on.

@@ -14,11 +14,11 @@ Two checks come first, because an update can empty the database.
 1. The [changelog](https://github.com/messagecrate/message-crate/blob/main/CHANGELOG.md) has an **Upgrading** heading under a release when that release needs something done. A release that changes the database layout rebuilds the database empty, as described [below](#when-the-database-layout-changes).
 2. The phone backups the messages were imported from must still be at hand, because they are what a rebuilt Message Crate is filled from again.
 
-For the app's own Message Crate, a copy of `data` in the Message Crate Directory (**Settings → System → Open Message Crate directory**), made while the app is closed, allows going back. For Docker, a copy of the `message-crate-data` volume, made as in [Run on another machine](/docs/user/features/owner/run-on-another-machine/#save-the-volume-to-a-file), does the same.
+For the app's own Message Crate, a copy of `data` in the Message Crate Directory (**Settings → System → Open Message Crate directory**), made while the app is closed, allows going back. For Docker, a copy of the `message-crate-data` volume, made as in [Run on another machine](/docs/user/features/admin/run-on-another-machine/#save-the-volume-to-a-file), does the same.
 
 ## Update a server in Docker
 
-The steps match the server started in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/): a container named `message-crate` on the volume `message-crate-data`.
+The steps match the server started in [Run Message Crate with Docker](/docs/user/features/admin/run-with-docker/): a container named `message-crate` on the volume `message-crate-data`.
 
 `docker stop` and `docker rm` remove the running server.
 They leave the volume alone, so the messages stay.
@@ -35,7 +35,7 @@ docker rm message-crate
 docker pull bitrealm/message-crate:latest
 ```
 
-[Check the image](/docs/user/features/owner/run-with-docker/#check-the-image) shows that it is the one Message Crate's release built.
+[Check the image](/docs/user/features/admin/run-with-docker/#check-the-image) shows that it is the one Message Crate's release built.
 
 The same command as the first time starts the new server on the same volume.
 
@@ -52,13 +52,13 @@ docker run -d --name message-crate \
   bitrealm/message-crate:latest
 ```
 
-A server that was started with a different `-p` value, as in [Run on another machine](/docs/user/features/owner/run-on-another-machine/), is started again with that value.
+A server that was started with a different `-p` value, as in [Run on another machine](/docs/user/features/admin/run-on-another-machine/), is started again with that value.
 
 The server adds demo data only to a volume with no database, so starting on this volume changes nothing it holds.
 
 ### Check that it worked
 
-1. Log in as the Owner at [http://localhost:8080](http://localhost:8080).
+1. Log in as `admin` at [http://localhost:8080](http://localhost:8080).
 2. Open **Server Settings**. **Version** shows the new release.
 
 ### A fixed release in place of the newest
@@ -73,7 +73,7 @@ The installers are on the [latest release on GitHub](https://github.com/messagec
 [Install the desktop app](/docs/user/try/install-the-desktop-app/) lists which file belongs to which computer, and [how to check a download](/docs/user/try/install-the-desktop-app/#check-the-download).
 
 A desktop app from a different release than the server still connects, and the server serves it.
-The Owner sees the difference on the account's **Profile** tab in [Owner Home](/docs/user/features/owner/owner-home/#profile), under **App**.
+The administrator sees the difference on the account's **Account** tab in [Admin Home](/docs/user/features/admin/admin-home/#account), under **App**.
 
 ## When the database layout changes
 
@@ -82,13 +82,13 @@ A server whose database layout differs from the one in the volume rebuilds the d
 
 How is a rebuild recognized?
 
-- The browser shows **Create Owner**, as it did the first time.
+- The browser shows **Set Up**, as it did the first time.
 - **Schema fingerprint** under **Server Settings** shows a different number than before the update. The number is the same for every server with the same database layout.
 - `docker logs message-crate` shows the line `The database's schema differs from this server's, so the database is rebuilt empty and its messages must be imported again`, followed by the path of the copy described below.
 
 Everything the database held is gone from it after a rebuild:
 
-- the Owner and every account,
+- the administrator's password, and every account,
 - every message, conversation, and contact,
 - contact names that were typed in, Contact Groups, Message Tags, Saved Searches, and the Trash,
 - every API Token.
@@ -107,4 +107,4 @@ The copies stay until they are deleted, and each one is as large as the database
 A message deleted for good after the rebuild is still in a copy made before it, because deleting erases only the database the server runs on.
 The copy holds it until the copy is deleted.
 
-The way forward on the new release is the first-time path again: [create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/#create-the-owner), then [import the backups](/docs/user/your-messages/import-your-backup/).
+The way forward on the new release is the first-time path again: [set up the administrator and create an account](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/#set-up-the-administrator), then [import the backups](/docs/user/your-messages/import-your-backup/).

@@ -38,7 +38,7 @@ const userGuideItems = [
   {
     label: 'Your own messages',
     items: [
-      { label: '1. Create the Owner and an account', slug: 'docs/user/your-messages/create-the-owner-and-an-account' },
+      { label: '1. Set up the administrator and create an account', slug: 'docs/user/your-messages/set-up-the-administrator-and-create-an-account' },
       { label: '2. Back up an iPhone', slug: 'docs/user/your-messages/back-up-an-iphone' },
       { label: '2. Back up an Android phone', slug: 'docs/user/your-messages/back-up-an-android-phone' },
       { label: '3. Import your backup', slug: 'docs/user/your-messages/import-your-backup' },
@@ -89,13 +89,13 @@ const userGuideItems = [
         ],
       },
       {
-        label: 'Owner',
+        label: 'Administrator',
         items: [
-          'docs/user/features/owner/owner-home',
-          'docs/user/features/owner/run-with-docker',
-          'docs/user/features/owner/update',
-          'docs/user/features/owner/run-on-another-machine',
-          'docs/user/features/owner/troubleshooting',
+          'docs/user/features/admin/admin-home',
+          'docs/user/features/admin/run-with-docker',
+          'docs/user/features/admin/update',
+          'docs/user/features/admin/run-on-another-machine',
+          'docs/user/features/admin/troubleshooting',
         ],
       },
     ],

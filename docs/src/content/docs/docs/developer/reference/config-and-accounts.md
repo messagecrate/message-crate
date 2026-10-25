@@ -45,7 +45,7 @@ A Message Crate database carries SQLite's `application_id` set to `0x4d734372` (
 A file without that mark, such as Apple's `chat.db` or another program's backup, is refused by name before any statement changes it, because rebuilding it would drop that program's tables.
 
 Only `serve`, `create-database` and `reset-demo` make a new database, at a path where no file exists or in an empty file.
-Every other command (`import`, `imports discard`, `dedupe-cross-source`, `process-assets`, `create-owner`, `reset-owner-password`) stops with an error naming the path when no database is there, so a mistyped `--db` creates nothing.
+Every other command (`import`, `imports discard`, `dedupe-cross-source`, `process-assets`, `set-admin-password`) stops with an error naming the path when no database is there, so a mistyped `--db` creates nothing.
 
 A Message Crate database stamped with another Schema Fingerprint is still rebuilt empty on open, as after any schema change.
 Before the rebuild drops its tables, the server copies it with `VACUUM INTO` to `<database>.before-rebuild-<old fingerprint>` beside it, and refuses to rebuild when the copy fails.
@@ -93,20 +93,20 @@ Why: a misspelled key would otherwise load as its default, and a removed key wou
 
 The attachment size limit is not a config key, and a file that still sets `[server] asset_max_bytes` is refused with a message saying where the limit is set now.
 It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload.
-It is a Server Setting stored in the database: 512 MiB until the Owner changes it under **Server Settings**, or a program with the Owner's Session sends `PATCH /v1/server/settings` with `asset_max_bytes` in bytes.
+It is a Server Setting stored in the database: 512 MiB until the administrator changes it under **Server Settings**, or a program with the administrator's Session sends `PATCH /v1/server/settings` with `asset_max_bytes` in bytes.
 A change holds from the next upload, with no restart.
 A multipart upload already in progress keeps the part size it started with, so lowering the limit does not break it.
 `GET /v1/server` reports the limit as `asset_max_bytes` to any client, with no credential, because the desktop app reads it before Staging.
 
-The limit is whatever the Owner set, and a part is never larger than the limit.
+The limit is whatever the administrator set, and a part is never larger than the limit.
 A limit below `asset_part_size` is accepted, and the server then hands out parts the size of the limit.
 The part size is worked out on each upload, so neither a change to the limit nor an edit to `asset_part_size` can leave a server that does not start.
 The server refuses only a limit of zero, or one above 9223372036854775807, with `422 Unprocessable Entity`.
 
 No other request body is held to the attachment size limit.
 Each part of a multipart upload is held to the part size the upload was given when it started.
-Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 16 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
-Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
+Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/setup`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 16 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
+Why: the administrator's limit must never reach the login, or the settings change that would raise it again.
 A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
 
 ### Connection limits
@@ -139,7 +139,7 @@ The desktop app kills the server it started when it closes, without this wait, b
 
 The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency (at `DEBUG` for a successful `GET /health` or file of the website), one `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.
 
-`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in `~/message-crate/data`. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/rules/server-log.md` in the repository.
+`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in `~/message-crate/data`. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The administrator reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/rules/server-log.md` in the repository.
 
 ## Per-account asset files
 
@@ -156,8 +156,8 @@ Preview of each attachment browsers often cannot show.
 
 ## Accounts
 
-Rows are scoped by `account_id` in a shared `messagecrate.db`. The owner is
-always account `1` and the demo account `2`; every other account takes an id
+Rows are scoped by `account_id` in a shared `messagecrate.db`. The administrator,
+`admin`, is always account `1` and the demo account `2`; every other account takes an id
 from `100` up.
 
 - Web login uses username + password (Argon2id hash in `accounts.password_hash`).
@@ -174,7 +174,7 @@ from `100` up.
   An account may have no password (`password_hash` NULL); an empty password is
   accepted only for those accounts.
 - A refused login waits about a second before the server answers, and so
-  does a wrong current password sent to change the owner's password or to
+  does a wrong current password sent to change the administrator's password or to
   delete an account. Nothing counts the attempts, so wrong passwords never lock
   an account out. The wait is not protection for a Message Crate reachable
   from the internet: put it behind a proxy with TLS and a login of its own.
@@ -183,7 +183,7 @@ from `100` up.
   token.
 - Four columns on `accounts` govern what a logged-in session may do, each
   enforced by a guard in `auth.rs` rather than left as decoration:
-  - `disabled` — may not log in; the owner disabling the account ends its
+  - `disabled` — may not log in; the administrator disabling the account ends its
     session, so enabling it again needs a new login, and an existing API
     token for a disabled account stops working immediately.
   - `can_import`, `can_export`, `can_delete` — may call the import endpoints,
@@ -191,14 +191,17 @@ from `100` up.
     respectively. New accounts default to all three. A named API token
     carries import and export only, never delete: permanent deletion is a
     person's act, so it always needs a logged-in session.
-  The owner sets another account's flags from Owner Home
+  The administrator sets another account's flags from Admin Home
   (`PATCH /v1/accounts/{id}`), resets a password
   (`PUT /v1/accounts/{id}/password`), deletes an account's messages
   (`DELETE /v1/accounts/{id}/messages`) or the account
-  (`DELETE /v1/accounts/{id}`). The owner has no flags of its own: it holds
-  no messages, and nothing can disable or delete it. `create-owner` and
-  `reset-owner-password` on the server CLI are the only ways to make or
-  recover the owner's login.
+  (`DELETE /v1/accounts/{id}`). The administrator has no flags of its own: it holds
+  no messages, and nothing can disable or delete it. `admin` is made with the
+  database, with no password, and the Message Crate is in setup until its
+  password is set: by `POST /v1/server/setup` from the login card's
+  **Set Up**, or by `set-admin-password` on the server CLI, which also
+  replaces a lost one. Only the administrator creates accounts
+  (`POST /v1/accounts`).
 - The Demo Account: username `demo`, never a password. `serve` adds it to a
   database that does not exist yet; `reset-demo` rebuilds it; the login card's
   **Explore Demo Account** button logs in as it.

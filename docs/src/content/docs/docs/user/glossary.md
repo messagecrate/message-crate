@@ -7,9 +7,13 @@ Short definitions of terms used in the User Guide. Command flags and vendor fiel
 
 ## Message Crate
 
-**Message Crate** — One installation of the product: the thing a person claims, owns, and logs in to. One Message Crate holds many accounts.
+**Message Crate** — One installation of the product: the thing a person runs and logs in to. One Message Crate holds many accounts.
 
-**Owner** — The person who claimed a Message Crate. The owner manages its accounts and its server settings, and reads no messages.
+**Administrator** — The login named `admin` that runs a Message Crate. Every Message Crate has it from the start. The administrator creates and manages the accounts and the server settings, and reads no messages.
+
+**Admin Home** — The screen the administrator logs in to, in place of a message list.
+
+**Setup** — The state of a new Message Crate whose administrator has no password yet. The login card shows **Set Up** until someone chooses that password.
 
 **Account** — One person's login to a Message Crate, with that person's own messages and contacts. Each account sees only its own.
 

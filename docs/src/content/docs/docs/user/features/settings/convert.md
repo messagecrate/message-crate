@@ -9,7 +9,7 @@ It never opens a phone backup, and it never reads or changes anything in Message
 
 The **Convert** tab of **Settings** appears in the desktop app only, because the conversion runs on the computer, not on the server.
 A browser does not show the tab.
-The Owner's own Settings has no **Convert** tab either, because the Owner holds no messages.
+The administrator's own Settings has no **Convert** tab either, because the administrator holds no messages.
 
 Convert sits under Settings, not beside Import and Export, because most people never need it.
 [Import](/docs/user/features/messages/import/) never requires it, and [Export](/docs/user/features/messages/export/) already writes every format Convert does.

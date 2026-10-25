@@ -1,6 +1,6 @@
 ---
 title: What Message Crate is
-description: Message Crate reads conversations out of phone backups and makes them searchable on a server its owner runs.
+description: Message Crate reads conversations out of phone backups and makes them searchable on a self-hosted server.
 ---
 
 Message Crate pulls conversations out of phone backups and makes them searchable.
@@ -65,7 +65,7 @@ The guide has two parts.
 
 **Your own messages** puts real messages into the same Message Crate:
 
-1. [Create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/).
+1. [Set up the administrator and create an account](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/).
 2. Back up the phone: [iPhone](/docs/user/your-messages/back-up-an-iphone/) or [Android](/docs/user/your-messages/back-up-an-android-phone/).
 3. [Import the backup](/docs/user/your-messages/import-your-backup/).
 4. [Where to go next](/docs/user/your-messages/where-to-go-next/).

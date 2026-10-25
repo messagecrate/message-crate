@@ -46,7 +46,7 @@ gh attestation verify <file> --repo messagecrate/message-crate
 ```
 
 It reports that verification succeeded, and names the workflow and the tag, when the file is one that workflow built.
-The Docker image carries the same kind of record, which [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#check-the-image) checks.
+The Docker image carries the same kind of record, which [Run Message Crate with Docker](/docs/user/features/admin/run-with-docker/#check-the-image) checks.
 
 ## Install
 
@@ -86,9 +86,9 @@ Windows or macOS may ask whether Message Crate may accept network connections wh
 
 ## Check that it worked
 
-The line under the title reads **Connected to 127.0.0.1:8080**, and the card shows a **Create Owner** form and an **Explore Demo Account** button.
+The line under the title reads **Connected to 127.0.0.1:8080**, and the card shows a **Set Up** form and an **Explore Demo Account** button.
 
-![The first screen of a new Message Crate: Create Owner, and Explore Demo Account](../../../../../assets/user-guide/login.png)
+![The first screen of a new Message Crate: Set Up, and Explore Demo Account](../../../../../assets/user-guide/login.png)
 
 While the app is open, a browser on this computer shows the same card at [http://localhost:8080](http://localhost:8080).
 
@@ -104,6 +104,6 @@ What if the card says another program is using port 8080?
 
 The app's server listens on port 8080, and something else on this computer already holds it.
 Closing that program and selecting **Try again** starts the server.
-When the other program is a Message Crate, such as one [run with Docker](/docs/user/features/owner/run-with-docker/), the app uses it and starts nothing.
+When the other program is a Message Crate, such as one [run with Docker](/docs/user/features/admin/run-with-docker/), the app uses it and starts nothing.
 
 Next: [Look around the demo data](/docs/user/try/look-around-the-demo-data/).

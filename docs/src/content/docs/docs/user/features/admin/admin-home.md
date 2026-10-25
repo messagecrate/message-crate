@@ -1,13 +1,13 @@
 ---
-title: Owner Home
-description: The five sections of Owner Home, and how the Owner adds, changes, disables, and deletes accounts.
+title: Admin Home
+description: The five sections of Admin Home, and how the administrator adds, changes, disables, and deletes accounts.
 ---
 
-The Owner logs in to **Owner Home** in place of a message list.
-The Owner runs the Message Crate and holds no messages, so Owner Home has no **Messages**, **Contacts**, **Import**, **Export**, or **Trash**.
+The administrator, `admin`, logs in to **Admin Home** in place of a message list.
+The administrator runs the Message Crate and holds no messages, so Admin Home has no **Messages**, **Contacts**, **Import**, **Export**, or **Trash**.
 
-Nothing in Owner Home shows a message's text, an attachment's contents, or a contact's name.
-The Owner sees counts, sizes, dates, and attachment file names.
+Nothing in Admin Home shows a message's text, an attachment's contents, or a contact's name.
+The administrator sees counts, sizes, dates, and attachment file names.
 
 The side panel lists five sections: **Dashboard**, **Server Settings**, **User Accounts**, **Audit Trail**, and **Logs**.
 Login opens **User Accounts**.
@@ -30,7 +30,7 @@ Under it are the number of messages, attachments, conversations, and contacts.
 **Database size** leaves out attachment files, because they are stored as files beside the database and are counted under **Contents**.
 The search index is one structure shared by every account, so it has one figure and no split by account.
 
-**Messages by account** has one row per account, the Owner first.
+**Messages by account** has one row per account, `admin` first.
 
 | Column | Meaning |
 |---|---|
@@ -41,25 +41,20 @@ The search index is one structure shared by every account, so it has one figure 
 
 The estimate is **Messages on disk** split by each account's share of the text.
 The last row, **All accounts**, carries the totals.
-The Owner's row reads zero, because the Owner holds no messages.
+The row of `admin` reads zero, because the administrator holds no messages.
 
 ## Server Settings
 
-**Server Settings** holds one switch, the attachment size limit, the space the Staging Directory takes on this computer in the desktop app, the Demo Account, and three facts about the server.
+**Server Settings** holds the attachment size limit, the space the Staging Directory takes on this computer in the desktop app, the Demo Account, and three facts about the server.
 
-The switch is **Let anyone who can reach this server create their own account**.
-
-- Off, the login screen offers **Login** only, and the Owner creates every account.
-- On, the login screen also offers **Create Account**, and anyone who can reach the server can make an account for themselves.
-
-It is off on a new Message Crate.
-The switch saves when it is selected. There is no save button.
+Only the administrator creates accounts, under [User Accounts](#user-accounts).
+No setting lets anyone else make one, and the login screen offers **Login** only.
 
 ### Attachment size limit
 
 **Attachment size limit** is the largest file an import can upload as an attachment, in MB.
 It is 512 on a new Message Crate.
-The Owner types a new number and selects **Save**.
+The administrator types a new number and selects **Save**.
 Any number above zero is accepted.
 
 A new limit holds for every upload after it is saved, with no restart.
@@ -79,7 +74,7 @@ Each account sees what its own Import Runs take under [Settings → System](/doc
 
 The Demo Account holds made-up conversations.
 Anyone who reaches the server opens it with **Explore Demo Account** on the login screen, and it has no password.
-On a server [published on the network](/docs/user/features/owner/run-on-another-machine/#only-on-a-trusted-network), that means every device on the network.
+On a server [published on the network](/docs/user/features/admin/run-on-another-machine/#only-on-a-trusted-network), that means every device on the network.
 Every new Message Crate starts with it.
 
 - **Add Demo Account** shows when there is none. It builds the account with the size chosen beside it.
@@ -91,7 +86,7 @@ The card shows **Building the Demo Account** until the build ends, and the serve
 Nobody can be in the Demo Account during a build: the build logs out anyone already in it, and the login screen offers **Explore Demo Account** again once the build ends.
 
 The Demo Account is removed under **User Accounts**, as any account is, with **Delete account** in its **Danger zone**.
-That is how an Owner closes it to the network, because no setting does.
+That is how the administrator closes it to the network, because no setting does.
 A restart doesn't bring it back, because the server builds it only for a new Message Crate.
 **Add Demo Account** builds it again.
 Its page there shows its status, permissions, and identities, and none of them can be changed.
@@ -99,17 +94,17 @@ Its page there shows its status, permissions, and identities, and none of them c
 Below the Demo Account:
 
 - **Version** is the version of the server that is running.
-- **Schema fingerprint** is a number the server derives from its database layout. [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) says what a changed number means.
-- **Journal mode** reads `wal` when the server runs the database with write-ahead logging, as it should. Any other mode means the server could not turn it on, and every page waits while an import writes: [Troubleshooting](/docs/user/features/owner/troubleshooting/#owner-home-says-the-server-could-not-turn-on-write-ahead-logging) says what to do. **unknown** means the server could not read the mode, and its log says why.
+- **Schema fingerprint** is a number the server derives from its database layout. [Update Message Crate](/docs/user/features/admin/update/#when-the-database-layout-changes) says what a changed number means.
+- **Journal mode** reads `wal` when the server runs the database with write-ahead logging, as it should. Any other mode means the server could not turn it on, and every page waits while an import writes: [Troubleshooting](/docs/user/features/admin/troubleshooting/#admin-home-says-the-server-could-not-turn-on-write-ahead-logging) says what to do. **unknown** means the server could not read the mode, and its log says why.
 
 ## User Accounts
 
-**User Accounts** lists every account, the Owner first.
+**User Accounts** lists every account, `admin` first.
 
 | Column | Meaning |
 |---|---|
 | **User** | The username, with the account's display name under it when it has one. |
-| **Status** | **Owner**, **Active**, or **Disabled**, with **No password** under it for an account that has no password: once the account is active, anyone who knows its username logs in with an empty one. The Demo Account has no password by design and is not marked. |
+| **Status** | **Administrator**, **Active**, or **Disabled**, with **No password** under it for an account that has no password: once the account is active, anyone who knows its username logs in with an empty one. The Demo Account has no password by design and is not marked. |
 | **Last login** | The date and time of the last login, or **Never**. |
 
 The search bar at the top reads **Search accounts**.
@@ -128,7 +123,7 @@ The gear opens that account's settings.
 The form reports **Invalid username.** when the username is already taken.
 
 The screen changes to **User Settings: _username_** for the new account.
-The Owner stays logged in.
+The administrator stays logged in.
 The new account is **Active**, with **Import**, **Export**, and **Delete** all on.
 
 ### User Settings for one account
@@ -151,7 +146,7 @@ Under it, two more parts are for reading only:
 The server refuses a disabled account's login.
 Disabling the account ends any Session it has open, so the person logs in again after the account is enabled.
 The login answers a disabled account the same way it answers a wrong password.
-The Owner tells the account's holder that the account is disabled.
+The administrator tells the account's holder that the account is disabled.
 The account's messages stay where they are.
 
 **Message Permissions** has three checkboxes: **Import**, **Export**, and **Delete**.
@@ -166,7 +161,7 @@ The account's holder sees the same status and permissions in their own **Setting
 - **Reset password** removes the password, so the account logs in with an empty one.
 
 Neither one ends a Session the account has open, and neither makes the person choose a new password at the next login.
-The Owner doesn't see the old password and isn't asked for it.
+The administrator doesn't see the old password and isn't asked for it.
 
 **Danger zone** is closed until it is selected. It holds two actions:
 
@@ -181,13 +176,13 @@ Neither deletion can be undone.
 **API Tokens** lists the account's API Tokens, with each token's name, permissions, and when it was created, last used, and expires.
 The token itself isn't shown, not even in part.
 The trash button on a row revokes that token after a confirmation, and programs using it stop working at once.
-The Owner can't add or rename a token, because a token is the account's own credential.
+The administrator can't add or rename a token, because a token is the account's own credential.
 
 #### Profile
 
-The Owner sets the same three things the account's holder sets:
+The administrator sets the same three things the account's holder sets:
 
-- **Display Name**. It saves when the Owner leaves the field, presses Enter, or moves to another tab.
+- **Display Name**. It saves when the administrator leaves the field, presses Enter, or moves to another tab.
 - **Time Zone**, the zone the account's message times are shown in. It saves when a zone is chosen.
 - **Identities**, the account holder's own phone numbers and email addresses.
 
@@ -200,20 +195,21 @@ The Owner sets the same three things the account's holder sets:
 - **Export history**: each export, with its date, scope, status, and counts.
 - **Largest attachments**: file names and sizes.
 
-Two things the holder sees are left out for the Owner, because they say who the account talks to.
-The Owner doesn't see which contacts an import created, and doesn't see which conversation a large attachment is in.
+Two things the holder sees are left out for the administrator, because they say who the account talks to.
+The administrator doesn't see which contacts an import created, and doesn't see which conversation a large attachment is in.
 
-### The Owner's own settings
+### The administrator's own settings
 
-The Owner's row opens **Settings for Owner**.
+The row of `admin` opens **Settings for Administrator**.
 **Settings** in the account menu, the round button at the top right, opens the same settings.
 
 The tabs are **Account**, **Profile**, **Audit Trail**, and **Appearance**.
-There is no **Storage** tab, because the Owner holds no messages.
+There is no **Storage** tab, because the administrator holds no messages.
 
-Changing the Owner's password needs **Current password** as well as the new one, because the Owner's login reaches every account.
-There is no **Reset password**, because the Owner must have a password.
-There is no **Danger zone**, because the Owner can't be deleted.
+Changing the administrator's password needs **Current password** as well as the new one, because the administrator's login reaches every account.
+There is no **Reset password**, because the administrator must have a password.
+There is no **Danger zone**, because `admin` can't be deleted.
+A lost administrator password is set again on the server, as [Troubleshooting](/docs/user/features/admin/troubleshooting/#the-administrators-password-is-lost) describes.
 
 ## Audit Trail
 
@@ -221,12 +217,12 @@ There is no **Danger zone**, because the Owner can't be deleted.
 The **Account** column names the account each entry is about.
 **Account** at the top narrows the list to one account, the entries its holder reads in the **Audit Trail** tab of their [Settings](/docs/user/features/settings/audit-trail/).
 
-Nobody can change or delete an entry, the Owner included.
+Nobody can change or delete an entry, the administrator included.
 A deleted account's entries stay under its old username, marked **deleted**.
 **Account** lists deleted accounts under **Deleted accounts**, below the live ones, each by its old username and when it was deleted.
 Picking one narrows the list to the entries and runs that account left.
 Another account given the same username, before or after, keeps its own entries apart.
-Opening and closing the Message Crate to new accounts is recorded too, under no account, and so is each change to the attachment size limit, with the new limit.
+Each change to the attachment size limit is recorded too, under no account, with the new limit.
 Adding the Demo Account is recorded under no account, and resetting it under the Demo Account it replaced, each with the set of Demo Data asked for.
 
 **View in log** on an entry opens [Logs](#logs) on the server's log with **Show** at **Everything** and the id of the request that made the entry in **Search the log**, so only that request's lines show.
