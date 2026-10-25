@@ -19,7 +19,6 @@ import {
 } from "../lib/imessageImport";
 import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
-import { serverService } from "../lib/offeredService";
 import { probePath, toDesktopOs } from "../lib/pathChecks";
 import { keys } from "../lib/queryKeys";
 import { unmatchedIdentities } from "../lib/serverApi";
@@ -175,15 +174,13 @@ export default function ImportScreen() {
    * caught here and turned into `identityAddError` rather than an unhandled
    * rejection through the fire-and-forget `void onAdd(...)` call in
    * BackupIdentityList/BackupIdentityStopScreen. */
-  const addIdentityToProfile = async (value: string, type: IdentityType): Promise<void> => {
+  const addIdentityToProfile = async (value: string, _type: IdentityType): Promise<void> => {
     setIdentityAddError(null);
     try {
       const updated = await updateProfile.mutateAsync({
         // A backup's own address is on Text Message, a number and an email
         // address alike: its type is not its service.
-        identities: [
-          { address: value, service: serverService(type === "email" ? "email" : "text_message") },
-        ],
+        identities: [{ address: value, service: "text_message" }],
       });
       if (!identityOnProfile(value, profileAddresses(updated))) {
         throw new Error("no-op add");
