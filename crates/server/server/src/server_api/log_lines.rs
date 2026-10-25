@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-lines`: the server's log lines, newest first, the
-//! owner's alone. The files are written by `crate::logging`, and read here
-//! a page at a time from the id of the last line the client holds
+//! administrator's alone. The files are written by `crate::logging`, and read
+//! here a page at a time from the id of the last line the client holds
 //! (`docs/architecture/rules/server-log.md`).
 
 use std::sync::Arc;
@@ -53,7 +53,7 @@ pub struct ListLogLinesResponse {
 /// and the more severe ones. `text` keeps the lines whose text, after the
 /// time and the level, holds it, ignoring case. A line never holds a
 /// password, a token, message text or a contact's name or identities. The
-/// owner's alone, because the log is about the whole installation.
+/// administrator's alone, because the log is about the whole installation.
 #[utoipa::path(
     get,
     path = "/v1/server/log-lines",

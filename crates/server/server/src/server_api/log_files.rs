@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`: the
-//! server's log files, listed and downloaded whole, the owner's alone
-//! (`docs/architecture/rules/server-log.md`).
+//! server's log files, listed and downloaded whole, the administrator's
+//! alone (`docs/architecture/rules/server-log.md`).
 
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ pub(crate) struct ListLogFilesQuery {
 ///
 /// The server writes to the newest, and starts the next before a line would
 /// carry it past 50 MB. It keeps 5, and deletes the oldest when one more
-/// starts. The owner's alone.
+/// starts. The administrator's alone.
 #[utoipa::path(
     get,
     path = "/v1/server/log-files",
@@ -58,7 +58,7 @@ pub(crate) async fn list_log_files(
 ///
 /// The answer is `text/plain`, an attachment named for the file. The newest
 /// file is answered as it stood when the download started; lines written
-/// while it downloads are in the next one. The owner's alone.
+/// while it downloads are in the next one. The administrator's alone.
 #[utoipa::path(
     get,
     path = "/v1/server/log-files/{id}",
