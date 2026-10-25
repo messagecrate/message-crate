@@ -3,6 +3,7 @@ import AuthErrorFooter from "../../components/AuthErrorFooter";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { useAuth } from "../../hooks/useAuth";
 import { setBaseUrl } from "../../lib/api";
+import { requireMatchingPasswords } from "../../lib/passwordConfirmation";
 import { setUpServer } from "../../lib/serverApi";
 import CredentialFields from "./CredentialFields";
 import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
@@ -34,11 +35,7 @@ export default function SetupForm({
     event.preventDefault();
     if (busy || disabled) return;
     void run(async () => {
-      // Only the mismatch is checked here. Length is the server's rule, so it
-      // stays there rather than being restated and left to drift.
-      if (password !== confirmPassword) {
-        throw new Error("Passwords do not match.");
-      }
+      requireMatchingPasswords(password, confirmPassword);
       const url = serverUrl.trim();
       setBaseUrl(url);
       const res = await setUpServer({ password });

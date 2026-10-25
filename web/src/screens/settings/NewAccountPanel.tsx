@@ -2,10 +2,10 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
-import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
 import { useRouteCache } from "../../hooks/useRouteQuery";
 import { keys } from "../../lib/queryKeys";
 import { sectionTitleClass } from "./profileStyles";
+import { useCreateAccountForm } from "./useCreateAccountForm";
 
 /**
  * The Account section of an account that does not exist yet, which the

@@ -31,7 +31,7 @@ import {
   shownState,
 } from "./auth/connectionState";
 import ExploreDemoAccountButton from "./auth/ExploreDemoAccountButton";
-import LocalAuthTabs from "./auth/LocalAuthTabs";
+import LocalAuthCard from "./auth/LocalAuthCard";
 import ServerSettingsScreen from "./auth/ServerSettingsScreen";
 import ServerStatus, { type ServerConnection } from "./auth/ServerStatus";
 import { useLocalServer } from "./auth/useLocalServer";
@@ -432,7 +432,7 @@ export default function LoginScreen() {
                 // shape for the seconds a start takes.
                 <FormSkeleton />
               ) : hasConnectedOnce && serverState ? (
-                <LocalAuthTabs
+                <LocalAuthCard
                   serverUrl={address}
                   serverState={serverState}
                   disabled={state !== "connected"}
@@ -443,7 +443,7 @@ export default function LoginScreen() {
                 // disabled: a placeholder here would read as "still loading"
                 // for as long as the server stays down. The way on is Change
                 // server address, below.
-                <LocalAuthTabs serverUrl={address} serverState="ready" disabled />
+                <LocalAuthCard serverUrl={address} serverState="ready" disabled />
               ) : (
                 <FormSkeleton />
               )}

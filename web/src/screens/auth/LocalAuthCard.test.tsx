@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { authModule, Providers } from "../../test/providers";
-import LocalAuthTabs from "./LocalAuthTabs";
+import LocalAuthCard from "./LocalAuthCard";
 import type { ServerState } from "./useServerState";
 
 vi.mock("../../hooks/useAuth", () =>
@@ -17,7 +17,7 @@ function renderTabs(serverState: ServerState) {
   render(
     <Providers>
       <MemoryRouter>
-        <LocalAuthTabs serverUrl="http://127.0.0.1:8080" serverState={serverState} />
+        <LocalAuthCard serverUrl="http://127.0.0.1:8080" serverState={serverState} />
       </MemoryRouter>
     </Providers>,
   );
@@ -28,7 +28,7 @@ function renderTabs(serverState: ServerState) {
  * whole of the entry screen's behavior, and the reason the server reports one
  * value rather than the facts behind it: the mapping lives in one place.
  */
-describe("LocalAuthTabs", () => {
+describe("LocalAuthCard", () => {
   it("offers only Set Up on a Message Crate in setup", () => {
     renderTabs("setup");
     expect(screen.getByRole("heading", { name: "Set Up" })).toBeInTheDocument();

@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ApiError } from "../lib/api";
-import { createAccount } from "../lib/serverApi";
-import type { components } from "../lib/serverApi.types";
-import { useAsyncAction } from "./useAsyncAction";
-import { useRouteMutation } from "./useRouteQuery";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useRouteMutation } from "../../hooks/useRouteQuery";
+import { ApiError } from "../../lib/api";
+import { requireMatchingPasswords } from "../../lib/passwordConfirmation";
+import { createAccount } from "../../lib/serverApi";
+import type { components } from "../../lib/serverApi.types";
 
 /** What the server answers when it creates an account: the new account's row. */
 type CreatedAccount = components["schemas"]["Account"];
@@ -39,11 +40,7 @@ export function useCreateAccountForm({
       if (!username.trim()) {
         throw new Error("Username is required.");
       }
-      // Only the mismatch is checked here. Length is the server's rule, so it
-      // stays there rather than being restated and left to drift.
-      if (password !== confirmPassword) {
-        throw new Error("Passwords do not match.");
-      }
+      requireMatchingPasswords(password, confirmPassword);
       let created: CreatedAccount;
       try {
         created = await create.mutateAsync({

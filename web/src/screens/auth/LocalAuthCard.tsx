@@ -16,7 +16,7 @@ import type { ServerState } from "./useServerState";
  * facts behind that answer. See
  * `docs/adr/0008-the-administrator-holds-no-messages.md`.
  */
-export default function LocalAuthTabs({
+export default function LocalAuthCard({
   serverUrl,
   serverState,
   disabled = false,
