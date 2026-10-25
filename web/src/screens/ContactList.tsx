@@ -41,6 +41,7 @@ import { exportAddressBook, listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
 import ContactActionsMenu from "./contacts/ContactActionsMenu";
+import MergeContactsDialog, { MAX_MERGED_CONTACTS } from "./contacts/MergeContactsDialog";
 import { useUndoShortcuts } from "./contacts/useUndoShortcuts";
 
 /** How long the search waits after the last key before it asks the server. */
@@ -162,6 +163,7 @@ export default function ContactList({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   useUndoShortcuts(history.undo, history.redo);
 
   const groupActive = Boolean(groupFilter);
@@ -479,6 +481,29 @@ export default function ContactList({
       ? "Move 1 contact to Trash?"
       : `Move ${deleteTargets.length} contacts to Trash?`;
 
+  const mergeTargets = checkedContacts;
+  const canMerge = mergeTargets.length >= 2 && mergeTargets.length <= MAX_MERGED_CONTACTS;
+  const mergeCandidates = useMemo(
+    () =>
+      mergeTargets.map((c) => ({ id: Number(c.id), name: c.name, addresses: c.addresses ?? [] })),
+    [mergeTargets],
+  );
+  /** Merge the checked contacts into `targetId`, then open it with nothing checked. */
+  const mergeContacts = async (targetId: number): Promise<unknown> => {
+    const target = mergeTargets.find((c) => Number(c.id) === targetId);
+    if (!target) return null;
+    const merged = mergeTargets
+      .filter((c) => c !== target)
+      .map((c) => ({ ...historyContact(c), named: c.name.trim() !== "" }));
+    const refusal = await history.mergeContacts(historyContact(target), merged);
+    if (refusal) return refusal;
+    setMergeOpen(false);
+    setRangeAnchor(null);
+    setCheckedIds(new Set());
+    onSelect(target);
+    return null;
+  };
+
   const scope =
     checkedContacts.length > 0
       ? `${checkedContacts.length} selected`
@@ -547,8 +572,17 @@ export default function ContactList({
             exporting={exporting}
             onExport={() => void exportContacts()}
             onDelete={() => setDeleteOpen(true)}
+            canMerge={canMerge}
+            onMerge={() => setMergeOpen(true)}
           />
           <ContactSortMenu state={sortState} onChange={onSortChange} />
+          <MergeContactsDialog
+            open={mergeOpen}
+            contacts={mergeCandidates}
+            busy={history.busy}
+            onMerge={mergeContacts}
+            onClose={() => setMergeOpen(false)}
+          />
           <ConfirmDialog
             open={deleteOpen}
             title={deleteTitle}

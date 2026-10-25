@@ -769,6 +769,9 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
             "text/vcard",
             b"BEGIN:VCARD\nVERSION:3.0\nFN:Robin\nTEL:+15555550199\nEND:VCARD\n".to_vec(),
         )),
+        // A contact no account holds, so the call gets past the body's
+        // checks to the lookup of the contact in the path.
+        ("post", "/v1/contacts/{id}/merge") => json(json!({ "from": [999_999_999] })),
         ("post", "/v1/contacts/summaries") => json(json!({ "ids": [1] })),
         ("post", "/v1/contacts/unmatched-identities") => json(json!({ "identifiers": [] })),
         ("patch", "/v1/contacts/{id}") => json(json!({ "name": "Samantha" })),

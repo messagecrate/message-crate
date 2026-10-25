@@ -1115,8 +1115,11 @@ CREATE INDEX IF NOT EXISTS ix_staging_message_versions_message_id ON staging_mes
 
 export const CONTACTS_DDL = `-- Address-book person for one account.
 CREATE TABLE IF NOT EXISTS contacts (
-    -- Surrogate primary key for this contact row.
-    id INTEGER PRIMARY KEY,
+    -- Surrogate primary key for this contact row. AUTOINCREMENT, so an id is
+    -- never handed out twice: undoing a contact merge puts a merged contact
+    -- back under the id it had (\`contact_merge_contacts\`), and a contact made
+    -- meanwhile must not hold it.
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     -- Owning account (\`accounts.id\`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     -- Display name shown in the UI. Empty until something supplies a name;
@@ -1247,6 +1250,84 @@ CREATE TABLE IF NOT EXISTS trashed_contacts (
     -- When the contact entered trash (SQLite datetime string).
     trashed_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (account_id, contact_id)
+);
+
+-- The account's most recent contact merge, kept so that it can be undone
+-- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-56).
+-- One per account: the next merge drops this row and everything below that
+-- names it, and the contacts it merged are gone for good.
+CREATE TABLE IF NOT EXISTS contact_merges (
+    -- Owning account (\`accounts.id\`).
+    account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    -- The contact the others were merged into (\`contacts.id\`). Deleting it
+    -- drops the merge, which then cannot be undone.
+    target_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    -- When the merge was made (SQLite datetime string).
+    merged_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A contact the merge took: its \`contacts\` row as it was, deleted from
+-- \`contacts\` by the merge and written back by an undo under the same id.
+CREATE TABLE IF NOT EXISTS contact_merge_contacts (
+    -- The merge (\`contact_merges.account_id\`).
+    account_id INTEGER NOT NULL REFERENCES contact_merges(account_id) ON DELETE CASCADE,
+    -- The id the contact had and gets back (\`contacts.id\`, no FK: the row is
+    -- gone while the merge stands).
+    contact_id INTEGER NOT NULL,
+    -- \`contacts.preferred_name\` as it was.
+    preferred_name TEXT NOT NULL,
+    -- \`contacts.origin\` as it was.
+    origin TEXT NOT NULL,
+    -- \`contacts.created_at\` as it was.
+    created_at TEXT NOT NULL,
+    -- \`contacts.last_modified\` as it was.
+    last_modified TEXT NOT NULL,
+    PRIMARY KEY (account_id, contact_id)
+);
+
+-- An identity a merged contact held, which the merge moved to the target.
+CREATE TABLE IF NOT EXISTS contact_merge_identities (
+    -- The merge (\`contact_merges.account_id\`).
+    account_id INTEGER NOT NULL REFERENCES contact_merges(account_id) ON DELETE CASCADE,
+    -- The merged contact that held it (\`contact_merge_contacts.contact_id\`).
+    contact_id INTEGER NOT NULL,
+    -- The identity (\`handles.id\`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    -- \`contact_handles.origin\` of the link as it was.
+    origin TEXT NOT NULL,
+    PRIMARY KEY (account_id, handle_id)
+);
+
+-- A Contact Group a merged contact was in, which the merge put the target in.
+CREATE TABLE IF NOT EXISTS contact_merge_groups (
+    -- The merge (\`contact_merges.account_id\`).
+    account_id INTEGER NOT NULL REFERENCES contact_merges(account_id) ON DELETE CASCADE,
+    -- The merged contact that was in it (\`contact_merge_contacts.contact_id\`).
+    contact_id INTEGER NOT NULL,
+    -- The Contact Group (\`contact_groups.id\`).
+    group_id INTEGER NOT NULL REFERENCES contact_groups(id) ON DELETE CASCADE,
+    -- 1 when the target was in the group before the merge, so an undo leaves
+    -- it there.
+    target_had INTEGER NOT NULL,
+    PRIMARY KEY (account_id, contact_id, group_id)
+);
+
+-- An Import Run record (\`import_contacts\`) of a merged contact, which the
+-- merge moved to the target.
+CREATE TABLE IF NOT EXISTS contact_merge_imports (
+    -- The merge (\`contact_merges.account_id\`).
+    account_id INTEGER NOT NULL REFERENCES contact_merges(account_id) ON DELETE CASCADE,
+    -- The merged contact the record was about (\`contact_merge_contacts.contact_id\`).
+    contact_id INTEGER NOT NULL,
+    -- The Import Run (\`imports.id\`).
+    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+    -- \`import_contacts.reason\` the merged contact's record gave.
+    reason TEXT NOT NULL,
+    -- The target's own \`import_contacts.reason\` for the run before the
+    -- merge, NULL when the run had no record of the target, so an undo puts
+    -- the target's record back as it was.
+    target_reason TEXT,
+    PRIMARY KEY (account_id, contact_id, import_id)
 );
 `;
 

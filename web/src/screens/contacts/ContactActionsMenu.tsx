@@ -1,5 +1,12 @@
 import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
-import { EllipsisIcon, ExportIcon, RedoIcon, TrashIcon, UndoIcon } from "../../components/icons";
+import {
+  EllipsisIcon,
+  ExportIcon,
+  MergeIcon,
+  RedoIcon,
+  TrashIcon,
+  UndoIcon,
+} from "../../components/icons";
 import PlainButton from "../../components/PlainButton";
 import { useContactHistory } from "../../hooks/useContactHistory";
 import { actionMenuName } from "../../lib/contactHistory";
@@ -13,7 +20,9 @@ const sectionHeaderClass = "px-3 pb-1.5 text-[0.75rem] font-semibold text-text";
  * and Redo (#3234).
  *
  * Delete Contacts moves the checked contacts to the Trash, where Restore
- * brings them back, so nothing on this menu deletes for good.
+ * brings them back, so nothing on this menu deletes for good. Merge Contacts
+ * (#3237) makes the checked contacts one; Undo takes it back until the next
+ * merge.
  */
 export default function ContactActionsMenu({
   scope,
@@ -21,6 +30,8 @@ export default function ContactActionsMenu({
   exporting,
   onExport,
   onDelete,
+  canMerge,
+  onMerge,
 }: {
   /** "2 selected", "This list" or "All contacts". */
   scope: string;
@@ -29,6 +40,9 @@ export default function ContactActionsMenu({
   exporting: boolean;
   onExport: () => void;
   onDelete: () => void;
+  /** Two to ten rows are checked. */
+  canMerge: boolean;
+  onMerge: () => void;
 }) {
   const history = useContactHistory();
   const undoLabel = history.undoEntry ? `Undo ${actionMenuName(history.undoEntry.action)}` : "Undo";
@@ -61,6 +75,16 @@ export default function ContactActionsMenu({
             >
               <ExportIcon size={14} />
               Export Contacts
+            </MenuItem>
+            <MenuItem
+              id="merge"
+              textValue="Merge Contacts"
+              isDisabled={!canMerge || history.busy}
+              onAction={onMerge}
+              className={`${menuItemClass} text-text`}
+            >
+              <MergeIcon size={14} />
+              Merge Contacts
             </MenuItem>
             <MenuItem
               id="delete"

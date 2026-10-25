@@ -431,6 +431,8 @@ pub struct Identity {
     /// The identity as the database stores it: E.164 for a number, lower case
     /// for an address.
     pub address: String,
+    /// The identity's type: `phone`, `email`, `username`, or `other`.
+    pub identity_type: String,
     /// `text_message`, `email`, or `whatsapp`.
     pub service: String,
     /// True for a phone number written without its `+` code whose country
@@ -486,6 +488,7 @@ pub enum IdentitiesOf {
 #[derive(sqlx::FromRow)]
 struct IdentityRow {
     normalized: String,
+    handle_type: String,
     service: String,
     country_unknown: bool,
     start_date: Option<String>,
@@ -551,6 +554,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
     let sql = format!(
         "WITH linked AS ({linked})
          SELECT h.normalized,
+                h.handle_type,
                 CASE WHEN h.handle_type = 'email' THEN 'email'
                      WHEN h.service = '{whatsapp}' THEN '{whatsapp}'
                      ELSE '{text_message}' END AS service,
@@ -579,6 +583,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
         .map(
             |IdentityRow {
                  normalized: handle,
+                 handle_type,
                  service,
                  country_unknown,
                  start_date,
@@ -590,6 +595,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
              }| {
                 Identity {
                     address: handle,
+                    identity_type: handle_type,
                     service,
                     country_unknown,
                     start_date,

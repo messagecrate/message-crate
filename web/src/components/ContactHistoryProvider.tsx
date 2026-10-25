@@ -17,11 +17,13 @@ import {
   type HistoryEvent,
   type HistoryStacks,
   historyReducer,
+  type MergedContact,
+  mergeFailureText,
   type RefusedGroupChange,
   trashFailureText,
   undoneText,
 } from "../lib/contactHistory";
-import { restoreContact, trashContact } from "../lib/serverApi";
+import { mergeContacts, restoreContact, trashContact, unmergeContacts } from "../lib/serverApi";
 import ContactHistoryToast from "./ContactHistoryToast";
 import {
   type ContactHistory,
@@ -97,6 +99,22 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   // show what the run did.
   const runMutation = useRouteMutation<RunOutcome, Error, RunVars>({
     mutationFn: async ({ action, direction }) => {
+      if (action.kind === "merge") {
+        // One request either way, and the server runs it whole or not at all.
+        try {
+          if (direction === "do") {
+            await mergeContacts(
+              action.target.id,
+              action.merged.map((c) => c.id),
+            );
+          } else {
+            await unmergeContacts(action.target.id);
+          }
+          return { done: action, failure: null };
+        } catch (err) {
+          return { done: null, failure: mergeFailureText(direction, errorText(err)) };
+        }
+      }
       if (action.kind === "trash") {
         const send = direction === "do" ? trashContact : restoreContact;
         const went: HistoryContact[] = [];
@@ -137,6 +155,16 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
     },
   });
   const run = runMutation.mutateAsync;
+  // Merge Contacts sends its merge itself, so the dialog can show a refusal
+  // with the server's reason and stay open for another try.
+  const runMergeMutation = useRouteMutation<void, Error, HistoryAction & { kind: "merge" }>({
+    mutationFn: async (action) => {
+      await mergeContacts(
+        action.target.id,
+        action.merged.map((c) => c.id),
+      );
+    },
+  });
 
   /** Run `work` unless a run is already in flight, with `busy` set while it runs. */
   const exclusive = useCallback(async (work: (gen: number) => Promise<void>) => {
@@ -174,6 +202,26 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         if (outcome.failure !== null) setReport(outcome.failure);
       }),
     [apply, exclusive, run, showToast],
+  );
+
+  const mergeContactsAction = useCallback(
+    async (target: HistoryContact, merged: MergedContact[]): Promise<unknown> => {
+      let refusal: unknown = null;
+      await exclusive(async (gen) => {
+        const action: HistoryAction = { kind: "merge", target, merged };
+        try {
+          await runMergeMutation.mutateAsync(action);
+        } catch (err) {
+          refusal = err;
+          return;
+        }
+        if (gen !== generation.current) return;
+        apply({ type: "push", entry: { id: nextId.current++, action } });
+        showToast(actionText(action), true);
+      });
+      return refusal;
+    },
+    [apply, exclusive, runMergeMutation.mutateAsync, showToast],
   );
 
   const undoEntry = stacks.undo.at(-1) ?? null;
@@ -235,6 +283,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
       report,
       push,
       deleteContacts,
+      mergeContacts: mergeContactsAction,
       undo,
       redo,
       clear,
@@ -248,6 +297,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
       report,
       push,
       deleteContacts,
+      mergeContactsAction,
       undo,
       redo,
       clear,

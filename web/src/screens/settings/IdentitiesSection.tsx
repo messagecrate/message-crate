@@ -41,9 +41,9 @@ type ListedIdentity = Pick<Identity, "address" | "service">;
 function placeholderRows(profile: AccountProfile): Identity[] {
   return [
     ...profile.phones.flatMap(({ address, services }) =>
-      services.map((service) => ({ address, service })),
+      services.map((service) => ({ address, identity_type: "phone", service })),
     ),
-    ...profile.emails.map((address) => ({ address, service: "email" })),
+    ...profile.emails.map((address) => ({ address, identity_type: "email", service: "email" })),
   ].map((row) => ({
     ...row,
     country_unknown: false,

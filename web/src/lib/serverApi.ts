@@ -755,6 +755,29 @@ export function restoreContact(contactId: string | number): Promise<void> {
 }
 
 /**
+ * Merge the contacts `from` into `targetId`, which keeps its id and name; the
+ * server answers with it as it now stands. The merge can be undone with
+ * `unmergeContacts` until the account's next merge.
+ */
+export function mergeContacts(
+  targetId: string | number,
+  from: number[],
+): Promise<Schema["Contact"]> {
+  return apiClient.post<Schema["Contact"]>(
+    `/v1/contacts/${encodeURIComponent(String(targetId))}/merge`,
+    { from } satisfies Schema["MergeContactRequest"],
+  );
+}
+
+/** Undo the account's most recent merge, which merged into `targetId`. */
+export function unmergeContacts(targetId: string | number): Promise<Schema["Contact"]> {
+  return apiClient.post<Schema["Contact"]>(
+    `/v1/contacts/${encodeURIComponent(String(targetId))}/unmerge`,
+    {},
+  );
+}
+
+/**
  * Delete a trashed contact the way a phone's Delete Contact does: the name
  * and details go, the contact becomes Unknown again and leaves the trash, and
  * its conversations stay, showing the handle. The server answers 409 for a

@@ -222,6 +222,16 @@ columns; import resolves handles to ids while rows are being staged.
 `trashed_conversations` and `trashed_contacts` mark items as trashed without
 deleting underlying rows.
 
+`contact_merges` holds each account's most recent contact merge, and
+`contact_merge_contacts`, `contact_merge_identities`, `contact_merge_groups`
+and `contact_merge_imports` hold what it took: each merged contact's row, the
+identities it held, the Contact Groups it was in and its Import Run records,
+with what the contact it merged into had before. Undoing the merge writes the
+merged contacts back under their own ids, which `contacts.id` never hands out
+twice (`AUTOINCREMENT`). The next merge drops the record. The rule is
+CONTACT-56 in
+[`docs/architecture/rules/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/rules/contacts-identities-and-messages.md).
+
 `participants_set_aside`, `import_contacts_set_aside` and
 `contact_group_members_set_aside` keep what linking an identity after an
 import takes away: the holder's participant rows, and the Import Run records

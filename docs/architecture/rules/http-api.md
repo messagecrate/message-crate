@@ -298,6 +298,12 @@ because a merge moves conversations and messages and cannot be undone; and
 a separate preview route, which would work the same form out twice while
 another request between the two could change the answer.
 
+A contact merge, `POST /v1/contacts/{id}/merge`, is not such a request. The
+client names every contact before it sends, so there is nothing for the
+server to tell it, and the merge moves no conversation and can be undone
+until the account's next merge
+(`contacts-identities-and-messages.md`, CONTACT-56).
+
 ### API-28 A failed credential is `401 Unauthorized`, a refused one `403 Forbidden`, and every refused login `401 Unauthorized`
 
 A failed credential answers `401 Unauthorized`. A refused one, including a

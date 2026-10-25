@@ -78,6 +78,12 @@ export const keys = {
      */
     summaries: (ids: readonly string[]) => ["contacts", "summaries", ids.join(",")] as const,
     /**
+     * The contacts Merge Contacts' dialog lists, read whole with their
+     * identities, one entry per set of ids. Under `all`, so a write that
+     * changes contacts refreshes them.
+     */
+    merging: (ids: readonly string[]) => ["contacts", "merging", ids.join(",")] as const,
+    /**
      * How many of these identifiers the account has no contact for, as the
      * Import screen's review counts them. Under `all`, so a write that changes
      * contacts changes the count.

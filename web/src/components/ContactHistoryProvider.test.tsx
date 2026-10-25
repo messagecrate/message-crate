@@ -1,13 +1,16 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useClearContactHistory, useContactHistory } from "../hooks/useContactHistory";
 import { ApiError, noAnswerError } from "../lib/api";
 import {
   listContactGroups,
+  mergeContacts,
   restoreContact,
   trashContact,
+  unmergeContacts,
   updateContactGroupMembers,
 } from "../lib/serverApi";
 import { act } from "../test/act";
@@ -31,12 +34,16 @@ vi.mock("../lib/serverApi", () => ({
   updateContactGroup: vi.fn(),
   deleteContactGroup: vi.fn(),
   updateContactGroupMembers: vi.fn(),
+  mergeContacts: vi.fn(),
+  unmergeContacts: vi.fn(),
 }));
 
 const trashMock = vi.mocked(trashContact);
 const restoreMock = vi.mocked(restoreContact);
 const listGroupsMock = vi.mocked(listContactGroups);
 const updateMembersMock = vi.mocked(updateContactGroupMembers);
+const mergeMock = vi.mocked(mergeContacts);
+const unmergeMock = vi.mocked(unmergeContacts);
 
 const mother = { id: 1, label: "Mother" };
 const ada = { id: 2, label: "Ada" };
@@ -46,8 +53,22 @@ const grace = { id: 3, label: "Grace" };
 function Harness() {
   const history = useContactHistory();
   const clear = useClearContactHistory();
+  const [refusal, setRefusal] = useState("");
   return (
     <div>
+      <button
+        type="button"
+        onClick={async () => {
+          const refused = await history.mergeContacts(mother, [
+            { ...ada, named: true },
+            { id: 4, label: "+15555550104", named: false },
+          ]);
+          setRefusal(refused ? String(refused) : "none");
+        }}
+      >
+        Merge into Mother
+      </button>
+      <p data-testid="merge-refusal">{refusal}</p>
       <button type="button" onClick={() => void history.deleteContacts([mother, ada, grace])}>
         Delete three
       </button>
@@ -248,6 +269,57 @@ describe("ContactHistoryProvider", () => {
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
     expect(toast()).toBeNull();
+  });
+
+  it("merges, then unmerges on Undo and merges again on Redo, naming who came back", async () => {
+    mergeMock.mockResolvedValue({} as Awaited<ReturnType<typeof mergeContacts>>);
+    unmergeMock.mockResolvedValue({} as Awaited<ReturnType<typeof unmergeContacts>>);
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Merge into Mother" }));
+    await settle();
+    expect(mergeMock).toHaveBeenCalledWith(1, [2, 4]);
+    expect(screen.getByTestId("merge-refusal")).toHaveTextContent("none");
+    expect(toast()).toHaveTextContent("Merged 3 contacts into Mother");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(unmergeMock).toHaveBeenCalledWith(1);
+    expect(toast()).toHaveTextContent("Unmerged Ada and 1 contact with no name");
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await settle();
+    expect(mergeMock).toHaveBeenCalledTimes(2);
+    expect(toast()).toHaveTextContent("Merged 3 contacts into Mother");
+  });
+
+  it("answers a refused merge to the dialog and records nothing", async () => {
+    mergeMock.mockRejectedValue(new ApiError(409, "contact 4 is in the trash"));
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Merge into Mother" }));
+    await settle();
+    expect(screen.getByTestId("merge-refusal")).toHaveTextContent("contact 4 is in the trash");
+    expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
+    expect(toast()).toBeNull();
+  });
+
+  it("says why an unmerge was refused and drops the entry", async () => {
+    mergeMock.mockResolvedValue({} as Awaited<ReturnType<typeof mergeContacts>>);
+    unmergeMock.mockRejectedValue(
+      new ApiError(409, "the account's most recent merge did not merge into this contact"),
+    );
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Merge into Mother" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(screen.getByTestId("report")).toHaveTextContent(
+      "Could not unmerge the contacts: the account's most recent merge did not merge into this contact",
+    );
+    expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
+    expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
   });
 
   it("forgets both stacks on a delete for good", async () => {
