@@ -171,9 +171,9 @@ from `100` up.
   another script, and logs in with it.
   Those letters must be typed in the case they were stored in, because the
   login folds the case of A to Z only.
-  An account may have no password (`password_hash` NULL). Only the Demo
-  Account logs in with an empty password; any other account with no password
-  is refused until the administrator sets one.
+  An account may have no password (`password_hash` NULL), and then logs in
+  with an empty password. The administrator is the exception: it must have a
+  password, so before setup a login as `admin` is refused.
 - A refused login waits about a second before the server answers, and so
   does a wrong current password sent to change the administrator's password or to
   delete an account. Nothing counts the attempts, so wrong passwords never lock

@@ -199,8 +199,9 @@ fn dummy_password_hash() -> &'static str {
 
 /// Check `password` against `password_hash`. A `None` or empty hash means
 /// the account has no password: it accepts an empty password only when
-/// `no_password_login` is true, which the login sets for the Demo Account
-/// alone. Argon2 runs against a dummy hash in that branch too, so the time a
+/// `no_password_login` is true, which the login sets for every account but
+/// the administrator. The administrator must have a password, so before setup
+/// its NULL hash is no way in. Argon2 runs against a dummy hash in that branch too, so the time a
 /// refusal takes does not say whether the account has a password. A login as
 /// a username nobody holds calls this with no hash and ignores the answer.
 /// Argon2 runs on the blocking thread pool.

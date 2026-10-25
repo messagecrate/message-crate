@@ -262,7 +262,7 @@ async fn log_in(
     let verified = verify_login_password(
         password_hash.as_deref(),
         password,
-        account_profile::is_demo_account(account_id),
+        !account_profile::is_admin(account_id),
     )
     .await?;
     let mut conn = db.acquire().await?;

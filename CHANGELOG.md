@@ -134,11 +134,12 @@ carry their date on the heading.
   copy existed yet, as if one were still coming, and the reason was in the
   server's log alone. The reason goes away once a later try makes the
   Preview (#2170).
-- 2026-10-10: **User Accounts shows which accounts have no password.** In Admin
-  Home, the Status of an account that has no password now reads **No password**
-  under it. Such an account cannot log in until the administrator sets a
-  password for it, and the list used to give no sign of which accounts those
-  were. The Demo Account has no password by design and is not marked (#2146).
+- 2026-10-10: **User Accounts shows which accounts have no password.** In
+  Admin Home, the Status of an account that has no password now reads
+  **No password** under it. Once such an account is active, anyone who
+  reaches the server and knows its username logs in with an empty password,
+  and the list used to give no sign of which accounts those were. The Demo
+  Account has no password by design and is not marked (#2146).
 - 2026-10-10: **Docker reports whether the server answers.** The Docker image
   asks the server every 30 seconds whether it is up. `docker ps` adds
   `(healthy)` after `Up` while the server answers and `(unhealthy)` after
@@ -272,10 +273,6 @@ carry their date on the heading.
   creating an owner, and `set-admin-password` sets or resets it from the
   server. Only the administrator creates accounts: the setting that let
   anyone create their own is gone, with its Create Account tab.
-- 2026-10-24: **Only the Demo Account logs in without a password.** An
-  account created without a password, or whose password was cleared, could
-  log in with an empty one. It is now refused like any wrong password until
-  the administrator sets a password for it under the account's Settings.
 - 2026-10-24: **Text Message has its own name inside Message Crate.** The
   service the screens call Text Message was stored and sent under the word
   for a phone number, which every phone number on it also carries. It is now

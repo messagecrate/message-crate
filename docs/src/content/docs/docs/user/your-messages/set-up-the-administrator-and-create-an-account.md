@@ -32,7 +32,7 @@ Choose a password that is used nowhere else: the administrator manages every acc
 
 1. On **User Accounts**, select **Add account**.
 2. Enter a **Username**.
-3. Enter a **Password** and repeat it in **Confirm password**. The form allows an account with no password, but such an account can't log in until the administrator sets one, so give it one now. A password is at most 128 characters.
+3. Enter a **Password** and repeat it in **Confirm password**. The form allows an account with no password, which logs in with an empty one. An account that holds real messages should have one. A password is at most 128 characters.
 4. Select **Create**.
 
 ![The New account form in Admin Home](../../../../../assets/user-guide/add-account.png)

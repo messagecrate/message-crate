@@ -731,7 +731,8 @@ async fn a_wrong_password_is_401_invalid_credentials() {
 
 /// Before setup the administrator has no password, and that is not a way
 /// in: a login as `admin` with an empty password is refused like a wrong
-/// one. Only the Demo Account enters without a password.
+/// one. The administrator is the one account that must have a password;
+/// every other account with none logs in with an empty one.
 #[tokio::test]
 async fn the_admin_cannot_log_in_with_an_empty_password_before_setup() {
     let fixture = test_fixture().await;

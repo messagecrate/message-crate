@@ -299,8 +299,7 @@ pub struct CreateAccountRequest {
     /// Local password: no minimum length, at most 128 characters, counted
     /// as characters rather than bytes and not trimmed. Over 128 is refused
     /// with `422 Unprocessable Entity`. Absent or empty opens an account
-    /// with no password, which cannot log in until the administrator sets
-    /// one.
+    /// with no password, which logs in with an empty one.
     #[serde(default)]
     #[schema(max_length = 128)]
     pub password: Option<String>,
@@ -1122,7 +1121,7 @@ pub async fn replace_account_password(
     }
 
     // The administrator must have a password. A user account may have none,
-    // and then cannot log in until it has one.
+    // and then logs in with an empty one.
     let new_hash = if account_profile::is_admin(target) {
         Some(hash_admin_password(&req.password).await?)
     } else {

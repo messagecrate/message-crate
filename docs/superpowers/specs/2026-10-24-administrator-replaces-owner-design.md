@@ -63,11 +63,13 @@ scripts, and AGENTS.md. It stays where it means something else:
 
 ### Login
 
-- The no-password login (an empty password against a NULL hash) is the Demo
-  Account's alone, decided by `DEMO_ACCOUNT_ID`. Any other account with a
-  NULL hash, `admin` in setup included, is refused with `invalid-credentials`
-  after the usual wait, and the refusal is recorded in the Audit Trail as a
-  wrong password.
+- The administrator is the one account that must have a password. Every
+  other account with a NULL hash, the Demo Account among them, logs in with
+  an empty password. `admin` in setup, with its NULL hash, is refused with
+  `invalid-credentials` after the usual wait, and the refusal is recorded in
+  the Audit Trail as a wrong password. (Amended 2026-10-25: this said the
+  no-password login was the Demo Account's alone, which locked out an
+  account whose holder pressed Reset password.)
 
 ### Routes
 

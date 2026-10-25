@@ -415,8 +415,9 @@ async fn the_admin_needs_one_character_and_a_user_needs_none() {
 }
 
 /// A login to an account with no password takes the empty password only,
-/// and only when the login allows it, which it does for the Demo Account
-/// alone. Any other account with no password is not entered at all.
+/// and only when the login allows it, which it does for every account but
+/// the administrator. The administrator with no password, before setup, is
+/// not entered at all.
 #[tokio::test]
 async fn a_login_to_an_account_with_no_password_takes_only_the_empty_one() {
     for no_hash in [None, Some("")] {

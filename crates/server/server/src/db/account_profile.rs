@@ -381,8 +381,8 @@ pub async fn username_for_account(
 /// Load the argon2 password hash for an account id, if set.
 ///
 /// `None` when the row is missing or its `password_hash` is NULL (NULL or
-/// empty means the account has no password; only the Demo Account logs in
-/// without one).
+/// empty means the account has no password, and logs in with an empty one,
+/// unless it is the administrator, which must have one).
 pub async fn load_password_hash(
     conn: &mut SqliteConnection,
     account_id: i64,

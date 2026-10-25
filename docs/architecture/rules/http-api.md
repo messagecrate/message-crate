@@ -1435,6 +1435,13 @@ keeps a client from sending a huge body as a password, and 128 leaves
 room for any generated password or passphrase, over the 64 NIST SP 800-63B
 asks a verifier to allow (#2996).
 
+An account other than the administrator may have no password, and then logs
+in with an empty one; the Demo Account is one such account. The
+administrator must have a password: setup, `set-admin-password` and its own
+change refuse an empty one, and before setup a login as `admin` is refused.
+Why the administrator alone: it reaches every other account, and a Message
+Crate in setup would otherwise be open to whoever logs in first.
+
 ### API-101 A multipart part is held to the part size its upload was told
 
 Each part of a multipart upload is held to the part size its upload was
@@ -1522,8 +1529,8 @@ refused login (`POST /v1/session`) and a wrong `current_password` sent to
 `PUT /v1/accounts/{id}/password` or `DELETE /v1/accounts/{id}` each wait
 about a second (`REFUSAL_WAIT` in `crates/server/server/src/credentials.rs`),
 then answer `401 Unauthorized` (`invalid-credentials`). Every refused login
-gets the same answer: a username nobody holds, a wrong or empty password, a
-disabled account. The request gives its database connection back before it
+gets the same answer: a username nobody holds, a wrong password, an empty
+password for the administrator before setup, a disabled account. The request gives its database connection back before it
 waits, so refusals waiting to answer do not hold the pool. A login with the
 right password, and a right `current_password`, do not wait. Nothing counts
 attempts: no route answers `429 Too Many Requests`, and nothing locks an

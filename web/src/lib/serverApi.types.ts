@@ -2637,8 +2637,7 @@ export interface components {
              * @description Local password: no minimum length, at most 128 characters, counted
              *     as characters rather than bytes and not trimmed. Over 128 is refused
              *     with `422 Unprocessable Entity`. Absent or empty opens an account
-             *     with no password, which cannot log in until the administrator sets
-             *     one.
+             *     with no password, which logs in with an empty one.
              */
             password?: string | null;
             /**

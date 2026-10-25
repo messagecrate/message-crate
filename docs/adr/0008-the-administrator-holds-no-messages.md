@@ -239,8 +239,9 @@ ceremony than a self-hosted product needs.)
   `POST /v1/accounts` takes the administrator's Session and nothing else.
 - The administrator must have a password, of one character or more, and
   cannot clear it. A user account has no minimum and may have no password,
-  but an account with no password cannot log in until the administrator sets
-  one under its Settings. Only the Demo Account enters without a password.
+  and an account with no password logs in with an empty one. The Demo
+  Account is one such account. The administrator is the one account that is
+  never entered without a password, so before setup `admin` is not a way in.
   (An earlier version had the demo seed write the administrator with the
   password `admin`;
   `docs/adr/0016-the-demo-account-is-fixed-not-configured.md` removed that,
