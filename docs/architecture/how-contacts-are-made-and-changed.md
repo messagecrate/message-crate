@@ -443,7 +443,7 @@ names every identity held elsewhere, each with the contact that holds it.
 
 ```mermaid
 flowchart TD
-  A["A name and zero or more identities, each on its service"] --> B{"Name blank or too long, or more than 100 identities?"}
+  A["A name and zero or more identities, each on its service"] --> B{"Name blank or too long, an identity blank or too long, or more than 100 identities?"}
   B -- yes --> R1{{"Refused. Nothing created."}}
   B -- no --> C["Type each identity by its service and its shape, and find it or create it"]
   C --> D{"Is any identity on a contact, or one of the account's own?"}
@@ -538,8 +538,8 @@ flowchart TD
   says which came back and Redo merges only those.
 
 Undo Merge Contacts is on the Contacts list's menu, with the toast's Undo
-and Ctrl+Z, in the browser session that made the merge. The contact page
-offers no unmerge.
+and Ctrl+Z (Cmd+Z on a Mac), in the browser session that made the merge.
+The contact page offers no unmerge.
 
 ## Delete Contacts
 
@@ -566,9 +566,12 @@ replaces contacts, one entry per action the person took, with a count and
 contact ids and never a name
 ([CONTACT-59](rules/contacts-identities-and-messages.md#contact-59-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
 The route that makes the change writes the entry in the change's own
-transaction, so the two land together or not at all. Most contact entries go
-through `record_contact_change` in
-`crates/server/server/src/db/audit_trail.rs`.
+transaction, so the two land together or not at all. The one exception
+today is an address book load, which writes its entry after the load's own
+transaction commits (#3310). Every entry in the table below goes through
+`record_contact_change` in `crates/server/server/src/db/audit_trail.rs`,
+except `address_book_loaded` and `trash_emptied`, which go through
+`record_about` in the same file.
 
 | Entry | Written by | Holds |
 |---|---|---|
@@ -581,9 +584,12 @@ through `record_contact_change` in
 | `contacts_merged` | Merge Contacts | The target, and the contacts merged into it |
 | `contacts_unmerged` | The Undo of Merge Contacts, when a contact comes back | The target, and the contacts written back |
 
-A request that changes no contact writes no entry: moving a contact to the
-Trash that is already there, or an undo of a merge that brings no contact
-back. Undo and Redo write no entry of their own, so each is recorded as the
+Moving a contact to the Trash that is already there, or an undo of a merge
+that brings no contact back, changes no contact and writes no entry. Empty
+Trash and an address book load write theirs even when they change nothing:
+an empty Trash gives `trash_emptied` counts of 0, and a file that matches
+the contacts row for row gives `address_book_loaded` counts of 0 (#3311).
+Undo and Redo write no entry of their own, so each is recorded as the
 same change made by hand. An import of a backup is recorded as its Import
 Run, with no contact entry, and an edit in the contact drawer or a Contact
 Group change writes no entry.
