@@ -430,7 +430,7 @@ pub(crate) async fn restore_contact(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Delete a trashed contact the way a phone's Delete Contact does: the name
+/// Delete a trashed contact the way a phone's Delete Contact does. The name
 /// and the person's edits go, the contact becomes Unknown again and leaves
 /// the trash, and every conversation it was in stays as it is, showing the
 /// identity. Conversations are never deleted with a contact. A contact that is

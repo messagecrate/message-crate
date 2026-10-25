@@ -9,7 +9,7 @@ type NotMadeCount = Schema["NotMadeCount"];
 type NotMadeAttachment = Schema["NotMadeAttachment"];
 type NotMadeVersion = Schema["NotMadeVersion"];
 
-/** Each kind of failure as the owner reads it. */
+/** Each kind of failure as the administrator reads it. */
 const NOT_MADE_KIND_LABEL: Record<NotMadeKind, string> = {
   conversion_failed: "Conversion failed",
   stalled: "Stopped making progress",
@@ -21,7 +21,7 @@ const NOT_MADE_KIND_LABEL: Record<NotMadeKind, string> = {
 
 /**
  * The attachments of one Import Run whose Thumbnail or Preview the server
- * could not make, as the owner reads them under another account: how many
+ * could not make, as the administrator reads them under another account: how many
  * for each kind of failure, then each attachment by its file name, type and
  * size, with why for each version not made. The server tries again only when
  * someone runs `process-assets`, so the panel offers no retry.

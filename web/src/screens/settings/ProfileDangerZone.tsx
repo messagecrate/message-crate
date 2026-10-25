@@ -4,9 +4,9 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
+import { useDeleteAccount, useDeleteAccountMessages } from "../../hooks/useAdminAccounts";
 import { useAuth } from "../../hooks/useAuth";
 import { useClearContactHistory } from "../../hooks/useContactHistory";
-import { useDeleteAccount, useDeleteAccountMessages } from "../../hooks/useOwnerAccounts";
 import { useRouteMutation, useRouteQuery } from "../../hooks/useRouteQuery";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { type AccountRunDirectories, accountRunDirectories } from "../../lib/importRun";
@@ -17,7 +17,8 @@ import { dangerButtonClass } from "./profileStyles";
 
 const NO_DIRECTORIES: AccountRunDirectories = { found: [], unreadable: [] };
 
-const CANNOT_DELETE = "Deleting is not permitted for this account. The owner can delete it.";
+const CANNOT_DELETE =
+  "Deleting is not permitted for this account. The administrator can delete it.";
 
 const dangerZoneButtonClass = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] !whitespace-nowrap !border-transparent !px-3 !py-2 !text-[0.813rem] !shadow-[inset_0_0_0_1px_var(--danger-soft-border)]`;
 
@@ -30,14 +31,14 @@ const dangerZoneButtonClass = `${dangerButtonClass} !box-border !w-auto !min-w-[
  * first: the server deletes the account's Import Runs with it, so nothing
  * would offer those directories again. One the app may not read is named,
  * with the system's reason, once the account is deleted. Given
- * `managedAccountId`, the owner is deleting someone else's: no password is
- * asked, because the owner does not know it, and the owner lands back on
- * User Accounts. The owner deletes on the strength of the
+ * `managedAccountId`, the administrator is deleting someone else's: no password is
+ * asked, because the administrator does not know it, and the administrator lands back on
+ * User Accounts. The administrator deletes on the strength of the
  * count and the account holder's word, so the confirmation states the count.
  *
  * `canDelete` is the account's own `delete` permission. Deleting the account
  * deletes its messages, so the server refuses both deletes to an account
- * without it, and the account is told to ask the owner. The owner deletes
+ * without it, and the account is told to ask the administrator. The administrator deletes
  * either way.
  */
 export function ProfileDangerZone({
@@ -51,7 +52,7 @@ export function ProfileDangerZone({
 }: {
   /** Nobody deletes the account's messages for good: `fixedSettings(profile).deleteMessages`. */
   messagesFixed: boolean;
-  /** The account may not delete itself, and the owner still may: `fixedSettings(profile).deleteOwnAccount`. */
+  /** The account may not delete itself, and the administrator still may: `fixedSettings(profile).deleteOwnAccount`. */
   accountFixed: boolean;
   username: string;
   hasPassword: boolean;
@@ -80,7 +81,7 @@ export function ProfileDangerZone({
   const managed = managedAccountId !== undefined;
   const busy = deleting || deletingMessages;
   const accountLocked = accountFixed && !managed;
-  // An account the owner barred from deleting asks the owner instead.
+  // An account the administrator barred from deleting asks the administrator instead.
   const notPermitted = !canDelete && !managed;
   const count = messageCount.toLocaleString();
   // Only the desktop app can find and delete directories on this computer.
@@ -119,7 +120,7 @@ export function ProfileDangerZone({
       if (managed) {
         await removeManagedAccount.mutateAsync(managedAccountId);
         setDeleteDialogOpen(false);
-        navigate("/owner/accounts");
+        navigate("/admin/accounts");
         return;
       }
       await deleteAccount({ confirm: true, current_password: currentPassword });
@@ -164,7 +165,7 @@ export function ProfileDangerZone({
         </p>
         {notPermitted && (
           <p className="ml-5 mt-[0.35rem] text-[0.813rem] text-muted">
-            Ask the owner to delete your messages or your account.
+            Ask the administrator to delete your messages or your account.
           </p>
         )}
 

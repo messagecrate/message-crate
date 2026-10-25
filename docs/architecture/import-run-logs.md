@@ -12,9 +12,9 @@ separate thing: [The server's log](server-log.md).
 
 | Log | Written by | Where it is | Who reads it, and where |
 |---|---|---|---|
-| The server's log | `serve` | The Data Directory of the server | The owner, in Owner Home → **Logs**, from a browser or the desktop app |
-| An Import Run's log | The desktop app, during the run | The Logs Directory of the computer that ran the import | The owner, in Owner Home → **Logs**; the account that ran it, from the run's row in Settings → Storage; both in the desktop app on that computer |
-| The desktop app's log | The desktop app, outside any run | The Logs Directory of the computer the app runs on | The owner, in Owner Home → **Logs**, listed as **Desktop app** |
+| The server's log | `serve` | The Data Directory of the server | The administrator, in Admin Home → **Logs**, from a browser or the desktop app |
+| An Import Run's log | The desktop app, during the run | The Logs Directory of the computer that ran the import | The administrator, in Admin Home → **Logs**; the account that ran it, from the run's row in Settings → Storage; both in the desktop app on that computer |
+| The desktop app's log | The desktop app, outside any run | The Logs Directory of the computer the app runs on | The administrator, in Admin Home → **Logs**, listed as **Desktop app** |
 
 A browser reads the server's log only. A run log never leaves the computer
 that ran the import.
@@ -51,7 +51,7 @@ Reading left to right:
    same log. The run's directory is deleted when the run ends, and its
    log is kept ([RUNLOG-2](rules/import-run-logs.md#runlog-2-kept-on-this-computer-never-deleted)).
 3. **The listing reads the account line to decide who sees the log.** The
-   owner sees every log on the computer, and an account sees the logs of
+   administrator sees every log on the computer, and an account sees the logs of
    its own runs on the Message Crate it is signed in to
    ([RUNLOG-3](rules/import-run-logs.md#runlog-3-the-account-line)).
 4. **The same line ties a run's directory to its run.** When an account opens
@@ -75,7 +75,7 @@ whose processes will not end with it, and the warnings the Apple Messages
 Reader writes during the Import screen's identity check. Each line is at
 `WARN`, because each is something the app went on without. The file is made
 when its first line is written, so an app with nothing to say has none. It
-names no account, so the listing gives it to the owner alone.
+names no account, so the listing gives it to the administrator alone.
 
 ## What a line looks like
 
@@ -94,7 +94,7 @@ level, and every other control character is escaped.
 A run log never holds a password, a token, message text or attachment bytes.
 Unlike a line of the server's log, it does name the conversation files and
 attachments the run read, such as `+15555550101.jsonl`, because that is what
-explains a failure, and the owner reads those names with the rest of the
+explains a failure, and the administrator reads those names with the rest of the
 log.
 
 ## A filter, not a guard

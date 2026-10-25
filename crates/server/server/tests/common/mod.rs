@@ -1,5 +1,5 @@
 //! Starting `message-crate-server serve` as the desktop app does, the lines
-//! of a JSON Lines batch to send it, and the calls that claim it, shared by
+//! of a JSON Lines batch to send it, and the calls that set it up, shared by
 //! the tests that run the binary.
 
 use std::io::{BufRead, BufReader};
@@ -23,11 +23,11 @@ pub mod client;
 #[path = "../../src/test_support/lines.rs"]
 pub mod lines;
 
-// Only the tests that claim the Message Crate and log in use it, and those
+// Only the tests that set up the Message Crate and log in use it, and those
 // use only some of it, so the rest would warn as dead code in each test
 // binary.
 #[allow(dead_code)]
-pub mod claim;
+pub mod setup;
 
 // Only the tests that upload through the import library use it.
 #[allow(dead_code)]

@@ -70,7 +70,7 @@ pub(crate) async fn list_conversations(
     Ok(Json(result))
 }
 
-/// One conversation, in the same shape a list row already has, so a caller
+/// One conversation, in the same shape a list row already has. So a caller
 /// that opens a conversation from a list does not have to convert between two
 /// shapes, and paging through the whole list to find one id is never
 /// necessary. Trash is a property the list applies, not a bar to reading:
@@ -291,7 +291,7 @@ pub(crate) async fn restore_conversation(
     }
 }
 
-/// Permanently delete a trashed conversation: the conversation, its
+/// Permanently delete a trashed conversation. The conversation, its
 /// messages, and any attachment file no other message still uses. Trash is
 /// the only door to deletion, so a conversation that is not in the trash
 /// answers 409 rather than being deleted from wherever it was.

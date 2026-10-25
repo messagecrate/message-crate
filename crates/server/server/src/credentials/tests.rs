@@ -340,7 +340,7 @@ async fn change_password_transaction_rolls_back_every_credential() {
 
 /// The password length rules, at their edges.
 ///
-/// The owner must have a password and one character is enough. A user
+/// The administrator must have a password and one character is enough. A user
 /// account has no minimum at all: an empty password is an account with no
 /// password. Both share the maximum, the only thing stopping a megabyte of
 /// text reaching Argon2, which would hash it and make every login slow for
@@ -349,20 +349,20 @@ async fn change_password_transaction_rolls_back_every_credential() {
 /// The hashes are made and checked on the blocking thread pool, and the
 /// refusals must still come back as the `validation-failed` they were.
 #[tokio::test]
-async fn the_owner_needs_one_character_and_a_user_needs_none() {
+async fn the_admin_needs_one_character_and_a_user_needs_none() {
     assert!(
         matches!(
-            hash_owner_password("").await,
-            Err(ApiError::ValidationFailed(ref m)) if m == &["the owner must have a password"]
+            hash_admin_password("").await,
+            Err(ApiError::ValidationFailed(ref m)) if m == &["the administrator must have a password"]
         ),
-        "an owner with no password"
+        "an administrator with no password"
     );
-    let owner_hash = hash_owner_password("a")
+    let admin_hash = hash_admin_password("a")
         .await
         .expect("one character is the minimum");
-    assert!(verify_password(&owner_hash, "a"));
-    assert!(passwords_match(Some(&owner_hash), "a").await.unwrap());
-    assert!(!passwords_match(Some(&owner_hash), "b").await.unwrap());
+    assert!(verify_password(&admin_hash, "a"));
+    assert!(passwords_match(Some(&admin_hash), "a").await.unwrap());
+    assert!(!passwords_match(Some(&admin_hash), "b").await.unwrap());
 
     assert_eq!(
         hash_user_password("").await.expect("empty is allowed"),
@@ -374,24 +374,32 @@ async fn the_owner_needs_one_character_and_a_user_needs_none() {
         .expect("one character is allowed")
         .expect("and is a real password");
     assert!(verify_password(&user_hash, "a"));
-    assert!(verify_login_password(Some(&user_hash), "a").await.unwrap());
-    assert!(!verify_login_password(Some(&user_hash), "b").await.unwrap());
+    assert!(
+        verify_login_password(Some(&user_hash), "a", false)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !verify_login_password(Some(&user_hash), "b", false)
+            .await
+            .unwrap()
+    );
 
     // The maximum is in characters, as a username's is, not bytes: 128
     // letters pass whether each takes one byte, two or four. One more is
     // refused.
     for letter in ["a", "é", "🔑"] {
         let at_limit = letter.repeat(MAX_PASSWORD_CHARS);
-        let owner_at_limit = hash_owner_password(&at_limit)
+        let admin_at_limit = hash_admin_password(&at_limit)
             .await
             .expect("exactly the limit is allowed");
-        assert!(verify_password(&owner_at_limit, &at_limit));
+        assert!(verify_password(&admin_at_limit, &at_limit));
         hash_user_password(&at_limit)
             .await
             .expect("exactly the limit is allowed");
         let over = letter.repeat(MAX_PASSWORD_CHARS + 1);
         for refused in [
-            hash_owner_password(&over).await.map(Some),
+            hash_admin_password(&over).await.map(Some),
             hash_user_password(&over).await,
         ] {
             assert!(
@@ -406,12 +414,25 @@ async fn the_owner_needs_one_character_and_a_user_needs_none() {
     }
 }
 
-/// A login to an account with no password takes the empty password only.
+/// A login to an account with no password takes the empty password only,
+/// and only when the login allows it, which it does for every account but
+/// the administrator. The administrator with no password, before setup, is
+/// not entered at all.
 #[tokio::test]
 async fn a_login_to_an_account_with_no_password_takes_only_the_empty_one() {
     for no_hash in [None, Some("")] {
-        assert!(verify_login_password(no_hash, "").await.unwrap());
-        assert!(!verify_login_password(no_hash, "anything").await.unwrap());
+        assert!(verify_login_password(no_hash, "", true).await.unwrap());
+        assert!(
+            !verify_login_password(no_hash, "anything", true)
+                .await
+                .unwrap()
+        );
+        assert!(!verify_login_password(no_hash, "", false).await.unwrap());
+        assert!(
+            !verify_login_password(no_hash, "anything", false)
+                .await
+                .unwrap()
+        );
     }
 }
 
@@ -569,13 +590,13 @@ fn the_reference_states_the_password_cap() {
     assert_eq!(
         found,
         [
-            "ClaimServerRequest.password",
             "CreateAccountRequest.password",
             "CreateSessionRequest.password",
             "DeleteAccountRequest.current_password",
             "ReplaceAccountPasswordRequest.current_password",
             "ReplaceAccountPasswordRequest.password",
             "ReplaceAccountPasswordRequest.password_confirmation",
+            "SetUpServerRequest.password",
         ],
         "every password field a request sends"
     );

@@ -3,15 +3,15 @@ use axum::http::StatusCode;
 use crate::db::trash::{Trashable, move_to_trash};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
-    conversation_header, delete_raw, delete_status, expect_problem, fake_sha256,
-    fixture_with_account, get_json, get_raw, get_status, message_line, patch_json, patch_json_raw,
-    post_status, register_via_api,
+    LoggedInAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
+    attach_stored_file, attachment, conversation_header, delete_raw, delete_status, expect_problem,
+    fake_sha256, fixture_with_account, get_json, get_raw, get_status, message_line, patch_json,
+    patch_json_raw, post_status,
     seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
-async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) -> i64 {
+async fn seed(fixture: &TestFixture, account: &LoggedInAccount, handle: &str) -> i64 {
     seed_conversation(
         &fixture.state,
         &SeedConversation {
@@ -32,7 +32,7 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
 }
 
 /// A named contact of `account`, returning its id.
-async fn seed_named_contact(fixture: &TestFixture, account: &RegisteredAccount, name: &str) -> i64 {
+async fn seed_named_contact(fixture: &TestFixture, account: &LoggedInAccount, name: &str) -> i64 {
     let mut conn = fixture.conn().await;
     sqlx::query_scalar(
         "INSERT INTO contacts (account_id, preferred_name, origin) VALUES ($1, $2, 'user') RETURNING id",
@@ -44,7 +44,7 @@ async fn seed_named_contact(fixture: &TestFixture, account: &RegisteredAccount, 
     .unwrap()
 }
 
-async fn trash(fixture: &TestFixture, account: &RegisteredAccount, target: Trashable) {
+async fn trash(fixture: &TestFixture, account: &LoggedInAccount, target: Trashable) {
     let mut conn = fixture.conn().await;
     assert!(
         move_to_trash(&mut conn, account.account_id, target)
@@ -147,7 +147,7 @@ async fn empty_trash_deletes_trashed_conversations_and_forgets_trashed_contacts(
 #[tokio::test]
 async fn empty_trash_leaves_another_accounts_trash_alone() {
     let (fixture, alice) = fixture_with_account().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let bobs = seed(&fixture, &bob, "+15550101").await;
     trash(&fixture, &bob, Trashable::Conversation(bobs)).await;
 
@@ -179,7 +179,7 @@ async fn empty_trash_needs_the_delete_permission() {
 
 /// Start an Import Run for `imessage`, as an Upload does before it asks
 /// about any file, and return its id.
-async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
+async fn start_run(fixture: &TestFixture, account: &LoggedInAccount) -> i64 {
     crate::test_support::start_import_run(
         &fixture.state,
         &account.token,
@@ -436,7 +436,7 @@ fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
 /// Returns the status the file's `PUT` answered.
 async fn import_file_from(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     source: &str,
     handle: &str,
     bytes: &[u8],
@@ -489,7 +489,7 @@ fn stored_copies(dir: &std::path::Path, sha: &str) -> Vec<std::path::PathBuf> {
 /// The one conversation of `account` whose messages come from `source`.
 async fn conversation_of_source(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     source: &str,
 ) -> i64 {
     let mut conn = fixture.conn().await;
@@ -630,7 +630,7 @@ async fn a_file_imported_from_two_sources_counts_once_in_storage() {
 /// contacts, oldest first.
 async fn contact_entries(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
 ) -> Vec<crate::db::audit_trail::AuditEntry> {
     use crate::db::audit_trail::{AuditAction, Scope, page};
     let mut conn = fixture.conn().await;
@@ -717,7 +717,7 @@ async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
 #[tokio::test]
 async fn a_contact_the_account_does_not_hold_refuses_the_whole_move() {
     let (fixture, alice) = fixture_with_account().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let ada = seed_named_contact(&fixture, &alice, "Ada").await;
     let bobs = seed_named_contact(&fixture, &bob, "Bob's").await;
 

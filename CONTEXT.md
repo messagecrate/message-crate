@@ -157,7 +157,7 @@ account's token.
 _Avoid_: Import Job, Import Session, Push
 
 **Message Crate**:
-One installation of the product: the thing a person claims, owns, and logs
+One installation of the product: the thing a person sets up, owns, and logs
 into. It holds many accounts and their messages, and each account's data is
 isolated from the others. The product carries the same name. "A Message
 Crate" or "this Message Crate" is one installation; "Message Crate" with no
@@ -174,20 +174,20 @@ and the database is the store; neither is a name for the installation.
 The made-up conversations, contacts, and attachments every new Message Crate
 starts with, so a person can look around before bringing their own messages.
 It belongs to the Demo Account and to no one else. It sits beside real
-accounts on the same Message Crate, and goes when the owner deletes the Demo
-Account.
+accounts on the same Message Crate, and goes when the administrator deletes
+the Demo Account.
 _Avoid_: Test data, Sample data, Demo mode
 
 **Demo Account**:
-The account that holds Demo Data, with the username `demo`. It has no
-password and can never be given one, so anyone who reaches the Message Crate
-can enter it. It may export, and move things to the trash and restore them; it
-may not import, delete for good, or load an address book, so a person's own
-messages and contacts never land in it and one visitor cannot empty it for the
-next. It may not make an API Token, which would outlive the visit. Its status,
-its permissions, its own identities, its display name and its time zone are
-fixed; the names, groups, tags and searches a visitor makes in it stay until
-it is reset. The owner can delete it, or reset it to how it started, and
+The account that holds Demo Data, with the username `demo`. It has no password
+and can never be given one, so anyone who reaches the Message Crate can enter
+it. It may export, and move things to the trash and restore them; it may not
+import, delete for good, or load an address book, so a person's own messages and
+contacts never land in it and one visitor cannot empty it for the next. It may
+not make an API Token, which would outlive the visit. Its status, its
+permissions, its own identities, its display name and its time zone are fixed;
+the names, groups, tags and searches a visitor makes in it stay until it is
+reset. The administrator can delete it, or reset it to how it started, and
 change nothing else about it.
 _Avoid_: Demo user, Guest, Sample account
 
@@ -327,77 +327,77 @@ account holds is visible to another. An account is not finished until
 profile setup finishes.
 _Avoid_: Login, Profile, Tenant, Workspace
 
-**Owner**:
-The administrator of a Message Crate: the one account that manages its other
-accounts and its server settings, and the only account that holds no messages
-of its own. The owner creates, disables and deletes accounts, resets their
-passwords, deletes their message data, and decides whether strangers may create
-an account. The owner monitors it through metadata: counts and totals of
-messages, contacts and attachments, each account's imports and exports, when
-it last logged in, and attachment file names and sizes. The owner never reads
-content: a message's text, an attachment's bytes, or a contact's name and
-identities. The full line is in `docs/adr/0008`. There is exactly one, it cannot
-be deleted, and no other account can be given its powers.
-_Avoid_ as its name: Vault Owner, Admin, Administrator, Superuser, Root. The
-role is an administrator's; the account is called the owner, because exactly
-one exists and it is whoever claimed the Message Crate.
+**Administrator**:
+The one account that manages a Message Crate: its other accounts and its
+server settings. Its username is `admin`, fixed, and it exists from the moment
+the database is made; it cannot be deleted, and no other account can be given
+its powers. It holds no messages of its own. The administrator creates,
+disables and deletes accounts, resets their passwords, and deletes their
+message data. It monitors the Message Crate through metadata: counts and
+totals of messages, contacts and attachments, each account's imports and
+exports, when it last logged in, and attachment file names and sizes. The
+administrator never reads content: a message's text, an attachment's bytes,
+or a contact's name and identities. The full line is in `docs/adr/0008`. In
+prose the role is "the administrator"; the account and the login are `admin`.
+_Avoid_: Owner, Vault Owner, Superuser, Root
 
-**Owner Home**:
-The screen the owner lands on at login and works from, the way any
-other account lands in Messages. It has the frame every account sees: the
-product name, a search bar, the username and the account button across the top, over a
+**Admin Home**:
+The screen the administrator lands on at login and works from, the way any other
+account lands in Messages. It has the frame every account sees: the product
+name, a search bar, the username and the account button across the top, over a
 side panel and a content pane. The side panel lists Dashboard, Server Settings,
-User Accounts, Audit Trail and Logs; Dashboard shows what the whole Message Crate
-holds, Audit Trail what each user did and when, and Logs is named and holds nothing yet. The search bar narrows User Accounts by username or
-preferred name. User Accounts lists every account, the owner's own first,
-each by username with its preferred name, its status and its last login. The
-status of an account that has no password reads No password under it, except
-for the Demo Account. There the owner adds
-accounts. An account's name opens that account's Settings, the screen its
-holder sees, where the owner sets its password, its status (active or
-disabled) and its permissions (import, export, delete), reads on Account its
-last login and the app it connects with, and deletes its messages or the
-account. The account holder reads the same status and permissions under
-Settings, Account, and changes none. The owner sets the account's display
-name, time zone and identities on Profile as the holder does, which is not the
-holder's own profile setup. On the Demo Account its display name, time zone and
-identities are fixed, for the owner as for the holder. The owner reads the
-Storage tab as the holder sees it, without seeing inside it. The owner's own
-row opens the owner's own Settings, which is also where the account button's
-Settings goes. An owner's password reset sets the password and nothing more:
-it does not end the person's session and does not make them choose a new one.
-_Avoid_: Console, Dashboard, Admin, Admin panel
+User Accounts, Audit Trail and Logs; Dashboard shows what the whole Message
+Crate holds, Audit Trail what each user did and when, and Logs the server's log
+and, in the desktop app, the Import Run logs and the desktop app's own log on
+that computer. The search bar narrows User Accounts by username or preferred
+name. User Accounts lists every account, the administrator's own first, each by
+username with its preferred name, its status and its last login. The status of
+an account that has no password reads No password under it, except for the Demo
+Account. There the administrator adds accounts. An account's name opens that
+account's Settings, the screen its holder sees, where the administrator sets its
+password, its status (active or disabled) and its permissions (import, export,
+delete), reads on Account its last login and the app it connects with, and
+deletes its messages or the account. The account holder reads the same status
+and permissions under Settings, Account, and changes none. The administrator
+sets the account's display name, time zone and identities on Profile as the
+holder does, which is not the holder's own profile setup. On the Demo Account
+its display name, time zone and identities are fixed, for the administrator as
+for the holder. The administrator reads the Storage tab as the holder sees it,
+without seeing inside it. The administrator's own row opens the administrator's
+own Settings, which is also where the account button's Settings goes. A password
+the administrator sets for an account sets the password and nothing more: it
+does not end the person's session and does not make them choose a new one.
+_Avoid_: Owner Home, Console, Dashboard, Admin panel
 
 **Audit Trail**:
 The permanent record of what each user did on a Message Crate, and when:
 logging in, sessions ending, logins refused, Import Runs, Export Runs, the
-owner's changes to accounts, every build of the Demo Account, and what adds,
-removes or replaces contacts: address book loads, contacts added by hand,
-Delete Contacts and Restore, deletes for good, and Merge Contacts and its
-undo, each by count and contact id. Edits to a contact and Contact Group
-changes are not recorded. Each entry
-names who acted: the account holder, the owner, a server command such as
+administrator's changes to accounts, every build of the Demo Account, and
+what adds, removes or replaces contacts: address book loads, contacts added
+by hand, Delete Contacts and Restore, deletes for good, and Merge Contacts
+and its undo, each by count and contact id. Edits to a contact and Contact
+Group changes are not recorded. Each entry
+names who acted: the account holder, the administrator, a server command such as
 `reset-demo`, the server's first start, the server on its own, or someone at
 the login card. The server's first start is the one that adds the Demo
 Account to a new Message Crate. It records that something happened and how
-much, never what the messages said. Nobody edits or deletes it, the owner
-included, and deleting an account does not remove its entries. The owner
-reads it for every account on Owner Home, and each account holder reads the
+much, never what the messages said. Nobody edits or deletes it, the administrator
+included, and deleting an account does not remove its entries. The administrator
+reads it for every account on Admin Home, and each account holder reads the
 entries about their own account under Settings. It is not the server's log
 output, which is Logs.
 Why it outlives the account: `docs/adr/0020`.
 _Avoid_: Activity, Audit log, Event log, History
 
-**Claiming**:
-Making a Message Crate's owner. One with no owner is unclaimed and offers only
-the Create Owner screen; claiming it is what that screen does. A claimed
-Message Crate is closed or open, depending on whether it lets strangers
-create their own accounts.
-_Avoid_: Setup, First run, Provisioning
+**Setup**:
+The state of a Message Crate whose administrator has no password yet, and
+the one act it offers: setting that password, from the login card or with
+`set-admin-password`. A Message Crate is in setup or ready; nothing else.
+_Avoid_: Claiming, Unclaimed, First run, Provisioning, Open, Closed
 
 **Session**:
 One account's logged-in state, made by logging in with the account's
-password and ended by logging out, by expiry, or by the owner disabling or
+password and ended by logging out, by expiry, or by the administrator disabling or
 deleting the account. There is one per logged-in account, and it is what the
 browser and the desktop app hold between requests. It is not an API token: a
 token is a named, scoped credential the person makes for a program, and it
@@ -412,7 +412,7 @@ both. A program holding one can bring messages in, or take them out
 through an Export Run it starts, but it can never browse: reading messages
 outside a run needs a Session. The secret is shown once when the token is
 made; afterwards the account sees only its name, a masked hint, and when it
-was last used. The owner sees the same without the hint, and may revoke it.
+was last used. The administrator sees the same without the hint, and may revoke it.
 _Avoid_: App password, Key, Credential, Session
 
 **User**:
@@ -577,7 +577,7 @@ closed; the run's log says so. A run's
 directory has no term of its own: on screen it is "this Import Run's
 directory". Exports and Converts never use it; they work in the Export
 Directory. Settings → System shows an account the space its own runs take in
-it on that computer, and Server Settings shows the owner the space the whole
+it on that computer, and Server Settings shows the administrator the space the whole
 directory takes. It is `staging` in the Message Crate Directory unless Settings
 name another directory.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
@@ -601,10 +601,10 @@ the run, such as `import-iphone-ios-261004-143000.log`. A log stays on the
 computer that ran the import and is never deleted, so it outlives the run's
 directory in the Staging Directory. Its first line names the run, the
 account that ran it, the server's address and the Message Crate's id. The
-owner reads every log in it, and an account the logs of its own runs, in
+administrator reads every log in it, and an account the logs of its own runs, in
 the desktop app on that computer. It also holds the desktop app's own log,
 `desktop-app.log`, what the app did and failed at outside an Import Run,
-which the owner reads. It is `logs` in the Message Crate Directory. The
+which the administrator reads. It is `logs` in the Message Crate Directory. The
 server's own log is in the Data Directory.
 _Avoid_: Log Folder, Run Log Directory
 
@@ -651,7 +651,7 @@ internal name of the desktop command that reads a backup during Import.
 The number a release of Message Crate is named by, such as `0.9.0`. The
 server, the desktop app and the website carry the same one. An app whose
 Product Version differs from its server's is flagged to the person and to the
-owner, and is served all the same.
+administrator, and is served all the same.
 _Avoid_: Release, Release number, App version
 
 **Build**:

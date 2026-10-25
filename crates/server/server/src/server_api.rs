@@ -1,22 +1,22 @@
 //! What a logged-out browser is allowed to know about this Message Crate, and the one
-//! act it is allowed to perform: claiming an unclaimed Message Crate.
+//! act it is allowed to perform: setting up a Message Crate in setup.
 //!
-//! `GET /v1/server` reports this Message Crate's state as a single value rather than the
-//! two facts behind it (whether an owner exists, and whether public
-//! registration is on), so that the rule joining them is stated once, on the
-//! server. A browser and a desktop app that each derived the entry screen from
-//! raw fields would be two copies of one rule, free to drift apart.
+//! `GET /v1/server` reports this Message Crate's state as one of two values:
+//! `setup` while the administrator has no password, and `ready` once it has
+//! one. The server states it, rather than leaving each app to read whether
+//! the administrator has a password, so that the browser and the desktop app
+//! show the same entry screen from one rule.
 //!
 //! It also reports the attachment size limit, because a program that uploads
-//! has to know it before it starts and only the owner reads the settings.
-//! How the database is stored is not part of it: the journal mode SQLite
-//! runs the database in is on the owner's `GET /v1/server/settings` (#2703).
+//! has to know it before it starts and only the administrator reads the
+//! settings. How the database is stored is not part of it: the journal mode
+//! SQLite runs the database in is on the administrator's
+//! `GET /v1/server/settings` (#2703).
 //!
-//! These are the server's only unauthenticated routes besides logging in and
-//! a stranger's `POST /v1/accounts`, and the first read routes that do not
-//! require a session: the entry screen cannot have one yet, which is the
-//! whole of the exception. See
-//! `docs/adr/0008-the-owner-holds-no-messages.md`.
+//! These are the server's only unauthenticated routes besides logging in,
+//! and the first read routes that do not require a session: the entry screen
+//! cannot have one yet, which is the whole of the exception. See
+//! `docs/adr/0008-the-administrator-holds-no-messages.md`.
 
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ pub(crate) mod log_files;
 pub(crate) mod log_lines;
 
 use crate::api_error::{ApiError, run_blocking};
-use crate::auth::Owner;
+use crate::auth::Admin;
 use crate::config::Config;
 use crate::db::demo_account_build::DemoDataSize;
 use crate::db::{account_profile, server_settings, storage};
@@ -55,12 +55,11 @@ async fn read_log<T: Send + 'static>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerState {
-    /// Nobody owns this Message Crate yet. The only thing to do is claim it.
-    Unclaimed,
-    /// Owned, and only the owner creates accounts.
-    Closed,
-    /// Owned, and anyone reaching the server may create their own account.
-    Open,
+    /// The administrator has no password yet. The only thing to do is set
+    /// one (`POST /v1/server/setup`).
+    Setup,
+    /// The administrator has a password. Log in.
+    Ready,
 }
 
 /// The state of this Message Crate, for the screen a logged-out person sees.
@@ -72,8 +71,7 @@ pub struct Server {
     /// `create-database`, whose account and Import Run ids start again at
     /// the same numbers.
     pub id: String,
-    /// `unclaimed` shows Create Owner alone; `closed` shows Login alone;
-    /// `open` shows Login and Create Account.
+    /// `setup` shows the Set Up card alone; `ready` shows Login.
     pub state: ServerState,
     /// Whether the Demo Account exists and is not being built. While it
     /// does, the screen offers a way into it beside whatever `state` shows:
@@ -89,8 +87,8 @@ pub struct Server {
     pub schema_fingerprint: i64,
     /// The attachment size limit, in bytes: the largest asset the server
     /// accepts, as one `PUT` or as the declared total of a multipart upload.
-    /// The owner sets it in the server settings. An app reads it here before
-    /// it prepares attachments for upload.
+    /// The administrator sets it in the server settings. An app reads it
+    /// here before it prepares attachments for upload.
     pub asset_max_bytes: u64,
     /// Seconds a request body, such as an import batch, an attachment, or a
     /// part of one, may go with no byte arriving before the server stops
@@ -105,36 +103,28 @@ pub struct Server {
     pub body_total_secs: u64,
 }
 
-/// Body for claiming a Message Crate.
+/// Body for setting up a Message Crate: the administrator's first password.
 // `max_length` takes only a literal; `the_reference_states_the_password_cap`
 // holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct ClaimServerRequest {
-    /// Login username for the owner, which the server trims: 1 to 128
-    /// characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
-    /// is refused with `422 Unprocessable Entity`.
-    pub username: String,
-    /// Password for the owner: one character or more, at most 128
-    /// characters, counted as characters rather than bytes and not trimmed.
-    /// Empty or over 128 is refused with `422 Unprocessable Entity`.
+pub struct SetUpServerRequest {
+    /// Password for `admin`: one character or more, at most 128 characters,
+    /// counted as characters rather than bytes and not trimmed. Empty or
+    /// over 128 is refused with `422 Unprocessable Entity`.
     #[schema(max_length = 128)]
     pub password: String,
 }
 
 /// Read this Message Crate's state on an existing connection.
 async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState, ApiError> {
-    if !account_profile::is_claimed(conn).await? {
-        return Ok(ServerState::Unclaimed);
-    }
-    let settings = server_settings::load(conn).await?;
-    Ok(if settings.public_registration {
-        ServerState::Open
+    Ok(if account_profile::admin_has_password(conn).await? {
+        ServerState::Ready
     } else {
-        ServerState::Closed
+        ServerState::Setup
     })
 }
 
-/// Report whether this Message Crate is unclaimed, closed, or open.
+/// Report whether this Message Crate is in setup or ready.
 ///
 /// Also reports this Message Crate's id, the server's Build, its Schema
 /// Fingerprint, whether the Demo Account exists, the attachment size limit,
@@ -166,94 +156,88 @@ pub async fn get_server(
     }))
 }
 
-/// Claim an unclaimed Message Crate by creating its owner.
+/// Set up a Message Crate by giving its administrator a password.
 ///
-/// Unauthenticated, because a Message Crate with no owner has no credential
-/// that could authorize this. Whoever reaches an unclaimed one first may
-/// claim it: Message Crate is self-hosted, so whoever installs the software
-/// claims it and then publishes the port, in that order and at times of
-/// their choosing. An unclaimed one is also empty, so a lost race
+/// Unauthenticated, because a Message Crate in setup has no credential that
+/// could authorize this: `admin` exists but cannot log in. Whoever reaches
+/// one in setup first sets the password: Message Crate is self-hosted, so
+/// whoever installs the software sets it up and then publishes the port, in
+/// that order and at times of their choosing. The administrator holds no
+/// messages, and the Demo Account is open to anyone already, so a lost race
 /// destroys nothing and announces itself at once.
 #[utoipa::path(
     post,
-    path = "/v1/server/claim",
+    path = "/v1/server/setup",
     tag = "Server",
-    request_body = ClaimServerRequest,
+    request_body = SetUpServerRequest,
     responses(
         (
             status = 201,
-            description = "Claimed; the owner's Session is made",
+            description = "Set up; the administrator's Session is made",
             body = crate::session_api::CreateSessionResponse,
-            headers(("Location" = String, description = "`/v1/session`, the Session the claim made"))
+            headers(("Location" = String, description = "`/v1/session`, the Session setup made"))
         ),
-        crate::problem::openapi::StateConflict,
-        crate::problem::openapi::UsernameTaken
+        crate::problem::openapi::StateConflict
     )
 )]
-pub async fn claim_server(
+pub async fn set_up_server(
     State(db): State<SqlitePool>,
     headers: axum::http::HeaderMap,
-    Json(req): Json<ClaimServerRequest>,
+    Json(req): Json<SetUpServerRequest>,
 ) -> Result<Created<crate::session_api::CreateSessionResponse>, ApiError> {
-    let username = crate::credentials::require_valid_username(&req.username)?;
-    let password_hash = crate::credentials::hash_owner_password(&req.password).await?;
+    let password_hash = crate::credentials::hash_admin_password(&req.password).await?;
 
     let mut conn = db.acquire().await?;
-    // The claim check and the insert share a write transaction: two requests
-    // racing for an unclaimed Message Crate must not both believe they won
-    // it, and the second waits for the first and then finds the owner.
+    // The check and the write share a write transaction: two requests racing
+    // to set up one Message Crate must not both believe they did, and the
+    // second waits for the first and then finds the password set.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    if account_profile::is_claimed(&mut tx).await? {
+    if account_profile::admin_has_password(&mut tx).await? {
         return Err(ApiError::StateConflict(
-            "this Message Crate already has an owner".into(),
+            "this Message Crate's administrator already has a password".into(),
         ));
     }
-    crate::credentials::require_username_free(&mut tx, &username).await?;
     let now = Utc::now();
-    account_profile::insert_account_at(
+    account_profile::update_password_hash(
         &mut tx,
-        account_profile::OWNER_ACCOUNT_ID,
-        &username,
+        account_profile::ADMIN_ACCOUNT_ID,
         Some(&password_hash),
-        None,
     )
-    .await
-    .map_err(ApiError::Internal)?;
-    crate::db::audit_trail::record(
+    .await?;
+    crate::db::audit_trail::record_about(
         &mut tx,
-        &crate::db::audit_trail::NewEntry::about(
-            crate::db::audit_trail::AuditAction::AccountCreated,
-            crate::db::audit_trail::AuditActor::Owner,
-            (account_profile::OWNER_ACCOUNT_ID, &username),
-        ),
+        crate::db::audit_trail::AuditAction::PasswordSet,
+        crate::db::audit_trail::AuditActor::Admin,
+        account_profile::ADMIN_ACCOUNT_ID,
+        crate::db::audit_trail::Details::default(),
         now,
     )
     .await?;
     let token = crate::db::session_tokens::open_session(
         &mut tx,
-        account_profile::OWNER_ACCOUNT_ID,
-        &username,
+        account_profile::ADMIN_ACCOUNT_ID,
+        account_profile::ADMIN_USERNAME,
         crate::auth::connecting_app(&headers).as_ref(),
         now,
     )
     .await
     .map_err(ApiError::Internal)?;
-    account_profile::record_login(&mut tx, account_profile::OWNER_ACCOUNT_ID, now).await?;
+    account_profile::record_login(&mut tx, account_profile::ADMIN_ACCOUNT_ID, now).await?;
     tx.commit().await?;
 
-    // The claim makes the owner's Session, and that is the resource it names.
+    // Setup makes the administrator's Session, and that is the resource it names.
     Ok(Created {
         location: "/v1/session".to_string(),
         body: crate::session_api::CreateSessionResponse {
             token,
-            account_id: account_profile::OWNER_ACCOUNT_ID,
-            username,
+            account_id: account_profile::ADMIN_ACCOUNT_ID,
+            username: account_profile::ADMIN_USERNAME.to_string(),
         },
     })
 }
 
-/// The server settings the owner controls, with the database's journal
-/// beside them, which the owner reads and cannot change.
+/// The server settings the administrator controls, with the database's journal
+/// beside them, which the administrator reads and cannot change.
 // The settings are the `db/` read's own struct, flattened in whole, so its
 // fields are written once (`docs/architecture/rules/http-api.md`, API-135).
 // Inline, and `Api` in Rust, because the `db/` struct has the wire name too
@@ -265,7 +249,7 @@ pub struct ApiServerSettings {
     #[schema(inline)]
     pub settings: server_settings::ServerSettings,
     /// The journal SQLite keeps the database with. Not a setting: the
-    /// server reports it here because only the owner may read it.
+    /// server reports it here because only the administrator may read it.
     pub journal: DatabaseJournal,
 }
 
@@ -277,7 +261,7 @@ pub struct DatabaseJournal {
     /// request is answered. The server asks for `wal` on every start. Any
     /// other mode means it could not have it, as when another program held
     /// the database file, and then every page waits while an import writes.
-    /// Owner Home says so. `null` when the mode could not be read; the
+    /// Admin Home says so. `null` when the mode could not be read; the
     /// server's log says why.
     pub mode: Option<crate::db::engine::JournalMode>,
     /// The error SQLite gave when the server asked for write-ahead logging
@@ -287,7 +271,7 @@ pub struct DatabaseJournal {
     pub wal_error: Option<String>,
 }
 
-/// The settings as the owner reads them: `settings` from the database, and
+/// The settings as the administrator reads them: `settings` from the database, and
 /// the database's journal, read on `conn`.
 async fn settings_body(
     wal_error: &WalError,
@@ -306,9 +290,6 @@ async fn settings_body(
 /// Body for changing the server settings. Omitted fields are left alone.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateServerSettingsRequest {
-    /// Let anyone reaching the server create their own account, or stop them.
-    #[serde(default)]
-    pub public_registration: Option<bool>,
     /// The new attachment size limit, in bytes. At least 1. A limit below
     /// `[server] asset_part_size` is accepted: the server then hands out
     /// parts the size of the limit.
@@ -316,7 +297,7 @@ pub struct UpdateServerSettingsRequest {
     pub asset_max_bytes: Option<u64>,
 }
 
-/// Check a new attachment size limit against the rules the owner's change is
+/// Check a new attachment size limit against the rules the administrator's change is
 /// held to, returning the sentence for the one it breaks. Any limit the
 /// database can hold is accepted but zero: the part size follows the limit
 /// down, so no limit is too small for the config file.
@@ -330,14 +311,14 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
     None
 }
 
-/// Read the server settings, and how the database is stored: its journal
+/// Read the server settings, and how the database is stored. Its journal
 /// mode, and the error SQLite gave when the server asked for write-ahead
 /// logging.
 #[utoipa::path(
     get,
     path = "/v1/server/settings",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     responses(
         (status = 200, body = ApiServerSettings),
     )
@@ -345,7 +326,7 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
 pub async fn get_server_settings(
     State(db): State<SqlitePool>,
     State(wal_error): State<WalError>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
 ) -> Result<Json<ApiServerSettings>, ApiError> {
     let mut conn = db.acquire().await?;
     let settings = server_settings::load(&mut conn).await?;
@@ -361,7 +342,7 @@ pub async fn get_server_settings(
     patch,
     path = "/v1/server/settings",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     request_body = UpdateServerSettingsRequest,
     responses(
         (status = 200, body = ApiServerSettings),
@@ -370,7 +351,7 @@ pub async fn get_server_settings(
 pub async fn update_server_settings(
     State(db): State<SqlitePool>,
     State(wal_error): State<WalError>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Json(req): Json<UpdateServerSettingsRequest>,
 ) -> Result<Json<ApiServerSettings>, ApiError> {
     // Checked before anything is written, so a refused request changes nothing.
@@ -384,27 +365,11 @@ pub async fn update_server_settings(
     let mut tx = crate::db::begin_write(&mut conn).await?;
     let now = Utc::now();
     let was = server_settings::load(&mut tx).await?;
-    if let Some(enabled) = req.public_registration
-        && enabled != was.public_registration
-    {
-        server_settings::set_public_registration(&mut tx, enabled).await?;
-        let action = if enabled {
-            AuditAction::RegistrationOpened
-        } else {
-            AuditAction::RegistrationClosed
-        };
-        audit_trail::record(
-            &mut tx,
-            &NewEntry::about_no_account(action, AuditActor::Owner),
-            now,
-        )
-        .await?;
-    }
     if let Some(bytes) = req.asset_max_bytes
         && bytes != was.asset_max_bytes
     {
         server_settings::set_asset_max_bytes(&mut tx, bytes).await?;
-        let entry = NewEntry::about_no_account(AuditAction::AssetLimitChanged, AuditActor::Owner)
+        let entry = NewEntry::about_no_account(AuditAction::AssetLimitChanged, AuditActor::Admin)
             .with_details(Details {
                 asset_max_bytes: Some(bytes),
                 ..Details::default()
@@ -439,8 +404,8 @@ pub struct ServerStorage {
     /// Bytes the full-text search index takes, measured, for the whole
     /// database. It is one shared structure, so there is no per-account figure.
     pub fts_bytes: i64,
-    /// Every account, including ones with no messages: the owner first, then
-    /// by username, as the User Accounts table lists them.
+    /// Every account, including ones with no messages: the administrator first,
+    /// then by username, as the User Accounts table lists them.
     pub accounts: Vec<AccountMessages>,
 }
 
@@ -461,24 +426,25 @@ pub struct AccountMessages {
 }
 
 /// Read what the database holds. The counts and the attachment bytes are summed
-/// over every account. The database, messages and full-text search sizes
-/// are measured on disk. Each account's share of message storage is an
-/// estimate from its share of text. Counts and totals only, never a name or
-/// a line of text (`docs/adr/0008-the-owner-holds-no-messages.md`,
-/// "What the owner may see"). The owner's, because the owner administers this
-/// Message Crate and nobody else holds more than their own account.
+/// over every account. The database, messages and full-text search sizes are
+/// measured on disk. Each account's share of message storage is an estimate
+/// from its share of text. Counts and totals only, never a name or a line of
+/// text (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the
+/// administrator may see"). The administrator's alone, because the
+/// administrator runs this Message Crate and nobody else holds more than their
+/// own account.
 #[utoipa::path(
     get,
     path = "/v1/server/storage",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     responses(
         (status = 200, body = ServerStorage),
     )
 )]
 pub async fn get_server_storage(
     State(db): State<SqlitePool>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
 ) -> Result<Json<ServerStorage>, ApiError> {
     let mut conn = db.acquire().await?;
     let scope = storage::Scope::AllAccounts;
@@ -527,7 +493,7 @@ pub enum DemoAccountStatus {
     Failed,
 }
 
-/// The Demo Account, as the owner manages it.
+/// The Demo Account, as the administrator manages it.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DemoAccount {
     /// Whether it exists, is being built, or failed to build.
@@ -813,13 +779,13 @@ async fn demo_account_on_conn(
     get,
     path = "/v1/server/demo-account",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     responses((status = 200, body = DemoAccount))
 )]
 pub async fn get_demo_account(
     State(db): State<SqlitePool>,
     State(demo): State<DemoState>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
 ) -> Result<Json<DemoAccount>, ApiError> {
     let mut conn = db.acquire().await?;
     Ok(Json(demo_account_on_conn(&demo.build, &mut conn).await?))
@@ -841,7 +807,7 @@ pub async fn get_demo_account(
     put,
     path = "/v1/server/demo-account",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     request_body = ReplaceDemoAccountRequest,
     responses(
         (status = 202, description = "The build has started", body = DemoAccount),
@@ -853,7 +819,7 @@ pub async fn replace_demo_account(
     State(db): State<SqlitePool>,
     State(cfg): State<Arc<Config>>,
     State(demo): State<DemoState>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Json(req): Json<ReplaceDemoAccountRequest>,
 ) -> Result<(axum::http::StatusCode, Json<DemoAccount>), ApiError> {
     if !demo.build.start(req.size) {
@@ -894,9 +860,9 @@ pub async fn replace_demo_account(
     ))
 }
 
-/// Record the owner's build of the Demo Account in the Audit Trail, then end
-/// every Session of the Demo Account, so nobody is inside it while it is
-/// removed and built again ([`crate::db::audit_trail::record_demo_build`]).
+/// Record the administrator's build of the Demo Account in the Audit Trail,
+/// then end every Session of the Demo Account, so nobody is inside it while it
+/// is removed and built again ([`crate::db::audit_trail::record_demo_build`]).
 async fn record_build_and_end_demo_sessions(
     db: &SqlitePool,
     size: DemoDataSize,
@@ -905,11 +871,11 @@ async fn record_build_and_end_demo_sessions(
     let mut conn = db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
     let now = Utc::now();
-    audit_trail::record_demo_build(&mut tx, AuditActor::Owner, size, now).await?;
+    audit_trail::record_demo_build(&mut tx, AuditActor::Admin, size, now).await?;
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,
         account_profile::DEMO_ACCOUNT_ID,
-        AuditActor::Owner,
+        AuditActor::Admin,
         now,
     )
     .await

@@ -1236,7 +1236,7 @@ pub struct TopAttachment {
     /// Attachment byte size.
     pub size_bytes: i64,
     /// Conversation that holds the attachment. Like the two fields after it,
-    /// `null` when the owner reads another account's storage: which
+    /// `null` when the administrator reads another account's storage: which
     /// conversation a file is in, and who it is with, is the holder's.
     pub conversation_id: Option<i64>,
     /// The title the export gave the conversation, when it gave one.

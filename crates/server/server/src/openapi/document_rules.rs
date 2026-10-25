@@ -5,21 +5,21 @@
 //!
 //! Part of it reads the document: the page shape and paging parameters of every
 //! list, every property of a success answer required, a `Location` on every
-//! `201`, a `404` on every path with an id, no body
-//! on the success of a `HEAD`, one-sentence summaries (API-122), declared tags,
+//! `201`, a `404` on every path with an id, no body on the success of a `HEAD`,
+//! one-sentence summaries of at most 120 characters (API-122), declared tags,
 //! kebab-case paths and the nesting depth. The rest calls every operation
 //! through the router, on the credential matrix's fixture: with no credential
 //! it must answer `401` with a `WWW-Authenticate` challenge, and so must a
-//! token the server never issued, with a query parameter it does not declare `422`, with
-//! a body that has no `Content-Type` or one the route does not take `415`, with
-//! a JSON body that is not JSON `400`, and a list with `limit`, or an `offset`
-//! past the ceiling its description states, out of range `422`. Each answer
-//! must be a problem document carrying its `request_id`, of a status and type
-//! the operation's document lists. An `Accept` that names nothing JSON must
-//! answer `406` exactly where the document lists it; a `GET` that succeeds must
-//! answer a media type its document declares; a success must carry every field
-//! its document declares, `null` where it has no value; and a `201` must name
-//! in its `Location` a resource the same credential can `GET`.
+//! token the server never issued, with a query parameter it does not declare
+//! `422`, with a body that has no `Content-Type` or one the route does not take
+//! `415`, with a JSON body that is not JSON `400`, and a list with `limit`, or
+//! an `offset` past the ceiling its description states, out of range `422`.
+//! Each answer must be a problem document carrying its `request_id`, of a
+//! status and type the operation's document lists. An `Accept` that names
+//! nothing JSON must answer `406` exactly where the document lists it; a `GET`
+//! that succeeds must answer a media type its document declares; a success must
+//! carry every field its document declares, `null` where it has no value; and a
+//! `201` must name in its `Location` a resource the same credential can `GET`.
 //!
 //! The failures an operation's shape brings are written into the document
 //! by `shared_parts`, so a check that reads them back from the document
@@ -45,6 +45,10 @@ use crate::test_support::{self, http_client};
 /// The one route nested three deep (`docs/architecture/rules/http-api.md`,
 /// API-16).
 const MULTIPART_PART: &str = "/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}";
+
+/// The longest summary that still reads as one line in the reference's
+/// operation list (`docs/architecture/rules/http-api.md`, API-122).
+const MAX_SUMMARY_CHARS: usize = 120;
 
 /// The four keys of every page.
 const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
@@ -164,6 +168,11 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
         broken.push("no summary".to_string());
     } else if !split_first_sentence(summary).1.is_empty() {
         broken.push(format!("summary is more than one sentence: {summary}"));
+    } else if summary.chars().count() > MAX_SUMMARY_CHARS {
+        broken.push(format!(
+            "summary is {} characters, past the {MAX_SUMMARY_CHARS} that fit on one line: {summary}",
+            summary.chars().count()
+        ));
     }
     let declared_tags: BTreeSet<&str> = doc["tags"]
         .as_array()
@@ -399,12 +408,12 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
         }
     }
 
-    // Last, because it may make, change or remove something: a success
-    // answers every field its document declares, `null` when it has no value
-    // (API-6), and a creation names the new resource in `Location`, where
-    // the credential that made it can read it (API-23). An operation
-    // that answers no JSON and makes nothing is not called, so the owner's
-    // `DELETE /v1/session` leaves the shared Session alone.
+    // Last, because it may make, change or remove something: a success answers
+    // every field its document declares, `null` when it has no value (API-6),
+    // and a creation names the new resource in `Location`, where the credential
+    // that made it can read it (API-23). An operation that answers no JSON and
+    // makes nothing is not called, so the administrator's `DELETE /v1/session`
+    // leaves the shared Session alone.
     let answers_json = success_schemas(spec).next().is_some();
     let creates = !spec["responses"]["201"].is_null() && token.is_some();
     if op.method == "head" || !(answers_json || creates) {
@@ -812,7 +821,7 @@ fn resolved<'d>(doc: &'d Value, schema: &'d Value) -> &'d Value {
 /// choice (`oneOf`, `anyOf`), the branches `value` fits are tried, and a
 /// value that carries every property of one of them leaves nothing out. A
 /// branch fits only a value of its own shape ([`fits`]), so a page of
-/// `ExportRun` is never read as a page of `OwnerExportRun`.
+/// `ExportRun` is never read as a page of `AdminExportRun`.
 fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTreeSet<String>) {
     let schema = resolved(doc, schema);
     if value.is_null() {
@@ -980,8 +989,8 @@ fn is_kebab(segment: &str) -> bool {
 }
 
 /// The page schemas a `200` answers: the page it names, or each page of a
-/// choice between pages, as an account's history answers the account in
-/// full and the owner without content. A schema is a page by its name or by
+/// choice between pages, as an account's history answers the account in full
+/// and the administrator without content. A schema is a page by its name or by
 /// its shape ([`is_page`]), so a page under a name that does not start with
 /// `Page_` is still held to the page rules. Empty when it answers no page.
 fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {

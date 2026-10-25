@@ -89,9 +89,9 @@ function assetLimitOf(form: Pick<ImportJobFormValues, "assetMaxBytes">): number 
 /**
  * Start the new run's log in the Logs Directory with the line naming the
  * account that runs it and the Message Crate, so the Logs panel shows the log
- * to that account and the owner only (#1665). A log that cannot be started
+ * to that account and the administrator only (#1665). A log that cannot be started
  * leaves the run going: its lines still reach the window, and the log is the
- * owner's alone.
+ * administrator's alone.
  */
 async function startRunLog(
   ctx: RunContext,

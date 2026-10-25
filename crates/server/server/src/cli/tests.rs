@@ -68,67 +68,120 @@ fn import_args(config: &Path, input: &Path) -> ImportArgs {
     }
 }
 
+/// `create-database` makes a database that holds the administrator, `admin`
+/// with no password, and no Demo Account: only `serve` on a new database and
+/// `reset-demo` add that.
 #[tokio::test]
-async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim() {
+async fn create_database_makes_admin_and_no_demo_account() {
     let dir = tempfile::tempdir().unwrap();
     let config = server_config(dir.path());
-    open(&config).await.close().await;
-
-    let unclaimed = reset_owner_password_with(
-        ResetOwnerPasswordArgs {
-            config: config.clone(),
-        },
-        "correct horse battery staple",
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(
-        unclaimed.to_string(),
-        "this Message Crate has no owner yet; use `create-owner` to claim it"
-    );
-
-    create_owner_with(
-        CreateOwnerArgs {
-            username: "Owner".into(),
-            config: config.clone(),
-        },
-        "correct horse battery staple",
-    )
-    .await
-    .unwrap();
-
-    let twice = create_owner_with(
-        CreateOwnerArgs {
-            username: "again".into(),
-            config: config.clone(),
-        },
-        "correct horse battery staple",
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(
-        twice.to_string(),
-        "this Message Crate already has an owner; use `reset-owner-password` to set a new password for it"
-    );
-
-    reset_owner_password_with(
-        ResetOwnerPasswordArgs {
-            config: config.clone(),
-        },
-        "a different long enough password",
-    )
+    run_create_database(CreateDatabaseArgs {
+        config: config.clone(),
+    })
     .await
     .unwrap();
 
     let opened = open(&config).await;
     let mut conn = opened.conn().await.unwrap();
-    assert!(account_profile::is_claimed(&mut conn).await.unwrap());
-    assert_eq!(
-        account_profile::username_for_account(&mut conn, account_profile::OWNER_ACCOUNT_ID)
+    let accounts: Vec<(i64, String, Option<String>)> =
+        sqlx::query_as("SELECT id, username, password_hash FROM accounts ORDER BY id")
+            .fetch_all(&mut *conn)
             .await
-            .unwrap(),
-        Some("Owner".to_string())
+            .unwrap();
+    assert_eq!(
+        accounts,
+        vec![(account_profile::ADMIN_ACCOUNT_ID, "admin".to_string(), None)]
     );
+    drop(conn);
+    opened.close().await;
+}
+
+/// `set-admin-password` sets the first password on a Message Crate in
+/// setup and replaces it on a ready one, from the same command.
+#[tokio::test]
+async fn set_admin_password_sets_the_first_password_and_then_replaces_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = server_config(dir.path());
+    open(&config).await.close().await;
+
+    for password in ["correct horse battery staple", "a different password"] {
+        set_admin_password_with(
+            SetAdminPasswordArgs {
+                config: config.clone(),
+                data_dir: None,
+            },
+            password,
+        )
+        .await
+        .unwrap();
+
+        let opened = open(&config).await;
+        let mut conn = opened.conn().await.unwrap();
+        let hash =
+            account_profile::load_password_hash(&mut conn, account_profile::ADMIN_ACCOUNT_ID)
+                .await
+                .unwrap()
+                .expect("the administrator has a password");
+        assert!(
+            crate::credentials::verify_password(&hash, password),
+            "{password}"
+        );
+        drop(conn);
+        opened.close().await;
+    }
+}
+
+/// `set-admin-password --data-dir` sets the password in the Message Crate
+/// kept in that directory, the way `serve --data-dir` keeps it, with no
+/// config file. That is how the desktop app's own server, which runs with
+/// `--data-dir`, gets its administrator back (#3272).
+#[tokio::test]
+async fn set_admin_password_reaches_the_message_crate_in_a_data_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    OpenDb::create_or_open(Config::for_data_dir(&data_dir))
+        .await
+        .unwrap()
+        .close()
+        .await;
+
+    set_admin_password_with(
+        SetAdminPasswordArgs {
+            config: PathBuf::from("no/such/config.toml"),
+            data_dir: Some(data_dir.clone()),
+        },
+        "correct horse battery staple",
+    )
+    .await
+    .unwrap();
+
+    let opened = OpenDb::open(Config::for_data_dir(&data_dir)).await.unwrap();
+    let mut conn = opened.conn().await.unwrap();
+    let hash = account_profile::load_password_hash(&mut conn, account_profile::ADMIN_ACCOUNT_ID)
+        .await
+        .unwrap()
+        .expect("the administrator has a password");
+    assert!(crate::credentials::verify_password(
+        &hash,
+        "correct horse battery staple"
+    ));
+    drop(conn);
+    opened.close().await;
+}
+
+/// `--data-dir` reads no config file, so naming both is refused rather than
+/// one of them silently winning.
+#[test]
+fn set_admin_password_takes_a_data_directory_or_a_config_file_not_both() {
+    let argv = [
+        "message-crate-server",
+        "set-admin-password",
+        "--config",
+        "c.toml",
+        "--data-dir",
+        "d",
+    ];
+    assert!(Cli::try_parse_from(argv).is_err());
 }
 
 #[tokio::test]
@@ -665,27 +718,15 @@ fn serve_refuses_a_config_file_together_with_a_data_dir() {
 }
 
 /// #2094: a password given as an argument is visible to every local user
-/// through `ps` while the command runs, so neither owner command takes one.
+/// through `ps` while the command runs, so `set-admin-password` takes none.
 #[test]
-fn the_owner_commands_take_no_password_argument() {
-    for args in [
-        &[
-            "create-owner",
-            "--username",
-            "owner",
-            "--password",
-            "secret",
-        ][..],
-        &["reset-owner-password", "--password", "secret"][..],
-    ] {
-        let err = Cli::try_parse_from(
-            std::iter::once("message-crate-server").chain(args.iter().copied()),
-        )
-        .unwrap_err();
-        assert_eq!(
-            err.kind(),
-            clap::error::ErrorKind::UnknownArgument,
-            "{args:?}"
-        );
-    }
+fn set_admin_password_takes_no_password_argument() {
+    let err = Cli::try_parse_from([
+        "message-crate-server",
+        "set-admin-password",
+        "--password",
+        "secret",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
 }

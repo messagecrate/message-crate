@@ -230,6 +230,57 @@ async fn fresh_database_has_complete_current_schema() {
     assert_current_schema_contract(&mut conn).await;
 }
 
+/// A database made by `ensure_schema` holds the administrator's row at id 1,
+/// named `admin`, with no password and no permission, so a new Message Crate
+/// is in setup rather than empty.
+#[tokio::test]
+async fn a_fresh_database_holds_the_admin_row_without_a_password() {
+    let (pool, _dir) = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    ensure_schema(&mut conn).await.unwrap();
+    let row: (String, Option<String>, i64, i64, i64) = sqlx::query_as(
+        "SELECT username, password_hash, can_import, can_export, can_delete
+         FROM accounts WHERE id = $1",
+    )
+    .bind(crate::db::account_profile::ADMIN_ACCOUNT_ID)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(row, ("admin".to_string(), None, 0, 0, 0));
+    assert!(
+        !crate::db::account_profile::admin_has_password(&mut conn)
+            .await
+            .unwrap()
+    );
+}
+
+/// Running `ensure_schema` twice leaves one admin row, and leaves a password
+/// it has been given alone.
+#[tokio::test]
+async fn re_ensuring_the_schema_keeps_the_admin_password() {
+    let (pool, _dir) = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    ensure_schema(&mut conn).await.unwrap();
+    crate::db::account_profile::update_password_hash(
+        &mut conn,
+        crate::db::account_profile::ADMIN_ACCOUNT_ID,
+        Some("$argon2id$fake"),
+    )
+    .await
+    .unwrap();
+    ensure_schema(&mut conn).await.unwrap();
+    assert!(
+        crate::db::account_profile::admin_has_password(&mut conn)
+            .await
+            .unwrap()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE username = 'admin'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
 /// Assert every table, index, trigger, metadata marker, and column the
 /// current schema contract lists is present.
 async fn assert_current_schema_contract(conn: &mut SqliteConnection) {
@@ -509,7 +560,10 @@ async fn old_database_rebuilds_empty_at_current_version() {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    assert_eq!(accounts, 0, "rebuild drops old database data");
+    assert_eq!(
+        accounts, 1,
+        "rebuild drops old database data and keeps only the admin row"
+    );
     assert_eq!(contacts, 0, "rebuild drops old database data");
 }
 
@@ -523,8 +577,8 @@ async fn current_version_database_keeps_data_across_reensure() {
         .await
         .unwrap();
     assert_eq!(
-        accounts, 2,
-        "re-ensuring a current database must not wipe data"
+        accounts, 3,
+        "re-ensuring a current database must not wipe data (admin, alice, bob)"
     );
 }
 
@@ -550,7 +604,10 @@ async fn other_fingerprint_rebuilds_to_current() {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    assert_eq!(accounts, 0, "the rebuild drops data");
+    assert_eq!(
+        accounts, 1,
+        "the rebuild drops data and writes only the admin row"
+    );
 }
 
 /// The database file behind `conn`, which every test pool has.
@@ -697,7 +754,10 @@ async fn a_copy_that_fails_leaves_the_database_as_it_is() {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    assert_eq!(accounts, 2, "the database keeps its rows");
+    assert_eq!(
+        accounts, 3,
+        "the database keeps its rows (admin, alice, bob)"
+    );
     assert_eq!(rebuild_copies(&db), Vec::<std::path::PathBuf>::new());
 }
 

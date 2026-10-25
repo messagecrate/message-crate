@@ -54,7 +54,7 @@ export function waitingLine(name: ToolName, received: number, total: number | nu
   return `${lead}: ${downloadProgress(received, total)}`;
 }
 
-const TROUBLESHOOTING = "https://messagecrate.app/docs/user/features/owner/troubleshooting/";
+const TROUBLESHOOTING = "https://messagecrate.app/docs/user/features/admin/troubleshooting/";
 
 /** The user guide's troubleshooting section for `name`: its heading and its address. */
 export function troubleshootingSection(name: ToolName): { heading: string; url: string } {

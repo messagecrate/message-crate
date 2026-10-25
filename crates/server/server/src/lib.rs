@@ -10,6 +10,7 @@ pub mod config;
 pub mod error_docs;
 
 pub(crate) mod accounts_api;
+pub(crate) mod admin_cli;
 pub(crate) mod api_error;
 pub(crate) mod asset_store;
 pub(crate) mod asset_uploads;
@@ -46,7 +47,6 @@ pub(crate) mod named_set_api;
 pub(crate) mod open_db;
 pub(crate) mod openapi;
 pub(crate) mod operation_lock;
-pub(crate) mod owner_cli;
 pub(crate) mod owner_only;
 pub(crate) mod paging;
 pub(crate) mod phone_countries_api;

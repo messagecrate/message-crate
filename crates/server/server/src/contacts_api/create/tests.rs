@@ -6,7 +6,7 @@ use crate::db::contacts::{self, Origin};
 use crate::db::handles;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, expect_problem, fixture_with_account, get_json,
+    LoggedInAccount, TestFixture, expect_problem, fixture_with_account, get_json,
     post_created_json, post_json_raw,
 };
 use ir::IdentityType;
@@ -16,7 +16,7 @@ use ir::IdentityType;
 /// identity of the account's own.
 async fn contact_holding(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     name: &str,
     address: &str,
 ) -> i64 {
@@ -40,7 +40,7 @@ async fn contact_holding(
 }
 
 /// How many contacts `account` holds.
-async fn contact_count(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
+async fn contact_count(fixture: &TestFixture, account: &LoggedInAccount) -> i64 {
     let mut conn = fixture.conn().await;
     sqlx::query_scalar("SELECT COUNT(*) FROM contacts WHERE account_id = $1")
         .bind(account.account_id)
@@ -50,7 +50,7 @@ async fn contact_count(fixture: &TestFixture, account: &RegisteredAccount) -> i6
 }
 
 /// The Audit Trail entries about `account`, newest first.
-async fn entries(fixture: &TestFixture, account: &RegisteredAccount) -> Vec<AuditEntry> {
+async fn entries(fixture: &TestFixture, account: &LoggedInAccount) -> Vec<AuditEntry> {
     let mut conn = fixture.conn().await;
     audit_trail::page(
         &mut conn,
@@ -68,7 +68,7 @@ async fn entries(fixture: &TestFixture, account: &RegisteredAccount) -> Vec<Audi
 /// the refusal's `errors`.
 async fn refused(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     body: Value,
     kind: ProblemType,
 ) -> Vec<String> {

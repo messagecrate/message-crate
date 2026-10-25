@@ -880,7 +880,8 @@ async fn a_multipart_body_is_an_unsupported_media_type() {
 #[tokio::test]
 async fn a_batch_into_another_accounts_run_is_not_found() {
     let (fixture, alice) = crate::test_support::fixture_with_account().await;
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let bobs_run = batches_path(&fixture.state, &bob.token, "imessage").await;
 
     let (status, text) = crate::test_support::post_raw(
@@ -973,7 +974,7 @@ async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back()
     crate::db::account_profile::delete_account(
         &mut conn,
         account,
-        crate::db::audit_trail::AuditActor::Owner,
+        crate::db::audit_trail::AuditActor::Admin,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -1016,7 +1017,7 @@ async fn an_import_run_for_a_deleted_account_brings_no_account_back() {
     crate::db::account_profile::delete_account(
         &mut conn,
         account,
-        crate::db::audit_trail::AuditActor::Owner,
+        crate::db::audit_trail::AuditActor::Admin,
         crate::test_support::fixed_instant(),
     )
     .await

@@ -21,14 +21,14 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   updateAccountProfile: (...a: unknown[]) => updateAccountProfile(...a),
 }));
 
-// The owner's profile, so the identities and address book sections stay out
+// The administrator's profile, so the identities and address book sections stay out
 // of the way: the bug is between the name field and the time zone.
 const stored = {
   account_id: 7,
-  username: "owner",
+  username: "admin",
   preferred_name: "Stored Name",
   time_zone: "Etc/UTC",
-  is_owner: true,
+  is_admin: true,
   phones: [],
   emails: [],
 } as unknown as AccountProfile;
@@ -223,7 +223,7 @@ describe("ProfileSettingsPanel", () => {
       ...stored,
       username: "demo",
       preferred_name: "Demo User",
-      is_owner: false,
+      is_admin: false,
       is_demo: true,
     }));
     render(<Panel />);

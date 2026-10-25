@@ -7,7 +7,7 @@
  * matches no number written with its `+` (#1676). The import form's Default
  * country for contacts states one for a whole run, and a vCard file
  * conversion for the whole file. The Contacts screen, My Identities, and the
- * Profile tab of an account the owner opens from User Accounts each pick one
+ * Profile tab of an account the administrator opens from User Accounts each pick one
  * for a single identity. Each of them offers this list.
  */
 

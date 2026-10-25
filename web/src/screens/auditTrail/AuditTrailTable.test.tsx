@@ -34,7 +34,7 @@ describe("AuditTrailTable", () => {
             account_deleted: true,
           }),
           // About no account, yet carrying a username: not a deleted account.
-          auditEntry({ id: 2, action: "asset_limit_changed", actor: "owner", username: "dave" }),
+          auditEntry({ id: 2, action: "asset_limit_changed", actor: "admin", username: "dave" }),
           auditEntry({
             id: 1,
             action: "login_refused",
@@ -62,7 +62,7 @@ describe("AuditTrailTable", () => {
     const entries = [
       auditEntry({ id: 2, action: "logged_in", request_id: "7f3a9c21" }),
       // Written by a server command, outside any request.
-      auditEntry({ id: 1, action: "asset_limit_changed", actor: "owner", request_id: null }),
+      auditEntry({ id: 1, action: "asset_limit_changed", actor: "admin", request_id: null }),
     ];
     const { unmount } = render(
       <MemoryRouter>
@@ -72,14 +72,14 @@ describe("AuditTrailTable", () => {
           page={0}
           onPageChange={() => {}}
           showAccount
-          logHref={(requestId) => `/owner/logs?request=${requestId}`}
+          logHref={(requestId) => `/admin/logs?request=${requestId}`}
         />
       </MemoryRouter>,
     );
     const rows = screen.getAllByRole("row");
     expect(within(nth(rows, 1)).getByRole("link", { name: "View in log" })).toHaveAttribute(
       "href",
-      "/owner/logs?request=7f3a9c21",
+      "/admin/logs?request=7f3a9c21",
     );
     expect(within(nth(rows, 2)).queryByRole("link")).toBeNull();
     unmount();

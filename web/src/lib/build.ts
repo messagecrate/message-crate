@@ -14,7 +14,7 @@ function appKind(): "desktop" | "website" {
 
 /**
  * The headers that name this app to the server on every request. The server
- * records them on the session and shows them to the owner; it serves the
+ * records them on the session and shows them to the administrator; it serves the
  * request whatever they say.
  */
 export function appHeaders(): Record<string, string> {

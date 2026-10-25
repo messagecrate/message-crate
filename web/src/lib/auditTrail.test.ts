@@ -115,7 +115,7 @@ describe("describeAuditEntry", () => {
       describeAuditEntry(
         entry({
           action: "permissions_changed",
-          actor: "owner",
+          actor: "admin",
           permissions_added: ["import"],
           permissions_removed: ["export", "delete"],
         }),
@@ -123,28 +123,28 @@ describe("describeAuditEntry", () => {
     ).toBe("Permissions changed: allowed import; removed export and delete");
   });
 
-  it("names the attachment size limit the owner set", () => {
+  it("names the attachment size limit the administrator set", () => {
     expect(
       describeAuditEntry(
-        auditEntry({ action: "asset_limit_changed", actor: "owner", asset_max_bytes: 104857600 }),
+        auditEntry({ action: "asset_limit_changed", actor: "admin", asset_max_bytes: 104857600 }),
       ),
     ).toBe("Attachment size limit set to 100 MB");
-    expect(describeAuditEntry(auditEntry({ action: "asset_limit_changed", actor: "owner" }))).toBe(
+    expect(describeAuditEntry(auditEntry({ action: "asset_limit_changed", actor: "admin" }))).toBe(
       "Attachment size limit changed",
     );
   });
 
-  it("names the set of Demo Data the owner added or reset the Demo Account with", () => {
+  it("names the set of Demo Data the administrator added or reset the Demo Account with", () => {
     expect(
       describeAuditEntry(
-        auditEntry({ action: "demo_account_added", actor: "owner", demo_data_size: "medium" }),
+        auditEntry({ action: "demo_account_added", actor: "admin", demo_data_size: "medium" }),
       ),
     ).toBe("Demo Account added with the medium set");
     expect(
       describeAuditEntry(
         auditEntry({
           action: "demo_account_reset",
-          actor: "owner",
+          actor: "admin",
           username: "demo",
           demo_data_size: "large",
         }),
@@ -152,7 +152,7 @@ describe("describeAuditEntry", () => {
     ).toBe("Demo Account reset with the large set");
     expect(
       describeAuditEntry(
-        auditEntry({ action: "demo_account_reset", actor: "owner", username: "demo" }),
+        auditEntry({ action: "demo_account_reset", actor: "admin", username: "demo" }),
       ),
     ).toBe("Demo Account reset");
   });

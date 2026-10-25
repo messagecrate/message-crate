@@ -2,23 +2,22 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
-import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
 import { useRouteCache } from "../../hooks/useRouteQuery";
 import { keys } from "../../lib/queryKeys";
 import { sectionTitleClass } from "./profileStyles";
+import { useCreateAccountForm } from "./useCreateAccountForm";
 
 /**
  * The Account section of an account that does not exist yet, which the
- * owner opens with Add account under User Accounts.
+ * administrator opens with Add account under User Accounts.
  *
  * It is laid out as `AccountSettingsPanel` is, with the two differences that
  * make it a new account's: the username can be typed, and the action is
  * Create. Status, permissions and the deletions are an existing account's, so
  * they are not here. Create opens the new account's Settings, where they are.
  *
- * The checks and the request are `useCreateAccountForm`'s, the same ones
- * Create Account on the Login screen runs. The server opens no session for an
- * account its owner creates, so the owner stays logged in.
+ * The checks and the request are `useCreateAccountForm`'s. The server opens
+ * no session for the account it creates, so the administrator stays logged in.
  */
 export function NewAccountPanel() {
   const navigate = useNavigate();
@@ -37,13 +36,11 @@ export function NewAccountPanel() {
     onCreated: async (created) => {
       // The server answers with the whole account row, so the account's
       // Settings draw from it at once instead of showing a loading state and
-      // redrawing when the fetch lands. The session token is not the row's.
-      // The request already marked the account's cache stale, so User
-      // Accounts fetches the list again.
-      const { token: _token, ...account } = created;
-      cache.set(keys.ownerAccounts.member(account.account_id), account);
+      // redrawing when the fetch lands. The request already marked the
+      // account's cache stale, so User Accounts fetches the list again.
+      cache.set(keys.adminAccounts.member(created.account_id), created);
       // `replace`, so Back from the account's Settings is User Accounts, not this form.
-      navigate(`/owner/accounts/${created.account_id}`, { replace: true });
+      navigate(`/admin/accounts/${created.account_id}`, { replace: true });
     },
   });
 

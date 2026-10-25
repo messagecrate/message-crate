@@ -26,7 +26,7 @@ pub const WHATSAPP_SOURCE: &str = "whatsapp";
 /// writes no comments, so the header says what each key does.
 const SEED_TOML_HEADER: &str = "\
 # Demo account identity, read only when the server builds the Demo Account
-# (`reset-demo`, `serve` on a new database, the Owner Home action).
+# (`reset-demo`, `serve` on a new database, the Admin Home action).
 #
 # owner.display_name: the Demo Account's display name.
 # owner.handle_specs: (raw handle, handle type) pairs linked into
@@ -82,7 +82,7 @@ impl DemoSeed {
 /// Write `seed.toml` in `config_dir` with [`DemoSeed::demo`].
 ///
 /// The server reads this file only when it builds the Demo Account:
-/// `reset-demo`, `serve` on a new database, and the Owner Home action.
+/// `reset-demo`, `serve` on a new database, and the Admin Home action.
 ///
 /// # Errors
 ///

@@ -828,7 +828,7 @@ pub(crate) async fn get_asset_preview(
     stream_version(&db, &cfg, reader, &headers, &sha256, Version::Preview).await
 }
 
-/// Download the thumbnail of a stored image or video: a JPEG at most 560
+/// Download the thumbnail of a stored image or video. A JPEG at most 560
 /// pixels on its long side, the image scaled down or the video's first frame.
 ///
 /// The server makes it in the background after the Import Run that brought

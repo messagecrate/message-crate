@@ -36,14 +36,14 @@ use crate::server::Created;
 /// uses.
 pub const MAX_SELECTION_IDS: usize = 500;
 
-/// An Export Run as the owner reads it under another account: the form of
-/// its scope, its tool, times, outcome and counts
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"). A query's text is a search over the account's messages, and a
-/// selection names its conversations, so neither is here, and a field
-/// reaches the owner only by being added here.
+/// An Export Run as the administrator reads it under another account: the form
+/// of its scope, its tool, times, outcome and counts
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the
+/// administrator may see"). A query's text is a search over the account's
+/// messages, and a selection names its conversations, so neither is here, and a
+/// field reaches the administrator only by being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct OwnerExportRun {
+pub(crate) struct AdminExportRun {
     /// Export Run id.
     id: i64,
     /// The form of the scope the run asked for.
@@ -68,7 +68,7 @@ pub(crate) struct OwnerExportRun {
     messages_delivered: i64,
 }
 
-impl From<ExportRun> for OwnerExportRun {
+impl From<ExportRun> for AdminExportRun {
     fn from(run: ExportRun) -> Self {
         let scope_kind = ExportScopeKind::of(&run.scope);
         Self {
@@ -417,7 +417,7 @@ pub(crate) async fn list_exports(
 /// One account's Export Runs as a page, in full. `GET /v1/exports` answers
 /// from it for the credential's account and `GET /v1/accounts/{id}/exports`
 /// for the account named, so the two lists cannot drift; the second shapes
-/// it for the owner as [`OwnerExportRun`].
+/// it for the administrator as [`AdminExportRun`].
 pub(crate) async fn exports_page(
     conn: &mut SqliteConnection,
     account: i64,
@@ -469,12 +469,12 @@ pub(crate) async fn get_export(
     ))
 }
 
-/// The messages a running Export Run matched when it was created, a page at
-/// a time, oldest first unless `sort` says otherwise. An import, a trash or
-/// a new day since creation changes nothing here. A message deleted since
-/// leaves its place empty: `total` stays `message_count`, a page can hold
-/// fewer than `limit` items, and a client advances `offset` by `limit`. Each
-/// page read raises the run's `messages_delivered` to the places reached.
+/// The messages a running Export Run matched when it was created. A page at a
+/// time, oldest first unless `sort` says otherwise. An import, a trash or a new
+/// day since creation changes nothing here. A message deleted since leaves its
+/// place empty: `total` stays `message_count`, a page can hold fewer than
+/// `limit` items, and a client advances `offset` by `limit`. Each page read
+/// raises the run's `messages_delivered` to the places reached.
 #[utoipa::path(
     get,
     path = "/v1/exports/{id}/messages",

@@ -17,8 +17,8 @@ const TITLE: Record<ImportExportFeature, string> = { import: "Import", export: "
 /**
  * What an account sees in place of the Import or Export form when it does not
  * hold the permission. The Demo Account on Import is sent to the login card,
- * where Create Owner or the login form is; every other case is the Owner's to
- * change.
+ * where Set Up or the login form is; every other case is the administrator's
+ * to change.
  */
 function PermissionMessage({
   feature,
@@ -45,8 +45,8 @@ function PermissionMessage({
         </>
       ) : (
         <p className="m-0 text-[0.875rem] text-muted">
-          The Owner has not allowed this account to {feature}. The Owner sets this under Message
-          Permissions in the account's settings.
+          The administrator has not allowed this account to {feature}. The administrator sets this
+          under Message Permissions in the account's settings.
         </p>
       )}
     </div>
@@ -87,8 +87,8 @@ export default function ImportExportRoute({
           role="status"
           className="mx-6 mt-6 max-w-[700px] rounded border border-danger-soft-border bg-danger-soft-bg p-3 text-[0.813rem] text-danger"
         >
-          The Owner has turned Import off for this account. The server refuses the rest of this
-          Import Run, so it ends as failed.
+          The administrator has turned Import off for this account. The server refuses the rest of
+          this Import Run, so it ends as failed.
         </div>
         <Suspense fallback={null}>{children}</Suspense>
       </>

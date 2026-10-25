@@ -31,7 +31,7 @@ import {
   shownState,
 } from "./auth/connectionState";
 import ExploreDemoAccountButton from "./auth/ExploreDemoAccountButton";
-import LocalAuthTabs from "./auth/LocalAuthTabs";
+import LocalAuthCard from "./auth/LocalAuthCard";
 import ServerSettingsScreen from "./auth/ServerSettingsScreen";
 import ServerStatus, { type ServerConnection } from "./auth/ServerStatus";
 import { useLocalServer } from "./auth/useLocalServer";
@@ -423,7 +423,7 @@ export default function LoginScreen() {
 
               {/* The card waits for the server's own answer as well as for the
                   connection: which forms belong here is the server's to say, and
-                  showing a login to an unclaimed Message Crate would offer a door that
+                  showing a login to a Message Crate in setup would offer a door that
                   opens onto nothing. */}
               {localFailed && state !== "connected" ? (
                 <StartFailed status={localFailed} onRetry={retryLocalServer} />
@@ -432,18 +432,18 @@ export default function LoginScreen() {
                 // shape for the seconds a start takes.
                 <FormSkeleton />
               ) : hasConnectedOnce && serverState ? (
-                <LocalAuthTabs
+                <LocalAuthCard
                   serverUrl={address}
                   serverState={serverState}
                   disabled={state !== "connected"}
                 />
               ) : state === "disconnected" ? (
                 // No server answered, so none has said which forms it offers.
-                // Login is the one every claimed Message Crate has, and it is shown
+                // Login is the one every ready Message Crate has, and it is shown
                 // disabled: a placeholder here would read as "still loading"
                 // for as long as the server stays down. The way on is Change
                 // server address, below.
-                <LocalAuthTabs serverUrl={address} serverState="closed" disabled />
+                <LocalAuthCard serverUrl={address} serverState="ready" disabled />
               ) : (
                 <FormSkeleton />
               )}

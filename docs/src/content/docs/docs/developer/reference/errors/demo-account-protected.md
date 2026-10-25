@@ -11,4 +11,4 @@ editUrl: false
 | Status | `403 Forbidden` |
 | Type | `https://messagecrate.app/docs/developer/reference/errors/demo-account-protected` |
 
-The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed. `detail` says what it refused. Log in as another account, or run `reset-demo` on the server to restore the Demo Data. The owner can also delete the Demo Account.
+The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed. `detail` says what it refused. Log in as another account, or run `reset-demo` on the server to restore the Demo Data. The administrator can also delete the Demo Account.

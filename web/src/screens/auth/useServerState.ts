@@ -3,17 +3,17 @@ import { setBaseUrl } from "../../lib/api";
 import { getServerState } from "../../lib/serverApi";
 
 /** What the server reports about itself, plus the shapes a screen must handle. */
-export type ServerState = "unclaimed" | "closed" | "open";
+export type ServerState = "setup" | "ready";
 
 /**
  * What the entry screen should offer, asked of the server rather than worked
  * out here.
  *
- * The server answers with one value — `unclaimed`, `closed`, or `open` — so the
- * rule joining "does an owner exist" to "is registration open" is stated once,
- * on the server. Deriving it again in the browser, and a third time in the
- * desktop app, would be three copies free to drift apart. See
- * `docs/adr/0008-the-owner-holds-no-messages.md`.
+ * The server answers with one value, `setup` or `ready`, so the rule "does the
+ * administrator have a password" is stated once, on the server. Deriving it
+ * again in the browser, and a third time in the desktop app, would be three
+ * copies free to drift apart. See
+ * `docs/adr/0008-the-administrator-holds-no-messages.md`.
  *
  * This is the one query that runs before anyone logs in, so it is a plain
  * `useQuery` rather than `useRouteQuery`: there is no account to name the

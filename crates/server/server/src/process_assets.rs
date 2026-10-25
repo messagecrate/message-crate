@@ -302,7 +302,10 @@ pub(crate) async fn decide_shown_as_is(
 ///
 /// # Errors
 ///
-/// Returns an error when no account is named and the database has none, a
+/// Returns an error when the account named is the administrator, which
+/// holds no messages and so no attachments
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`), when no account
+/// is named and the database has none, a
 /// query fails, or an account's asset directories cannot be prepared. An
 /// original whose Preview or Thumbnail cannot be made is counted in
 /// `not_made`, a damaged version that cannot be dropped in `not_dropped`,
@@ -317,6 +320,13 @@ pub async fn run(
 ) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
     let account_ids = match opts.account {
+        // The administrator holds no attachments: the full walk leaves it
+        // out (`list_account_ids`), and an `account` naming it is refused
+        // rather than walked into a warning that its assets directory is
+        // missing.
+        Some(account_id) if account_profile::is_admin(account_id) => {
+            bail!("the administrator holds no attachments, so there is nothing to process")
+        }
         Some(account_id) => vec![account_id],
         None => list_account_ids(&mut *opened.conn().await?, &cfg.paths.data_dir).await?,
     };
@@ -1054,7 +1064,10 @@ impl<'a> AccountPass<'a> {
 }
 
 /// Account ids from the database, falling back to the directory names under
-/// `data_dir` when the table does not exist yet.
+/// `data_dir` when the table does not exist yet. The administrator
+/// ([`account_profile::ADMIN_ACCOUNT_ID`]) is left out of both: it holds no
+/// messages and so no Assets, and walking it would only warn that its
+/// directory is missing (`docs/adr/0008-the-administrator-holds-no-messages.md`).
 async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Result<Vec<i64>> {
     let mut ids = Vec::new();
     if schema::table_exists(conn, "accounts").await? {
@@ -1073,6 +1086,7 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
         }
         ids.sort_unstable();
     }
+    ids.retain(|&id| !account_profile::is_admin(id));
     Ok(ids)
 }
 
@@ -1082,17 +1096,17 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
 #[error("missing original")]
 struct MissingOriginal;
 
-/// Why a version was not made, from `err`, the failure of making it: the
-/// kind of failure, which the owner's view of an Import Run counts, and the
+/// Why a version was not made, from `err`, the failure of making it: the kind
+/// of failure, which the administrator's view of an Import Run counts, and the
 /// reason as the `/v1` Attachment answers it. The reason is what ffmpeg said
-/// about the file, with each path under one of `dirs` made relative to it;
-/// why ffmpeg was stopped (it made no progress, ran past twice the file's
-/// length, or did not finish one frame in time); or a phrase of the
-/// server's when ffmpeg did not read the file. Nothing else of `err` is
-/// kept: its context names the original by its full path, and a missing
-/// ffmpeg's error names every directory the server looked in. The `dirs` are
-/// the account's originals directory and the pass's work directory, both
-/// under the data directory, so what is left names no file outside it.
+/// about the file, with each path under one of `dirs` made relative to it; why
+/// ffmpeg was stopped (it made no progress, ran past twice the file's length,
+/// or did not finish one frame in time); or a phrase of the server's when
+/// ffmpeg did not read the file. Nothing else of `err` is kept: its context
+/// names the original by its full path, and a missing ffmpeg's error names
+/// every directory the server looked in. The `dirs` are the account's originals
+/// directory and the pass's work directory, both under the data directory, so
+/// what is left names no file outside it.
 fn not_made(err: &anyhow::Error, dirs: &[&Path]) -> (NotMadeKind, String) {
     if let Some(failed) = err.downcast_ref::<media::FfmpegFailed>() {
         let said = dirs.iter().fold(failed.said().to_string(), |said, dir| {

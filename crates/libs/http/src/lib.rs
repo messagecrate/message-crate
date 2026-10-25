@@ -39,7 +39,7 @@ static DESKTOP_BUILD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// Say which Build of the desktop app this process is, so every request to the server
 /// made through [`build_client`] carries it. The server records it on the
-/// account's session and shows it to the owner.
+/// account's session and shows it to the administrator.
 ///
 /// This crate cannot work the Build out itself: it is a library at `0.1.0`,
 /// and the Product Version belongs to the app that links it. Called once, from

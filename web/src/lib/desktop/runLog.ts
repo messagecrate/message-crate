@@ -17,7 +17,7 @@ interface RunLogAccount {
 /**
  * Start a new Import Run's log with the line that names the account running
  * it and the server, so the Logs panel shows the log to that account and the
- * owner only.
+ * administrator only.
  */
 export async function invokeStartImportRunLog(
   runDir: string,
@@ -32,10 +32,10 @@ export interface LogReader {
   messageCrateId: string;
   accountId: number;
   /**
-   * The owner reads every log, the desktop app's own included; an account
+   * The administrator reads every log, the desktop app's own included; an account
    * only those of its own Import Runs.
    */
-  owner: boolean;
+  admin: boolean;
 }
 
 /** One log on this computer: an Import Run's, or the desktop app's own. */
@@ -44,7 +44,7 @@ export interface LogEntry {
   name: string;
   /**
    * An Import Run's log, or the desktop app's own: what it did outside an
-   * Import Run, which names no account and so is listed for the owner alone.
+   * Import Run, which names no account and so is listed for the administrator alone.
    */
   kind: "importRun" | "desktopApp";
   /** Who ran the run, or null when the log does not say. */
@@ -63,7 +63,7 @@ export interface LogEntry {
 
 /**
  * The logs on this computer that `reader` may read, newest first: its Import
- * Run logs, and for the owner every one and the desktop app's own.
+ * Run logs, and for the administrator every one and the desktop app's own.
  */
 export async function invokeListLogs(reader: LogReader): Promise<LogEntry[]> {
   return invoke("list_logs", { reader });

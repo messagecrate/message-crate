@@ -124,9 +124,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     tracing::info!(
         "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
-    // A Demo Account build the owner started would otherwise end part-way
-    // when the process exits (#1215), and an ffmpeg the pass started would
-    // go on converting after it (#1729). Both are stopped as the signal
+    // A Demo Account build the administrator started would otherwise end
+    // part-way when the process exits (#1215), and an ffmpeg the pass started
+    // would go on converting after it (#1729). Both are stopped as the signal
     // comes, and the stop waits for them alongside the requests in flight,
     // within the same limit, so nothing after the limit can outlast Docker's
     // stop time. A build cut off at the limit is removed at the next start.

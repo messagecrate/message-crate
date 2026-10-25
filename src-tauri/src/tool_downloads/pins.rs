@@ -1,7 +1,7 @@
 //! The releases the app downloads ffmpeg, ffprobe and wtsexporter from, and
 //! the SHA-256 of each file, by platform. A newer pinned ffmpeg release is a
 //! change to this file and to the user guide's troubleshooting page,
-//! `docs/src/content/docs/docs/user/features/owner/troubleshooting.md`,
+//! `docs/src/content/docs/docs/user/features/admin/troubleshooting.md`,
 //! which names the release and its files for a copy put in the Tools
 //! Directory by hand (`docs/adr/0019`). The wtsexporter release and its
 //! checksums are the WhatsApp exporter's

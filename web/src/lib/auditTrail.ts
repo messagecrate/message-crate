@@ -181,10 +181,6 @@ export function describeAuditEntry(entry: AuditEntry): string {
       return `Trash emptied: ${countOrZero(entry.conversations, "conversation")} deleted, ${countOrZero(entry.contacts, "contact")} made Unknown`;
     case "account_deleted":
       return "Account deleted";
-    case "registration_opened":
-      return "Opened Message Crate to new accounts";
-    case "registration_closed":
-      return "Closed Message Crate to new accounts";
     case "asset_limit_changed":
       return assetLimitChanged(entry);
     case "demo_account_added":
@@ -224,7 +220,7 @@ export function describeAuditEntry(entry: AuditEntry): string {
 }
 
 const ACTOR_LABELS: Record<AuditActor, string> = {
-  owner: "Owner",
+  admin: "Administrator",
   holder: "Account holder",
   command_line: "Server command",
   start_up: "Server's first start",

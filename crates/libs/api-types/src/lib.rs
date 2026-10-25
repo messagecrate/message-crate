@@ -100,8 +100,8 @@ pub const SOURCE_IDS: &[&str] = &[
 ];
 
 /// Which app a session's requests come from. The server records it beside the
-/// app's Build and shows both to the owner; it never refuses a request
-/// on account of either.
+/// app's Build and shows both to the administrator; it never refuses a
+/// request on account of either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]

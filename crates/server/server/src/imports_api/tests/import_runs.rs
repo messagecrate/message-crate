@@ -7,8 +7,8 @@ use crate::imports_api::dto::ListImportsQuery;
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    claim_as_owner, expect_problem, get_raw, get_status, patch_status, post_json_raw,
-    register_via_api,
+    add_account_and_log_in, expect_problem, get_raw, get_status, log_in_as_admin, patch_status,
+    post_json_raw,
 };
 use axum::http::StatusCode;
 
@@ -22,7 +22,7 @@ async fn start_run(state: &AppState, token: &str, body: serde_json::Value) -> i6
 /// A fixture holding one running Import Run at `staging_review` whose
 /// `summary_json` already carries `summary` — as if an earlier
 /// `PATCH /v1/imports/{id}` recorded the Staging Review approval.
-async fn run_with_summary(summary: serde_json::Value) -> (TestFixture, RegisteredAccount, i64) {
+async fn run_with_summary(summary: serde_json::Value) -> (TestFixture, LoggedInAccount, i64) {
     let (fixture, account) = fixture_with_account().await;
     let import_id = start_run(
         &fixture.state,
@@ -345,7 +345,8 @@ async fn run_state(
 #[tokio::test]
 async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() {
     let (fixture, alice) = crate::test_support::fixture_with_account().await;
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let bobs_run = start_run(
         &fixture.state,
         &bob.token,
@@ -1168,7 +1169,7 @@ async fn the_import_run_list_counts_each_runs_issues_and_carries_none() {
 /// #1559: a page of Import Runs is read in the list's own statements, the
 /// count and the page, whatever rows the page holds: no statement runs once
 /// per row for its issues or its contacts. Both lists shape the rows
-/// without the database, the account's and the owner's alike.
+/// without the database, the account's and the administrator's alike.
 #[tokio::test]
 async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
     use sqlx::Connection as _;
@@ -1201,8 +1202,8 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
     );
     let counts: Vec<u64> = rows.items.iter().map(|run| run.issue_count).collect();
     assert_eq!(counts, [1, 0, 3], "newest first");
-    let owner: Page<OwnerImportRunSummary> = rows.map(OwnerImportRunSummary::from);
-    assert_eq!(owner.items[2].issue_count, 3);
+    let admin: Page<AdminImportRunSummary> = rows.map(AdminImportRunSummary::from);
+    assert_eq!(admin.items[2].issue_count, 3);
 }
 
 /// The `ImportAccess` extractor guards `GET /v1/imports`: with
@@ -1211,14 +1212,14 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
 async fn import_endpoint_honors_can_import_flag() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "import-guard-keeper", "hunter2hunter2").await;
-    let user = register_via_api(&state, "import-guard-user", "hunter2hunter2").await;
+    let admin = log_in_as_admin(&state, "hunter2hunter2").await;
+    let user = add_account_and_log_in(&state, "import-guard-user", "hunter2hunter2").await;
 
     assert_eq!(
         patch_status(
             &state,
             &format!("/v1/accounts/{}", user.account_id),
-            &owner.token,
+            &admin.token,
             serde_json::json!({ "can_import": false }),
         )
         .await,
@@ -1232,7 +1233,7 @@ async fn import_endpoint_honors_can_import_flag() {
         patch_status(
             &state,
             &format!("/v1/accounts/{}", user.account_id),
-            &owner.token,
+            &admin.token,
             serde_json::json!({ "can_import": true }),
         )
         .await,

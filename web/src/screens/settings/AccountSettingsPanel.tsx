@@ -10,14 +10,14 @@ import { sectionTitleClass } from "./profileStyles";
 import { useSettingsAccount } from "./useSettingsAccount";
 
 /**
- * Account settings: username, last login and app (an account the owner
+ * Account settings: username, last login and app (an account the administrator
  * opened), password, status, permissions, API tokens, danger zone.
  *
- * Given `managedAccountId`, the account is one the owner opened from
- * User Accounts. The owner reads when it last logged in and which app it
+ * Given `managedAccountId`, the account is one the administrator opened from
+ * User Accounts. The administrator reads when it last logged in and which app it
  * connects with, and sees that account's API tokens without their
  * secrets and revokes them, so a leaked token can be ended; making and
- * renaming one are the holder's. The owner's own account has no tokens and
+ * renaming one are the holder's. The administrator's own account has no tokens and
  * cannot be deleted, so it has neither section.
  */
 export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: number }) {
@@ -32,7 +32,7 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
   }
 
   const managed = managedAccountId !== undefined;
-  const isOwner = profile.is_owner === true;
+  const isAdmin = profile.is_admin === true;
   const fixed = fixedSettings(profile);
 
   return (
@@ -47,8 +47,8 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
         />
       </div>
       {managed && <AccountActivitySection profile={profile} />}
-      {/* The owner cannot be disabled and holds no messages to import, export or delete. */}
-      {!isOwner ? (
+      {/* The administrator cannot be disabled and holds no messages to import, export or delete. */}
+      {!isAdmin ? (
         <AccountPermissionsSection profile={profile} managedAccountId={managedAccountId} />
       ) : null}
 
@@ -61,8 +61,8 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
         </>
       ) : (
         <ChangePasswordSection
-          canReset={!isOwner}
-          requireCurrent={isOwner && !managed}
+          canReset={!isAdmin}
+          requireCurrent={isAdmin && !managed}
           managedAccountId={managedAccountId}
         />
       )}
@@ -74,17 +74,17 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
             The Demo Account makes no API Tokens.
           </p>
         </>
-      ) : !managed && !isOwner ? (
+      ) : !managed && !isAdmin ? (
         <ApiTokensSection
           accountCanImport={profile.can_import ?? true}
           accountCanExport={profile.can_export ?? true}
         />
       ) : null}
-      {managedAccountId !== undefined && !isOwner ? (
+      {managedAccountId !== undefined && !isAdmin ? (
         <ManagedApiTokensSection accountId={managedAccountId} />
       ) : null}
 
-      {!isOwner ? (
+      {!isAdmin ? (
         <ProfileDangerZone
           messagesFixed={fixed.deleteMessages}
           accountFixed={fixed.deleteOwnAccount}

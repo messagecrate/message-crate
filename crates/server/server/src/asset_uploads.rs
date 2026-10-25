@@ -57,11 +57,11 @@ impl Default for UploadLimits {
 }
 
 impl UploadLimits {
-    /// The limits in force: the attachment size limit as the owner set it,
-    /// and a part size that is the configured one or the limit, whichever is
-    /// smaller. A part is never larger than the limit, so every limit the
-    /// owner can set is one an upload can complete under, and no pairing of
-    /// the setting and the config file is an error.
+    /// The limits in force: the attachment size limit as the administrator set
+    /// it, and a part size that is the configured one or the limit, whichever
+    /// is smaller. A part is never larger than the limit, so every limit the
+    /// administrator can set is one an upload can complete under, and no
+    /// pairing of the setting and the config file is an error.
     pub fn within(configured_part_size: usize, max_bytes: u64) -> Self {
         let part_size = usize::try_from(max_bytes)
             .map_or(configured_part_size, |limit| {
@@ -75,9 +75,9 @@ impl UploadLimits {
     }
 }
 
-/// The attachment size limit as the Server Settings hold it at this moment,
-/// in bytes. Read on every request that needs it, so a change the owner makes
-/// holds for the next upload with no restart.
+/// The attachment size limit as the Server Settings hold it at this moment, in
+/// bytes. Read on every request that needs it, so a change the administrator
+/// makes holds for the next upload with no restart.
 pub(crate) async fn asset_max_bytes(db: &SqlitePool) -> Result<u64> {
     let mut conn = db.acquire().await?;
     Ok(crate::db::server_settings::load(&mut conn)
@@ -493,9 +493,9 @@ pub struct PartTemp {
     session: PathBuf,
     /// The part number the file is for.
     part: u32,
-    /// The part size the upload started with. A body is capped at this
-    /// size, not at the part size the Server Settings give now, so an upload
-    /// in progress keeps the limits it started with when the owner lowers
+    /// The part size the upload started with. A body is capped at this size,
+    /// not at the part size the Server Settings give now, so an upload in
+    /// progress keeps the limits it started with when the administrator lowers
     /// the attachment size limit.
     part_size: usize,
     /// Where the file is.

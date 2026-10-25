@@ -1,14 +1,14 @@
 //! Listing and reading the Import Run logs in the Logs Directory, for the
-//! Logs panel on Owner Home and the run's row in Settings → Storage, and the
+//! Logs panel on Admin Home and the run's row in Settings → Storage, and the
 //! desktop app's own log beside them ([`crate::app_log`]), which names no
-//! account and so is the owner's alone, listed as "Desktop app".
+//! account and so is the administrator's alone, listed as "Desktop app".
 //!
-//! Who reads which log (decided on #1665): the owner reads every run log on
-//! this computer, whoever ran the import; an account reads the logs of the
-//! runs it ran on the Message Crate it is signed in to. A log names the
+//! Who reads which log (decided on #1665): the administrator reads every run
+//! log on this computer, whoever ran the import; an account reads the logs of
+//! the runs it ran on the Message Crate it is signed in to. A log names the
 //! account that ran it, and the Message Crate's id, in its first line
 //! ([`RunLogAccount`]); a log that names none, such as one a run left before
-//! that line was written, is the owner's alone.
+//! that line was written, is the administrator's alone.
 //!
 //! This is a filter, not a guard. The window says who is asking
 //! ([`Reader`]) and the commands take its word, and a run log is a plain
@@ -44,7 +44,7 @@ const ACCOUNT_LINE_BYTES: u64 = 16 * 1024;
 const MAX_LIMIT: usize = 500;
 
 /// Who is asking for the logs: the signed-in account, on which Message
-/// Crate, and whether it is the owner.
+/// Crate, and whether it is the administrator.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reader {
@@ -53,14 +53,14 @@ pub struct Reader {
     pub message_crate_id: String,
     /// The signed-in account.
     pub account_id: i64,
-    /// Whether that account is the owner, who reads every log.
-    pub owner: bool,
+    /// Whether that account is the administrator, who reads every log.
+    pub admin: bool,
 }
 
 impl Reader {
     /// Whether this reader may read a log whose account line is `account`.
     fn reads(&self, account: Option<&RunLogAccount>) -> bool {
-        self.owner
+        self.admin
             || account.is_some_and(|account| {
                 account.account_id == self.account_id && self.signed_in_to(account)
             })
@@ -159,8 +159,8 @@ pub struct LinesPage {
 }
 
 /// The logs in `logs_dir` that `reader` may read, the most recently written
-/// first: the Import Run logs, and the desktop app's own for the owner. A
-/// Logs Directory that does not exist yet holds none.
+/// first: the Import Run logs, and the desktop app's own for the
+/// administrator. A Logs Directory that does not exist yet holds none.
 ///
 /// # Errors
 ///
@@ -291,7 +291,9 @@ fn readable_log(logs_dir: &Path, reader: &Reader, name: &str) -> Result<PathBuf,
     if !reader.reads(account.as_ref()) {
         return Err(match kind {
             LogKind::ImportRun => format!("{name} is the log of another account's Import Run"),
-            LogKind::DesktopApp => format!("{name}, the desktop app's log, is the owner's alone"),
+            LogKind::DesktopApp => {
+                format!("{name}, the desktop app's log, is the administrator's alone")
+            }
         });
     }
     Ok(path)

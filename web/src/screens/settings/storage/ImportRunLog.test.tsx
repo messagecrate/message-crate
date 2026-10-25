@@ -45,7 +45,7 @@ describe("ImportRunLog", () => {
     vi.clearAllMocks();
     installIntersectionObserver();
     desktop.on = true;
-    getAccountProfile.mockResolvedValue({ is_owner: false });
+    getAccountProfile.mockResolvedValue({ is_admin: false });
     getServerState.mockResolvedValue({ id: HERE });
     invokeListLogs.mockResolvedValue([
       {
@@ -96,7 +96,7 @@ describe("ImportRunLog", () => {
     await settle();
 
     expect(screen.getByText("a.jpg: missing")).toBeInTheDocument();
-    const reader = { messageCrateId: HERE, accountId: 2, owner: false };
+    const reader = { messageCrateId: HERE, accountId: 2, admin: false };
     expect(invokeListLogs).toHaveBeenCalledWith(reader);
     expect(invokeReadLogLines).toHaveBeenCalledWith(
       reader,
