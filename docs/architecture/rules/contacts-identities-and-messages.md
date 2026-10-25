@@ -1159,7 +1159,12 @@ the account's own. A trigger on an update names only the columns the dedupe
 reads, so a Preview or Thumbnail the media pass makes, a login and another
 account's import count nothing. The dedupe reads the count before its first
 read and again once it holds the lock. The stored flags are read under the
-lock, so a write to `duplicate_of` is not counted.
+lock, so a write to `duplicate_of` is not counted. That read names
+`ix_messages_duplicate_of` with `INDEXED BY` (`duplicate_flags` in
+`db/dedupe.rs`), so it reads only the flagged rows even on a new database
+with no `ANALYZE` statistics, where SQLite would otherwise read every
+message of the account through its conversations, under the lock
+([#3256](https://github.com/messagecrate/message-crate/issues/3256)).
 
 When the count has moved, the pass writes nothing, lets the lock go, and
 works the keys and flags out again from the start. After three attempts that
@@ -1191,7 +1196,7 @@ Turned down:
   connection. The media pass commits once per Asset, so a run that ends
   while an earlier run's media pass works would never apply what it worked
   out without the lock, and would hold the lock for the whole pass every
-  time, as before.
+  time.
 - Reading again under the lock what the pass read, and comparing. Those
   reads are the time the change takes out from under the lock.
 - Raising the count in each writer's code instead of in triggers. A writer

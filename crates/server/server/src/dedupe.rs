@@ -358,7 +358,7 @@ async fn apply_plan(tx: &mut WriteTx<'_>, pass: &Pass<'_>, plan: Plan) -> Result
     let progress = pass.progress;
     let Plan { keys, flags, stats } = plan;
     if !keys.is_empty() {
-        write_content_keys(conn, &keys, progress).await?;
+        write_content_keys_saying(conn, &keys, progress).await?;
     }
     let stored = db::duplicate_flags(conn, pass.account_id).await?;
     let shown: Vec<i64> = stored
@@ -522,7 +522,7 @@ async fn recompute_content_keys(
     if keys.is_empty() {
         return Ok(0);
     }
-    write_content_keys(conn, &keys, progress).await?;
+    write_content_keys_saying(conn, &keys, progress).await?;
     Ok(keys.len() as u64)
 }
 
@@ -533,7 +533,7 @@ async fn recompute_content_keys(
 /// # Errors
 ///
 /// Returns an error when a statement fails.
-async fn write_content_keys(
+async fn write_content_keys_saying(
     conn: &mut SqliteConnection,
     keys: &[(i64, String)],
     progress: Progress,
