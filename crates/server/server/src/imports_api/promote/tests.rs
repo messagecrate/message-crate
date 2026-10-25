@@ -195,10 +195,10 @@ fn a_promotion_is_named_only_for_the_unknown_service_it_caused() {
     );
     assert_eq!(
         unknown_service_reason(&written(&["sms", "unknown"], &["sms"])).as_deref(),
-        Some("which do not name one known service")
+        Some("do not name one known service")
     );
     assert_eq!(
         unknown_service_reason(&written(&["sms"], &["whatsapp"])).as_deref(),
-        Some("and its earlier messages are whatsapp, another service")
+        Some("name another service than the conversation's earlier messages (whatsapp)")
     );
 }

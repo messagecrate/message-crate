@@ -96,13 +96,14 @@ struct Promote<'a> {
 }
 
 /// Why a promotion that wrote `written` to a conversation made it
-/// `unknown`, as the end of a warning's sentence; `None` when it did not:
+/// `unknown`, as what the added messages' transports do in a warning's
+/// sentence; `None` when it did not:
 /// its added messages name one known service, and the earlier messages
 /// name the same one, none, or were `unknown` already (CONTACT-56).
 fn unknown_service_reason(written: &PromotedTransports) -> Option<String> {
     let added = ConversationService::of_transports(written.added.iter().map(|(t, _)| t.as_deref()));
     if added == ConversationService::Unknown {
-        return Some("which do not name one known service".to_string());
+        return Some("do not name one known service".to_string());
     }
     if written.earlier.is_empty() {
         return None;
@@ -110,7 +111,7 @@ fn unknown_service_reason(written: &PromotedTransports) -> Option<String> {
     let earlier = ConversationService::of_transports(written.earlier.iter().map(Option::as_deref));
     (earlier != ConversationService::Unknown && earlier != added).then(|| {
         format!(
-            "and its earlier messages are {}, another service",
+            "name another service than the conversation's earlier messages ({})",
             earlier.as_str()
         )
     })
@@ -360,15 +361,16 @@ impl Promote<'_> {
                 .iter()
                 .map(|(t, _)| t.as_deref().unwrap_or("none"))
                 .collect();
+            transports.sort_unstable();
             transports.dedup();
             let mut sources: Vec<&str> = written.added.iter().map(|(_, s)| s.as_str()).collect();
             sources.sort_unstable();
             sources.dedup();
             self.progress.warn(format_args!(
-                "Conversation {id} is shown as Unknown, because {run} wrote messages to it \
-                 with the transports {} from {}, {reason}",
-                transports.join(", "),
+                "Conversation {id} is shown as Unknown, because {run} wrote messages from {} \
+                 to it whose transports ({}) {reason}",
                 sources.join(", "),
+                transports.join(", "),
             ));
         }
         Ok(())

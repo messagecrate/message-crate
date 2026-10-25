@@ -699,8 +699,8 @@ async fn promoting_a_message_of_unknown_transport_writes_a_warning() {
     assert!(
         warnings[0].contains(&format!(
             "Conversation {unknown_id} is shown as Unknown, because an import with no Import Run \
-             wrote messages to it with the transports imessage, unknown from \
-             sms-backup-restore, which do not name one known service"
+             wrote messages from sms-backup-restore to it whose transports (imessage, unknown) \
+             do not name one known service"
         )),
         "{}",
         warnings[0]
