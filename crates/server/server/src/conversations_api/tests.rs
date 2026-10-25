@@ -1273,6 +1273,24 @@ fn a_conversations_service_is_the_one_its_transports_belong_to() {
     }
 }
 
+/// The name the import warning writes for each service is the one the wire
+/// sends, so a reader can search the log for the value the screen came from.
+#[test]
+fn a_services_log_name_is_its_wire_name() {
+    use ConversationService as S;
+    for service in [
+        S::TextMessage,
+        S::Whatsapp,
+        S::Discord,
+        S::Signal,
+        S::Telegram,
+        S::Slack,
+        S::Unknown,
+    ] {
+        assert_eq!(serde_json::to_value(service).unwrap(), service.as_str());
+    }
+}
+
 /// The conversation list names each thread's service from its messages'
 /// transports, never from the import sources they came from: an iMazing
 /// thread of texts is Text Message, a thread fed by two backups is one
