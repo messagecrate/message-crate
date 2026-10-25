@@ -1627,6 +1627,12 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-24: **Undo of a Contact Group change says why it was refused.**
+  When Undo or Redo of a Contact Group change on the Contacts list was
+  refused for some Contact Groups, the line above the list said only how
+  many. It now names each of those Contact Groups on a line of its own with
+  the reason, so a Contact Group deleted meanwhile reads differently from a
+  lost connection (#3252).
 - 2026-10-16: **A vCard name in another character set converts as written.**
   Convert a vCard file reads a name in the character set the card names,
   such as Shift_JIS from a Japanese Android phone, or Windows-1252, whose €
