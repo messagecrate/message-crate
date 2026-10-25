@@ -242,6 +242,12 @@ const EXERCISED: Record<string, () => unknown> = {
   exportAddressBook: () => serverApi.exportAddressBook({ q: "group:Family", ids: [1, 2] }),
   convertVcardToAddressBook: () =>
     serverApi.convertVcardToAddressBook("BEGIN:VCARD\nEND:VCARD\n", "US"),
+  createContact: () =>
+    serverApi.createContact({
+      name: "Mom",
+      identities: [{ address: "+15555550100", service: "text_message" }],
+    }),
+  updateTrashedContacts: () => serverApi.updateTrashedContacts({ add: [1, 2], remove: [3] }),
   trashContact: () => serverApi.trashContact(42),
   restoreContact: () => serverApi.restoreContact(42),
   mergeContacts: () => serverApi.mergeContacts(42, [43]),
@@ -327,6 +333,21 @@ describe("every route function asks for a documented address", () => {
       ).toEqual([]);
     });
   }
+});
+
+describe("the caps the web app copies", () => {
+  it("sends a Trash move in parts no larger than the server takes", () => {
+    const schemas = (
+      openapi as unknown as {
+        components: {
+          schemas: Record<string, { properties: Record<string, { maxItems?: number }> }>;
+        };
+      }
+    ).components.schemas;
+    const request = schemas.UpdateTrashedContactsRequest?.properties;
+    expect(request?.add?.maxItems).toBe(serverApi.TRASHED_CONTACT_IDS_MAX);
+    expect(request?.remove?.maxItems).toBe(serverApi.TRASHED_CONTACT_IDS_MAX);
+  });
 });
 
 describe("the table stays complete", () => {

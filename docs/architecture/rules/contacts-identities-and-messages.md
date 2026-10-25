@@ -1212,3 +1212,55 @@ nothing more is built for the way back, nothing that survives a reload or
 reaches another device; the server keeps the merged contacts until the next
 merge only so that Undo can work. Rejected: an Unmerge button and a "Merged
 from" line on the target's page, a second control for the same act.
+
+## CONTACT-58 New Contact refuses an identity another contact holds, and offers no merge
+
+New Contact on the Contacts list adds one contact under the logged-in
+account: a name, which it needs, and zero or more identities, each on its
+service and typed by CONTACT-9. It is `POST /v1/contacts` with a JSON body.
+A contact with a name and no identity is allowed, and the list shows it by
+its name alone, the mirror of a contact with an identity and no name. It is
+Unknown by CONTACT-3, because nothing reaches it yet. An identity that is on
+another contact, named or nameless, in the Trash or not, is refused with
+`422 Unprocessable Entity`, one sentence per identity naming the contact that
+holds it, and nothing is created. So is one of the account's own identities,
+which is on no contact (CONTACT-46). The person removes the identity from
+the form or goes to the contact that holds it. New Contact moves only the
+identities it is given, as the contact drawer does (CONTACT-15), and the
+Demo Account is refused it by its id. Why: the contact was never created, so
+there is nothing to merge yet. A refusal that names the holder leaves the
+person both ways forward, and Merge Contacts joins two contacts once both
+exist. Rejected: `409 Conflict` with a confirmed merge, the shape of API-27,
+which joins records that already exist; and taking the identity freely from a
+nameless holder, as an edit in the contact drawer does, because the
+maintainer settled the refusal for every holder (#3245).
+
+## CONTACT-59 The Audit Trail records what adds, removes or replaces contacts, and no edit
+
+The Audit Trail records an address book load, a contact added by hand
+(`contact_added`), contacts moved to the Trash and out of it
+(`contacts_trashed`, `contacts_restored`), a contact deleted for good
+(`contact_deleted`) and the Trash emptied, and a merge of contacts and its
+undo (`contacts_merged`, `contacts_unmerged`). Each entry is one action as
+the person took it, with a count and contact ids, never a name or message
+text: Delete Contacts on three rows is one `contacts_trashed` entry with
+`contacts` 3 and the three ids, and its undo is one `contacts_restored`
+entry. A merge entry names the contact kept as `contact_id` and the merged
+ones as `contact_ids`: the contacts merged in, or the ones an undo wrote
+back (CONTACT-57). The route that makes the change
+writes the entry in the change's own transaction, so a change made by Undo
+or Redo is recorded as the same change made by hand. Undo and Redo get no
+entry of their own. A request that changes no contact, such as moving a
+contact already in the Trash there again, writes no entry. Delete Contacts
+sends its contacts in one request, `PATCH /v1/trash/contacts`, so the trail
+sees one action. That route takes at most 10000 ids in a list, and a larger selection
+is sent, and recorded, in parts of that size. A rename, an identity added, swapped or
+taken off in the contact drawer, a country picked, a Contact Group
+membership change, and a Contact Group created, renamed or deleted get no
+entry. Why: the trail records what removes or replaces contact data, and an
+addition, so the person can see what came and went. A merge is recorded
+because the next merge deletes the merged rows for good. An edit changes a
+name or a link the person can see and change back on the same screen.
+Rejected: one entry per contact for a bulk change, which buries one action
+under hundreds of rows; and entries for every edit, which would bury the
+deletions they exist to show (#3241).

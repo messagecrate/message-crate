@@ -163,8 +163,11 @@ function OneContactDrawer({
 
   const detailMatches = !!matchedDetail;
   // A failed refetch behind a contact already on screen keeps showing it; only
-  // a drawer with nothing to show says the load failed.
-  const loadError = detailMatches ? null : detailError;
+  // a drawer with nothing to show says the load failed. A refetch answered
+  // `404 Not Found` says the contact is gone, as after Undo of New Contact
+  // moved the open contact to the Trash, so the drawer says so too.
+  const gone = detailError instanceof ApiError && detailError.status === 404;
+  const loadError = detailMatches && !gone ? null : detailError;
   const previewMatches = !!contactId && !!preview && String(preview.id) === String(contactId);
   const matchedName = matchedDetail?.name;
 

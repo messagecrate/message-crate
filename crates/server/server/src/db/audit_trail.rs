@@ -97,6 +97,24 @@ pub enum AuditAction {
     AddressBookLoaded,
     /// The holder exported the address book.
     AddressBookExported,
+    /// The holder added a contact by hand (New Contact); `contact_id` names
+    /// it.
+    ContactAdded,
+    /// The holder moved contacts to the Trash; `contacts` counts them and
+    /// `contact_ids` names them.
+    ContactsTrashed,
+    /// The holder took contacts out of the Trash; `contacts` counts them and
+    /// `contact_ids` names them.
+    ContactsRestored,
+    /// The holder deleted a contact for good from the Trash, which makes it
+    /// Unknown again; `contact_id` names it.
+    ContactDeleted,
+    /// The holder merged contacts into one; `contact_id` names the contact
+    /// kept, and `contacts` and `contact_ids` the contacts merged into it.
+    ContactsMerged,
+    /// The holder undid a merge; `contact_id` names the contact that was
+    /// kept, and `contacts` and `contact_ids` the contacts taken out of it.
+    ContactsUnmerged,
     /// The server closed a running Export Run as `canceled`, removing its
     /// list of messages; `reason` says why and `export_run_id` names the run.
     ExportRunClosed,
@@ -130,6 +148,12 @@ impl AuditAction {
             Self::ApiTokenDeleted => "api_token_deleted",
             Self::AddressBookLoaded => "address_book_loaded",
             Self::AddressBookExported => "address_book_exported",
+            Self::ContactAdded => "contact_added",
+            Self::ContactsTrashed => "contacts_trashed",
+            Self::ContactsRestored => "contacts_restored",
+            Self::ContactDeleted => "contact_deleted",
+            Self::ContactsMerged => "contacts_merged",
+            Self::ContactsUnmerged => "contacts_unmerged",
             Self::ExportRunClosed => "export_run_closed",
             Self::ImportRun => "import_run",
             Self::ExportRun => "export_run",
@@ -421,10 +445,19 @@ pub struct Details {
     /// Attachments deleted for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachments: Option<i64>,
-    /// Contacts: forgotten when the trash was emptied, or written to an
-    /// exported address book.
+    /// Contacts: forgotten when the trash was emptied, written to an
+    /// exported address book, moved to or out of the Trash, or merged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contacts: Option<i64>,
+    /// `contact_added` and `contact_deleted`: the contact. `contacts_merged`
+    /// and `contacts_unmerged`: the contact kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<i64>,
+    /// `contacts_trashed` and `contacts_restored`: the contacts moved.
+    /// `contacts_merged` and `contacts_unmerged`: the contacts merged into
+    /// the one kept or taken out of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_ids: Option<Vec<i64>>,
     /// Identities written to an exported address book.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identities: Option<i64>,
@@ -528,9 +561,17 @@ pub struct AuditEntry {
     pub attachments: Option<i64>,
     /// Bytes an Import Run uploaded, or an Export Run's attachments total.
     pub bytes: Option<i64>,
-    /// Contacts forgotten when the trash was emptied, or written to an
-    /// exported address book.
+    /// Contacts forgotten when the trash was emptied, written to an
+    /// exported address book, moved to or out of the Trash, or merged.
     pub contacts: Option<i64>,
+    /// `contact_added` and `contact_deleted`: the contact's id.
+    /// `contacts_merged` and `contacts_unmerged`: the id of the contact kept.
+    /// An id only, never the contact's name.
+    pub contact_id: Option<i64>,
+    /// `contacts_trashed` and `contacts_restored`: the ids of the contacts
+    /// moved. `contacts_merged` and `contacts_unmerged`: the ids of the
+    /// contacts merged into the one kept, or taken out of it.
+    pub contact_ids: Option<Vec<i64>>,
     /// Identities written to an exported address book.
     pub identities: Option<i64>,
     /// `address_book_loaded`: `append` or `edit`.
@@ -589,6 +630,8 @@ impl AuditEntry {
             attachments: None,
             bytes: None,
             contacts: None,
+            contact_id: None,
+            contact_ids: None,
             identities: None,
             mode: None,
             contacts_created: None,
@@ -702,6 +745,52 @@ pub async fn record_about(
     )
     .await?;
     Ok(())
+}
+
+/// A change the holder made to their contacts, as [`record_contact_change`]
+/// writes it: the contact it is about, and the contacts it moved. Ids only,
+/// never a name, because the Audit Trail says how much and never what.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContactChange<'a> {
+    /// The contact the change is about: the one added or deleted for good,
+    /// or the one a merge kept.
+    pub contact_id: Option<i64>,
+    /// The contacts the change moved: to or out of the Trash, or into or
+    /// out of the contact a merge kept. Counted as well as named.
+    pub contact_ids: &'a [i64],
+}
+
+/// Write the entry `action` for a change the holder of `account_id` made to
+/// their contacts, stamped `now`. Each route that makes the change calls it
+/// in the change's own transaction, so a change made by Undo or Redo is
+/// recorded as the same change made by hand
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-59). Nothing is written when the account does not exist.
+///
+/// The Merge Contacts routes record `contacts_merged` and `contacts_unmerged`
+/// through here, with the contact kept as `contact_id` and the contacts merged
+/// in, or written back, as `contact_ids`.
+///
+/// # Errors
+///
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_contact_change(
+    conn: &mut SqliteConnection,
+    action: AuditAction,
+    account_id: i64,
+    change: ContactChange<'_>,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let moved = (!change.contact_ids.is_empty()).then(|| change.contact_ids.to_vec());
+    let details = Details {
+        contacts: moved
+            .as_ref()
+            .map(|ids| i64::try_from(ids.len()).unwrap_or(i64::MAX)),
+        contact_id: change.contact_id,
+        contact_ids: moved,
+        ..Details::default()
+    };
+    record_about(conn, action, AuditActor::Holder, account_id, details, now).await
 }
 
 /// Record that `actor` is building the Demo Account with the `size` set of Demo
@@ -1317,6 +1406,8 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
         conversations: details.conversations,
         attachments: details.attachments,
         contacts: details.contacts,
+        contact_id: details.contact_id,
+        contact_ids: details.contact_ids,
         identities: details.identities,
         mode: details.mode,
         contacts_created: details.contacts_created,

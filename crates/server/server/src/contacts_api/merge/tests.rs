@@ -615,3 +615,73 @@ fn the_documented_cap_is_the_servers() {
         MAX_MERGED_CONTACTS - 1
     );
 }
+
+/// A merge and its undo are each one Audit Trail entry naming the contact
+/// kept and the contacts merged into it or written back, by id (CONTACT-59).
+#[tokio::test]
+async fn a_merge_and_its_undo_are_each_one_audit_trail_entry() {
+    use crate::db::audit_trail::{AuditAction, Scope, page};
+    let (fixture, account) = fixture_with_account().await;
+    let a = account.account_id;
+    let mut conn = fixture.conn().await;
+    let nicholas = contact(
+        &mut conn,
+        a,
+        "Nicholas Koch",
+        "+12155550112",
+        IdentityType::Phone,
+    )
+    .await;
+    let nick = contact(
+        &mut conn,
+        a,
+        "Nick Koch",
+        "nick.koch@example.com",
+        IdentityType::Email,
+    )
+    .await;
+    let koch = contact(&mut conn, a, "N. Koch", "+12155550113", IdentityType::Phone).await;
+    drop(conn);
+
+    merge(&fixture, &account, nicholas, &[nick, koch]).await;
+    unmerge(&fixture, &account, nicholas).await;
+
+    let mut conn = fixture.conn().await;
+    let (entries, _) = page(&mut conn, Scope::Account(a), 100, 0, chrono::Utc::now())
+        .await
+        .unwrap();
+    let mut recorded: Vec<_> = entries
+        .into_iter()
+        .filter(|e| {
+            matches!(
+                e.action,
+                AuditAction::ContactsMerged | AuditAction::ContactsUnmerged
+            )
+        })
+        .map(|e| {
+            let mut ids = e.contact_ids.unwrap_or_default();
+            ids.sort_unstable();
+            (e.action, e.contact_id, e.contacts, ids)
+        })
+        .collect();
+    recorded.reverse();
+    let mut merged = vec![nick, koch];
+    merged.sort_unstable();
+    assert_eq!(
+        recorded,
+        vec![
+            (
+                AuditAction::ContactsMerged,
+                Some(nicholas),
+                Some(2),
+                merged.clone()
+            ),
+            (
+                AuditAction::ContactsUnmerged,
+                Some(nicholas),
+                Some(2),
+                merged
+            ),
+        ]
+    );
+}

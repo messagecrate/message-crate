@@ -44,6 +44,10 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   deleteContact: vi.fn(),
   emptyTrash: vi.fn(),
   trashContact: vi.fn(),
+  updateTrashedContacts: vi.fn(async (body: { add?: number[]; remove?: number[] }) => ({
+    trashed: body.add ?? [],
+    restored: body.remove ?? [],
+  })),
 }));
 
 const restoreConversation = vi.mocked(restoreConversationRoute);

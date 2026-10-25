@@ -2743,12 +2743,17 @@ async fn the_mode_parameter_picks_append_or_edit() {
     expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
-/// The file is the body and `text/csv` is its only format. A vCard, which
-/// the route once read, is `415` like any other type.
+/// The file is the body and `text/csv` is its only format; a JSON body is a
+/// contact typed by hand. A vCard, which the route once read, is `415` like
+/// any other type.
 #[tokio::test]
 async fn an_address_book_that_is_not_text_csv_is_a_415() {
     let (fixture, account) = fixture_with_account().await;
-    for content_type in ["text/vcard", "application/json", "text/plain"] {
+    for content_type in [
+        "text/vcard",
+        "text/plain",
+        "application/x-www-form-urlencoded",
+    ] {
         let (status, text) = crate::test_support::post_raw(
             &fixture.state,
             "/v1/contacts",

@@ -50,7 +50,7 @@ use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 use crate::db::attachment_versions::NamedFiles;
-use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
+use crate::db::audit_trail::{self, AuditAction, AuditActor, ContactChange, Details};
 use crate::db::contacts;
 use crate::db::erase;
 use crate::db::ownership::{owns_contact, owns_conversation};
@@ -194,6 +194,102 @@ pub async fn restore(
     .await
     .context("delete a trash marker")?;
     Ok(true)
+}
+
+/// What [`update_trashed_contacts`] did, each list in the order the request
+/// named its contacts.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TrashedContactsChange {
+    /// Contacts of `add` that are in the Trash now, those that were there
+    /// already included. A contact the account does not hold is left out.
+    pub in_trash: Vec<i64>,
+    /// Contacts that were not in the Trash and now are: what the
+    /// `contacts_trashed` entry names.
+    pub trashed: Vec<i64>,
+    /// Contacts that were in the Trash and now are not.
+    pub restored: Vec<i64>,
+}
+
+/// Move the contacts `add` names to the Trash and take the ones `remove`
+/// names out of it, in one write transaction, and record each half that
+/// changed a contact in the Audit Trail at `now`: one `contacts_trashed`
+/// entry and one `contacts_restored` entry, each with the count and the ids
+/// of the contacts it changed (CONTACT-59).
+///
+/// An id the account does not hold is skipped in either list, so one contact
+/// deleted since the person chose it never keeps the others where they were
+/// (`docs/architecture/rules/http-api.md`, API-13). A contact already in the
+/// Trash stays there and is not recorded again, and one not in it is not
+/// restored. The caller keeps an id out of both lists at once.
+///
+/// # Errors
+///
+/// Returns an error naming the step when a statement fails; the transaction
+/// is then rolled back.
+pub async fn update_trashed_contacts(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    add: &[i64],
+    remove: &[i64],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<TrashedContactsChange> {
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
+    let mut change = TrashedContactsChange::default();
+    for &id in add {
+        if change.in_trash.contains(&id)
+            || !owns_contact(&mut tx, account_id, id)
+                .await
+                .context("check that the account holds the contact")?
+        {
+            continue;
+        }
+        let inserted = sqlx::query(
+            "INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(account_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .context("insert a contact's trash marker")?
+        .rows_affected();
+        change.in_trash.push(id);
+        if inserted > 0 {
+            change.trashed.push(id);
+        }
+    }
+    for &id in remove {
+        let deleted =
+            sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id = $2")
+                .bind(account_id)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .context("delete a contact's trash marker")?
+                .rows_affected();
+        if deleted > 0 {
+            change.restored.push(id);
+        }
+    }
+    for (action, ids) in [
+        (AuditAction::ContactsTrashed, &change.trashed),
+        (AuditAction::ContactsRestored, &change.restored),
+    ] {
+        if ids.is_empty() {
+            continue;
+        }
+        let moved = ContactChange {
+            contact_id: None,
+            contact_ids: ids,
+        };
+        audit_trail::record_contact_change(&mut tx, action, account_id, moved, now).await?;
+    }
+    tx.commit()
+        .await
+        .context("commit the contacts' trash markers")?;
+    Ok(change)
 }
 
 /// True when `contact_id` carries `account_id`'s trash marker.
@@ -352,6 +448,20 @@ pub async fn delete_trashed(
         }
         Trashable::Contact(id) => {
             forget_contacts(&mut tx, account_id, &[id], now).await?;
+            // The contact's id, as the Audit Trail names every contact it
+            // records (CONTACT-59), in the delete's own transaction.
+            let deleted = ContactChange {
+                contact_id: Some(id),
+                contact_ids: &[],
+            };
+            audit_trail::record_contact_change(
+                &mut tx,
+                AuditAction::ContactDeleted,
+                account_id,
+                deleted,
+                now,
+            )
+            .await?;
             tx.commit().await.context("commit the forgotten contact")?;
             Vec::new()
         }

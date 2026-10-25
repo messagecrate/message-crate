@@ -22,6 +22,19 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-25: **Add a contact by hand.** **New Contact**, first on the
+  Contacts list's ⋯ menu, adds a contact with a name and any number of
+  phone numbers, email addresses and WhatsApp numbers, or with a name
+  alone. An identity already on another contact is refused, naming that
+  contact, and nothing is added. The new contact opens beside the list,
+  and **Undo** moves it to the Trash (#3245).
+- 2026-10-25: **The Audit Trail records changes to contacts.** Adding a
+  contact by hand, moving contacts to the Trash and restoring them,
+  deleting a contact for good, and merging contacts or undoing a merge
+  each add an entry that counts the contacts and names them by number,
+  never by name. One **Delete Contacts** is one
+  entry however many contacts it moves. Edits to a contact and Contact
+  Group changes are not recorded (#3241).
 - 2026-10-25: **Merge Contacts.** When one person is on the Contacts list
   two or more times, such as the iPhone contact, the Android one and an
   Unknown WhatsApp number, check the rows and choose **Merge Contacts** on
