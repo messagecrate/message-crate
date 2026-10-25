@@ -489,7 +489,7 @@ export default function ContactList({
     [mergeTargets],
   );
   /** Merge the checked contacts into `targetId`, then open it with nothing checked. */
-  const mergeContacts = async (targetId: number): Promise<unknown> => {
+  const mergeContacts = async (targetId: number): Promise<Error | null> => {
     const target = mergeTargets.find((c) => Number(c.id) === targetId);
     if (!target) return null;
     const merged = mergeTargets

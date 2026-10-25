@@ -50,8 +50,11 @@ export const EMPTY_HISTORY: HistoryStacks = { undo: [], redo: [] };
 export type HistoryEvent =
   /** A new action: it goes on top, and whatever was undone can no longer be redone. */
   | { type: "push"; entry: HistoryEntry }
-  /** The entry's undo went through: it moves to the redo stack. */
-  | { type: "undone"; id: number }
+  /**
+   * The entry's undo went through: it moves to the redo stack, holding
+   * `action`, what the undo did, when that was less than the whole entry.
+   */
+  | { type: "undone"; id: number; action?: HistoryAction }
   /**
    * The entry's redo went through: it goes back on top of the undo stack,
    * even when a new action meanwhile cleared the redo stack it came from,
@@ -90,7 +93,8 @@ export function historyReducer(state: HistoryStacks, event: HistoryEvent): Histo
     case "undone": {
       const entry = state.undo.find((e) => e.id === event.id);
       if (!entry) return state;
-      return { undo: state.undo.filter((e) => e !== entry), redo: [...state.redo, entry] };
+      const moved = event.action ? { ...entry, action: event.action } : entry;
+      return { undo: state.undo.filter((e) => e !== entry), redo: [...state.redo, moved] };
     }
     case "redone":
       return {
@@ -186,6 +190,16 @@ export function actionMenuName(action: HistoryAction): string {
   if (action.kind === "trash") return "Delete Contacts";
   if (action.kind === "merge") return "Merge Contacts";
   return action.op === "add" ? "Add to Contact Group" : "Remove from Contact Group";
+}
+
+/**
+ * What an undo of a merge adds when the server left contacts out: a contact
+ * with no name whose identities all left the merged contact since the merge.
+ */
+export function notRestoredText(n: number): string {
+  return n === 1
+    ? "1 contact with no name had no identity left and was not brought back"
+    : `${n} contacts with no name had no identity left and were not brought back`;
 }
 
 /**

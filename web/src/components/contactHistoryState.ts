@@ -34,7 +34,7 @@ export type ContactHistory = {
    * Answers what the server refused it with, or null when it went through or
    * another run was already in flight.
    */
-  mergeContacts: (target: HistoryContact, merged: MergedContact[]) => Promise<unknown>;
+  mergeContacts: (target: HistoryContact, merged: MergedContact[]) => Promise<Error | null>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
   /** Forget every entry, as a delete for good does. */

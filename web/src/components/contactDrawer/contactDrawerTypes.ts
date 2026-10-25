@@ -114,7 +114,7 @@ export function formatHandleDate(iso: string | null | undefined, zone: string): 
 function emptyHandleRow(address: string): ContactHandle {
   return {
     address,
-    identity_type: "",
+    identity_type: "other",
     service: "",
     country_unknown: false,
     start_date: null,

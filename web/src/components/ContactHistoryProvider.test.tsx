@@ -273,7 +273,9 @@ describe("ContactHistoryProvider", () => {
 
   it("merges, then unmerges on Undo and merges again on Redo, naming who came back", async () => {
     mergeMock.mockResolvedValue({} as Awaited<ReturnType<typeof mergeContacts>>);
-    unmergeMock.mockResolvedValue({} as Awaited<ReturnType<typeof unmergeContacts>>);
+    unmergeMock.mockResolvedValue({ restored: [2, 4] } as Awaited<
+      ReturnType<typeof unmergeContacts>
+    >);
     const user = setupUser();
     renderHarness();
     await user.click(screen.getByRole("button", { name: "Merge into Mother" }));
@@ -291,6 +293,24 @@ describe("ContactHistoryProvider", () => {
     await settle();
     expect(mergeMock).toHaveBeenCalledTimes(2);
     expect(toast()).toHaveTextContent("Merged 3 contacts into Mother");
+  });
+
+  it("names only the contacts the unmerge brought back, and Redo merges only those", async () => {
+    mergeMock.mockResolvedValue({} as Awaited<ReturnType<typeof mergeContacts>>);
+    unmergeMock.mockResolvedValue({ restored: [2] } as Awaited<ReturnType<typeof unmergeContacts>>);
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Merge into Mother" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(toast()).toHaveTextContent(
+      "Unmerged Ada. 1 contact with no name had no identity left and was not brought back",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await settle();
+    expect(mergeMock).toHaveBeenLastCalledWith(1, [2]);
   });
 
   it("answers a refused merge to the dialog and records nothing", async () => {

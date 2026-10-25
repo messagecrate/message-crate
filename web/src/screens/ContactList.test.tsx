@@ -883,9 +883,9 @@ describe("ContactList", () => {
           }) as unknown as Awaited<ReturnType<typeof getContact>>,
       );
       vi.mocked(mergeContacts).mockResolvedValue({} as Awaited<ReturnType<typeof mergeContacts>>);
-      vi.mocked(unmergeContacts).mockResolvedValue(
-        {} as Awaited<ReturnType<typeof unmergeContacts>>,
-      );
+      vi.mocked(unmergeContacts).mockResolvedValue({ restored: [2, 3] } as Awaited<
+        ReturnType<typeof unmergeContacts>
+      >);
     });
 
     it("is offered for two or more checked contacts", async () => {

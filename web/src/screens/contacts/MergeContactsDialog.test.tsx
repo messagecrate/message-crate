@@ -8,7 +8,10 @@ import type { components } from "../../lib/serverApi.types";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
-import MergeContactsDialog, { type MergeCandidate } from "./MergeContactsDialog";
+import MergeContactsDialog, {
+  MAX_MERGED_CONTACTS,
+  type MergeCandidate,
+} from "./MergeContactsDialog";
 
 vi.mock("../../hooks/useAuth", async () =>
   (await import("../../test/providers")).authModule(() => ({ accountId: 7 })),
@@ -18,7 +21,11 @@ vi.mock("../../lib/serverApi", () => ({ getContact: vi.fn() }));
 type Contact = components["schemas"]["Contact"];
 type Identity = components["schemas"]["Identity"];
 
-function identity(address: string, identity_type: string, service: string): Identity {
+function identity(
+  address: string,
+  identity_type: Identity["identity_type"],
+  service: string,
+): Identity {
   return {
     address,
     identity_type,

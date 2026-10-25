@@ -817,9 +817,11 @@ export interface paths {
          *     records go to this contact, and it leaves every list. No conversation or
          *     message changes, because they are kept by identity. The merge can be
          *     undone with `POST /v1/contacts/{id}/unmerge` until the account's next
-         *     merge, which takes the contacts this one merged for good. A contact in
-         *     the Trash, or one holding one of the account's own identities, answers
-         *     `409 Conflict`; the Demo Account is refused.
+         *     merge, which deletes the contacts this one merged for good, so a merge
+         *     needs the `delete` permission. A contact in the Trash, or one holding one
+         *     of the account's own identities, answers `409 Conflict`. A contact the
+         *     last merge took is no contact of the account's: in the path it is
+         *     `404 Not Found`, and in `from` `422 Unprocessable Entity`.
          */
         post: operations["merge_contact"];
         delete?: never;
@@ -884,7 +886,7 @@ export interface paths {
          *     that is still on this contact; one moved elsewhere since stays there.
          *     This contact keeps what was its own before the merge. A contact that was
          *     not the target of the account's most recent merge answers
-         *     `409 Conflict`.
+         *     `409 Conflict`. `restored` names the contacts written back.
          */
         post: operations["unmerge_contact"];
         delete?: never;
@@ -3341,8 +3343,8 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
-            /** @description The identity's type: `phone`, `email`, `username`, or `other`. */
-            identity_type: string;
+            /** @description The identity's type. */
+            identity_type: components["schemas"]["IdentityType"];
             /**
              * Format: int64
              * @description The identity's messages in one-to-one conversations, trashed
@@ -3403,6 +3405,12 @@ export interface components {
          * @enum {string}
          */
         IdentityService: "text_message" | "whatsapp";
+        /**
+         * @description What an identity is: a phone number, an email address, a username, or
+         *     something else.
+         * @enum {string}
+         */
+        IdentityType: "phone" | "email" | "username" | "other";
         /** @description One contact an import run touched, and what the run did to it. */
         ImportContact: {
             /**
@@ -4927,8 +4935,8 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
-                /** @description The identity's type: `phone`, `email`, `username`, or `other`. */
-                identity_type: string;
+                /** @description The identity's type. */
+                identity_type: components["schemas"]["IdentityType"];
                 /**
                  * Format: int64
                  * @description The identity's messages in one-to-one conversations, trashed
@@ -5843,6 +5851,17 @@ export interface components {
              *     on Text Message, and `other` on WhatsApp.
              */
             service: components["schemas"]["IdentityService"];
+        };
+        /** @description The answer to `POST /v1/contacts/{id}/unmerge`. */
+        UnmergeContactResponse: {
+            /** @description The contact the others were merged into, as it now stands. */
+            contact: components["schemas"]["Contact"];
+            /**
+             * @description The merged contacts written back, by id. A contact with no name
+             *     whose identities all moved elsewhere since the merge is left out:
+             *     nothing could reach it, so it was not written back.
+             */
+            restored: number[];
         };
         /**
          * @description Body for changing an account. Omitted fields are left alone. The name,
@@ -10732,7 +10751,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Contact"];
+                    "application/json": components["schemas"]["UnmergeContactResponse"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */

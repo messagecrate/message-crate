@@ -25,7 +25,7 @@ export const MAX_MERGED_CONTACTS = 10;
 export type MergeCandidate = { id: number; name: string; addresses: string[] };
 
 /** The screen name of each identity type the server sends. */
-const TYPE_LABELS: Record<string, string> = {
+const TYPE_LABELS: Record<components["schemas"]["IdentityType"], string> = {
   phone: "Phone",
   email: "Email",
   username: "Username",
@@ -66,7 +66,7 @@ export default function MergeContactsDialog({
   /** A merge, an undo or a redo is sending its requests. */
   busy: boolean;
   /** Merge the others into `targetId`; answers what refused it, or null when it went through. */
-  onMerge: (targetId: number) => Promise<unknown>;
+  onMerge: (targetId: number) => Promise<Error | null>;
   onClose: () => void;
 }) {
   const ids = contacts.map((c) => c.id);
@@ -195,7 +195,7 @@ export default function MergeContactsDialog({
                       {identity.address}
                     </td>
                     <td className={`${cellClass} text-muted`}>
-                      {TYPE_LABELS[identity.identity_type] ?? identity.identity_type}
+                      {TYPE_LABELS[identity.identity_type]}
                     </td>
                     <td className={`${cellClass} text-muted`}>
                       {serviceLabel(identity.service) ?? "—"}

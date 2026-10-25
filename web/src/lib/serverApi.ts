@@ -782,9 +782,14 @@ export function mergeContacts(
   );
 }
 
-/** Undo the account's most recent merge, which merged into `targetId`. */
-export function unmergeContacts(targetId: string | number): Promise<Schema["Contact"]> {
-  return apiClient.post<Schema["Contact"]>(
+/**
+ * Undo the account's most recent merge, which merged into `targetId`. The
+ * answer names the contacts written back in `restored`.
+ */
+export function unmergeContacts(
+  targetId: string | number,
+): Promise<Schema["UnmergeContactResponse"]> {
+  return apiClient.post<Schema["UnmergeContactResponse"]>(
     `/v1/contacts/${encodeURIComponent(String(targetId))}/unmerge`,
     {},
   );
