@@ -125,7 +125,7 @@ pub async fn database_is_new(cfg: &Config) -> Result<bool> {
 /// A failure is reported and not returned: the unfinished database is
 /// removed and `serve` creates an empty one, so the Message Crate starts
 /// without the Demo Account, since the administrator can still set it up
-/// and import, and can add the Demo Account later.
+/// and add accounts to import into, and can add the Demo Account later.
 pub async fn seed_new_database(cfg: &Config) {
     let size = DemoSize::Medium;
     tracing::info!(

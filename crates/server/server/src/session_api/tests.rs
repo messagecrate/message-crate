@@ -266,7 +266,7 @@ async fn a_session_lists_the_account_sources_oldest_first() {
 }
 
 #[tokio::test]
-async fn logout_on_conn_leaves_registered_account() {
+async fn logout_on_conn_leaves_the_account() {
     let fixture = test_fixture().await;
     let mut conn = fixture.conn().await;
     crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;

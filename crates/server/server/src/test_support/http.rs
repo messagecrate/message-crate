@@ -8,9 +8,9 @@ use serde::de::DeserializeOwned;
 use super::http_client;
 use crate::server::{AppState, http_app};
 
-/// An account a test added, with a live session token for it.
+/// An account with a live session token for it.
 pub struct LoggedInAccount {
-    /// The new account's id.
+    /// The account's id.
     pub account_id: i64,
     /// The username it was created with.
     pub username: String,

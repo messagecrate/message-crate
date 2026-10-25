@@ -172,8 +172,8 @@ async fn a_desktop_login_records_the_website_session_as_replaced() {
     assert_eq!(items[1]["app_build"], "0.10.0+bbbb2222");
     assert_eq!(items[2]["reason"], "replaced");
     assert_eq!(items[3]["app"], "website");
-    // Adding the account logged it in, and the website login replaced that
-    // Session.
+    // The helper's login opened the first Session, and the website login
+    // replaced it.
     assert_eq!(items[4]["reason"], "replaced");
 }
 
@@ -448,9 +448,9 @@ async fn a_session_that_ran_out_reads_as_expired() {
     let state = &fixture.state;
     let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
-    // Registered on 1 January 2000, so the Session ran out on 31 January
+    // Created on 1 January 2000, so the Session ran out on 31 January
     // 2000, long before any day this test runs on.
-    let registered = "2000-01-01T00:00:00+00:00";
+    let created = "2000-01-01T00:00:00+00:00";
     let ran_out = "2000-01-31T00:00:00+00:00";
     with_trigger_lifted(
         &mut *fixture.conn().await,
@@ -461,7 +461,7 @@ async fn a_session_that_ran_out_reads_as_expired() {
                     session_expires_at = CASE WHEN action = 'logged_in' THEN $2 END
              WHERE account_id = $3",
             )
-            .bind(registered)
+            .bind(created)
             .bind(ran_out)
             .bind(alice.account_id)
             .execute(conn)

@@ -789,8 +789,8 @@ async fn patching_with_an_unknown_time_zone_is_a_validation_failure() {
 }
 
 /// An account's display name is at most 200 characters and an identity
-/// address it links at most 320, on a change and on a new account alike,
-/// and a body over either is refused whole. Both were stored at any length a
+/// address it links at most 320, on a change and when an account is
+/// created, and a body over either is refused whole. Both were stored at any length a
 /// JSON body could carry (#2183).
 #[tokio::test]
 async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
