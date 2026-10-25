@@ -64,8 +64,6 @@ type NameCollectionConfig = {
   key: RouteQueryKey;
   /** Cached shapes to patch with this collection's names before the server answers. */
   chips: readonly ChipTarget[];
-  /** What one of these is called in an error, e.g. `group`. */
-  label: string;
   /** This collection's search term for one name, e.g. `forGroup` from `searchQuery.ts`. */
   forName: (name: string) => string;
   /**
@@ -84,6 +82,10 @@ export type NameCollection = {
   key: RouteQueryKey;
   routes: NameCollectionRoutes;
   chips: readonly ChipTarget[];
+  /**
+   * What one of these is called on the screen, "Contact Group" or "Message
+   * Tag": the server's own name for it, from `reservedNames.json`.
+   */
   label: string;
   isReserved: (name: string) => boolean;
   reservedError: (name: string) => string;
@@ -136,7 +138,7 @@ export function createNameCollection(config: NameCollectionConfig): NameCollecti
     key: config.key,
     routes: config.routes,
     chips: config.chips,
-    label: config.label,
+    label: config.reserved.label,
     isReserved,
     reservedError,
     listQuery,

@@ -25,7 +25,6 @@ export const contactGroups = createNameCollection({
     { key: keys.contacts.lists, field: "groups", shape: "pages" },
     { key: keys.contacts.details, field: "groups", shape: "row" },
   ],
-  label: "group",
   forName: forGroup,
   reserved: reservedNames.contactGroup,
 });

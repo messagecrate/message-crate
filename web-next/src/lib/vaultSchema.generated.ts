@@ -1151,7 +1151,7 @@ CREATE TABLE IF NOT EXISTS handles (
     normalized_note TEXT,
     -- Shape of the identity: 'phone' | 'email' | 'username' | 'other'.
     handle_type TEXT NOT NULL,
-    -- Platform identity: 'phone' | 'whatsapp' (not per-message SMS/iMessage/RCS).
+    -- Platform identity: 'text_message' | 'whatsapp' (not per-message SMS/iMessage/RCS).
     service TEXT NOT NULL,
     -- What made this row: 'address_book' (an address book load), 'import',
     -- or 'user'. Whatever made it, an identity taken off its contact is

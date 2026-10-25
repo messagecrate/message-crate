@@ -816,7 +816,7 @@ describe("ContactList", () => {
           return { added: 0, removed: 1 };
         }
         aliceGroups = ["Work"];
-        throw new ApiError(404, "contact group not found");
+        throw new ApiError(404, "Contact Group not found");
       });
       const user = setupUser();
       renderList();
@@ -830,7 +830,7 @@ describe("ContactList", () => {
       await chooseAction("Undo Remove from Contact Group");
       await settle();
       expect(screen.getByRole("alert")).toHaveTextContent(
-        "Could not add Alice to Family: contact group not found",
+        "Could not add Alice to Family: Contact Group not found",
       );
       await user.click(screen.getByRole("button", { name: "Contact Groups" }));
       expect(screen.getByRole("checkbox", { name: "Family" })).not.toBeChecked();

@@ -138,14 +138,14 @@ describe("the words", () => {
         "add",
         [{ group: "Work", contacts: [mother, ada] }],
         [
-          { group: "Family", contacts: [mother], reason: "contact group not found" },
+          { group: "Family", contacts: [mother], reason: "Contact Group not found" },
           { group: "Club", contacts: [mother, ada], reason: "the server did not answer" },
         ],
       ),
     ).toBe(
       [
         "Added 2 contacts to 1 of 3 Contact Groups.",
-        "Could not add Mother to Family: contact group not found",
+        "Could not add Mother to Family: Contact Group not found",
         "Could not add 2 contacts to Club: the server did not answer",
       ].join("\n"),
     );

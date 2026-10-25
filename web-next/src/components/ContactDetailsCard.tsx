@@ -1,6 +1,7 @@
 "use client";
 
 import { formatPhoneDisplay } from "@/lib/phoneE164";
+import { serviceLabel } from "@/lib/serviceLabel";
 import type { ContactHandle } from "@/lib/types";
 import type { ReactNode } from "react";
 import {
@@ -95,7 +96,7 @@ function HandleViewList({ handles }: { handles: ContactHandle[] }) {
               ) : null}
               {h.service ? (
                 <span className="shrink-0 truncate text-[11px] text-muted">
-                  {h.service}
+                  {serviceLabel(h.service)}
                 </span>
               ) : null}
             </div>

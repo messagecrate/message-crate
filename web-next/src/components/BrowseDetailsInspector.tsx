@@ -2,6 +2,7 @@
 
 import type { CollapsedGroupConversation } from "@/lib/groupChatList";
 import { formatPhoneDisplay } from "@/lib/phoneE164";
+import { serviceLabel } from "@/lib/serviceLabel";
 import type {
   ContactDetail,
   ContactHandle,
@@ -131,7 +132,7 @@ function HandlesSection({
                 ) : null}
                 {h.service ? (
                   <span className="shrink-0 truncate text-[11px] text-muted">
-                    {h.service}
+                    {serviceLabel(h.service)}
                   </span>
                 ) : null}
               </li>

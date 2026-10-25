@@ -1,4 +1,5 @@
 import type { components } from "./serverApi.types";
+import { EMAIL_LABEL, IDENTITY_SERVICE_LABELS, serviceLabel } from "./serviceLabel";
 
 /**
  * A service offered wherever an identity is added: setup, the account
@@ -53,9 +54,13 @@ export const EXAMPLE_PHONE = "+1 555-555-0119";
  * there.
  */
 export const OFFERED_SERVICE_OPTIONS = [
-  { value: "text_message", label: "Text Message", placeholder: EXAMPLE_PHONE },
-  { value: "email", label: "Email", placeholder: "you@example.com" },
-  { value: "whatsapp", label: "WhatsApp", placeholder: EXAMPLE_PHONE },
+  {
+    value: "text_message",
+    label: IDENTITY_SERVICE_LABELS.text_message,
+    placeholder: EXAMPLE_PHONE,
+  },
+  { value: "email", label: EMAIL_LABEL, placeholder: "you@example.com" },
+  { value: "whatsapp", label: IDENTITY_SERVICE_LABELS.whatsapp, placeholder: EXAMPLE_PHONE },
 ] as const satisfies ReadonlyArray<{
   value: OfferedService;
   label: string;
@@ -140,25 +145,14 @@ export function inferService(handle: string, service: string | null | undefined)
   return "unknown";
 }
 
-/** Label shown in the handles table Service column. */
+/**
+ * Label shown in the identities table's Service column: the name
+ * `serviceLabel` gives the listed service, or the one guessed from the
+ * address when the list names none, and `—` when neither names a service.
+ */
 export function formatOfferedServiceLabel(
   handle: string,
   service: string | null | undefined,
 ): string {
-  const lower = inferService(handle, service);
-  if (lower === "whatsapp") return "WhatsApp";
-  if (
-    lower === "text_message" ||
-    lower === "sms" ||
-    lower === "mms" ||
-    lower === "sms/mms" ||
-    lower === "imessage" ||
-    lower === "ios" ||
-    lower === "rcs"
-  ) {
-    return "Text Message";
-  }
-  if (lower === "email") return "Email";
-  if (lower === "unknown") return "—";
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
+  return serviceLabel(inferService(handle, service)) ?? "—";
 }

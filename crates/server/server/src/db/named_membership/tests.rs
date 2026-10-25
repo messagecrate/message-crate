@@ -456,7 +456,7 @@ async fn rename_set_allows_a_case_change_and_refuses_another_sets_name() {
     let err = rename_set(group_spec(), &mut conn, account, 999_999, "Anything")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::SetNotFound("group")));
+    assert!(matches!(err, MembershipError::SetNotFound("Contact Group")));
 }
 
 #[tokio::test]
@@ -509,7 +509,7 @@ async fn delete_set_drops_its_memberships_and_refuses_an_unknown_id() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(err, MembershipError::SetNotFound("group")));
+    assert!(matches!(err, MembershipError::SetNotFound("Contact Group")));
 }
 
 // Deleting a Contact Group changes each member's groups, so it touches each
@@ -793,7 +793,7 @@ async fn another_accounts_set_is_not_found() {
     let err = get_set(tag_spec(), &mut conn, account, id)
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::SetNotFound("tag")));
+    assert!(matches!(err, MembershipError::SetNotFound("Message Tag")));
     assert!(
         list_sets(tag_spec(), &mut conn, account)
             .await
@@ -820,7 +820,7 @@ async fn get_set_does_not_find_a_reserved_name_leftover() {
     let err = get_set(group_spec(), &mut conn, account, id)
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::SetNotFound("group")));
+    assert!(matches!(err, MembershipError::SetNotFound("Contact Group")));
 }
 
 thread_local! {
@@ -969,7 +969,7 @@ fn reserved_names_json(spec: &MembershipSpec) -> serde_json::Value {
         .map(|(name, message)| serde_json::json!({ "name": name, "message": message }))
         .collect();
     serde_json::json!({
-        "label": spec.reserved_label,
+        "label": spec.label,
         "reserved": spec.reserved,
         "special": special,
     })

@@ -251,7 +251,7 @@ describe("NavEntityList navigation", () => {
   });
 
   it("keeps the confirmation open with the server's message when the delete is refused", async () => {
-    routes.deleteContactGroup.mockRejectedValue(new Error("group not found"));
+    routes.deleteContactGroup.mockRejectedValue(new Error("Contact Group not found"));
     const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
@@ -260,7 +260,7 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("button", { name: "Delete" }));
     await settle();
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Group not found");
+    expect(screen.getByRole("alert")).toHaveTextContent("Contact Group not found");
     expect(screen.getByRole("dialog", { name: "Delete Family?" })).toBeTruthy();
     expect(screen.getByTestId("location").textContent).toBe("/group/Family");
   });

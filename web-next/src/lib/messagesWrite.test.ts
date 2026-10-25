@@ -43,7 +43,7 @@ describe("deleteAllMessagesForAccount", () => {
       ensureVaultSchema(db);
       db.prepare(
         `INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES (?, '+15555550167', '+15555550167', 'phone', 'phone')`,
+         VALUES (?, '+15555550167', '+15555550167', 'phone', 'text_message')`,
       ).run(accountId);
       const handleId = Number(
         db

@@ -46,7 +46,7 @@ describe("unknown contact backfill", () => {
       const resolveHandle = (raw: string, handleType = "phone"): number => {
         db.prepare(
           `INSERT OR IGNORE INTO handles (account_id, raw, normalized, handle_type, service)
-           VALUES (?, ?, ?, ?, 'phone')`,
+           VALUES (?, ?, ?, ?, 'text_message')`,
         ).run(accountId, raw, raw, handleType);
         return Number(
           db

@@ -51,7 +51,6 @@ function groupsOver(routes: NameCollectionRoutes) {
       { key: keys.contacts.lists, field: "groups", shape: "pages" },
       { key: keys.contacts.details, field: "groups", shape: "row" },
     ],
-    label: "group",
     forName: (name) => `group:${name}`,
     reserved: {
       label: "Contact Group",
@@ -172,7 +171,7 @@ describe("useNameCollectionActions", () => {
   it("throws without a write when the server has no set of that name", async () => {
     const routes = fakeRoutes();
     const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
-    await expect(result.current.remove("Nope")).rejects.toThrow("group not found");
+    await expect(result.current.remove("Nope")).rejects.toThrow("Contact Group not found");
     expect(routes.list).toHaveBeenCalledTimes(1);
     expect(routes.remove).not.toHaveBeenCalled();
   });
@@ -195,7 +194,6 @@ describe("useNameCollectionActions", () => {
       routes,
       key: keys.contactGroups.all,
       chips: [],
-      label: "group",
       forName: (name) => `group:${name}`,
       reserved: {
         label: "Contact Group",
