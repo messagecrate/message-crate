@@ -30,7 +30,7 @@ pub fn start_import_run_log(app: tauri::AppHandle, args: StartRunLogArgs) {
 }
 
 /// The logs on this computer that `reader` may read: every Import Run log
-/// and the desktop app's own for the owner, the signed-in account's own
+/// and the desktop app's own for the administrator, the signed-in account's own
 /// Import Run logs otherwise. The most recently written first.
 ///
 /// # Errors

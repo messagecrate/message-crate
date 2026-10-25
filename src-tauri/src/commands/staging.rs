@@ -374,7 +374,7 @@ pub fn account_staging_bytes(
 
 /// The disk space the whole Staging Directory takes on this computer, in
 /// bytes, measured now ([`RunDirectories::bytes_of_all`]). Server Settings
-/// shows it to the owner (#3087).
+/// shows it to the administrator (#3087).
 ///
 /// # Errors
 ///
