@@ -6,9 +6,10 @@
 //! Part of it reads the document: the page shape and paging parameters of every
 //! list, every property of a success answer required, a `Location` on every
 //! `201`, a `404` on every path with an id, no body
-//! on the success of a `HEAD`, one-sentence summaries (API-122), declared tags,
-//! kebab-case paths and the nesting depth. The rest calls every operation
-//! through the router, on the credential matrix's fixture: with no credential
+//! on the success of a `HEAD`, one-sentence summaries of at most 120 characters
+//! (API-122), declared tags, kebab-case paths and the nesting depth. The rest
+//! calls every operation through the router, on the credential matrix's
+//! fixture: with no credential
 //! it must answer `401` with a `WWW-Authenticate` challenge, and so must a
 //! token the server never issued, with a query parameter it does not declare `422`, with
 //! a body that has no `Content-Type` or one the route does not take `415`, with
@@ -45,6 +46,10 @@ use crate::test_support::{self, http_client};
 /// The one route nested three deep (`docs/architecture/rules/http-api.md`,
 /// API-16).
 const MULTIPART_PART: &str = "/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}";
+
+/// The longest summary that still reads as one line in the reference's
+/// operation list (`docs/architecture/rules/http-api.md`, API-122).
+const MAX_SUMMARY_CHARS: usize = 120;
 
 /// The four keys of every page.
 const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
@@ -164,6 +169,11 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
         broken.push("no summary".to_string());
     } else if !split_first_sentence(summary).1.is_empty() {
         broken.push(format!("summary is more than one sentence: {summary}"));
+    } else if summary.chars().count() > MAX_SUMMARY_CHARS {
+        broken.push(format!(
+            "summary is {} characters, past the {MAX_SUMMARY_CHARS} that fit on one line: {summary}",
+            summary.chars().count()
+        ));
     }
     let declared_tags: BTreeSet<&str> = doc["tags"]
         .as_array()

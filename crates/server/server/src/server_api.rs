@@ -330,7 +330,7 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
     None
 }
 
-/// Read the server settings, and how the database is stored: its journal
+/// Read the server settings, and how the database is stored. Its journal
 /// mode, and the error SQLite gave when the server asked for write-ahead
 /// logging.
 #[utoipa::path(

@@ -152,7 +152,7 @@ async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<String, Api
 /// not tell a guesser which part failed.
 const INVALID_LOGIN: &str = "invalid username or password";
 
-/// Log in: verify a local username and password and answer the Session, a
+/// Log in. Verify a local username and password and answer the Session, a
 /// `201 Created` whose `Location` is the singleton itself.
 ///
 /// A refused login waits about a second, then answers

@@ -469,8 +469,8 @@ pub(crate) async fn get_export(
     ))
 }
 
-/// The messages a running Export Run matched when it was created, a page at
-/// a time, oldest first unless `sort` says otherwise. An import, a trash or
+/// The messages a running Export Run matched when it was created. They come a
+/// page at a time, oldest first unless `sort` says otherwise. An import, a trash or
 /// a new day since creation changes nothing here. A message deleted since
 /// leaves its place empty: `total` stays `message_count`, a page can hold
 /// fewer than `limit` items, and a client advances `offset` by `limit`. Each

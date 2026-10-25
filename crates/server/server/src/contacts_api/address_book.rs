@@ -209,8 +209,8 @@ pub(crate) struct GetAddressBookRequest {
     ids: Vec<i64>,
 }
 
-/// Write the address book for the contacts a search matches, the checked
-/// ones among them, or every contact when the body names neither.
+/// Write the address book. It holds the contacts a search matches, the
+/// checked ones among them, or every contact when the body names neither.
 ///
 /// The answer is `text/csv`, not JSON: one row per identity, with the
 /// columns `contact_id`, `display_name`, `service`, `identity` and `groups`.
