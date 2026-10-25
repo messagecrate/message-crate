@@ -52,8 +52,8 @@ pub(super) enum Credential {
     TokenImportOnly,
     /// Alice's API token with the export scope only.
     TokenExportOnly,
-    /// The owner's session.
-    Owner,
+    /// The administrator's session.
+    Admin,
     /// Alice's session, every permission on.
     Session,
     /// Alice's session with her `import` permission off.
@@ -71,7 +71,7 @@ const CREDENTIALS: [Credential; 10] = [
     Credential::TokenNoScopes,
     Credential::TokenImportOnly,
     Credential::TokenExportOnly,
-    Credential::Owner,
+    Credential::Admin,
     Credential::Session,
     Credential::SessionWithoutImport,
     Credential::SessionWithoutExport,
@@ -87,7 +87,7 @@ impl Credential {
             | Self::TokenNoScopes
             | Self::TokenImportOnly
             | Self::TokenExportOnly => "api-token",
-            Self::Owner
+            Self::Admin
             | Self::Session
             | Self::SessionWithoutImport
             | Self::SessionWithoutExport
@@ -104,7 +104,7 @@ impl Credential {
             Self::TokenNoScopes => &[],
             Self::TokenImportOnly => &["import"],
             Self::TokenExportOnly => &["export"],
-            Self::Owner => &["owner"],
+            Self::Admin => &["admin"],
             Self::SessionWithoutImport => &["export", "delete"],
             Self::SessionWithoutExport => &["import", "delete"],
             Self::SessionWithoutDelete => &["import", "export"],
@@ -119,7 +119,7 @@ impl fmt::Display for Credential {
             Self::TokenNoScopes => "token, no scopes",
             Self::TokenImportOnly => "token, import only",
             Self::TokenExportOnly => "token, export only",
-            Self::Owner => "owner session",
+            Self::Admin => "admin session",
             Self::Session => "session",
             Self::SessionWithoutImport => "session, no import",
             Self::SessionWithoutExport => "session, no export",
@@ -214,17 +214,17 @@ impl Operation {
             .find(|c| self.expected(*c) == Expected::Accepted)
     }
 
-    /// Whether a requirement names the owner's role.
-    pub(super) fn names_owner(&self) -> bool {
+    /// Whether a requirement names the administrator's role.
+    pub(super) fn names_admin(&self) -> bool {
         self.security.iter().flatten().any(|requirement| {
             requirement["session"]
                 .as_array()
-                .is_some_and(|scopes| scopes.iter().any(|s| s == "owner"))
+                .is_some_and(|scopes| scopes.iter().any(|s| s == "admin"))
         })
     }
 
-    /// Under `/v1/accounts/{id}`: read and written by the owner or by that
-    /// account, and nobody else.
+    /// Under `/v1/accounts/{id}`: read and written by the administrator or
+    /// by that account, and nobody else.
     fn is_under_an_account(&self) -> bool {
         self.path.starts_with("/v1/accounts/{id}")
     }
@@ -245,12 +245,12 @@ impl Operation {
         }
         match credential {
             // A session with no scope named admits any logged-in person, but
-            // the owner's session reaches only what the rules give it: its own
-            // session, the routes that name the owner, and the accounts it
-            // manages, where it lists and revokes API tokens and never makes
-            // or renames one.
-            Credential::Owner => {
-                let reaches = self.names_owner()
+            // the administrator's session reaches only what the rules give
+            // it: its own session, the routes that name the administrator,
+            // and the accounts it manages, where it lists and revokes API
+            // tokens and never makes or renames one.
+            Credential::Admin => {
+                let reaches = self.names_admin()
                     || self.path == "/v1/session"
                     || (self.is_under_an_account() && !self.makes_or_renames_a_token());
                 if reaches {
@@ -332,16 +332,17 @@ pub(super) fn operations() -> Vec<Operation> {
     operations
 }
 
-/// One fixture and one running server for the whole matrix, with its owner.
-/// Creating a fixture is the slow part, so every call
-/// gets fresh accounts inside this one instead of a fixture of its own.
+/// One fixture and one running server for the whole matrix, with its
+/// administrator. Creating a fixture is the slow part, so every call gets fresh
+/// accounts inside this one instead of a fixture of its own.
 ///
-/// An account holds one Session at a time, so every call shares the owner's.
-/// The one call that ends it, the owner's `DELETE /v1/session`, runs last.
+/// An account holds one Session at a time, so every call shares the
+/// administrator's. The one call that ends it, the administrator's `DELETE
+/// /v1/session`, runs last.
 pub(super) struct Shared {
     fixture: TestFixture,
     server: TestServer,
-    owner_session: String,
+    admin_session: String,
 }
 
 impl Shared {
@@ -351,7 +352,7 @@ impl Shared {
         account_profile::update_password_hash(&mut conn, ADMIN_ACCOUNT_ID, Some(password_hash()))
             .await
             .unwrap();
-        let owner_session = insert_account_session_token(
+        let admin_session = insert_account_session_token(
             &mut conn,
             ADMIN_ACCOUNT_ID,
             crate::test_support::routed_credential_instant(),
@@ -365,7 +366,7 @@ impl Shared {
         Self {
             fixture,
             server,
-            owner_session,
+            admin_session,
         }
     }
 }
@@ -393,7 +394,7 @@ pub(super) struct World<'a> {
 }
 
 struct Tokens {
-    owner: String,
+    admin: String,
     alice: String,
     bob: String,
     all_scopes: String,
@@ -409,7 +410,7 @@ impl Tokens {
             Credential::TokenNoScopes => &self.no_scopes,
             Credential::TokenImportOnly => &self.import_only,
             Credential::TokenExportOnly => &self.export_only,
-            Credential::Owner => &self.owner,
+            Credential::Admin => &self.admin,
             Credential::Session
             | Credential::SessionWithoutImport
             | Credential::SessionWithoutExport
@@ -432,8 +433,8 @@ impl<'a> World<'a> {
         let mut conn = shared.fixture.conn().await;
         let hash = Some(password_hash());
         // Ids of the call's own, because every call adds its accounts to the
-        // one shared database. They count down from the top, so
-        // the account the owner creates with the next free id never meets one.
+        // one shared database. They count down from the top, so the account the
+        // administrator creates with the next free id never meets one.
         let alice = 10_000_000 - 2 * n as i64;
         let bob = alice + 1;
         for (id, name) in [(alice, "alice"), (bob, "bob")] {
@@ -459,7 +460,7 @@ impl<'a> World<'a> {
             .unwrap()
         };
         let tokens = Tokens {
-            owner: shared.owner_session.clone(),
+            admin: shared.admin_session.clone(),
             alice: session(&mut conn, alice).await,
             bob: session(&mut conn, bob).await,
             all_scopes: token(&mut conn, "all", true, true).await.token,
@@ -852,13 +853,13 @@ async fn every_route_accepts_and_refuses_each_credential_as_the_document_and_rul
         .collect();
     let total = calls.len();
     let shared = Shared::build().await;
-    let ends_the_owners_session = |(_, (op, credential)): &(usize, (Operation, Credential))| {
-        *credential == Credential::Owner && op.method == "delete" && op.path == "/v1/session"
+    let ends_the_admins_session = |(_, (op, credential)): &(usize, (Operation, Credential))| {
+        *credential == Credential::Admin && op.method == "delete" && op.path == "/v1/session"
     };
     let (last, first): (Vec<_>, Vec<_>) = calls
         .into_iter()
         .enumerate()
-        .partition(ends_the_owners_session);
+        .partition(ends_the_admins_session);
 
     // SQLite has one writer, and a transaction that starts reading and then
     // writes fails outright when another holds the lock, so calls run one at
@@ -888,7 +889,7 @@ async fn every_route_accepts_and_refuses_each_credential_as_the_document_and_rul
 }
 
 #[test]
-fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
+fn the_expected_outcome_follows_the_declared_security_and_the_admin_rule() {
     let op = |method: &str, path: &str, security: Value| Operation {
         method: method.into(),
         path: path.into(),
@@ -901,7 +902,7 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         browse.expected(Credential::TokenAllScopes),
         Expected::Refused
     );
-    assert_eq!(browse.expected(Credential::Owner), Expected::Refused);
+    assert_eq!(browse.expected(Credential::Admin), Expected::Refused);
     assert_eq!(
         browse.expected(Credential::OtherAccount),
         Expected::Accepted
@@ -923,7 +924,7 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         export.expected(Credential::TokenImportOnly),
         Expected::Refused
     );
-    assert_eq!(export.expected(Credential::Owner), Expected::Refused);
+    assert_eq!(export.expected(Credential::Admin), Expected::Refused);
     assert_eq!(
         export.expected(Credential::SessionWithoutExport),
         Expected::Refused
@@ -948,7 +949,7 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
     );
 
     let account = op("get", "/v1/accounts/{id}", json!([{ "session": [] }]));
-    assert_eq!(account.expected(Credential::Owner), Expected::Accepted);
+    assert_eq!(account.expected(Credential::Admin), Expected::Accepted);
     assert_eq!(
         account.expected(Credential::OtherAccount),
         Expected::Refused
@@ -958,25 +959,25 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         "/v1/accounts/{id}/api-tokens",
         json!([{ "session": [] }]),
     );
-    assert_eq!(tokens.expected(Credential::Owner), Expected::Accepted);
+    assert_eq!(tokens.expected(Credential::Admin), Expected::Accepted);
     let revoke = op(
         "delete",
         "/v1/accounts/{id}/api-tokens/{token_id}",
         json!([{ "session": [] }]),
     );
-    assert_eq!(revoke.expected(Credential::Owner), Expected::Accepted);
+    assert_eq!(revoke.expected(Credential::Admin), Expected::Accepted);
     let mint = op(
         "post",
         "/v1/accounts/{id}/api-tokens",
         json!([{ "session": [] }]),
     );
-    assert_eq!(mint.expected(Credential::Owner), Expected::Refused);
+    assert_eq!(mint.expected(Credential::Admin), Expected::Refused);
     let rename = op(
         "patch",
         "/v1/accounts/{id}/api-tokens/{token_id}",
         json!([{ "session": [] }]),
     );
-    assert_eq!(rename.expected(Credential::Owner), Expected::Refused);
+    assert_eq!(rename.expected(Credential::Admin), Expected::Refused);
 
     let public = op("get", "/v1/server", Value::Null);
     let outcomes: BTreeSet<String> = CREDENTIALS
@@ -985,9 +986,9 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         .collect();
     assert_eq!(outcomes, BTreeSet::from(["accepted".to_string()]));
 
-    let create_account = op("post", "/v1/accounts", json!([{ "session": ["owner"] }]));
+    let create_account = op("post", "/v1/accounts", json!([{ "session": ["admin"] }]));
     assert_eq!(
-        create_account.expected(Credential::Owner),
+        create_account.expected(Credential::Admin),
         Expected::Accepted
     );
     assert_eq!(

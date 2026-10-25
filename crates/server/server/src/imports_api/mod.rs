@@ -56,23 +56,24 @@ pub mod with_yourself;
 
 use crate::imports_api::run_control::Importer;
 use dto::{
-    CompleteImportRequest, CreateImportBatchResponse, CreateImportRequest, CreateImportResponse,
-    DiscardImportRequest, ImportIssue, ImportNote, ImportRun, ImportRunSummary, ListImportsQuery,
-    OwnerImportRun, OwnerImportRunSummary, UpdateImportRequest, capped_json_string, empty_as_none,
-    import_status_refusal, issues_and_notes, optional_json_string, strip_form_credentials,
+    AdminImportRun, AdminImportRunSummary, CompleteImportRequest, CreateImportBatchResponse,
+    CreateImportRequest, CreateImportResponse, DiscardImportRequest, ImportIssue, ImportNote,
+    ImportRun, ImportRunSummary, ListImportsQuery, UpdateImportRequest, capped_json_string,
+    empty_as_none, import_status_refusal, issues_and_notes, optional_json_string,
+    strip_form_credentials,
 };
 pub use failure::{ImportError, ImportFailure, MISSING_GUID_LINES_NAMED};
 use run_control::{
     BatchContext, RunEnd, end_run, run_import_path, server_stopping, take_import_slot,
 };
 
-/// The owner's view of one Import Run, read from the run's row, its issue
-/// count, its contact tally, and its attachments whose versions were not
+/// The administrator's view of one Import Run, read from the run's row, its
+/// issue count, its contact tally, and its attachments whose versions were not
 /// made.
-pub(crate) async fn owner_import_run(
+pub(crate) async fn admin_import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
-) -> Result<OwnerImportRun, ApiError> {
+) -> Result<AdminImportRun, ApiError> {
     let (issue_count, note_count) = crate::db::imports::issue_and_note_counts(conn, row.id).await?;
     let not_made_attachments =
         crate::db::attachment_versions::not_made_for_import(conn, row.id).await?;
@@ -80,8 +81,8 @@ pub(crate) async fn owner_import_run(
         crate::db::attachment_versions::written_by_import(conn, row.id).await?;
     let run = listed_import(conn, row, issue_count, note_count)
         .await
-        .map(OwnerImportRunSummary::from)?;
-    Ok(OwnerImportRun {
+        .map(AdminImportRunSummary::from)?;
+    Ok(AdminImportRun {
         run,
         written_attachment_count,
         not_made_counts: crate::db::attachment_versions::count_not_made(&not_made_attachments),

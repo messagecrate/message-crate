@@ -29,7 +29,7 @@ pub(crate) mod log_files;
 pub(crate) mod log_lines;
 
 use crate::api_error::{ApiError, run_blocking};
-use crate::auth::Owner;
+use crate::auth::Admin;
 use crate::config::Config;
 use crate::db::demo_account_build::DemoDataSize;
 use crate::db::{account_profile, server_settings, storage};
@@ -317,7 +317,7 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
     get,
     path = "/v1/server/settings",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     responses(
         (status = 200, body = ApiServerSettings),
     )
@@ -325,7 +325,7 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
 pub async fn get_server_settings(
     State(db): State<SqlitePool>,
     State(wal_error): State<WalError>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
 ) -> Result<Json<ApiServerSettings>, ApiError> {
     let mut conn = db.acquire().await?;
     let settings = server_settings::load(&mut conn).await?;
@@ -341,7 +341,7 @@ pub async fn get_server_settings(
     patch,
     path = "/v1/server/settings",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     request_body = UpdateServerSettingsRequest,
     responses(
         (status = 200, body = ApiServerSettings),
@@ -350,7 +350,7 @@ pub async fn get_server_settings(
 pub async fn update_server_settings(
     State(db): State<SqlitePool>,
     State(wal_error): State<WalError>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Json(req): Json<UpdateServerSettingsRequest>,
 ) -> Result<Json<ApiServerSettings>, ApiError> {
     // Checked before anything is written, so a refused request changes nothing.
@@ -435,14 +435,14 @@ pub struct AccountMessages {
     get,
     path = "/v1/server/storage",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     responses(
         (status = 200, body = ServerStorage),
     )
 )]
 pub async fn get_server_storage(
     State(db): State<SqlitePool>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
 ) -> Result<Json<ServerStorage>, ApiError> {
     let mut conn = db.acquire().await?;
     let scope = storage::Scope::AllAccounts;
@@ -777,13 +777,13 @@ async fn demo_account_on_conn(
     get,
     path = "/v1/server/demo-account",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     responses((status = 200, body = DemoAccount))
 )]
 pub async fn get_demo_account(
     State(db): State<SqlitePool>,
     State(demo): State<DemoState>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
 ) -> Result<Json<DemoAccount>, ApiError> {
     let mut conn = db.acquire().await?;
     Ok(Json(demo_account_on_conn(&demo.build, &mut conn).await?))
@@ -805,7 +805,7 @@ pub async fn get_demo_account(
     put,
     path = "/v1/server/demo-account",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     request_body = ReplaceDemoAccountRequest,
     responses(
         (status = 202, description = "The build has started", body = DemoAccount),
@@ -817,7 +817,7 @@ pub async fn replace_demo_account(
     State(db): State<SqlitePool>,
     State(cfg): State<Arc<Config>>,
     State(demo): State<DemoState>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Json(req): Json<ReplaceDemoAccountRequest>,
 ) -> Result<(axum::http::StatusCode, Json<DemoAccount>), ApiError> {
     if !demo.build.start(req.size) {

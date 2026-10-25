@@ -17,7 +17,7 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::api_error::ApiError;
-use crate::auth::Owner;
+use crate::auth::Admin;
 use crate::db::audit_trail::{self, AuditEntry, DeletedAccount, Scope};
 use crate::extract::{Json, Query};
 use crate::paging::{
@@ -93,7 +93,7 @@ pub(crate) async fn audit_trail_page(
     get,
     path = "/v1/audit-trail",
     tag = "Audit Trail",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     params(
         ("deleted_account_id" = Option<i64>, Query, description = "Only the entries and runs of the deleted account with this id, from `GET /v1/audit-trail/deleted-accounts`"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
@@ -106,7 +106,7 @@ pub(crate) async fn audit_trail_page(
 )]
 pub(crate) async fn list_audit_trail(
     State(db): State<SqlitePool>,
-    Owner(auth): Owner,
+    Admin(auth): Admin,
     Query(query): Query<ListAuditTrailQuery>,
 ) -> Result<Json<Page<AuditEntry>>, ApiError> {
     let scope = query
@@ -124,7 +124,7 @@ pub(crate) async fn list_audit_trail(
     get,
     path = "/v1/audit-trail/deleted-accounts",
     tag = "Audit Trail",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     params(
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
         ("offset" = Option<usize>, Query, description = "Rows to skip, at most 50000")
@@ -136,7 +136,7 @@ pub(crate) async fn list_audit_trail(
 )]
 pub(crate) async fn list_deleted_accounts(
     State(db): State<SqlitePool>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Query(query): Query<ListDeletedAccountsQuery>,
 ) -> Result<Json<Page<DeletedAccount>>, ApiError> {
     let params = trail_page_params(query.limit, query.offset)?;

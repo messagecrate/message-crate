@@ -515,15 +515,14 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
     }
 }
 
-/// An Import Run as the owner's list of another account's runs answers it:
-/// its source, mode, times, outcome and counts, and nothing of what the
-/// backup held
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"). The run's summary, its issues, its notes and its form say whom the
-/// account talks to, so they stay out, and a field reaches the owner only by
-/// being added here.
+/// An Import Run as the administrator's list of another account's runs answers
+/// it: its source, mode, times, outcome and counts, and nothing of what the
+/// backup held (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner
+/// may see"). The run's summary, its issues, its notes and its form say whom
+/// the account talks to, so they stay out, and a field reaches the
+/// administrator only by being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct OwnerImportRunSummary {
+pub(crate) struct AdminImportRunSummary {
     /// Import Run id.
     pub(crate) id: i64,
     /// Source id the run imports.
@@ -559,10 +558,10 @@ pub(crate) struct OwnerImportRunSummary {
     /// the account's own.
     counts: std::collections::BTreeMap<String, i64>,
     /// Issues the run recorded. Each names the conversation it was about, so
-    /// the owner reads how many and not which.
+    /// the administrator reads how many and not which.
     pub(super) issue_count: u64,
-    /// Notes the run recorded. Each names a file or an address, so the owner
-    /// reads how many and not which.
+    /// Notes the run recorded. Each names a file or an address, so the
+    /// administrator reads how many and not which.
     note_count: u64,
     /// Contacts this run created.
     contacts_new: u64,
@@ -570,19 +569,19 @@ pub(crate) struct OwnerImportRunSummary {
     contacts_changed: u64,
 }
 
-/// One Import Run as the owner reads it under another account: everything
-/// the list answers for it, and the attachments the run wrote whose
-/// Thumbnail or Preview the server's media pass could not make, with why. A
-/// run may write any number of them, so the list leaves them out
+/// One Import Run as the administrator reads it under another account:
+/// everything the list answers for it, and the attachments the run wrote whose
+/// Thumbnail or Preview the server's media pass could not make, with why. A run
+/// may write any number of them, so the list leaves them out
 /// (`docs/architecture/rules/http-api.md`, API-45). Each is named by its file
-/// name, type and size, which the owner may read
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"); never by its message, its conversation, or its bytes.
+/// name, type and size, which the administrator may read
+/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may see");
+/// never by its message, its conversation, or its bytes.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct OwnerImportRun {
+pub(crate) struct AdminImportRun {
     /// Everything the list answers for the run.
     #[serde(flatten)]
-    pub(crate) run: OwnerImportRunSummary,
+    pub(crate) run: AdminImportRunSummary,
     /// How many attachments the run last wrote: those of the messages it
     /// added, and the stored ones it gave their missing file, less any a
     /// later run wrote since. `not_made_attachments` are out of these.
@@ -597,7 +596,7 @@ pub(crate) struct OwnerImportRun {
     pub(super) not_made_attachments: Vec<crate::db::attachment_versions::NotMadeAttachment>,
 }
 
-impl From<crate::db::imports::ListedImport> for OwnerImportRunSummary {
+impl From<crate::db::imports::ListedImport> for AdminImportRunSummary {
     fn from(listed: crate::db::imports::ListedImport) -> Self {
         let row = listed.row;
         let counts = match crate::db::imports::json_column(row.summary_json) {

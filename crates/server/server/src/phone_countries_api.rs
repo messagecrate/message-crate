@@ -46,7 +46,7 @@ pub(crate) struct ListPhoneCountriesQuery {
     tag = "Contacts",
     security(
         ("session" = []),
-        ("session" = ["owner"])
+        ("session" = ["admin"])
     ),
     params(ListPhoneCountriesQuery),
     responses(

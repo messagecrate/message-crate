@@ -1202,7 +1202,7 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
     );
     let counts: Vec<u64> = rows.items.iter().map(|run| run.issue_count).collect();
     assert_eq!(counts, [1, 0, 3], "newest first");
-    let owner: Page<OwnerImportRunSummary> = rows.map(OwnerImportRunSummary::from);
+    let owner: Page<AdminImportRunSummary> = rows.map(AdminImportRunSummary::from);
     assert_eq!(owner.items[2].issue_count, 3);
 }
 

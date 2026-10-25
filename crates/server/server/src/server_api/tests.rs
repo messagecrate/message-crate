@@ -216,7 +216,7 @@ async fn setting_up_the_server_gives_admin_a_password_and_signs_them_in() {
     )
     .await
     .unwrap();
-    assert!(auth.is_owner());
+    assert!(auth.is_admin());
     drop(conn);
 
     assert_eq!(

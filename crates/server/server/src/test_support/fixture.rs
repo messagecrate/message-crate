@@ -62,8 +62,8 @@ pub async fn fixture_with_account() -> (TestFixture, RegisteredAccount) {
 }
 
 impl TestFixture {
-    /// Turn off `account_id`'s `delete` permission, as the owner would, for a
-    /// test of what an account without it is refused.
+    /// Turn off `account_id`'s `delete` permission, as the administrator
+    /// would, for a test of what an account without it is refused.
     pub async fn turn_off_delete(&self, account_id: i64) {
         let mut conn = self.conn().await;
         crate::db::account_profile::set_account_flags(

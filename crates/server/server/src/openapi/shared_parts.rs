@@ -222,12 +222,12 @@ fn failures(path: &str, op: &mut Operation) {
             ProblemType::AccountDisabled,
         ]);
         let session_scopes = || requirements.iter().filter_map(|r| r["session"].as_array());
-        let names_owner = session_scopes().any(|s| s.iter().any(|s| s == "owner"));
+        let names_admin = session_scopes().any(|s| s.iter().any(|s| s == "admin"));
         // A Session requirement with no scope is met by a Session that is not
-        // the owner's, so the guard never answers `not-the-admin`
-        // (`GET /v1/phone-countries`, which names the owner as well).
+        // the administrator's, so the guard never answers `not-the-admin`
+        // (`GET /v1/phone-countries`, which names the administrator as well).
         let admits_every_session = session_scopes().any(Vec::is_empty);
-        if names_owner && !admits_every_session {
+        if names_admin && !admits_every_session {
             kinds.push(ProblemType::NotTheAdmin);
         }
         // The import and delete guards refuse the Demo Account by its id
