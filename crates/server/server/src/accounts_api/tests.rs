@@ -268,7 +268,9 @@ async fn a_created_account_logs_in_with_the_password_the_owner_chose() {
 }
 
 /// A user account has no password length rule, so the owner may create one
-/// with a single character or with none, and both log in.
+/// with a single character or with none. The one-character password logs in;
+/// the account with none cannot log in until the administrator sets one, and
+/// an empty password is refused like a wrong one.
 #[tokio::test]
 async fn the_owner_creates_accounts_with_a_short_password_or_none() {
     let fixture = test_fixture().await;
@@ -283,7 +285,10 @@ async fn the_owner_creates_accounts_with_a_short_password_or_none() {
         assert_eq!(status, StatusCode::CREATED);
     }
 
-    assert_eq!(login_status(&state, "carol", "").await, StatusCode::CREATED);
+    assert_eq!(
+        login_status(&state, "carol", "").await,
+        StatusCode::UNAUTHORIZED
+    );
     assert_eq!(login_status(&state, "dave", "a").await, StatusCode::CREATED);
 }
 
@@ -458,25 +463,6 @@ async fn a_registration_that_names_the_account_owes_no_profile_setup() {
         .unwrap()
         .unwrap();
     assert!(!auth.must_set_up_profile);
-}
-
-/// A stranger may register without a password.
-#[tokio::test]
-async fn a_stranger_may_register_without_a_password() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-
-    let status = post_status_logged_out(
-        &state,
-        "/v1/accounts",
-        serde_json::json!({ "username": "passwordless" }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(
-        login_status(&state, "passwordless", "").await,
-        StatusCode::CREATED
-    );
 }
 
 /// A closed server admits nobody the owner has not admitted, and a logged-in
@@ -1655,8 +1641,10 @@ async fn a_user_password_can_be_cleared_by_the_account_or_the_owner() {
 }
 
 /// The account row says whether a password is set, so a screen asks for the
-/// current password only from an account that has one. The owner and the
-/// account read the same answer.
+/// current password only from an account that has one. An account created
+/// with no password cannot log in until the administrator sets one, so the
+/// account reads its own row once it has a password, and the owner reads the
+/// same answer throughout.
 #[tokio::test]
 async fn the_account_says_whether_it_has_a_password() {
     let fixture = test_fixture().await;
@@ -1670,15 +1658,22 @@ async fn the_account_says_whether_it_has_a_password() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    let login = log_in(&state, "carol", "").await;
-    let carol = login["account_id"].as_i64().unwrap();
+    assert_eq!(
+        login_status(&state, "carol", "").await,
+        StatusCode::UNAUTHORIZED,
+        "an account with no password cannot log in"
+    );
+    let carol = {
+        let mut conn = state.db.acquire().await.unwrap();
+        account_profile::lookup_account_by_username(&mut conn, "carol")
+            .await
+            .unwrap()
+            .unwrap()
+    };
     let path = format!("{}/password", member(carol));
 
-    let own: serde_json::Value =
-        get_json(&state, &member(carol), login["token"].as_str().unwrap()).await;
-    assert_eq!(own["has_password"], false, "created with no password");
     let seen: serde_json::Value = get_json(&state, &member(carol), &owner.token).await;
-    assert_eq!(seen["has_password"], false);
+    assert_eq!(seen["has_password"], false, "created with no password");
 
     for (password, expected) in [("a", true), ("", false)] {
         let status = put_status(
@@ -1691,6 +1686,15 @@ async fn the_account_says_whether_it_has_a_password() {
         assert_eq!(status, StatusCode::NO_CONTENT);
         let seen: serde_json::Value = get_json(&state, &member(carol), &owner.token).await;
         assert_eq!(seen["has_password"], expected, "after setting {password:?}");
+        if expected {
+            let login = log_in(&state, "carol", password).await;
+            let own: serde_json::Value =
+                get_json(&state, &member(carol), login["token"].as_str().unwrap()).await;
+            assert_eq!(
+                own["has_password"], true,
+                "the account reads the same answer"
+            );
+        }
     }
 
     let keeper: serde_json::Value = get_json(&state, &member(owner.account_id), &owner.token).await;

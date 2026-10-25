@@ -82,8 +82,9 @@ pub struct Account {
     /// client: the same answer reaches every app, and it survives cleared site
     /// data and a second browser.
     pub must_set_up_profile: bool,
-    /// The account has a password. False for one that logs in with none,
-    /// which deletes itself without `current_password`.
+    /// The account has a password. False for one with none, which cannot
+    /// log in until the administrator sets one, and deletes itself without
+    /// `current_password`.
     pub has_password: bool,
     /// When the account last logged in (RFC 3339, UTC), or `null` if it never
     /// has. Logging in, claiming Message Crate and registering all count; a
@@ -298,7 +299,8 @@ pub struct CreateAccountRequest {
     /// Local password: no minimum length, at most 128 characters, counted
     /// as characters rather than bytes and not trimmed. Over 128 is refused
     /// with `422 Unprocessable Entity`. Absent or empty opens an account
-    /// with no password.
+    /// with no password, which cannot log in until the administrator sets
+    /// one.
     #[serde(default)]
     #[schema(max_length = 128)]
     pub password: Option<String>,
@@ -1178,7 +1180,8 @@ pub async fn replace_account_password(
         return Err(ApiError::validation("new passwords do not match"));
     }
 
-    // The owner must have a password; a user account may have none.
+    // The administrator must have a password. A user account may have none,
+    // and then cannot log in until it has one.
     let new_hash = if account_profile::is_admin(target) {
         Some(hash_admin_password(&req.password).await?)
     } else {
