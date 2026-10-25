@@ -239,6 +239,7 @@ describe("ContactHistoryProvider", () => {
     await settle();
 
     expect(updateMembersMock.mock.calls.map(([id]) => id)).toEqual([10, 11, 12]);
+    expect(noAnswerError().message).toMatch(/^The server at .* didn't answer\.$/);
     expect(screen.getByTestId("report").textContent?.split("\n")).toEqual([
       "Added Ada to 1 of 3 Contact Groups.",
       "Could not add Ada to Family: contact group not found",
