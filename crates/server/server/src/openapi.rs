@@ -26,13 +26,13 @@ use crate::server::AppState;
         crate::search::ListKind,
         crate::problem::Problem,
         crate::db::address_book::LoadMode,
-        crate::exports_api::OwnerExportRun
+        crate::exports_api::AdminExportRun
     )),
     tags(
         (name = "Health", description = "Whether the server is up and can reach its database"),
         (name = "Session", description = "The logged-in credential: log in, check it, log out"),
-        (name = "Accounts", description = "The accounts: the owner manages them, and each account reads and writes its own, API tokens included"),
-        (name = "Audit Trail", description = "What each user did on this Message Crate, and when: the owner reads every account's, and each account its own"),
+        (name = "Accounts", description = "The accounts: the administrator manages them, and each account reads and writes its own, API tokens included"),
+        (name = "Audit Trail", description = "What each user did on this Message Crate, and when: the administrator reads every account's, and each account its own"),
         (name = "Import", description = "Import Runs: start one, send JSON Lines batches into it, close it"),
         (name = "Export", description = "Export Runs: create one, page its messages, close it"),
         (name = "Assets", description = "Attachment bytes"),
@@ -43,7 +43,7 @@ use crate::server::AppState;
         (name = "Message tags", description = "Tags on conversations"),
         (name = "Saved searches", description = "Queries in the search language, saved under a name"),
         (name = "Search", description = "The words the search language accepts"),
-        (name = "Server", description = "The state of this Message Crate: claiming it, and what a logged-out visitor may do")
+        (name = "Server", description = "The state of this Message Crate: setting it up, and what a logged-out visitor may do")
     )
 )]
 /// OpenAPI document definition assembled from the utoipa-annotated handlers.
@@ -55,15 +55,15 @@ impl Modify for BearerAddon {
     /// Register the three credentials a route may name, `session`,
     /// `api-token` and `media-link`, and say which is which.
     ///
-    /// Both are `Authorization: Bearer`, and the server tells them apart by
-    /// the token's own prefix, so one scheme could have described the header.
-    /// Two describe the interface: most routes take a logged-in session and
-    /// refuse a token outright, and the ones that take a token say which
-    /// scope it needs. The scope names on a requirement are the role names
-    /// OpenAPI allows on a non-OAuth scheme: `owner` for the owner's
-    /// session, and `import`, `export` and `delete` for the three
-    /// permissions a session carries. A token carries `import` and `export`
-    /// only, so no route offers a token the `delete` scope.
+    /// Both are `Authorization: Bearer`, and the server tells them apart by the
+    /// token's own prefix, so one scheme could have described the header. Two
+    /// describe the interface: most routes take a logged-in session and refuse
+    /// a token outright, and the ones that take a token say which scope it
+    /// needs. The scope names on a requirement are the role names OpenAPI
+    /// allows on a non-OAuth scheme: `admin` for the administrator's session,
+    /// and `import`, `export` and `delete` for the three permissions a session
+    /// carries. A token carries `import` and `export` only, so no route offers
+    /// a token the `delete` scope.
     ///
     /// `media-link` is the third: a signed value in the `media_link` query
     /// parameter, for a media element that cannot send a header. Only the
@@ -110,14 +110,15 @@ impl Modify for BearerAddon {
     }
 }
 
-/// The routes a stranger may call: creating an account, logging in, and
-/// reading or claiming the server. Served behind a small body limit.
+/// The routes behind a small body limit: logging in, reading or setting up
+/// the server, which a stranger may call, and the administrator's creating
+/// an account.
 pub fn public_openapi() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(crate::accounts_api::create_account))
         .routes(routes!(crate::session_api::create_session))
         .routes(routes!(crate::server_api::get_server))
-        .routes(routes!(crate::server_api::claim_server))
+        .routes(routes!(crate::server_api::set_up_server))
 }
 
 /// `/health`, the one route outside `/v1`. Kept apart from [`api_openapi`]
@@ -367,12 +368,12 @@ mod tests {
                         for scope in scopes.as_array().unwrap() {
                             let scope = scope.as_str().unwrap();
                             assert!(
-                                ["owner", "import", "export", "delete"].contains(&scope),
+                                ["admin", "import", "export", "delete"].contains(&scope),
                                 "{method} {path} asks for an unknown scope {scope}"
                             );
                             assert!(
-                                !(scheme == "api-token" && scope == "owner"),
-                                "{method} {path} offers an API token the owner's role"
+                                !(scheme == "api-token" && scope == "admin"),
+                                "{method} {path} offers an API token the administrator's role"
                             );
                             assert!(
                                 !(scheme == "api-token" && scope == "delete"),
@@ -399,7 +400,7 @@ mod tests {
         assert_eq!(scopes_of("api-token", exports), ["export"]);
         assert_eq!(
             scopes_of("session", &paths["/v1/accounts"]["get"]),
-            ["owner"]
+            ["admin"]
         );
     }
 

@@ -15,8 +15,8 @@ import { useRouteQuery } from "./useRouteQuery";
 export const AUDIT_TRAIL_PAGE_SIZE = 50;
 
 /**
- * Whose Audit Trail to read: every account's (the owner's view), the
- * logged-in account's own, one account the owner has opened, or one deleted
+ * Whose Audit Trail to read: every account's (the administrator's view), the
+ * logged-in account's own, one account the administrator has opened, or one deleted
  * account's, by its id from the deleted-accounts list.
  */
 export type AuditTrailOf =
@@ -25,7 +25,7 @@ export type AuditTrailOf =
   | { kind: "account"; id: number }
   | { kind: "deleted"; id: number };
 
-/** The key that names `of`: the cache key's word for it, and the owner's account picker's. */
+/** The key that names `of`: the cache key's word for it, and the administrator's account picker's. */
 export function auditTrailKey(of: AuditTrailOf): AuditTrailKey {
   switch (of.kind) {
     case "account":
@@ -92,7 +92,7 @@ export function useAuditTrail(of: AuditTrailOf) {
 
 /**
  * The deleted accounts whose entries the Audit Trail keeps, by username A to
- * Z, for the owner's account picker. Empty while they load or when the read
+ * Z, for the administrator's account picker. Empty while they load or when the read
  * fails: the picker still offers every live account.
  */
 export function useDeletedAccounts(): DeletedAccount[] {

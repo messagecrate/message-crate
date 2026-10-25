@@ -1,7 +1,7 @@
 //! The Session singleton: `POST`, `GET` and `DELETE /v1/session`.
 //!
-//! A Session is one per logged-in account or owner. Logging in creates it,
-//! reading it says which account the bearer token names, and logging out
+//! A Session is one per logged-in account or administrator. Logging in creates
+//! it, reading it says which account the bearer token names, and logging out
 //! ends it. The password rules it applies live in `credentials`.
 
 use axum::extract::State;
@@ -62,8 +62,8 @@ impl CreateSessionResponse {
     /// and record the login at `now`, unless the account is disabled or gone.
     /// `username` is the one the account's row holds.
     ///
-    /// The account is read under the write lock that opens the Session, so
-    /// an owner disabling it during the password check, whose write ends
+    /// The account is read under the write lock that opens the Session, so an
+    /// administrator disabling it during the password check, whose write ends
     /// every Session the account has, cannot be followed by a Session that
     /// outlives the disable and works again once the account is enabled
     /// (#2074).
@@ -157,8 +157,10 @@ const INVALID_LOGIN: &str = "invalid username or password";
 ///
 /// A refused login waits about a second, then answers
 /// `invalid-credentials`, whatever was wrong: a username nobody holds, a
-/// wrong or empty password, a disabled account. A login with the right
-/// password does not wait.
+/// wrong password, an empty password for the administrator before setup, a
+/// disabled account. An account other than the administrator that has no
+/// password logs in with an empty one. A login with the right password does
+/// not wait.
 #[utoipa::path(
     post,
     path = "/v1/session",
@@ -231,7 +233,7 @@ async fn log_in(
         // below, and the connection goes back to the pool for the length of
         // the run.
         drop(conn);
-        let _ = verify_login_password(None, password).await?;
+        let _ = verify_login_password(None, password, false).await?;
         let mut conn = db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,
@@ -259,7 +261,12 @@ async fn log_in(
     // so a burst of logins neither stalls the async workers nor empties the
     // pool. An account changed meanwhile is read afresh below.
     drop(conn);
-    let verified = verify_login_password(password_hash.as_deref(), password).await?;
+    let verified = verify_login_password(
+        password_hash.as_deref(),
+        password,
+        !account_profile::is_admin(account_id),
+    )
+    .await?;
     let mut conn = db.acquire().await?;
     let now = Utc::now();
     if !verified {
@@ -278,7 +285,7 @@ async fn log_in(
     // A disabled account gets the answer every refused login gets. Its own
     // answer would come only after the right password, so a guesser would
     // learn which guess was right, and that password works again once the
-    // owner enables the account. The Audit Trail still says why.
+    // administrator enables the account. The Audit Trail still says why.
     match CreateSessionResponse::for_existing_account(
         &mut conn,
         account_id,

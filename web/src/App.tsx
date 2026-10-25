@@ -14,15 +14,15 @@ import {
 import ContactHistoryProvider from "./components/ContactHistoryProvider";
 import ImportExportRoute from "./components/ImportExportRoute";
 import { useAuth } from "./hooks/useAuth";
-import { useIsOwner } from "./hooks/useIsOwner";
+import { useIsAdmin } from "./hooks/useIsAdmin";
 import { useNeedsProfileSetup } from "./hooks/useNeedsProfileSetup";
 import { lazyChunk } from "./lib/chunkLoad";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";
+import AdminHome from "./screens/AdminHome";
 import LoginScreen from "./screens/LoginScreen";
 import { SettingsScreen } from "./screens/lazySettingsScreen";
 import OnboardingScreen from "./screens/OnboardingScreen";
-import OwnerHome from "./screens/OwnerHome";
 import { useMouseHistoryNavigation } from "./useMouseHistoryNavigation";
 
 /**
@@ -35,34 +35,32 @@ const ExportScreen = lazyChunk("ExportScreen", () => import("./screens/ExportScr
 
 /**
  * Trash is its own route and is not on the first paint path. Neither is
- * Settings, which Owner Home opens too (`lazySettingsScreen`).
+ * Settings, which Admin Home opens too (`lazySettingsScreen`).
  */
 const TrashScreen = lazyChunk("TrashScreen", () => import("./screens/TrashScreen"));
 
 /** Every route of the app; exported so tests drive the real route table. */
 export function AppRoutes() {
   const { isAuthenticated } = useAuth();
-  const { isOwner } = useIsOwner();
+  const { isAdmin } = useIsAdmin();
   const { needsSetup: needsOnboarding } = useNeedsProfileSetup();
   useMouseHistoryNavigation();
 
   // Where a logged-in visitor to the login screen should go next. Same order
   // the AuthGuard uses.
   const loggedInDestination = (
-    <Navigate to={isOwner ? "/owner" : needsOnboarding ? "/onboarding" : "/"} replace />
+    <Navigate to={isAdmin ? "/admin" : needsOnboarding ? "/onboarding" : "/"} replace />
   );
 
   return (
     <Routes>
       {/* Public routes — an authenticated visitor goes to loggedInDestination */}
       <Route path="/login" element={isAuthenticated ? loggedInDestination : <LoginScreen />} />
-      {/* Registration is now the second tab of the login card, not its own screen. */}
-      <Route path="/register" element={<Navigate to="/login" replace />} />
-      {/* Owner Home, outside the AuthGuard's message shell: the owner holds
+      {/* Admin Home, outside the AuthGuard's message shell: the administrator holds
           no messages, so none of what that shell frames exists for them. */}
       <Route
-        path="/owner/:section?/:accountId?"
-        element={isAuthenticated && isOwner ? <OwnerHome /> : <Navigate to="/" replace />}
+        path="/admin/:section?/:accountId?"
+        element={isAuthenticated && isAdmin ? <AdminHome /> : <Navigate to="/" replace />}
       />
       <Route
         path="/onboarding"

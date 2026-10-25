@@ -30,10 +30,10 @@ pub(super) fn say_reset_header(
     progress.say(format_args!("database:     {db}"));
 }
 
-/// The line printed when processing the demo originals could not do
-/// everything, naming each count of what it could not do, or `None` when it
-/// did everything. `reset-demo`, a new database's seeding and the owner's
-/// rebuild all print it, so it names none of them.
+/// The line printed when processing the demo originals could not do everything,
+/// naming each count of what it could not do, or `None` when it did everything.
+/// `reset-demo`, a new database's seeding and the administrator's rebuild all
+/// print it, so it names none of them.
 pub(super) fn not_done_line(stats: &process_assets::ProcessAssetsStats) -> Option<String> {
     stats
         .failures()

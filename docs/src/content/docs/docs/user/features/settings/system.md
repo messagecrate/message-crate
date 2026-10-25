@@ -9,7 +9,7 @@ They are stored on the computer, not in the account, so a second computer has it
 In a browser the tab shows **About** and nothing else to change.
 A line under it says the other settings are available in the desktop app, because they name directories on the computer and a web page can't reach those.
 
-The Owner's own Settings has no **System** tab, because every setting here serves Import and Export and the Owner holds no messages.
+The administrator's own Settings has no **System** tab, because every setting here serves Import and Export and the administrator holds no messages.
 
 ## Staging
 
@@ -38,7 +38,7 @@ The line under the field says how much disk space the account's own Import Runs 
 It counts each run's directory wherever the Staging Directory pointed when the run started.
 The size is measured when Settings opens and doesn't change while the tab is open.
 A run's directory is deleted when the run ends, and opening Import deletes the directory of any run Message Crate reports as ended, so the number is mostly runs that are paused or waiting at a Review.
-The Owner sees the size of the whole Staging Directory under [Server Settings](/docs/user/features/owner/owner-home/#staging-directory-on-this-computer).
+The administrator sees the size of the whole Staging Directory under [Server Settings](/docs/user/features/admin/admin-home/#staging-directory-on-this-computer).
 
 A change applies to the Import Runs started after it.
 An import already staged keeps the directory it was staged in, so it can still be resumed, discarded or cleaned up after the setting moves.
@@ -89,7 +89,7 @@ One line per program reports the result:
   The programs share those four tries, so with no connection at all every download has failed about two minutes after the first one tried.
   A copy put in the Tools Directory by hand during those waits ends them, and the app uses it: for `wtsexporter`, once the whole pinned file is in place.
   A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form or, for ffmpeg and ffprobe, at the Staging Review.
-  The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
+  The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/admin/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/admin/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
   A program that doesn't run is not downloaded again, because the download would be the same file.
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
   While an older `ffmpeg` or `ffprobe` is in place, the line shows that copy as found instead, because the old copy is still the one used.
@@ -121,7 +121,7 @@ Only the user who runs the app can read it, because it holds every account's mes
 | Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts. A copy of it is a backup |
 | Staging Directory | `staging` | One directory per Import Run, unless [Staging directory](#staging-directory) names another place |
 | Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
-| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`, and the desktop app's own log, `desktop-app.log`. Never deleted. The run's account reads a run's log from **Settings → Storage**, and the Owner every log from **Logs** on Owner Home |
+| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`, and the desktop app's own log, `desktop-app.log`. Never deleted. The run's account reads a run's log from **Settings → Storage**, and the administrator every log from **Logs** on Admin Home |
 | Scratch Directory | `scratch` | Decrypted iPhone backup databases, the WhatsApp database decrypted from an Android backup, WhatsApp's files read out of a phone backup, and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
 | Tools Directory | `tools` | ffmpeg, ffprobe and wtsexporter, when the app downloaded them or they were put there by hand. See [Media](#media) |
 

@@ -36,15 +36,15 @@ fn account(account_id: i64) -> Reader {
     Reader {
         message_crate_id: HERE.into(),
         account_id,
-        owner: false,
+        admin: false,
     }
 }
 
-fn owner() -> Reader {
+fn admin() -> Reader {
     Reader {
         message_crate_id: HERE.into(),
         account_id: 1,
-        owner: true,
+        admin: true,
     }
 }
 
@@ -59,7 +59,7 @@ fn names(reader: &Reader, logs: &Path) -> Vec<String> {
 }
 
 #[test]
-fn an_account_lists_its_own_run_logs_and_the_owner_lists_every_one() {
+fn an_account_lists_its_own_run_logs_and_the_administrator_lists_every_one() {
     let logs = tempfile::tempdir().unwrap();
     let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, HERE);
     let bob = run_log(logs.path(), "iphone-ios-261005-090000", 3, HERE);
@@ -83,7 +83,7 @@ fn an_account_lists_its_own_run_logs_and_the_owner_lists_every_one() {
         std::slice::from_ref(&alice)
     );
     assert_eq!(names(&account(3), logs.path()), std::slice::from_ref(&bob));
-    let here: Vec<_> = list(logs.path(), &owner())
+    let here: Vec<_> = list(logs.path(), &admin())
         .unwrap()
         .into_iter()
         .filter(|entry| entry.this_message_crate)
@@ -97,7 +97,7 @@ fn an_account_lists_its_own_run_logs_and_the_owner_lists_every_one() {
         "import-old-261001-080000.log".to_string(),
     ];
     every.sort();
-    assert_eq!(names(&owner(), logs.path()), every);
+    assert_eq!(names(&admin(), logs.path()), every);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn an_account_cannot_read_another_account_s_run_log() {
     assert!(refused.contains("another account"), "{refused}");
     assert!(read_whole(logs.path(), &account(2), &bob).is_err());
     assert_eq!(
-        read_lines(logs.path(), &owner(), &bob, &query)
+        read_lines(logs.path(), &admin(), &bob, &query)
             .unwrap()
             .items
             .len(),
@@ -121,10 +121,10 @@ fn an_account_cannot_read_another_account_s_run_log() {
     );
 }
 
-/// The desktop app's own log names no account, so the owner alone lists and
-/// reads it, as "Desktop app" beside the Import Run logs (#2185).
+/// The desktop app's own log names no account, so the administrator alone
+/// lists and reads it, as "Desktop app" beside the Import Run logs (#2185).
 #[test]
-fn the_desktop_app_s_log_is_the_owner_s_alone() {
+fn the_desktop_app_s_log_is_the_administrator_s_alone() {
     let logs = tempfile::tempdir().unwrap();
     let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, HERE);
     AppLog::in_logs_dir(logs.path()).write(
@@ -137,18 +137,18 @@ fn the_desktop_app_s_log_is_the_owner_s_alone() {
     };
 
     assert_eq!(names(&account(2), logs.path()), [alice]);
-    let entry = list(logs.path(), &owner())
+    let entry = list(logs.path(), &admin())
         .unwrap()
         .into_iter()
         .find(|entry| entry.name == DESKTOP_APP_LOG)
-        .expect("the owner lists the desktop app's log");
+        .expect("the administrator lists the desktop app's log");
     assert_eq!(entry.kind, LogKind::DesktopApp);
     assert!(entry.account.is_none() && entry.has_lines);
-    let page = read_lines(logs.path(), &owner(), DESKTOP_APP_LOG, &query).unwrap();
+    let page = read_lines(logs.path(), &admin(), DESKTOP_APP_LOG, &query).unwrap();
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].level, RunLogLevel::Warn);
     let refused = read_lines(logs.path(), &account(2), DESKTOP_APP_LOG, &query).unwrap_err();
-    assert!(refused.contains("owner's alone"), "{refused}");
+    assert!(refused.contains("administrator's alone"), "{refused}");
     assert!(read_whole(logs.path(), &account(2), DESKTOP_APP_LOG).is_err());
 }
 
@@ -156,7 +156,7 @@ fn the_desktop_app_s_log_is_the_owner_s_alone() {
 fn a_name_outside_the_logs_directory_is_refused() {
     let logs = tempfile::tempdir().unwrap();
     for name in ["../import-x.log", "import-x.txt", "notes.log"] {
-        assert!(read_whole(logs.path(), &owner(), name).is_err(), "{name}");
+        assert!(read_whole(logs.path(), &admin(), name).is_err(), "{name}");
     }
 }
 
@@ -178,7 +178,7 @@ fn lines_come_newest_first_filtered_by_level_and_text_a_page_at_a_time() {
     log.error(&anyhow::anyhow!("the backup could not be read"));
     let name = "import-sms-261006-120000.log";
 
-    let page = |query: LinesQuery| read_lines(logs.path(), &owner(), name, &query).unwrap();
+    let page = |query: LinesQuery| read_lines(logs.path(), &admin(), name, &query).unwrap();
     let all = page(LinesQuery {
         limit: 3,
         ..LinesQuery::default()
@@ -292,7 +292,7 @@ fn a_line_still_being_written_is_left_out_of_the_page() {
 
     let page = read_lines(
         logs.path(),
-        &owner(),
+        &admin(),
         "import-sms-261006-120000.log",
         &LinesQuery {
             limit: 10,
@@ -320,7 +320,7 @@ fn a_log_that_cannot_be_read_is_left_out_of_the_listing() {
         return;
     }
 
-    assert_eq!(names(&owner(), logs.path()), std::slice::from_ref(&alice));
+    assert_eq!(names(&admin(), logs.path()), std::slice::from_ref(&alice));
 }
 
 #[cfg(unix)]
@@ -332,8 +332,8 @@ fn a_link_named_like_a_run_log_is_not_read() {
     fs::write(&target, "2026-10-08T12:00:00.123456Z  INFO secret\n").unwrap();
     std::os::unix::fs::symlink(&target, logs.path().join("import-link-261004-143000.log")).unwrap();
 
-    assert!(names(&owner(), logs.path()).is_empty());
-    assert!(read_whole(logs.path(), &owner(), "import-link-261004-143000.log").is_err());
+    assert!(names(&admin(), logs.path()).is_empty());
+    assert!(read_whole(logs.path(), &admin(), "import-link-261004-143000.log").is_err());
 }
 
 #[test]
@@ -343,7 +343,7 @@ fn a_download_is_the_log_byte_for_byte() {
     fs::write(logs.path().join("import-sms-261006-120000.log"), &bytes).unwrap();
 
     assert_eq!(
-        read_whole(logs.path(), &owner(), "import-sms-261006-120000.log").unwrap(),
+        read_whole(logs.path(), &admin(), "import-sms-261006-120000.log").unwrap(),
         bytes
     );
 }
@@ -358,7 +358,7 @@ fn a_log_with_no_line_the_viewer_reads_says_so_in_the_listing() {
     )
     .unwrap();
 
-    let listed: Vec<_> = list(logs.path(), &owner())
+    let listed: Vec<_> = list(logs.path(), &admin())
         .unwrap()
         .into_iter()
         .map(|entry| (entry.name, entry.has_lines))
@@ -380,7 +380,7 @@ fn a_log_with_untimed_lines_first_and_timed_lines_later_has_lines() {
     text.push_str("2026-10-08T12:00:00.123456Z  INFO Resumed after the upgrade\n");
     fs::write(logs.path().join("import-resumed-261001-080000.log"), text).unwrap();
 
-    let listed = list(logs.path(), &owner()).unwrap();
+    let listed = list(logs.path(), &admin()).unwrap();
     assert_eq!(listed.len(), 1);
     assert!(listed[0].has_lines);
 }

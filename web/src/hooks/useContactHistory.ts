@@ -16,7 +16,7 @@ const NOTHING_TO_CLEAR = () => {};
  * for good is no longer there (#3234).
  *
  * It does nothing outside `ContactHistoryProvider`, because Settings also
- * opens from Owner Home, where there is no Contacts list and no stack.
+ * opens from Admin Home, where there is no Contacts list and no stack.
  */
 export function useClearContactHistory(): () => void {
   return useContext(ContactHistoryContext)?.clear ?? NOTHING_TO_CLEAR;

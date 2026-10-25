@@ -55,8 +55,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   getServerState: vi.fn(),
   login: vi.fn(),
-  claimServer: vi.fn(),
-  createAccount: vi.fn(),
+  setUpServer: vi.fn(),
 }));
 
 vi.mock("../lib/serverHealth", async (importOriginal) => ({
@@ -66,7 +65,7 @@ vi.mock("../lib/serverHealth", async (importOriginal) => ({
 }));
 
 import { getBaseUrl } from "../lib/api";
-import { claimServer, createAccount, getServerState, login as serverLogin } from "../lib/serverApi";
+import { getServerState, login as serverLogin, setUpServer } from "../lib/serverApi";
 import {
   checkServerHealth,
   checkServerHealthWithRetry,
@@ -84,8 +83,7 @@ const checkServerHealthMock = vi.mocked(checkServerHealth);
 const checkServerHealthWithRetryMock = vi.mocked(checkServerHealthWithRetry);
 const getServerStateMock = vi.mocked(getServerState);
 const serverLoginMock = vi.mocked(serverLogin);
-const claimServerMock = vi.mocked(claimServer);
-const createAccountMock = vi.mocked(createAccount);
+const setUpServerMock = vi.mocked(setUpServer);
 
 /**
  * The card's connect asks again after a server's error before it says
@@ -141,11 +139,11 @@ function serveAt(answer: (address: string) => Answer) {
 /**
  * Every address healthy, in the state given.
  *
- * The state decides which forms the card offers, so a test that says nothing
- * about it gets `open`: the two-tab card, which is what most of these tests
+ * The state decides which form the card offers, so a test that says nothing
+ * about it gets `ready`: the login form, which is what most of these tests
  * are about.
  */
-function stubServer(state: ServerState = "open", demoAccount = false) {
+function stubServer(state: ServerState = "ready", demoAccount = false) {
   serveAt(() => ({ state, demoAccount }));
 }
 
@@ -189,8 +187,7 @@ describe("LoginScreen", () => {
     skipRetry();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();
-    claimServerMock.mockReset();
-    createAccountMock.mockReset();
+    setUpServerMock.mockReset();
     startFakeClock();
   });
 
@@ -204,7 +201,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Username" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
 
@@ -212,14 +209,14 @@ describe("LoginScreen", () => {
     expect(screen.queryByRole("textbox", { name: "Server URL" })).not.toBeInTheDocument();
   });
 
-  it("offers the Demo Account beside Create Owner on an unclaimed Message Crate", async () => {
-    stubServer("unclaimed", true);
+  it("offers the Demo Account beside Set Up on a Message Crate in setup", async () => {
+    stubServer("setup", true);
     serverLoginMock.mockResolvedValue({ token: "mc-user-demo", account_id: 2, username: "demo" });
     renderScreen();
     await settle();
 
     const explore = screen.getByRole("button", { name: "Explore Demo Account" });
-    expect(screen.getByRole("heading", { name: "Create Owner" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Set Up" })).toBeInTheDocument();
 
     await setupUser().click(explore);
     await settle();
@@ -228,8 +225,8 @@ describe("LoginScreen", () => {
     expect(serverLoginMock).toHaveBeenCalledWith({ username: "demo", password: "" });
   });
 
-  it("keeps the Demo Account button beside the login form once claimed", async () => {
-    stubServer("closed", true);
+  it("keeps the Demo Account button beside the login form once set up", async () => {
+    stubServer("ready", true);
     renderScreen();
     await settle();
 
@@ -238,7 +235,7 @@ describe("LoginScreen", () => {
   });
 
   it("shows no Demo Account button when the server has no Demo Account", async () => {
-    stubServer("closed", false);
+    stubServer("ready", false);
     renderScreen();
     await settle();
 
@@ -272,12 +269,12 @@ describe("LoginScreen", () => {
 
   // The forms send the password to the address the card is on, so over
   // plain HTTP to another computer the card says it crosses the network
-  // unencrypted, on the login form and on Create Owner alike (#2115).
+  // unencrypted, on the login form and on Set Up alike (#2115).
   const IN_CLEAR = /not encrypted, so the password crosses the network as typed/;
 
   it("says a plain HTTP connection to another computer is not encrypted", async () => {
     authState.serverUrl = "http://192.168.1.20:8080";
-    stubServer("closed");
+    stubServer("ready");
     renderScreen();
     await settle();
 
@@ -285,20 +282,20 @@ describe("LoginScreen", () => {
     expect(screen.getByText(IN_CLEAR)).toBeInTheDocument();
   });
 
-  it("says so above Create Owner too", async () => {
+  it("says so above Set Up too", async () => {
     authState.serverUrl = "http://192.168.1.20:8080";
-    stubServer("unclaimed");
+    stubServer("setup");
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("heading", { name: "Create Owner" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Set Up" })).toBeInTheDocument();
     expect(screen.getByText(IN_CLEAR)).toBeInTheDocument();
   });
 
   it("says nothing of encryption for this computer or an https address", async () => {
     for (const address of ["", "http://127.0.0.1:8080", "https://192.168.1.20:8080"]) {
       authState.serverUrl = address;
-      stubServer("closed");
+      stubServer("ready");
       renderScreen();
       await settle();
 
@@ -308,25 +305,10 @@ describe("LoginScreen", () => {
     }
   });
 
-  it("keeps both tabs, Login first", async () => {
-    stubServer();
+  it("asks for the administrator's password twice on Set Up", async () => {
+    stubServer("setup");
     renderScreen();
     await settle();
-
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Login", "Create Account"]);
-    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
-  });
-
-  it("still asks for the password twice on Create Account", async () => {
-    stubServer();
-    const user = setupUser();
-    renderScreen();
-    await settle();
-
-    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(screen.getByLabelText("Confirm Password")).toBeInTheDocument();
@@ -334,32 +316,11 @@ describe("LoginScreen", () => {
   });
 
   it("drops the password-length claim the server does not enforce", async () => {
-    stubServer();
-    const user = setupUser();
+    stubServer("setup");
     renderScreen();
     await settle();
-
-    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.queryByText(/At least 8 characters/i)).not.toBeInTheDocument();
-  });
-
-  it("rejects a new account when the two passwords disagree", async () => {
-    stubServer();
-    const user = setupUser();
-    renderScreen();
-    await settle();
-
-    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Create Account" }));
-    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
-    await fill(user, screen.getByLabelText("Password"), "hunter22");
-    await fill(user, screen.getByLabelText("Confirm Password"), "hunter23");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    expect(screen.getByText("Passwords do not match.")).toBeInTheDocument();
-    expect(login).not.toHaveBeenCalled();
   });
 
   it("says Disconnected when nothing answers", async () => {
@@ -417,8 +378,6 @@ describe("LoginScreen", () => {
     expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(screen.queryByTestId("auth-form-skeleton")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeDisabled();
-    // No server has said it takes new accounts, so the card does not offer one.
-    expect(screen.queryByRole("tab", { name: "Create Account" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change server address" })).toBeEnabled();
   });
 
@@ -464,7 +423,7 @@ describe("LoginScreen", () => {
     const A = "http://crate-a.example:8080";
     const B = "http://crate-b.example:8080";
     authState.serverUrl = A;
-    serveAt((address) => (address.startsWith(A) ? { state: "closed" } : "down"));
+    serveAt((address) => (address.startsWith(A) ? { state: "ready" } : "down"));
     const user = setupUser();
     renderScreen();
     await settle();
@@ -560,17 +519,17 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Address" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument();
     // The settings screen replaces the card body rather than opening beside it.
-    expect(screen.queryByRole("tab", { name: "Login" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Login" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
   });
 
   it("reports what Test found for the typed address", async () => {
@@ -579,7 +538,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     stubNoServer();
@@ -600,7 +559,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     // Opened on the address the card is connected to, so that connection is
     // this address's and saying so is true.
@@ -638,9 +597,9 @@ describe("LoginScreen", () => {
     // below. Two hosts, two answers, so this test is about the one thing it
     // names: applying the address that was typed. Which probe wins when both
     // answer is the next test's subject.
-    // Healthy, and open, so the card offers the two tabs this test looks for.
+    // Healthy, and ready, so the card offers the login form this test looks for.
     serveAt((address) =>
-      address.startsWith("http://127.0.0.1:8080") ? { state: "open" } : "down",
+      address.startsWith("http://127.0.0.1:8080") ? { state: "ready" } : "down",
     );
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
@@ -648,7 +607,7 @@ describe("LoginScreen", () => {
     await user.click(screen.getByRole("button", { name: "Use this address" }));
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
   });
 
@@ -661,7 +620,7 @@ describe("LoginScreen", () => {
     // this test needs.
     let answerSavedAddress: (() => void) | undefined;
     serveAt((address) =>
-      address.startsWith("http://127.0.0.1:8080") ? { state: "open" } : "silent",
+      address.startsWith("http://127.0.0.1:8080") ? { state: "ready" } : "silent",
     );
     checkServerHealthMock.mockImplementation((address) =>
       address.startsWith("http://127.0.0.1:8080")
@@ -702,7 +661,7 @@ describe("LoginScreen", () => {
 
   it("reconnects on its own once a probe finds the server healthy again", async () => {
     let healthy = false;
-    serveAt(() => (healthy ? { state: "open" } : "down"));
+    serveAt(() => (healthy ? { state: "ready" } : "down"));
     renderScreen();
     await settle();
 
@@ -714,13 +673,13 @@ describe("LoginScreen", () => {
     await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS - 1);
     expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     await advanceTimersAndSettle(1);
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
   });
 
   it("tries the saved login again once the server is healthy again", async () => {
     let healthy = false;
-    serveAt(() => (healthy ? { state: "open" } : "down"));
+    serveAt(() => (healthy ? { state: "ready" } : "down"));
     retrySavedLogin.mockClear();
     renderScreen();
     await settle();
@@ -742,7 +701,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(checkServerHealthMock).toHaveBeenCalledWith("", expect.any(AbortSignal));
   });
 
@@ -766,7 +725,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     const form = screen.getByLabelText("Password").closest("form");
     expect(form).not.toBeNull();
 
@@ -828,33 +787,10 @@ describe("LoginScreen", () => {
     expect(login).toHaveBeenCalledWith("http://127.0.0.1:8080", "mc-user-ada", 7, "kept");
   });
 
-  it("logs a new account in for this visit only with Keep me logged in unticked", async () => {
-    stubServer();
-    createAccountMock.mockResolvedValue({
-      token: "mc-user-new",
-      account_id: 9,
-    } as Awaited<ReturnType<typeof createAccount>>);
-    const user = setupUser();
-    renderScreen();
-    await settle();
-
-    await user.click(screen.getByRole("tab", { name: "Create Account" }));
-    const keep = screen.getByRole("checkbox", { name: "Keep me logged in" });
-    expect(keep).toBeChecked();
-    await user.click(keep);
-    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
-    await fill(user, screen.getByLabelText("Password"), "hunter22");
-    await fill(user, screen.getByLabelText("Confirm Password"), "hunter22");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await settle();
-
-    expect(login).toHaveBeenCalledWith("", "mc-user-new", 9, "visit");
-  });
-
-  it("logs the new owner in for this visit only with Keep me logged in unticked", async () => {
-    stubServer("unclaimed");
-    claimServerMock.mockResolvedValue({
-      token: "mc-user-owner",
+  it("logs the administrator in for this visit only with Keep me logged in unticked", async () => {
+    stubServer("setup");
+    setUpServerMock.mockResolvedValue({
+      token: "mc-user-admin",
       account_id: 1,
       username: "admin",
     });
@@ -867,34 +803,19 @@ describe("LoginScreen", () => {
     await user.click(keep);
     await fill(user, screen.getByLabelText("Password"), "hunter22");
     await fill(user, screen.getByLabelText("Confirm Password"), "hunter22");
-    await user.click(screen.getByRole("button", { name: "Create Owner" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await settle();
 
-    expect(login).toHaveBeenCalledWith("", "mc-user-owner", 1, "visit");
-  });
-
-  it("calls the new-account action Continue, since profile setup finishes it", async () => {
-    stubServer();
-    const user = setupUser();
-    renderScreen();
-    await settle();
-
-    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Create Account" }));
-
-    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Create account" })).not.toBeInTheDocument();
+    expect(setUpServerMock).toHaveBeenCalledWith({ password: "hunter22" });
+    expect(login).toHaveBeenCalledWith("", "mc-user-admin", 1, "visit");
   });
 
   it("keeps the action under the fields and the error down by the or-rule", async () => {
-    stubServer();
+    stubServer("setup");
     const user = setupUser();
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Create Account" }));
-    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
     await fill(user, screen.getByLabelText("Password"), "hunter22");
     await fill(user, screen.getByLabelText("Confirm Password"), "hunter23");
     await user.click(screen.getByRole("button", { name: "Continue" }));
@@ -919,7 +840,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(startLocalServer).toHaveBeenCalledTimes(1);
   });
 
@@ -929,7 +850,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
     await settle();
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     startLocalServer.mockClear();
 
     await user.click(screen.getByRole("button", { name: "Change server address" }));
@@ -948,7 +869,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
@@ -961,7 +882,7 @@ describe("LoginScreen", () => {
     await settle();
 
     expect(screen.getByRole("status")).toHaveTextContent("Starting Message Crate…");
-    expect(screen.queryByRole("tab", { name: "Login" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Login" })).toBeNull();
   });
 
   it("says a first start is setting Message Crate up", async () => {
@@ -986,7 +907,7 @@ describe("LoginScreen", () => {
     await settle();
     expect(screen.getByText("Setting up Message Crate for the first time…")).toBeInTheDocument();
 
-    stubServer("unclaimed", true);
+    stubServer("setup", true);
     invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
 
     // The card hears the app's server is ready when it next asks.
@@ -1045,7 +966,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(screen.getByText("Connected to crate.example:8080")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Server Address" })).toBeNull();
     expect(startLocalServer).not.toHaveBeenCalled();
@@ -1064,7 +985,7 @@ describe("LoginScreen", () => {
     });
     invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
     serveAt((address) =>
-      ownRunning && address.startsWith("http://127.0.0.1:8080") ? { state: "closed" } : "down",
+      ownRunning && address.startsWith("http://127.0.0.1:8080") ? { state: "ready" } : "down",
     );
     const user = setupUser();
     renderScreen();
@@ -1140,7 +1061,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Server Address" })).toBeNull();
   });
 
@@ -1148,7 +1069,7 @@ describe("LoginScreen", () => {
     // The saved address outlives logout, so a website once pointed at a
     // Message Crate that has since gone away needs a way back to its own.
     authState.serverUrl = "http://old.example:8080";
-    serveAt((address) => (address === "" ? { state: "open" } : "down"));
+    serveAt((address) => (address === "" ? { state: "ready" } : "down"));
     const user = setupUser();
     renderScreen();
     await settle();

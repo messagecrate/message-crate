@@ -4,7 +4,7 @@
 
 use tempfile::TempDir;
 
-use super::{RegisteredAccount, insert_account_with_id, log_in, register_via_api};
+use super::{LoggedInAccount, add_account_and_log_in, insert_account_with_id, log_in};
 use crate::server::AppState;
 
 /// A server state plus its temp directory. Drop the `TempDir` last.
@@ -15,11 +15,8 @@ pub struct TestFixture {
     pub state: AppState,
 }
 
-/// An empty database with schema applied and no accounts.
-///
-/// Public registration is turned on, because most of the suite reaches the
-/// server through `register_via_api` and a real server ships with it off. Tests
-/// whose subject is the closed server turn it back off and say so.
+/// An empty database with schema applied, holding the administrator's row
+/// with no password and no other account.
 pub async fn test_fixture() -> TestFixture {
     fixture_on(crate::db::engine::test_pool().await).await
 }
@@ -48,29 +45,25 @@ async fn fixture_on((pool, tmp): (sqlx::SqlitePool, TempDir)) -> TestFixture {
     {
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::server_settings::set_public_registration(&mut conn, true)
-            .await
-            .unwrap();
     }
     let state = crate::server::test_app_state(pool, tmp.path());
     TestFixture { tmp, state }
 }
 
-/// The password every account the fixtures register is given.
+/// The password every account the fixtures add is given.
 pub const PASSWORD: &str = "hunter2hunter2";
 
-/// A fixture with one account in it, `alice`, registered through the API the
-/// way a stranger does it, and logged in: the fixture a route test starts
-/// from.
-pub async fn fixture_with_account() -> (TestFixture, RegisteredAccount) {
+/// A fixture with one account in it, `alice`, created as the administrator
+/// creates one and logged in: the fixture a route test starts from.
+pub async fn fixture_with_account() -> (TestFixture, LoggedInAccount) {
     let fixture = test_fixture().await;
-    let account = register_via_api(&fixture.state, "alice", PASSWORD).await;
+    let account = add_account_and_log_in(&fixture.state, "alice", PASSWORD).await;
     (fixture, account)
 }
 
 impl TestFixture {
-    /// Turn off `account_id`'s `delete` permission, as the owner would, for a
-    /// test of what an account without it is refused.
+    /// Turn off `account_id`'s `delete` permission, as the administrator
+    /// would, for a test of what an account without it is refused.
     pub async fn turn_off_delete(&self, account_id: i64) {
         let mut conn = self.conn().await;
         crate::db::account_profile::set_account_flags(

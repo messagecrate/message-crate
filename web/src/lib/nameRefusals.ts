@@ -11,7 +11,7 @@ export interface NameRefusal {
   accountId: number | null;
   /** The Profile tab the name was typed on, to go back to. */
   profilePath: string;
-  /** The account the name was for when it is not the logged-in one: an account the owner opened. */
+  /** The account the name was for when it is not the logged-in one: an account the administrator opened. */
   username: string | null;
   /** The name that was sent; empty when the save cleared the name. */
   name: string;

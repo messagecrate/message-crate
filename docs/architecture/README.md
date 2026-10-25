@@ -30,7 +30,7 @@ words; both kinds of document use them and redefine none.
 
 | Architecture | Rules | Covers |
 |---|---|---|
-| [The server's log](server-log.md) | [rules](rules/server-log.md) | What the server records about its own work, how a line travels to the owner's screen, and what never reaches it |
+| [The server's log](server-log.md) | [rules](rules/server-log.md) | What the server records about its own work, how a line travels to the administrator's screen, and what never reaches it |
 | [Contacts, identities and messages](contacts-identities-and-messages.md) | [rules](rules/contacts-identities-and-messages.md) | The people model: what a contact and an identity are, how conversations and messages attach to them, one group chat drawn out, and where each piece lives |
 | [The search language](search.md) | [rules](rules/search.md) | The language typed on the Contacts, Conversations and Messages lists: its grammar, values, each list's defaults, and what every word means on every list |
 | [How contacts are made and changed](how-contacts-are-made-and-changed.md) | | What an import of a backup does to contacts and identities, what an address book load does, and how the two differ |

@@ -64,8 +64,8 @@ fn line_holding<'a>(log: &'a str, text: &str) -> &'a str {
 }
 
 /// `serve`'s start-up lines reach the server's log, not stderr alone, so
-/// the owner of a Message Crate in Docker or in the desktop app can read
-/// them (#2079).
+/// the administrator of a Message Crate in Docker or in the desktop app can
+/// read them (#2079).
 #[test]
 fn serve_writes_its_start_up_lines_in_the_server_log() {
     let root = tempfile::tempdir().unwrap();
@@ -80,7 +80,7 @@ fn serve_writes_its_start_up_lines_in_the_server_log() {
 
 /// A database that cannot be opened stops `serve` after it has opened the
 /// server's log, and the reason is the last line of the newest file, at
-/// `ERROR`, so the owner can read why the Message Crate would not start
+/// `ERROR`, so the administrator can read why the Message Crate would not start
 /// (#2079).
 #[test]
 fn a_database_that_cannot_be_opened_is_named_in_the_server_log() {

@@ -1,5 +1,5 @@
-//! What the server's log holds after a real `serve` process has handled an
-//! owner, an account, an API token, an Import Run, an attachment, a media
+//! What the server's log holds after a real `serve` process has handled the
+//! administrator, an account, an API token, an Import Run, an attachment, a media
 //! link, searches and refused requests: the requests and the problem types
 //! they were refused with, and never a password, a session or API
 //! token (hashed or not), message text, attachment bytes, or a contact's
@@ -16,11 +16,9 @@ use std::path::Path;
 use file_io::sha256_hex;
 use serde_json::json;
 
-use common::claim::{
-    ALICE_PASSWORD, Claimed, OWNER_PASSWORD, call, claimed_with_account, json_body,
-};
 use common::lines::{attachment, conversation_header, message_line};
 use common::log::newest_log;
+use common::setup::{ADMIN_PASSWORD, ALICE_PASSWORD, SetUp, call, json_body, set_up_with_account};
 use common::{empty_message_crate, listen, listen_however_long, new_message_crate, serve};
 
 /// The account's new password.
@@ -92,13 +90,13 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    // The owner claims the Message Crate and opens registration, and Alice
-    // registers and logs in.
-    let Claimed {
-        owner_token: owner,
+    // The administrator sets up the Message Crate and creates Alice, and
+    // Alice logs in.
+    let SetUp {
+        admin_token: admin,
         alice_id,
         alice_token: alice,
-    } = claimed_with_account(base).await;
+    } = set_up_with_account(base).await;
 
     // Alice makes an API token.
     let (status, made) = call(
@@ -230,19 +228,19 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
 
     refuse_a_wrong_password_and_a_search(base, &alice_next).await;
 
-    // The owner reads the log back through its route.
+    // The administrator reads the log back through its route.
     let (status, lines) = call(
         base,
         Method::GET,
         "/v1/server/log-lines?limit=500",
-        Some(&owner),
+        Some(&admin),
         None,
     )
     .await;
     assert_eq!(status, S::OK, "{lines}");
     assert!(
         !lines["items"].as_array().unwrap().is_empty(),
-        "the owner reads lines: {lines}"
+        "the administrator reads lines: {lines}"
     );
 
     let (log, files) = log_text(&data_dir);
@@ -253,7 +251,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     );
     // The log is about these requests, so a clean result means something.
     for expected in [
-        "/v1/server/claim",
+        "/v1/server/setup",
         "/v1/imports",
         "/v1/messages?q=",
         "media_link=",
@@ -266,7 +264,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     let link_signature = media_link_value.rsplit_once('.').unwrap().1.to_string();
     let attachment_text = String::from_utf8_lossy(ATTACHMENT).to_string();
     let mut never: Vec<(&str, String)> = vec![
-        ("the owner's password", OWNER_PASSWORD.to_string()),
+        ("the administrator's password", ADMIN_PASSWORD.to_string()),
         ("the account's password", ALICE_PASSWORD.to_string()),
         ("the account's new password", ALICE_NEW_PASSWORD.to_string()),
         ("a wrong password", WRONG_PASSWORD.to_string()),
@@ -281,7 +279,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         ("the media link", link_signature),
     ];
     for (what, token) in [
-        ("the owner's session token", &owner),
+        ("the administrator's session token", &admin),
         ("the account's session token", &alice),
         ("the account's next session token", &alice_next),
         ("the API token", &api_token),
@@ -324,7 +322,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    let alice = claimed_with_account(base).await.alice_token;
+    let alice = set_up_with_account(base).await.alice_token;
 
     let (status, run) = call(
         base,
@@ -388,7 +386,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
 
 /// A refused request leaves a line with its problem type and status, at
 /// `WARN` when it is about who may do what (`401 Unauthorized`,
-/// `403 Forbidden`) and at `INFO` for the rest, so the owner's Logs panel,
+/// `403 Forbidden`) and at `INFO` for the rest, so the administrator's Logs panel,
 /// which opens at warnings and up, shows a password guesser or a token that
 /// lost its rights (#2168). The line never holds the problem's `detail`,
 /// which can repeat what a person typed.
@@ -402,14 +400,14 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
     let (_server, address) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "info"));
     let base = format!("http://{address}");
     let base = base.as_str();
-    let Claimed {
-        owner_token: owner,
+    let SetUp {
+        admin_token: admin,
         alice_token: alice,
         ..
-    } = claimed_with_account(base).await;
+    } = set_up_with_account(base).await;
 
     // A wrong password, a refused search, and an account reading the
-    // owner's log.
+    // administrator's log.
     refuse_a_wrong_password_and_a_search(base, &alice).await;
     let (status, answer) = call(
         base,
@@ -455,8 +453,8 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
         "the wrong password is a warning with its problem type:\n{log}"
     );
     assert!(
-        refusal("WARN", "not-the-owner", 403, "/v1/server/log-lines"),
-        "the account refused the owner's log is a warning with its problem type:\n{log}"
+        refusal("WARN", "not-the-admin", 403, "/v1/server/log-lines"),
+        "the account refused the administrator's log is a warning with its problem type:\n{log}"
     );
     assert!(
         refusal("INFO", "search-query-invalid", 422, "/v1/messages"),
@@ -474,18 +472,18 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
         );
     }
 
-    // The owner's Logs panel opens at warnings and up, and shows the two.
+    // The administrator's Logs panel opens at warnings and up, and shows the two.
     let (status, lines) = call(
         base,
         Method::GET,
         "/v1/server/log-lines?level=warn&limit=500",
-        Some(&owner),
+        Some(&admin),
         None,
     )
     .await;
     assert_eq!(status, S::OK, "{lines}");
     let warnings = lines["items"].to_string();
-    for problem in ["invalid-credentials", "not-the-owner"] {
+    for problem in ["invalid-credentials", "not-the-admin"] {
         assert!(
             warnings.contains(problem),
             "the warnings hold {problem}: {lines}"

@@ -78,7 +78,7 @@ fn message_crate() -> MockServer {
     server.mock(|when, then| {
         when.method(GET).path("/v1/server");
         then.status(200).json_body(serde_json::json!({
-            "state": "unclaimed",
+            "state": "setup",
             "demo_account": true,
             "version": "0.10.0",
             "schema_fingerprint": 1,

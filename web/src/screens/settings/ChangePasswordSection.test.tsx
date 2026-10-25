@@ -99,7 +99,7 @@ describe("ChangePasswordSection", () => {
     expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
   });
 
-  it("asks the owner for the current password and sends it", async () => {
+  it("asks the administrator for the current password and sends it", async () => {
     const user = setupUser();
     renderWithProviders(<ChangePasswordSection canReset={false} requireCurrent />);
 
@@ -145,9 +145,9 @@ describe("ChangePasswordSection", () => {
     expect(freshEntries(client, 101, shown)).toEqual([]);
   });
 
-  it("marks User Accounts stale when the owner sets another account's password", async () => {
-    // The owner's list says which accounts have a password.
-    const shown = [keys.ownerAccounts.all];
+  it("marks User Accounts stale when the administrator sets another account's password", async () => {
+    // The administrator's list says which accounts have a password.
+    const shown = [keys.adminAccounts.all];
     const client = testQueryClient();
     seedEntries(client, 101, shown);
     const user = setupUser();

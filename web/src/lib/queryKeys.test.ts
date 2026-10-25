@@ -56,7 +56,7 @@ describe("keys", () => {
     expect(keys.savedSearches.all).toEqual(["saved-searches"]);
     expect(keys.accountProfile.all).toEqual(["account-profile"]);
     expect(keys.apiTokens.all).toEqual(["api-tokens"]);
-    expect(keys.ownerAccounts.all).toEqual(["owner-accounts"]);
+    expect(keys.adminAccounts.all).toEqual(["admin-accounts"]);
     expect(keys.serverSettings.all).toEqual(["server-settings"]);
   });
 

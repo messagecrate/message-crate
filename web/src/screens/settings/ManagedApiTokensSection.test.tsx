@@ -29,7 +29,7 @@ beforeEach(() => {
   startFakeClock();
   apiList.mockReset();
   apiDelete.mockReset();
-  // The owner's list carries no `token_hint`: the server leaves it out.
+  // The administrator's list carries no `token_hint`: the server leaves it out.
   apiList.mockResolvedValue([
     {
       id: 3,

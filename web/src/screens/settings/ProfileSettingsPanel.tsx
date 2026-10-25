@@ -12,9 +12,9 @@ import { useSettingsAccount, useUpdateSettingsProfile } from "./useSettingsAccou
 /**
  * Profile settings: display name, time zone, identities, address book.
  *
- * Given `managedAccountId`, the account is one the owner opened from
- * User Accounts. The owner sets its name, zone and identities as the holder
- * does. The address book is the account's contacts, which the owner does not
+ * Given `managedAccountId`, the account is one the administrator opened from
+ * User Accounts. The administrator sets its name, zone and identities as the holder
+ * does. The address book is the account's contacts, which the administrator does not
  * reach.
  */
 export function ProfileSettingsPanel({
@@ -111,9 +111,9 @@ export function ProfileSettingsPanel({
       {zoneError && <div className="mb-6 text-[0.813rem] text-danger">{zoneError}</div>}
       {!zoneError && <div className="mb-6" />}
 
-      {/* The owner holds no messages: it has no handles to match a sender
+      {/* The administrator holds no messages: it has no handles to match a sender
           against and no contacts, so neither section is its to fill in. */}
-      {profile.is_owner ? null : (
+      {profile.is_admin ? null : (
         <>
           <IdentitiesSection profile={profile} managedAccountId={managedAccountId} />
           {!managed && !fixed.addressBook && <AddressBookSection />}

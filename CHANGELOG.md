@@ -34,24 +34,23 @@ carry their date on the heading.
   Ctrl+Y. The last 20 actions are kept until the page reloads, the account
   logs out, or something is deleted for good (#3244, #3234).
 - 2026-10-16: **Open an Audit Trail entry's lines in the server's log.**
-  Each entry on Owner Home's **Audit Trail** that a request made has a
+  Each entry on Admin Home's **Audit Trail** that a request made has a
   **View in log** link. It opens **Logs** on the server's log at every level
   with the request's id in **Search the log**, so only that request's lines
   show, in place of matching the entry to its lines by time. When the log
   holds none of them, **Logs** says so. The holder's own Audit Trail in
   Settings has no link, because a holder cannot read the server's log
   (#3060).
-- 2026-10-16: **The desktop app keeps a log of its own.** What the desktop
-  app went on without outside an import, such as a program it downloaded
-  whose record it could not write, was written where nobody could see it.
-  It now goes to a log in the Logs Directory, which the owner reads under
-  **Logs** on Owner Home as **Desktop app** (#2185).
-- 2026-10-16: **See how much space your Import Runs take on this
-  computer.** In the desktop app, **Settings → System** says how much disk
-  space your own Import Runs take in the Staging Directory, where staged
-  photos and videos wait for upload. The Owner sees the size of the whole
-  Staging Directory under **Server Settings**. The size is measured when
-  the page opens (#3087).
+- 2026-10-16: **The desktop app keeps a log of its own.** What the desktop app
+  went on without outside an import, such as a program it downloaded whose
+  record it could not write, was written where nobody could see it. It now goes
+  to a log in the Logs Directory, which the administrator reads under **Logs**
+  on Admin Home as **Desktop app** (#2185).
+- 2026-10-16: **See how much space your Import Runs take on this computer.** In
+  the desktop app, **Settings → System** says how much disk space your own
+  Import Runs take in the Staging Directory, where staged photos and videos wait
+  for upload. The administrator sees the size of the whole Staging Directory
+  under **Server Settings**. The size is measured when the page opens (#3087).
 - 2026-10-15: **A phone's contacts convert to the address book.** Settings →
   Profile → Address book has Convert a vCard file, which turns the .vcf file
   a phone or Google Contacts exports into the address book CSV, to edit in a
@@ -82,30 +81,29 @@ carry their date on the heading.
   import can still start (#2010).
 - 2026-10-15: **The login card says when the password would cross the
   network unencrypted.** Opened over plain HTTP from another computer, such
-  as at `http://192.168.1.20:8080`, the login card and Create Owner now say
-  that the connection is not encrypted, so the password crosses the network
+  as at `http://192.168.1.20:8080`, the login card now says that the
+  connection is not encrypted, so the password crosses the network
   as typed. An address on the same computer, and any `https` address, shows
   nothing new (#2115).
-- 2026-10-12: **Owner Home quotes SQLite's error when write-ahead logging is
-  off.** When the server could not turn write-ahead logging on as it
-  started, the notice above every Owner Home section now says what SQLite
-  answered, such as that the database is locked, rather than sending the
-  owner to the server's log for it. Only the owner learns the journal mode
-  now: the screen anyone sees before logging in no longer receives it
-  (#2691, #2703).
-- 2026-10-12: **The owner sees which attachments of an import have no
+- 2026-10-12: **Admin Home quotes SQLite's error when write-ahead logging is
+  off.** When the server could not turn write-ahead logging on as it started,
+  the notice above every Admin Home section now says what SQLite answered, such
+  as that the database is locked, rather than sending the administrator to the
+  server's log for it. Only the administrator learns the journal mode now: the
+  screen anyone sees before logging in no longer receives it (#2691, #2703).
+- 2026-10-12: **The administrator sees which attachments of an import have no
   Thumbnail or Preview, and why.** In User Accounts, an account's Storage tab
   opens each Import Run with a **Thumbnails and Previews** part. It counts the
   run's attachments whose Thumbnail or Preview the server could not make, by
-  kind of failure: the conversion failed, it stopped making progress, a
-  damaged file ran past its length, a step took too long, the original file
-  is missing, or a problem on the server. Under the counts it lists each of
-  those attachments by file name, type and size, with the reason for each
-  version that was not made. The owner never sees the attachment itself, its
+  kind of failure: the conversion failed, it stopped making progress, a damaged
+  file ran past its length, a step took too long, the original file is missing,
+  or a problem on the server. Under the counts it lists each of those
+  attachments by file name, type and size, with the reason for each version that
+  was not made. The administrator never sees the attachment itself, its
   Thumbnail or its Preview. Nothing tries again on its own, and running
-  `process-assets` is still how to try again. The database format changed:
-  an existing Message Crate is rebuilt empty on first start and its messages
-  must be imported again (#2636).
+  `process-assets` is still how to try again. The database format changed: an
+  existing Message Crate is rebuilt empty on first start and its messages must
+  be imported again (#2636).
 - 2026-10-12: **A photo or video with no Thumbnail says why.** When the
   server tried to make the small picture a conversation shows for a photo or
   video and could not, the conversation showed only the file's name in its
@@ -113,17 +111,17 @@ carry their date on the heading.
   went wrong, as opening an attachment with no Preview already did. The
   database format changed: an existing Message Crate is rebuilt empty on
   first start and its messages must be imported again (#2635, #2639).
-- 2026-10-11: **The owner's Logs panel shows refused logins.** A login
+- 2026-10-11: **The administrator's Logs panel shows refused logins.** A login
   refused for a wrong password, an unknown username or a disabled account
   now leaves a warning in the server's log naming the account and the
   reason, and so does an account whose limit of attempts fills, so someone
   guessing a password shows in the Logs panel. The username typed and the
   password are never written.
-- 2026-10-11: **Owner Home says when the database runs without write-ahead
+- 2026-10-11: **Admin Home says when the database runs without write-ahead
   logging.** The server turns write-ahead logging on each time it starts, so
   pages load while an import writes. When it cannot, most often because
   another program holds the database file, every page waits for each import
-  batch instead, and the only sign was a warning in the server's log. Owner
+  batch instead, and the only sign was a warning in the server's log. Admin
   Home now says so above every section, with where to read what went wrong
   and what to do: close any other program that has the database file open,
   then restart the server. Server Settings shows the journal mode beside
@@ -137,7 +135,7 @@ carry their date on the heading.
   server's log alone. The reason goes away once a later try makes the
   Preview (#2170).
 - 2026-10-10: **User Accounts shows which accounts have no password.** In
-  Owner Home, the Status of an account that has no password now reads
+  Admin Home, the Status of an account that has no password now reads
   **No password** under it. Once such an account is active, anyone who
   reaches the server and knows its username logs in with an empty password,
   and the list used to give no sign of which accounts those were. The Demo
@@ -208,10 +206,10 @@ carry their date on the heading.
   Identities**, with **Pick country**. Picking one gives the number its full
   form; when another identity already has that form, Message Crate says whose
   it is and asks before it merges the two, their one-to-one conversations
-  with them. The owner picks one the same way on the Profile tab of an
+  with them. The administrator picks one the same way on the Profile tab of an
   account opened from User Accounts (#1676, #2987).
-- 2026-10-08: **Owner Home's Logs shows the server's log and the Import Run
-  logs on this computer.** The owner picks the server's log or, in the
+- 2026-10-08: **Admin Home's Logs shows the server's log and the Import Run
+  logs on this computer.** The administrator picks the server's log or, in the
   desktop app, any Import Run's log on this computer, whoever ran it. An
   account opens its own run's log from the run's row in Settings → Storage,
   in the desktop app on the computer that ran the import. Both read the same
@@ -270,6 +268,11 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-24: **The owner is now the administrator, `admin`.** Every Message
+  Crate has it from the start; the first visit sets its password instead of
+  creating an owner, and `set-admin-password` sets or resets it from the
+  server. Only the administrator creates accounts: the setting that let
+  anyone create their own is gone, with its Create Account tab.
 - 2026-10-24: **Text Message has its own name inside Message Crate.** The
   service the screens call Text Message was stored and sent under the word
   for a phone number, which every phone number on it also carries. It is now
@@ -366,12 +369,12 @@ carry their date on the heading.
   now built on Debian alone and checks its own health with the server
   program. It still runs as user and group 1000, so existing data and
   Compose files work as before (#2065).
-- 2026-10-15: **The owner's password is typed, not written on the command
-  line.** The server's `create-owner` and `reset-owner-password` commands
-  now ask for the password and don't show it as it's typed, or read it from
-  the first line of their input when it is piped in. They no longer take
-  it as `--password`, because a command line is visible to everyone signed
-  in to the computer while it runs and stays in the shell's history (#2094).
+- 2026-10-15: **The administrator's password is typed, not written on the
+  command line.** The server's `set-admin-password` command asks for the
+  password and doesn't show it as it's typed, or reads it from the first line of
+  its input when it is piped in. It takes no `--password`, because a command
+  line is visible to everyone signed in to the computer while it runs and stays
+  in the shell's history (#2094).
 - 2026-10-15: **An import hides its duplicates once, when it ends.** The
   server used to hide the duplicates of the whole account after every part
   of an import it received, so a large import into a large account went
@@ -380,13 +383,13 @@ carry their date on the heading.
   Duplicates the import brings stay shown until then (#2040).
 - 2026-10-12: **A wrong password now costs a short wait instead of counting
   toward a lockout.** A refused login, and a wrong current password when
-  changing the owner's password or deleting an account, waits about a second
-  before Message Crate answers. Nothing counts the wrong tries anymore, so
-  someone who knows your username can no longer keep you from logging in by
-  sending wrong passwords, and creating an account or claiming Message Crate
-  is no longer limited to 20 tries a minute. The wait is not protection for a
-  Message Crate reachable from the internet: that needs a proxy with its own
-  login in front of it (#2893, #2894).
+  changing the administrator's password or deleting an account, waits about a
+  second before Message Crate answers. Nothing counts the wrong tries anymore,
+  so someone who knows your username can no longer keep you from logging in by
+  sending wrong passwords, and setting up a new Message Crate is no longer
+  limited to 20 tries a minute. The wait is not protection for a Message Crate
+  reachable from the internet: that needs a proxy with its own login in front of
+  it (#2893, #2894).
 - 2026-10-12: The Demo Account's username, `demo`, is fixed in the server
   and no longer read from the Demo Data it is built from, with nothing
   visible (#2808).
@@ -581,7 +584,7 @@ carry their date on the heading.
   (#3014).
 - 2026-10-16: **A display name the server refuses after you leave Settings
   says so.** A display name typed on Settings → Profile, or on an account's
-  Profile in Owner Home, saves when you leave Settings for another screen.
+  Profile in Admin Home, saves when you leave Settings for another screen.
   When the server refused that save, the name was dropped without a word.
   Now a line across the top of the page says "Your display name wasn't
   saved", with the name you typed and why, and a link back to the Profile
@@ -599,23 +602,23 @@ carry their date on the heading.
   `sam`, was reported removed without being looked for, and adding one would
   have said the server did not add it. Settings now looks in the list of
   identities it shows (#2738).
-- 2026-10-14: **Last Login and App are on an account's Account tab.** When
-  the owner opens an account from User Accounts, when it last logged in and
+- 2026-10-14: **Last Login and App are on an account's Account tab.** When the
+  administrator opens an account from User Accounts, when it last logged in and
   the app it last connected with now sit under its username on **Account**,
   rather than under its identities on **Profile**, which holds what the
   account's holder sets about themselves (#2988).
-- 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.**
-  The `reset-demo` server command recorded its reset after deleting the old
-  Demo Account, so its entry belonged to no account and appeared only in the
-  owner's whole Audit Trail. It now records the reset first, as a reset from
-  Owner Home does, so both are read among the old Demo Account's entries
+- 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.** The
+  `reset-demo` server command recorded its reset after deleting the old Demo
+  Account, so its entry belonged to no account and appeared only in the
+  administrator's whole Audit Trail. It now records the reset first, as a reset
+  from Admin Home does, so both are read among the old Demo Account's entries
   (#2977).
 - 2026-10-14: **A typed display name is no longer lost.** On Settings →
-  Profile, and on an account's Profile in Owner Home, the display name saves
+  Profile, and on an account's Profile in Admin Home, the display name saves
   when you leave the field, press Enter, or move to another tab, as the time
   zone and identities already did. The **Save** button is gone. Before, a
   name typed without pressing **Save** was dropped without a word, so an
-  account the owner had named could still open on Profile Setup with an
+  account the administrator had named could still open on Profile Setup with an
   empty name (#2985).
 - 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
   Profile, the identities in a contact's drawer, and the totals of checked
@@ -652,11 +655,11 @@ carry their date on the heading.
   Resetting or adding the Demo Account with the `reset-demo` server command
   is now recorded, with the set of Demo Data, by **Server command**, and so
   is the Demo Account a new Message Crate adds on its first start, by
-  **Server's first start**. Before, only a build from Owner Home left an
+  **Server's first start**. Before, only a build from Admin Home left an
   entry, and the command recorded only the deletion of the old Demo Account
   (#2686).
 - 2026-10-12: **Disabling an account logs it out.** A person still logged
-  in to an account the owner disabled was only refused while the account
+  in to an account the administrator disabled was only refused while the account
   stayed disabled, so enabling it again let them carry on without logging
   in, and every media link opened before worked again. Disabling now logs
   them out, and they log in again once the account is enabled.
@@ -672,8 +675,8 @@ carry their date on the heading.
   server named before it asks once more. A change you save is still not sent
   again on its own: you read why it failed and send it again (#2891).
 - 2026-10-12: **The first page downloads less.** Settings was part of the
-  code every visit downloads first, through Owner Home. It is now downloaded
-  the first time Settings is opened, from the app or from Owner Home (#2879).
+  code every visit downloads first, through Admin Home. It is now downloaded
+  the first time Settings is opened, from the app or from Admin Home (#2879).
 - 2026-10-11: **Logging in often no longer locks you out.** Every login
   counted toward the limit of 20 attempts a minute for an account, the
   successful ones too, so an account that logged in often, such as the Demo
@@ -712,12 +715,6 @@ carry their date on the heading.
   runs, and what the computer refused, such as a permission error. The app
   tries again each time it starts, so fixing the permission is enough
   (#2255).
-- 2026-10-11: **No account is created after the owner closes registration.**
-  A stranger's registration that arrived just as the owner closed
-  registration could still create an account. Whether registration is open
-  is now decided at the moment the account is written. A Message Crate with
-  registration closed also turns a stranger away at once, without first
-  working on the password they sent (#2231, #2232).
 - 2026-10-11: **A new username can no longer hold letters from other
   scripts.** A username could hold letters from any script,
   so `аdmin` written with a Cyrillic `а` made a second account that read
@@ -760,13 +757,12 @@ carry their date on the heading.
   takes longer on a large account, such as an import's steps, deleting
   messages or an account for good, or loading an address book, waits up to
   10 minutes (#2199).
-- 2026-10-11: **The Audit Trail records the attachment size limit and adding
-  or resetting the Demo Account.** When the owner changes the attachment size
-  limit in Server Settings, the Audit Trail now says so and names the new
+- 2026-10-11: **The Audit Trail records the attachment size limit and adding or
+  resetting the Demo Account.** When the administrator changes the attachment
+  size limit in Server Settings, the Audit Trail now says so and names the new
   limit; saving the limit it already had records nothing. Adding or resetting
   the Demo Account is recorded too, with the set of Demo Data asked for. Before,
-  neither left an entry, though opening or closing Message Crate to new
-  accounts did (#2187).
+  neither left an entry (#2187).
 - 2026-10-11: **An import's notes and details have a length limit too.**
   Each part of a note an import records may be up to 2,000 characters, the
   name of the program that ran the import and the id of the copy of the
@@ -812,18 +808,18 @@ carry their date on the heading.
   shares the Demo Account, so each one also saw the tokens the others made
   and could revoke them. Its Settings now say it makes no API Tokens, and the
   server refuses one (#2148).
-- 2026-10-10: **No API token works on the owner's account.** The owner
-  cannot make an API token, but a token on the owner's account that got
-  there another way, such as in a restored database, used to import into
-  and export from the owner's account. The server now refuses it as if it
-  had never issued it. The owner's entry in User Accounts also used to
-  claim import, export and delete, which the owner never holds; it now
-  reports none (#2147).
+- 2026-10-10: **No API token works on the administrator's account.** The
+  administrator cannot make an API token, but a token on the administrator's
+  account that got there another way, such as in a restored database, used to
+  import into and export from the administrator's account. The server now
+  refuses it as if it had never issued it. The administrator's entry in User
+  Accounts also used to claim import, export and delete, which the administrator
+  never holds; it now reports none (#2147).
 - 2026-10-10: **Logging in to a disabled account no longer tells a guesser
   the password was right.** A disabled account's login used to say the
   account was disabled only when the password was right. A wrong password got
   the usual "invalid username or password". So someone guessing learned which
-  guess worked. That password works again once the owner enables the
+  guess worked. That password works again once the administrator enables the
   account. Every refused login now gets the same answer. The
   Audit Trail still records that the login was refused because the account
   is disabled (#2145).
@@ -831,7 +827,7 @@ carry their date on the heading.
   the Audit Trail.** A refused login for a username that matches no account
   kept the typed text, with surrounding spaces trimmed and up to 128
   characters of it, for 90 days, so a password typed into the wrong field,
-  which happens when a browser fills it in, was there for the owner
+  which happens when a browser fills it in, was there for the administrator
   to read. The Audit Trail now keeps the text only when it could be a
   username, and otherwise says the login was refused for something that is
   not a valid username (#2135).
@@ -1198,7 +1194,7 @@ carry their date on the heading.
   running the import again continues it. The server gives up on a part
   after a minute with nothing arriving, as before, or after 5 minutes in
   all, down from 10, so a stalled import holds up other imports for less
-  time. The owner can change both times in the server's config file with
+  time. The administrator can change both times in the server's config file with
   `body_stall_secs` and `body_total_secs`, and the desktop app waits as
   long as the server it imports into says. The same limits hold for
   attachments, which now go up in parts of 16 MiB, down from 64 MiB, so a
@@ -1390,7 +1386,7 @@ carry their date on the heading.
   an internal id is imported under that id, with their name, and is listed
   under Unknown until given an address. A WhatsApp file that another
   version of wtsexporter wrote is refused, naming Message Crate's own (#1092).
-- 2026-10-09: **Owner Home's Logs panel shows how each import went.** The
+- 2026-10-09: **Admin Home's Logs panel shows how each import went.** The
   lines an import writes as it reads its files, writes them into the account
   and hides duplicates never reached the **Logs** panel. They do now, and so
   do the lines of the Demo Account's import when it is built or rebuilt. An
@@ -1775,18 +1771,18 @@ carry their date on the heading.
   a server was serving it, and the server went on showing the empty
   database until it restarted. The command now stops, names the database
   and asks for the server to be stopped first (#2920).
-- 2026-10-14: **The Compose files publish the server to this computer
-  only.** Both Compose files published port 8080 on every network the
-  computer is on, unlike the `docker run` command in Run Message Crate
-  with Docker. Any device on that network could reach a new Message Crate
-  over plain HTTP, and claim it as owner before its installer did. Both
-  now publish it on `127.0.0.1`, and Run on another machine says how to
-  open it to the network (#2063).
+- 2026-10-14: **The Compose files publish the server to this computer only.**
+  Both Compose files published port 8080 on every network the computer is on,
+  unlike the `docker run` command in Run Message Crate with Docker. Any device
+  on that network could reach a new Message Crate over plain HTTP, and set its
+  administrator's password before its installer did. Both now publish it on
+  `127.0.0.1`, and Run on another machine says how to open it to the network
+  (#2063).
 - 2026-10-14: **A Demo Data backup left behind is in the server's log.**
   When the server writes new Demo Data, it removes its backup of the files
   they replace. When that removal failed, the warning went only to the
   terminal the server was started from, never to the server's log or the
-  **Logs** panel in Owner Home. It now goes there, and the `reset-demo`
+  **Logs** panel in Admin Home. It now goes there, and the `reset-demo`
   command still prints it (#2903).
 - 2026-10-14: **The guide's `docker run` commands limit the container as
   the Compose files do.** A server started with the user guide's commands
@@ -1955,8 +1951,8 @@ carry their date on the heading.
 - 2026-10-11: **The server warns when every website may call it.** A `*` in
   the server's list of websites allowed to call it lets a page on any
   website, opened by anyone on the network, reach the server through their
-  browser: to try logins, to register while registration is open, and to
-  claim a server nobody owns yet. Until now the server started with it and
+  browser: to try logins, and to set the administrator's password on a
+  Message Crate still in setup. Until now the server started with it and
   wrote nothing about it. It now writes a warning to its log as it starts,
   naming the setting and the command-line option that can add it, whether
   it runs in Docker or the desktop app starts it (#2218).
@@ -1993,7 +1989,7 @@ carry their date on the heading.
   password, a request that did not log in or whose Session ended, a request
   without the right to what it asked for, and a client that asked too often
   now each leave a warning in the server's log naming which of those it was,
-  so Owner Home's Logs shows them at its opening filter. Before, they were
+  so Admin Home's Logs shows them at its opening filter. Before, they were
   in the log only as a status number, shown only when the Logs panel showed
   everything, and a person guessing passwords left nothing among the
   warnings. Every other refused request also names its reason now, shown
@@ -2063,6 +2059,11 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-24: The database is rebuilt empty at this version (the schema
+  changed), and the server has no `create-owner` or `reset-owner-password`
+  command; run `set-admin-password`. It reads the password from its input,
+  for example `printf '%s\n' "$PASSWORD" | message-crate-server
+  set-admin-password`; with `docker exec`, add `-it` to type it when asked.
 - 2026-10-24: A program that adds or reads identities through your Message
   Crate's HTTP API must name Text Message `text_message` where it named it
   `phone`. The server refuses `phone` as a service (#3086).
@@ -2090,11 +2091,6 @@ carry their date on the heading.
   you import or convert them. Export the backup again with this build. An
   existing Message Crate is rebuilt empty on first start and its messages
   must be imported again (#2286, #1967).
-- 2026-10-15: A script that runs `create-owner` or
-  `reset-owner-password` with `--password` must write the password to the
-  command's input instead, for example
-  `printf '%s\n' "$PASSWORD" | message-crate-server reset-owner-password`.
-  With `docker exec`, add `-it` to type it when asked (#2094).
 - 2026-10-14: A Compose file saved from the repository before this
   release keeps publishing the server on every network the computer is
   on, because pulling a new image does not change the file. To keep the

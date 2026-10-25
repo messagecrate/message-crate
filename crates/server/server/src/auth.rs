@@ -27,11 +27,12 @@ pub enum AuthCapability {
         /// What the account may do.
         permissions: Permissions,
     },
-    /// Logged-in owner. Carries no permissions at all, so every guard
-    /// that asks for one refuses it and the owner cannot reach message data.
-    /// See `docs/adr/0008-the-owner-holds-no-messages.md`.
-    Owner,
-    /// Named API token. Already intersected with its owner's permissions.
+    /// Logged-in administrator. Carries no permissions at all, so every
+    /// guard that asks for one refuses it and the administrator cannot
+    /// reach message data.
+    /// See `docs/adr/0008-the-administrator-holds-no-messages.md`.
+    Admin,
+    /// Named API token. Already intersected with its account's permissions.
     ApiToken(Permissions),
 }
 
@@ -49,42 +50,43 @@ pub struct AuthIdentity {
 
 impl AuthIdentity {
     /// What this credential may do, account and token already intersected.
-    /// The owner has nothing: holding no messages is what the owner is.
+    /// The administrator has nothing: holding no messages is what the
+    /// administrator is.
     pub fn permissions(&self) -> Permissions {
         match self.capability {
             AuthCapability::Session { permissions } | AuthCapability::ApiToken(permissions) => {
                 permissions
             }
-            AuthCapability::Owner => Permissions::none(),
+            AuthCapability::Admin => Permissions::none(),
         }
     }
 
-    /// True only for the logged-in owner. An API token can never be the
-    /// owner, because no token resolves to [`AuthCapability::Owner`].
-    pub fn is_owner(&self) -> bool {
-        matches!(self.capability, AuthCapability::Owner)
+    /// True only for the logged-in administrator. An API token can never be the
+    /// administrator, because no token resolves to [`AuthCapability::Admin`].
+    pub fn is_admin(&self) -> bool {
+        matches!(self.capability, AuthCapability::Admin)
     }
 
     /// True when the credential is a logged-in session on an ordinary account:
-    /// not a token, and not the owner.
+    /// not a token, and not the administrator.
     pub fn is_session(&self) -> bool {
         matches!(self.capability, AuthCapability::Session { .. })
     }
 
-    /// True when a person logged in, whether as the owner or on an
+    /// True when a person logged in, whether as the administrator or on an
     /// ordinary account. False for every API token.
     pub fn is_logged_in(&self) -> bool {
-        self.is_session() || self.is_owner()
+        self.is_session() || self.is_admin()
     }
 }
 
-/// Reject API tokens and the owner's session on routes that require a
+/// Reject API tokens and the administrator's session on routes that require a
 /// logged-in session on an ordinary account.
 ///
 /// # Errors
 ///
 /// Returns `403 Forbidden` when the credential is a named API token or the
-/// owner's session.
+/// administrator's session.
 pub fn require_full_access(auth: &AuthIdentity) -> Result<(), ApiError> {
     if auth.is_session() {
         return Ok(());
@@ -95,24 +97,25 @@ pub fn require_full_access(auth: &AuthIdentity) -> Result<(), ApiError> {
     ))
 }
 
-/// Reject anything that is not the logged-in owner.
+/// Reject anything that is not the logged-in administrator.
 ///
 /// # Errors
 ///
 /// Returns forbidden for ordinary sessions and for every API token.
-pub fn require_owner(auth: &AuthIdentity) -> Result<(), ApiError> {
-    if auth.is_owner() {
+pub fn require_admin(auth: &AuthIdentity) -> Result<(), ApiError> {
+    if auth.is_admin() {
         return Ok(());
     }
-    Err(ApiError::NotTheOwner(
-        "this endpoint requires the owner's session".into(),
+    Err(ApiError::NotTheAdmin(
+        "this endpoint requires the administrator's session".into(),
     ))
 }
 
-/// Allow any logged-in person, owner or ordinary account, and reject
-/// API tokens. The guard for the routes under `/v1/accounts/{id}`, where a
-/// handler then decides whether the caller is the owner or the account
-/// itself; the owner needs them for its own row as much as anyone.
+/// Allow any logged-in person, the administrator or an ordinary account, and
+/// reject API tokens. The guard for the routes under `/v1/accounts/{id}`,
+/// where a handler then decides whether the caller is the administrator or
+/// the account itself; the administrator needs them for its own row as much
+/// as anyone.
 ///
 /// # Errors
 ///
@@ -131,7 +134,7 @@ pub fn require_logged_in(auth: &AuthIdentity) -> Result<(), ApiError> {
 ///
 /// The Demo Account has no password, so anyone at the login card can enter
 /// it. Its limits are therefore fixed here, by its id, whatever its
-/// permission row says, and are not settings the owner can change
+/// permission row says, and are not settings the administrator can change
 /// (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
 ///
 /// # Errors
@@ -142,9 +145,9 @@ pub fn require_logged_in(auth: &AuthIdentity) -> Result<(), ApiError> {
 /// a caller can do about it is on the problem type's page.
 ///
 /// One refusal of the Demo Account is not built here: `delete_account`
-/// answers "the Demo Account cannot delete itself" on its own. The owner may
-/// delete the Demo Account, so that refusal depends on who asks, and this
-/// function refuses whoever asks.
+/// answers "the Demo Account cannot delete itself" on its own. The
+/// administrator may delete the Demo Account, so that refusal depends on who
+/// asks, and this function refuses whoever asks.
 pub fn refuse_for_demo_account(target: i64, what: &str) -> Result<(), ApiError> {
     if account_profile::is_demo_account(target) {
         return Err(ApiError::DemoAccountProtected(format!(
@@ -283,36 +286,6 @@ where
     }
 }
 
-/// `auth: Option<AuthIdentity>`, for the one route a stranger and the owner
-/// share, `POST /v1/accounts`: `None` when no `Authorization` header was
-/// sent, the resolved credential when one was, and the usual `401` or `403`
-/// when the header names nothing usable. A bad credential is never quietly
-/// treated as no credential.
-impl<S> axum::extract::OptionalFromRequestParts<S> for AuthIdentity
-where
-    S: Send + Sync,
-    SqlitePool: FromRef<S>,
-    ExpiryMoves: FromRef<S>,
-{
-    type Rejection = ApiError;
-
-    async fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
-        state: &S,
-    ) -> Result<Option<Self>, Self::Rejection> {
-        if parts.headers.get(header::AUTHORIZATION).is_none() {
-            return Ok(None);
-        }
-        resolve_auth(
-            &parts.headers,
-            &SqlitePool::from_ref(state),
-            &ExpiryMoves::from_ref(state),
-        )
-        .await
-        .map(Some)
-    }
-}
-
 /// Define a newtype extractor that resolves the Bearer credential and runs one
 /// `require_*` capability check, so a route cannot compile without its guard.
 macro_rules! auth_guard {
@@ -345,18 +318,18 @@ macro_rules! auth_guard {
 }
 
 auth_guard!(
-    /// Logged-in session on an ordinary account (API tokens and the owner
-    /// rejected); wraps [`require_full_access`].
+    /// Logged-in session on an ordinary account (API tokens and the
+    /// administrator rejected); wraps [`require_full_access`].
     FullAccess,
     require_full_access
 );
 auth_guard!(
-    /// Logged-in owner; wraps [`require_owner`].
-    Owner,
-    require_owner
+    /// Logged-in administrator; wraps [`require_admin`].
+    Admin,
+    require_admin
 );
 auth_guard!(
-    /// Any logged-in person, owner or ordinary account; wraps
+    /// Any logged-in person, the administrator or an ordinary account; wraps
     /// [`require_logged_in`].
     LoggedIn,
     require_logged_in
@@ -556,9 +529,9 @@ pub(crate) async fn resolve_auth_on_conn(
 ///
 /// # Errors
 ///
-/// Unauthorized when the token matches nothing, which includes an API token
-/// on the owner's account (`api_tokens::lookup_account_for_api_token` refuses
-/// it); forbidden when the account is disabled.
+/// Unauthorized when the token matches nothing, which includes an API token on
+/// the administrator's account (`api_tokens::lookup_account_for_api_token`
+/// refuses it); forbidden when the account is disabled.
 async fn resolve_auth_and_expiry_move(
     conn: &mut SqliteConnection,
     token: &str,
@@ -608,13 +581,11 @@ async fn resolve_auth_and_expiry_move(
         return Err(ApiError::AccountDisabled("this account is disabled".into()));
     }
 
-    // A session on the owner's account resolves to `Owner`, which carries no
-    // permissions. An API token never does, whichever account issued it, so
-    // no token can reach what the owner reaches.
+    // A session on the administrator's account resolves to `Admin`, which
+    // carries no permissions. An API token never does, whichever account
+    // issued it, so no token can reach what the administrator reaches.
     let capability = match credential {
-        Credential::Session if account_profile::is_server_owner(account_id) => {
-            AuthCapability::Owner
-        }
+        Credential::Session if account_profile::is_admin(account_id) => AuthCapability::Admin,
         Credential::Session => AuthCapability::Session {
             permissions: auth.permissions,
         },

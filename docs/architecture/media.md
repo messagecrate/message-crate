@@ -119,7 +119,7 @@ gets 15 seconds, a video conversion is stopped when its reported position
 has not moved for two minutes or has run past twice the file's length, and
 an audio conversion has a time limit scaled to its length. The reason is
 recorded on the attachment rows, the viewer shows it in place of the
-Preview, and the owner's read of the Import Run lists every file left
+Preview, and the administrator's read of the Import Run lists every file left
 without a version and why. No single Asset and no single error stops the
 pass.
 

@@ -22,7 +22,7 @@ Nothing needs installing, and [**Settings → System**](/docs/user/features/sett
 A WhatsApp import can't start without `wtsexporter`, and the Import form then names the reason and offers **Try again**.
 An import started while `wtsexporter` is still downloading waits for the download, and its progress line says so.
 
-When the download fails, or the computer has no download, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) says what to do.
+When the download fails, or the computer has no download, [Import can't find wtsexporter](/docs/user/features/admin/troubleshooting/#import-cant-find-wtsexporter) says what to do.
 
 ## Who is imported
 
@@ -54,7 +54,7 @@ A disk that is full, or fills part-way, stops the run with `Not enough space on 
 The part already written is deleted with the rest of the run's working files, so the import can run again once that disk has room.
 The Import Run's log holds everything `wtsexporter` printed, as warnings.
 It shows when a different disk filled, such as the one that holds the system's temporary files.
-The owner reads it under **Logs** in Owner Home, and the account that ran the import from the run's row in **Settings → Storage**.
+The administrator reads it under **Logs** in Admin Home, and the account that ran the import from the run's row in **Settings → Storage**.
 
 ### Without root: the 64-digit key
 

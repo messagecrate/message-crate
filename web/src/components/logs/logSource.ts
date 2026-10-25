@@ -34,7 +34,7 @@ export type LogSource = {
   readLines: (request: LinesRequest, signal: AbortSignal) => Promise<LogLinesPage>;
 };
 
-/** The server's log, read through `/v1/server/log-lines`. The owner's alone. */
+/** The server's log, read through `/v1/server/log-lines`. The administrator's alone. */
 export const SERVER_LOG: LogSource = {
   key: ["logs", "server"],
   readLines: (request, signal) => listServerLogLines(request, { signal }),
@@ -46,7 +46,7 @@ export const SERVER_LOG: LogSource = {
  */
 export function desktopLogSource(reader: LogReader, name: string): LogSource {
   return {
-    key: ["logs", "desktop", "lines", reader.messageCrateId, reader.owner, name],
+    key: ["logs", "desktop", "lines", reader.messageCrateId, reader.admin, name],
     // The desktop app cannot cancel the read, so the signal goes unused.
     readLines: (request) => invokeReadLogLines(reader, name, request),
   };

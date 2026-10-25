@@ -3,9 +3,9 @@ import { sectionHintClass, sectionTitleClass } from "./storage/storageUtils";
 
 /**
  * The account's own Audit Trail, under Settings: every entry about this
- * account, whoever acted, so its holder reads when the owner changed it as
+ * account, whoever acted, so its holder reads when the administrator changed it as
  * well as their own logins, imports and exports. Given `managedAccountId`,
- * the owner reads the same entries for the account they opened.
+ * the administrator reads the same entries for the account they opened.
  */
 export function AuditTrailSection({ managedAccountId }: { managedAccountId?: number }) {
   return (
@@ -13,7 +13,7 @@ export function AuditTrailSection({ managedAccountId }: { managedAccountId?: num
       <h3 className={sectionTitleClass}>Audit Trail</h3>
       <p className={sectionHintClass}>
         What was done with this account and when: logins, imports, exports, and changes made by the
-        account holder or the owner.
+        account holder or the administrator.
       </p>
       <AuditTrail
         of={

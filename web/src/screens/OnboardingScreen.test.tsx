@@ -20,7 +20,7 @@ vi.mock("../hooks/useAuth", () =>
 );
 
 // The account's identities as the server lists them, each with its service; a
-// test sets them to what the owner added.
+// test sets them to what the administrator added.
 type Service = "text_message" | "email" | "whatsapp";
 let identities: { address: string; service: Service }[] = [];
 
@@ -38,7 +38,7 @@ vi.mock("../lib/serverApi", () => ({
     })),
 }));
 
-// What the server says the account already holds; a test sets it to what the owner filled in.
+// What the server says the account already holds; a test sets it to what the administrator filled in.
 const blankProfile = { preferred_name: null, time_zone: "UTC" };
 let profile: { preferred_name: string | null; time_zone: string } = blankProfile;
 
@@ -111,7 +111,7 @@ describe("OnboardingScreen", () => {
     }
   });
 
-  it("shows the name and zone the owner set, for the holder to check", () => {
+  it("shows the name and zone the administrator set, for the holder to check", () => {
     profile = { ...blankProfile, preferred_name: "Bob Archer", time_zone: "Asia/Tokyo" };
     render(<OnboardingScreen />);
 
@@ -127,7 +127,7 @@ describe("OnboardingScreen", () => {
     expect(screen.getByRole("combobox", { name: "Time Zone" })).not.toHaveValue("");
   });
 
-  it("puts each identity the owner added in its own row, for the holder to change", async () => {
+  it("puts each identity the administrator added in its own row, for the holder to change", async () => {
     identities = [
       { address: "+15555550100", service: "text_message" },
       { address: "bob@example.com", service: "email" },
@@ -176,7 +176,7 @@ describe("OnboardingScreen", () => {
     expect(rowValue(1)).toHaveValue("+15555550123");
   });
 
-  it("counts an identity the owner added, so another is not required", async () => {
+  it("counts an identity the administrator added, so another is not required", async () => {
     identities = [{ address: "+15555550100", service: "text_message" }];
     render(<OnboardingScreen />);
     await settle();

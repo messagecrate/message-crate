@@ -26,7 +26,7 @@ export type ImportExportFeature = "import" | "export";
  * The left panel shows both entries to every account in the desktop app. A
  * hidden entry says nothing about why, so the screen stays and explains.
  * `demo` is the Demo Account on Import: the way forward there is an account of
- * the person's own, not a word with the Owner.
+ * the person's own, not a word with the administrator.
  */
 export type ImportExportBlock = "demo" | "not-allowed";
 

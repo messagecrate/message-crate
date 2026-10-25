@@ -36,9 +36,9 @@ pub(crate) struct ListPhoneCountriesQuery {
     offset: Option<usize>,
 }
 
-/// The countries a phone number written without its `+` code can be read
-/// in, by ISO code. Any logged-in person reads it, the owner included: the
-/// owner picks the country of a number on an account it opens from User
+/// The countries a phone number written without its `+` code can be read in, by
+/// ISO code. Any logged-in person reads it, the administrator included: the
+/// administrator picks the country of a number on an account it opens from User
 /// Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).
 #[utoipa::path(
     get,
@@ -46,7 +46,7 @@ pub(crate) struct ListPhoneCountriesQuery {
     tag = "Contacts",
     security(
         ("session" = []),
-        ("session" = ["owner"])
+        ("session" = ["admin"])
     ),
     params(ListPhoneCountriesQuery),
     responses(
@@ -76,28 +76,28 @@ pub(crate) async fn list_phone_countries(
 #[cfg(test)]
 mod tests {
     use crate::paging::Page;
-    use crate::test_support::{claim_as_owner, get_json, test_fixture};
+    use crate::test_support::{get_json, log_in_as_admin, test_fixture};
 
-    /// The owner picks the country of a managed account's number from that
-    /// account's Profile tab (`set_identity_country` on
-    /// `PATCH /v1/accounts/{id}`), so the owner's session reads the list the
-    /// picker offers (#2987).
+    /// The administrator picks the country of a managed account's number from
+    /// that account's Profile tab (`set_identity_country` on
+    /// `PATCH /v1/accounts/{id}`), so the administrator's session reads the
+    /// list the picker offers (#2987).
     #[tokio::test]
-    async fn the_owner_reads_the_country_list() {
+    async fn the_admin_reads_the_country_list() {
         let fixture = test_fixture().await;
-        let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
+        let admin = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
 
         let page: Page<serde_json::Value> = get_json(
             &fixture.state,
             "/v1/phone-countries?limit=500&offset=0",
-            &owner.token,
+            &admin.token,
         )
         .await;
 
         assert_eq!(page.total, phone::COUNTRIES.len() as u64);
         assert!(
             page.items.iter().any(|country| country["code"] == "GB"),
-            "the owner's list names GB: {:?}",
+            "the administrator's list names GB: {:?}",
             page.items
         );
     }

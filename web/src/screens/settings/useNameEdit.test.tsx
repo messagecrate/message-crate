@@ -34,12 +34,12 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   listAccountIdentities: async () => [],
 }));
 
-// The owner's own profile, so Profile has no identities or address book.
+// The administrator's own profile, so Profile has no identities or address book.
 const own = {
-  ...account({ account_id: 7, username: "owner", preferred_name: "Stored Name" }),
-  is_owner: true,
+  ...account({ account_id: 7, username: "admin", preferred_name: "Stored Name" }),
+  is_admin: true,
 } as AccountProfile;
-// An account the owner opened from User Accounts.
+// An account the administrator opened from User Accounts.
 const bob = account({ account_id: 5, username: "bob", preferred_name: "Bob" }) as AccountProfile;
 
 beforeEach(() => {
@@ -71,7 +71,7 @@ function renderApp(path: string) {
         <Routes>
           <Route path="/settings" element={<SettingsScreen />} />
           <Route
-            path="/owner/accounts/5"
+            path="/admin/accounts/5"
             element={<SettingsScreen managedAccountId={5} backToAccounts />}
           />
           <Route path="/search" element={<p>Search screen</p>} />
@@ -117,11 +117,11 @@ describe("a display name refused after Settings is left", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("names the account an owner was changing, and links back to its Profile", async () => {
+  it("names the account an administrator was changing, and links back to its Profile", async () => {
     const save = deferred<AccountProfile>();
     updateAccount.mockReturnValue(save.promise);
     const user = setupUser();
-    renderApp("/owner/accounts/5?tab=profile");
+    renderApp("/admin/accounts/5?tab=profile");
     await settle();
 
     await fill(user, nameField(), " Smith");
@@ -136,7 +136,7 @@ describe("a display name refused after Settings is left", () => {
     );
     expect(screen.getByRole("link", { name: "Go to Profile" })).toHaveAttribute(
       "href",
-      "/owner/accounts/5?tab=profile",
+      "/admin/accounts/5?tab=profile",
     );
   });
 

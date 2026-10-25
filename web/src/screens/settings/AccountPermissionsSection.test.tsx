@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { AccountPermissionsSection } from "./AccountPermissionsSection";
 
-vi.mock("../../hooks/useOwnerAccounts", () => ({
+vi.mock("../../hooks/useAdminAccounts", () => ({
   useUpdateAccount: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 
@@ -33,20 +33,22 @@ describe("AccountPermissionsSection", () => {
     expect(screen.getByRole("checkbox", { name: "Import" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Delete" })).not.toBeChecked();
     for (const box of screen.getAllByRole("checkbox")) expect(box).toBeDisabled();
-    expect(screen.getByText("The owner sets your status and permissions.")).toBeInTheDocument();
+    expect(
+      screen.getByText("The administrator sets your status and permissions."),
+    ).toBeInTheDocument();
   });
 
-  it("lets the owner change them on an account it opened", () => {
+  it("lets the administrator change them on an account it opened", () => {
     render(<AccountPermissionsSection profile={profile} managedAccountId={101} />);
 
     expect(screen.getByRole("button", { name: /Status/ })).toBeEnabled();
     for (const box of screen.getAllByRole("checkbox")) expect(box).toBeEnabled();
     expect(
-      screen.queryByText("The owner sets your status and permissions."),
+      screen.queryByText("The administrator sets your status and permissions."),
     ).not.toBeInTheDocument();
   });
 
-  it("gives the owner nothing to change on the Demo Account", () => {
+  it("gives the administrator nothing to change on the Demo Account", () => {
     render(
       <AccountPermissionsSection
         profile={{ ...profile, is_demo: true } as AccountProfile}

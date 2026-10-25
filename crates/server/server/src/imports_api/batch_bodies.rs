@@ -2,12 +2,12 @@
 //! `data_dir/.import-batches/`, one directory per batch, removed when the
 //! batch is done.
 //!
-//! The body lives under the Data Directory, on the disk the owner sized for
-//! Message Crate, and not in the operating system's temporary directory,
-//! which is often small or held in memory and is not the `/app/data` volume
-//! of the Docker image (#2123). A server stopped part-way through a batch
-//! cannot remove that batch's directory, so `serve` removes every one left
-//! there before it listens: no batch is being read then.
+//! The body lives under the Data Directory, on the disk the administrator sized
+//! for Message Crate, and not in the operating system's temporary directory,
+//! which is often small or held in memory and is not the `/app/data` volume of
+//! the Docker image (#2123). A server stopped part-way through a batch cannot
+//! remove that batch's directory, so `serve` removes every one left there
+//! before it listens: no batch is being read then.
 
 use std::path::{Path, PathBuf};
 

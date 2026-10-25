@@ -1,8 +1,9 @@
 // Captures the User Guide's screenshots into docs/src/assets/user-guide/.
 //
 // It needs one server already running from the release image: a new Message
-// Crate, which starts unclaimed with the Demo Account, as the guide's does.
-// The run claims it, so its volume is deleted before each run.
+// Crate, which starts in setup with the Demo Account, as the guide's does.
+// The run sets the administrator's password, so its volume is deleted before
+// each run.
 //
 //   npm install --no-save playwright && npx playwright install chromium
 //   CRATE_URL=http://localhost:18080 node scripts/user-guide-screenshots.cjs
@@ -57,13 +58,14 @@ async function capture(browser) {
   await shot(demo, 'demo-search');
   await demo.context().close();
 
-  // Your own messages, step 1: the same Message Crate, claimed.
+  // Your own messages, step 1: the same Message Crate, set up. The Set Up
+  // form asks only for the administrator's password, twice: the
+  // administrator is always admin, so there is no username to fill in.
   const own = await open(CRATE);
-  await own.getByLabel('Username').fill('owner');
-  await own.getByLabel('Password', { exact: true }).fill('a long owner password');
-  await own.getByLabel('Confirm Password').fill('a long owner password');
-  await shot(own, 'create-owner');
-  await own.getByRole('button', { name: 'Create Owner' }).click();
+  await own.getByLabel('Password', { exact: true }).fill('a long administrator password');
+  await own.getByLabel('Confirm Password').fill('a long administrator password');
+  await shot(own, 'set-up');
+  await own.getByRole('button', { name: 'Continue' }).click();
   await own.waitForTimeout(2000);
   await own.getByRole('button', { name: 'Add account' }).click();
   await own.waitForTimeout(600);

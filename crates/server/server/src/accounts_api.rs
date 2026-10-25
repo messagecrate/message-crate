@@ -2,17 +2,17 @@
 //! API tokens, `/v1/accounts/{id}/api-tokens`, are in the `api_tokens`
 //! submodule.
 //!
-//! One collection serves the owner and every account. Who may call a
-//! route is decided here, per handler, never by the path: the owner reaches
-//! every row, an account reaches its own, and a stranger may create one while
-//! the server is open. `docs/architecture/rules/http-api.md` records the rule and the
-//! role prefix it replaced.
+//! One collection serves the administrator and every account. Who may call a
+//! route is decided here, per handler, never by the path: the administrator
+//! reaches every row and alone creates one, and an account reaches its own.
+//! `docs/architecture/rules/http-api.md` records the rule and the role prefix
+//! it replaced.
 //!
-//! The owner manages accounts, not the contents of other people's accounts, so
-//! nothing here reads `messages.body`, `attachments.transcription`, or any
-//! other content column: a row carries who an account is, what it may do and
-//! how much it holds, never what it says.
-//! See `docs/adr/0008-the-owner-holds-no-messages.md`.
+//! The administrator manages accounts, not the contents of other people's
+//! accounts, so nothing here reads `messages.body`,
+//! `attachments.transcription`, or any other content column: a row carries who
+//! an account is, what it may do and how much it holds, never what it says. See
+//! `docs/adr/0008-the-administrator-holds-no-messages.md`.
 
 use std::sync::Arc;
 
@@ -25,11 +25,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::api_error::ApiError;
-use crate::auth::{AuthIdentity, LoggedIn, Owner, refuse_for_demo_account};
+use crate::auth::{Admin, AuthIdentity, LoggedIn, refuse_for_demo_account};
 use crate::config::Config;
 use crate::credentials::RefusalWait;
 use crate::credentials::{
-    change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
+    change_password_on_conn, hash_admin_password, hash_user_password, passwords_match,
     require_password_within_cap, require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
@@ -37,10 +37,10 @@ use crate::db::handles::{self, ApiIdentityService, Identity};
 use crate::db::permissions::Permission;
 use crate::db::storage::{self, Scope};
 use crate::db::{WriteTx, begin_write};
-use crate::db::{account_profile, imports, server_settings, session_tokens};
-use crate::exports_api::OwnerExportRun;
+use crate::db::{account_profile, imports, session_tokens};
+use crate::exports_api::AdminExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::dto::{ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary};
+use crate::imports_api::dto::{AdminImportRun, AdminImportRunSummary, ImportRun, ImportRunSummary};
 use crate::imports_api::with_yourself;
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
 use crate::server::{Created, DemoState, ImportState};
@@ -52,9 +52,9 @@ pub(crate) mod api_tokens;
 // The account as every caller sees it
 // ---------------------------------------------------------------------------
 
-/// One account: who it is, what it may do, and how much it holds. The owner
-/// and the account itself both read the whole struct; nothing in it is a
-/// message.
+/// One account: who it is, what it may do, and how much it holds. The
+/// administrator and the account itself both read the whole struct; nothing in
+/// it is a message.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Account {
     /// Account id.
@@ -71,10 +71,10 @@ pub struct Account {
     pub phones: Vec<account_profile::AccountPhone>,
     /// Email addresses linked to the account.
     pub emails: Vec<String>,
-    /// True for the seeded demo account (only the owner can delete it).
+    /// True for the seeded demo account (only the administrator can delete it).
     pub is_demo: bool,
-    /// True for the owner: manages accounts, holds no messages.
-    pub is_owner: bool,
+    /// True for the administrator: manages accounts, holds no messages.
+    pub is_admin: bool,
     /// May not log in.
     pub disabled: bool,
     /// The account holder has not set up their profile yet, so profile setup
@@ -82,12 +82,13 @@ pub struct Account {
     /// client: the same answer reaches every app, and it survives cleared site
     /// data and a second browser.
     pub must_set_up_profile: bool,
-    /// The account has a password. False for one that logs in with none,
-    /// which deletes itself without `current_password`.
+    /// The account has a password. False for one with none, which logs in
+    /// with an empty password and deletes itself without `current_password`.
+    /// The administrator always has one once the Message Crate is set up.
     pub has_password: bool,
     /// When the account last logged in (RFC 3339, UTC), or `null` if it never
-    /// has. Logging in, claiming Message Crate and registering all count; a
-    /// password change does not.
+    /// has. Logging in and setting up the administrator count; a password
+    /// change does not.
     pub last_login_at: Option<String>,
     /// Which app last used the account's session, the desktop app or the
     /// website, or `null` when the account has no session or no request on it
@@ -138,7 +139,7 @@ async fn load_account(
         phones: profile.phones,
         emails: profile.emails,
         is_demo: account_profile::is_demo_account(account_id),
-        is_owner: account_profile::is_server_owner(account_id),
+        is_admin: account_profile::is_admin(account_id),
         disabled: auth.disabled,
         must_set_up_profile: auth.must_set_up_profile,
         has_password: has_password(password_hash.as_deref()),
@@ -176,25 +177,25 @@ async fn require_account(
 /// What the caller is to the account a member route addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Reach {
-    /// The owner, acting on an account that is not its own.
-    Owner,
-    /// The owner, on its own row.
-    OwnersOwn,
+    /// The administrator, acting on an account that is not its own.
+    Admin,
+    /// The administrator, on its own row.
+    AdminsOwn,
     /// An ordinary account, on its own row.
     Own,
 }
 
 impl Reach {
-    /// True when the row is the caller's own, the owner's included.
+    /// True when the row is the caller's own, the administrator's included.
     pub(crate) fn is_own(self) -> bool {
-        matches!(self, Self::Own | Self::OwnersOwn)
+        matches!(self, Self::Own | Self::AdminsOwn)
     }
 
-    /// Who the Audit Trail says acted: the owner, on any account, or the
-    /// holder on their own.
+    /// Who the Audit Trail says acted: the administrator, on any account, or
+    /// the holder on their own.
     pub(crate) fn actor(self) -> AuditActor {
         match self {
-            Self::Owner | Self::OwnersOwn => AuditActor::Owner,
+            Self::Admin | Self::AdminsOwn => AuditActor::Admin,
             Self::Own => AuditActor::Holder,
         }
     }
@@ -203,19 +204,19 @@ impl Reach {
 /// Who a member route admits besides the account itself.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Admits {
-    /// The owner too, on any account.
-    Owner,
+    /// The administrator too, on any account.
+    Admin,
     /// Nobody else. The sentence is the refusal everyone else gets.
     NobodyElse(&'static str),
 }
 
 /// The one answer to "is this row the caller's?" for the routes under
-/// `/v1/accounts/{id}`: admit the account itself, and the owner when
+/// `/v1/accounts/{id}`: admit the account itself, and the administrator when
 /// `admits` says so, and say which.
 ///
 /// A caller addressing a row it may not reach answers `403`, whether or not
 /// the row exists, so the refusal says nothing about the server's accounts.
-/// The owner alone learns that an id is absent.
+/// The administrator alone learns that an id is absent.
 pub(crate) async fn require_account_reach(
     conn: &mut SqliteConnection,
     auth: &AuthIdentity,
@@ -223,25 +224,25 @@ pub(crate) async fn require_account_reach(
     admits: Admits,
 ) -> Result<Reach, ApiError> {
     if auth.account_id == target {
-        return Ok(if auth.is_owner() {
-            Reach::OwnersOwn
+        return Ok(if auth.is_admin() {
+            Reach::AdminsOwn
         } else {
             Reach::Own
         });
     }
     match admits {
         Admits::NobodyElse(refusal) => Err(ApiError::InsufficientScope(refusal.into())),
-        Admits::Owner if !auth.is_owner() => Err(ApiError::NotTheOwner(format!(
-            "account {target} is not yours, and only the owner reaches other accounts"
+        Admits::Admin if !auth.is_admin() => Err(ApiError::NotTheAdmin(format!(
+            "account {target} is not yours, and only the administrator reaches other accounts"
         ))),
-        Admits::Owner => {
+        Admits::Admin => {
             if account_profile::username_for_account(conn, target)
                 .await?
                 .is_none()
             {
                 return Err(ApiError::NotFound(format!("account {target} not found")));
             }
-            Ok(Reach::Owner)
+            Ok(Reach::Admin)
         }
     }
 }
@@ -250,15 +251,15 @@ pub(crate) async fn require_account_reach(
 // The collection
 // ---------------------------------------------------------------------------
 
-/// List the accounts this Message Crate holds, with their flags, message count, and
-/// storage use. The owner's own account comes first, then the rest by
-/// username: the owner is an account too, and reaches its own
+/// List the accounts this Message Crate holds, with their flags, message count,
+/// and storage use. The administrator's own account comes first, then the rest
+/// by username: the administrator is an account too, and reaches its own
 /// settings from the same list as everyone else's.
 #[utoipa::path(
     get,
     path = "/v1/accounts",
     tag = "Accounts",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     params(
         ("limit" = Option<usize>, Query, description = "Page size, default 40, max 500"),
         ("offset" = Option<usize>, Query, description = "Page offset")
@@ -269,7 +270,7 @@ pub(crate) async fn require_account_reach(
 )]
 pub async fn list_accounts(
     State(db): State<SqlitePool>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<Account>>, ApiError> {
     let page = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
@@ -286,7 +287,7 @@ pub async fn list_accounts(
     Ok(Json(page_from_rows(items, total.max(0) as u64, page)))
 }
 
-/// Body for creating an account, by the owner or by a stranger.
+/// Body for creating an account, by the administrator.
 // `max_length` takes only a literal; `the_reference_states_the_password_cap`
 // holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -298,7 +299,7 @@ pub struct CreateAccountRequest {
     /// Local password: no minimum length, at most 128 characters, counted
     /// as characters rather than bytes and not trimmed. Over 128 is refused
     /// with `422 Unprocessable Entity`. Absent or empty opens an account
-    /// with no password.
+    /// with no password, which logs in with an empty one.
     #[serde(default)]
     #[schema(max_length = 128)]
     pub password: Option<String>,
@@ -312,58 +313,32 @@ pub struct CreateAccountRequest {
     pub phone: Option<String>,
 }
 
-/// The account that was created, and the Session a stranger's registration
-/// opens on it. The owner's creation opens no session, so `token` is `null`.
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct CreateAccountResponse {
-    /// The new account.
-    #[serde(flatten)]
-    pub account: Account,
-    /// Session token to send as `Authorization: Bearer …`. `null` unless a
-    /// stranger registered, because only they are logged in on creation.
-    pub token: Option<String>,
-}
-
-/// Create an account.
+/// Create an account, as the administrator.
 ///
-/// The owner may always: the owner picks the first password, and the
-/// account holder keeps it until they change it under Settings. A stranger
-/// with no credential may while registration is open, and is logged in on
-/// creation. Registering is the only self-service door, shut unless the
-/// owner has opened it; an unclaimed Message Crate is shut too, because its
-/// first act is being claimed, not being joined.
+/// The administrator picks the first password, and the account holder keeps
+/// it until they change it under Settings.
 #[utoipa::path(
     post,
     path = "/v1/accounts",
     tag = "Accounts",
-    security((), ("session" = ["owner"])),
+    security(("session" = ["admin"])),
     request_body = CreateAccountRequest,
     responses(
         (
             status = 201,
-            body = CreateAccountResponse,
+            body = Account,
+            description = "The new account. Creating it opens no Session on it.",
             headers(("Location" = String, description = "Path of the new account"))
         ),
-        crate::problem::openapi::RegistrationClosed,
         crate::problem::openapi::UsernameTaken
     )
 )]
 pub async fn create_account(
     State(db): State<SqlitePool>,
-    auth: Option<AuthIdentity>,
-    headers: axum::http::HeaderMap,
+    Admin(_auth): Admin,
     Json(req): Json<CreateAccountRequest>,
-) -> Result<Created<CreateAccountResponse>, ApiError> {
+) -> Result<Created<Account>, ApiError> {
     let username = require_valid_username(&req.username)?;
-    let by_owner = match &auth {
-        Some(auth) if auth.is_owner() => true,
-        Some(_) => {
-            return Err(ApiError::NotTheOwner(
-                "only the owner creates accounts for others; a stranger creates their own with no credential while registration is open".into(),
-            ));
-        }
-        None => false,
-    };
 
     let preferred_name = req
         .preferred_name
@@ -378,13 +353,6 @@ pub async fn create_account(
         .transpose()?
         .and_then(ir::nonempty);
 
-    // A stranger is refused on a closed server before the password is hashed,
-    // so a refusal costs no Argon2 work. This read takes no lock, so the
-    // owner may close registration before the write transaction below
-    // begins: the check inside that transaction is the one that decides.
-    if !by_owner {
-        require_registration_open(&mut *db.acquire().await?).await?;
-    }
     // Hashed before a connection is taken for the write, so neither a pooled
     // connection nor the write lock is held for the length of an Argon2 hash.
     let password_hash = hash_user_password(req.password.as_deref().unwrap_or("")).await?;
@@ -394,14 +362,9 @@ pub async fn create_account(
     // The insert, the phone, and the profile-setup mark land together: a
     // failure between them would leave an account that owes profile setup
     // without being marked for it. The write transaction takes the write
-    // lock before the registration and username checks, so the owner cannot
-    // close registration between the check and the insert, and two
-    // registrations of one name cannot both pass the check and then race to
-    // the insert.
+    // lock before the username check, so two creations of one name cannot
+    // both pass the check and then race to the insert.
     let mut tx = begin_write(&mut conn).await?;
-    if !by_owner {
-        require_registration_open(&mut tx).await?;
-    }
     require_username_free(&mut tx, &username).await?;
     let account_id = account_profile::insert_account(
         &mut tx,
@@ -423,29 +386,16 @@ pub async fn create_account(
     if preferred_name.is_none() && phone.is_none() {
         account_profile::set_must_set_up_profile(&mut tx, account_id, true).await?;
     }
-    let actor = if by_owner {
-        AuditActor::Owner
-    } else {
-        AuditActor::Anonymous
-    };
-    let now = Utc::now();
     audit_trail::record(
         &mut tx,
-        &NewEntry::about(AuditAction::AccountCreated, actor, (account_id, &username)),
-        now,
+        &NewEntry::about(
+            AuditAction::AccountCreated,
+            AuditActor::Admin,
+            (account_id, &username),
+        ),
+        Utc::now(),
     )
     .await?;
-    let token = if by_owner {
-        None
-    } else {
-        // Registering opens a Session, so it is the account's first login.
-        let app = crate::auth::connecting_app(&headers);
-        let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref(), now)
-            .await
-            .map_err(ApiError::Internal)?;
-        account_profile::record_login(&mut tx, account_id, now).await?;
-        Some(token)
-    };
     tx.commit().await?;
 
     let account = load_account(&mut conn, account_id).await?.ok_or_else(|| {
@@ -453,26 +403,15 @@ pub async fn create_account(
     })?;
     Ok(Created {
         location: format!("/v1/accounts/{account_id}"),
-        body: CreateAccountResponse { account, token },
+        body: account,
     })
-}
-
-/// Refuse a stranger's registration while the owner has registration closed.
-async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), ApiError> {
-    if server_settings::load(conn).await?.public_registration {
-        Ok(())
-    } else {
-        Err(ApiError::RegistrationClosed(
-            "this Message Crate does not accept new accounts; ask its owner for one".into(),
-        ))
-    }
 }
 
 // ---------------------------------------------------------------------------
 // One account
 // ---------------------------------------------------------------------------
 
-/// Read one account: the owner reads any, an account reads its own.
+/// Read one account: the administrator reads any, an account reads its own.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}",
@@ -481,7 +420,7 @@ async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), Ap
     params(("id" = i64, Path, description = "Account id")),
     responses(
         (status = 200, body = Account),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn get_account(
@@ -490,7 +429,7 @@ pub async fn get_account(
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<Account>, ApiError> {
     let mut conn = db.acquire().await?;
-    require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     Ok(Json(require_account(&mut conn, target).await?))
 }
 
@@ -520,8 +459,8 @@ pub struct UnlinkAccountIdentityRequest {
 }
 
 /// Body for changing an account. Omitted fields are left alone. The name,
-/// zone and identities are set by the account or by the owner; the
-/// disabled flag and the three permissions are the owner's alone.
+/// zone and identities are set by the account or by the administrator; the
+/// disabled flag and the three permissions are the administrator's alone.
 #[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
 pub struct UpdateAccountRequest {
     /// Display name. Absent leaves the current name unchanged, `null` clears
@@ -617,7 +556,7 @@ impl UpdateAccountRequest {
             || self.set_identity_country.is_some()
     }
 
-    /// True when the body names a field only the owner may set.
+    /// True when the body names a field only the administrator may set.
     fn touches_flags(&self) -> bool {
         self.disabled.is_some()
             || self.can_import.is_some()
@@ -751,26 +690,27 @@ async fn update_profile_in(
     // An account saving its own profile is what profile setup is, so it no
     // longer owes one. Cleared in the same transaction as the change it
     // describes, so the flag cannot outlive the fact it stands for. The
-    // owner filling a profile in ahead of time is not the holder's setup.
+    // administrator filling a profile in ahead of time is not the holder's
+    // setup.
     if completes_setup {
         account_profile::set_must_set_up_profile(tx, account_id, false).await?;
     }
     Ok(())
 }
 
-/// Set the owner's flags on an account.
+/// Set the administrator's flags on an account.
 ///
 /// Clearing `can_import` or `can_export` also narrows every API token that
 /// account has already issued, because a token's permissions are intersected
-/// with its account's on every request. The owner restrains the account and
-/// the tokens follow, without ever seeing one.
+/// with its account's on every request. The administrator restrains the account
+/// and the tokens follow, without ever seeing one.
 ///
 /// Disabling the account also ends its Session, recorded as revoked by the
-/// owner, so enabling it again does not bring back the old token or the
+/// administrator, so enabling it again does not bring back the old token or the
 /// Media Links signed under it: the holder logs in again (#2074).
 ///
-/// What changed goes in the Audit Trail as the owner's act: disabling or
-/// re-enabling, and which permissions were turned on and off. A flag sent
+/// What changed goes in the Audit Trail as the administrator's act: disabling
+/// or re-enabling, and which permissions were turned on and off. A flag sent
 /// with the value it already had changes nothing and records nothing. The
 /// caller holds the write transaction, so the change and its record land
 /// together. The record is stamped `now`.
@@ -799,14 +739,14 @@ async fn apply_flags(
         audit_trail::record_about(
             conn,
             action,
-            AuditActor::Owner,
+            AuditActor::Admin,
             account_id,
             Details::default(),
             now,
         )
         .await?;
         if disabled {
-            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Owner, now)
+            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Admin, now)
                 .await?;
         }
     }
@@ -834,7 +774,7 @@ async fn apply_flags(
         audit_trail::record_about(
             conn,
             AuditAction::PermissionsChanged,
-            AuditActor::Owner,
+            AuditActor::Admin,
             account_id,
             details,
             now,
@@ -844,12 +784,12 @@ async fn apply_flags(
     Ok(())
 }
 
-/// Change an account. Its display name, time zone and identities are set by
-/// the account itself or by the owner; only the owner sets an
+/// Change an account. Its display name, time zone and identities are set by the
+/// account itself or by the administrator; only the administrator sets an
 /// account's disabled flag and its import, export and delete permissions. A
 /// field the caller may not set answers `403 Forbidden`, and the reloaded
-/// account is the answer. The Demo Account's status, permissions,
-/// identities, display name and time zone are fixed for everyone, the owner
+/// account is the answer. The Demo Account's status, permissions, identities,
+/// display name and time zone are fixed for everyone, the administrator
 /// included: every visitor shares the account, so a change one makes is what
 /// the next one finds.
 #[utoipa::path(
@@ -861,7 +801,7 @@ async fn apply_flags(
     request_body = UpdateAccountRequest,
     responses(
         (status = 200, body = Account),
-        crate::problem::openapi::NotTheOwner,
+        crate::problem::openapi::NotTheAdmin,
         crate::problem::openapi::DemoAccountProtected,
         crate::problem::openapi::IdentityExists
     )
@@ -873,7 +813,7 @@ pub async fn update_account(
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<Account>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     req.check_caps()?;
     if req.touches_flags() {
         refuse_for_demo_account(target, "status and permissions are fixed")?;
@@ -891,25 +831,27 @@ pub async fn update_account(
     }
     let now = Utc::now();
     match reach {
-        reach @ (Reach::Own | Reach::OwnersOwn) => {
+        reach @ (Reach::Own | Reach::AdminsOwn) => {
             if req.touches_flags() {
-                return Err(if reach == Reach::OwnersOwn {
-                    // The owner holds no messages, so its permissions mean
-                    // nothing, and it cannot lock itself out.
-                    ApiError::validation("the owner cannot be disabled or given permissions")
+                return Err(if reach == Reach::AdminsOwn {
+                    // The administrator holds no messages, so its permissions
+                    // mean nothing, and it cannot lock itself out.
+                    ApiError::validation(
+                        "the administrator cannot be disabled or given permissions",
+                    )
                 } else {
                     ApiError::InsufficientScope(
-                        "only the owner sets disabled, can_import, can_export and can_delete"
+                        "only the administrator sets disabled, can_import, can_export and can_delete"
                             .into(),
                     )
                 });
             }
             update_profile_on_conn(&mut conn, target, &req, true, now).await?;
         }
-        Reach::Owner => {
-            // The owner sets up an account for its holder: the name, zone and
-            // handles as well as the flags, in one write transaction, so a
-            // failed flag leaves the profile as it was too.
+        Reach::Admin => {
+            // The administrator sets up an account for its holder: the name,
+            // zone and handles as well as the flags, in one write transaction,
+            // so a failed flag leaves the profile as it was too.
             let mut tx = begin_write(&mut conn).await?;
             if req.touches_profile() {
                 update_profile_in(&mut tx, target, &req, false, now).await?;
@@ -922,7 +864,7 @@ pub async fn update_account(
 }
 
 /// Confirmation flag and the current password when one is set: the body an
-/// account sends to delete itself. The owner sends none.
+/// account sends to delete itself. The administrator sends none.
 // `max_length` takes only a literal; `the_reference_states_the_password_cap`
 // holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -940,30 +882,30 @@ pub struct DeleteAccountRequest {
 /// Permanently delete an account: login, profile, contacts, and every
 /// message it owns, with its data directory.
 ///
-/// The owner deletes any account outright, the demo account included,
-/// which is how a demo Message Crate is cleared into a real one. An account deletes
-/// itself with a body carrying the confirmation and its current password: a
-/// credential belongs in a body, not in a URL or a header of the server's own
-/// invention, and a DELETE body has no defined meaning in RFC 9110 but is not
-/// forbidden. Deleting an account deletes its messages, so an account needs
-/// the `delete` permission to delete itself, and one without it asks the
-/// owner. The demo account refuses its own deletion, and nobody deletes the
-/// owner.
+/// The administrator deletes any account outright, the demo account included,
+/// which is how a demo Message Crate is cleared into a real one. An account
+/// deletes itself with a body carrying the confirmation and its current
+/// password: a credential belongs in a body, not in a URL or a header of the
+/// server's own invention, and a DELETE body has no defined meaning in RFC 9110
+/// but is not forbidden. Deleting an account deletes its messages, so an
+/// account needs the `delete` permission to delete itself, and one without it
+/// asks the administrator. The demo account refuses its own deletion, and
+/// nobody deletes the administrator.
 #[utoipa::path(
     delete,
     path = "/v1/accounts/{id}",
     tag = "Accounts",
     security(
-        ("session" = ["owner"]),
+        ("session" = ["admin"]),
         ("session" = ["delete"])
     ),
     params(("id" = i64, Path, description = "Account id to delete")),
-    request_body(content = Option<DeleteAccountRequest>, description = "Sent by an account deleting itself; the owner sends no body"),
+    request_body(content = Option<DeleteAccountRequest>, description = "Sent by an account deleting itself; the administrator sends no body"),
     responses(
         (status = 204, description = "Account deleted"),
         crate::problem::openapi::InvalidCredentials,
         crate::problem::openapi::DemoAccountProtected,
-        crate::problem::openapi::NotTheOwner,
+        crate::problem::openapi::NotTheAdmin,
         crate::problem::openapi::StateConflict
     )
 )]
@@ -979,14 +921,14 @@ pub async fn delete_account(
     let mut conn = db.acquire().await?;
     // Checked before the account is looked up: a build removes the account
     // row and writes it again, and a delete must not slip in between.
-    if account_profile::is_demo_account(target) && auth.is_owner() && demo.build.is_building() {
+    if account_profile::is_demo_account(target) && auth.is_admin() && demo.build.is_building() {
         return Err(ApiError::StateConflict(
             "the Demo Account is being built; delete it when the build ends".into(),
         ));
     }
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
-    if account_profile::is_server_owner(target) {
-        return Err(ApiError::validation("the owner cannot be deleted"));
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
+    if account_profile::is_admin(target) {
+        return Err(ApiError::validation("the administrator cannot be deleted"));
     }
     if reach.is_own() {
         if account_profile::is_demo_account(target) {
@@ -994,13 +936,13 @@ pub async fn delete_account(
                 "the Demo Account cannot delete itself".into(),
             ));
         }
-        // Deleting the account deletes every message it owns, so an account
-        // the owner barred from deleting messages may not delete itself
-        // either. The owner's delete is untouched: it is how such an account
-        // is closed.
+        // Deleting the account deletes every message it owns, so an account the
+        // administrator barred from deleting messages may not delete itself
+        // either. The administrator's delete is untouched: it is how such an
+        // account is closed.
         if !auth.permissions().delete {
             return Err(ApiError::InsufficientScope(
-                "this account may not delete messages, so it may not delete itself; the owner can delete it"
+                "this account may not delete messages, so it may not delete itself; the administrator can delete it"
                     .into(),
             ));
         }
@@ -1086,8 +1028,8 @@ async fn require_current_password(
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReplaceAccountPasswordRequest {
     /// The new password: no minimum length for a user account, where empty
-    /// clears it, and one character or more for the owner's. At most 128
-    /// characters, counted as characters rather than bytes and not trimmed;
+    /// clears it, and one character or more for the administrator's. At most
+    /// 128 characters, counted as characters rather than bytes and not trimmed;
     /// over 128 is refused with `422 Unprocessable Entity`.
     #[schema(max_length = 128)]
     pub password: String,
@@ -1097,7 +1039,7 @@ pub struct ReplaceAccountPasswordRequest {
     /// current one.
     #[schema(max_length = 128)]
     pub password_confirmation: String,
-    /// The password being replaced. Required when the owner changes its
+    /// The password being replaced. Required when the administrator changes its
     /// own; nobody else sends it. A password is at most 128 characters, so a
     /// longer one is refused with `422 Unprocessable Entity` before it is
     /// checked.
@@ -1115,14 +1057,14 @@ pub struct ReplaceAccountPasswordResponse {
 
 /// Set an account's password.
 ///
-/// For a user account the session is the credential, and the current
-/// password is not asked for. The owner changing its own must send
-/// `current_password`: that account reaches every other, so a session left
-/// open on a shared machine must not be enough to take it over.
-/// An account changing its own has its API tokens revoked and gets
-/// `200` with a rotated session token. The owner setting another
-/// account's answers `204`. That is the whole of it: the account's sessions carry on,
-/// and its holder keeps the new password until they change it themselves.
+/// For a user account the session is the credential, and the current password
+/// is not asked for. The administrator changing its own must send
+/// `current_password`: that account reaches every other, so a session left open
+/// on a shared machine must not be enough to take it over. An account changing
+/// its own has its API tokens revoked and gets `200` with a rotated session
+/// token. The administrator setting another account's answers `204`. That is
+/// the whole of it: the account's sessions carry on, and its holder keeps the
+/// new password until they change it themselves.
 #[utoipa::path(
     put,
     path = "/v1/accounts/{id}/password",
@@ -1132,9 +1074,9 @@ pub struct ReplaceAccountPasswordResponse {
     request_body = ReplaceAccountPasswordRequest,
     responses(
         (status = 200, description = "Own password changed; the rotated session token", body = ReplaceAccountPasswordResponse),
-        (status = 204, description = "Password set by the owner"),
+        (status = 204, description = "Password set by the administrator"),
         crate::problem::openapi::InvalidCredentials,
-        crate::problem::openapi::NotTheOwner,
+        crate::problem::openapi::NotTheAdmin,
         crate::problem::openapi::DemoAccountProtected
     )
 )]
@@ -1149,7 +1091,7 @@ pub async fn replace_account_password(
     // statement that needs it, and the write takes one after them, so no
     // connection is held for the length of a hash or a check.
     let reach =
-        require_account_reach(&mut *db.acquire().await?, &auth, target, Admits::Owner).await?;
+        require_account_reach(&mut *db.acquire().await?, &auth, target, Admits::Admin).await?;
     // The login card's button enters the Demo Account with no password, so
     // one set by anybody would shut it.
     refuse_for_demo_account(target, "password cannot be set")?;
@@ -1157,10 +1099,10 @@ pub async fn replace_account_password(
     // The checks run in a fixed order so the first thing a user is told is the
     // first thing they typed wrong: the current password, then the pair, then
     // that the new one is actually new.
-    if reach == Reach::OwnersOwn {
+    if reach == Reach::AdminsOwn {
         let Some(current) = req.current_password.as_deref() else {
             return Err(ApiError::validation(
-                "current password is required to change the owner's password",
+                "current password is required to change the administrator's password",
             ));
         };
         let password_hash =
@@ -1178,9 +1120,10 @@ pub async fn replace_account_password(
         return Err(ApiError::validation("new passwords do not match"));
     }
 
-    // The owner must have a password; a user account may have none.
-    let new_hash = if account_profile::is_server_owner(target) {
-        Some(hash_owner_password(&req.password).await?)
+    // The administrator must have a password. A user account may have none,
+    // and then logs in with an empty one.
+    let new_hash = if account_profile::is_admin(target) {
+        Some(hash_admin_password(&req.password).await?)
     } else {
         hash_user_password(&req.password).await?
     };
@@ -1189,17 +1132,17 @@ pub async fn replace_account_password(
     let now = Utc::now();
 
     match reach {
-        Reach::Own | Reach::OwnersOwn => {
+        Reach::Own | Reach::AdminsOwn => {
             let token = change_password_on_conn(&mut conn, target, new_hash, now).await?;
             Ok(Json(ReplaceAccountPasswordResponse { token }).into_response())
         }
-        Reach::Owner => {
+        Reach::Admin => {
             let mut tx = begin_write(&mut conn).await?;
             account_profile::update_password_hash(&mut tx, target, new_hash).await?;
             audit_trail::record_about(
                 &mut tx,
                 AuditAction::PasswordSet,
-                AuditActor::Owner,
+                AuditActor::Admin,
                 target,
                 Details::default(),
                 now,
@@ -1216,7 +1159,7 @@ pub async fn replace_account_password(
 // ---------------------------------------------------------------------------
 
 /// Confirmation flag: the body an account sends to delete its own messages.
-/// The owner sends none.
+/// The administrator sends none.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct DeleteMessagesRequest {
     /// Must be `true`; anything else is rejected.
@@ -1242,7 +1185,7 @@ pub struct DeleteMessagesResponse {
 /// uploaded files for a batch it has not sent yet. The run's end removes
 /// the ones no batch named.
 ///
-/// The owner may, on any account. The account itself may with a
+/// The administrator may, on any account. The account itself may with a
 /// session that carries the `delete` permission, and confirms in the body.
 /// An API token is refused whatever its scopes: permanent deletion is a
 /// person's act (`docs/architecture/rules/http-api.md`, API-83).
@@ -1251,11 +1194,11 @@ pub struct DeleteMessagesResponse {
     path = "/v1/accounts/{id}/messages",
     tag = "Accounts",
     security(
-        ("session" = ["owner"]),
+        ("session" = ["admin"]),
         ("session" = ["delete"])
     ),
     params(("id" = i64, Path, description = "Account whose messages are destroyed")),
-    request_body(content = Option<DeleteMessagesRequest>, description = "Sent by an account deleting its own messages; the owner sends no body"),
+    request_body(content = Option<DeleteMessagesRequest>, description = "Sent by an account deleting its own messages; the administrator sends no body"),
     responses(
         (status = 200, body = DeleteMessagesResponse),
         crate::problem::openapi::DemoAccountProtected
@@ -1270,9 +1213,10 @@ pub async fn delete_account_messages(
     body: Option<Json<DeleteMessagesRequest>>,
 ) -> Result<Json<DeleteMessagesResponse>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     // Emptied, the Demo Account would still be offered on the login card and
-    // open onto nothing. The owner removes Demo Data by deleting the account.
+    // open onto nothing. The administrator removes Demo Data by deleting the
+    // account.
     refuse_for_demo_account(target, "messages cannot be deleted for good")?;
     if reach.is_own() {
         crate::auth::require_delete_access(&auth)?;
@@ -1328,10 +1272,10 @@ pub(crate) struct AccountStorage {
 }
 
 /// What an account holds: attachment bytes, the attachment, conversation and
-/// contact counts, and the 100 largest files. The owner reads any account's;
-/// an account reads its own. The owner is told each file's name, type and
-/// size and not the conversation it is in, which says who the account talks
-/// to (`docs/adr/0008-the-owner-holds-no-messages.md`).
+/// contact counts, and the 100 largest files. The administrator reads any
+/// account's; an account reads its own. The administrator is told each file's
+/// name, type and size and not the conversation it is in, which says who the
+/// account talks to (`docs/adr/0008-the-administrator-holds-no-messages.md`).
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/storage",
@@ -1340,7 +1284,7 @@ pub(crate) struct AccountStorage {
     params(("id" = i64, Path, description = "Account id")),
     responses(
         (status = 200, body = AccountStorage),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn get_account_storage(
@@ -1349,7 +1293,7 @@ pub(crate) async fn get_account_storage(
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<AccountStorage>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     let scope = Scope::Account(target);
     let total_bytes = storage::attachment_bytes(&mut conn, scope).await?;
     let attachment_count = storage::attachment_count(&mut conn, scope).await?;
@@ -1357,7 +1301,7 @@ pub(crate) async fn get_account_storage(
     let contact_count = storage::contact_count(&mut conn, scope).await?;
     let mut top_attachments =
         imports::top_attachments_by_size(&mut conn, target, TOP_ATTACHMENTS).await?;
-    if matches!(reach, Reach::Owner) {
+    if matches!(reach, Reach::Admin) {
         top_attachments = top_attachments
             .into_iter()
             .map(imports::TopAttachment::without_conversation)
@@ -1377,7 +1321,7 @@ pub(crate) async fn get_account_storage(
 // ---------------------------------------------------------------------------
 
 /// An account's identities, each with the messages held at it. The
-/// owner reads any account's; an account reads its own.
+/// administrator reads any account's; an account reads its own.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/identities",
@@ -1390,7 +1334,7 @@ pub(crate) async fn get_account_storage(
     ),
     responses(
         (status = 200, body = Page<Identity>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_identities(
@@ -1401,7 +1345,7 @@ pub(crate) async fn list_account_identities(
 ) -> Result<Json<Page<Identity>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
     let mut conn = db.acquire().await?;
-    require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     let rows = handles::identities(&mut conn, handles::IdentitiesOf::Account(target)).await?;
     Ok(Json(page_of(rows, params)))
 }
@@ -1410,32 +1354,33 @@ pub(crate) async fn list_account_identities(
 // Import and export history
 // ---------------------------------------------------------------------------
 //
-// An account's history is metadata about it, so the owner reads it as well as
-// the account (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the
-// owner may see"). `/v1/imports` and `/v1/exports` are the import and export
-// pipelines' own routes and ask for a permission the owner's session never
-// carries; these ask only who is calling. Which contacts a run created is the
-// holder's address book, so `/v1/imports/{id}/contacts` has no twin here: the
-// run's detail carries the counts.
+// An account's history is metadata about it, so the administrator reads it as
+// well as the account (`docs/adr/0008-the-administrator-holds-no-messages.md`,
+// "What the administrator may see"). `/v1/imports` and `/v1/exports` are the
+// import and export pipelines' own routes and ask for a permission the
+// administrator's session never carries; these ask only who is calling. Which
+// contacts a run created is the holder's address book, so
+// `/v1/imports/{id}/contacts` has no twin here: the run's detail carries the
+// counts.
 //
-// The account reads its runs in full. The owner reads each as an
-// `OwnerImportRun` (in a list an `OwnerImportRunSummary`) or an
-// `OwnerExportRun`, which hold only what ADR 0008 lists:
-// a run's summary, its issues and an export's query say whom the account
-// talks to and what it searched for. The owner's view is a type of its own
-// rather than the account's with fields removed, so a field added to a run
-// reaches the owner only when someone adds it to that type.
+// The account reads its runs in full. The administrator reads each as an
+// `AdminImportRun` (in a list an `AdminImportRunSummary`) or an
+// `AdminExportRun`, which hold only what ADR 0008 lists: a run's summary, its
+// issues and an export's query say whom the account talks to and what it
+// searched for. The administrator's view is a type of its own rather than the
+// account's with fields removed, so a field added to a run reaches the
+// administrator only when someone adds it to that type.
 
 /// An account's Import Runs as its reader may see them: each an
-/// `ImportRunSummary` for the account itself, an `OwnerImportRunSummary`
-/// for the owner. Neither carries the run's issues.
+/// `ImportRunSummary` for the account itself, an `AdminImportRunSummary`
+/// for the administrator. Neither carries the run's issues.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub(crate) enum AccountImportRuns {
     /// The account's own runs.
     Own(Page<ImportRunSummary>),
-    /// Another account's runs, as the owner reads them.
-    Owner(Page<OwnerImportRunSummary>),
+    /// Another account's runs, as the administrator reads them.
+    Admin(Page<AdminImportRunSummary>),
 }
 
 /// One of an account's Import Runs as its reader may see it.
@@ -1444,24 +1389,24 @@ pub(crate) enum AccountImportRuns {
 pub(crate) enum AccountImportRun {
     /// The account's own run.
     Own(Box<ImportRun>),
-    /// Another account's run, as the owner reads it.
-    Owner(Box<OwnerImportRun>),
+    /// Another account's run, as the administrator reads it.
+    Admin(Box<AdminImportRun>),
 }
 
 /// An account's Export Runs as its reader may see them: in full for the
-/// account itself, each an `OwnerExportRun` for the owner.
+/// account itself, each an `AdminExportRun` for the administrator.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub(crate) enum AccountExportRuns {
     /// The account's own runs.
     Own(Page<api_types::ExportRun>),
-    /// Another account's runs, as the owner reads them.
-    Owner(Page<OwnerExportRun>),
+    /// Another account's runs, as the administrator reads them.
+    Admin(Page<AdminExportRun>),
 }
 
 /// An account's Import Runs as a page, newest first unless `sort` says
-/// otherwise. The owner reads any account's, each an `OwnerImportRunSummary`; an
-/// account reads its own in full.
+/// otherwise. The administrator reads any account's, each an
+/// `AdminImportRunSummary`; an account reads its own in full.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/imports",
@@ -1476,7 +1421,7 @@ pub(crate) enum AccountExportRuns {
     ),
     responses(
         (status = 200, body = AccountImportRuns),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_imports(
@@ -1486,18 +1431,18 @@ pub(crate) async fn list_account_imports(
     Query(query): Query<crate::imports_api::dto::ListImportsQuery>,
 ) -> Result<Json<AccountImportRuns>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     let rows = crate::imports_api::import_rows_page(&mut conn, target, query).await?;
     Ok(Json(if reach.is_own() {
         AccountImportRuns::Own(rows.map(Into::into))
     } else {
-        AccountImportRuns::Owner(rows.map(Into::into))
+        AccountImportRuns::Admin(rows.map(Into::into))
     }))
 }
 
 /// One of an account's Import Runs: status, timings and counts, and for the
-/// account itself its summary and issues. The owner reads it as an
-/// `OwnerImportRun`, with the attachments whose Thumbnail or Preview
+/// account itself its summary and issues. The administrator reads it as an
+/// `AdminImportRun`, with the attachments whose Thumbnail or Preview
 /// could not be made and why. A run that is another account's is a 404.
 #[utoipa::path(
     get,
@@ -1510,7 +1455,7 @@ pub(crate) async fn list_account_imports(
     ),
     responses(
         (status = 200, body = AccountImportRun),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn get_account_import(
@@ -1519,21 +1464,21 @@ pub(crate) async fn get_account_import(
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<AccountImportRun>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     if !reach.is_own() {
         let row = imports::get_owned_import(&mut conn, target, import_id)
             .await
             .map_err(ApiError::from)?;
-        let run = crate::imports_api::owner_import_run(&mut conn, row).await?;
-        return Ok(Json(AccountImportRun::Owner(Box::new(run))));
+        let run = crate::imports_api::admin_import_run(&mut conn, row).await?;
+        return Ok(Json(AccountImportRun::Admin(Box::new(run))));
     }
     let run = crate::imports_api::full_import_run(&mut conn, target, import_id).await?;
     Ok(Json(AccountImportRun::Own(Box::new(run))))
 }
 
 /// An account's Export Runs as a page, newest first unless `sort` says
-/// otherwise. The owner reads any account's, each an `OwnerExportRun`; an
-/// account reads its own in full.
+/// otherwise. The administrator reads any account's, each an `AdminExportRun`;
+/// an account reads its own in full.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/exports",
@@ -1548,7 +1493,7 @@ pub(crate) async fn get_account_import(
     ),
     responses(
         (status = 200, body = AccountExportRuns),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_exports(
@@ -1558,20 +1503,20 @@ pub(crate) async fn list_account_exports(
     Query(query): Query<crate::exports_api::ListExportsQuery>,
 ) -> Result<Json<AccountExportRuns>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, target, Admits::Admin).await?;
     let page = crate::exports_api::exports_page(&mut conn, target, query).await?;
     if !reach.is_own() {
-        return Ok(Json(AccountExportRuns::Owner(
-            page.map(OwnerExportRun::from),
+        return Ok(Json(AccountExportRuns::Admin(
+            page.map(AdminExportRun::from),
         )));
     }
     Ok(Json(AccountExportRuns::Own(page)))
 }
 
 /// An account's Audit Trail, newest first: every entry about the account,
-/// whoever acted, the owner's changes to it and the logins refused for its
-/// username included, with its Import and Export Runs. The owner reads any
-/// account's; an account reads its own.
+/// whoever acted, the administrator's changes to it and the logins refused for
+/// its username included, with its Import and Export Runs. The administrator
+/// reads any account's; an account reads its own.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/audit-trail",
@@ -1584,7 +1529,7 @@ pub(crate) async fn list_account_exports(
     ),
     responses(
         (status = 200, body = Page<crate::db::audit_trail::AuditEntry>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_audit_trail(
@@ -1604,15 +1549,15 @@ pub(crate) async fn list_account_audit_trail(
     .await
 }
 
-/// [`require_account_reach`], admitting the owner, on a connection of its
-/// own, for a handler whose work then runs on another.
+/// [`require_account_reach`], admitting the administrator, on a connection of
+/// its own, for a handler whose work then runs on another.
 async fn require_reach(
     db: &SqlitePool,
     auth: &AuthIdentity,
     target: i64,
 ) -> Result<Reach, ApiError> {
     let mut conn = db.acquire().await?;
-    require_account_reach(&mut conn, auth, target, Admits::Owner).await
+    require_account_reach(&mut conn, auth, target, Admits::Admin).await
 }
 
 #[cfg(test)]

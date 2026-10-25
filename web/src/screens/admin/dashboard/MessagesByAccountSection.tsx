@@ -1,0 +1,72 @@
+import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { formatBytes } from "../../../lib/formatBytes";
+import { tdClass, tdMutedClass } from "../../settings/apiTokensUtils";
+import { rowStripeClass, thClass, thSeparatorClass } from "../adminTableStyles";
+import { DashboardSection } from "./DashboardSection";
+import type { ServerStorage } from "./types";
+
+/** A figure lines up on the right, so sizes can be read down the column. */
+const numberCellClass = "whitespace-nowrap text-right";
+
+/**
+ * One row per account: its username, how many messages it holds, how much
+ * text they are, and the estimated share of the messages' storage. The
+ * accounts come in the order the User Accounts table lists them: the administrator
+ * first, then by username. The totals row at the bottom carries the
+ * whole-database figures, so the split can be seen to add up.
+ *
+ * The estimate is the measured messages-on-disk figure split by each
+ * account's share of text; the hint says so.
+ */
+export function MessagesByAccountSection({ storage }: { storage: ServerStorage }) {
+  const totalText = storage.accounts.reduce((sum, account) => sum + account.text_bytes, 0);
+  return (
+    <DashboardSection
+      title="Messages by account"
+      hint="Estimated size on disk is the messages-on-disk figure split by each account's share of text."
+    >
+      <ScrollingTableCard cardClassName="rounded-xl bg-elevated">
+        <table className="w-full border-collapse" aria-label="Messages by account">
+          <thead>
+            <tr>
+              <th className={thClass}>Account</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>Messages</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>Text</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>
+                Estimated size on disk
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {storage.accounts.map((account) => (
+              <tr key={account.account_id} className={`border-t border-border ${rowStripeClass}`}>
+                <td className={`${tdClass} whitespace-nowrap font-semibold`}>{account.username}</td>
+                <td className={`${tdMutedClass} ${numberCellClass}`}>
+                  {account.message_count.toLocaleString()}
+                </td>
+                <td className={`${tdMutedClass} ${numberCellClass}`}>
+                  {formatBytes(account.text_bytes)}
+                </td>
+                <td className={`${tdClass} ${numberCellClass}`}>
+                  {formatBytes(account.estimated_message_bytes)}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-border">
+              <td className={`${tdClass} whitespace-nowrap font-semibold`}>All accounts</td>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
+                {storage.message_count.toLocaleString()}
+              </td>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
+                {formatBytes(totalText)}
+              </td>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
+                {formatBytes(storage.messages_bytes)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </ScrollingTableCard>
+    </DashboardSection>
+  );
+}

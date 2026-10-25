@@ -1,5 +1,5 @@
 # Published Message Crate image. Save this file and run: docker compose up -d
-# Docs: https://messagecrate.app/docs/user/features/owner/run-with-docker/
+# Docs: https://messagecrate.app/docs/user/features/admin/run-with-docker/
 #
 # Pin a release: change :latest to a release number such as :0.10.0 (no "v").
 # JSONL drop: copy files into ./staging
@@ -28,7 +28,7 @@ services:
       - /tmp
     ports:
       # This computer only. To reach the server from other computers, see
-      # https://messagecrate.app/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network
+      # https://messagecrate.app/docs/user/features/admin/run-on-another-machine/#publish-the-server-on-the-network
       - "127.0.0.1:8080:8080"
     volumes:
       - message-crate-data:/app/data
