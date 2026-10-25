@@ -667,6 +667,20 @@ fn an_orphaned_row_and_a_non_imessage_row_are_classified() {
     );
 }
 
+/// A row sent by satellite (`iMessageLite`) is iMessage, a row with no
+/// service is empty, and any other service keeps its own name.
+#[test]
+fn a_satellite_row_is_imessage() {
+    assert_eq!(
+        service_name(&Service::from_name(Some("iMessageLite"))),
+        "iMessage"
+    );
+    assert_eq!(service_name(&Service::from_name(Some("SMS"))), "SMS");
+    assert_eq!(service_name(&Service::from_name(Some("rcs"))), "RCS");
+    assert_eq!(service_name(&Service::from_name(Some("Pager"))), "Pager");
+    assert_eq!(service_name(&Service::from_name(None)), "");
+}
+
 /// The classifier's other branches over a fixture row with its fields
 /// changed: a rename announcement, a location share, a balloon and a
 /// send effect.

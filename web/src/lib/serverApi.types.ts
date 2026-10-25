@@ -146,8 +146,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * An account's Audit Trail, newest first: every entry about the account, whoever acted, the administrator's changes to it and the logins refused for its username included, with its Import and Export Runs.
-         * @description The administrator reads any account's; an account reads its own.
+         * An account's Audit Trail, newest first.
+         * @description Every entry about the account, whoever acted, the administrator's changes to it and the logins refused for its username included, with its Import and Export Runs. The administrator reads any account's; an account reads its own.
          */
         get: operations["list_account_audit_trail"];
         put?: never;
@@ -409,8 +409,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download the thumbnail of a stored image or video: a JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.
-         * @description The server makes it in the background after the Import Run that brought
+         * Download the thumbnail of a stored image or video.
+         * @description A JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.
+         *
+         *     The server makes it in the background after the Import Run that brought
          *     the asset, and `process-assets` makes any that are missing. The URL is
          *     the SHA-256 fingerprint of the original. An asset with no thumbnail yet
          *     answers `404 Not Found`; the attachment's `thumbnail_mime_type` says
@@ -505,8 +507,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Every account's Audit Trail, newest first: logins, sessions ending, refused logins, Import Runs, Export Runs, and the administrator's and holders' changes to accounts, including those of deleted accounts under their old usernames.
-         * @description The administrator's alone.
+         * Every account's Audit Trail, newest first.
+         * @description Logins, sessions ending, refused logins, Import Runs, Export Runs, and the administrator's and holders' changes to accounts, including those of deleted accounts under their old usernames. The administrator's alone.
          *
          *     `deleted_account_id` narrows the list to one deleted account's entries
          *     and runs, which no longer carry an account id. The ids are listed by
@@ -531,8 +533,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The deleted accounts whose entries the Audit Trail keeps, by username A to Z, the latest deletion first under one username.
-         * @description Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.
+         * The deleted accounts whose entries the Audit Trail keeps.
+         * @description By username A to Z, the latest deletion first under one username. Each is one account: two accounts deleted under one username are two. Admin Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The administrator's alone.
          */
         get: operations["list_deleted_accounts"];
         put?: never;
@@ -671,8 +673,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Write the address book for the contacts a search matches, the checked ones among them, or every contact when the body names neither.
-         * @description The answer is `text/csv`, not JSON: one row per identity, with the
+         * Write the address book.
+         * @description For the contacts a search matches, the checked ones among them, or every contact when the body names neither.
+         *
+         *     The answer is `text/csv`, not JSON: one row per identity, with the
          *     columns `contact_id`, `display_name`, `service`, `identity` and `groups`.
          *     `service` is `Text Message`, `Email` for an email address on Text
          *     Message, or `WhatsApp`. A contact's name and its Contact Group names,
@@ -781,8 +785,8 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Delete a trashed contact the way a phone's Delete Contact does: the name and the person's edits go, the contact becomes Unknown again and leaves the trash, and every conversation it was in stays as it is, showing the identity.
-         * @description Conversations are never deleted with a contact. A contact that is not in the trash answers 409.
+         * Delete a trashed contact the way a phone's Delete Contact does.
+         * @description The name and the person's edits go, the contact becomes Unknown again and leaves the trash, and every conversation it was in stays as it is, showing the identity. Conversations are never deleted with a contact. A contact that is not in the trash answers 409.
          */
         delete: operations["delete_contact"];
         options?: never;
@@ -865,15 +869,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
-         * @description Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.
+         * One conversation, in the same shape a list row already has.
+         * @description So a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary. Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.
          */
         get: operations["get_conversation"];
         put?: never;
         post?: never;
         /**
-         * Permanently delete a trashed conversation: the conversation, its messages, and any attachment file no other message still uses.
-         * @description Trash is the only door to deletion, so a conversation that is not in the trash answers 409 rather than being deleted from wherever it was.
+         * Permanently delete a trashed conversation.
+         * @description The conversation, its messages, and any attachment file no other message still uses. Trash is the only door to deletion, so a conversation that is not in the trash answers 409 rather than being deleted from wherever it was.
          */
         delete: operations["delete_conversation"];
         options?: never;
@@ -1049,8 +1053,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The messages a running Export Run matched when it was created, a page at a time, oldest first unless `sort` says otherwise.
-         * @description An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.
+         * The messages a running Export Run matched when it was created.
+         * @description A page at a time, oldest first unless `sort` says otherwise. An import, a trash or a new day since creation changes nothing here. A message deleted since leaves its place empty: `total` stays `message_count`, a page can hold fewer than `limit` items, and a client advances `offset` by `limit`. Each page read raises the run's `messages_delivered` to the places reached.
          */
         get: operations["list_export_messages"];
         put?: never;
@@ -1283,8 +1287,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Messages matching `q`: the same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.
-         * @description With no `sort`, the best match comes first when `q` has a free-text word
+         * Messages matching `q`.
+         * @description The same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.
+         *
+         *     With no `sort`, the best match comes first when `q` has a free-text word
          *     to rank by, and the newest message first when it has none. The page's
          *     `search` says which order it applied and which terms it ranks by, so a
          *     client never parses `q` itself.
@@ -1577,7 +1583,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the server settings, and how the database is stored: its journal mode, and the error SQLite gave when the server asked for write-ahead logging. */
+        /**
+         * Read the server settings, and how the database is stored.
+         * @description Its journal mode, and the error SQLite gave when the server asked for write-ahead logging.
+         */
         get: operations["get_server_settings"];
         put?: never;
         post?: never;
@@ -1653,8 +1662,10 @@ export interface paths {
         get: operations["get_session"];
         put?: never;
         /**
-         * Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
-         * @description A refused login waits about a second, then answers
+         * Log in.
+         * @description Verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
+         *
+         *     A refused login waits about a second, then answers
          *     `invalid-credentials`, whatever was wrong: a username nobody holds, a
          *     wrong password, an empty password for the administrator before setup, a
          *     disabled account. An account other than the administrator that has no
@@ -1685,8 +1696,8 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Empty the trash: every trashed conversation is deleted for good, with its messages and any attachment file no other message uses, and every trashed contact loses its name and details and becomes Unknown, its conversations untouched.
-         * @description Trash is the only door to permanent deletion; this is the door for everything in it at once.
+         * Empty the trash.
+         * @description Every trashed conversation is deleted for good, with its messages and any attachment file no other message uses, and every trashed contact loses its name and details and becomes Unknown, its conversations untouched. Trash is the only door to permanent deletion; this is the door for everything in it at once.
          */
         delete: operations["delete_trash"];
         options?: never;
@@ -2573,6 +2584,17 @@ export interface components {
              */
             unknown: boolean;
         };
+        /**
+         * @description The service a conversation's messages were sent on: `text_message` (Text
+         *     Message: SMS, MMS, iMessage and RCS) or `whatsapp`, the two an identity
+         *     is on (`IdentityService`); `discord`, `signal`, `telegram` or `slack`,
+         *     which the conversation file names and no source reads today; or
+         *     `unknown`, when a message's transport could not be read or the messages
+         *     name two different services. `unknown` is never a default: each one is a
+         *     fault, and the import that wrote it logs a warning.
+         * @enum {string}
+         */
+        ConversationService: "text_message" | "whatsapp" | "discord" | "signal" | "telegram" | "slack" | "unknown";
         /** @description One backup source with message counts and share. */
         ConversationSource: {
             /** @description Backup source name. */
@@ -2619,8 +2641,14 @@ export interface components {
             message_count: number;
             /** @description Participants with names and identities. */
             participants: components["schemas"]["Participant"][];
-            /** @description Platform service of the conversation, e.g. `imessage`. */
-            service: string;
+            /**
+             * @description The service the conversation's messages were sent on, named from
+             *     each message's own transport and never from the import it came from:
+             *     `text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for
+             *     WhatsApp. `unknown` when a message's transport could not be read, or
+             *     when the messages name two different services.
+             */
+            service: components["schemas"]["ConversationService"];
             /**
              * @description The title the conversation is shown by: for a conversation the account
              *     holder has with themselves, the account's display name or, without
@@ -4687,8 +4715,14 @@ export interface components {
                 message_count: number;
                 /** @description Participants with names and identities. */
                 participants: components["schemas"]["Participant"][];
-                /** @description Platform service of the conversation, e.g. `imessage`. */
-                service: string;
+                /**
+                 * @description The service the conversation's messages were sent on, named from
+                 *     each message's own transport and never from the import it came from:
+                 *     `text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for
+                 *     WhatsApp. `unknown` when a message's transport could not be read, or
+                 *     when the messages name two different services.
+                 */
+                service: components["schemas"]["ConversationService"];
                 /**
                  * @description The title the conversation is shown by: for a conversation the account
                  *     holder has with themselves, the account's display name or, without

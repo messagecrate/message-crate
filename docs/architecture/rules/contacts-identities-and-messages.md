@@ -236,9 +236,9 @@ never makes a phone number anything else. A phone number is a phone number on
 any service, including one the model does not know, and a sender the header
 does not list over such a service is typed by its shape. Why: identities of
 one address are linked as siblings only when their types are equal. A number
-typed `other` because its message came over an unknown service, such as Apple
-Messages by satellite, became a second identity on a new contact with no
-name, and the real contact's counts left the message out
+typed `other` because its message came over an unknown service, as Apple
+Messages by satellite did before it was read as iMessage, became a second
+identity on a new contact with no name, and the real contact's counts left the message out
 ([#1144](https://github.com/messagecrate/message-crate/issues/1144)).
 
 ## CONTACT-15 One number is one person on every service
@@ -789,7 +789,7 @@ the run's end, so the duplicates a run brings are shown while it is open.
 Why: each dedupe works over the whole account, so one after every batch made
 an import of many batches into a large account rehash the account once per
 batch, while every other write waited for the write lock, which the dedupe
-then held throughout (CONTACT-56 has since taken its reads out from under
+then held throughout (CONTACT-57 has since taken its reads out from under
 it). No dedupe
 scoped to a batch gives the full one's result, because the rank in CONTACT-41
 reads the open run's growing message count and the account's source order
@@ -1105,7 +1105,44 @@ failure in either rolls both back. Why: a trashed contact's name and Contact
 Groups are gone for good once discarded, and a contact made for an import
 that brought no messages is clutter the person never asked for.
 
-## CONTACT-56 The dedupe works out its flags without the write lock, and writes only what changed
+## CONTACT-56 A conversation is named by the service its messages were sent on, and `unknown` is a fault
+
+The `service` the server sends for a conversation comes from the transports
+its messages carry (`messages.service`), never from the import sources they
+came from (`ConversationService::of_transports` in `db/conversations.rs`).
+`sms`, `imessage` and `rcs` are `text_message`, and `whatsapp` is
+`whatsapp`: the values an identity's service takes. Each other transport the
+conversation file names (`discord`, `signal`, `telegram`, `slack`) is its own
+value. Every message counts, a hidden duplicate included.
+
+The answer is `unknown` when a message's transport is `unknown`, NULL or a
+word the file does not name, and when the messages belong to two services.
+Neither is a default. Every exporter writes a transport on every message, and
+writes `unknown` only when the source gives none it can read, so each one is
+a fault. An import whose added messages make a conversation `unknown`
+writes a warning to the server's log. The warning names the conversation,
+the transports and sources of the messages that import added, and the
+Import Run (`warn_of_unknown_services` in `imports_api/promote.rs`). A later
+import that adds only well-formed messages to a conversation that is
+`unknown` already is not named, because the fault is not its own. The web
+app shows the conversation as "Unknown".
+
+Why: named from the sources, a conversation took the id of the backup it came
+from. A source that holds texts and WhatsApp chats alike, such as iMazing,
+names no service, so a group conversation from it showed no service, and so
+did one fed by two sources. A new exporter's source id reached the screen
+capitalized until someone listed it in the web app
+([#3277](https://github.com/messagecrate/message-crate/issues/3277)). Every
+message already says what carried it, so the sources added nothing but a list
+to keep.
+
+Rejected: reading `unknown` as Text Message, or hiding it. Either one keeps
+an exporter that writes a value it could not read from ever being noticed,
+and puts a WhatsApp conversation under Text Message without a word. Also
+rejected: falling back to a one-to-one conversation's participant's service,
+which the web app did, because it hid the same fault.
+
+## CONTACT-57 The dedupe works out its flags without the write lock, and writes only what changed
 
 The full dedupe (CONTACT-39) reads the account and works out every content
 key and every duplicate flag without holding the write lock (`plan_dedupe`

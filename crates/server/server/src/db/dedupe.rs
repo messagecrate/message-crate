@@ -508,7 +508,7 @@ pub async fn attachment_digests(
 /// messages.
 ///
 /// The full dedupe reads them with the write lock held, to write only the
-/// flags that changed (CONTACT-56), so the read must not cost a pass over
+/// flags that changed (CONTACT-57), so the read must not cost a pass over
 /// the account. `EXPLAIN QUERY PLAN` shows SQLite searching
 /// `ix_messages_duplicate_of`, which indexes only the flagged rows, so the
 /// statement finds them without reading the rest (#3256).

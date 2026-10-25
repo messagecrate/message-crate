@@ -535,9 +535,15 @@ async fn promote_step(
     wipe_sources: &[String],
     counts: &mut ImportCounts,
 ) -> Result<(), promote::PromoteError> {
-    let promote_stats =
-        promote::promote_append(tx, opts.mode, opts.account_id, wipe_sources, opts.progress)
-            .await?;
+    let promote_stats = promote::promote_append(
+        tx,
+        opts.mode,
+        opts.account_id,
+        opts.import_id,
+        wipe_sources,
+        opts.progress,
+    )
+    .await?;
     counts.messages_deduped += promote_stats.messages_deduped;
     counts.messages_appended = promote_stats.messages_appended;
     if opts.mode == ImportMode::Append {

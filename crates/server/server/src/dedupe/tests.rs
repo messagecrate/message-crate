@@ -1257,7 +1257,7 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
 /// the pass does not, and leaves another account's flags as they were.
 ///
 /// The pass writes only the flags that differ from the stored ones
-/// (CONTACT-56), so a stale flag is shown by clearing it alone. The three
+/// (CONTACT-57), so a stale flag is shown by clearing it alone. The three
 /// copies here come from one source, so the pass keeps every one of them.
 #[tokio::test]
 async fn a_pass_shows_the_accounts_stale_copies_and_no_other_accounts() {
@@ -1319,7 +1319,7 @@ async fn a_pass_shows_the_accounts_stale_copies_and_no_other_accounts() {
 /// A pass clears each stored flag it does not set again, so a copy that no
 /// longer pairs is shown. Here the second copy gains a photo the first
 /// lacks, so their content keys differ. Writing only the flags that differ
-/// from the stored ones (CONTACT-56) must still reach the twin's flag.
+/// from the stored ones (CONTACT-57) must still reach the twin's flag.
 #[tokio::test]
 async fn a_hidden_copy_shows_again_after_the_pass_once_it_stops_matching() {
     let (pool, _dir) = engine::test_pool().await;
@@ -2467,7 +2467,7 @@ async fn the_second_shown_place_goes_to_the_copy_ranked_first() {
 }
 
 // ---------------------------------------------------------------------------
-// The flags are worked out without the write lock (CONTACT-56).
+// The flags are worked out without the write lock (CONTACT-57).
 // ---------------------------------------------------------------------------
 
 /// The pass of `dedupe_cross_source` for the test account, with the window

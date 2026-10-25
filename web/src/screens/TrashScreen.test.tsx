@@ -80,7 +80,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     message_count: 5,
     first_message_at: "2024-01-01T10:00:00Z",
     last_message_at: "2024-01-01T10:00:00Z",
-    service: "sms",
+    service: "text_message",
     is_group: false,
     shown_title: null,
     tags: [],
