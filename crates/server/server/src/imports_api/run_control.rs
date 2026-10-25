@@ -116,11 +116,11 @@ pub(super) enum RunEnd {
 /// what changed (`docs/architecture/rules/contacts-identities-and-messages.md`,
 /// CONTACT-57), and no batch of the run can land while the run ends. The
 /// run is checked first, so a request for a run that is not running is
-/// refused before the pass. Like a
-/// batch, it runs off the async workers, because hashing every content key
-/// again is CPU work. The task also does what follows a run's end
-/// ([`after_run_ended`]) once the end is written, so it happens even when
-/// the client gave up waiting and the request is gone.
+/// refused before the pass. Like a batch, it runs off the async workers,
+/// because hashing every content key again is CPU work. The task also does
+/// what follows a run's end ([`after_run_ended`]) once the end is written,
+/// so it happens even when the client gave up waiting and the request is
+/// gone.
 ///
 /// # Errors
 ///

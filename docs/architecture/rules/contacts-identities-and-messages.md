@@ -786,13 +786,12 @@ a copy whose text no longer matches, where no search finds it
 
 `POST /v1/imports/{id}/batches` stores its messages and leaves the dedupe to
 the run's end, so the duplicates a run brings are shown while it is open.
-Why: each dedupe works over the whole account, so one after every batch made
-an import of many batches into a large account rehash the account once per
-batch, while every other write waited for the write lock, which the dedupe
-then held throughout (CONTACT-57 has since taken its reads out from under
-it). No dedupe
-scoped to a batch gives the full one's result, because the rank in CONTACT-41
-reads the open run's growing message count and the account's source order
+Why: each dedupe works over the whole account, so one after every batch
+makes an import of many batches into a large account rehash the account once
+per batch, and each dedupe still takes the write lock to write what changed
+(CONTACT-57). No dedupe scoped to a batch gives the full one's result,
+because the rank in CONTACT-41 reads the open run's growing message count
+and the account's source order
 ([#2040](https://github.com/messagecrate/message-crate/issues/2040)).
 
 ## CONTACT-41 Which copy is shown
@@ -1165,7 +1164,7 @@ lock, so a write to `duplicate_of` is not counted.
 When the count has moved, the pass writes nothing, lets the lock go, and
 works the keys and flags out again from the start. After three attempts that
 each saw a write, it works them out a fourth time with the lock held from its
-first read, as every pass did before, so it always ends.
+first read, so it always ends.
 
 Why: the reads are most of the pass, and every other writer, a login
 included, waits 15 seconds for the lock before it answers `database-busy`
@@ -1202,8 +1201,8 @@ Turned down:
   with one and 0.19 s without, which is about 12 ms of the 1.8 s a full
   16 MiB batch holds the lock.
 - Failing the completion when the count moved, so the client completes
-  again. The pass can always end by holding the lock, as it did before, and
-  a failed completion is an error the person sees.
-- Clearing every flag of the account and writing them all again, as passes
-  did before. It wrote each hidden copy twice under the lock on every run,
-  though most runs change few flags.
+  again. The pass can always end by holding the lock from its first read,
+  and a failed completion is an error the person sees.
+- Clearing every flag of the account and writing them all again. That
+  writes each hidden copy twice under the lock on every run, though most
+  runs change few flags.
