@@ -9,7 +9,7 @@ import { useMarkAccountStale, useRouteCache, useRouteQuery } from "../hooks/useR
 import { useTimeZone } from "../hooks/useTimeZone";
 import { phoneNumbers, profileAddresses } from "../lib/account";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
+import { identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { invokeHomeDir, invokePathStat } from "../lib/desktop/fs";
 import { getDeviceId } from "../lib/deviceId";
 import {
@@ -174,7 +174,7 @@ export default function ImportScreen() {
    * caught here and turned into `identityAddError` rather than an unhandled
    * rejection through the fire-and-forget `void onAdd(...)` call in
    * BackupIdentityList/BackupIdentityStopScreen. */
-  const addIdentityToProfile = async (value: string, _type: IdentityType): Promise<void> => {
+  const addIdentityToProfile = async (value: string): Promise<void> => {
     setIdentityAddError(null);
     try {
       const updated = await updateProfile.mutateAsync({
