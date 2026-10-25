@@ -1,6 +1,6 @@
 //! Merging contacts and undoing the merge: the `contact_merges` tables
 //! (`docs/architecture/rules/contacts-identities-and-messages.md`,
-//! CONTACT-56).
+//! CONTACT-57).
 //!
 //! A merge makes two or more contacts one. The target keeps its id, name and
 //! origin; every other contact's identities, Contact Group memberships and

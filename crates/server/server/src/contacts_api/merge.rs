@@ -1,7 +1,7 @@
 //! `POST /v1/contacts/{id}/merge` and `POST /v1/contacts/{id}/unmerge`:
 //! Merge Contacts on the Contacts list, and its Undo
 //! (`docs/architecture/rules/contacts-identities-and-messages.md`,
-//! CONTACT-56). The queries are in `db::contact_merges`.
+//! CONTACT-57). The queries are in `db::contact_merges`.
 
 use std::collections::HashSet;
 

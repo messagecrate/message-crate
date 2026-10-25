@@ -1,4 +1,4 @@
-//! Merge Contacts and its undo through the router (CONTACT-56).
+//! Merge Contacts and its undo through the router (CONTACT-57).
 
 use axum::http::StatusCode;
 use ir::IdentityType;

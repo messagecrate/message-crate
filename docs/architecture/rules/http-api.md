@@ -304,7 +304,7 @@ A contact merge, `POST /v1/contacts/{id}/merge`, is not such a request. The
 client names every contact before it sends, so there is nothing for the
 server to tell it, and the merge moves no conversation and can be undone
 until the account's next merge
-(`contacts-identities-and-messages.md`, CONTACT-56).
+(`contacts-identities-and-messages.md`, CONTACT-57).
 
 ### API-28 A failed credential is `401 Unauthorized`, a refused one `403 Forbidden`, and every refused login `401 Unauthorized`
 

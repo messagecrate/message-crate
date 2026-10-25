@@ -1541,6 +1541,18 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-25: **Every conversation names the service its messages were
+  sent on.** The conversation list and the conversation's header named a
+  conversation's service from the backups its messages came from, so a
+  group conversation from an iMazing export, or one fed by two backups,
+  showed no service at all. Each message already records what carried it,
+  so a conversation of texts now always says Text Message, and one of
+  WhatsApp chats says WhatsApp, whichever backups they came from. A
+  conversation whose messages name two services, or one an exporter could
+  not read, says **Unknown**, and the server's log says which conversation
+  and backup it was. Texts sent by satellite on an iPhone are now read as
+  iMessage. Their service was saved as `Satellite`, a word nothing
+  recognized, so their conversation would have said Unknown (#3277).
 - 2026-10-25: **The conversation list names WhatsApp as the identities
   table does.** A one-to-one WhatsApp conversation imported from two
   sources showed the word `whatsapp` in lower case where the identities

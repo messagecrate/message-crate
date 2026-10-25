@@ -49,6 +49,7 @@ async fn a_promote_that_fails_is_an_internal_import_failure() {
         &mut conn,
         ImportMode::Append,
         TEST_ACCOUNT,
+        None,
         &[],
         Progress::Log,
     )
@@ -119,6 +120,7 @@ async fn promote_message_map_ignores_other_accounts() {
     let mut promote = Promote {
         tx: &mut conn,
         account_id: TEST_ACCOUNT,
+        import_id: None,
         mode: ImportMode::Append,
         stats: PromoteStats::default(),
         started: Instant::now(),
@@ -163,5 +165,40 @@ fn the_promoted_line_counts_one_and_many() {
     assert_eq!(
         promoted_line(&many),
         "Wrote 2 conversations, 3 participants, 0 messages, 4 attachments and 5 tapbacks"
+    );
+}
+
+/// A promotion makes a conversation `unknown` when what it added names no
+/// one known service, or another service than the earlier messages. Adding
+/// well-formed messages to one that was `unknown` already is not its fault
+/// (CONTACT-56).
+#[test]
+fn a_promotion_is_named_only_for_the_unknown_service_it_caused() {
+    use super::unknown_service_reason;
+    use crate::db::conversations::PromotedTransports;
+
+    let written = |added: &[&str], earlier: &[&str]| PromotedTransports {
+        added: added
+            .iter()
+            .map(|t| (Some((*t).to_string()), "imazing".to_string()))
+            .collect(),
+        earlier: earlier.iter().map(|t| Some((*t).to_string())).collect(),
+    };
+    assert_eq!(
+        unknown_service_reason(&written(&["sms", "imessage"], &[])),
+        None
+    );
+    assert_eq!(unknown_service_reason(&written(&["sms"], &["rcs"])), None);
+    assert_eq!(
+        unknown_service_reason(&written(&["sms"], &["unknown"])),
+        None
+    );
+    assert_eq!(
+        unknown_service_reason(&written(&["sms", "unknown"], &["sms"])).as_deref(),
+        Some("do not name one known service")
+    );
+    assert_eq!(
+        unknown_service_reason(&written(&["sms"], &["whatsapp"])).as_deref(),
+        Some("name another service than the conversation's earlier messages (whatsapp)")
     );
 }

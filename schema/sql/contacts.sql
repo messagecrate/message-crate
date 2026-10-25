@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS trashed_contacts (
 );
 
 -- The account's most recent contact merge, kept so that it can be undone
--- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-56).
+-- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-57).
 -- One per account: the next merge drops this row and everything below that
 -- names it, and the contacts it merged are gone for good.
 CREATE TABLE IF NOT EXISTS contact_merges (

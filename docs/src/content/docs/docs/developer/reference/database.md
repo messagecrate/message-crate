@@ -229,7 +229,7 @@ identities it held, the Contact Groups it was in and its Import Run records,
 with what the contact it merged into had before. Undoing the merge writes the
 merged contacts back under their own ids, which `contacts.id` never hands out
 twice (`AUTOINCREMENT`). The next merge drops the record. The rule is
-CONTACT-56 in
+CONTACT-57 in
 [`docs/architecture/rules/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/rules/contacts-identities-and-messages.md).
 
 `participants_set_aside`, `import_contacts_set_aside` and
