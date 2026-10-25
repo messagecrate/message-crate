@@ -1543,6 +1543,8 @@ username typed and the password are never written
 
 ## Runs
 
+### API-109 A run is recorded for good, and only the client closes it
+
 An Import Run and an Export Run are recorded permanently, whether they
 completed, failed or were canceled, and outlive the account that ran them, as
 the rest of the Audit Trail does. Each run records what started it: a Session
@@ -1552,6 +1554,8 @@ settings are stated once on creation, never per batch or per page, and
 `complete`, `discard` (imports) and `cancel` (exports) are the only ways out.
 There is no sessionless import and no unrecorded export.
 
+### API-110 `complete` states the outcome, and a run an error stopped is `failed`, never canceled
+
 `complete` states the outcome in its body, as `status`: `completed`,
 `completed_with_issues` or `failed` for an Import Run, and `completed` or
 `failed` for an Export Run. An Export Run's `cancel` is for a run the person
@@ -1559,6 +1563,8 @@ gave up. A run an error stopped is closed with `complete` as `failed`, never
 with `cancel`. Why: the Audit Trail and the export history show `canceled` as
 the person's own choice, so a failed run recorded that way lies the same way
 a canceled run marked completed would (#2069).
+
+### API-111 A finished run answers `409 Conflict` to every change
 
 A run that has finished answers `409 Conflict` to `complete`, `discard`,
 `cancel`, a batch, and a change of stage; its record is never rewritten. Its
@@ -1570,6 +1576,8 @@ call.
 Rejected: a repeatable `complete`, answering `200 OK` when the run already
 ended the same way. It makes one call safe to retry at the cost of a second
 rule, and `GET` already answers the question a retry is asking.
+
+### API-112 An Import Run's stage moves only forward, and every run opens at `parse`
 
 A running Import Run's stage moves only to the next stage in the order a run
 passes through (`parse`, `write`, `staging_review`, `media`, `media_review`,
@@ -1585,15 +1593,21 @@ does not name. Why: a run opened later in the order would be resumed at work
 nobody did (#2638), and a field with one valid value carries nothing
 (#2858).
 
+### API-113 A running run with no stored stage is refused any change of stage
+
 A running run with no stored stage is refused any change of stage with
 `500 Internal Server Error`. Why: the server never writes such a row, so there
 is no stage to check the move from, and passing it unchecked would let any
 move through (#2638).
 
+### API-114 An Export Run's scope is one of three forms, stored as given
+
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`
 and `message_ids`. The record holds what was asked for and how much matched,
 never what the messages said.
+
+### API-115 A `query` scope names the list its query is for
 
 A `query` scope names the list its query is for, in `list`, and has no
 default: `{"kind": "query", "list": "conversations", "q": "messages:>100"}`.
@@ -1616,6 +1630,8 @@ Rejected: guessing the list from the words in the query. A query made of
 words both lists have compiles on either and means something different on
 each.
 
+### API-116 An Export Run is a snapshot taken when it is created
+
 An Export Run is a snapshot taken when it is created. In the transaction that
 records the run, the server lists the ids of the messages the scope matches,
 each at a numbered place (oldest first), and computes the four counts
@@ -1635,6 +1651,8 @@ between pages move the offsets, so pages skipped or repeated messages and
   holds fewer than `limit` items, and the places after it do not move. A
   client steps `offset` by `limit` until it reaches `total`, never by the
   items it got, and never stops on a short or empty page.
+
+### API-117 An account has at most one running Export Run, and a new one replaces it
 
 An account has at most one running Export Run, held by a partial unique
 index on `exports(account_id) WHERE status = 'running'`, as for Import Runs.

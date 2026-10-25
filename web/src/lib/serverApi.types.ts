@@ -2944,7 +2944,7 @@ export interface components {
         };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,
-         *     "Runs"). The list decides which search words the query may use and what
+         *     API-115). The list decides which search words the query may use and what
          *     the run hands over.
          * @enum {string}
          */
@@ -3001,7 +3001,7 @@ export interface components {
         };
         /**
          * @description What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,
-         *     "Runs"). One of three forms: everything the account holds, a query in the
+         *     API-114). One of three forms: everything the account holds, a query in the
          *     search language, or conversations and messages picked by hand.
          */
         ExportScope: {
