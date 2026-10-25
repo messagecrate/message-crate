@@ -178,8 +178,8 @@ describe("IdentitiesSection", () => {
     await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "New@example.com");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
-    // `email` is no service the server takes: an email address is on the
-    // phone service, and the server types it by the address (#1631).
+    // `email` is no service the server takes: an email address is on
+    // Text Message, and the server types it by the address (#1631).
     expect(mutateAsync).toHaveBeenCalledWith({
       identities: [{ address: "New@example.com", service: "text_message" }],
     });
