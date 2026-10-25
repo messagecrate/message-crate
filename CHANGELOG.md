@@ -1708,7 +1708,7 @@ carry their date on the heading.
 
 #### The server
 
-- 2026-10-24: **A request that lists the answers it accepts on two lines
+- 2026-10-25: **A request that lists the answers it accepts on two lines
   is answered.** A program talking to the server can send the kinds of
   answer it accepts over several lines, and some programs and proxies do.
   The server read only the first line, so a request whose first line named
