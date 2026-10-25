@@ -1513,7 +1513,7 @@ pub(crate) async fn list_account_exports(
     Ok(Json(AccountExportRuns::Own(page)))
 }
 
-/// An account's Audit Trail, newest first: every entry about the account,
+/// An account's Audit Trail, newest first. Every entry about the account,
 /// whoever acted, the administrator's changes to it and the logins refused for
 /// its username included, with its Import and Export Runs. The administrator
 /// reads any account's; an account reads its own.
