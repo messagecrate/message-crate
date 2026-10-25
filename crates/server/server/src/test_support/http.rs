@@ -205,7 +205,9 @@ pub async fn add_account_and_log_in(
     }
 }
 
-/// Give the administrator `password` and log in as `admin`, as setup does.
+/// Give the administrator `password` and log in as `admin`. The password is
+/// written straight to the database, not through `POST /v1/server/setup`,
+/// so nothing is recorded in the Audit Trail for it.
 pub async fn log_in_as_admin(state: &AppState, password: &str) -> RegisteredAccount {
     let hash = crate::credentials::hash_password(password).expect("hash the admin password");
     let mut conn = state.db.acquire().await.expect("acquire for setup");

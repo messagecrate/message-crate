@@ -855,6 +855,7 @@ async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
     .await;
     assert_eq!(at_cap["preferred_name"], "n".repeat(200));
 
+    let admin = log_in_as_admin(&fixture.state, "Admin-Pw-7q2Lx9Vb").await;
     for (body, field) in [
         (
             serde_json::json!({ "username": "sam", "preferred_name": "n".repeat(201) }),
@@ -865,7 +866,6 @@ async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
             "phone",
         ),
     ] {
-        let admin = log_in_as_admin(&fixture.state, "Admin-Pw-7q2Lx9Vb").await;
         let (status, text) =
             post_json_raw(&fixture.state, "/v1/accounts", &admin.token, body).await;
         let problem = expect_problem(status, &text, ProblemType::ValidationFailed);

@@ -228,6 +228,30 @@ async fn setting_up_the_server_gives_admin_a_password_and_signs_them_in() {
     assert_eq!(after.state, ServerState::Ready);
 }
 
+/// Setup records the administrator's password as set, by the
+/// administrator, on the administrator's account.
+#[tokio::test]
+async fn setting_up_the_server_records_the_password_as_set() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let (status, text) = post_json_raw(
+        &state,
+        "/v1/server/setup",
+        "",
+        serde_json::json!({ "password": "Admin-Pw-7q2Lx9Vb" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{text}");
+    let token: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let token = token["token"].as_str().unwrap();
+
+    let entries = owner_entries(&state, token, "password_set").await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["actor"], "admin");
+    assert_eq!(entries[0]["account_id"], account_profile::ADMIN_ACCOUNT_ID);
+    assert_eq!(entries[0]["username"], "admin");
+}
+
 /// A second setup is refused: the password is set once here, and changed
 /// afterwards by the administrator under Settings or by
 /// `set-admin-password`.

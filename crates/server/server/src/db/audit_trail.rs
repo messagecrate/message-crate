@@ -53,8 +53,8 @@ pub const UNKNOWN_USERNAME_RETENTION_DAYS: i64 = 90;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditAction {
-    /// A login opened a Session: logging in, claiming the Message Crate, or
-    /// registering.
+    /// A login opened a Session: logging in, or setting up the
+    /// administrator.
     LoggedIn,
     /// A Session ended; `reason` says how.
     SessionEnded,
@@ -622,7 +622,8 @@ pub struct NewEntry<'a> {
 }
 
 impl<'a> NewEntry<'a> {
-    /// An entry about no account, such as the owner opening registration.
+    /// An entry about no account, such as the administrator changing the
+    /// attachment size limit.
     #[must_use]
     pub fn about_no_account(action: AuditAction, actor: AuditActor) -> Self {
         Self {

@@ -438,7 +438,7 @@ pub(crate) async fn live_login_entry(
 /// so: a login on the desktop ends the website's. The new Session's
 /// `logged_in` entry names the app the request named, and the session row
 /// records that app from the start. Called by every route that opens a
-/// Session for a person: login, claiming the Message Crate, and registering.
+/// Session for a person: logging in and setting up the administrator.
 /// The Session and the entries it writes are stamped `now`, and the Session
 /// expires [`SESSION_IDLE_SECS`] after it unless it is used.
 ///

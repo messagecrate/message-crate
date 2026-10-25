@@ -162,8 +162,9 @@ pub async fn get_server(
 /// could authorize this: `admin` exists but cannot log in. Whoever reaches
 /// one in setup first sets the password: Message Crate is self-hosted, so
 /// whoever installs the software sets it up and then publishes the port, in
-/// that order and at times of their choosing. One in setup holds no
-/// messages, so a lost race destroys nothing and announces itself at once.
+/// that order and at times of their choosing. The administrator holds no
+/// messages, and the Demo Account is open to anyone already, so a lost race
+/// destroys nothing and announces itself at once.
 #[utoipa::path(
     post,
     path = "/v1/server/setup",

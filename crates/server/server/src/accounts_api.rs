@@ -87,8 +87,8 @@ pub struct Account {
     /// `current_password`.
     pub has_password: bool,
     /// When the account last logged in (RFC 3339, UTC), or `null` if it never
-    /// has. Logging in, claiming Message Crate and registering all count; a
-    /// password change does not.
+    /// has. Logging in and setting up the administrator count; a password
+    /// change does not.
     pub last_login_at: Option<String>,
     /// Which app last used the account's session, the desktop app or the
     /// website, or `null` when the account has no session or no request on it
