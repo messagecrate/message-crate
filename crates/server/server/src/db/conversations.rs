@@ -506,7 +506,7 @@ pub(crate) async fn transports_promoted_above(
     account_id: i64,
     message_id: i64,
 ) -> anyhow::Result<BTreeMap<i64, PromotedTransports>> {
-    let added: Vec<AddedRow> = sqlx::query_as(
+    let added = sqlx::query_as::<_, AddedRow>(
         "SELECT conversation_id, service, source FROM messages
          WHERE account_id = $1 AND id > $2
          GROUP BY conversation_id, service, source
