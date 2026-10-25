@@ -347,7 +347,7 @@ A body that the server stopped reading because it took too long is
 `408 Request Timeout` (`body-stalled`): a body that went `[server]
 body_stall_secs` (60) with no byte arriving, or was still arriving
 `body_total_secs` (300) after the read started. Every body is held to
-the limits ([Connections](#connections)). Why: the connection failed, not the data, and
+the limits (API-65). Why: the connection failed, not the data, and
 `malformed-body` told the person their data was bad. The client is still
 there to read the answer, so the answer says that running the import
 again continues it. The desktop app shows it and does not send the piece
@@ -829,42 +829,18 @@ connection that sends no request, or sends one too slowly, is closed after
 30 seconds. At most 256 connections are open at once, and the next waits
 for one to close. A body that stops arriving, or arrives too slowly, is no
 longer read once the body time limits pass. A connection whose client reads
-none of its answer for the body stall time is closed. In detail:
+none of its answer for the body stall time is closed. API-63 to API-66 give
+each in detail.
 
-- A connection has 30 seconds to send a request's headers, counted from when
-  it opens or from the previous answer, and is closed when it has not
-  (`HEADER_READ_LIMIT` in `crates/server/server/src/connections.rs`). So an
-  idle connection stays open 30 seconds after its last answer. The desktop
-  app keeps an idle connection for reuse 20 seconds (`POOL_IDLE_LIMIT` in
-  `crates/libs/http`), under that, so it never sends a request on a
-  connection the server is closing.
-- At most 256 connections are open at once (`MAX_CONNECTIONS` there). The
-  next one is accepted once one of them closes, and waits with the operating
-  system until then. 256 is far above what a few browser tabs and the
-  desktop app's Upload open together, and under the 1024 open files a Linux
-  process gets by default, which the connections share with the database and
-  the upload files.
-- Every request body is held to the body time limits, `[server]
-  body_stall_secs` (60) with no byte arriving and `body_total_secs` (300)
-  for the whole body, and one that meets either answers `408 Request Timeout`
-  (`body-stalled`). An import batch, an attachment and a part of one hold
-  their bodies to the limits themselves, from when they start reading. The
-  layers hold every other body from when the request arrives
-  (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
-  clock: an import batch waits for an import slot before it reads, and a
-  clock started on arrival would count that wait against its body.
-- An answer the client takes no byte of for `[server] body_stall_secs`
-  (60) closes its connection, and the server lets go of the answer and the
-  file it reads from (`AnswerStall` in
-  `crates/server/server/src/connections.rs`). The wait counts only while a
-  write waits on the client, and starts again with every byte the client
-  takes, so a download that is still moving, however slowly, is never cut
-  off, and an answer the server is still making is not timed. The close is
-  written to the server's log at `INFO`, so the limit firing shows at the
-  default level and reads apart from a client that hung up, which is
-  written at `DEBUG`. Nothing limits
-  how long a whole answer takes to send: an export download or a large
-  attachment takes as long as the client's link needs.
+### API-63 A connection has 30 seconds to send a request's headers
+
+A connection has 30 seconds to send a request's headers, counted from when
+it opens or from the previous answer, and is closed when it has not
+(`HEADER_READ_LIMIT` in `crates/server/server/src/connections.rs`). So an
+idle connection stays open 30 seconds after its last answer. The desktop
+app keeps an idle connection for reuse 20 seconds (`POOL_IDLE_LIMIT` in
+`crates/libs/http`), under that, so it never sends a request on a
+connection the server is closing.
 
 Why: `axum::serve` builds each connection without a timer, and hyper reads
 its own 30-second header limit only with one set, so a device that opened a
@@ -874,9 +850,53 @@ of devices could. On a home network one misbehaving device could starve a
 server that has one database file and two import slots. The header read
 limit and the connection cap are fixed in the code, not config keys,
 because no setup needs others: a working client sends its headers at once.
+
+### API-64 At most 256 connections are open at once
+
+At most 256 connections are open at once (`MAX_CONNECTIONS` there). The
+next one is accepted once one of them closes, and waits with the operating
+system until then. 256 is far above what a few browser tabs and the
+desktop app's Upload open together, and under the 1024 open files a Linux
+process gets by default, which the connections share with the database and
+the upload files.
+
+Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
+in place of the cap on connections. A connection that never sends its
+headers is no request, so a cap on requests leaves it uncounted. Under
+HTTP/1.1 a connection carries one request at a time, so the cap on
+connections bounds the requests too. Axum's `Router::layer` would also give
+each route a cap of its own.
+
+### API-65 Every request body is held to the body time limits
+
+Every request body is held to the body time limits, `[server]
+body_stall_secs` (60) with no byte arriving and `body_total_secs` (300)
+for the whole body, and one that meets either answers `408 Request Timeout`
+(`body-stalled`). An import batch, an attachment and a part of one hold
+their bodies to the limits themselves, from when they start reading. The
+layers hold every other body from when the request arrives
+(`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
+clock: an import batch waits for an import slot before it reads, and a
+clock started on arrival would count that wait against its body.
+
 Why the body limits are the upload ones rather than figures of their own:
 every other body is smaller than an import batch, so the limits a batch
 arrives inside hold it too, and one pair of figures is one to explain.
+
+### API-66 An answer the client takes no byte of for the body stall time closes its connection
+
+An answer the client takes no byte of for `[server] body_stall_secs`
+(60) closes its connection, and the server lets go of the answer and the
+file it reads from (`AnswerStall` in
+`crates/server/server/src/connections.rs`). The wait counts only while a
+write waits on the client, and starts again with every byte the client
+takes, so a download that is still moving, however slowly, is never cut
+off, and an answer the server is still making is not timed. The close is
+written to the server's log at `INFO`, so the limit firing shows at the
+default level and reads apart from a client that hung up, which is
+written at `DEBUG`. Nothing limits
+how long a whole answer takes to send: an export download or a large
+attachment takes as long as the client's link needs.
 
 Why the answer is held to the body stall time rather than a figure of its
 own: a client that reads none of an answer is as stuck as one that sends
@@ -885,12 +905,7 @@ the limit sits on the connection rather than on the answer's body: while
 the client reads nothing, the server is waiting to write and does not ask
 the body for more, so a timer in the body would never be looked at.
 
-Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
-in place of the cap on connections. A connection that never sends its
-headers is no request, so a cap on requests leaves it uncounted. Under
-HTTP/1.1 a connection carries one request at a time, so the cap on
-connections bounds the requests too. Axum's `Router::layer` would also give
-each route a cap of its own.
+### API-67 The connection limits do not make the server safe to reach from the internet
 
 These limits keep a slow or broken client from holding the server. They do
 not make the server safe to reach from the internet: that needs a proxy, as
@@ -1248,7 +1263,7 @@ What each reaches:
   An attachment body and a part of one are held to the same two limits,
   though they take no slot, because each holds a connection and a file
   while it reads, and so is every other body
-  ([Connections](#connections)). At 16 MiB, a full batch arrives inside 5 minutes at about
+  (API-65). At 16 MiB, a full batch arrives inside 5 minutes at about
   0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
   asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
   (`MAX_PROXY_BODY_BYTES` in `import`), so an attachment
