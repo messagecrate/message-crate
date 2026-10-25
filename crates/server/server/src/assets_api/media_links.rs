@@ -11,7 +11,7 @@
 //! checks a link by signing its terms again with the Session the account
 //! holds now, so a link opens one asset of one account, for an hour at most,
 //! and ends with its Session or with a restart. Why this credential and not
-//! another: `docs/architecture/rules/http-api.md`, "Credentials and reach".
+//! another: `docs/architecture/rules/http-api.md`, API-75.
 
 use std::fmt;
 use std::sync::Arc;

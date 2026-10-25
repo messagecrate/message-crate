@@ -661,7 +661,7 @@ pub(crate) async fn require_account_row(
 /// A route never takes an `account=` parameter. A session or an API token
 /// belongs to exactly one account, so a parameter could only repeat it or
 /// contradict it, and the rules document says the credential names the
-/// account (`docs/architecture/rules/http-api.md`, "Credentials and reach").
+/// account (`docs/architecture/rules/http-api.md`, API-105).
 pub(crate) fn resolve_import_account(auth: &AuthIdentity) -> i64 {
     auth.account_id
 }

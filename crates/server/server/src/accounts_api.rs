@@ -1245,7 +1245,7 @@ pub struct DeleteMessagesResponse {
 /// The owner may, on any account. The account itself may with a
 /// session that carries the `delete` permission, and confirms in the body.
 /// An API token is refused whatever its scopes: permanent deletion is a
-/// person's act (`docs/architecture/rules/http-api.md`, "Credentials and reach").
+/// person's act (`docs/architecture/rules/http-api.md`, API-83).
 #[utoipa::path(
     delete,
     path = "/v1/accounts/{id}/messages",
