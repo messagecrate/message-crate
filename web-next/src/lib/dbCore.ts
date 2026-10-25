@@ -250,6 +250,9 @@ export function preferredHandleTypeOf(
   return first ? first.handle_type : null;
 }
 
+/** The Text Message service, as the handles table names it: the service a lookup uses unless told another. */
+export const TEXT_MESSAGE_SERVICE = "text_message";
+
 /**
  * Resolve raw handles to handle ids for one platform service, dropping raws
  * with no handle row. Matching includes the service because the same phone can
@@ -259,7 +262,7 @@ export function handleIdsForRaws(
   db: Database.Database,
   accountId: string,
   raws: string[],
-  service = "text_message",
+  service = TEXT_MESSAGE_SERVICE,
 ): number[] {
   const seen = new Map<string, { type: IdentityType; normalized: string }>();
   for (const raw of raws) {

@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { currentAccountId } from "./accountScope";
-import { handleIdsForRaws, resetDb } from "./dbCore";
+import { handleIdsForRaws, resetDb, TEXT_MESSAGE_SERVICE } from "./dbCore";
 import {
   inferHandleType,
   normalizeHandle,
@@ -19,7 +19,7 @@ export function resolveHandleId(
   accountId: string,
   raw: string,
   handleType: IdentityType,
-  service = "text_message",
+  service = TEXT_MESSAGE_SERVICE,
 ): number {
   const trimmed = raw.trim();
   if (!trimmed) throw new Error("handle required");
@@ -52,7 +52,7 @@ export function handleIdForRaw(
   accountId: string,
   raw: string,
   handleType?: IdentityType,
-  service = "text_message",
+  service = TEXT_MESSAGE_SERVICE,
 ): number | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
