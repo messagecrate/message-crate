@@ -17,7 +17,7 @@ async fn seed(
         .unwrap();
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'phone', 'imessage') RETURNING id",
+         VALUES ($1, $2, $2, 'phone', 'text_message') RETURNING id",
     )
     .bind(TEST_ACCOUNT)
     .bind(handle)
@@ -73,7 +73,7 @@ async fn seed_address_less(
 ) -> i64 {
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'other', 'phone') RETURNING id",
+         VALUES ($1, $2, $2, 'other', 'text_message') RETURNING id",
     )
     .bind(TEST_ACCOUNT)
     .bind(name_alias)
@@ -107,7 +107,7 @@ async fn contact_name_wins_over_the_backup_name() {
     let p = &loaded[&conversation_id][0];
     assert_eq!(p.name, "Robert Smith");
     assert_eq!(p.identity, Some("+15555550100".to_string()));
-    assert_eq!(p.service, Some("imessage".to_string()));
+    assert_eq!(p.service, Some("text_message".to_string()));
     assert_eq!(p.contact_id, Some(contact_id));
 }
 
@@ -160,7 +160,7 @@ async fn the_chat_handle_takes_the_contact_name_and_id() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].name, "Robert Smith");
     assert_eq!(loaded[0].identity, Some("+15555550151".to_string()));
-    assert_eq!(loaded[0].service, Some("imessage".to_string()));
+    assert_eq!(loaded[0].service, Some("text_message".to_string()));
     assert_eq!(loaded[0].contact_id, Some(contact_id));
 }
 
@@ -236,7 +236,7 @@ async fn an_address_less_participant_appears_in_their_conversation() {
     let p = &loaded[&conversation_id][0];
     assert_eq!(p.name, "Sarah Vale");
     assert_eq!(p.identity, Some("Sarah Vale".to_string()));
-    assert_eq!(p.service, Some("phone".to_string()));
+    assert_eq!(p.service, Some("text_message".to_string()));
     assert_eq!(p.contact_id, Some(contact_id));
 }
 

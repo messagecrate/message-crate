@@ -21,7 +21,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
         &state,
         &account,
         &token,
-        serde_json::json!({ "identities": [{ "address": "+15555550199", "service": "phone" }] }),
+        serde_json::json!({ "identities": [{ "address": "+15555550199", "service": "text_message" }] }),
     )
     .await;
 
@@ -748,7 +748,7 @@ async fn removing_an_identity_puts_back_the_holder_participants_it_set_aside() {
 }
 
 /// A participant set aside keeps its identity alive. The holder's number is
-/// linked on the phone service, so its WhatsApp row is set aside in the
+/// linked on Text Message, so its WhatsApp row is set aside in the
 /// group and stays on the named contact the import made. Taking that row off
 /// the contact must not delete it, or its set-aside participant would go
 /// with it, and removing the identity would give nothing back (#1662).
@@ -757,7 +757,7 @@ async fn taking_a_set_aside_identity_off_its_contact_keeps_it_for_the_unlink() {
     let (state, fixture, token) = importer().await;
     import_whatsapp(&state, &token, holder_listed_with_ada_file("Matt", "1")).await;
     let group = family_group(&fixture).await;
-    change_holder_identity_on(&state, &fixture, &token, "identities", "phone").await;
+    change_holder_identity_on(&state, &fixture, &token, "identities", "text_message").await;
     let contact_id = holder_contact(&fixture)
         .await
         .expect("the named contact stays");
@@ -771,7 +771,14 @@ async fn taking_a_set_aside_identity_off_its_contact_keeps_it_for_the_unlink() {
     )
     .await;
 
-    change_holder_identity_on(&state, &fixture, &token, "remove_identities", "phone").await;
+    change_holder_identity_on(
+        &state,
+        &fixture,
+        &token,
+        "remove_identities",
+        "text_message",
+    )
+    .await;
 
     assert!(
         participants_of(&fixture, group)

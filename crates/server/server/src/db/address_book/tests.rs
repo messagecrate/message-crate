@@ -231,8 +231,8 @@ async fn a_blank_name_or_groups_cell_agrees_with_the_rows_that_fill_it() {
         vec![(
             "Ada".to_string(),
             vec![
-                "phone/email/ada@example.com".to_string(),
-                "phone/phone/+15555550100".to_string(),
+                "text_message/email/ada@example.com".to_string(),
+                "text_message/phone/+15555550100".to_string(),
                 "whatsapp/phone/+15555550100".to_string(),
             ],
             vec!["Family".to_string(), "Work".to_string()],
@@ -313,10 +313,10 @@ async fn a_row_is_typed_by_its_service_and_its_shape() {
     assert_eq!(
         identities_of(&mut conn, ada).await,
         [
-            "phone/email/ada@example.com",
-            "phone/email/ada@example.org",
-            "phone/other/555-0100 x99",
-            "phone/phone/5555550100",
+            "text_message/email/ada@example.com",
+            "text_message/email/ada@example.org",
+            "text_message/other/555-0100 x99",
+            "text_message/phone/5555550100",
             "whatsapp/other/123456789012345@lid",
             "whatsapp/other/AMAZON",
             "whatsapp/phone/+15555550100",
@@ -332,7 +332,7 @@ async fn an_email_is_lowercased() {
     let id = contact_named(&mut conn, "Ada").await;
     assert_eq!(
         identities_of(&mut conn, id).await,
-        ["phone/email/ada.lovelace@example.com"]
+        ["text_message/email/ada.lovelace@example.com"]
     );
 }
 
@@ -408,7 +408,7 @@ async fn an_identity_written_as_the_account_keys_it_keeps_its_stored_type() {
         "Ada",
         &[
             ("whatsapp", "other", "123456789012345@lid"),
-            ("phone", "other", "55555"),
+            ("text_message", "other", "55555"),
         ],
     )
     .await;
@@ -421,7 +421,10 @@ async fn an_identity_written_as_the_account_keys_it_keeps_its_stored_type() {
     assert_eq!(counts.identities_removed, 0);
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/other/55555", "whatsapp/other/123456789012345@lid"]
+        [
+            "text_message/other/55555",
+            "whatsapp/other/123456789012345@lid"
+        ]
     );
 }
 
@@ -463,7 +466,7 @@ async fn identities_move_from_an_unknown_holding_one_number_on_two_services() {
         &mut conn,
         "",
         &[
-            ("phone", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550100"),
             ("whatsapp", "phone", "+15555550100"),
         ],
     )
@@ -492,7 +495,7 @@ async fn identities_move_from_an_unknown_holding_one_number_on_two_services() {
         vec![(
             "Ada".to_string(),
             vec![
-                "phone/phone/+15555550100".to_string(),
+                "text_message/phone/+15555550100".to_string(),
                 "whatsapp/phone/+15555550100".to_string(),
             ],
             vec![],
@@ -512,7 +515,7 @@ async fn a_load_moves_only_the_identity_its_row_lists() {
             &mut conn,
             "",
             &[
-                ("phone", "phone", "+15555550100"),
+                ("text_message", "phone", "+15555550100"),
                 ("whatsapp", "phone", "+15555550100"),
             ],
         )
@@ -541,7 +544,7 @@ async fn a_load_moves_only_the_identity_its_row_lists() {
         let ada = contact_named(&mut conn, "Ada").await;
         assert_eq!(
             identities_of(&mut conn, ada).await,
-            ["phone/phone/+15555550100"],
+            ["text_message/phone/+15555550100"],
             "{mode:?}"
         );
     }
@@ -557,7 +560,7 @@ async fn a_file_that_lists_both_identities_under_two_contacts_places_each_as_wri
             &mut conn,
             "",
             &[
-                ("phone", "phone", "+15555550100"),
+                ("text_message", "phone", "+15555550100"),
                 ("whatsapp", "phone", "+15555550100"),
             ],
         )
@@ -571,7 +574,7 @@ async fn a_file_that_lists_both_identities_under_two_contacts_places_each_as_wri
         let bao = contact_named(&mut conn, "Bao").await;
         assert_eq!(
             identities_of(&mut conn, ada).await,
-            ["phone/phone/+15555550100"],
+            ["text_message/phone/+15555550100"],
             "{mode:?}"
         );
         assert_eq!(
@@ -593,7 +596,7 @@ async fn edit_takes_off_the_same_number_on_the_other_service_when_no_row_lists_i
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550100"),
             ("whatsapp", "phone", "+15555550100"),
         ],
     )
@@ -603,20 +606,25 @@ async fn edit_takes_off_the_same_number_on_the_other_service_when_no_row_lists_i
     assert_eq!(counts.identities_removed, 1);
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+15555550100"]
+        ["text_message/phone/+15555550100"]
     );
 }
 
 #[tokio::test]
 async fn an_identity_moves_between_two_contacts_that_are_both_in_the_file() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     let bao = imported(
         &mut conn,
         "Bao",
         &[
-            ("phone", "phone", "+15555550101"),
-            ("phone", "email", "ada@example.com"),
+            ("text_message", "phone", "+15555550101"),
+            ("text_message", "email", "ada@example.com"),
         ],
     )
     .await;
@@ -644,12 +652,15 @@ async fn an_identity_moves_between_two_contacts_that_are_both_in_the_file() {
         let counts = loaded(&mut conn, &file(&rows), mode).await;
         assert_eq!(
             identities_of(&mut conn, ada).await,
-            ["phone/email/ada@example.com", "phone/phone/+15555550100"],
+            [
+                "text_message/email/ada@example.com",
+                "text_message/phone/+15555550100"
+            ],
             "{mode:?}"
         );
         assert_eq!(
             identities_of(&mut conn, bao).await,
-            ["phone/phone/+15555550101"],
+            ["text_message/phone/+15555550101"],
             "{mode:?}"
         );
         if mode == LoadMode::Append {
@@ -671,8 +682,18 @@ async fn an_identity_moves_between_two_contacts_that_are_both_in_the_file() {
 #[tokio::test]
 async fn an_identity_of_a_named_contact_outside_the_file_is_refused_naming_both_contacts() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
-    let bao = imported(&mut conn, "Bao", &[("phone", "phone", "+15555550101")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
+    let bao = imported(
+        &mut conn,
+        "Bao",
+        &[("text_message", "phone", "+15555550101")],
+    )
+    .await;
     let text = file(&[
         &format!("{bao},Bao,Text Message,+15555550101,"),
         &format!("{bao},Bao,Text Message,+15555550100,"),
@@ -696,7 +717,7 @@ async fn an_identity_of_a_named_contact_outside_the_file_is_refused_naming_both_
     }
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+15555550100"],
+        ["text_message/phone/+15555550100"],
         "nothing moved"
     );
 }
@@ -706,8 +727,18 @@ async fn an_identity_of_a_named_contact_outside_the_file_is_refused_naming_both_
 #[tokio::test]
 async fn an_identity_of_a_trashed_named_contact_is_refused_saying_it_is_in_the_trash() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
-    let bob = imported(&mut conn, "Bob", &[("phone", "phone", "+15555550142")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
+    let bob = imported(
+        &mut conn,
+        "Bob",
+        &[("text_message", "phone", "+15555550142")],
+    )
+    .await;
     sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
         .bind(ACCOUNT)
         .bind(bob)
@@ -734,7 +765,7 @@ async fn an_identity_of_a_trashed_named_contact_is_refused_saying_it_is_in_the_t
     }
     assert_eq!(
         identities_of(&mut conn, bob).await,
-        ["phone/phone/+15555550142"],
+        ["text_message/phone/+15555550142"],
         "nothing moved"
     );
 }
@@ -756,12 +787,12 @@ async fn a_blank_id_creates_a_contact_for_each_row() {
         vec![
             (
                 "Ada".to_string(),
-                vec!["phone/phone/+15555550100".to_string()],
+                vec!["text_message/phone/+15555550100".to_string()],
                 vec![]
             ),
             (
                 "Ada".to_string(),
-                vec!["phone/email/ada@example.com".to_string()],
+                vec!["text_message/email/ada@example.com".to_string()],
                 vec![]
             ),
         ]
@@ -795,11 +826,21 @@ async fn rows_sharing_an_unknown_id_are_one_new_contact() {
 #[tokio::test]
 async fn a_known_id_renames_the_contact() {
     let (mut conn, _pool, _dir) = account().await;
-    let by_import = imported(&mut conn, "ada l", &[("phone", "phone", "+15555550100")]).await;
+    let by_import = imported(
+        &mut conn,
+        "ada l",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     let typed = contacts::create_contact(&mut conn, ACCOUNT, "Bao", Origin::User)
         .await
         .unwrap();
-    let kept = imported(&mut conn, "Cy", &[("phone", "phone", "+15555550102")]).await;
+    let kept = imported(
+        &mut conn,
+        "Cy",
+        &[("text_message", "phone", "+15555550102")],
+    )
+    .await;
     let text = file(&[
         &format!("{by_import},Ada Lovelace,Text Message,+15555550100,"),
         &format!("{typed},Bao Nguyen,,,"),
@@ -830,7 +871,12 @@ async fn a_known_id_renames_the_contact() {
 #[tokio::test]
 async fn a_load_replaces_a_name_the_person_typed() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "ada l", &[("phone", "phone", "+15555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "ada l",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     contacts::propose_name(
         &mut conn,
         ACCOUNT,
@@ -873,7 +919,7 @@ async fn a_load_replaces_a_name_the_person_typed() {
 #[tokio::test]
 async fn an_import_does_not_rename_a_contact_a_load_named() {
     let (mut conn, _pool, _dir) = account().await;
-    let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
+    let unknown = imported(&mut conn, "", &[("text_message", "phone", "+15555550100")]).await;
     let text = file(&[&format!(
         "{unknown},Ada Lovelace,Text Message,+15555550100,"
     )]);
@@ -904,8 +950,8 @@ async fn append_adds_identities_and_memberships_and_removes_nothing() {
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+15555550100"),
-            ("phone", "phone", "+15555550109"),
+            ("text_message", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550109"),
         ],
     )
     .await;
@@ -927,9 +973,9 @@ async fn append_adds_identities_and_memberships_and_removes_nothing() {
     assert_eq!(
         identities_of(&mut conn, ada).await,
         [
-            "phone/email/ada@example.com",
-            "phone/phone/+15555550100",
-            "phone/phone/+15555550109"
+            "text_message/email/ada@example.com",
+            "text_message/phone/+15555550100",
+            "text_message/phone/+15555550109"
         ]
     );
     assert_eq!(groups_of(&mut conn, ada).await, ["Family", "Work"]);
@@ -942,8 +988,8 @@ async fn edit_removes_the_identities_and_memberships_the_rows_do_not_list() {
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+15555550100"),
-            ("phone", "phone", "+15555550109"),
+            ("text_message", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550109"),
         ],
     )
     .await;
@@ -966,7 +1012,10 @@ async fn edit_removes_the_identities_and_memberships_the_rows_do_not_list() {
     );
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/email/ada@example.com", "phone/phone/+15555550100"]
+        [
+            "text_message/email/ada@example.com",
+            "text_message/phone/+15555550100"
+        ]
     );
     assert_eq!(groups_of(&mut conn, ada).await, ["Work"]);
     // The identity is off the contact and, because a conversation cites it,
@@ -1001,8 +1050,8 @@ async fn edit_deletes_an_unlisted_identity_nothing_uses() {
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+15555550100"),
-            ("phone", "phone", "+15555550109"),
+            ("text_message", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550109"),
         ],
     )
     .await;
@@ -1024,7 +1073,12 @@ async fn edit_deletes_an_unlisted_identity_nothing_uses() {
 #[tokio::test]
 async fn a_group_name_matching_no_contact_group_creates_one() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     join_group(&mut conn, ada, "Family").await;
     let text = file(&[
         "b,Bao,Text Message,+15555550101,family;Chess Club",
@@ -1060,8 +1114,13 @@ async fn a_reserved_group_name_is_refused_with_its_row() {
 #[tokio::test]
 async fn a_nameless_contact_edit_leaves_with_no_identity_is_deleted() {
     let (mut conn, _pool, _dir) = account().await;
-    let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
-    let named = imported(&mut conn, "Bao", &[("phone", "phone", "+15555550101")]).await;
+    let unknown = imported(&mut conn, "", &[("text_message", "phone", "+15555550100")]).await;
+    let named = imported(
+        &mut conn,
+        "Bao",
+        &[("text_message", "phone", "+15555550101")],
+    )
+    .await;
     // Both contacts stay in the file with their identity rows taken out.
     let text = file(&[&format!("{unknown},,,,"), &format!("{named},Bao,,,")]);
 
@@ -1088,13 +1147,18 @@ async fn a_nameless_contact_edit_leaves_with_no_identity_is_deleted() {
 #[tokio::test]
 async fn a_contact_absent_from_the_file_is_untouched_in_both_modes() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     let bao = imported(
         &mut conn,
         "Bao",
         &[
-            ("phone", "phone", "+15555550101"),
-            ("phone", "email", "bao@example.com"),
+            ("text_message", "phone", "+15555550101"),
+            ("text_message", "email", "bao@example.com"),
         ],
     )
     .await;
@@ -1127,7 +1191,7 @@ async fn a_contact_absent_from_the_file_is_untouched_in_both_modes() {
 #[tokio::test]
 async fn the_rows_a_load_makes_carry_the_address_book_origin() {
     let (mut conn, _pool, _dir) = account().await;
-    imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
+    imported(&mut conn, "", &[("text_message", "phone", "+15555550100")]).await;
     let text = file(&[
         "a,Ada,Text Message,+15555550100,",
         "a,Ada,Email,ada@example.com,",
@@ -1176,7 +1240,12 @@ async fn the_rows_a_load_makes_carry_the_address_book_origin() {
 #[tokio::test]
 async fn a_refused_load_names_every_bad_row_and_writes_nothing() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     let before = picture(&mut conn).await;
     let text = file(&[
         &format!("{ada},Ada Lovelace,Text Message,+15555550100,New Group"),
@@ -1238,7 +1307,7 @@ async fn a_row_with_more_fields_than_the_header_is_refused_with_its_row() {
     let ada = imported(
         &mut conn,
         "Ada Lovelace",
-        &[("phone", "phone", "+15555550110")],
+        &[("text_message", "phone", "+15555550110")],
     )
     .await;
     join_group(&mut conn, ada, "Family").await;
@@ -1267,7 +1336,7 @@ async fn a_row_with_fewer_fields_than_the_header_reads_the_missing_cells_as_blan
     let ada = contact_named(&mut conn, "Ada").await;
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+15555550100"]
+        ["text_message/phone/+15555550100"]
     );
 }
 
@@ -1284,7 +1353,7 @@ async fn a_file_a_spreadsheet_saved_loads() {
     let ada = contact_named(&mut conn, "Lovelace, Ada").await;
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+15555550100"]
+        ["text_message/phone/+15555550100"]
     );
 }
 
@@ -1297,19 +1366,24 @@ async fn export_writes_one_row_per_identity_with_the_contact_repeated() {
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550100"),
             ("whatsapp", "phone", "+15555550100"),
-            ("phone", "email", "ada@example.com"),
+            ("text_message", "email", "ada@example.com"),
         ],
     )
     .await;
     join_group(&mut conn, ada, "Work").await;
     join_group(&mut conn, ada, "Family").await;
-    let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550101")]).await;
+    let unknown = imported(&mut conn, "", &[("text_message", "phone", "+15555550101")]).await;
     let no_identity = contacts::create_contact(&mut conn, ACCOUNT, "Cy", Origin::User)
         .await
         .unwrap();
-    let trashed = imported(&mut conn, "Di", &[("phone", "phone", "+15555550103")]).await;
+    let trashed = imported(
+        &mut conn,
+        "Di",
+        &[("text_message", "phone", "+15555550103")],
+    )
+    .await;
     sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
         .bind(ACCOUNT)
         .bind(trashed)
@@ -1354,17 +1428,17 @@ async fn an_export_loaded_straight_back_changes_nothing() {
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+15555550100"),
+            ("text_message", "phone", "+15555550100"),
             ("whatsapp", "phone", "+15555550100"),
-            ("phone", "email", "Ada@Example.com"),
+            ("text_message", "email", "Ada@Example.com"),
         ],
     )
     .await;
     join_group(&mut conn, ada, "Family").await;
     join_group(&mut conn, ada, "Chess Club").await;
-    imported(&mut conn, "", &[("phone", "phone", "020 7946 0000")]).await;
-    imported(&mut conn, "Bank", &[("phone", "phone", "*611")]).await;
-    imported(&mut conn, "Sam", &[("phone", "other", "@sam")]).await;
+    imported(&mut conn, "", &[("text_message", "phone", "020 7946 0000")]).await;
+    imported(&mut conn, "Bank", &[("text_message", "phone", "*611")]).await;
+    imported(&mut conn, "Sam", &[("text_message", "other", "@sam")]).await;
     contacts::create_contact(&mut conn, ACCOUNT, "Cy", Origin::User)
         .await
         .unwrap();
@@ -1435,7 +1509,12 @@ async fn an_identity_only_a_file_knew_goes_when_edit_takes_it_off() {
 #[tokio::test]
 async fn s4_6_a_number_without_its_plus_keeps_the_real_identity() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+6555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+6555550100")],
+    )
+    .await;
     let before = identities_of(&mut conn, ada).await;
     let row = format!("{ada},Ada,Text Message,6555550100,");
     let _ = load(
@@ -1454,7 +1533,12 @@ async fn s4_6_a_number_without_its_plus_keeps_the_real_identity() {
 #[tokio::test]
 async fn a_number_read_with_its_plus_back_is_named_in_the_result() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+6555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+6555550100")],
+    )
+    .await;
     let counts = loaded(
         &mut conn,
         &file(&[&format!("{ada},Ada,Text Message,6555550100,")]),
@@ -1482,8 +1566,8 @@ async fn a_number_without_plus_whose_contact_holds_both_readings_is_refused() {
         &mut conn,
         "Ada",
         &[
-            ("phone", "phone", "+6555550100"),
-            ("phone", "phone", "6555550100"),
+            ("text_message", "phone", "+6555550100"),
+            ("text_message", "phone", "6555550100"),
         ],
     )
     .await;
@@ -1506,7 +1590,12 @@ async fn a_number_without_plus_whose_contact_holds_both_readings_is_refused() {
 #[tokio::test]
 async fn a_number_without_plus_never_takes_another_contacts_identity() {
     let (mut conn, _pool, _dir) = account().await;
-    let bob = imported(&mut conn, "Bob", &[("phone", "phone", "+6555550100")]).await;
+    let bob = imported(
+        &mut conn,
+        "Bob",
+        &[("text_message", "phone", "+6555550100")],
+    )
+    .await;
     let ada = imported(&mut conn, "Ada", &[]).await;
     let counts = loaded(
         &mut conn,
@@ -1516,11 +1605,11 @@ async fn a_number_without_plus_never_takes_another_contacts_identity() {
     .await;
     assert_eq!(
         identities_of(&mut conn, bob).await,
-        ["phone/phone/+6555550100"]
+        ["text_message/phone/+6555550100"]
     );
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/6555550100"]
+        ["text_message/phone/6555550100"]
     );
     assert_eq!(
         counts.notes,
@@ -1542,7 +1631,7 @@ async fn a_new_identity_of_bare_digits_is_named_in_the_result() {
     let ada = contact_named(&mut conn, "Ada").await;
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/447700900123"]
+        ["text_message/phone/447700900123"]
     );
     assert_eq!(
         counts.notes,
@@ -1583,7 +1672,12 @@ async fn the_notes_follow_the_order_of_the_rows() {
 #[tokio::test]
 async fn a_national_number_without_plus_is_not_read_as_a_us_number() {
     let (mut conn, _pool, _dir) = account().await;
-    let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[("text_message", "phone", "+15555550100")],
+    )
+    .await;
     let counts = loaded(
         &mut conn,
         &file(&[&format!("{ada},Ada,Text Message,555-555-0100,")]),
@@ -1596,7 +1690,7 @@ async fn a_national_number_without_plus_is_not_read_as_a_us_number() {
     );
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/5555550100"]
+        ["text_message/phone/5555550100"]
     );
 }
 
@@ -1613,9 +1707,9 @@ async fn export_writes_a_quote_before_a_cell_a_spreadsheet_would_run() {
         &mut conn,
         name,
         &[
-            ("phone", "phone", "+15555550100"),
-            ("phone", "other", "@ada"),
-            ("phone", "other", "-ada"),
+            ("text_message", "phone", "+15555550100"),
+            ("text_message", "other", "@ada"),
+            ("text_message", "other", "-ada"),
         ],
     )
     .await;
@@ -1643,11 +1737,11 @@ async fn a_quoted_cell_loaded_straight_back_changes_nothing() {
     let ada = imported(
         &mut conn,
         "=HYPERLINK(\"http://example.com/?\"&B2,\"Ada\")",
-        &[("phone", "phone", "+15555550100")],
+        &[("text_message", "phone", "+15555550100")],
     )
     .await;
     join_group(&mut conn, ada, "-Family").await;
-    imported(&mut conn, "'=1+1", &[("phone", "other", "@bo")]).await;
+    imported(&mut conn, "'=1+1", &[("text_message", "other", "@bo")]).await;
     let stamp = "2001-01-01 00:00:00";
     sqlx::query("UPDATE contacts SET last_modified = $1")
         .bind(stamp)
@@ -1687,7 +1781,7 @@ async fn a_cell_loads_the_same_with_or_without_its_quote() {
     let ada = contact_named(&mut conn, "=Ada").await;
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+15555550100"]
+        ["text_message/phone/+15555550100"]
     );
     assert_eq!(groups_of(&mut conn, ada).await, ["+Work"]);
     let bo = contact_named(&mut conn, "=Bo").await;
@@ -1742,8 +1836,8 @@ async fn an_export_libreoffice_saved_again_changes_nothing() {
         &mut conn,
         "=HYPERLINK(\"http://example.com/?\"&B2,\"Ada\")",
         &[
-            ("phone", "phone", "+15555550100"),
-            ("phone", "other", "@ada"),
+            ("text_message", "phone", "+15555550100"),
+            ("text_message", "other", "@ada"),
         ],
     )
     .await;
@@ -1809,7 +1903,7 @@ fn ids_of(text: &str) -> Vec<String> {
 #[tokio::test]
 async fn a_new_contact_whose_identity_a_nameless_contact_holds_names_it_in_place() {
     let (mut conn, _pool, _dir) = account().await;
-    let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550150")]).await;
+    let unknown = imported(&mut conn, "", &[("text_message", "phone", "+15555550150")]).await;
 
     let text = rewrite_ids_to_nameless(
         &mut conn,
@@ -1828,7 +1922,7 @@ async fn a_new_contact_whose_identity_a_nameless_contact_holds_names_it_in_place
 #[tokio::test]
 async fn a_new_contact_whose_rows_read_otherwise_under_the_nameless_contacts_id_stays_new() {
     let (mut conn, _pool, _dir) = account().await;
-    imported(&mut conn, "", &[("phone", "phone", "+6555550100")]).await;
+    imported(&mut conn, "", &[("text_message", "phone", "+6555550100")]).await;
     // As a new contact, the second row is another number; under the
     // nameless contact's id it would read as the first row's `+6555550100`.
     let original = file(&[
@@ -1854,7 +1948,7 @@ async fn a_new_contact_listing_one_service_of_a_number_leaves_its_nameless_holde
         &mut conn,
         "",
         &[
-            ("phone", "phone", "+15555550150"),
+            ("text_message", "phone", "+15555550150"),
             ("whatsapp", "phone", "+15555550150"),
         ],
     )
@@ -1888,7 +1982,7 @@ async fn a_new_contact_listing_one_service_of_a_number_leaves_its_nameless_holde
     let alice = contact_named(&mut conn, "Alice").await;
     assert_eq!(
         identities_of(&mut conn, alice).await,
-        ["phone/phone/+15555550150"]
+        ["text_message/phone/+15555550150"]
     );
 }
 
@@ -1965,11 +2059,17 @@ async fn a_converted_vcard_file_loads() {
     let ada = contact_named(&mut conn, "Ada Lovelace").await;
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/email/ada@example.com", "phone/phone/+15555550101"]
+        [
+            "text_message/email/ada@example.com",
+            "text_message/phone/+15555550101"
+        ]
     );
     let bao = contact_named(&mut conn, "Smith, Bao").await;
     assert_eq!(
         identities_of(&mut conn, bao).await,
-        ["phone/phone/+15555550102", "phone/phone/+447700900123"]
+        [
+            "text_message/phone/+15555550102",
+            "text_message/phone/+447700900123"
+        ]
     );
 }

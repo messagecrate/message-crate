@@ -12,8 +12,8 @@ The Message Crate SQLite database falls into four groups:
 
 Conversations and people are **not** joined by a shared person ID. They meet through
 the **`handles`** table: every phone number, email, or username appears once
-per account **per platform** (`phone` or `whatsapp`) as a typed handle, and
-conversations, participants, messages, and contacts all point at the same
+per account **per platform** (`text_message` or `whatsapp`) as a typed handle,
+and conversations, participants, messages, and contacts all point at the same
 handle rows.
 
 ```mermaid
@@ -122,13 +122,13 @@ Run ids at the same numbers again.
 
 One row = one **platform** identity per account: `raw` (as the source wrote
 it), `normalized`, `handle_type` (`phone` / `email` / `username` / `other`),
-required `service` (`phone` | `whatsapp` — UI labels “Text Message” /
+required `service` (`text_message` | `whatsapp` — UI labels “Text Message” /
 “WhatsApp”), and an optional `normalized_note`. Handles are deduplicated per
 account by `(account_id, normalized, handle_type, service)`, so the same phone
 number on Text Message and WhatsApp is two rows. SMS / iMessage / RCS are
 **not** handle platforms; those are per-message transport values on
-`messages.service`. Everywhere else in the schema, identities are referenced by
-`handle_id` — never by text.
+`messages.service`. Everywhere else in the schema, identities are referenced
+by `handle_id` — never by text.
 
 `normalized_note` is the needs-review flag: phone numbers are written as
 E.164 only when unambiguous. Ambiguous values (e.g. a trunk-zero national
@@ -169,7 +169,7 @@ tables and reads back into them, one row per `contact_handles` link:
 |---|---|
 | `contact_id` | `contacts.id` |
 | `display_name` | `contacts.preferred_name`, trimmed |
-| `service` | `Email` for a `handles.handle_type` of `email`, otherwise `Text Message` for a `handles.service` of `phone` and `WhatsApp` for `whatsapp` |
+| `service` | `Email` for a `handles.handle_type` of `email`, otherwise `Text Message` for a `handles.service` of `text_message` and `WhatsApp` for `whatsapp` |
 | `identity` | `handles.normalized` |
 | `groups` | the names of the contact's `contact_groups`, joined with `;` |
 

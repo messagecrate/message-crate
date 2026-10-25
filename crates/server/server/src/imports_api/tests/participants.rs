@@ -634,7 +634,7 @@ async fn an_account_identity_listed_among_a_groups_members_is_not_a_participant(
         &state,
         &account,
         &token,
-        serde_json::json!({ "identities": [{ "address": "+15555550199", "service": "phone" }] }),
+        serde_json::json!({ "identities": [{ "address": "+15555550199", "service": "text_message" }] }),
     )
     .await;
     let identities_before: serde_json::Value =

@@ -203,7 +203,7 @@ async fn setup_db(conn: &mut SqliteConnection) {
     sqlx::query(
         r"
         INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-        VALUES ($1, '+14075550106', '+14075550106', 'phone', 'phone')
+        VALUES ($1, '+14075550106', '+14075550106', 'phone', 'text_message')
         ",
     )
     .bind(TEST_ACCOUNT_ID)
@@ -1123,7 +1123,7 @@ async fn handle(conn: &mut SqliteConnection, normalized: &str) -> i64 {
     sqlx::query_scalar(
         r"
         INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-        VALUES ($1, $2, $2, 'phone', 'phone')
+        VALUES ($1, $2, $2, 'phone', 'text_message')
         RETURNING id
         ",
     )

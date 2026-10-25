@@ -33,7 +33,7 @@ function alreadyListed(
   if (!key) return false;
   return existing.some((row) => {
     const rowService = inferService(row.address, row.service);
-    const known = OFFERED_SERVICES.find((s) => s === rowService) ?? "phone";
+    const known = OFFERED_SERVICES.find((s) => s === rowService) ?? "text_message";
     return identityDuplicateKey(known, row.address) === key;
   });
 }
@@ -66,7 +66,7 @@ export default function AddIdentityDialog({
   onClose: () => void;
   onConfirm: (args: { address: string; service: OfferedService }) => void;
 }) {
-  const [service, setService] = useState<OfferedService>("phone");
+  const [service, setService] = useState<OfferedService>("text_message");
   const [handle, setHandle] = useState("");
   const [invalid, setInvalid] = useState("");
   const serviceId = useId();
@@ -74,7 +74,7 @@ export default function AddIdentityDialog({
 
   useEffect(() => {
     if (open) {
-      setService("phone");
+      setService("text_message");
       setHandle("");
       setInvalid("");
     }

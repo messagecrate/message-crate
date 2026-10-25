@@ -789,7 +789,7 @@ async fn an_import_writes_no_email_identity_on_whatsapp() {
 }
 
 /// On Text Message an address has one type whichever transport carried it,
-/// because SMS and iMessage share the one `phone` service. An address with an
+/// because SMS and iMessage share the one service Text Message. An address with an
 /// `@` that is a participant in one conversation and an unlisted SMS sender
 /// in a group is one identity on one contact. Typed by the message's
 /// transport, the SMS sender became a second identity on a new contact with
@@ -939,7 +939,7 @@ async fn text_message_types_a_short_code_a_sender_name_and_an_email_by_shape() {
 }
 
 /// iMessage reaches an email address, so an iMessage sender with one is an
-/// email identity on the phone service.
+/// email identity on Text Message.
 #[tokio::test]
 async fn an_imessage_sender_with_an_email_address_is_email() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
@@ -951,7 +951,7 @@ async fn an_imessage_sender_with_an_email_address_is_email() {
         .unwrap();
 
     assert_eq!(
-        email_identities_on(&mut conn, "phone").await,
+        email_identities_on(&mut conn, "text_message").await,
         ["ada@example.com".to_string()]
     );
 }

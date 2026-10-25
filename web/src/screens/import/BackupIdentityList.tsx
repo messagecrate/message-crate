@@ -1,10 +1,5 @@
 import Button from "../../components/Button";
-import {
-  type IdentityType,
-  identityMessageCounts,
-  identityOnProfile,
-  identityType,
-} from "../../lib/backupIdentity";
+import { identityMessageCounts, identityOnProfile } from "../../lib/backupIdentity";
 
 const HEAD_CELL_CLASS =
   "border-b border-border pb-1 pr-4 text-left text-[0.75rem] font-normal text-muted";
@@ -30,7 +25,7 @@ export default function BackupIdentityList({
    * add buttons both need it, so both wait on it: each row shows just the
    * identity value, with no mark and no button, until the profile loads. */
   profile: { phones: string[]; emails: string[] } | null;
-  onAdd: (value: string, type: IdentityType) => Promise<void>;
+  onAdd: (value: string) => Promise<void>;
   busy?: boolean;
   /** Set after an "Add to profile" call fails or silently didn't add the
    * address — a short factual line shown under the list, not tied to any
@@ -97,7 +92,7 @@ export default function BackupIdentityList({
                         <Button
                           variant="ghost"
                           size="chip"
-                          onClick={() => void onAdd(identity, identityType(identity))}
+                          onClick={() => void onAdd(identity)}
                           disabled={busy}
                         >
                           Add to profile
@@ -132,11 +127,7 @@ export default function BackupIdentityList({
               {matched === false && (
                 <span className="flex items-center gap-2">
                   <span className="text-[0.813rem] text-muted">Not on your profile</span>
-                  <Button
-                    variant="ghost"
-                    onClick={() => void onAdd(identity, identityType(identity))}
-                    disabled={busy}
-                  >
+                  <Button variant="ghost" onClick={() => void onAdd(identity)} disabled={busy}>
                     Add to profile
                   </Button>
                 </span>

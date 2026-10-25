@@ -21,7 +21,7 @@ pub struct SetIdentityCountryRequest {
     /// The identity as the list shows it: the number as typed, without `+`.
     pub address: String,
     /// The service the identity is on. When omitted, the identity is found
-    /// on the phone service first, then WhatsApp.
+    /// on Text Message first, then WhatsApp.
     #[serde(default)]
     pub service: Option<ApiIdentityService>,
     /// The country the number is in, as an ISO 3166-1 alpha-2 code such as
