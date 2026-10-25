@@ -29,11 +29,10 @@ carry their date on the heading.
   contact, and nothing is added. The new contact opens beside the list,
   and **Undo** moves it to the Trash (#3245).
 - 2026-10-25: **The Audit Trail records changes to contacts.** Adding a
-  contact by hand, moving contacts to the Trash and restoring them,
-  deleting a contact for good, and merging contacts or undoing a merge
-  each add an entry that counts the contacts and names them by number,
-  never by name. One **Delete Contacts** is one entry however many
-  contacts it moves. Edits to a contact and Contact Group changes are not
+  contact by hand, moving contacts to the Trash and restoring them, and
+  deleting a contact for good each add an entry that counts the contacts
+  and names them by number, never by name. One **Delete Contacts** is one
+  entry however many contacts it moves. Edits to a contact and Contact Group changes are not
   recorded (#3241).
 - 2026-10-24: **A ⋯ menu on the Contacts list, with Undo and Redo.** The
   loose **Export** link beside the sort button is now a ⋯ menu. Its header

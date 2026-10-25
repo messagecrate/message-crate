@@ -1136,14 +1136,15 @@ the person took it, with a count and contact ids, never a name or message
 text: Delete Contacts on three rows is one `contacts_trashed` entry with
 `contacts` 3 and the three ids, and its undo is one `contacts_restored`
 entry. A merge entry names the contact kept as `contact_id` and the merged
-ones as `contact_ids`. The route that makes the change writes the entry in
-the change's own transaction, so a change made by Undo or Redo is recorded
-as the same change made by hand, and Undo and Redo get no entry of their
-own. A request that changes no contact, such as moving a contact already in
-the Trash there again, writes no entry. Delete Contacts sends its contacts
-in one request, `PATCH /v1/trash/contacts`, so the trail sees one action;
-that route takes at most 10000 ids, and a larger selection is sent, and
-recorded, in parts of that size. A rename, an identity added, swapped or
+ones as `contact_ids`. Merge Contacts is not built yet, so nothing writes
+the two merge entries until #3237 lands. The route that makes the change
+writes the entry in the change's own transaction, so a change made by Undo
+or Redo is recorded as the same change made by hand. Undo and Redo get no
+entry of their own. A request that changes no contact, such as moving a
+contact already in the Trash there again, writes no entry. Delete Contacts
+sends its contacts in one request, `PATCH /v1/trash/contacts`, so the trail
+sees one action. That route takes at most 10000 ids, and a larger selection
+is sent, and recorded, in parts of that size. A rename, an identity added, swapped or
 taken off in the contact drawer, a country picked, a Contact Group
 membership change, and a Contact Group created, renamed or deleted get no
 entry. Why: the trail records what removes or replaces contact data, and an

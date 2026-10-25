@@ -449,11 +449,11 @@ pub struct Details {
     /// exported address book, moved to or out of the Trash, or merged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contacts: Option<i64>,
-    /// `contact_added` and `contact_deleted`: the contact; `contacts_merged`
+    /// `contact_added` and `contact_deleted`: the contact. `contacts_merged`
     /// and `contacts_unmerged`: the contact kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_id: Option<i64>,
-    /// `contacts_trashed` and `contacts_restored`: the contacts moved;
+    /// `contacts_trashed` and `contacts_restored`: the contacts moved.
     /// `contacts_merged` and `contacts_unmerged`: the contacts merged into
     /// the one kept or taken out of it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -767,9 +767,9 @@ pub struct ContactChange<'a> {
 /// (`docs/architecture/rules/contacts-identities-and-messages.md`,
 /// CONTACT-57). Nothing is written when the account does not exist.
 ///
-/// The Merge Contacts routes record `contacts_merged` and
-/// `contacts_unmerged` through here, with the contact kept as `contact_id`
-/// and the merged ones as `contact_ids`.
+/// No route writes `contacts_merged` or `contacts_unmerged` yet. The Merge
+/// Contacts routes (#3237) are to record them through here, with the contact
+/// kept as `contact_id` and the merged ones as `contact_ids`.
 ///
 /// # Errors
 ///
