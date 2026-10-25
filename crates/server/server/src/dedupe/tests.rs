@@ -1109,10 +1109,15 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
 
 /// Insert (or find) a handle of the test account and return its id.
 async fn handle(conn: &mut SqliteConnection, normalized: &str) -> i64 {
+    handle_of(conn, TEST_ACCOUNT_ID, normalized).await
+}
+
+/// Insert (or find) a handle of `account_id` and return its id.
+async fn handle_of(conn: &mut SqliteConnection, account_id: i64, normalized: &str) -> i64 {
     if let Some(id) = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM handles WHERE account_id = $1 AND normalized = $2",
     )
-    .bind(TEST_ACCOUNT_ID)
+    .bind(account_id)
     .bind(normalized)
     .fetch_optional(&mut *conn)
     .await
@@ -1127,7 +1132,7 @@ async fn handle(conn: &mut SqliteConnection, normalized: &str) -> i64 {
         RETURNING id
         ",
     )
-    .bind(TEST_ACCOUNT_ID)
+    .bind(account_id)
     .bind(normalized)
     .fetch_one(&mut *conn)
     .await
@@ -1179,6 +1184,35 @@ async fn duplicate_of(conn: &mut SqliteConnection, id: i64) -> Option<i64> {
         .unwrap()
 }
 
+/// One group under two chat identifiers, as two exporters name it: the
+/// conversations `chat-x` and `chat-y` of the test account, with the same
+/// two people in each. Only the content key can pair a copy in one with its
+/// twin in the other, because the near-time pass looks inside one
+/// conversation.
+async fn one_group_under_two_chat_identifiers(conn: &mut SqliteConnection) -> (i64, i64) {
+    let x = conversation(conn, "chat-x", "group").await;
+    let y = conversation(conn, "chat-y", "group").await;
+    for conv in [x, y] {
+        add_participant(conn, conv, "+15555550128").await;
+        add_participant(conn, conv, "+15555550129").await;
+    }
+    (x, y)
+}
+
+/// "look", sent by the account at 2015-03-12T18:04:22.000Z in
+/// `conversation_id`, as `source` wrote it under `guid`.
+fn look_sent_by(source: &'static str, guid: &str, conversation_id: i64) -> MessageRow<'static> {
+    MessageRow {
+        source,
+        guid: Some(guid.into()),
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
+        is_from_me: true,
+        sender_handle_id: None,
+        body: Some("look"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, conversation_id)
+    }
+}
+
 /// A message imported before its attachment reached the server still pairs
 /// with its twin once the attachment arrives.
 ///
@@ -1193,41 +1227,18 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     let (pool, _dir) = engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     setup_account(&mut conn).await;
-    let x = conversation(&mut conn, "chat-x", "group").await;
-    let y = conversation(&mut conn, "chat-y", "group").await;
-    for conv in [x, y] {
-        add_participant(&mut conn, conv, "+15555550128").await;
-        add_participant(&mut conn, conv, "+15555550129").await;
-    }
+    let (x, y) = one_group_under_two_chat_identifiers(&mut conn).await;
 
-    let first = MessageRow {
-        source: "imessage",
-        guid: Some("a-1".into()),
-        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
-        is_from_me: true,
-        sender_handle_id: None,
-        body: Some("look"),
-        ..MessageRow::new(TEST_ACCOUNT_ID, x)
-    }
-    .insert(&mut conn)
-    .await;
+    let first = look_sent_by("imessage", "a-1", x).insert(&mut conn).await;
     dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
         .await
         .unwrap();
 
     // The re-import brings the photo; the other exporter had it all along.
     add_attachment(&mut conn, first, "sha-photo").await;
-    let twin = MessageRow {
-        source: "sms-backup-plus",
-        guid: Some("b-1".into()),
-        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
-        is_from_me: true,
-        sender_handle_id: None,
-        body: Some("look"),
-        ..MessageRow::new(TEST_ACCOUNT_ID, y)
-    }
-    .insert(&mut conn)
-    .await;
+    let twin = look_sent_by("sms-backup-plus", "b-1", y)
+        .insert(&mut conn)
+        .await;
     add_attachment(&mut conn, twin, "sha-photo").await;
 
     let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
@@ -1245,9 +1256,9 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
 /// Clearing an account's duplicate flags leaves none of its messages hidden,
 /// and leaves another account's flags as they were.
 ///
-/// The statement writes only the rows that carry a flag (#3256), so this
-/// checks that narrowing it still reaches every flagged row of the account
-/// and no row of another.
+/// The statement writes only the rows that carry a flag (#3256). The test
+/// pins what that narrowing must not change, so the old statement passes it
+/// too: every flagged row of the account is cleared, and no row of another.
 #[tokio::test]
 async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
     const OTHER_ACCOUNT_ID: i64 = 8;
@@ -1268,17 +1279,7 @@ async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
     }
 
     crate::test_support::insert_account_with_id(&mut conn, OTHER_ACCOUNT_ID, "other").await;
-    let other_handle: i64 = sqlx::query_scalar(
-        r"
-        INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-        VALUES ($1, '+14075550107', '+14075550107', 'phone', 'phone')
-        RETURNING id
-        ",
-    )
-    .bind(OTHER_ACCOUNT_ID)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let other_handle = handle_of(&mut conn, OTHER_ACCOUNT_ID, "+14075550107").await;
     let other_peer = ConversationRow::new(OTHER_ACCOUNT_ID, other_handle)
         .insert(&mut conn)
         .await;
@@ -1318,40 +1319,20 @@ async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
 ///
 /// Each pass clears the flags it set last time before it sets them again, so
 /// a copy that no longer pairs is shown. Here the second copy gains a photo
-/// the first lacks, so their content keys differ. The two copies sit in
-/// different conversations (the same group under two chat identifiers), so
-/// only the content key could pair them.
+/// the first lacks, so their content keys differ.
+///
+/// The test pins behavior that narrowing the clearing to the flagged rows
+/// (#3256) must not change: the old statement passes it too.
 #[tokio::test]
 async fn a_hidden_copy_shows_again_after_the_pass_once_it_stops_matching() {
     let (pool, _dir) = engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     setup_account(&mut conn).await;
-    let x = conversation(&mut conn, "chat-x", "group").await;
-    let y = conversation(&mut conn, "chat-y", "group").await;
-    for conv in [x, y] {
-        add_participant(&mut conn, conv, "+15555550128").await;
-        add_participant(&mut conn, conv, "+15555550129").await;
-    }
-    let first = MessageRow {
-        source: "imessage",
-        guid: Some("a-1".into()),
-        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
-        is_from_me: true,
-        body: Some("look"),
-        ..MessageRow::new(TEST_ACCOUNT_ID, x)
-    }
-    .insert(&mut conn)
-    .await;
-    let twin = MessageRow {
-        source: "sms-backup-plus",
-        guid: Some("b-1".into()),
-        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
-        is_from_me: true,
-        body: Some("look"),
-        ..MessageRow::new(TEST_ACCOUNT_ID, y)
-    }
-    .insert(&mut conn)
-    .await;
+    let (x, y) = one_group_under_two_chat_identifiers(&mut conn).await;
+    let first = look_sent_by("imessage", "a-1", x).insert(&mut conn).await;
+    let twin = look_sent_by("sms-backup-plus", "b-1", y)
+        .insert(&mut conn)
+        .await;
     dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
         .await
         .unwrap();

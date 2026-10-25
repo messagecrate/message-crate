@@ -552,7 +552,8 @@ pub async fn duplicate_flags(
 /// Only the rows that carry a flag are written. Clearing an empty flag
 /// changes nothing, and the hidden copies are a small part of an account, so
 /// writing every row held the write lock for seconds on a large account
-/// (#3256). `ix_messages_duplicate_of` indexes only the flagged rows, so the
+/// (#3256). `EXPLAIN QUERY PLAN` shows SQLite searching
+/// `ix_messages_duplicate_of`, which indexes only the flagged rows, so the
 /// statement finds them without reading the rest.
 ///
 /// # Errors
