@@ -15,7 +15,7 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 ## Docs
 
 This crate is a library used by the desktop app and the converters. The Slint GUI that once used it is gone; its screens are recorded in
-[docs/superpowers/reference/legacy-slint-gui.md](../../../docs/superpowers/reference/legacy-slint-gui.md).
+[docs/gui/legacy-slint-gui.md](../../../docs/gui/legacy-slint-gui.md).
 
 ## License
 
