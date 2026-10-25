@@ -423,7 +423,8 @@ async fn accept_is_checked_on_v1_json_routes_only() {
 
 /// An `Accept` sent on two field lines is one list (RFC 9110, section 5.3),
 /// so a JSON member on the second line lets the request through, though the
-/// first line alone names only `text/html`.
+/// first line alone names only `text/html`. Two lines that both name
+/// something else are refused, and the problem detail quotes the whole list.
 #[tokio::test]
 async fn accept_on_two_lines_is_read_as_one_list() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
@@ -439,6 +440,22 @@ async fn accept_on_two_lines_is_read_as_one_list() {
         .await
         .unwrap();
     assert_eq!(allowed.status(), StatusCode::OK);
+
+    let refused = server
+        .get("/v1/conversations")
+        .bearer_auth(&user.token)
+        .header(header::ACCEPT, "text/html")
+        .header(header::ACCEPT, "text/plain")
+        .send()
+        .await
+        .unwrap();
+    let status = refused.status();
+    let text = refused.text().await.unwrap();
+    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotAcceptable);
+    assert!(
+        text.contains("text/html, text/plain"),
+        "the detail quotes both lines: {text}"
+    );
 }
 
 /// The attachment size limit holds the attachment uploads and nothing else.
