@@ -167,3 +167,38 @@ fn the_promoted_line_counts_one_and_many() {
         "Wrote 2 conversations, 3 participants, 0 messages, 4 attachments and 5 tapbacks"
     );
 }
+
+/// A promotion makes a conversation `unknown` when what it added names no
+/// one known service, or another service than the earlier messages. Adding
+/// well-formed messages to one that was `unknown` already is not its fault
+/// (CONTACT-56).
+#[test]
+fn a_promotion_is_named_only_for_the_unknown_service_it_caused() {
+    use super::unknown_service_reason;
+    use crate::db::conversations::PromotedTransports;
+
+    let written = |added: &[&str], earlier: &[&str]| PromotedTransports {
+        added: added
+            .iter()
+            .map(|t| (Some((*t).to_string()), "imazing".to_string()))
+            .collect(),
+        earlier: earlier.iter().map(|t| Some((*t).to_string())).collect(),
+    };
+    assert_eq!(
+        unknown_service_reason(&written(&["sms", "imessage"], &[])),
+        None
+    );
+    assert_eq!(unknown_service_reason(&written(&["sms"], &["rcs"])), None);
+    assert_eq!(
+        unknown_service_reason(&written(&["sms"], &["unknown"])),
+        None
+    );
+    assert_eq!(
+        unknown_service_reason(&written(&["sms", "unknown"], &["sms"])).as_deref(),
+        Some("which do not name one known service")
+    );
+    assert_eq!(
+        unknown_service_reason(&written(&["sms"], &["whatsapp"])).as_deref(),
+        Some("and its earlier messages are whatsapp, another service")
+    );
+}

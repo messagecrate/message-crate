@@ -646,9 +646,10 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
 
 /// A promoted message whose transport could not be read leaves its
 /// conversation `unknown`, and the import writes a warning naming the
-/// conversation, its transports and its source, so the exporter gets looked
-/// into. A conversation of known transports of one service gets none
-/// (CONTACT-56).
+/// conversation and the transports and source of what it added, so the
+/// exporter gets looked into. A conversation of known transports of one
+/// service gets none, and so does a later import that adds only well-formed
+/// messages to the `unknown` one (CONTACT-56).
 #[tokio::test]
 async fn promoting_a_message_of_unknown_transport_writes_a_warning() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
@@ -662,12 +663,21 @@ async fn promoting_a_message_of_unknown_transport_writes_a_warning() {
         .participant("+15555550102", Some("Kim"))
         .line()
         + &incoming("g-known-1", "+15555550102");
+    // A later import of well-formed messages into the conversation that is
+    // already `unknown` is not at fault, so it is not named.
+    let later = conversation_header("imessage", "+15555550101")
+        .participant("+15555550101", Some("Sam"))
+        .line()
+        + &incoming("g-unk-3", "+15555550101");
 
     let ((), lines) = crate::test_support::lines_written_by("warn", async {
         import_one(&mut conn, "+15555550101.jsonl", &unknown)
             .await
             .unwrap();
         import_one(&mut conn, "+15555550102.jsonl", &known)
+            .await
+            .unwrap();
+        import_one(&mut conn, "+15555550101.jsonl", &later)
             .await
             .unwrap();
     })
@@ -688,9 +698,9 @@ async fn promoting_a_message_of_unknown_transport_writes_a_warning() {
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
         warnings[0].contains(&format!(
-            "Conversation {unknown_id} is shown as Unknown, because its messages' transports \
-             (imessage, unknown) do not name one known service. Its messages came from \
-             sms-backup-restore. An import with no Import Run wrote to it"
+            "Conversation {unknown_id} is shown as Unknown, because an import with no Import Run \
+             wrote messages to it with the transports imessage, unknown from \
+             sms-backup-restore, which do not name one known service"
         )),
         "{}",
         warnings[0]

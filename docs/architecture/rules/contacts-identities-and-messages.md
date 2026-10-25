@@ -1117,10 +1117,13 @@ The answer is `unknown` when a message's transport is `unknown`, NULL or a
 word the file does not name, and when the messages belong to two services.
 Neither is a default. Every exporter writes a transport on every message, and
 writes `unknown` only when the source gives none it can read, so each one is
-a fault. The import that promotes a message into such a conversation writes
-a warning to the server's log, naming the conversation, its transports, its
-sources and the Import Run (`warn_of_unknown_services` in
-`imports_api/promote.rs`). The web app shows it as "Unknown".
+a fault. An import whose added messages make a conversation `unknown`
+writes a warning to the server's log. The warning names the conversation,
+the transports and sources of the messages that import added, and the
+Import Run (`warn_of_unknown_services` in `imports_api/promote.rs`). A later
+import that adds only well-formed messages to a conversation that is
+`unknown` already is not named, because the fault is not its own. The web
+app shows the conversation as "Unknown".
 
 Why: named from the sources, a conversation took the id of the backup it came
 from. A source that holds texts and WhatsApp chats alike, such as iMazing,

@@ -4,7 +4,7 @@
 //! So does the list of conversations with yourself that an identity change
 //! measures against (`imports_api::with_yourself`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Context;
 use serde::Serialize;
@@ -388,6 +388,20 @@ impl ConversationService {
         }
         found.unwrap_or(Self::Unknown)
     }
+
+    /// The value as the wire spells it, such as `text_message`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TextMessage => "text_message",
+            Self::Whatsapp => "whatsapp",
+            Self::Discord => "discord",
+            Self::Signal => "signal",
+            Self::Telegram => "telegram",
+            Self::Slack => "slack",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 /// One stored transport of one conversation, for [`conversation_transports`].
@@ -457,47 +471,91 @@ pub(crate) async fn conversation_services(
         .collect())
 }
 
-/// The conversations of `account_id` that hold a message with an id above
-/// `message_id`: those an import's promotion wrote to, when `message_id` is
-/// the highest id before it.
+/// What a promotion wrote to one conversation, for the warning of
+/// CONTACT-56: the distinct transports and sources of the messages it
+/// added, and the distinct transports of the messages the conversation held
+/// before.
+#[derive(Debug, Default)]
+pub(crate) struct PromotedTransports {
+    /// Each distinct pair of transport (`messages.service`, NULL as `None`)
+    /// and source of the added messages, in order.
+    pub added: Vec<(Option<String>, String)>,
+    /// Each distinct transport of the earlier messages; empty for a
+    /// conversation the promotion made.
+    pub earlier: Vec<Option<String>>,
+}
+
+/// One added message's transport and source, for [`transports_promoted_above`].
+#[derive(sqlx::FromRow)]
+struct AddedRow {
+    conversation_id: i64,
+    service: Option<String>,
+    source: String,
+}
+
+/// Each conversation of `account_id` that holds a message with an id above
+/// `message_id`, with [`PromotedTransports`] split at that id: when
+/// `message_id` is the highest id before a promotion, the conversations it
+/// wrote to, what it added and what was there before.
 ///
 /// # Errors
 ///
-/// Returns an error when the statement fails.
-pub(crate) async fn conversations_with_messages_above(
+/// Returns an error when a statement fails.
+pub(crate) async fn transports_promoted_above(
     conn: &mut SqliteConnection,
     account_id: i64,
     message_id: i64,
-) -> anyhow::Result<Vec<i64>> {
-    sqlx::query_scalar(
-        "SELECT DISTINCT conversation_id FROM messages
+) -> anyhow::Result<BTreeMap<i64, PromotedTransports>> {
+    let added: Vec<AddedRow> = sqlx::query_as(
+        "SELECT conversation_id, service, source FROM messages
          WHERE account_id = $1 AND id > $2
-         ORDER BY conversation_id",
+         GROUP BY conversation_id, service, source
+         ORDER BY conversation_id, service, source",
     )
     .bind(account_id)
     .bind(message_id)
     .fetch_all(&mut *conn)
     .await
-    .context("read the conversations the import wrote to")
-}
-
-/// The distinct import sources (`messages.source`) of conversation
-/// `conversation_id`'s messages, in order.
-///
-/// # Errors
-///
-/// Returns an error when the statement fails.
-pub(crate) async fn conversation_message_sources(
-    conn: &mut SqliteConnection,
-    conversation_id: i64,
-) -> anyhow::Result<Vec<String>> {
-    sqlx::query_scalar(
-        "SELECT DISTINCT source FROM messages WHERE conversation_id = $1 ORDER BY source",
-    )
-    .bind(conversation_id)
-    .fetch_all(&mut *conn)
-    .await
-    .context("read the sources of the conversation's messages")
+    .context("read the transports of the messages the import added")?;
+    let mut out: BTreeMap<i64, PromotedTransports> = BTreeMap::new();
+    for row in added {
+        out.entry(row.conversation_id)
+            .or_default()
+            .added
+            .push((row.service, row.source));
+    }
+    let ids: Vec<i64> = out.keys().copied().collect();
+    let earlier = fold_in_id_chunks(conn, &ids, |conn, chunk| {
+        Box::pin(async move {
+            let placeholders = in_placeholders(2, chunk.len());
+            let sql = format!(
+                "SELECT conversation_id, service FROM messages
+                 WHERE id <= $1 AND conversation_id IN ({placeholders})
+                 GROUP BY conversation_id, service"
+            );
+            let mut q =
+                sqlx::query_as::<_, TransportRow>(sqlx::AssertSqlSafe(sql)).bind(message_id);
+            for id in chunk {
+                q = q.bind(*id);
+            }
+            let rows = q
+                .fetch_all(&mut *conn)
+                .await
+                .context("read the transports of the conversations' earlier messages")?;
+            anyhow::Ok(
+                rows.into_iter()
+                    .map(|r| (r.conversation_id, r.service))
+                    .collect(),
+            )
+        })
+    })
+    .await?;
+    for (id, transports) in earlier {
+        if let Some(entry) = out.get_mut(&id) {
+            entry.earlier = transports;
+        }
+    }
+    Ok(out)
 }
 
 /// One backup source with message counts and share.
