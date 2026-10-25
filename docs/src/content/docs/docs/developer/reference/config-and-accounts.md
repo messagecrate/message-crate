@@ -120,7 +120,7 @@ A working client sends its headers at once and opens far fewer connections, so n
 With the two body limits above, they keep one slow or broken client from holding the server: one that connects and sends nothing, sends its request a byte at a time, or stops part-way through a body.
 They do not make the server safe to reach from the internet.
 Nothing limits how long an answer takes to send, so an export download or a large attachment takes as long as the link needs.
-Why the rules: "Connections" in `docs/architecture/rules/http-api.md` in the repository.
+Why the rules: API-63 to API-67 in `docs/architecture/rules/http-api.md` in the repository.
 
 ### Stopping the server
 
