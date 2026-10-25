@@ -3,7 +3,11 @@
 // It needs one server already running from the release image: a new Message
 // Crate, which starts in setup with the Demo Account, as the guide's does.
 // The run sets the administrator's password, so its volume is deleted before
-// each run.
+// each run. A server built from this checkout works too, started on a new
+// directory with the built website:
+//
+//   message-crate-server serve --data-dir <new directory> \
+//     --bind 127.0.0.1:18080 --static-dir web/dist
 //
 //   npm install --no-save playwright && npx playwright install chromium
 //   CRATE_URL=http://localhost:18080 node scripts/user-guide-screenshots.cjs
@@ -47,11 +51,19 @@ async function capture(browser) {
   await demo.getByRole('button', { name: 'Explore Demo Account' }).click();
   await demo.waitForTimeout(2500);
   await shot(demo, 'demo-messages');
-  await demo.getByRole('button', { name: /^Carolyn Jones/ }).first().click();
+  // The first conversation in the list, whichever it is: the Demo Data's
+  // names are generated, so a name written here goes stale when the
+  // generator changes. Its checkbox is labeled `Select <name>`, and the
+  // row's button, which opens it, starts with the same name.
+  const firstSelect = demo.getByRole('checkbox', { name: /^Select (?!all conversations$)/ }).first();
+  const firstName = (await firstSelect.getAttribute('aria-label')).slice('Select '.length);
+  const startsWith = new RegExp(`^${firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+  await demo.getByRole('button', { name: startsWith }).first().click();
   await demo.waitForTimeout(2000);
   // Typed key by key: the search box drops text that arrives faster than a
   // person types, so `fill` followed at once by Enter searches for nothing.
-  await demo.getByPlaceholder('Search messages').click();
+  // The box searches the conversation list, which the guide's caption names.
+  await demo.getByPlaceholder('Search conversations').click();
   await demo.keyboard.type('attachment:any', { delay: 120 });
   await demo.keyboard.press('Enter');
   await demo.waitForTimeout(2500);
