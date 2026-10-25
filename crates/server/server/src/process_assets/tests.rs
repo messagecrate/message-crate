@@ -1094,19 +1094,12 @@ async fn a_stopped_run_fails_and_converts_nothing_more() {
     assert_eq!(preview_of(&mut conn, attachment).await, None);
 }
 
+/// A new database holds only the administrator's row, and the administrator
+/// holds no Assets, so no account is walked (no warning that `data/1/assets`
+/// is missing) and the run says there are no accounts.
 #[tokio::test]
 async fn a_database_without_accounts_is_an_error() {
     let (opened, _dir) = open_db().await;
-    // Every database is made with the administrator's row; remove it to
-    // reach a database with no account at all.
-    let mut conn = opened.conn().await.unwrap();
-    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    sqlx::query("DELETE FROM accounts")
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
-    drop(conn);
 
     let err = run(
         &opened,
@@ -1980,7 +1973,7 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
 async fn account_ids_come_from_the_table_or_else_from_the_data_directories() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
-    for directory in ["7", "12", "notes"] {
+    for directory in ["1", "7", "12", "notes"] {
         fs::create_dir_all(data.join(directory)).unwrap();
     }
     fs::write(data.join("3"), b"a file, not an account").unwrap();
@@ -1995,17 +1988,16 @@ async fn account_ids_come_from_the_table_or_else_from_the_data_directories() {
         Vec::<i64>::new()
     );
 
-    // No accounts table yet: the directories named by an id are the accounts.
+    // No accounts table yet: the directories named by an id are the accounts,
+    // less the administrator's.
     assert_eq!(list_account_ids(&mut conn, &data).await.unwrap(), [7, 12]);
 
     // A table with rows in it is the answer, and the directories are ignored.
-    // The administrator's row is there from the moment the schema is made.
+    // The administrator's row, there from the moment the schema is made, is
+    // not an account whose Assets are walked.
     schema::ensure_schema(&mut conn).await.unwrap();
     seed_account(&mut conn, 5).await;
-    assert_eq!(
-        list_account_ids(&mut conn, &data).await.unwrap(),
-        [crate::db::account_profile::ADMIN_ACCOUNT_ID, 5]
-    );
+    assert_eq!(list_account_ids(&mut conn, &data).await.unwrap(), [5]);
 }
 
 #[tokio::test]

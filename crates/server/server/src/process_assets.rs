@@ -1054,7 +1054,10 @@ impl<'a> AccountPass<'a> {
 }
 
 /// Account ids from the database, falling back to the directory names under
-/// `data_dir` when the table does not exist yet.
+/// `data_dir` when the table does not exist yet. The administrator
+/// ([`account_profile::ADMIN_ACCOUNT_ID`]) is left out of both: it holds no
+/// messages and so no Assets, and walking it would only warn that its
+/// directory is missing (`docs/adr/0008-the-administrator-holds-no-messages.md`).
 async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Result<Vec<i64>> {
     let mut ids = Vec::new();
     if schema::table_exists(conn, "accounts").await? {
@@ -1073,6 +1076,7 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
         }
         ids.sort_unstable();
     }
+    ids.retain(|&id| !account_profile::is_admin(id));
     Ok(ids)
 }
 
