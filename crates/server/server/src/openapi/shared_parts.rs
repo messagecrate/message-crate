@@ -12,8 +12,8 @@
 //! whose description names the types it can carry.
 //!
 //! utoipa makes the first paragraph of a handler's doc comment the summary;
-//! the rule is the first sentence, so the rest of that paragraph moves to the
-//! front of the description here.
+//! the rule is the first sentence (API-122), so the rest of that paragraph
+//! moves to the front of the description here.
 
 use std::collections::BTreeMap;
 
