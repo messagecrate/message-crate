@@ -50,12 +50,16 @@ export type HistoryEvent =
   /** A delete for good, or a change of account: nothing can be undone or redone. */
   | { type: "clear" };
 
+/** The newest `HISTORY_LIMIT` entries of `list`. */
+function capped(list: HistoryEntry[]): HistoryEntry[] {
+  return list.slice(Math.max(0, list.length - HISTORY_LIMIT));
+}
+
 /** The stacks after one event. A linear model: a new action discards the redo stack. */
 export function historyReducer(state: HistoryStacks, event: HistoryEvent): HistoryStacks {
   switch (event.type) {
     case "push": {
-      const undo = [...state.undo, event.entry];
-      return { undo: undo.slice(Math.max(0, undo.length - HISTORY_LIMIT)), redo: [] };
+      return { undo: capped([...state.undo, event.entry]), redo: [] };
     }
     case "undone": {
       const entry = state.undo.find((e) => e.id === event.id);
@@ -65,9 +69,8 @@ export function historyReducer(state: HistoryStacks, event: HistoryEvent): Histo
     case "redone": {
       const entry = state.redo.find((e) => e.id === event.id);
       if (!entry) return state;
-      const undo = [...state.undo, entry];
       return {
-        undo: undo.slice(Math.max(0, undo.length - HISTORY_LIMIT)),
+        undo: capped([...state.undo, entry]),
         redo: state.redo.filter((e) => e !== entry),
       };
     }
@@ -79,6 +82,18 @@ export function historyReducer(state: HistoryStacks, event: HistoryEvent): Histo
     case "clear":
       return EMPTY_HISTORY;
   }
+}
+
+/** The two directions an entry's requests can run in. */
+export type HistoryDirection = "do" | "undo";
+
+/** The membership request a group action sends in `direction`: its own, or the opposite. */
+export function groupOp(
+  action: Extract<HistoryAction, { kind: "group" }>,
+  direction: HistoryDirection,
+): "add" | "remove" {
+  if (direction === "do") return action.op;
+  return action.op === "add" ? "remove" : "add";
 }
 
 /** "Mother" for one contact, "3 contacts" for more. */
@@ -115,7 +130,7 @@ export function actionText(action: HistoryAction): string {
 /** What the toast says after an undo: "Restored 3 contacts". */
 export function undoneText(action: HistoryAction): string {
   if (action.kind === "trash") return `Restored ${who(action.contacts)}`;
-  return groupText(action.op === "add" ? "remove" : "add", action.changes);
+  return groupText(groupOp(action, "undo"), action.changes);
 }
 
 /** The menu's name for the action, after "Undo" or "Redo". It carries no count. */
@@ -123,9 +138,6 @@ export function actionMenuName(action: HistoryAction): string {
   if (action.kind === "trash") return "Delete Contacts";
   return action.op === "add" ? "Add to Contact Group" : "Remove from Contact Group";
 }
-
-/** The two directions an entry's requests can run in. */
-export type HistoryDirection = "do" | "undo";
 
 /**
  * What the error banner says when some of an entry's requests failed.
@@ -142,14 +154,14 @@ export function partialFailureText(
     const doneWords = done === 1 ? "1 contact" : `${done} contacts`;
     if (direction === "undo") {
       const verb = failed === 1 ? "is" : "are";
-      return `Restored ${doneWords}; ${failed} ${verb} no longer in the Trash`;
+      return `Restored ${doneWords}. ${failed} ${verb} no longer in the Trash.`;
     }
-    return `Moved ${doneWords} to Trash; ${failed} could not be moved`;
+    return `Moved ${doneWords} to Trash. ${failed} could not be moved.`;
   }
-  const op = direction === "do" ? action.op : action.op === "add" ? "remove" : "add";
+  const op = groupOp(action, direction);
   const contacts = who(groupContacts(action.changes));
   const groups = whichGroups(action.changes);
   const what = op === "add" ? `add ${contacts} to ${groups}` : `remove ${contacts} from ${groups}`;
-  if (done === 0) return `Could not ${what}`;
-  return `Could not ${what}: ${failed} of ${done + failed} Contact Groups refused the change`;
+  if (done === 0) return `Could not ${what}.`;
+  return `Could not ${what}. ${failed} of ${done + failed} Contact Groups refused the change.`;
 }

@@ -117,10 +117,10 @@ describe("the words", () => {
   it("says what a partial restore did and did not do", () => {
     const action: HistoryAction = { kind: "trash", contacts: three };
     expect(partialFailureText(action, "undo", 2, 1)).toBe(
-      "Restored 2 contacts; 1 is no longer in the Trash",
+      "Restored 2 contacts. 1 is no longer in the Trash.",
     );
     expect(partialFailureText(action, "do", 1, 2)).toBe(
-      "Moved 1 contact to Trash; 2 could not be moved",
+      "Moved 1 contact to Trash. 2 could not be moved.",
     );
   });
 });
