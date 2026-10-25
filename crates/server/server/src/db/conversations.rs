@@ -4,7 +4,7 @@
 //! So does the list of conversations with yourself that an identity change
 //! measures against (`imports_api::with_yourself`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::Context;
 use serde::Serialize;
@@ -80,8 +80,12 @@ pub struct ConversationSummary {
     /// Timestamp of the conversation's last message. `null` when every
     /// message in the conversation is a duplicate, so none is left to date it.
     pub last_message_at: Option<String>,
-    /// Platform service of the conversation, e.g. `imessage`.
-    pub service: String,
+    /// The service the conversation's messages were sent on, named from
+    /// each message's own transport and never from the import it came from:
+    /// `text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for
+    /// WhatsApp. `unknown` when a message's transport could not be read, or
+    /// when the messages name two different services.
+    pub service: ConversationService,
     /// True for group conversations.
     pub is_group: bool,
     /// The title the conversation is shown by: for a conversation the account
@@ -264,7 +268,7 @@ fn conversation_row_select() -> String {
 }
 
 /// Run a [`conversation_row_select`]-shaped query and assemble
-/// [`ConversationSummary`] rows: participants, sources, and tags, exactly as
+/// [`ConversationSummary`] rows: participants, service, and tags, exactly as
 /// the list builds them. Shared so the list and the single-conversation read
 /// cannot drift into two different notions of what a conversation summary is.
 async fn load_conversation_rows(
@@ -282,7 +286,7 @@ async fn load_conversation_rows(
     let mut participants = load_for_conversations(conn, &ids)
         .await
         .context("read the participants of the conversations")?;
-    let source_sets = load_conversation_sources(conn, &ids).await?;
+    let services = conversation_services(conn, &ids).await?;
     let mut tag_sets = crate::db::named_membership::names_for_items(
         crate::db::named_membership::tag_spec(),
         conn,
@@ -295,12 +299,10 @@ async fn load_conversation_rows(
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let is_group = is_group_type(&row.conversation_type);
-        let service = display_service_label(
-            source_sets
-                .get(&row.id)
-                .map(Vec::as_slice)
-                .unwrap_or_default(),
-        );
+        let service = services
+            .get(&row.id)
+            .copied()
+            .unwrap_or(ConversationService::Unknown);
         let parts = participants.remove(&row.id).unwrap_or_default();
         out.push(ConversationSummary {
             id: row.id,
@@ -320,74 +322,182 @@ async fn load_conversation_rows(
     Ok(out)
 }
 
-const IMESSAGE_SOURCE: &str = "imessage";
-const SBR_SOURCE: &str = "sms-backup-restore";
-const WHATSAPP_SOURCE: &str = "whatsapp";
-
-/// Header label from distinct message sources in a conversation.
-pub fn display_service_label(sources: &[String]) -> String {
-    let set: HashSet<&str> = sources.iter().map(|s| s.as_str()).collect();
-    if set.contains(SBR_SOURCE) {
-        return "SMS/MMS".into();
-    }
-    if set.len() == 1 && set.contains(IMESSAGE_SOURCE) {
-        return IMESSAGE_SOURCE.into();
-    }
-    if set.len() == 1 && set.contains(WHATSAPP_SOURCE) {
-        return "WhatsApp".into();
-    }
-    if set.len() == 1 {
-        return sources[0].trim().to_string();
-    }
-    "unknown".into()
+/// The service a conversation's messages were sent on: `text_message` (Text
+/// Message: SMS, MMS, iMessage and RCS) or `whatsapp`, the two an identity
+/// is on (`IdentityService`); `discord`, `signal`, `telegram` or `slack`,
+/// which the conversation file names and no source reads today; or
+/// `unknown`, when a message's transport could not be read or the messages
+/// name two different services. `unknown` is never a default: each one is a
+/// fault, and the import that wrote it logs a warning.
+//
+// The rule, its reason and what was rejected:
+// docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-56.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversationService {
+    /// Text Message: SMS, MMS, iMessage and RCS.
+    TextMessage,
+    /// WhatsApp.
+    Whatsapp,
+    /// Discord.
+    Discord,
+    /// Signal.
+    Signal,
+    /// Telegram.
+    Telegram,
+    /// Slack.
+    Slack,
+    /// A message's transport could not be read, or the messages name two
+    /// different services. Never a default: each one is a fault to look
+    /// into, and the import that promotes such a message logs a warning.
+    Unknown,
 }
 
-/// One source of one conversation, for [`load_conversation_sources`].
+impl ConversationService {
+    /// The service one message's transport belongs to.
+    #[must_use]
+    pub fn of_transport(transport: ir::Transport) -> Self {
+        match transport {
+            ir::Transport::Sms | ir::Transport::IMessage | ir::Transport::Rcs => Self::TextMessage,
+            ir::Transport::Whatsapp => Self::Whatsapp,
+            ir::Transport::Discord => Self::Discord,
+            ir::Transport::Signal => Self::Signal,
+            ir::Transport::Telegram => Self::Telegram,
+            ir::Transport::Slack => Self::Slack,
+            ir::Transport::Unknown => Self::Unknown,
+        }
+    }
+
+    /// The service of a conversation whose messages carry the stored
+    /// transports `transports` (`messages.service`): the one service they
+    /// all belong to, and [`Self::Unknown`] when one is NULL or a word the
+    /// conversation file does not name, when they belong to two services,
+    /// or when there are none.
+    #[must_use]
+    pub fn of_transports<'a>(transports: impl IntoIterator<Item = Option<&'a str>>) -> Self {
+        let mut found = None;
+        for transport in transports {
+            let service = transport.map_or(Self::Unknown, |t| {
+                Self::of_transport(ir::Transport::parse(t))
+            });
+            match found {
+                None => found = Some(service),
+                Some(earlier) if earlier == service => {}
+                Some(_) => return Self::Unknown,
+            }
+        }
+        found.unwrap_or(Self::Unknown)
+    }
+}
+
+/// One stored transport of one conversation, for [`conversation_transports`].
 #[derive(sqlx::FromRow)]
-struct SourceRow {
+struct TransportRow {
     conversation_id: i64,
-    source: String,
+    service: Option<String>,
 }
 
-/// Source ids per conversation, for conversations holding messages from more than one import.
-async fn load_conversation_sources(
+/// The distinct stored transports (`messages.service`) of each of
+/// `conversation_ids`, NULL as `None`. A conversation with no message is
+/// left out. Every message counts, a hidden duplicate included, because it
+/// is still a message of the conversation.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub(crate) async fn conversation_transports(
     conn: &mut SqliteConnection,
     conversation_ids: &[i64],
-) -> anyhow::Result<HashMap<i64, Vec<String>>> {
+) -> anyhow::Result<HashMap<i64, Vec<Option<String>>>> {
     fold_in_id_chunks(conn, conversation_ids, |conn, chunk| {
         Box::pin(async move {
             let placeholders = in_placeholders(1, chunk.len());
             let sql = format!(
-                "SELECT conversation_id, source
+                "SELECT conversation_id, service
                  FROM messages
-                 WHERE duplicate_of IS NULL
-                   AND conversation_id IN ({placeholders})
-                 GROUP BY conversation_id, source
-                 ORDER BY conversation_id, source"
+                 WHERE conversation_id IN ({placeholders})
+                 GROUP BY conversation_id, service"
             );
-            let mut q = sqlx::query_as::<_, SourceRow>(sqlx::AssertSqlSafe(sql));
+            let mut q = sqlx::query_as::<_, TransportRow>(sqlx::AssertSqlSafe(sql));
             for id in chunk {
                 q = q.bind(*id);
             }
             let rows = q
                 .fetch_all(&mut *conn)
                 .await
-                .context("read the sources of the conversations")?;
-            let mut out = Vec::new();
-            for SourceRow {
-                conversation_id: cid,
-                source,
-            } in rows
-            {
-                if source.trim().is_empty() {
-                    continue;
-                }
-                out.push((cid, source));
-            }
-            Ok(out)
+                .context("read the transports of the conversations")?;
+            Ok(rows
+                .into_iter()
+                .map(|r| (r.conversation_id, r.service))
+                .collect())
         })
     })
     .await
+}
+
+/// The service of each of `conversation_ids`, by
+/// [`ConversationService::of_transports`]. A conversation with no message is
+/// left out; its service is [`ConversationService::Unknown`].
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub(crate) async fn conversation_services(
+    conn: &mut SqliteConnection,
+    conversation_ids: &[i64],
+) -> anyhow::Result<HashMap<i64, ConversationService>> {
+    Ok(conversation_transports(conn, conversation_ids)
+        .await?
+        .into_iter()
+        .map(|(id, transports)| {
+            let service =
+                ConversationService::of_transports(transports.iter().map(Option::as_deref));
+            (id, service)
+        })
+        .collect())
+}
+
+/// The conversations of `account_id` that hold a message with an id above
+/// `message_id`: those an import's promotion wrote to, when `message_id` is
+/// the highest id before it.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub(crate) async fn conversations_with_messages_above(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    message_id: i64,
+) -> anyhow::Result<Vec<i64>> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT conversation_id FROM messages
+         WHERE account_id = $1 AND id > $2
+         ORDER BY conversation_id",
+    )
+    .bind(account_id)
+    .bind(message_id)
+    .fetch_all(&mut *conn)
+    .await
+    .context("read the conversations the import wrote to")
+}
+
+/// The distinct import sources (`messages.source`) of conversation
+/// `conversation_id`'s messages, in order.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub(crate) async fn conversation_message_sources(
+    conn: &mut SqliteConnection,
+    conversation_id: i64,
+) -> anyhow::Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT source FROM messages WHERE conversation_id = $1 ORDER BY source",
+    )
+    .bind(conversation_id)
+    .fetch_all(&mut *conn)
+    .await
+    .context("read the sources of the conversation's messages")
 }
 
 /// One backup source with message counts and share.

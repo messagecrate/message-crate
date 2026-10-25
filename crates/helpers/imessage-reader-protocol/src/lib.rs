@@ -441,7 +441,9 @@ pub struct Message {
     pub time_precision: TimePrecision,
     /// `true` for a message the owner sent.
     pub outgoing: bool,
-    /// `iMessage`, `SMS`, `RCS`, or empty when unknown.
+    /// `iMessage` (a message sent by satellite included), `SMS`, `RCS`, the
+    /// name `chat.db` gives any other service, or empty when the row names
+    /// none.
     pub service: String,
     /// `imessage`, `sms`, `mms`, `tapback`, `sticker_tapback`,
     /// `announcement`, `location_share`, or `balloon`.

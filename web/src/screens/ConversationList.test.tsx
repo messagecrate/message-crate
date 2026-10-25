@@ -144,7 +144,7 @@ describe("ConversationList", () => {
         message_count: 1,
         first_message_at: "2024-01-01T10:00:00Z",
         last_message_at: "2024-01-01T10:00:00Z",
-        service: "sms",
+        service: "text_message",
         is_group: false,
         shown_title: `Chat ${id}`,
         tags: [],

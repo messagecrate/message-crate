@@ -49,6 +49,7 @@ async fn a_promote_that_fails_is_an_internal_import_failure() {
         &mut conn,
         ImportMode::Append,
         TEST_ACCOUNT,
+        None,
         &[],
         Progress::Log,
     )
@@ -119,6 +120,7 @@ async fn promote_message_map_ignores_other_accounts() {
     let mut promote = Promote {
         tx: &mut conn,
         account_id: TEST_ACCOUNT,
+        import_id: None,
         mode: ImportMode::Append,
         stats: PromoteStats::default(),
         started: Instant::now(),

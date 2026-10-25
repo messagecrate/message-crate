@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { participant } from "../test/apiShapes";
-import { conversationServiceLabel, IDENTITY_SERVICE_LABELS, serviceLabel } from "./serviceLabel";
+import {
+  CONVERSATION_SERVICE_LABELS,
+  conversationServiceLabel,
+  IDENTITY_SERVICE_LABELS,
+  serviceLabel,
+} from "./serviceLabel";
 import type { Conversation } from "./types";
 
 function conversation(overrides: Partial<Conversation> = {}): Conversation {
@@ -12,7 +17,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     message_count: 1,
     first_message_at: "2024-06-01T12:00:00Z",
     last_message_at: "2024-06-01T12:00:00Z",
-    service: "imessage",
+    service: "text_message",
     is_group: false,
     shown_title: null,
     tags: [],
@@ -20,82 +25,58 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
   };
 }
 
+/** The enum the published OpenAPI document lists for schema `name`. */
+function publishedEnum(name: "IdentityService" | "ConversationService"): string[] {
+  // The generated types are built from this document, so a service the
+  // server adds fails here until it has a name (#3262).
+  const path = fileURLToPath(new URL("../../../docs/src/assets/openapi.json", import.meta.url));
+  const openapi = JSON.parse(readFileSync(path, "utf8")) as {
+    components: { schemas: Record<string, { enum: string[] }> };
+  };
+  return openapi.components.schemas[name]?.enum ?? [];
+}
+
 describe("conversationServiceLabel", () => {
-  it("calls a one-to-one conversation with no transport of its own after its participant's Text Message service", () => {
-    // A conversation imported from two sources names no transport, so the
-    // label falls back to the participant's stored service (#3086).
+  it("names every service the server names a conversation by", () => {
+    const services = publishedEnum("ConversationService");
+    expect(services.length).toBeGreaterThan(0);
+    for (const service of services) {
+      expect(Object.keys(CONVERSATION_SERVICE_LABELS)).toContain(service);
+    }
+  });
+
+  it("calls a conversation by the same names as an identity's service", () => {
+    expect(conversationServiceLabel(conversation({ service: "text_message" }))).toBe(
+      "Text Message",
+    );
+    expect(conversationServiceLabel(conversation({ service: "whatsapp" }))).toBe("WhatsApp");
+    expect(conversationServiceLabel(conversation({ service: "signal", is_group: true }))).toBe(
+      "Signal",
+    );
+  });
+
+  it("shows unknown as Unknown, never as the participant's service", () => {
+    // `unknown` is a fault the server logs at import: a message whose
+    // transport could not be read, or two services in one conversation. It
+    // is shown so it gets looked into, not hidden or read as Text Message
+    // (#3277).
     const conv = conversation({
       service: "unknown",
       participants: [participant({ name: "Ada Lovelace", service: "text_message" })],
     });
-    expect(conversationServiceLabel(conv)).toBe("Text Message");
-  });
-
-  it("keeps WhatsApp's own name", () => {
-    expect(conversationServiceLabel(conversation({ service: "whatsapp" }))).toBe("WhatsApp");
-  });
-
-  it("names each service the server sends for a conversation of one import source", () => {
-    // The server sends a conversation's service from its messages' import
-    // sources (`display_service_label`), so a source id stands in for a
-    // service. SMS Backup+ and GO SMS Pro read as Text Message, as they did
-    // under the old "contains sms" rule.
-    const cases: [string, string | null][] = [
-      ["SMS/MMS", "Text Message"],
-      ["imessage", "Text Message"],
-      ["WhatsApp", "WhatsApp"],
-      ["sms-backup-plus", "Text Message"],
-      ["go-sms-pro", "Text Message"],
-      ["openextract", "Text Message"],
-      ["imazing", null],
-      ["unknown", null],
-    ];
-    for (const [service, label] of cases) {
-      expect(conversationServiceLabel(conversation({ service, is_group: true }))).toBe(label);
-    }
-  });
-
-  it("calls a one-to-one conversation of two sources after its participant's WhatsApp service", () => {
-    const conv = conversation({
-      service: "unknown",
-      participants: [participant({ name: "Ada Lovelace", service: "whatsapp" })],
-    });
-    expect(conversationServiceLabel(conv)).toBe("WhatsApp");
-  });
-
-  it("calls a one-to-one iMazing conversation after its participant's service", () => {
-    // An iMazing export holds texts and WhatsApp chats alike, so its source
-    // id names no service.
-    const conv = conversation({
-      service: "imazing",
-      participants: [participant({ name: "Ada Lovelace", service: "whatsapp" })],
-    });
-    expect(conversationServiceLabel(conv)).toBe("WhatsApp");
+    expect(conversationServiceLabel(conv)).toBe("Unknown");
   });
 });
 
 describe("serviceLabel", () => {
   it("names every service the server takes for an identity", () => {
-    // The list comes from the published OpenAPI document the generated types
-    // are built from, so a service the server adds fails here until it has a
-    // name (#3262).
-    const path = fileURLToPath(new URL("../../../docs/src/assets/openapi.json", import.meta.url));
-    const openapi = JSON.parse(readFileSync(path, "utf8")) as {
-      components: { schemas: { IdentityService: { enum: string[] } } };
-    };
-    const services = openapi.components.schemas.IdentityService.enum;
+    const services = publishedEnum("IdentityService");
     expect(services.length).toBeGreaterThan(0);
     for (const service of services) {
       expect(Object.keys(IDENTITY_SERVICE_LABELS)).toContain(service);
       expect(serviceLabel(service)).toBe(
         IDENTITY_SERVICE_LABELS[service as keyof typeof IDENTITY_SERVICE_LABELS],
       );
-    }
-  });
-
-  it("gives each transport of Text Message the same name as the service", () => {
-    for (const transport of ["imessage", "ios", "sms", "mms", "sms/mms", "rcs", "SMS"]) {
-      expect(serviceLabel(transport)).toBe("Text Message");
     }
   });
 

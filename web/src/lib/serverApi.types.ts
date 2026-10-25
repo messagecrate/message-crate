@@ -2408,6 +2408,17 @@ export interface components {
              */
             unknown: boolean;
         };
+        /**
+         * @description The service a conversation's messages were sent on: `text_message` (Text
+         *     Message: SMS, MMS, iMessage and RCS) or `whatsapp`, the two an identity
+         *     is on (`IdentityService`); `discord`, `signal`, `telegram` or `slack`,
+         *     which the conversation file names and no source reads today; or
+         *     `unknown`, when a message's transport could not be read or the messages
+         *     name two different services. `unknown` is never a default: each one is a
+         *     fault, and the import that wrote it logs a warning.
+         * @enum {string}
+         */
+        ConversationService: "text_message" | "whatsapp" | "discord" | "signal" | "telegram" | "slack" | "unknown";
         /** @description One backup source with message counts and share. */
         ConversationSource: {
             /** @description Backup source name. */
@@ -2454,8 +2465,14 @@ export interface components {
             message_count: number;
             /** @description Participants with names and identities. */
             participants: components["schemas"]["Participant"][];
-            /** @description Platform service of the conversation, e.g. `imessage`. */
-            service: string;
+            /**
+             * @description The service the conversation's messages were sent on, named from
+             *     each message's own transport and never from the import it came from:
+             *     `text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for
+             *     WhatsApp. `unknown` when a message's transport could not be read, or
+             *     when the messages name two different services.
+             */
+            service: components["schemas"]["ConversationService"];
             /**
              * @description The title the conversation is shown by: for a conversation the account
              *     holder has with themselves, the account's display name or, without
@@ -4552,8 +4569,14 @@ export interface components {
                 message_count: number;
                 /** @description Participants with names and identities. */
                 participants: components["schemas"]["Participant"][];
-                /** @description Platform service of the conversation, e.g. `imessage`. */
-                service: string;
+                /**
+                 * @description The service the conversation's messages were sent on, named from
+                 *     each message's own transport and never from the import it came from:
+                 *     `text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for
+                 *     WhatsApp. `unknown` when a message's transport could not be read, or
+                 *     when the messages name two different services.
+                 */
+                service: components["schemas"]["ConversationService"];
                 /**
                  * @description The title the conversation is shown by: for a conversation the account
                  *     holder has with themselves, the account's display name or, without

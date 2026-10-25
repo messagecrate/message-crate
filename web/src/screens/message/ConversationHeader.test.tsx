@@ -79,7 +79,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     message_count: 3,
     first_message_at: "2024-01-01T10:00:00Z",
     last_message_at: "2024-01-01T10:00:00Z",
-    service: "sms",
+    service: "text_message",
     is_group: false,
     shown_title: "Chat 42",
     tags: [],
@@ -232,7 +232,7 @@ describe("ConversationHeader", () => {
     renderHeader(groupConversation());
     expect(screen.getByRole("heading", { name: "Book Club" })).toBeInTheDocument();
     expect(screen.getByText("4 people")).toBeInTheDocument();
-    // `sms` reads "Text Message", the conversation list's word, not the raw service.
+    // `text_message` reads "Text Message", the conversation list's word, not the raw service.
     expect(screen.getByText("Text Message")).toBeInTheDocument();
     expect(screen.getByText("3 messages")).toBeInTheDocument();
   });

@@ -11,6 +11,7 @@ use anyhow::{Result, bail};
 use sqlx::SqliteConnection;
 
 use crate::counts::words;
+use crate::db::conversations::ConversationService;
 use crate::db::schema;
 use crate::db::staging;
 use crate::progress::Progress;
@@ -56,12 +57,14 @@ pub(super) async fn promote_append(
     tx: &mut SqliteConnection,
     mode: ImportMode,
     account_id: i64,
+    import_id: Option<i64>,
     wipe_sources: &[String],
     progress: Progress,
 ) -> Result<PromoteStats, PromoteError> {
     let mut promote = Promote {
         tx,
         account_id,
+        import_id,
         mode,
         stats: PromoteStats::default(),
         started: Instant::now(),
@@ -81,6 +84,9 @@ pub(super) async fn promote_append(
 struct Promote<'a> {
     tx: &'a mut SqliteConnection,
     account_id: i64,
+    /// The Import Run the promotion belongs to, named in its warnings;
+    /// `None` for the server's `import` command run without one.
+    import_id: Option<i64>,
     mode: ImportMode,
     stats: PromoteStats,
     /// When the promotion began, for the total in every phase's log line.
@@ -110,6 +116,7 @@ impl Promote<'_> {
         self.promote_conversations().await?;
         self.promote_participants().await?;
         let messages_before = self.promote_messages().await?;
+        self.warn_of_unknown_services(messages_before).await?;
         let attachments_before = self.promote_attachments().await?;
         self.promote_tapbacks().await?;
         let versions_before = self.promote_earlier_versions(messages_before).await?;
@@ -300,6 +307,50 @@ impl Promote<'_> {
             ),
         );
         Ok(messages_before)
+    }
+
+    /// Write a warning for each conversation this promotion wrote a message
+    /// to whose service is `unknown`: a message's transport could not be
+    /// read, or its messages name two services. It names the conversation,
+    /// the transports and sources of its messages, and the Import Run, so
+    /// the exporter that wrote it can be looked into
+    /// (docs/architecture/rules/contacts-identities-and-messages.md,
+    /// CONTACT-56). `messages_before` is the highest message id before the
+    /// promotion.
+    async fn warn_of_unknown_services(&mut self, messages_before: i64) -> Result<()> {
+        let written = crate::db::conversations::conversations_with_messages_above(
+            self.tx,
+            self.account_id,
+            messages_before,
+        )
+        .await?;
+        let transports =
+            crate::db::conversations::conversation_transports(self.tx, &written).await?;
+        for id in written {
+            let found = transports.get(&id).map(Vec::as_slice).unwrap_or_default();
+            let service = ConversationService::of_transports(found.iter().map(Option::as_deref));
+            if service != ConversationService::Unknown {
+                continue;
+            }
+            let mut words: Vec<&str> = found
+                .iter()
+                .map(|t| t.as_deref().unwrap_or("none"))
+                .collect();
+            words.sort_unstable();
+            let sources =
+                crate::db::conversations::conversation_message_sources(self.tx, id).await?;
+            let run = self.import_id.map_or_else(
+                || "An import with no Import Run".to_string(),
+                |run| format!("Import Run {run}"),
+            );
+            self.progress.warn(format_args!(
+                "Conversation {id} is shown as Unknown, because its messages' transports ({}) \
+                 do not name one known service. Its messages came from {}. {run} wrote to it",
+                words.join(", "),
+                sources.join(", "),
+            ));
+        }
+        Ok(())
     }
 
     /// Skip per-row full-text search trigger work during the bulk inserts;

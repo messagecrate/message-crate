@@ -32,7 +32,7 @@ describe("offeredService", () => {
   });
 
   it("formats user-facing labels for the handles table", () => {
-    expect(formatOfferedServiceLabel("x", "imessage")).toBe("Text Message");
+    expect(formatOfferedServiceLabel("x", "text_message")).toBe("Text Message");
     expect(formatOfferedServiceLabel("x", "whatsapp")).toBe("WhatsApp");
     expect(formatOfferedServiceLabel("a@example.com", null)).toBe("Email");
     expect(formatOfferedServiceLabel("x", null)).toBe("—");
