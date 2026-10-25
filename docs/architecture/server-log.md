@@ -2,7 +2,7 @@
 
 The server keeps a record of its own work: every request it answered, every
 failure it met, and what it did at start-up. This page follows one line of
-that record from the event that caused it to the owner reading it, and shows
+that record from the event that caused it to the administrator reading it, and shows
 why the pieces sit where they do. The constraints a change must keep are in
 [The server's log: rules](rules/server-log.md).
 
@@ -20,7 +20,7 @@ flowchart LR
     S --> SE["stderr"]
     S --> F["Data Directory/logs/<br/>server-000001.log, 000002, …"]
     F --> R["GET /v1/server/log-lines<br/>GET /v1/server/log-files"]
-    R --> P["Owner Home → Logs"]
+    R --> P["Admin Home → Logs"]
 ```
 
 Reading left to right:
@@ -42,10 +42,10 @@ Reading left to right:
    where a terminal or Docker shows it, and to the newest file in the
    `logs` directory of the Data Directory. A write that stderr refuses is
    dropped; the file still gets the line.
-5. **Three routes.** The owner reads the files back through
+5. **Three routes.** The administrator reads the files back through
    `GET /v1/server/log-lines`, newest first and a page at a time, and
    downloads a whole file through the two `log-files` routes.
-6. **The Logs panel.** Owner Home's Logs panel calls those routes and shows
+6. **The Logs panel.** Admin Home's Logs panel calls those routes and shows
    the lines, filtered by level and by text.
 
 The Message Crate in Docker and the one the desktop app starts are the same
@@ -73,7 +73,7 @@ share, so one viewer reads both.
 
 ## What reaches the log
 
-The server writes at five levels, and the owner's Logs panel opens at
+The server writes at five levels, and the administrator's Logs panel opens at
 warnings and up.
 
 | Level | What is written there |
@@ -90,7 +90,7 @@ as the step and then the database's own message.
 
 ## What never reaches the log
 
-The owner reads this log, and the owner never reads anyone's messages
+The administrator reads this log, and the administrator never reads anyone's messages
 ([ADR 0008](../adr/0008-the-administrator-holds-no-messages.md)). So a line holds
 outcomes, never content: ids, counts, sizes, times, routes and statuses. A
 search's words, a media link, a password, a token, message text, an
@@ -117,7 +117,7 @@ user the server runs as and nobody else.
 
 ## Reading it back
 
-The owner's Session is the one credential the three log routes accept. The
+The administrator's Session is the one credential the three log routes accept. The
 Logs panel asks for the newest lines first and reads older ones as it
 scrolls, filtered by level and by a text search. Each line has an id that
 says where it is: its file's number in the high bits and its byte offset in
@@ -141,5 +141,5 @@ The panel shows the log as it was when it was read; nothing streams.
 | What a request's line keeps of its URI, and body failures | `crates/server/server/src/middleware.rs` |
 | The problem-type and `500` lines | `crates/server/server/src/problem.rs`, `api_error.rs` |
 | The three routes | `crates/server/server/src/server_api/log_lines.rs`, `log_files.rs` |
-| The Logs panel | `web/src/screens/owner/OwnerLogsPanel.tsx`, `web/src/components/logs/` |
+| The Logs panel | `web/src/screens/admin/AdminLogsPanel.tsx`, `web/src/components/logs/` |
 | The content test | `crates/server/server/tests/server_log.rs` |

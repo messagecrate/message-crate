@@ -1,7 +1,7 @@
 # The server's log: rules
 
 The constraints the server's log must keep satisfying. What the log is and
-how a line travels from the event to the owner's screen is in
+how a line travels from the event to the administrator's screen is in
 [The server's log](../server-log.md); this document is what a change must
 not break. Each rule has an id, `LOG-n`, which code comments, tests and
 reviews cite. A rule's id never changes; a rule that stops holding is
@@ -28,7 +28,7 @@ have and to be allowed to write, in Docker and in the desktop app alike, and
 a copy of it is already the whole installation.
 
 Rejected: stderr alone. Docker keeps it only as long as the container, and
-the desktop app has no window to show it in, so the owner of either had no
+the desktop app has no window to show it in, so an administrator running either had no
 way to read it (#2079, #2018). Rejected: a table in the database, the one
 store that is missing when the log is needed most.
 
@@ -65,8 +65,8 @@ says where the server listens (`LISTENING_LINE` in
 there.
 
 Why: a Message Crate that will not start, or misbehaves from its first
-minute, is when the owner needs these lines, and stderr is the place the
-owner of Docker or the desktop app cannot read (#2079, #2018).
+minute, is when the administrator needs these lines, and stderr is the place the
+administrator running Docker or the desktop app cannot read (#2079, #2018).
 
 Code: `crates/server/server/src/logging.rs`, `serve.rs`.
 
@@ -110,7 +110,7 @@ from. That is the one place a line can hold what LOG-18 keeps out, and it is
 accepted: a panic is a bug, and its message is what makes it possible to
 fix.
 
-Why: a panic was the one failure that reached stderr alone, so the owner's
+Why: a panic was the one failure that reached stderr alone, so the administrator's
 Logs panel showed nothing for the request that broke (#2060, #2086).
 
 Code: `crates/server/server/src/logging.rs`, the hook `init` installs.
@@ -149,7 +149,7 @@ out a second time.
 
 Why: the web app asks `/health` every 30 seconds in each open tab, and
 loading the website asks for one file per asset. At `INFO` those lines bury
-the requests that did something in the owner's Logs panel.
+the requests that did something in the administrator's Logs panel.
 
 Code: `crates/server/server/src/middleware.rs`.
 
@@ -167,13 +167,13 @@ line also carries the error's chain as `error`, as the `ERROR` line of a
 `500` does.
 
 Why `WARN` for those three: a run of `401` or `403` is what a password
-guesser or an API token that lost its rights looks like, and the owner's
+guesser or an API token that lost its rights looks like, and the administrator's
 Logs panel opens at warnings and up. A run of `database-busy` says the
 server has more work than its database keeps up with, or that something
 holds the lock and never lets it go, while one of them is no bug, so it is
 not an `ERROR`; the chain names the step that met the lock, so a lock that
 never clears can be told from a busy spell. A `404 Not Found` or a refused
-search is a client asking for something that is not there, which the owner
+search is a client asking for something that is not there, which the administrator
 has nothing to do about.
 
 Why not `detail`: it can repeat what a person typed, such as a search word
@@ -191,7 +191,7 @@ reason (`unknown_username`, `wrong_password` or `account_disabled`), and the
 connecting app and its Build. The username must not be written.
 
 Why: the Audit Trail is read one account at a time, so a run of password
-guesses showed in the owner's Logs panel only as `invalid-credentials`
+guesses showed in the administrator's Logs panel only as `invalid-credentials`
 lines that do not say which account or why. The username is what a person
 typed, and a guesser's list of usernames is not an outcome.
 
@@ -217,7 +217,7 @@ something new.
 
 Why the step: the request's span names the route, but a route that runs
 several statements gives the same database message for each, and a line
-that does not say which statement failed sends the owner to the code to
+that does not say which statement failed sends the administrator to the code to
 guess. Why a fixed phrase: a bound value can be a search word or a message's
 text, which a line never holds (LOG-18). Why the deduplication: `sqlx`'s
 database error writes "error returned from database:" and the database's
@@ -265,7 +265,7 @@ Account build `serve` runs on a new database, and the rows Import Runs,
 Export Runs and a Session that ran out are read from.
 
 Why: an entry says who did what and when, and a line says which request did
-it and how it went, and with no key shared between them the owner matched
+it and how it went, and with no key shared between them the administrator matched
 the two by time alone (#2276).
 
 Code: `crates/server/server/src/db/audit_trail.rs`.
@@ -308,20 +308,20 @@ length it had when the download started. A line that does not start with a
 time and a level is left out of the lines; only a write cut short leaves
 one, and the downloaded file still has it.
 
-Why from a line: the server writes lines while the owner reads them, its
+Why from a line: the server writes lines while the administrator reads them, its
 own answers included, so a count from the newest line moves between pages.
 An id names a line that does not move.
 
 Code: `crates/server/server/src/logging/read.rs`,
 `server_api/log_lines.rs`, `server_api/log_files.rs`.
 
-## LOG-17 The owner reads it, nobody else
+## LOG-17 The administrator reads it, nobody else
 
-The three routes must take the owner's Session and refuse every other
+The three routes must take the administrator's Session and refuse every other
 credential with `403 Forbidden`.
 
 Why: the log is about the whole installation, every account's requests in
-one stream, and the owner is the one who runs the installation and is asked
+one stream, and the administrator is the one who runs the installation and is asked
 when it fails. An account holder is not shown other accounts' requests, so
 no account reads it, and an API token never reads anything but its
 account's own data. An Import Run's log follows a separate rule: it stays
@@ -334,7 +334,7 @@ Code: `crates/server/server/src/server_api/`.
 
 A line must never hold a password, a Session token or an API token, hashed or
 not, message text, attachment bytes, or a contact's name or identities. It
-may hold only what the owner may see: ids, counts, sizes, times, routes and
+may hold only what the administrator may see: ids, counts, sizes, times, routes and
 outcomes. The line each request writes names its path and query, and the
 query keeps a parameter's value only when it is a number, an id or a fixed
 word (`after`, `around`, `before`, `deleted_account_id`, `level`, `limit`,
@@ -345,7 +345,7 @@ any parameter added later. The path and query are cut at 2,048 bytes, on a
 character boundary, ending in `...[cut]`. Every event the server writes is
 held to the same rule by whoever writes it.
 
-Why: the owner reads the log, and the owner never reads content
+Why: the administrator reads the log, and the administrator never reads content
 (`docs/adr/0008-the-administrator-holds-no-messages.md`). Why the cut: a request
 needs no credential to leave its line, and a URI can be 64 KiB long, so
 without it anyone who can reach the port could fill the 250 MB the log
@@ -353,7 +353,7 @@ keeps with a few thousand requests and push every other line off the disk
 (#2088).
 
 Checked by `crates/server/server/tests/server_log.rs`, which runs `serve` at
-`RUST_LOG=trace` through an owner, an account, an API token, an import with a
+`RUST_LOG=trace` through the administrator, an account, an API token, an import with a
 named contact and an attachment, a search, a media link, a password change,
 a wrong password and a refused search, and fails if any of those secrets,
 the message's words, the attachment's bytes, or the contact's name, phone

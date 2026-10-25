@@ -138,17 +138,17 @@ and there is at most one per Message Crate.
 
 A path segment names a resource, never a caller's role. Who may call a route is
 decided in its handler, so a change to permissions never renames a URL.
-`/v1/accounts` is one collection for the owner and for the account itself;
-there is no `/v1/owner/` and no `/v1/account`.
+`/v1/accounts` is one collection for the administrator and for the account
+itself; there is no `/v1/admin/` and no `/v1/account`.
 
-Rejected: a role prefix such as `/v1/owner/`. It reads well until permissions
+Rejected: a role prefix such as `/v1/admin/`. It reads well until permissions
 change and a URL has to be renamed to match.
 
 ### API-12 A verb is a sub-resource of a member, and only for an action that is not a field write
 
 A verb is legal only as a sub-resource of a member, and only when the action is
 not a field write: it crosses a state machine, touches rows other than the
-addressed one, or has no field to write. `claim`, `complete`, `cancel`,
+addressed one, or has no field to write. `setup`, `complete`, `cancel`,
 `discard`, `trash` and `restore` pass. Setting a run's progress marker does
 not; that is `PATCH /v1/imports/{id} {stage}`. A verb that merely spells an
 HTTP method never passes: deleting an account is `DELETE /v1/accounts/{id}`.
@@ -233,9 +233,9 @@ negotiate where every other answers JSON.
 ### API-22 Behavior that differs by caller lives inside one handler
 
 Behavior that differs by caller lives inside one handler, not in two routes.
-`PUT /v1/accounts/{id}/password` is one route: the owner sets another
+`PUT /v1/accounts/{id}/password` is one route: the administrator sets another
 account's password without the current one, a user account changes its own on
-its session alone, and the owner changing its own must supply the
+its session alone, and the administrator changing its own must supply the
 current one, because that account reaches every other.
 
 ## Status codes
@@ -244,7 +244,7 @@ current one, because that account reaches every other.
 
 A creation answers `201 Created` with a `Location` header naming the new
 resource, whatever the method that made it: a `PUT` that stores an asset the
-database did not hold, and a claim that makes the owner's Session
+database did not hold, and a setup that makes the administrator's Session
 (`Location: /v1/session`), both answer `201 Created`. A create that takes a
 batch answers `200 OK` with a summary of what was created, updated and
 skipped, because no single resource was made. A Media Link is made though
@@ -272,7 +272,7 @@ Account is there when it is not yet.
 ### API-26 A name collision, a wrong state, or the wrong resource answers `409 Conflict`
 
 A name collision answers `409 Conflict`. So does an action on a resource in
-the wrong state: deleting before trashing, claiming a claimed Message Crate, a batch
+the wrong state: deleting before trashing, a setup on a Message Crate that is ready, a batch
 or a `complete` on a finished run. So does an action asked of the wrong
 resource, `state-conflict` with `detail` naming the right one: a country
 picked on a contact for a number whose `+` form is one of the account's own
@@ -309,7 +309,7 @@ disabled account's included, answers the same `401 Unauthorized`
 (`invalid-credentials`).
 Why: a disabled account's own answer would come only after the right
 password, so a guesser would learn which guess was right, and the password
-works again once the owner enables the account. The Audit Trail records the
+works again once the administrator enables the account. The Audit Trail records the
 real reason.
 
 ### API-29 Disabling an account ends its Session
@@ -319,7 +319,7 @@ answers `401 Unauthorized` from then on, after the account is enabled
 again too; only its API tokens answer `403 Forbidden` (`account-disabled`)
 while it stays disabled. A login whose password check the disable
 overtook opens no Session.
-Why: an owner who learns that someone else holds the Session token can
+Why: an administrator who learns that someone else holds the Session token can
 shut it out and give the account back to its holder, and enabling the
 account brings back neither the token nor the Media Links signed under it
 (#2074).
@@ -512,8 +512,8 @@ such a collection, as an Import Run holds its issues and its notes, the list
 answers how many in a count (`issue_count`, `note_count`) and the resource's
 own `GET` answers the collection. `GET /v1/imports` and an account's own
 `GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`, with
-the counts and without the issues or notes. The owner's
-`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRunSummary`,
+the counts and without the issues or notes. The administrator's
+`GET /v1/accounts/{id}/imports` answers each as an `AdminImportRunSummary`,
 which also counts them and never carries them. `GET /v1/imports/{id}` answers
 the issues and the notes. Each count is read in the list's own statement, never
 by a statement per row. Why: `limit` bounds a page's rows and nothing else, so
@@ -524,15 +524,15 @@ Storage carry about 800,000 issues, and one statement per row made a page of
 Rejected: capping how many issues a run stores. It bounds the list by
 throwing away the diagnostics the run exists to keep.
 
-### API-45 An Import Run's attachments without a Thumbnail or Preview are only on the owner's read of the run
+### API-45 An Import Run's attachments without a Thumbnail or Preview are only on the administrator's read of the run
 
 The attachments an Import Run wrote whose Thumbnail or Preview could not be
-made are such a collection too (API-44). The owner's
-`GET /v1/accounts/{id}/imports/{import_id}` answers an `OwnerImportRun`,
+made are such a collection too (API-44). The administrator's
+`GET /v1/accounts/{id}/imports/{import_id}` answers an `AdminImportRun`,
 which adds them (`not_made_attachments`) and their count by kind of failure
-(`not_made_counts`). The owner's list carries neither, not even a count.
+(`not_made_counts`). The administrator's list carries neither, not even a count.
 Why: a count would read every attachment of every run on the page, where
-the issue count reads one small table, and the owner reads the failures on
+the issue count reads one small table, and the administrator reads the failures on
 the run's record (#2636).
 
 ### API-46 `limit` is 1 to 500, `offset` at most 50 000 on a browse list, and a value outside is refused
@@ -607,7 +607,7 @@ a refusal.
 The server's log lines, `GET /v1/server/log-lines`, are the one list that pages
 from a line instead: `{items, limit, has_more}`, newest first, and `after={id}`
 reads the lines older than the line with that id. It takes no `offset` and
-answers no `total`. Why: the server writes lines while the owner reads them,
+answers no `total`. Why: the server writes lines while the administrator reads them,
 its answers to the reading included, so the reason cursor paging is rejected
 under API-40 does not hold for it, and a `total` would mean counting up to 250
 MB of files for every page. The id names a line, as `around`, `before` and
@@ -662,9 +662,10 @@ The code is the registry: each type is declared once in
 test fails when the checked-in pages drift. Only `500 Internal Server Error`
 uses `about:blank`, because a page about it could say nothing a reader could
 act on. The taxonomy is per problem, not per status: the test for a new type
-is that a client's remedy differs. A closed registration is its own type,
-because the remedy (ask the owner for an account) is not the remedy for a
-caller who is not the owner.
+is that a client's remedy differs. A disabled account is its own type
+(`account-disabled`), because the remedy (ask the administrator to enable
+the account) is not the remedy for a caller who is not the administrator
+(`not-the-admin`).
 
 ### API-55 Every response carries an `x-request-id` the server makes
 
@@ -1022,13 +1023,15 @@ security scheme with its scopes, so every route says which it accepts.
 
 ### API-72 A Session carries the account's own permissions and ends after 7 days unused or 30 days from the login
 
-A **Session** is one per logged-in account or owner, made by
+A **Session** is one per logged-in account or administrator, made by
 `POST /v1/session` and ended by `DELETE /v1/session`. It carries the
-account's own permissions: `import`, `export`, `delete`. The owner's session
+account's own permissions: `import`, `export`, `delete`. The administrator's session
 carries none of those and reaches only the accounts collection, the server
-settings and the installation's storage totals, because the owner holds no
+settings and the installation's storage totals, because the administrator holds no
 messages. It also reads the country list (`GET /v1/phone-countries`),
-because the owner picks the country of a number on an account it manages.
+because the administrator picks the country of a number on an account it
+manages. The OpenAPI document marks each route the administrator's Session
+reaches with the `admin` scope on the `session` scheme.
 A Session ends after 7 days unused, and after 30 days from the login
 however much it is used. A login sets its expiry 7 days ahead. A request
 that the Session serves moves the expiry to 7 days after the request, but
@@ -1049,17 +1052,17 @@ An **API token** is a named credential an account makes for a program, with
 the scopes the person chose from `import` and `export`, capped by the
 account's own. The cap holds on every request, when the token is made, and
 when it is listed, so the list shows what the token may do now: a scope the
-owner turns off later shows as off. A token never carries `delete`: permanent deletion is a
+administrator turns off later shows as off. A token never carries `delete`: permanent deletion is a
 person's act, and a leaked or faulty program must not be able to empty an
 archive. A token never signs in and never browses. It is ended by the person
-or the owner revoking it (`DELETE /v1/accounts/{id}/api-tokens/{token_id}`,
+or the administrator revoking it (`DELETE /v1/accounts/{id}/api-tokens/{token_id}`,
 with a session) or by its expiry, never by the program holding it. The
-owner makes no token, and a token row on the owner's account, written by
+administrator makes no token, and a token row on the administrator's account, written by
 hand or restored with a database, answers the same `401 Unauthorized` as a
-token the server never issued. Why: no token acts as the owner
+token the server never issued. Why: no token acts as the administrator
 (`docs/adr/0008-the-administrator-holds-no-messages.md`), and the refusal sits in
 the token lookup every route goes through, so a route that forgets to
-refuse the owner cannot break it.
+refuse the administrator cannot break it.
 
 ### API-74 `GET /v1/session` answers whose credential the caller holds
 
@@ -1162,14 +1165,14 @@ bytes on; fetching them with one is taking them out, which is what the
 read under the same rule as the asset they were made from (API-79), by the same
 account and nobody else. Why: a Preview and a Thumbnail are the attachment's
 content as much as the original is, so a caller who may not read one may not
-read the others, and the owner reads none.
+read the others, and the administrator reads none.
 
 ### API-81 Only an account's Session makes a Media Link
 
 `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
 Why: only a screen has a media element to put a link in, or a download for
 the desktop app to make, and a program sends its token in the header. The
-owner holds no attachment to read.
+administrator holds no attachment to read.
 
 ### API-82 `HEAD /v1/assets/{sha256}` also accepts the `import` scope
 
@@ -1182,7 +1185,7 @@ Permanent deletion (`DELETE /v1/conversations/{id}`,
 `DELETE /v1/contacts/{id}`, `DELETE /v1/trash`,
 `DELETE /v1/accounts/{id}/messages`, `DELETE /v1/accounts/{id}`) needs a
 session: the account's own with the `delete` permission, or, for an
-account's messages and for the account itself, the owner's. A token is
+account's messages and for the account itself, the administrator's. A token is
 refused whatever its scopes.
 
 ### API-84 The Demo Account is refused every route that needs the `import` scope, permanent deletion, an address book load and making an API token by its id, whatever its permission row says
@@ -1195,42 +1198,43 @@ profile reports `export` and neither `import` nor `delete`, from the same
 id. Why: it has no password, so its limits must not rest on a row
 (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
 
-### API-85 An account may do everything with its own messages unless the owner limits it
+### API-85 An account may do everything with its own messages unless the administrator limits it
 
 An account may do everything with its own messages, deleting them and
-itself included, unless the owner limits it. Deleting an account deletes
+itself included, unless the administrator limits it. Deleting an account deletes
 every message it owns, so an account whose `delete` permission is off
 cannot delete itself either: it is refused with `403 Forbidden` and asks the
-owner, who can. No separate permission for closing an account exists,
-because one that allowed it without `delete` would undo the owner's limit.
+administrator, who can. No separate permission for closing an account exists,
+because one that allowed it without `delete` would undo the administrator's limit.
 
-### API-86 `/v1/accounts/{id}` is read and written by the owner or by that account
+### API-86 `/v1/accounts/{id}` is read and written by the administrator or by that account
 
-`/v1/accounts/{id}` and everything under it is read and written by the owner
-or by that account; a `Location` handed to a newly registered account names a
-row it may read.
+`/v1/accounts/{id}` and everything under it is read and written by the
+administrator or by that account. `POST /v1/accounts` takes the
+administrator's Session only, and the `Location` it answers names a row the
+administrator may read.
 
-### API-87 An account's API tokens are listed and revoked by the account and the owner, and made and renamed by the account alone
+### API-87 An account's API tokens are listed and revoked by the account and the administrator, and made and renamed by the account alone
 
 An account's API tokens are listed and revoked by the account and by the
-owner, and made and renamed by the account alone. The owner's list holds
+administrator, and made and renamed by the account alone. The administrator's list holds
 each token's id, label, permissions, creation, last use, expiry and state,
-and leaves out `token_hint`. Why: the owner must be able to end a
+and leaves out `token_hint`. Why: the administrator must be able to end a
 credential that has leaked, and a token's label and permissions are not
 message content (`docs/adr/0008-the-administrator-holds-no-messages.md`). The
-masked hint is part of the secret, and the owner never reads a secret.
-Making a token answers with its secret, so the owner makes none, and a
-token is the account's own name for its program, so the owner renames none.
+masked hint is part of the secret, and the administrator never reads a secret.
+Making a token answers with its secret, so the administrator makes none, and a
+token is the account's own name for its program, so the administrator renames none.
 
 ### API-88 An account's history is read under the account, with no permission asked
 
 An account's history is read under the account:
 `GET /v1/accounts/{id}/imports`, `GET /v1/accounts/{id}/imports/{import_id}`
 and `GET /v1/accounts/{id}/exports`, beside `GET /v1/accounts/{id}/storage`.
-They ask who is calling and no permission, so the owner reads them, and so
+They ask who is calling and no permission, so the administrator reads them, and so
 does an account whose `import` or `export` permission is off. `/v1/imports`
 and `/v1/exports` are the pipelines' routes: they ask for the permission,
-which the owner's session never carries, and a program's token reaches only
+which the administrator's session never carries, and a program's token reaches only
 them. Each pair answers from one function, so the two lists cannot differ.
 Which contacts a run created is content, so `/v1/imports/{id}/contacts` has
 no twin under the account.
@@ -1238,12 +1242,12 @@ no twin under the account.
 ### API-89 The Audit Trail is read, never written, through a route
 
 The Audit Trail is read at `GET /v1/audit-trail`, every account's entries,
-which is the owner's alone, and at `GET /v1/accounts/{id}/audit-trail`, the
-entries about one account, which the owner and that account read. Both answer
+which is the administrator's alone, and at `GET /v1/accounts/{id}/audit-trail`, the
+entries about one account, which the administrator and that account read. Both answer
 from one function, so the two lists cannot differ. No route writes, changes
 or deletes an entry: the server writes one as part of the act it records.
-Why: an account holder reads what the owner did to their account, and a
-record its subject or the owner could edit would be no check on either
+Why: an account holder reads what the administrator did to their account, and a
+record its subject or the administrator could edit would be no check on either
 (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 
 ### API-90 A deleted account's entries and runs keep the id of its `account_deleted` entry
@@ -1252,66 +1256,70 @@ A deleted account's entries and runs lose its account id, and each keeps
 the id of the account's `account_deleted` entry, which is the deleted
 account's id on the wire. `GET /v1/audit-trail/deleted-accounts` lists the
 deleted accounts with those ids and usernames, and
-`GET /v1/audit-trail?deleted_account_id=` narrows the owner's list to one.
-Both are the owner's alone. Why: the account's own id names nothing once it
+`GET /v1/audit-trail?deleted_account_id=` narrows the administrator's list to one.
+Both are the administrator's alone. Why: the account's own id names nothing once it
 is gone, and the Demo Account is deleted and made again under one id, while
 a username passes to a later account, deleted or live.
 Rejected: narrowing by the username the entries keep, which reads two
 accounts that held one username as one, and takes in the logins refused for
 the username while no account held it.
 
-### API-91 The account reads its own runs in full, and the owner reads a run as a type of its own that carries no content
+### API-91 The account reads its own runs in full, and the administrator reads a run as a type of its own that carries no content
 
 The account reads its own runs in full, a list's rows less what
-API-44 keeps out of a row. The owner reads each run as an
-`OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
+API-44 keeps out of a row. The administrator reads each run as an
+`AdminImportRun` or `AdminExportRun`: the source, mode, tool, times,
 outcome and counts, with the counts an import's summary reported and how
 many issues it recorded, and for an export only which form its scope took.
-The times are the run's own, when it started and ended; the owner reads
+The times are the run's own, when it started and ended; the administrator reads
 nothing of the backup an import read, neither the file the desktop app
 recorded (`source_fingerprint`) nor when the backup was made
 (`backup_taken_at`), because both say when and from what the account's
-phone was backed up. The owner's read of one run adds the attachments it
+phone was backed up. The administrator's read of one run adds the attachments it
 wrote whose Thumbnail or Preview the media pass could not make, each by
 its file name, type and size with why each version was not made, and their
 count by kind of failure: an attachment's name, type and size are what
-ADR 0008 lets the owner read, and the reason is what ffmpeg said about the
+ADR 0008 lets the administrator read, and the reason is what ffmpeg said about the
 file or a phrase of the server's. Nothing of the message or conversation
 the attachment belongs to comes with it (#2636).
 Why: a staging summary lists the addresses of everyone in the backup, an
 issue names its conversation's file, a note names a file or an address, and
 an export's query is a search over
 the account's messages, all content under
-`docs/adr/0008-the-administrator-holds-no-messages.md`. The owner's view is a type
+`docs/adr/0008-the-administrator-holds-no-messages.md`. The administrator's view is a type
 of its own rather than the account's with fields removed, so a field added
-to a run reaches the owner only when someone adds it to that type.
+to a run reaches the administrator only when someone adds it to that type.
 
-### API-92 `GET /v1/server` and `POST /v1/server/claim` take no credential, and the settings and storage are the owner's
+### API-92 `GET /v1/server` and `POST /v1/server/setup` take no credential, and the settings and storage are the administrator's
 
-`GET /v1/server` and `POST /v1/server/claim` take no credential.
-`/v1/server/settings` and `GET /v1/server/storage` are the owner's: the
+`GET /v1/server` and `POST /v1/server/setup` take no credential.
+`GET /v1/server` reports the Message Crate's state, `setup` until the
+administrator has a password and `ready` after. `POST /v1/server/setup` sets
+that first password and answers `409 Conflict` (`state-conflict`) once the
+Message Crate is ready.
+`/v1/server/settings` and `GET /v1/server/storage` are the administrator's: the
 storage totals sum every account, and no account holds more than its own.
 
-### API-93 The server's log is the owner's alone
+### API-93 The server's log is the administrator's alone
 
 The server's log, `GET /v1/server/log-lines`, `GET /v1/server/log-files`
-and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
-account's requests in one stream, about the installation the owner runs,
-and a line never holds content, so the owner may read all of it
+and `GET /v1/server/log-files/{id}`, is the administrator's alone. Why: it is every
+account's requests in one stream, about the installation the administrator runs,
+and a line never holds content, so the administrator may read all of it
 (`docs/architecture/rules/server-log.md`).
 
-### API-94 The attachment size limit is a server setting the owner may set to any value of 1 byte or more
+### API-94 The attachment size limit is a server setting the administrator may set to any value of 1 byte or more
 
 The attachment size limit is a server setting, `asset_max_bytes` in bytes,
-and the settings row is the only place it lives. The owner reads and
+and the settings row is the only place it lives. The administrator reads and
 changes it at `/v1/server/settings`; `GET /v1/server` reports it to any
 client. Why: a program that uploads has to know the limit before it
 prepares attachments, and it holds an account's credential, never the
-owner's. A change is `422 Unprocessable Entity` only when it is zero or
+administrator's. A change is `422 Unprocessable Entity` only when it is zero or
 more than the database can hold, and an accepted one holds from the next
 upload, because every upload reads the setting. The part size a multipart
 upload is told is the configured one or the limit, whichever is smaller,
-worked out when the upload starts. Why: the limit is the owner's to set,
+worked out when the upload starts. Why: the limit is the administrator's to set,
 and no value of it, and no edit to the config file, may leave a server
 that refuses to start or an upload that cannot complete. Rejected:
 refusing a limit below the configured part size, and stopping `serve`
@@ -1321,7 +1329,7 @@ when the config file's part size is above a stored limit.
 
 The attachment size limit holds the attachment uploads only:
 `PUT /v1/assets/{sha256}` and the start of a multipart upload. Every
-other route has a body cap fixed in the code. Why: the owner may set any
+other route has a body cap fixed in the code. Why: the administrator may set any
 limit of 1 byte or more, and a limit that held every body would refuse
 the login and the settings change that raise it again.
 
@@ -1380,8 +1388,8 @@ journal mode SQLite runs the database in, `mode`, read when the request
 is answered, and `wal_error`, the error SQLite gave when the server asked
 for write-ahead logging as it started, in SQLite's words. `journal` is not
 a setting, so it sits in an object of its own beside the settings, and
-the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
-a change replaces the one the screen read without losing it. Owner Home
+the administrator cannot change it. `GET` and `PATCH` answer it, so the answer to
+a change replaces the one the screen read without losing it. Admin Home
 says so when the mode is not `wal`, or it cannot be read and SQLite gave
 an error, and names that error. A `wal` mode hides the notice whatever
 `wal_error` says, because the error is from the start and the file may
@@ -1392,7 +1400,7 @@ in any other mode every page waits while an import writes, and a warning
 in the server's log was the only sign of it (#2201). Neither is on
 `GET /v1/server`, which answers anyone: that route carries only what a
 client needs before it logs in, and how the database is stored is not
-that (#2703). SQLite's error goes to the owner alone, as the server's log
+that (#2703). SQLite's error goes to the administrator alone, as the server's log
 does (#2691).
 
 ### API-99 Free text a route stores has a cap of its own
@@ -1417,8 +1425,8 @@ file Export wrote must load back whatever an import stored.
 
 A password is at most 128 characters wherever a request sends one: a new
 account's, a login's, a new or current password on a change, and the
-owner's on a claim. It is counted in characters, as a username is, never
-trimmed, and has no minimum length but the owner's one character. One
+administrator's on setup. It is counted in characters, as a username is, never
+trimmed, and has no minimum length but the administrator's one character. One
 over the cap is `validation-failed`, and the OpenAPI description and
 `maxLength` state it. Why: people count characters, not bytes; Argon2
 reduces a password to a fixed size before its costly work, so the cap only
@@ -1775,7 +1783,7 @@ Why: a route's code is found from its URL without searching.
 A handler is named `verb_noun`, with no `_handler` suffix. The verb is `list`,
 `get`, `create`, `update` (`PATCH`), `replace` (`PUT`) or `delete`, or the
 action's own verb: `list_contacts`, `get_contact`, `update_contact`,
-`claim_server`, `complete_import`.
+`set_up_server`, `complete_import`.
 A `HEAD` handler takes the method's own verb, `head`: `head_asset`.
 A `POST` that reads is named for what it returns, as its route is:
 `list_contact_summaries`, `get_address_book`.
@@ -1791,15 +1799,15 @@ from the name:
   part, and is written down here with its reason. `Summary` is the thing as
   a list answers it: `ContactSummary` is a contact's row in the Contacts
   list, and `ImportRunSummary` is an Import Run without its issues and
-  notes, which `ImportRun` adds to it (API-44). `Owner` is the
-  thing as the owner reads it under another account: `OwnerImportRun` and
-  `OwnerExportRun` (API-91), and
-  `OwnerImportRunSummary` is an `OwnerImportRun` as the owner's list answers
+  notes, which `ImportRun` adds to it (API-44). `Admin` is the
+  thing as the administrator reads it under another account: `AdminImportRun` and
+  `AdminExportRun` (API-91), and
+  `AdminImportRunSummary` is an `AdminImportRun` as the administrator's list answers
   it, without the attachments whose versions were not made. `NotMade` is a
-  Thumbnail or Preview the server could not make, as the owner reads it:
+  Thumbnail or Preview the server could not make, as the administrator reads it:
   `NotMadeAttachment` is an attachment that has one, by its file name, type
   and size and nothing of its message or conversation, because those are
-  what ADR 0008 lets the owner read of an attachment. The types it carries
+  what ADR 0008 lets the administrator read of an attachment. The types it carries
   share the prefix: `NotMadeVersion` (why one version was not made),
   `NotMadeKind` and `NotMadeCount`.
 - An action's input and output are named for the action:
@@ -1837,7 +1845,7 @@ cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
 `DemoState`, `RefusalWait`, `BodyTimeLimits`, `MediaLinkKey` and
 `WalError`. The import routes take `Importer`, in
 `imports_api/run_control.rs`, which holds what running and ending an Import
-Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
+Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Admin`
 and the rest) read only the pool, so they work under any router state that
 has one. Why: a handler's signature then names everything it reads, so a
 reader sees its dependencies without reading its body. A change to the Demo
@@ -1891,8 +1899,8 @@ answer is not one read's result as it stands. An action's answer is a
 several reads is defined in the route group: `Account`, `Contact`, and
 `ImportRun`, which is an `ImportRunSummary` with the run's issues and notes.
 So is a thing whose fields depend on who asks: `ApiToken` carries a `null`
-`token_hint` when the owner lists another account's tokens, and
-`OwnerImportRun` leaves out what the backup held. So is a thing whose stored
+`token_hint` when the administrator lists another account's tokens, and
+`AdminImportRun` leaves out what the backup held. So is a thing whose stored
 form is not its wire form: `ImportRunSummary` decodes the JSON text its row
 holds in `form_json`, `summary_json`, `source_fingerprint` and
 `source_identities` into JSON values, and answers `form_json` as `form` and
@@ -1927,10 +1935,10 @@ it runs. The desktop app
 and the website send `x-message-crate-app` (`desktop` or `website`) and
 `x-message-crate-version` (their Build) on every request; the server records
 the pair on the account's session, rewrites it only when it changes, and shows
-it to the owner. A request that sends neither header, or sends them
+it to the administrator. A request that sends neither header, or sends them
 malformed, is served and nothing is recorded, which covers curl, Swagger UI
 and any program holding an API token. No route refuses, redirects or changes
 its answer on account of either header: this is a record of what connected,
-not a handshake. The Product Version is the only value an app or Owner Home
+not a handshake. The Product Version is the only value an app or Admin Home
 compares, and the HTTP interface has no version number of its own beyond the
 `1` in the path.

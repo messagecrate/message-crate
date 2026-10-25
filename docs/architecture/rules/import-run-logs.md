@@ -21,16 +21,16 @@ log](server-log.md).*
 
 | Log | Where it is | Who reads it | Where |
 |---|---|---|---|
-| The server's log | The Data Directory of the server | The owner | Owner Home → **Logs**, in a browser or the desktop app |
-| An Import Run's log | The Logs Directory of the computer that ran the import | The owner, and the account that ran the run | Owner Home → **Logs** (the owner), and the run's row in Settings → Storage (the account), in the desktop app on that computer |
-| The desktop app's log | The Logs Directory of the computer the app runs on | The owner | Owner Home → **Logs**, as **Desktop app**, in the desktop app on that computer |
+| The server's log | The Data Directory of the server | The administrator | Admin Home → **Logs**, in a browser or the desktop app |
+| An Import Run's log | The Logs Directory of the computer that ran the import | The administrator, and the account that ran the run | Admin Home → **Logs** (the administrator), and the run's row in Settings → Storage (the account), in the desktop app on that computer |
+| The desktop app's log | The Logs Directory of the computer the app runs on | The administrator | Admin Home → **Logs**, as **Desktop app**, in the desktop app on that computer |
 
 A browser reads the server's log only, because a run log never leaves the
 computer that ran the import.
 
-Why the owner reads every run log: a run log holds the import's metadata,
+Why the administrator reads every run log: a run log holds the import's metadata,
 what went wrong, what succeeded, counts, and the names of the files the run
-read (RUNLOG-8). The owner already sees each
+read (RUNLOG-8). The administrator already sees each
 account's Import Runs and what each account holds
 (`docs/adr/0008-the-administrator-holds-no-messages.md`), so the run's log is the same
 information at finer grain. Decided on #1665, which changed decision 5 on
@@ -65,10 +65,10 @@ created the run and before Staging writes anything:
 2026-10-04T14:30:00.123456Z  INFO Import Run 42 by account 7 on http://127.0.0.1:8080, Message Crate 3f2a9c…
 ```
 
-The listing reads it to decide who sees the log. The owner sees every log; an
+The listing reads it to decide who sees the log. The administrator sees every log; an
 account sees a log whose line names its own id and the id of the Message
 Crate it is signed in to, because account 7 of another Message Crate is
-another account. A log with no account line is the owner's alone.
+another account. A log with no account line is the administrator's alone.
 
 The line is also what ties a run's directory in the Staging Directory to its
 run (#2822). When an account opens Import, the desktop app lists the run
@@ -114,9 +114,9 @@ no Logs Directory to write it in. A line written before the app has named
 the Logs Directory, or one the log cannot take, goes there too, as the one
 place left.
 
-The owner reads it, in the desktop app on that computer, as **Desktop
+The administrator reads it, in the desktop app on that computer, as **Desktop
 app** in the Logs panel. It names no account, so the listing gives it to
-the owner alone, as it does a run log with no account line. Like a run
+the administrator alone, as it does a run log with no account line. Like a run
 log, it is a plain file that the computer's own user can open with or
 without Message Crate (RUNLOG-7).
 
@@ -126,7 +126,7 @@ identity check reads is written as "the backup", in the form the window
 gave it, which is the form the Reader names it in. The Reader's other lines
 from the identity check are not written at all: they say how far it got,
 and one of them names the phone, such as "Decrypted iOS backup: Sam's
-iPhone". Why: the log is offered to the owner of whichever Message Crate
+iPhone". Why: the log is offered to the administrator of whichever Message Crate
 the app is signed in to, and a backup's path or a phone's name can name the
 person whose phone it is.
 
@@ -171,7 +171,7 @@ saying no line matches the filter.
 
 Who reads which log decides what each screen offers, not who can open a file.
 The window tells the desktop app which account is signed in, on which Message
-Crate, and whether it is the owner, and the desktop app takes its word. A run
+Crate, and whether it is the administrator, and the desktop app takes its word. A run
 log is a plain file in the Logs Directory, which any program run by the
 computer's user can open. No other user of the computer can: the desktop app
 makes the Logs Directory with mode `0700` and takes group and other access
@@ -196,11 +196,11 @@ carry a conversation's identities in the file names it gives (below).
 A run log does name the conversation files and attachments the run read, such
 as `+15555550101.jsonl` and `attachments/IMG_1234.jpg`, because that is what
 explains a failure. A conversation file is named for the people in it, so its
-name can carry a phone number, an email address or a group's title. The owner
+name can carry a phone number, an email address or a group's title. The administrator
 reads those names with the rest of the log, as ADR 0008 says for run logs.
 Why: the log is a plain file in the Logs Directory. The operating-system user
 who ran the import can open it with or without Message Crate (RUNLOG-7), and
-the owner reads it in the desktop app running as that user. While the run
+the administrator reads it in the desktop app running as that user. While the run
 lasts, its directory in the Staging Directory holds the same names. A neutral
-name on the owner's screen would protect nothing
+name on the administrator's screen would protect nothing
 ([#1990](https://github.com/messagecrate/message-crate/issues/1990)).
