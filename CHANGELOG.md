@@ -1686,6 +1686,11 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-25: **The Audit Trail records only what changed something.**
+  Empty Trash on an empty Trash, and an address book load that added,
+  changed and removed no contact, each added an entry that counted nothing.
+  They now add none. A load whose entry could not be written now fails
+  whole, so a load is never applied without its entry (#3310, #3311).
 - 2026-10-25: **A Contact Group or Message Tag that is gone is named in
   full.** A change to a Contact Group deleted meanwhile was refused as
   "Group not found", and one to a Message Tag as "Tag not found". They now

@@ -2743,6 +2743,109 @@ async fn the_mode_parameter_picks_append_or_edit() {
     expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
+/// The `address_book_loaded` entries about `account`, oldest first.
+async fn address_book_entries(
+    fixture: &TestFixture,
+    account: &LoggedInAccount,
+) -> Vec<crate::db::audit_trail::AuditEntry> {
+    use crate::db::audit_trail::{AuditAction, Scope, page};
+    let mut conn = fixture.conn().await;
+    let (entries, _) = page(
+        &mut conn,
+        Scope::Account(account.account_id),
+        100,
+        0,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
+    let mut loads: Vec<_> = entries
+        .into_iter()
+        .filter(|e| e.action == AuditAction::AddressBookLoaded)
+        .collect();
+    loads.reverse();
+    loads
+}
+
+/// The names of `account`'s contacts, sorted.
+async fn contact_names(fixture: &TestFixture, account: &LoggedInAccount) -> Vec<String> {
+    let mut conn = fixture.conn().await;
+    sqlx::query_scalar(
+        "SELECT preferred_name FROM contacts WHERE account_id = $1 ORDER BY preferred_name",
+    )
+    .bind(account.account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// A load and its `address_book_loaded` entry commit together or not at
+/// all, because the entry is written in the load's own transaction
+/// (CONTACT-59, #3310). When the entry's insert fails, the load fails with
+/// it and leaves the contacts as they were.
+#[tokio::test]
+async fn an_address_book_load_and_its_audit_trail_entry_commit_together() {
+    let (fixture, account) = fixture_with_account().await;
+    let first = format!("{ADDRESS_BOOK_HEADER}\na,Dana,Text Message,+15555550100,\n");
+    let (status, text) = load_address_book(&fixture, &account, "", first).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let entries = address_book_entries(&fixture, &account).await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(
+        entries[0].mode,
+        Some(crate::db::address_book::LoadMode::Append)
+    );
+    assert_eq!(
+        (
+            entries[0].contacts_created,
+            entries[0].contacts_updated,
+            entries[0].contacts_deleted
+        ),
+        (Some(1), Some(0), Some(0))
+    );
+
+    let mut conn = fixture.conn().await;
+    sqlx::raw_sql(
+        "CREATE TRIGGER fail_address_book_entry BEFORE INSERT ON audit_entries
+         WHEN NEW.action = 'address_book_loaded'
+         BEGIN SELECT RAISE(ABORT, 'the entry fails on purpose'); END",
+    )
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    drop(conn);
+    let second = format!("{ADDRESS_BOOK_HEADER}\nb,Eli,Text Message,+15555550101,\n");
+    let (status, text) = load_address_book(&fixture, &account, "", second).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{text}");
+    assert_eq!(contact_names(&fixture, &account).await, vec!["Dana"]);
+    assert_eq!(address_book_entries(&fixture, &account).await.len(), 1);
+}
+
+/// A load that creates, changes and deletes no contact writes no Audit
+/// Trail entry, in either mode: a file that matches the contacts row for
+/// row, such as the export loaded straight back, changes nothing
+/// (CONTACT-59, #3311).
+#[tokio::test]
+async fn an_address_book_load_that_changes_no_contact_writes_no_audit_trail_entry() {
+    let (fixture, account) = fixture_with_account().await;
+    let first = format!("{ADDRESS_BOOK_HEADER}\na,Dana,Text Message,+15555550100,Family\n");
+    let (status, text) = load_address_book(&fixture, &account, "", first).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let (status, _, _, exported) =
+        get_address_book(&fixture, &account, serde_json::json!({}), None).await;
+    assert_eq!(status, StatusCode::OK, "{exported}");
+
+    for query in ["?mode=append", "?mode=edit"] {
+        let (status, text) = load_address_book(&fixture, &account, query, exported.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {text}");
+        let body: serde_json::Value = serde_json::from_str(&text).unwrap();
+        for count in ["contacts_created", "contacts_updated", "contacts_deleted"] {
+            assert_eq!(body[count], 0, "{query}: {text}");
+        }
+    }
+    assert_eq!(address_book_entries(&fixture, &account).await.len(), 1);
+}
+
 /// The file is the body and `text/csv` is its only format; a JSON body is a
 /// contact typed by hand. A vCard, which the route once read, is `415` like
 /// any other type.

@@ -21,6 +21,7 @@ use message_crate_csv::{read_cell, write_guarded_record};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
+use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts::{self, Origin};
 use crate::db::trash::not_trashed_contact;
 use crate::db::{WriteTx, begin_write};
@@ -943,6 +944,14 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
 /// whole, with one sentence for each bad row, and nothing is written. Each
 /// contact the load changes is stamped `now`.
 ///
+/// With `recorded_as` `Some`, the load writes its `address_book_loaded`
+/// Audit Trail entry, as that actor's, in the same transaction, so the load
+/// and its entry commit together or not at all. A load that creates,
+/// changes and deletes no contact writes no entry
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-59). With `None`, as the Demo Data build loads its address book,
+/// nothing is recorded.
+///
 /// An Edit load deletes for good the identities the file no longer lists
 /// that nothing else uses, so after it commits the write-ahead log is
 /// cleared of them ([`crate::db::erase`]). An Append load deletes no text
@@ -960,6 +969,7 @@ pub async fn load(
     account_id: i64,
     csv_text: &str,
     mode: LoadMode,
+    recorded_as: Option<AuditActor>,
     now: DateTime<Utc>,
 ) -> Result<LoadCounts, LoadError> {
     let rows = read_rows(csv_text).map_err(LoadError::Refused)?;
@@ -972,6 +982,27 @@ pub async fn load(
     let snapshot = Snapshot::read(&mut tx, account_id).await?;
     let file = plan(&rows, &snapshot).map_err(LoadError::Refused)?;
     let counts = apply(&mut tx, account_id, &snapshot, &file, mode, now).await?;
+    if let Some(actor) = recorded_as
+        && counts.contacts_changed() + counts.contacts_deleted > 0
+    {
+        let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));
+        let details = Details {
+            mode: Some(mode),
+            contacts_created: count(counts.contacts_created),
+            contacts_updated: count(counts.contacts_updated),
+            contacts_deleted: count(counts.contacts_deleted),
+            ..Details::default()
+        };
+        audit_trail::record_about(
+            &mut tx,
+            AuditAction::AddressBookLoaded,
+            actor,
+            account_id,
+            details,
+            now,
+        )
+        .await?;
+    }
     tx.commit().await.context("commit the address book load")?;
     if mode == LoadMode::Edit {
         crate::db::erase::clear_write_ahead_log(conn).await;

@@ -473,8 +473,11 @@ pub async fn delete_trashed(
 /// Empty the trash: delete every trashed conversation permanently and make
 /// every trashed contact Unknown, its `last_modified` set to `now`, then
 /// clear both marker tables and record it in the Audit Trail at `now`. One
-/// transaction, so the trash is either emptied or untouched. What was
-/// deleted is erased from the database's files ([`crate::db::erase`]).
+/// transaction, so the trash is either emptied or untouched. A Trash that
+/// holds nothing is not recorded, because emptying it changes nothing
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-59). What was deleted is erased from the database's files
+/// ([`crate::db::erase`]).
 ///
 /// # Errors
 ///
@@ -517,20 +520,22 @@ pub async fn empty_trash(
     // also drops any marker whose row is already gone, which the marker
     // tables allow because neither carries a foreign key to its target.
     purge_account(&mut tx, account_id).await?;
-    let count = |n: usize| Some(i64::try_from(n).unwrap_or(i64::MAX));
-    audit_trail::record_about(
-        &mut tx,
-        AuditAction::TrashEmptied,
-        actor,
-        account_id,
-        Details {
-            conversations: count(conversation_ids.len()),
-            contacts: count(contact_ids.len()),
-            ..Details::default()
-        },
-        now,
-    )
-    .await?;
+    if !(conversation_ids.is_empty() && contact_ids.is_empty()) {
+        let count = |n: usize| Some(i64::try_from(n).unwrap_or(i64::MAX));
+        audit_trail::record_about(
+            &mut tx,
+            AuditAction::TrashEmptied,
+            actor,
+            account_id,
+            Details {
+                conversations: count(conversation_ids.len()),
+                contacts: count(contact_ids.len()),
+                ..Details::default()
+            },
+            now,
+        )
+        .await?;
+    }
     erase::erase_and_commit(tx).await?;
     erase::clear_write_ahead_log(conn).await;
     Ok(EmptiedTrash {

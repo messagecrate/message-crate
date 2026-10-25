@@ -84,7 +84,7 @@ pub(crate) const MAX_VCARD_BYTES: usize = 64 * 1024 * 1024;
 const EXPORT_FILE_NAME: &str = "address-book.csv";
 
 /// Load the address book `request` carries into `account_id`, in `mode`,
-/// and record the load in the Audit Trail. `super::create::create_contacts`
+/// and record the load in the Audit Trail, in the load's own transaction. `super::create::create_contacts`
 /// documents the file and the load, as the route's reference does.
 pub(super) async fn load_address_book(
     db: &SqlitePool,
@@ -100,23 +100,13 @@ pub(super) async fn load_address_book(
         return Err(ApiError::validation("address book is empty"));
     }
     let mut conn = db.acquire().await?;
-    let now = chrono::Utc::now();
-    let counts = address_book::load(&mut conn, account_id, content, mode, now).await?;
-    let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));
-    let details = Details {
-        mode: Some(mode),
-        contacts_created: count(counts.contacts_created),
-        contacts_updated: count(counts.contacts_updated),
-        contacts_deleted: count(counts.contacts_deleted),
-        ..Details::default()
-    };
-    audit_trail::record_about(
+    let counts = address_book::load(
         &mut conn,
-        AuditAction::AddressBookLoaded,
-        AuditActor::Holder,
         account_id,
-        details,
-        now,
+        content,
+        mode,
+        Some(AuditActor::Holder),
+        chrono::Utc::now(),
     )
     .await?;
     Ok(counts.into())

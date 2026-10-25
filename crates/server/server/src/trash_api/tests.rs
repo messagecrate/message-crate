@@ -625,6 +625,43 @@ async fn a_file_imported_from_two_sources_counts_once_in_storage() {
     assert_eq!(stored, i64::try_from(bytes.len()).unwrap());
 }
 
+/// Emptying a Trash that holds nothing changes nothing, so it writes no
+/// `trash_emptied` entry (CONTACT-59, #3311). A Trash that holds only a
+/// conversation is still recorded, because emptying it deletes the
+/// conversation for good.
+#[tokio::test]
+async fn emptying_an_empty_trash_writes_no_audit_trail_entry() {
+    use crate::db::audit_trail::{AuditAction, Scope, page};
+    let (fixture, alice) = fixture_with_account().await;
+    let emptied = || async {
+        let mut conn = fixture.conn().await;
+        let (items, _) = page(
+            &mut conn,
+            Scope::Account(alice.account_id),
+            100,
+            0,
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+        items
+            .into_iter()
+            .filter(|e| e.action == AuditAction::TrashEmptied)
+            .map(|e| (e.conversations, e.contacts))
+            .collect::<Vec<_>>()
+    };
+
+    let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(emptied().await, Vec::new());
+
+    let doomed = seed(&fixture, &alice, "+15550101").await;
+    trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
+    let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(emptied().await, vec![(Some(1), Some(0))]);
+}
+
 /// The Audit Trail entries about `account` that record a change to its
 /// contacts, oldest first.
 async fn contact_entries(
