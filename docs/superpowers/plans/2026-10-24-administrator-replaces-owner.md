@@ -217,6 +217,12 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ### Task 2: Only the Demo Account logs in without a password
 
+> Amended 2026-10-25: the maintainer ruled the other way on the pull request.
+> The administrator alone must have a password; every other account with none
+> logs in with an empty password, the Demo Account among them. The login
+> passes `!is_admin(account_id)` as `no_password_login`. Read this task as
+> history, not as the rule.
+
 **Files:**
 - Modify: `crates/server/server/src/credentials.rs:200-230`
 - Modify: `crates/server/server/src/session_api.rs:255-262`

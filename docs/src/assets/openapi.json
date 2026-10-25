@@ -13300,7 +13300,7 @@
           "Session"
         ],
         "summary": "Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.",
-        "description": "A refused login waits about a second, then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong or empty password, a disabled account. A login with the right\npassword does not wait.",
+        "description": "A refused login waits about a second, then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong password, an empty password for the administrator before setup, a\ndisabled account. An account other than the administrator that has no\npassword logs in with an empty one. A login with the right password does\nnot wait.",
         "operationId": "create_session",
         "requestBody": {
           "content": {
@@ -13648,7 +13648,7 @@
           },
           "has_password": {
             "type": "boolean",
-            "description": "The account has a password. False for one with none, which cannot\nlog in until the administrator sets one, and deletes itself without\n`current_password`."
+            "description": "The account has a password. False for one with none, which logs in\nwith an empty password and deletes itself without `current_password`.\nThe administrator always has one once the Message Crate is set up."
           },
           "is_admin": {
             "type": "boolean",
@@ -17442,7 +17442,7 @@
                 },
                 "has_password": {
                   "type": "boolean",
-                  "description": "The account has a password. False for one with none, which cannot\nlog in until the administrator sets one, and deletes itself without\n`current_password`."
+                  "description": "The account has a password. False for one with none, which logs in\nwith an empty password and deletes itself without `current_password`.\nThe administrator always has one once the Message Crate is set up."
                 },
                 "is_admin": {
                   "type": "boolean",

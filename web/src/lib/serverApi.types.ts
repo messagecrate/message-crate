@@ -1656,8 +1656,10 @@ export interface paths {
          * Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
          * @description A refused login waits about a second, then answers
          *     `invalid-credentials`, whatever was wrong: a username nobody holds, a
-         *     wrong or empty password, a disabled account. A login with the right
-         *     password does not wait.
+         *     wrong password, an empty password for the administrator before setup, a
+         *     disabled account. An account other than the administrator that has no
+         *     password logs in with an empty one. A login with the right password does
+         *     not wait.
          */
         post: operations["create_session"];
         /**
@@ -1729,9 +1731,9 @@ export interface components {
             /** @description Email addresses linked to the account. */
             emails: string[];
             /**
-             * @description The account has a password. False for one with none, which cannot
-             *     log in until the administrator sets one, and deletes itself without
-             *     `current_password`.
+             * @description The account has a password. False for one with none, which logs in
+             *     with an empty password and deletes itself without `current_password`.
+             *     The administrator always has one once the Message Crate is set up.
              */
             has_password: boolean;
             /** @description True for the administrator: manages accounts, holds no messages. */
@@ -4108,9 +4110,9 @@ export interface components {
                 /** @description Email addresses linked to the account. */
                 emails: string[];
                 /**
-                 * @description The account has a password. False for one with none, which cannot
-                 *     log in until the administrator sets one, and deletes itself without
-                 *     `current_password`.
+                 * @description The account has a password. False for one with none, which logs in
+                 *     with an empty password and deletes itself without `current_password`.
+                 *     The administrator always has one once the Message Crate is set up.
                  */
                 has_password: boolean;
                 /** @description True for the administrator: manages accounts, holds no messages. */

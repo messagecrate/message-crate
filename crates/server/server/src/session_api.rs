@@ -157,8 +157,10 @@ const INVALID_LOGIN: &str = "invalid username or password";
 ///
 /// A refused login waits about a second, then answers
 /// `invalid-credentials`, whatever was wrong: a username nobody holds, a
-/// wrong or empty password, a disabled account. A login with the right
-/// password does not wait.
+/// wrong password, an empty password for the administrator before setup, a
+/// disabled account. An account other than the administrator that has no
+/// password logs in with an empty one. A login with the right password does
+/// not wait.
 #[utoipa::path(
     post,
     path = "/v1/session",

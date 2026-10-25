@@ -82,9 +82,9 @@ pub struct Account {
     /// client: the same answer reaches every app, and it survives cleared site
     /// data and a second browser.
     pub must_set_up_profile: bool,
-    /// The account has a password. False for one with none, which cannot
-    /// log in until the administrator sets one, and deletes itself without
-    /// `current_password`.
+    /// The account has a password. False for one with none, which logs in
+    /// with an empty password and deletes itself without `current_password`.
+    /// The administrator always has one once the Message Crate is set up.
     pub has_password: bool,
     /// When the account last logged in (RFC 3339, UTC), or `null` if it never
     /// has. Logging in and setting up the administrator count; a password
