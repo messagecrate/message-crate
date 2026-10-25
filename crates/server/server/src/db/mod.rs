@@ -5,6 +5,7 @@ pub mod address_book;
 pub mod api_tokens;
 pub mod attachment_versions;
 pub mod audit_trail;
+pub mod contact_merges;
 pub mod contacts;
 pub mod conversation_messages;
 pub mod conversations;

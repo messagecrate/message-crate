@@ -300,6 +300,12 @@ because a merge moves conversations and messages and cannot be undone; and
 a separate preview route, which would work the same form out twice while
 another request between the two could change the answer.
 
+A contact merge, `POST /v1/contacts/{id}/merge`, is not such a request. The
+client names every contact before it sends, so there is nothing for the
+server to tell it, and the merge moves no conversation and can be undone
+until the account's next merge
+(`contacts-identities-and-messages.md`, CONTACT-57).
+
 ### API-28 A failed credential is `401 Unauthorized`, a refused one `403 Forbidden`, and every refused login `401 Unauthorized`
 
 A failed credential answers `401 Unauthorized`. A refused one, including a
@@ -1184,6 +1190,8 @@ can only push may ask whether an asset exists, and may not read it.
 
 Permanent deletion (`DELETE /v1/conversations/{id}`,
 `DELETE /v1/contacts/{id}`, `DELETE /v1/trash`,
+`POST /v1/contacts/{id}/merge`, which deletes the previous merge's contacts
+for good,
 `DELETE /v1/accounts/{id}/messages`, `DELETE /v1/accounts/{id}`) needs a
 session: the account's own with the `delete` permission, or, for an
 account's messages and for the account itself, the administrator's. A token is

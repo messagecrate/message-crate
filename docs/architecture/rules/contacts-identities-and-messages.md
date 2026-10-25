@@ -1139,3 +1139,76 @@ an exporter that writes a value it could not read from ever being noticed,
 and puts a WhatsApp conversation under Text Message without a word. Also
 rejected: falling back to a one-to-one conversation's participant's service,
 which the web app did, because it hid the same fault.
+
+## CONTACT-57 A contact merge can be undone until the next merge
+
+Merge Contacts on the Contacts list makes two to ten contacts one
+(`POST /v1/contacts/{id}/merge`, `db/contact_merges.rs`). The person picks
+the name the merged contact keeps, and the contact that owns it is the
+target: it keeps its id, name and origin. Each other contact's identities
+move to the target as they are, its Contact Group memberships join the
+target's (a group both were in stays one row), and its Import Run records
+move to the target, which keeps the more consequential reason when one run
+has a record of both. The other contact then leaves every list, search and
+export, and its page answers `404 Not Found`. No conversation, participant,
+message, reaction or content key changes, because each is kept by identity
+and no identity changes, so no duplicate pass runs. Why: the identity merge
+of CONTACT-20 joins two spellings of one number into one identity, and this
+merge joins people, whose identities stay distinct.
+
+A contact in the Trash, or one holding one of the account's own identities
+(CONTACT-48), is refused with `409 Conflict`, and nothing changes. A contact
+the last merge took is no contact of the account's any more: named as the
+target it answers `404 Not Found`, and named in `from` it is an id that
+names no row the caller holds, `422 Unprocessable Entity` (`http-api.md`,
+API-33). A merge needs the `delete` permission, and the Demo Account is
+refused every merge, because the next merge deletes for good
+(`http-api.md`, API-83 to API-85). Rejected: a merge with no permission
+beyond the Session, which let an account the administrator kept from
+deleting delete contacts for good by merging twice.
+
+The merge keeps what it took: each merged contact's row, the identities it
+held, the Contact Groups it was in and its Import Run records, beside what
+the target had before. An account keeps only its most recent merge. The
+next merge drops it, and the contacts it took are then gone for good; by
+then they hold nothing but their names, because their identities,
+memberships and records are on the target. This is the one deletion for
+good that does not go through the Trash. Undo (`POST
+/v1/contacts/{id}/unmerge`) writes each merged contact back under its own
+id, with its name, Contact Groups and Import Run records, and with each
+identity it held that is still on the target; one the person moved
+elsewhere since stays there. The target keeps what was its own before the
+merge and loses what only the merge gave it. A contact with no name that
+gets no identity back stays gone, because nothing could reach it
+(CONTACT-1). The undo answers the contacts it wrote back, so the screen says
+which came back and Redo merges only those.
+
+Why: a contact merge joins records the person picked, and nothing it moves
+is keyed by contact, so it can be taken back exactly. The dialog exists to
+choose the name, not to ask whether. Rejected: the identity merge's
+`409 Conflict` until `merge: true` (`http-api.md`, API-27), which asks
+because only the server knows two numbers are one and that merge cannot be
+undone; keeping every merge undoable, which would keep every merged contact
+for good for an act a person finishes in one sitting; and keeping a merged
+contact's row in `contacts`, marked as merged, because every query that
+reads contacts would need a second filter beside the Trash's, and one that
+missed it would show a merged contact. `contacts.id` is `AUTOINCREMENT`
+instead, so a merged contact's id is never handed to another contact and
+Undo can write it back.
+
+At most ten contacts merge at once: the menu item is disabled past ten
+checked, and the route refuses a `from` list that makes more than ten with
+the target with `422 Unprocessable Entity`, so the cap holds for any client.
+Why: a real merge is two to four rows of one person (the iPhone contact, the
+Android one, a WhatsApp number, an email address). A larger selection is
+almost always a slip of Shift + click or Select all, and refusing it beats
+an undo that lasts only until the next merge.
+
+The way back is Undo Merge Contacts on the Contacts list's menu, with the
+toast's Undo and Ctrl+Z, in the browser session that made the merge. The
+contact page shows no Unmerge. Why: merging is rare, and a person who starts
+it finishes in the same sitting: they merge, or they undo and abandon it. So
+nothing more is built for the way back, nothing that survives a reload or
+reaches another device; the server keeps the merged contacts until the next
+merge only so that Undo can work. Rejected: an Unmerge button and a "Merged
+from" line on the target's page, a second control for the same act.

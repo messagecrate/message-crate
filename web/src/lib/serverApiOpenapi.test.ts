@@ -244,6 +244,8 @@ const EXERCISED: Record<string, () => unknown> = {
     serverApi.convertVcardToAddressBook("BEGIN:VCARD\nEND:VCARD\n", "US"),
   trashContact: () => serverApi.trashContact(42),
   restoreContact: () => serverApi.restoreContact(42),
+  mergeContacts: () => serverApi.mergeContacts(42, [43]),
+  unmergeContacts: () => serverApi.unmergeContacts(42),
   deleteContact: () => serverApi.deleteContact(42),
 
   // Contact groups
