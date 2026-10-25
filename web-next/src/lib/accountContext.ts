@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 
 import { runWithAccountAsync } from "./accountScope";
 import { getAccountIdFromCookies, getSessionTokenFromCookies } from "./session";
-
-export const NOT_SIGNED_IN = "Not signed in";
+import { NOT_SIGNED_IN } from "./vault/client";
 
 /** The signed-in account id. Both session cookies must be present. */
 export async function requireAccountId(): Promise<string> {
