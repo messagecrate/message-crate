@@ -188,7 +188,7 @@ pub(crate) fn is_api_path(path: &str) -> bool {
 }
 
 /// Mark every `/v1` answer `Cache-Control: no-store` unless the route set its
-/// own (`docs/architecture/rules/http-api.md`, "Caching"). The answers carry a
+/// own (`docs/architecture/rules/http-api.md`, API-69). The answers carry a
 /// Session token, message text, contacts or attachments, and no cache should
 /// keep them. An asset read sets `private` itself and keeps it. Only `/v1`
 /// is marked: the website served by the fallback, `/health` and the OpenAPI
