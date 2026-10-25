@@ -13,7 +13,7 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import ContactHistoryProvider from "../components/ContactHistoryProvider";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
@@ -465,8 +465,8 @@ describe("ContactList", () => {
   });
 
   describe("in the desktop list", () => {
-    let heights: { mockRestore: () => void };
-    let widths: { mockRestore: () => void };
+    let heights: MockInstance;
+    let widths: MockInstance;
     beforeEach(() => {
       tauriMock.current = true;
       // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
