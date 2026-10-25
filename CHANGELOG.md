@@ -1533,7 +1533,8 @@ carry their date on the heading.
   conversation whose messages name two services, or one an exporter could
   not read, says **Unknown**, and the server's log says which conversation
   and backup it was. Texts sent by satellite on an iPhone are now read as
-  iMessage, where they were a service of their own nobody knew (#3277).
+  iMessage. Their service was saved as `Satellite`, a word nothing
+  recognized, so their conversation would have said Unknown (#3277).
 - 2026-10-25: **The conversation list names WhatsApp as the identities
   table does.** A one-to-one WhatsApp conversation imported from two
   sources showed the word `whatsapp` in lower case where the identities
