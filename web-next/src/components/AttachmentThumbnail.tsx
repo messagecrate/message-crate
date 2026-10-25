@@ -43,11 +43,58 @@ export function ThumbnailPlaceholder({
 }
 
 /**
+ * Whether loading `src` failed, and the ref and error handler that tell. A row
+ * can name a Thumbnail whose file the media pass found damaged, so the thread
+ * learns of it only when the load fails, as in `web/`'s `useThumbnail`. The
+ * failure belongs to the `src` that failed: a new `src` is tried again.
+ */
+function useImageFailed(src: string) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const ref = useRef<HTMLImageElement>(null);
+
+  // A load that failed before hydration fired its error event before React
+  // listened for it; the element says so as a complete image with no width.
+  useEffect(() => {
+    const el = ref.current;
+    if (el?.complete && el.naturalWidth === 0) setFailedSrc(src);
+  }, [src]);
+
+  return {
+    failed: failedSrc === src,
+    ref,
+    onError: () => setFailedSrc(src),
+  };
+}
+
+function ThumbnailImg({
+  src,
+  alt,
+  ref,
+  onError,
+}: {
+  src: string;
+  alt: string;
+  ref: React.Ref<HTMLImageElement>;
+  onError: () => void;
+}) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={ref}
+      src={src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onError={onError}
+      className="max-h-64 max-w-full rounded-lg"
+    />
+  );
+}
+
+/**
  * The Thumbnail a row names, opening `url` on click. When it fails to load it
  * gives way to {@link ThumbnailPlaceholder}, which shows why the server could
- * not make it when the server says: a row can name a Thumbnail whose file the
- * media pass found damaged, so that reason waits for the load to fail rather
- * than standing beside a picture, as in `web/`'s `useThumbnail`.
+ * not make it when the server says.
  */
 export function AttachmentThumbnail({
   attachment,
@@ -56,31 +103,28 @@ export function AttachmentThumbnail({
 }: {
   attachment: AttachmentRow;
   url: string;
-  thumbnailUrl: string | null;
+  thumbnailUrl: string;
 }) {
-  const [failed, setFailed] = useState(false);
-  const img = useRef<HTMLImageElement>(null);
-
-  // A load that failed before hydration fired its error event before React
-  // listened for it; the element says so as a complete image with no width.
-  useEffect(() => {
-    const el = img.current;
-    if (el?.complete && el.naturalWidth === 0) setFailed(true);
-  }, []);
-
+  const { failed, ref, onError } = useImageFailed(thumbnailUrl);
   if (failed) return <ThumbnailPlaceholder attachment={attachment} url={url} />;
   return (
     <a href={url} className="block w-fit" target="_blank" rel="noreferrer">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        ref={img}
-        src={thumbnailUrl ?? undefined}
+      <ThumbnailImg
+        src={thumbnailUrl}
         alt={attachment.originalName ?? "attachment"}
-        loading="lazy"
-        decoding="async"
-        onError={() => setFailed(true)}
-        className="max-h-64 max-w-full rounded-lg"
+        ref={ref}
+        onError={onError}
       />
     </a>
   );
+}
+
+/**
+ * The Thumbnail above a no-Preview notice. When it fails to load it is left
+ * out, and the notice under it still says why the attachment does not open.
+ */
+export function NoticeThumbnail({ src, alt }: { src: string; alt: string }) {
+  const { failed, ref, onError } = useImageFailed(src);
+  if (failed) return null;
+  return <ThumbnailImg src={src} alt={alt} ref={ref} onError={onError} />;
 }

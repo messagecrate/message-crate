@@ -8,7 +8,11 @@ import {
 } from "@/lib/attachmentMedia";
 import type { AttachmentRow } from "@/lib/types";
 
-import { AttachmentThumbnail, ThumbnailPlaceholder } from "./AttachmentThumbnail";
+import {
+  AttachmentThumbnail,
+  NoticeThumbnail,
+  ThumbnailPlaceholder,
+} from "./AttachmentThumbnail";
 
 function isVideoMime(mime: string | null): boolean {
   return Boolean(mime?.startsWith("video/"));
@@ -83,16 +87,7 @@ function NoPreviewNotice({
   const note = noPreviewNote(attachment);
   return (
     <div className="flex max-w-xs flex-col gap-1.5">
-      {thumbnailUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={thumbnailUrl}
-          alt={label}
-          loading="lazy"
-          decoding="async"
-          className="max-h-64 max-w-full rounded-lg"
-        />
-      ) : null}
+      {thumbnailUrl ? <NoticeThumbnail src={thumbnailUrl} alt={label} /> : null}
       <div
         role="note"
         className="flex flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
@@ -141,14 +136,14 @@ export function MessageAttachments({
               />
             );
           case "thumbnail":
-            return (
+            return thumbnailUrl ? (
               <AttachmentThumbnail
                 key={a.id}
                 attachment={a}
                 url={url}
                 thumbnailUrl={thumbnailUrl}
               />
-            );
+            ) : null;
           case "placeholder":
             return <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />;
           case "link":
