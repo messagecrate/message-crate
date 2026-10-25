@@ -1549,11 +1549,26 @@ the rest of the Audit Trail does. Each run records what started it: a Session
 with the app it named, or an API token by its label and hint as they were
 then. There is no sessionless import and no unrecorded export.
 
+Deleting an account closes each of its runs still running, Import Run and
+Export Run alike, as `canceled` at the time of the deletion, before the run
+is kept without the account. Why: the account's Sessions and API tokens end
+with it, so no client is left to close the run, and a record kept as
+`running` would say that work is still under way
+(`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+
 ### API-110 A run's settings are stated once on creation, and `complete`, `discard` and `cancel` are the client's ways to close it
 
-The client closes a run: a run's settings are stated once on creation, never
-per batch or per page, and `complete`, `discard` (imports) and `cancel`
-(exports) are the only ways out.
+A run's settings are stated once on creation, never per batch or per page.
+`complete`, `discard` (imports) and `cancel` (exports) are the client's ways
+to close a run. The server also closes a running run as `canceled` on its
+own, in three cases:
+
+- an Export Run, when the account starts another (API-119);
+- an Export Run no page of which was read for an hour (API-119);
+- an Import Run or an Export Run, when its account is deleted (API-109).
+
+A client that still sends to a run the server closed gets the
+`409 Conflict` every finished run answers (API-112).
 
 ### API-111 `complete` states the outcome, and a run an error stopped is `failed`, never canceled
 
