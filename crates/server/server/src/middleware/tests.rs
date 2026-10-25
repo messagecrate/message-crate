@@ -421,6 +421,26 @@ async fn accept_is_checked_on_v1_json_routes_only() {
     assert_ne!(asset.status(), StatusCode::NOT_ACCEPTABLE);
 }
 
+/// An `Accept` sent on two field lines is one list (RFC 9110, section 5.3),
+/// so a JSON member on the second line lets the request through, though the
+/// first line alone names only `text/html`.
+#[tokio::test]
+async fn accept_on_two_lines_is_read_as_one_list() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = fixture.state.clone();
+    let server = crate::test_support::serve(&state).await;
+
+    let allowed = server
+        .get("/v1/conversations")
+        .bearer_auth(&user.token)
+        .header(header::ACCEPT, "text/html")
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(allowed.status(), StatusCode::OK);
+}
+
 /// The attachment size limit holds the attachment uploads and nothing else.
 /// An owner who sets it to 20 bytes can still log in and change the Server
 /// Settings, and an account can still post an import batch of a few

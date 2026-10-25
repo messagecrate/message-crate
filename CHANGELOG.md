@@ -1708,6 +1708,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-24: **A request that lists the answers it accepts on two lines
+  is answered.** A program talking to the server can send the kinds of
+  answer it accepts over several lines, and some programs and proxies do.
+  The server read only the first line, so a request whose first line named
+  only web pages was turned away even when a later line accepted the
+  server's answer. It now reads every line as one list (#3236).
 - 2026-10-16: **A download nobody reads no longer holds the server.** A
   client that stopped reading an answer part-way, such as a browser tab that
   hung mid-download, kept its connection, and the export file or attachment
