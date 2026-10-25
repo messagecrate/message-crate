@@ -66,6 +66,7 @@ export function toAttachment(
     previewNotMadeReason: a.preview_not_made_reason ?? null,
     thumbnailMimeType: thumbnail ? a.thumbnail_mime_type : null,
     thumbnailAssetsPath: thumbnail,
+    thumbnailNotMadeReason: a.thumbnail_not_made_reason ?? null,
     shownAsIs: a.shown_as_is,
   };
 }

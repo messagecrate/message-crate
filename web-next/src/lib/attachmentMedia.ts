@@ -85,3 +85,54 @@ export function noPreviewNote(a: AttachmentRow): string | null {
   const reason = a.previewNotMadeReason;
   return reason ? `No Preview could be made: ${reason}` : null;
 }
+
+/**
+ * What the thread says about a picture with no Thumbnail because the server
+ * tried to make one and could not, in the words of `noThumbnailNote` in
+ * `web/src/lib/attachmentMedia.ts` (MEDIA-4). `null` while no try has failed.
+ */
+export function noThumbnailNote(a: AttachmentRow): string | null {
+  const reason = a.thumbnailNotMadeReason;
+  return reason ? `No Thumbnail could be made: ${reason}` : null;
+}
+
+/** Whether a type names a picture. */
+export function isImageMime(mime: string | null): boolean {
+  return Boolean(mime?.startsWith("image/"));
+}
+
+/**
+ * What the thread draws for one attachment the server holds bytes of:
+ *
+ * - `notice`: it opens in no version (`full` is `none`), so the thread says
+ *   why and offers the original as a download.
+ * - `thumbnail`: its Thumbnail, which opens the full version on click.
+ * - `placeholder`: a picture with no Thumbnail yet, or one the server could
+ *   not make, and every picture with the `original` variant, which never
+ *   reads a Thumbnail. The thread draws its name, and
+ *   {@link noThumbnailNote} when there is one, and a click opens `url` (the
+ *   original, or the Preview), as `web/`'s `AttachmentThumbnail` does: a
+ *   conversation never fetches an original while scrolling
+ *   (`docs/architecture/rules/media.md`, MEDIA-5).
+ * - `link`: any other file, as a link to the version that opens.
+ */
+export type ThreadDrawing = "notice" | "thumbnail" | "placeholder" | "link";
+
+/** An attachment's media whose bytes the server holds: it has a `url`. */
+export type HeldMedia = AttachmentMedia & { url: string };
+
+/**
+ * Whether the server holds the attachment's bytes. One it does not is drawn
+ * as missing.
+ */
+export function isHeld(media: AttachmentMedia): media is HeldMedia {
+  return media.url !== null;
+}
+
+/** Pick what the thread draws for an attachment whose bytes the server holds. */
+export function threadDrawing(media: HeldMedia): ThreadDrawing {
+  if (media.full === "none") return "notice";
+  if (media.thumbnailUrl) return "thumbnail";
+  if (isImageMime(media.mimeType)) return "placeholder";
+  return "link";
+}
