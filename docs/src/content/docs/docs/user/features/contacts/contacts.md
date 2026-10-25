@@ -146,7 +146,7 @@ The ⋯ button beside the sort button above the list opens the list's actions.
 Its first section is headed with what the actions work on: **2 selected** with rows checked, **This list** with a search or a Contact Group open, and **All contacts** otherwise.
 
 - **Export Contacts** saves the Address Book for those contacts ([Export the file](#export-the-file)).
-- **Delete Contacts** moves the checked contacts to the Trash, after asking, such as **Move 3 contacts to Trash?**. It is grey with no row checked. Nothing is deleted for good: **Restore** in the Trash brings a contact back.
+- **Delete Contacts** moves the checked contacts to the Trash, after asking, such as **Move 3 contacts to Trash?**. It is gray with no row checked. Nothing is deleted for good: **Restore** in the Trash brings a contact back.
 - **Undo** and **Redo** come last ([Undo and Redo](#undo-and-redo)).
 
 ## Undo and Redo
@@ -155,9 +155,11 @@ Moving contacts to the Trash with **Delete Contacts**, and putting contacts in o
 After each one a message at the bottom of the window says what happened, such as **Moved 3 contacts to Trash**, with an **Undo** button.
 It goes after 20 seconds, on its ×, or when the next action replaces it.
 
-**Undo** and **Redo** on the ⋯ menu are named after the action they reverse or repeat, such as **Undo Delete Contacts**, and are grey when there is nothing to undo or redo.
-Ctrl+Z undoes, and Ctrl+Shift+Z or Ctrl+Y redoes; on macOS, Cmd takes the place of Ctrl.
+**Undo** and **Redo** on the ⋯ menu are named after the action they reverse or repeat, such as **Undo Delete Contacts**, and are gray when there is nothing to undo or redo.
+Ctrl+Z undoes, and Ctrl+Shift+Z or Ctrl+Y redoes.
+On macOS, Cmd takes the place of Ctrl.
 The keys work while the Contacts list is open and the cursor is not in a text field, so the search box keeps its own undo.
+They do nothing while a menu or a dialog such as **Move 3 contacts to Trash?** is open, so the list never changes under it.
 
 The last 20 actions are kept.
 They are forgotten when the page reloads, on logging out, and when anything is deleted for good, because an undo brings contacts back from the Trash.
