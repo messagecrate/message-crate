@@ -549,6 +549,13 @@ pub async fn duplicate_flags(
 
 /// Show every message of the account: clear each duplicate flag.
 ///
+/// Only the rows that carry a flag are written. Clearing an empty flag
+/// changes nothing, and the hidden copies are a small part of an account, so
+/// writing every row held the write lock for seconds on a large account
+/// (#3256). `EXPLAIN QUERY PLAN` shows SQLite searching
+/// `ix_messages_duplicate_of`, which indexes only the flagged rows, so the
+/// statement finds them without reading the rest.
+///
 /// # Errors
 ///
 /// Returns an error when the update fails.
@@ -560,9 +567,10 @@ pub async fn clear_account_duplicate_flags(
         r"
         UPDATE messages
         SET duplicate_of = NULL
-        WHERE conversation_id IN (
+        WHERE duplicate_of IS NOT NULL
+          AND conversation_id IN (
             SELECT id FROM conversations WHERE account_id = $1
-        )
+          )
         ",
     )
     .bind(account_id)
