@@ -1,4 +1,5 @@
 import type { UseMutationResult } from "@tanstack/react-query";
+import { useClearContactHistory } from "../../hooks/useContactHistory";
 import { useRouteMutation } from "../../hooks/useRouteQuery";
 import {
   deleteContact,
@@ -20,6 +21,10 @@ import {
  * there is no name, no membership, and nothing to look an id up by — the
  * caller already has the conversation or contact id. Each one is a plain
  * mutation over one server route.
+ *
+ * The three deletes for good clear the Contacts list's Undo and Redo stack
+ * once they settle, because an undo restores from the Trash and what they
+ * deleted is no longer there (#3234). Restore leaves the stack alone.
  */
 
 export function useRestoreConversation(): UseMutationResult<void, Error, number> {
@@ -28,7 +33,8 @@ export function useRestoreConversation(): UseMutationResult<void, Error, number>
 
 /** Permanently delete a trashed conversation. */
 export function useDeleteConversation(): UseMutationResult<void, Error, number> {
-  return useRouteMutation({ mutationFn: deleteConversation });
+  const clearHistory = useClearContactHistory();
+  return useRouteMutation({ mutationFn: deleteConversation, onSettled: clearHistory });
 }
 
 export function useRestoreContact(): UseMutationResult<void, Error, string | number> {
@@ -40,7 +46,8 @@ export function useRestoreContact(): UseMutationResult<void, Error, string | num
  * Unknown again, its conversations untouched.
  */
 export function useDeleteContact(): UseMutationResult<void, Error, string | number> {
-  return useRouteMutation({ mutationFn: deleteContact });
+  const clearHistory = useClearContactHistory();
+  return useRouteMutation({ mutationFn: deleteContact, onSettled: clearHistory });
 }
 
 /**
@@ -49,5 +56,6 @@ export function useDeleteContact(): UseMutationResult<void, Error, string | numb
  * call.
  */
 export function useEmptyTrash(): UseMutationResult<void, Error, void> {
-  return useRouteMutation({ mutationFn: emptyTrash });
+  const clearHistory = useClearContactHistory();
+  return useRouteMutation({ mutationFn: emptyTrash, onSettled: clearHistory });
 }

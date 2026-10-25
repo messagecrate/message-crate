@@ -11,6 +11,7 @@ import {
   OpenConversationRoute,
   TrashRoute,
 } from "./components/BrowseRoutes";
+import ContactHistoryProvider from "./components/ContactHistoryProvider";
 import ImportExportRoute from "./components/ImportExportRoute";
 import { useAuth } from "./hooks/useAuth";
 import { useIsOwner } from "./hooks/useIsOwner";
@@ -78,7 +79,11 @@ export function AppRoutes() {
               {/* Above Settings, so a new token's secret is shown even after
                   Settings is left; below the AuthGuard, so logging out drops it. */}
               <ApiTokenRevealProvider>
-                <AppLayout />
+                {/* Above the routes, so Undo on the Contacts list survives
+                    opening a conversation and coming back (#3234). */}
+                <ContactHistoryProvider>
+                  <AppLayout />
+                </ContactHistoryProvider>
               </ApiTokenRevealProvider>
             </TimeZoneProvider>
           }

@@ -22,6 +22,17 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-24: **A ⋯ menu on the Contacts list, with Undo and Redo.** The
+  loose **Export** link beside the sort button is now a ⋯ menu. Its header
+  says what it acts on: the checked contacts, the list a search or Contact
+  Group narrows, or all contacts. **Export Contacts** saves the address
+  book as before. **Delete Contacts** moves the checked contacts to the
+  Trash after asking, and Restore there brings them back. Deleting
+  contacts and changing their Contact Groups from the list can be undone
+  with **Undo** on the menu, the toast at the bottom of the window, or
+  Ctrl+Z (Cmd+Z on macOS), and redone with **Redo**, Ctrl+Shift+Z or
+  Ctrl+Y. The last 20 actions are kept until the page reloads, the account
+  logs out, or something is deleted for good (#3244, #3234).
 - 2026-10-16: **Open an Audit Trail entry's lines in the server's log.**
   Each entry on Owner Home's **Audit Trail** that a request made has a
   **View in log** link. It opens **Logs** on the server's log at every level

@@ -25,6 +25,7 @@ export default function ListRangeHeader({
   filling = false,
   actions,
   selectAll,
+  alert = null,
 }: {
   /** When omitted, the center stays empty so actions stay right-aligned. */
   rangeLabel?: string;
@@ -34,8 +35,11 @@ export default function ListRangeHeader({
   actions?: ReactNode;
   /** The Select all box; a list without one leaves it out. */
   selectAll?: SelectAllBox;
+  /** A problem with an action on the list, shown under the toolbar when Select all has none. */
+  alert?: string | null;
 }) {
   const activitySuffix = listActivitySuffix(refreshing, filling);
+  const problem = selectAll?.error || alert;
 
   return (
     <>
@@ -61,12 +65,12 @@ export default function ListRangeHeader({
         </span>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      {selectAll?.error ? (
+      {problem ? (
         <p
           role="alert"
           className="shrink-0 border-b border-border px-3 py-1.5 text-[0.75rem] text-danger"
         >
-          {selectAll.error}
+          {problem}
         </p>
       ) : null}
     </>

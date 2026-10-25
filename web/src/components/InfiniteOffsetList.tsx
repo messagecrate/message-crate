@@ -64,6 +64,8 @@ type InfiniteOffsetListProps<T> = {
   headerActions?: ReactNode;
   /** The toolbar's Select all box; it waits while the list is empty. */
   selectAll?: SelectAllBox;
+  /** A problem with an action on the list, shown under the toolbar. */
+  alert?: string | null;
   /** Letter for in-list section headers. Omit while searching. */
   getSectionLetter?: (item: T) => string;
 };
@@ -557,6 +559,7 @@ export default function InfiniteOffsetList<T extends object>({
   errorPrefix = "Could not load list",
   headerActions,
   selectAll,
+  alert = null,
   getSectionLetter,
 }: InfiniteOffsetListProps<T>) {
   const [visibleRange, setVisibleRange] = useState<VisibleRange>({
@@ -612,6 +615,7 @@ export default function InfiniteOffsetList<T extends object>({
         selectAll={
           selectAll && { ...selectAll, disabled: items.length === 0 || selectAll.disabled }
         }
+        alert={alert}
       />
       {headerLetter ? (
         <div className="flex shrink-0 items-center border-b border-border bg-panel px-3 py-1">

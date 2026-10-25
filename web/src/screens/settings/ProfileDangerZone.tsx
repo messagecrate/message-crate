@@ -5,6 +5,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
 import { useAuth } from "../../hooks/useAuth";
+import { useClearContactHistory } from "../../hooks/useContactHistory";
 import { useDeleteAccount, useDeleteAccountMessages } from "../../hooks/useOwnerAccounts";
 import { useRouteMutation, useRouteQuery } from "../../hooks/useRouteQuery";
 import { errorLine } from "../../lib/apiErrorMessage";
@@ -62,8 +63,12 @@ export function ProfileDangerZone({
   const navigate = useNavigate();
   const removeManagedAccount = useDeleteAccount();
   const removeManagedMessages = useDeleteAccountMessages();
+  const clearContactHistory = useClearContactHistory();
+  // Deleting the account's messages for good empties the conversations in the
+  // Trash too, so nothing on the Contacts list's Undo stack is kept (#3234).
   const removeOwnMessages = useRouteMutation({
     mutationFn: () => deleteAllMessagesRoute({ confirm: true }),
+    onSettled: clearContactHistory,
   });
   const [dangerZoneOpen, setDangerZoneOpen] = useState(false);
   const [confirmDeleteMessagesOpen, setConfirmDeleteMessagesOpen] = useState(false);
