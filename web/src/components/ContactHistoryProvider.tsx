@@ -3,9 +3,12 @@ import { useAuth } from "../hooks/useAuth";
 import { useResetOnChange } from "../hooks/useResetOnChange";
 import { useRouteMutation } from "../hooks/useRouteQuery";
 import { useSetContactGroupMembers } from "../hooks/useSetContactGroupMembers";
+import { errorText } from "../lib/apiErrorMessage";
 import {
   actionText,
   EMPTY_HISTORY,
+  type GroupChange,
+  groupFailureText,
   groupOp,
   type HistoryAction,
   type HistoryContact,
@@ -14,7 +17,8 @@ import {
   type HistoryEvent,
   type HistoryStacks,
   historyReducer,
-  partialFailureText,
+  type RefusedGroupChange,
+  trashFailureText,
   undoneText,
 } from "../lib/contactHistory";
 import { restoreContact, trashContact } from "../lib/serverApi";
@@ -29,9 +33,8 @@ import {
 type RunOutcome = {
   /** The part of the action that went through, or null when none of it did. */
   done: HistoryAction | null;
-  /** Contacts (trash) or Contact Groups (membership) whose request went through. */
-  doneCount: number;
-  failedCount: number;
+  /** What the error banner says about the requests that failed, or null when none did. */
+  failure: string | null;
 };
 
 type RunVars = { action: HistoryAction; direction: HistoryDirection };
@@ -105,14 +108,15 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
             // Counted below; the rest are still sent.
           }
         }
+        const failed = action.contacts.length - went.length;
         return {
           done: went.length > 0 ? { kind: "trash", contacts: went } : null,
-          doneCount: went.length,
-          failedCount: action.contacts.length - went.length,
+          failure: failed > 0 ? trashFailureText(direction, went.length, failed) : null,
         };
       }
       const op = groupOp(action, direction);
-      const went = [];
+      const went: GroupChange[] = [];
+      const refused: RefusedGroupChange[] = [];
       for (const change of action.changes) {
         const ids = change.contacts.map((c) => c.id);
         try {
@@ -121,14 +125,14 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
             patch: op === "add" ? { add: ids } : { remove: ids },
           });
           went.push(change);
-        } catch {
-          // Counted below; the rest are still sent.
+        } catch (err) {
+          // Named in the banner with its reason; the rest are still sent.
+          refused.push({ ...change, reason: errorText(err) });
         }
       }
       return {
         done: went.length > 0 ? { ...action, changes: went } : null,
-        doneCount: went.length,
-        failedCount: action.changes.length - went.length,
+        failure: refused.length > 0 ? groupFailureText(op, went, refused) : null,
       };
     },
   });
@@ -167,9 +171,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
           apply({ type: "push", entry: { id: nextId.current++, action: outcome.done } });
           showToast(actionText(outcome.done), true);
         }
-        if (outcome.failedCount > 0) {
-          setReport(partialFailureText(action, "do", outcome.doneCount, outcome.failedCount));
-        }
+        if (outcome.failure !== null) setReport(outcome.failure);
       }),
     [apply, exclusive, run, showToast],
   );
@@ -194,7 +196,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         const pushesBefore = pushes.current;
         const outcome = await run({ action, direction });
         if (gen !== generation.current) return;
-        if (outcome.failedCount === 0) {
+        if (outcome.failure === null) {
           const overtaken = pushes.current !== pushesBefore;
           if (from === "redo") apply({ type: "redone", entry });
           // An undo that a new action overtook leaves nothing to redo.
@@ -207,7 +209,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         }
         apply({ type: "drop", id: entry.id });
         setToast(null);
-        setReport(partialFailureText(action, direction, outcome.doneCount, outcome.failedCount));
+        setReport(outcome.failure);
       }),
     [apply, exclusive, run, showToast],
   );
