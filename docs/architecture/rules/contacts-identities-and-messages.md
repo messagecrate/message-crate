@@ -1256,7 +1256,13 @@ contact already in the Trash there again, writes no entry. Neither does an
 undo of a merge that writes no contact back (CONTACT-57), though it still
 takes from the target the Contact Groups and Import Run records only the
 merge gave it, and drops the merge: those are bookkeeping, and no contact
-came or went (#3307). Delete Contacts
+came or went (#3307). An address book load that creates, changes and
+deletes no contact, such as the export loaded straight back, writes no
+`address_book_loaded` entry, and Empty Trash on a Trash that holds nothing
+writes no `trash_emptied` entry (#3311). Empty Trash on a Trash that holds
+only conversations is still recorded, because it deletes them for good, as
+the trail records a conversation deleted for good from the Trash
+(`conversation_deleted`). Delete Contacts
 sends its contacts in one request, `PATCH /v1/trash/contacts`, so the trail
 sees one action. That route takes at most 10000 ids in a list, and a larger selection
 is sent, and recorded, in parts of that size. A rename, an identity added, swapped or

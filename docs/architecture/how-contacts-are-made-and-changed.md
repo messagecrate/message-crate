@@ -587,7 +587,8 @@ A request that changes nothing writes no entry: moving a contact to the
 Trash that is already there, an undo of a merge that brings no contact
 back, Empty Trash on a Trash that holds nothing, and an address book load
 that creates, changes and deletes no contact, such as the export loaded
-straight back.
+straight back. Empty Trash on a Trash that holds only conversations is
+still recorded, because it deletes them for good.
 Undo and Redo write no entry of their own, so each is recorded as the
 same change made by hand. An import of a backup is recorded as its Import
 Run, with no contact entry, and an edit in the contact drawer or a Contact

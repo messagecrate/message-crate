@@ -84,8 +84,9 @@ pub(crate) const MAX_VCARD_BYTES: usize = 64 * 1024 * 1024;
 const EXPORT_FILE_NAME: &str = "address-book.csv";
 
 /// Load the address book `request` carries into `account_id`, in `mode`,
-/// and record the load in the Audit Trail, in the load's own transaction. `super::create::create_contacts`
-/// documents the file and the load, as the route's reference does.
+/// and record the load in the Audit Trail, in the load's own transaction.
+/// `super::create::create_contacts` documents the file and the load, as the
+/// route's reference does.
 pub(super) async fn load_address_book(
     db: &SqlitePool,
     account_id: i64,
