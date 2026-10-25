@@ -6,6 +6,7 @@ import ContactLabel from "../components/ContactLabel";
 import ContactSortMenu from "../components/ContactSortMenu";
 import GroupsMenu from "../components/GroupsMenu";
 import InfiniteOffsetList from "../components/InfiniteOffsetList";
+import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useContactGroupActions } from "../hooks/useContactGroupActions";
 import { useContactGroups } from "../hooks/useContactGroups";
 import { useContactHistory } from "../hooks/useContactHistory";
@@ -482,7 +483,13 @@ export default function ContactList({
       : `Move ${deleteTargets.length} contacts to Trash?`;
 
   const mergeTargets = checkedContacts;
-  const canMerge = mergeTargets.length >= 2 && mergeTargets.length <= MAX_MERGED_CONTACTS;
+  // A merge deletes the previous merge's contacts for good, so the server
+  // asks for the delete permission (the Demo Account has none); the item says
+  // so up front. Until the profile loads the server is the only gate.
+  const { profile } = useAccountProfile();
+  const mayDelete = profile?.can_delete ?? true;
+  const canMerge =
+    mayDelete && mergeTargets.length >= 2 && mergeTargets.length <= MAX_MERGED_CONTACTS;
   const mergeCandidates = useMemo(
     () =>
       mergeTargets.map((c) => ({ id: Number(c.id), name: c.name, addresses: c.addresses ?? [] })),
@@ -573,6 +580,7 @@ export default function ContactList({
             onExport={() => void exportContacts()}
             onDelete={() => setDeleteOpen(true)}
             canMerge={canMerge}
+            mergeHint={mayDelete ? undefined : "Merging is not permitted for this account"}
             onMerge={() => setMergeOpen(true)}
           />
           <ContactSortMenu state={sortState} onChange={onSortChange} />

@@ -39,7 +39,7 @@ type RunOutcome = {
   /** What the error banner says about the requests that failed, or null when none did. */
   failure: string | null;
   /** A sentence the toast adds after the words for `done`, or null. */
-  note?: string | null;
+  note: string | null;
 };
 
 /** Send Merge Contacts' merge for `action`, as it first ran and as its redo. */
@@ -115,7 +115,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         try {
           if (direction === "do") {
             await sendMerge(action);
-            return { done: action, failure: null };
+            return { done: action, failure: null, note: null };
           }
           // A contact with no name and nothing left on the target is not
           // written back, so the undo names only the ones the server restored.
@@ -129,7 +129,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
             note: gone > 0 ? notRestoredText(gone) : null,
           };
         } catch (err) {
-          return { done: null, failure: mergeFailureText(direction, errorText(err)) };
+          return { done: null, failure: mergeFailureText(direction, errorText(err)), note: null };
         }
       }
       if (action.kind === "trash") {
@@ -147,6 +147,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         return {
           done: went.length > 0 ? { kind: "trash", contacts: went } : null,
           failure: failed > 0 ? trashFailureText(direction, went.length, failed) : null,
+          note: null,
         };
       }
       const op = groupOp(action, direction);
@@ -168,6 +169,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
       return {
         done: went.length > 0 ? { ...action, changes: went } : null,
         failure: refused.length > 0 ? groupFailureText(op, went, refused) : null,
+        note: null,
       };
     },
   });

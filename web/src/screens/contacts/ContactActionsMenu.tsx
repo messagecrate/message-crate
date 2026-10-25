@@ -31,6 +31,7 @@ export default function ContactActionsMenu({
   onExport,
   onDelete,
   canMerge,
+  mergeHint,
   onMerge,
 }: {
   /** "2 selected", "This list" or "All contacts". */
@@ -40,8 +41,10 @@ export default function ContactActionsMenu({
   exporting: boolean;
   onExport: () => void;
   onDelete: () => void;
-  /** Two to ten rows are checked. */
+  /** Two to ten rows are checked, and the account may delete. */
   canMerge: boolean;
+  /** Why Merge Contacts is off when the account may not merge, shown on hover. */
+  mergeHint?: string;
   onMerge: () => void;
 }) {
   const history = useContactHistory();
@@ -84,7 +87,7 @@ export default function ContactActionsMenu({
               className={`${menuItemClass} text-text`}
             >
               <MergeIcon size={14} />
-              Merge Contacts
+              <span title={mergeHint}>Merge Contacts</span>
             </MenuItem>
             <MenuItem
               id="delete"

@@ -1190,6 +1190,8 @@ can only push may ask whether an asset exists, and may not read it.
 
 Permanent deletion (`DELETE /v1/conversations/{id}`,
 `DELETE /v1/contacts/{id}`, `DELETE /v1/trash`,
+`POST /v1/contacts/{id}/merge`, which deletes the previous merge's contacts
+for good,
 `DELETE /v1/accounts/{id}/messages`, `DELETE /v1/accounts/{id}`) needs a
 session: the account's own with the `delete` permission, or, for an
 account's messages and for the account itself, the administrator's. A token is

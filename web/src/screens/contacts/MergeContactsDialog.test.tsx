@@ -8,10 +8,7 @@ import type { components } from "../../lib/serverApi.types";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
-import MergeContactsDialog, {
-  MAX_MERGED_CONTACTS,
-  type MergeCandidate,
-} from "./MergeContactsDialog";
+import MergeContactsDialog, { type MergeCandidate } from "./MergeContactsDialog";
 
 vi.mock("../../hooks/useAuth", async () =>
   (await import("../../test/providers")).authModule(() => ({ accountId: 7 })),

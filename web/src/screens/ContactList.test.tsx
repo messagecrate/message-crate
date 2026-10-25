@@ -40,6 +40,7 @@ vi.mock("../lib/serverApi", () => ({
   trashContact: vi.fn(),
   restoreContact: vi.fn(),
   getContact: vi.fn(),
+  getAccountProfile: vi.fn(),
   mergeContacts: vi.fn(),
   unmergeContacts: vi.fn(),
 }));
@@ -63,6 +64,7 @@ import { saveFile } from "../lib/saveFile";
 import {
   createContactGroup,
   exportAddressBook,
+  getAccountProfile,
   getContact,
   listContactGroups,
   listContacts,
@@ -873,6 +875,9 @@ describe("ContactList", () => {
             offset: 0,
           }) as unknown as Awaited<ReturnType<typeof listContacts>>,
       );
+      vi.mocked(getAccountProfile).mockResolvedValue({ can_delete: true } as Awaited<
+        ReturnType<typeof getAccountProfile>
+      >);
       vi.mocked(getContact).mockImplementation(
         async (id) =>
           ({
@@ -903,6 +908,22 @@ describe("ContactList", () => {
       await user.click(screen.getByRole("button", { name: "Contact actions" }));
       expect(screen.getByRole("menuitem", { name: "Merge Contacts" })).not.toHaveAttribute(
         "aria-disabled",
+      );
+    });
+
+    it("is off for an account that may not delete", async () => {
+      vi.mocked(getAccountProfile).mockResolvedValue({ can_delete: false } as Awaited<
+        ReturnType<typeof getAccountProfile>
+      >);
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Nicholas Koch" }));
+      await user.click(screen.getByRole("checkbox", { name: "Select Nick Koch" }));
+      await user.click(screen.getByRole("button", { name: "Contact actions" }));
+      expect(screen.getByRole("menuitem", { name: "Merge Contacts" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
       );
     });
 
