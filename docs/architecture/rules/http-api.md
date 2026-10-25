@@ -917,6 +917,8 @@ a separate design
 
 ## Content negotiation
 
+### API-68 `406 Not Acceptable` is answered only when `Accept` names nothing JSON matches
+
 `406 Not Acceptable` is answered only when an `Accept` header is present and no
 member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
