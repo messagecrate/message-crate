@@ -1,21 +1,24 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Checkbox from "../components/Checkbox";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ContactInitialCircle from "../components/ContactInitialCircle";
 import ContactLabel from "../components/ContactLabel";
 import ContactSortMenu from "../components/ContactSortMenu";
-import ExportAddressBookButton from "../components/ExportAddressBookButton";
 import GroupsMenu from "../components/GroupsMenu";
 import InfiniteOffsetList from "../components/InfiniteOffsetList";
 import { useContactGroupActions } from "../hooks/useContactGroupActions";
 import { useContactGroups } from "../hooks/useContactGroups";
+import { useContactHistory } from "../hooks/useContactHistory";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useResetOnChange } from "../hooks/useResetOnChange";
 import { useSetRightToolbar } from "../hooks/useRightToolbar";
 import { useRoutePagedList } from "../hooks/useRouteQuery";
 import { useSelectAll } from "../hooks/useSelectAll";
+import { useSetContactGroupMembers } from "../hooks/useSetContactGroupMembers";
 import { useTimeZone } from "../hooks/useTimeZone";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { apiErrorMessage, errorLine } from "../lib/apiErrorMessage";
 import { contactBelongsToGroup, groupListQuery } from "../lib/contactGroups";
+import type { GroupChange, HistoryContact } from "../lib/contactHistory";
 import { contactLabelText } from "../lib/contactLabel";
 import {
   type ContactSortState,
@@ -32,16 +35,20 @@ import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { keys } from "../lib/queryKeys";
 import { applyCheckedRange } from "../lib/rangeCheck";
 import type { PagedFetchPage } from "../lib/routeQuery";
+import { saveFile } from "../lib/saveFile";
 import { hasFieldToken, stripFieldTokens } from "../lib/searchFields";
-import { listContacts } from "../lib/serverApi";
+import { exportAddressBook, listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
-import { useSetContactGroupMembers } from "./contacts/useSetContactGroupMembers";
+import ContactActionsMenu from "./contacts/ContactActionsMenu";
+import { useUndoShortcuts } from "./contacts/useUndoShortcuts";
 
 /** How long the search waits after the last key before it asks the server. */
 export const FILTER_DEBOUNCE_MS = 300;
 /** Fixed row height keeps virtualization slots aligned with flex-centered content. */
 const CONTACT_ROW_HEIGHT = 49;
+/** The name the address book is saved under, the one the server gives it. */
+const ADDRESS_BOOK_FILE = "address-book.csv";
 
 /** The contact row as the API sends it: `id` is a real integer. */
 type ContactSummary = components["schemas"]["ContactSummary"];
@@ -99,6 +106,16 @@ function contactMatchesFilter(c: Contact, filter: string): boolean {
   return matchingHandles(c.addresses, filter).length > 0;
 }
 
+/** `row` as `contacts` holds it now, or null when the list no longer holds it. */
+function liveRow(row: Contact, contacts: readonly Contact[]): Contact | null {
+  return contacts.find((c) => c.id === row.id) ?? null;
+}
+
+/** A contact as an Undo entry records it: its id and the label the toast names it by. */
+function historyContact(c: Contact): HistoryContact {
+  return { id: Number(c.id), label: contactLabelText(c.name, c.addresses) };
+}
+
 /** Make every contact id a string so list keys stay stable. */
 function normalizeContacts(rows: ContactSummary[]): Contact[] {
   return rows.map((c) => ({
@@ -141,6 +158,11 @@ export default function ContactList({
   const groupActions = useContactGroupActions();
   const setGroupMembers = useSetContactGroupMembers();
   const setRightToolbar = useSetRightToolbar();
+  const history = useContactHistory();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  useUndoShortcuts(history.undo, history.redo);
 
   const groupActive = Boolean(groupFilter);
   const advancedActive = hasFieldToken(filter);
@@ -286,7 +308,7 @@ export default function ContactList({
       targetContacts.length > 0
         ? targetContacts
         : assignTargetsRef.current
-            .map((c) => contacts.find((x) => x.id === c.id) ?? null)
+            .map((c) => liveRow(c, contacts))
             .filter((c): c is Contact => c !== null),
     [targetContacts, contacts],
   );
@@ -330,32 +352,61 @@ export default function ContactList({
     [allGroups, assignTargets],
   );
 
+  /**
+   * Put the Groups menu's contacts in or out of one Contact Group. It answers
+   * the contacts whose membership the write changed, for the Undo entry, or
+   * null when the write was refused or changed no one.
+   */
   const applyMembership = useCallback(
-    (name: string, enable: boolean) => {
-      const ids = assignTargetsRef.current
-        .map((c) => Number(c.id))
-        .filter((id) => Number.isFinite(id) && id > 0);
-      if (ids.length === 0) return Promise.resolve();
+    (name: string, enable: boolean): Promise<GroupChange | null> => {
+      const targets = assignTargetsRef.current.filter((c) => {
+        const id = Number(c.id);
+        return Number.isFinite(id) && id > 0;
+      });
+      if (targets.length === 0) return Promise.resolve(null);
+      const ids = targets.map((c) => Number(c.id));
+      const key = name.toLowerCase();
+      // The live row, as `assignTargets` reads it: the ref's rows predate
+      // any toggle made while the menu's contact is filtered out.
+      const changed = targets.filter((c) => {
+        const row = liveRow(c, contacts) ?? c;
+        return (row.groups ?? []).some((g) => g.toLowerCase() === key) !== enable;
+      });
       // A refused write puts the chips back in the mutation's onError, and the
       // chips going back is the report, so there is nothing to handle here.
       return setGroupMembers
         .mutateAsync({ name, patch: enable ? { add: ids } : { remove: ids } })
         .then(
-          () => undefined,
-          () => undefined,
+          () =>
+            changed.length > 0 ? { group: name, contacts: changed.map(historyContact) } : null,
+          () => null,
         );
     },
-    [setGroupMembers.mutateAsync],
+    [setGroupMembers.mutateAsync, contacts],
   );
 
-  const clearAllMembership = useCallback(
-    () =>
-      clearAllMembers(
-        assignTargetsRef.current.map((c) => c.groups ?? []),
-        (name) => applyMembership(name, false),
-      ),
-    [applyMembership],
+  const recordMembership = history.push;
+  const toggleMembership = useCallback(
+    async (name: string, enable: boolean) => {
+      const change = await applyMembership(name, enable);
+      if (change)
+        recordMembership({ kind: "group", op: enable ? "add" : "remove", changes: [change] });
+    },
+    [applyMembership, recordMembership],
   );
+
+  const clearAllMembership = useCallback(async () => {
+    const changes: GroupChange[] = [];
+    await clearAllMembers(
+      assignTargetsRef.current.map((c) => c.groups ?? []),
+      async (name) => {
+        const change = await applyMembership(name, false);
+        if (change) changes.push(change);
+      },
+    );
+    // One press, one Undo entry, however many Contact Groups it emptied.
+    if (changes.length > 0) recordMembership({ kind: "group", op: "remove", changes });
+  }, [applyMembership, recordMembership]);
 
   const menuDisabled = assignTargets.length === 0 && !groupsMenuOpen;
 
@@ -370,10 +421,10 @@ export default function ContactList({
         checksDisabled={menuDisabled}
         onToggle={(name) => {
           const on = groupChecks[name] === "on";
-          void applyMembership(name, !on);
+          void toggleMembership(name, !on);
         }}
         onCreate={async (name) => {
-          await applyMembership(await groupActions.ensure(name), true);
+          await toggleMembership(await groupActions.ensure(name), true);
         }}
         onClearAll={() => {
           void clearAllMembership();
@@ -382,7 +433,7 @@ export default function ContactList({
     );
   }, [
     allGroups,
-    applyMembership,
+    toggleMembership,
     clearAllMembership,
     groupChecks,
     groupsMenuOpen,
@@ -398,6 +449,43 @@ export default function ContactList({
   const sectionLetter = isNameSort(nameSort)
     ? (c: Contact) => contactSortLetter(contactLabelText(c.name, c.addresses), nameSort)
     : undefined;
+
+  const listQuery = groupListQuery(groupFilter, filter);
+  const exportContacts = async () => {
+    setExporting(true);
+    setExportError("");
+    try {
+      // The checked rows are rows the person can see, so they are the whole
+      // selection: sending the search with them could only take rows away.
+      const body = exportIds.length > 0 ? { ids: exportIds } : { q: listQuery };
+      const csv = await exportAddressBook(body);
+      await saveFile(ADDRESS_BOOK_FILE, new Blob([csv], { type: "text/csv" }));
+    } catch (err) {
+      setExportError(errorLine(err, "Could not export the address book."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const deleteTargets = checkedContacts;
+  const deleteContacts = async () => {
+    await history.deleteContacts(deleteTargets.map(historyContact));
+    setDeleteOpen(false);
+    setRangeAnchor(null);
+    setCheckedIds(new Set());
+  };
+  const deleteTitle =
+    deleteTargets.length === 1
+      ? "Move 1 contact to Trash?"
+      : `Move ${deleteTargets.length} contacts to Trash?`;
+
+  const scope =
+    checkedContacts.length > 0
+      ? `${checkedContacts.length} selected`
+      : filter.trim() || groupFilter
+        ? "This list"
+        : "All contacts";
+  const banner = selectAllError || exportError || history.report || null;
 
   const localSlice = !advancedActive && !serverQ.trim() && (filterActive || groupActive);
   const rangeTotal = localSlice ? displayContacts.length : total;
@@ -445,19 +533,37 @@ export default function ContactList({
         },
         label: "Select all contacts",
         disabled: selectingAll,
-        error: selectAllError,
       }}
+      alert={banner}
       getId={(c) => c.id}
       getTextValue={(c) => contactLabelText(c.name, c.addresses)}
       ariaLabel="Contacts"
       errorPrefix="Could not load contacts"
       headerActions={
         <span className="flex items-center gap-1">
-          <ExportAddressBookButton
-            query={groupListQuery(groupFilter, filter)}
-            checkedIds={exportIds}
+          <ContactActionsMenu
+            scope={scope}
+            canDelete={checkedContacts.length > 0}
+            exporting={exporting}
+            onExport={() => void exportContacts()}
+            onDelete={() => setDeleteOpen(true)}
           />
           <ContactSortMenu state={sortState} onChange={onSortChange} />
+          <ConfirmDialog
+            open={deleteOpen}
+            title={deleteTitle}
+            body={
+              deleteTargets.length === 1
+                ? "Restore in the Trash brings it back."
+                : "Restore in the Trash brings them back."
+            }
+            confirmLabel="Move to Trash"
+            busyLabel="Moving to Trash…"
+            danger
+            busy={history.busy}
+            onConfirm={() => void deleteContacts()}
+            onClose={() => setDeleteOpen(false)}
+          />
         </span>
       }
       getSectionLetter={filterActive ? undefined : sectionLetter}
