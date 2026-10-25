@@ -35,8 +35,30 @@ describe("conversationServiceLabel", () => {
     expect(conversationServiceLabel(conversation({ service: "whatsapp" }))).toBe("WhatsApp");
   });
 
-  it("calls a conversation on RCS Text Message", () => {
-    expect(conversationServiceLabel(conversation({ service: "rcs" }))).toBe("Text Message");
+  it("names each service the server sends for a conversation of one import source", () => {
+    // The server sends a conversation's service from its messages' import
+    // sources (`display_service_label`), so a source id stands in for a
+    // service. SMS Backup+ and GO SMS Pro read as Text Message, as they did
+    // under the old "contains sms" rule.
+    const cases: [string, string | null][] = [
+      ["SMS/MMS", "Text Message"],
+      ["imessage", "Text Message"],
+      ["WhatsApp", "WhatsApp"],
+      ["sms-backup-plus", "Text Message"],
+      ["go-sms-pro", "Text Message"],
+      ["unknown", null],
+    ];
+    for (const [service, label] of cases) {
+      expect(conversationServiceLabel(conversation({ service, is_group: true }))).toBe(label);
+    }
+  });
+
+  it("calls a one-to-one conversation of two sources after its participant's WhatsApp service", () => {
+    const conv = conversation({
+      service: "unknown",
+      participants: [participant({ name: "Ada Lovelace", service: "whatsapp" })],
+    });
+    expect(conversationServiceLabel(conv)).toBe("WhatsApp");
   });
 });
 
@@ -68,6 +90,7 @@ describe("serviceLabel", () => {
   it("names an email address's type, capitalizes any other word, and names nothing for unknown", () => {
     expect(serviceLabel("email")).toBe("Email");
     expect(serviceLabel("signal")).toBe("Signal");
+    expect(serviceLabel("weChat")).toBe("WeChat");
     expect(serviceLabel("unknown")).toBeNull();
     expect(serviceLabel("  ")).toBeNull();
     expect(serviceLabel(null)).toBeNull();

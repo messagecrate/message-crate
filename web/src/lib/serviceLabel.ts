@@ -15,17 +15,33 @@ export const IDENTITY_SERVICE_LABELS = {
 } as const satisfies Record<IdentityService, string>;
 
 /**
- * The transports a message's `service` records that are Text Message:
- * iMessage, SMS, MMS and RCS are one service to someone reading their
- * messages, and which one carried a text is not what the label is for.
+ * The screen name of `email`, the type the identities list names an email
+ * address by, and the option an identity is added under.
  */
-const TEXT_MESSAGE_TRANSPORTS: ReadonlySet<string> = new Set([
+export const EMAIL_LABEL = "Email";
+
+/**
+ * The words that are Text Message. iMessage, SMS, MMS and RCS are one
+ * service to someone reading their messages, and which one carried a text
+ * is not what the label is for.
+ *
+ * A conversation's `service` is not a transport: the server builds it from
+ * the import sources of its messages (`display_service_label` in
+ * `crates/server/server/src/db/conversations.rs`), as `SMS/MMS`, `imessage`,
+ * `WhatsApp`, or the one source's id. So the source ids that carry nothing
+ * but texts are listed too. `imazing` and `openextract` are not, because an
+ * iMazing export can hold WhatsApp chats.
+ */
+const TEXT_MESSAGE_WORDS: ReadonlySet<string> = new Set([
   "imessage",
   "ios",
   "sms",
   "mms",
   "sms/mms",
   "rcs",
+  "sms-backup-restore",
+  "sms-backup-plus",
+  "go-sms-pro",
 ]);
 
 function isIdentityService(word: string): word is IdentityService {
@@ -34,18 +50,19 @@ function isIdentityService(word: string): word is IdentityService {
 
 /**
  * The screen name of a service word, the one map every screen reads: a
- * service the server takes for an identity, a transport a message took, or
- * `email`, the type the identities list names an email address by. Any
- * other word keeps its own name with its first letter capitalized, such as
- * `Signal`. Null for an empty word or `unknown`, which name no service.
+ * service the server takes for an identity, a word that is Text Message, or
+ * `email`. Any other word keeps its own spelling with its first letter
+ * capitalized, such as `Signal`. Null for an empty word or `unknown`, which
+ * name no service.
  */
 export function serviceLabel(service: string | null | undefined): string | null {
-  const word = (service ?? "").trim().toLowerCase();
+  const trimmed = (service ?? "").trim();
+  const word = trimmed.toLowerCase();
   if (!word || word === "unknown") return null;
   if (isIdentityService(word)) return IDENTITY_SERVICE_LABELS[word];
-  if (TEXT_MESSAGE_TRANSPORTS.has(word)) return IDENTITY_SERVICE_LABELS.text_message;
-  if (word === "email") return "Email";
-  return word.charAt(0).toUpperCase() + word.slice(1);
+  if (TEXT_MESSAGE_WORDS.has(word)) return IDENTITY_SERVICE_LABELS.text_message;
+  if (word === "email") return EMAIL_LABEL;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 /**

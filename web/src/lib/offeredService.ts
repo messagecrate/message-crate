@@ -1,5 +1,5 @@
 import type { components } from "./serverApi.types";
-import { IDENTITY_SERVICE_LABELS, serviceLabel } from "./serviceLabel";
+import { EMAIL_LABEL, IDENTITY_SERVICE_LABELS, serviceLabel } from "./serviceLabel";
 
 /**
  * A service offered wherever an identity is added: setup, the account
@@ -59,7 +59,7 @@ export const OFFERED_SERVICE_OPTIONS = [
     label: IDENTITY_SERVICE_LABELS.text_message,
     placeholder: EXAMPLE_PHONE,
   },
-  { value: "email", label: "Email", placeholder: "you@example.com" },
+  { value: "email", label: EMAIL_LABEL, placeholder: "you@example.com" },
   { value: "whatsapp", label: IDENTITY_SERVICE_LABELS.whatsapp, placeholder: EXAMPLE_PHONE },
 ] as const satisfies ReadonlyArray<{
   value: OfferedService;
