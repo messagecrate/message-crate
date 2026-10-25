@@ -46,5 +46,15 @@ describe("toAttachment", () => {
     assert.equal(row.thumbnailAssetsPath, null);
     assert.equal(row.assetsPath, SHA);
     assert.equal(row.shownAsIs, true);
+    assert.equal(row.thumbnailNotMadeReason, null);
+  });
+
+  it("carries why the server could not make the Thumbnail", () => {
+    const row = toAttachment(
+      attachment({ shown_as_is: true, thumbnail_not_made_reason: "Invalid data" }),
+      0,
+    );
+    assert.equal(row.thumbnailAssetsPath, null);
+    assert.equal(row.thumbnailNotMadeReason, "Invalid data");
   });
 });

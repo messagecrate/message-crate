@@ -50,6 +50,10 @@ Sign in with user `demo` and an empty password. The vault host comes from
   the modules above.
 - `src/app/api/auth/login` — `POST /v1/session`; the token and account id
   go in httpOnly cookies. Logout ends the Session with `DELETE /v1/session`.
+- `src/app/api/auth/session-ended` — where a page goes when the server
+  refuses the token in the cookie (`withServerAccount` in
+  `src/lib/serverAccount.ts`): it clears both cookies and redirects to
+  `/login`.
 - `src/app/api/assets/[source]/[sha256]` — proxies `GET /v1/assets/{sha256}`;
   `api/assets_converted/…` proxies its `/preview` and `api/assets_thumbnail/…`
   its `/thumbnail`, byte ranges included (`src/lib/vault/assets.ts`).
