@@ -917,6 +917,8 @@ a separate design
 
 ## Content negotiation
 
+### API-68 Outside the routes that answer bytes, `/v1` refuses with `406 Not Acceptable` only an `Accept` header none of whose members matches JSON
+
 `406 Not Acceptable` is answered only when an `Accept` header is present and no
 member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
