@@ -13,7 +13,7 @@ vi.mock("../../hooks/useAuth", () =>
 
 afterEach(cleanup);
 
-function renderTabs(serverState: ServerState) {
+function renderCard(serverState: ServerState) {
   render(
     <Providers>
       <MemoryRouter>
@@ -30,7 +30,7 @@ function renderTabs(serverState: ServerState) {
  */
 describe("LocalAuthCard", () => {
   it("offers only Set Up on a Message Crate in setup", () => {
-    renderTabs("setup");
+    renderCard("setup");
     expect(screen.getByRole("heading", { name: "Set Up" })).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
@@ -40,14 +40,14 @@ describe("LocalAuthCard", () => {
   });
 
   it("offers only Login on a ready Message Crate", () => {
-    renderTabs("ready");
+    renderCard("ready");
     expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.queryByText("Create Account")).not.toBeInTheDocument();
   });
 
   it("explains that the password is the administrator's", () => {
-    renderTabs("setup");
+    renderCard("setup");
     expect(screen.getByText(/password for admin/i)).toBeInTheDocument();
   });
 });
