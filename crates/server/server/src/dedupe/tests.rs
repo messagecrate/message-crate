@@ -1256,9 +1256,8 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
 /// Clearing an account's duplicate flags leaves none of its messages hidden,
 /// and leaves another account's flags as they were.
 ///
-/// The statement writes only the rows that carry a flag (#3256). The test
-/// pins what that narrowing must not change, so the old statement passes it
-/// too: every flagged row of the account is cleared, and no row of another.
+/// The statement writes only the rows that carry a flag (#3256), and must
+/// still clear every flagged row of the account and no row of another.
 #[tokio::test]
 async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
     const OTHER_ACCOUNT_ID: i64 = 8;
@@ -1319,10 +1318,8 @@ async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
 ///
 /// Each pass clears the flags it set last time before it sets them again, so
 /// a copy that no longer pairs is shown. Here the second copy gains a photo
-/// the first lacks, so their content keys differ.
-///
-/// The test pins behavior that narrowing the clearing to the flagged rows
-/// (#3256) must not change: the old statement passes it too.
+/// the first lacks, so their content keys differ. Narrowing the clearing to
+/// the flagged rows (#3256) must still reach the twin's flag.
 #[tokio::test]
 async fn a_hidden_copy_shows_again_after_the_pass_once_it_stops_matching() {
     let (pool, _dir) = engine::test_pool().await;

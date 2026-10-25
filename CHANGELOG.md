@@ -1007,7 +1007,7 @@ carry their date on the heading.
 - 2026-10-24: **Finishing an import holds up the rest of the server for
   less time.** The duplicate check that runs when an import finishes
   rewrote every message of the account before it hid the duplicates again.
-  It now touches only the messages that are hidden. On an account of about
+  It now touches only the messages hidden as duplicates. On an account of about
   636,000 messages the check takes about 9 s in place of 15 s, and about
   75 s in place of 119 s on a computer five times slower, so a login or a
   settings change made meanwhile waits less, and is turned away less often
