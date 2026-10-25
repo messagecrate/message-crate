@@ -29,7 +29,7 @@ use crate::auth::{AuthIdentity, LoggedIn, Owner, refuse_for_demo_account};
 use crate::config::Config;
 use crate::credentials::RefusalWait;
 use crate::credentials::{
-    change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
+    change_password_on_conn, hash_admin_password, hash_user_password, passwords_match,
     require_password_within_cap, require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
@@ -1180,7 +1180,7 @@ pub async fn replace_account_password(
 
     // The owner must have a password; a user account may have none.
     let new_hash = if account_profile::is_admin(target) {
-        Some(hash_owner_password(&req.password).await?)
+        Some(hash_admin_password(&req.password).await?)
     } else {
         hash_user_password(&req.password).await?
     };

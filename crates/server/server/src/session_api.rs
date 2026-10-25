@@ -231,7 +231,7 @@ async fn log_in(
         // below, and the connection goes back to the pool for the length of
         // the run.
         drop(conn);
-        let _ = verify_login_password(None, password).await?;
+        let _ = verify_login_password(None, password, false).await?;
         let mut conn = db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,
@@ -259,7 +259,12 @@ async fn log_in(
     // so a burst of logins neither stalls the async workers nor empties the
     // pool. An account changed meanwhile is read afresh below.
     drop(conn);
-    let verified = verify_login_password(password_hash.as_deref(), password).await?;
+    let verified = verify_login_password(
+        password_hash.as_deref(),
+        password,
+        account_profile::is_demo_account(account_id),
+    )
+    .await?;
     let mut conn = db.acquire().await?;
     let now = Utc::now();
     if !verified {

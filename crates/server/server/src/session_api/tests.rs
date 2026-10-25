@@ -730,3 +730,24 @@ async fn a_wrong_password_is_401_invalid_credentials() {
         Some("invalid username or password")
     );
 }
+
+/// Before setup the administrator has no password, and that is not a way
+/// in: a login as `admin` with an empty password is refused like a wrong
+/// one. Only the Demo Account enters without a password.
+#[tokio::test]
+async fn the_admin_cannot_log_in_with_an_empty_password_before_setup() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    assert_eq!(
+        crate::test_support::login_status(&state, "admin", "").await,
+        StatusCode::UNAUTHORIZED
+    );
+    let mut conn = state.db.acquire().await.unwrap();
+    let reason: Option<String> = sqlx::query_scalar(
+        "SELECT reason FROM audit_entries WHERE action = 'login_refused' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(reason.as_deref(), Some("wrong_password"));
+}

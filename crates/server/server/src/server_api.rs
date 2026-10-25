@@ -196,7 +196,7 @@ pub async fn claim_server(
     Json(req): Json<ClaimServerRequest>,
 ) -> Result<Created<crate::session_api::CreateSessionResponse>, ApiError> {
     let username = crate::credentials::require_valid_username(&req.username)?;
-    let password_hash = crate::credentials::hash_owner_password(&req.password).await?;
+    let password_hash = crate::credentials::hash_admin_password(&req.password).await?;
 
     let mut conn = db.acquire().await?;
     // The claim check and the insert share a write transaction: two requests

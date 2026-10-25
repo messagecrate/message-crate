@@ -197,20 +197,24 @@ fn dummy_password_hash() -> &'static str {
     })
 }
 
-/// Always run Argon2 so missing accounts cost similar to wrong passwords.
-/// Passwordless accounts (NULL hash) still accept an empty password only.
-/// A login as a username nobody holds calls this with no hash and ignores
-/// the answer. Argon2 runs on the blocking thread pool.
+/// Check `password` against `password_hash`. A `None` or empty hash means
+/// the account has no password: it accepts an empty password only when
+/// `no_password_login` is true, which the login sets for the Demo Account
+/// alone. Argon2 runs against a dummy hash in that branch too, so the time a
+/// refusal takes does not say whether the account has a password. A login as
+/// a username nobody holds calls this with no hash and ignores the answer.
+/// Argon2 runs on the blocking thread pool.
 pub(crate) async fn verify_login_password(
     password_hash: Option<&str>,
     password: &str,
+    no_password_login: bool,
 ) -> Result<bool, ApiError> {
     let (hash, password) = (password_hash.map(str::to_owned), password.to_owned());
     run_argon2("password check", move || {
         Ok(match hash.as_deref() {
             None | Some("") => {
                 let _ = verify_password(dummy_password_hash(), &password);
-                password.is_empty()
+                no_password_login && password.is_empty()
             }
             Some(hash) => verify_password(hash, &password),
         })
@@ -218,11 +222,14 @@ pub(crate) async fn verify_login_password(
     .await
 }
 
-/// Hash the owner's password, on the blocking thread pool. The owner must
-/// have one, so an empty password is refused; one character is enough.
-pub(crate) async fn hash_owner_password(password: &str) -> Result<String, ApiError> {
+/// Hash the administrator's password, on the blocking thread pool. The
+/// administrator must have one, so an empty password is refused; one
+/// character is enough.
+pub(crate) async fn hash_admin_password(password: &str) -> Result<String, ApiError> {
     if password.is_empty() {
-        return Err(ApiError::validation("the owner must have a password"));
+        return Err(ApiError::validation(
+            "the administrator must have a password",
+        ));
     }
     require_password_within_cap("password", password)?;
     let password = password.to_owned();

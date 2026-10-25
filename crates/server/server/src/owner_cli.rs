@@ -78,7 +78,7 @@ pub async fn create_owner(opened: &OpenDb, username: &str, password: &str) -> Re
         Err(e) => bail!("{e}"),
     };
     // Hashed before a connection is taken, so none is held for the hash.
-    let hash = match crate::credentials::hash_owner_password(password).await {
+    let hash = match crate::credentials::hash_admin_password(password).await {
         Ok(hash) => hash,
         Err(e) => bail!("{e}"),
     };
@@ -125,7 +125,7 @@ pub async fn create_owner(opened: &OpenDb, username: &str, password: &str) -> Re
 /// Fails when this Message Crate has no owner, or when the password is empty.
 pub async fn reset_owner_password(opened: &OpenDb, password: &str) -> Result<String> {
     // Hashed before a connection is taken, so none is held for the hash.
-    let hash = match crate::credentials::hash_owner_password(password).await {
+    let hash = match crate::credentials::hash_admin_password(password).await {
         Ok(hash) => hash,
         Err(e) => bail!("{e}"),
     };
