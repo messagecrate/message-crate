@@ -1732,6 +1732,10 @@ Why: every mismatch between the reference and the handlers that the September
 
 The first sentence of a handler's doc comment is the operation's summary, and
 the rest is its description.
+Why: the summary is the operation's title in the reference's operation list
+and in the generated client types, so it has to read as one line; everything
+past the first sentence is description, and the cut keeps handler doc comments
+free to say more without lengthening the list.
 
 ### API-123 A field's description sits on the field
 
