@@ -15,7 +15,7 @@ pub(crate) const MAX_JSON_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 /// The body cap of every route but the attachment uploads: 512 MiB, the
 /// attachment size limit a new Message Crate starts with. It is fixed in the
-/// code because the owner's limit must never reach the login or the settings
-/// change that would raise it again. Routes that read a body of their own
-/// hold it to a smaller figure first.
+/// code because the administrator's limit must never reach the login or the
+/// settings change that would raise it again. Routes that read a body of their
+/// own hold it to a smaller figure first.
 pub(crate) const MAX_REQUEST_BODY_BYTES: usize = 512 * 1024 * 1024;

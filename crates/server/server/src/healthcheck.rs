@@ -11,7 +11,7 @@
 //!
 //! The container's command is the oldest `message-crate-server` process other
 //! than this one. When that command is not `serve` (`docker compose run --rm
-//! server reset-demo`, `create-owner`), or the container runs no other
+//! server reset-demo`, `set-admin-password`), or the container runs no other
 //! `message-crate-server` at all (a shell started with `--entrypoint bash`),
 //! nothing is meant to answer, so the check passes instead of reading
 //! unhealthy once the start period ends. A serving container whose server has

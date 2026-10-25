@@ -35,8 +35,7 @@ A `500 Internal Server Error` has no page: its `type` is `about:blank`, and its 
 | [`username-taken`](./username-taken/) | `409 Conflict` | Username taken |
 | [`name-taken`](./name-taken/) | `409 Conflict` | Name taken |
 | [`demo-account-protected`](./demo-account-protected/) | `403 Forbidden` | Demo account protected |
-| [`not-the-owner`](./not-the-owner/) | `403 Forbidden` | Not the owner |
-| [`registration-closed`](./registration-closed/) | `403 Forbidden` | Registration closed |
+| [`not-the-admin`](./not-the-admin/) | `403 Forbidden` | Not the administrator |
 | [`insufficient-scope`](./insufficient-scope/) | `403 Forbidden` | Insufficient scope |
 | [`account-disabled`](./account-disabled/) | `403 Forbidden` | Account disabled |
 | [`search-query-invalid`](./search-query-invalid/) | `422 Unprocessable Entity` | Search query invalid |

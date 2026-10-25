@@ -212,7 +212,7 @@ a fact about the two trees, not a gap to close.
 | "Message Vault" title menu with Logout | Account menu with Settings and Log out |
 
 Web has a set of features web-next lacks, among them Message Tags, Saved
-Searches, the Unknown and No Contact Group pages, owner administration,
+Searches, the Unknown and No Contact Group pages, Admin Home,
 import and export in the desktop app, tapbacks, and a per-service message
 style. Those are outside this document's question.
 
@@ -265,7 +265,7 @@ app has no such screen.
 | | ![Settings: Access](2026-10-24/web-next/settings-access.png) |
 | | ![Settings: Storage](2026-10-24/web-next/settings-storage.png) |
 | | ![Settings: Appearance](2026-10-24/web-next/settings-appearance.png) |
-| ![Owner: User Accounts](2026-10-24/web/owner-accounts.png) | |
+| ![Admin Home: User Accounts](2026-10-24/web/admin-accounts.png) | |
 
 Web's Settings is one screen with tabs (Account, Profile, Storage, Audit
 Trail, System, Appearance), so one screenshot stands for all of them. Import

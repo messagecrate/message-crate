@@ -35,7 +35,7 @@ export interface NameEdit {
 export interface NameEditOrigin {
   /** The Profile tab the name is typed on. */
   profilePath: string;
-  /** The account the name is for when the owner opened it; null for the logged-in account. */
+  /** The account the name is for when the administrator opened it; null for the logged-in account. */
   username: string | null;
 }
 

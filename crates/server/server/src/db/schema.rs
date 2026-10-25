@@ -445,6 +445,7 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
     .execute(&mut *conn)
     .await
     .context("give the database its Message Crate id")?;
+    crate::db::account_profile::insert_admin_row_if_missing(conn).await?;
     Ok(())
 }
 

@@ -69,3 +69,19 @@ regexes = [
   '''whatsappKey: "0123abcd4567"''',
   '''"whatsappKey": "0123456789abcdef"''',
 ]
+
+# Made-up account passwords in the account tests, and in the plan that wrote
+# them, which gitleaks' generic-api-key rule reads as secrets because of their
+# mixed case and digits.
+[[allowlists]]
+description = "Made-up account passwords in the account tests"
+condition = "AND"
+paths = [
+  '''(?:^|/)crates/server/server/src/accounts_api/tests\.rs$''',
+  '''(?:^|/)docs/superpowers/plans/2026-10-24-administrator-replaces-owner\.md$''',
+]
+regexTarget = "line"
+regexes = [
+  '''"password": "Alice-Pw-3kN8wZr4"''',
+  '''"password": "Bob-Pw-9qW2eRt6"''',
+]

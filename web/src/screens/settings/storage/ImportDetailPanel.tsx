@@ -25,7 +25,7 @@ export default function ImportDetailPanel({
   onClose,
 }: {
   detailId: string;
-  /** False for the owner: who an account's contacts are is the account's own. */
+  /** False for the administrator: who an account's contacts are is the account's own. */
   listContacts: boolean;
   selectedImport: AccountImportRun | null;
   selectedImportSummary: ImportSummaryView | null;
@@ -146,7 +146,7 @@ export default function ImportDetailPanel({
 
 /**
  * The backup the run read, beside when that backup was made, so two imports of
- * one phone can be told apart. The owner's view of another account's run
+ * one phone can be told apart. The administrator's view of another account's run
  * carries neither, and shows nothing here.
  */
 function ImportBackupDetail({ run }: { run: AccountImportRun }) {

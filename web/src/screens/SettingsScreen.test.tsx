@@ -10,7 +10,7 @@ import { authModule, Providers } from "../test/providers";
 import SettingsScreen from "./SettingsScreen";
 
 /**
- * Settings holds no account management. The owner manages accounts from
+ * Settings holds no account management. The administrator manages accounts from
  * a console of their own, and an ordinary account never could. `?tab=users`
  * must therefore fall back to Account rather than render anything.
  */
@@ -77,7 +77,7 @@ describe("SettingsScreen has no account management", () => {
 });
 
 /**
- * The owner holds no messages, so the owner's own Settings have no Storage
+ * The administrator holds no messages, so the administrator's own Settings have no Storage
  * tab. The tabs follow the account the screen reads, so an ordinary
  * account keeps Storage.
  */
@@ -93,8 +93,8 @@ describe("SettingsScreen tabs follow the account it reads", () => {
     expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
   });
 
-  it("drops Storage once the account read is the owner's", async () => {
-    getAccountProfileMock.mockResolvedValue({ ...baseProfile(), is_owner: true });
+  it("drops Storage once the account read is the administrator's", async () => {
+    getAccountProfileMock.mockResolvedValue({ ...baseProfile(), is_admin: true });
     renderSettings(["/settings?tab=audit-trail"]);
 
     // Storage shows until the account arrives, then goes.

@@ -19,16 +19,14 @@ export const pageCenterClass =
   "min-h-screen box-border flex items-center justify-center bg-bg p-4 overflow-y-auto";
 /**
  * Every auth card is at least 576 × 608 and never scrolls, so nothing moves
- * underneath the user as they step between Login and Create Account. The
- * floor is set by Create Account, whose three fields sit above the pinned
- * action row with room for a two-line error above it. The width is set by
- * Profile Setup: a time zone row ("(UTC−10:00) Hawaii-Aleutian Time —
- * Honolulu, East Honolulu") reads on one line.
+ * underneath the user as they step from one card to the next. The floor
+ * fits three fields above the pinned action row with room for a two-line
+ * error above it. The width is set by Profile Setup: a time zone row
+ * ("(UTC−10:00) Hawaii-Aleutian Time — Honolulu, East Honolulu") reads on
+ * one line.
  *
  * A floor, not a fixed height: a card whose content runs taller grows to fit
- * it. Create Owner is the same three fields plus a line explaining what
- * the owner is, and with a fixed height that line pushed the submit button
- * out of the form and over the "or" rule below it.
+ * it, where a fixed height would push the submit button out of the form.
  */
 export const authCardClass =
   "box-border flex min-h-[38rem] w-full max-w-xl flex-col bg-panel border border-border rounded-lg shadow-card p-8";
@@ -37,8 +35,8 @@ export const authCardClass =
 export const authCardBodyClass = "flex min-h-0 flex-1 flex-col";
 
 /**
- * Action row pinned to the bottom of the frame: the primary action does not
- * move when switching between the Login and Create Account tabs. Profile
+ * Action row pinned to the bottom of the frame: the primary action lands in
+ * the same place on the Set Up card as on the Login card. Profile
  * setup uses the same pinned footer for its own submit and back button, so
  * the action still lands in the same place on that screen too — it just
  * carries more below it there.

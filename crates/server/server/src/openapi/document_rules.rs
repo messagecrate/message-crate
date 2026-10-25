@@ -409,12 +409,12 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
         }
     }
 
-    // Last, because it may make, change or remove something: a success
-    // answers every field its document declares, `null` when it has no value
-    // (API-6), and a creation names the new resource in `Location`, where
-    // the credential that made it can read it (API-23). An operation
-    // that answers no JSON and makes nothing is not called, so the owner's
-    // `DELETE /v1/session` leaves the shared Session alone.
+    // Last, because it may make, change or remove something: a success answers
+    // every field its document declares, `null` when it has no value (API-6),
+    // and a creation names the new resource in `Location`, where the credential
+    // that made it can read it (API-23). An operation that answers no JSON and
+    // makes nothing is not called, so the administrator's `DELETE /v1/session`
+    // leaves the shared Session alone.
     let answers_json = success_schemas(spec).next().is_some();
     let creates = !spec["responses"]["201"].is_null() && token.is_some();
     if op.method == "head" || !(answers_json || creates) {
@@ -822,7 +822,7 @@ fn resolved<'d>(doc: &'d Value, schema: &'d Value) -> &'d Value {
 /// choice (`oneOf`, `anyOf`), the branches `value` fits are tried, and a
 /// value that carries every property of one of them leaves nothing out. A
 /// branch fits only a value of its own shape ([`fits`]), so a page of
-/// `ExportRun` is never read as a page of `OwnerExportRun`.
+/// `ExportRun` is never read as a page of `AdminExportRun`.
 fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTreeSet<String>) {
     let schema = resolved(doc, schema);
     if value.is_null() {
@@ -990,8 +990,8 @@ fn is_kebab(segment: &str) -> bool {
 }
 
 /// The page schemas a `200` answers: the page it names, or each page of a
-/// choice between pages, as an account's history answers the account in
-/// full and the owner without content. A schema is a page by its name or by
+/// choice between pages, as an account's history answers the account in full
+/// and the administrator without content. A schema is a page by its name or by
 /// its shape ([`is_page`]), so a page under a name that does not start with
 /// `Page_` is still held to the page rules. Empty when it answers no page.
 fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {

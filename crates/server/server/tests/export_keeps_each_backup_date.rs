@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use common::claim::claimed_with_account;
 use common::lines::{conversation_header, message_line};
+use common::setup::set_up_with_account;
 use common::upload::upload;
 use common::{empty_message_crate, listen, serve};
 
@@ -84,7 +84,7 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
     let (data_dir, static_dir) = empty_message_crate(&root.path().join("first"));
     let (_first, address) = listen(&mut serve(&data_dir, &static_dir));
     let first = format!("http://{address}");
-    let first_token = claimed_with_account(&first).await.alice_token;
+    let first_token = set_up_with_account(&first).await.alice_token;
     let older = backup(
         root.path(),
         "older",
@@ -156,7 +156,7 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
     let (data_dir, static_dir) = empty_message_crate(&root.path().join("second"));
     let (_second, address) = listen(&mut serve(&data_dir, &static_dir));
     let second = format!("http://{address}");
-    let second_token = claimed_with_account(&second).await.alice_token;
+    let second_token = set_up_with_account(&second).await.alice_token;
     upload(&second, &second_token, "sms-backup-restore", exported).await;
     assert_eq!(stored_dates(&second, &second_token).await, expected);
 }

@@ -1159,7 +1159,7 @@ describe("ImportFormFields programs the import needs", () => {
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
-      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+      "https://messagecrate.app/docs/user/features/admin/troubleshooting/#import-cant-find-wtsexporter",
     );
     expect(importButton()).toBeDisabled();
   });
@@ -1189,7 +1189,7 @@ describe("ImportFormFields programs the import needs", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
-      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+      "https://messagecrate.app/docs/user/features/admin/troubleshooting/#import-cant-find-wtsexporter",
     );
     expect(importButton()).toBeDisabled();
   });
@@ -1293,7 +1293,7 @@ describe("ImportFormFields programs the import needs", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
-      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found",
+      "https://messagecrate.app/docs/user/features/admin/troubleshooting/#ffmpeg-or-ffprobe-not-found",
     );
     expect(importButton()).toBeEnabled();
   });

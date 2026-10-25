@@ -34,7 +34,7 @@ function accountCell(entry: AuditEntry) {
  * said.
  *
  * Given `logHref`, an entry written in a request links to that request's
- * lines in the server's log. Only Owner Home passes it: a holder reading
+ * lines in the server's log. Only Admin Home passes it: a holder reading
  * their own Audit Trail in Settings cannot read the log.
  */
 export default function AuditTrailTable({
@@ -51,7 +51,7 @@ export default function AuditTrailTable({
   total: number;
   page: number;
   onPageChange: (page: number) => void;
-  /** Show the Account column: the owner's list of every account. */
+  /** Show the Account column: the administrator's list of every account. */
   showAccount: boolean;
   /** Where an entry's request's lines in the server's log are read, by its `request_id`. */
   logHref?: (requestId: string) => string;

@@ -32,9 +32,10 @@ assets_converted_dir = "assets_converted"
 bind = "127.0.0.1:8080"
 # Largest multipart part. Default 16 MiB, so a whole part arrives inside the
 # default body_total_secs at about 0.45 Mbit/s (keep under ~100 MB for
-# Cloudflare). The attachment size limit has no key here: the owner sets it
-# under Server Settings in the app (512 MiB until then). When the limit is
-# smaller than this part size, the server uses parts the size of the limit.
+# Cloudflare). The attachment size limit has no key here: the administrator
+# sets it under Server Settings in the app (512 MiB until then). When the
+# limit is smaller than this part size, the server uses parts the size of the
+# limit.
 # asset_part_size = 16777216
 
 # How long the server waits for a request body: seconds with no byte

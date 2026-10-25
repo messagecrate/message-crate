@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    ConversationRow, RegisteredAccount, delete_raw, delete_status, expect_problem,
-    expect_problem_for, get_json, get_raw, get_status, patch_failure, patch_json, patch_json_raw,
-    post_created_json, post_json_raw, register_via_api, test_fixture,
+    ConversationRow, LoggedInAccount, add_account_and_log_in, delete_raw, delete_status,
+    expect_problem, expect_problem_for, get_json, get_raw, get_status, patch_failure, patch_json,
+    patch_json_raw, post_created_json, post_json_raw, test_fixture,
 };
 
 /// Which collection a case runs against. Every case runs for both, except
@@ -61,8 +61,8 @@ fn rand_suffix() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-async fn alice(state: &AppState) -> RegisteredAccount {
-    register_via_api(state, "alice", "hunter2hunter2").await
+async fn alice(state: &AppState) -> LoggedInAccount {
+    add_account_and_log_in(state, "alice", "hunter2hunter2").await
 }
 
 async fn create(state: &AppState, kind: Kind, token: &str, name: &str) -> i64 {
@@ -289,7 +289,7 @@ async fn members_patch_with_a_foreign_member_writes_nothing() {
         let fixture = test_fixture().await;
         let state = &fixture.state;
         let user = alice(state).await;
-        let bob = register_via_api(state, "bob", "hunter2hunter2").await;
+        let bob = add_account_and_log_in(state, "bob", "hunter2hunter2").await;
         let a = kind.member(state, user.account_id).await;
         let bobs = kind.member(state, bob.account_id).await;
         let id = create(state, kind, &user.token, "Family").await;
@@ -347,7 +347,7 @@ async fn another_accounts_set_is_not_visible() {
         let fixture = test_fixture().await;
         let state = &fixture.state;
         let user = alice(state).await;
-        let bob = register_via_api(state, "bob", "hunter2hunter2").await;
+        let bob = add_account_and_log_in(state, "bob", "hunter2hunter2").await;
         let id = create(state, kind, &bob.token, "Holiday").await;
         let base = kind.base();
 
@@ -403,7 +403,7 @@ async fn another_accounts_set_answers_404_to_get() {
         let fixture = test_fixture().await;
         let state = &fixture.state;
         let user = alice(state).await;
-        let bob = register_via_api(state, "bob", "hunter2hunter2").await;
+        let bob = add_account_and_log_in(state, "bob", "hunter2hunter2").await;
         let id = create(state, kind, &bob.token, "Holiday").await;
         let path = format!("{}/{id}", kind.base());
 

@@ -21,7 +21,7 @@ export default function TopAttachmentsTable({
   topAttachments: TopAttachment[];
   page: number;
   onPageChange: (page: number) => void;
-  /** False for the owner, whom the server does not tell which conversation a file is in. */
+  /** False for the administrator, whom the server does not tell which conversation a file is in. */
   showConversation: boolean;
 }) {
   const pageRows = topAttachments.slice(

@@ -48,7 +48,7 @@ export const REQUEST_NOT_IN_LOG =
  * first, older ones read as the list scrolls near its end. Nothing reads new
  * lines on its own: the list shows the log as it was when it was read.
  *
- * Owner Home's Logs panel shows the server's log and the Import Run logs on
+ * Admin Home's Logs panel shows the server's log and the Import Run logs on
  * this computer through it, and an Import Run's row in Settings → Storage
  * shows that run's log, so every log reads the same way.
  *

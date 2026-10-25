@@ -57,7 +57,7 @@ export function useStorageData(managedAccountId?: number) {
   } = useRouteQuery(
     managedAccountId === undefined
       ? keys.storage.overview
-      : keys.ownerAccounts.storage(managedAccountId),
+      : keys.adminAccounts.storage(managedAccountId),
     (signal) => fetchOverview(signal, managedAccountId),
   );
 
@@ -70,7 +70,7 @@ export function useStorageData(managedAccountId?: number) {
   } = useRouteQuery(
     managedAccountId === undefined
       ? keys.storage.imports(importPage)
-      : keys.ownerAccounts.imports(managedAccountId, importPage),
+      : keys.adminAccounts.imports(managedAccountId, importPage),
     (signal) => listAccountImports(runPage(importPage), { signal }, managedAccountId),
     { placeholderData: keepPreviousData },
   );
@@ -82,7 +82,7 @@ export function useStorageData(managedAccountId?: number) {
   } = useRouteQuery(
     managedAccountId === undefined
       ? keys.storage.exports(exportPage)
-      : keys.ownerAccounts.exports(managedAccountId, exportPage),
+      : keys.adminAccounts.exports(managedAccountId, exportPage),
     (signal) => listAccountExports(runPage(exportPage), { signal }, managedAccountId),
     { placeholderData: keepPreviousData },
   );
@@ -110,7 +110,7 @@ export function useStorageData(managedAccountId?: number) {
   } = useRouteQuery(
     managedAccountId === undefined
       ? keys.storage.importDetail(selectedImportId)
-      : keys.ownerAccounts.importDetail(managedAccountId, selectedImportId),
+      : keys.adminAccounts.importDetail(managedAccountId, selectedImportId),
     fetchDetail,
     {
       enabled: selectedImportId !== null,

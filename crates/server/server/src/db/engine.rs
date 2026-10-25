@@ -347,7 +347,7 @@ pub struct OpenedPool {
 }
 
 /// [`open_pool_for_path`], keeping the error SQLite gave when the pool
-/// asked for write-ahead logging, so Owner Home can say why the database
+/// asked for write-ahead logging, so Admin Home can say why the database
 /// runs without it.
 ///
 /// The file and its `-wal`, `-shm` and `-journal` files are made readable by
@@ -482,7 +482,7 @@ mod tests {
 
     /// Another connection's write transaction keeps SQLite from turning
     /// write-ahead logging on. The answer keeps the error SQLite gave, in
-    /// SQLite's words, so Owner Home can name the cause (#2691), and the
+    /// SQLite's words, so Admin Home can name the cause (#2691), and the
     /// mode the database stayed in.
     #[tokio::test]
     async fn a_refused_wal_request_keeps_the_error_sqlite_gave() {

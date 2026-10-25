@@ -8,8 +8,8 @@ One import is one Import Run.
 
 Import is in the desktop app's sidebar, under **Messages**.
 The browser doesn't show it, because reading a backup needs the desktop app.
-The Owner's login doesn't show it either, because the Owner holds no messages.
-Importing also needs the account's import permission, which the Owner sets.
+The administrator's login doesn't show it either, because the administrator holds no messages.
+Importing also needs the account's import permission, which the administrator sets.
 
 A first import is walked through in [Import your backup](/docs/user/your-messages/import-your-backup/).
 This page describes every field and every stage.
@@ -21,11 +21,11 @@ Opening it shows a message in place of the form, and nothing is read from a back
 
 | Account | What the screen says |
 |---|---|
-| An account with **Import** off | The Owner has not allowed this account to import. The Owner turns it on under **Message Permissions**. |
+| An account with **Import** off | The administrator has not allowed this account to import. The administrator turns it on under **Message Permissions**. |
 | The Demo Account, which can never import | Importing needs a personal account. **Log out** goes to the login card. |
 
-An Import Run already in progress when the Owner turns **Import** off stays on screen until it ends.
-A notice above the run says the Owner has turned Import off.
+An Import Run already in progress when the administrator turns **Import** off stays on screen until it ends.
+A notice above the run says the administrator has turned Import off.
 The server refuses the run's next request.
 A run in Staging or Media then ends as failed, and a run in Upload is paused.
 Leaving the run shows the message above.
@@ -394,7 +394,7 @@ The heading of a finished run says how it ended.
 
 A run that ends deletes its directory, and the journal with it.
 Its log stays in the Logs Directory, `~/message-crate/logs`, and Message Crate never deletes it.
-The run's row in **Settings → Storage** opens it again later, and the Owner reads it under **Logs** on Owner Home.
+The run's row in **Settings → Storage** opens it again later, and the administrator reads it under **Logs** on Admin Home.
 After a success the Message Crate holds the messages, so the staged copy is no longer needed.
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
 A run that is canceled or paused leaves its directory in place, because the staged files are what a resume reads.

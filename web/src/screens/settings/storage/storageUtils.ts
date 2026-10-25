@@ -24,24 +24,24 @@ type Schema = components["schemas"];
 
 /**
  * One past Import Run, as the imports list returns it: to the account itself
- * everything but its issues and notes, and to the owner without what the run
+ * everything but its issues and notes, and to the administrator without what the run
  * held. Both carry how many issues the run recorded; opening the run reads
  * them, and its notes.
  */
-export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRunSummary"];
+export type ListedImportRun = Schema["ImportRunSummary"] | Schema["AdminImportRunSummary"];
 
 /**
  * One Export Run as the history table lists it: in full to the account
- * itself, and to the owner without what the run asked for.
+ * itself, and to the administrator without what the run asked for.
  */
-export type ListedExportRun = Schema["ExportRun"] | Schema["OwnerExportRun"];
+export type ListedExportRun = Schema["ExportRun"] | Schema["AdminExportRun"];
 
 /** One large attachment in the storage breakdown. */
 export type TopAttachment = Schema["TopAttachment"];
 
 /**
  * What an Export Run asked for, in one line. The account reads its own runs
- * in full ({@link describeExportScope}); the owner is told only which of the
+ * in full ({@link describeExportScope}); the administrator is told only which of the
  * three forms the scope took, because the search is the account's own.
  */
 export function describeExportRun(run: ListedExportRun): string {
@@ -89,7 +89,7 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
 
 /**
  * One Import Run: in full, with its summary, issues and notes, to the account
- * itself; to the owner with the summary's counts, how many issues, and the
+ * itself; to the administrator with the summary's counts, how many issues, and the
  * attachments whose Thumbnail or Preview could not be made.
  */
 export type AccountImportRun = Schema["AccountImportRun"];
@@ -97,7 +97,7 @@ export type AccountImportRun = Schema["AccountImportRun"];
 /**
  * The backup an account's own Import Run read: the file the desktop app
  * recorded for it, and when the backup was made, each null when the run does
- * not say. Null for the owner's view of another account's run, which carries
+ * not say. Null for the administrator's view of another account's run, which carries
  * neither.
  */
 export function importBackup(
@@ -172,7 +172,7 @@ export function importStatusLabel(status: Schema["ImportStatus"]): string {
 
 /** Build the import summary panel model from an Account Import Run. */
 export function toImportSummaryView(run: AccountImportRun): ImportSummaryView {
-  // The owner reads the summary's counts and nothing else of it.
+  // The administrator reads the summary's counts and nothing else of it.
   const summary: Record<string, unknown> =
     "counts" in run
       ? run.counts

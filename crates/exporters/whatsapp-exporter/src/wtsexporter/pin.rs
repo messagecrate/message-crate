@@ -9,7 +9,7 @@
 //! the file the download fetches are one. A newer release is a change to
 //! this file, to [`super::RELEASE_FILE_HINT`], to the user guide's
 //! troubleshooting page,
-//! `docs/src/content/docs/docs/user/features/owner/troubleshooting.md`, and
+//! `docs/src/content/docs/docs/user/features/admin/troubleshooting.md`, and
 //! to the developer install in `AGENTS.md` and
 //! `docs/src/content/docs/docs/developer/contributing.md`, which name it.
 

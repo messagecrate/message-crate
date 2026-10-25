@@ -34,12 +34,12 @@
 //! index, so it ends in [`clear_write_ahead_log`] alone.
 //!
 //! What the files of the database do not cover is outside this module: the
-//! attachment files are unlinked, not overwritten; a copy the owner made,
-//! and the `.before-rebuild-` copy a schema rebuild keeps
+//! attachment files are unlinked, not overwritten; a copy the administrator
+//! made, and the `.before-rebuild-` copy a schema rebuild keeps
 //! ([`crate::db::schema`]), hold what they held when they were made. Text
-//! deleted before the server wrote over freed pages stays in pages freed
-//! then, until they are used again or the file is vacuumed. The user guide's
-//! Trash page says so.
+//! deleted before the server wrote over freed pages stays in pages freed then,
+//! until they are used again or the file is vacuumed. The user guide's Trash
+//! page says so.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

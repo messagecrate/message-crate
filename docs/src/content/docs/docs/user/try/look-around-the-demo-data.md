@@ -11,7 +11,7 @@ It sits in an account of its own, the Demo Account, apart from any real messages
 On the card the app opened on, select **Explore Demo Account**.
 
 The Demo Account has no password, so there is nothing to type.
-The card also shows **Create Owner**, which is for [Your own messages](/docs/user/your-messages/create-the-owner-and-an-account/).
+The card also shows **Set Up**, which is for [Your own messages](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/).
 The name at the top right, **demo**, shows which account is logged in.
 
 ## Things to try
@@ -45,12 +45,12 @@ It may not import, delete for good, or load an address book.
 Its display name and time zone stay as they are.
 Anyone who reaches this Message Crate can enter it, so those limits keep a person's own messages out of the demo data and keep one visitor from emptying it for the next.
 
-Names given to contacts, groups, tags, and saved searches made here stay until the Owner resets the Demo Account.
+Names given to contacts, groups, tags, and saved searches made here stay until the administrator resets the Demo Account.
 
 ## Log out
 
 The round button at the top right opens the account menu, which holds **Log out**.
-Logging out returns to the first screen, which still shows **Create Owner** and **Explore Demo Account**.
+Logging out returns to the first screen, which still shows **Set Up** and **Explore Demo Account**.
 
 The Demo Account stays for as long as it is useful.
 [Import your backup](/docs/user/your-messages/import-your-backup/#delete-the-demo-account) ends by deleting it.
@@ -58,4 +58,4 @@ The Demo Account stays for as long as it is useful.
 That is the end of the first part.
 The second part puts real messages into this Message Crate.
 
-Next: [Create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/).
+Next: [Set up the administrator and create an account](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/).

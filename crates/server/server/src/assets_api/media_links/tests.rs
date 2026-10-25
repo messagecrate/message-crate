@@ -8,7 +8,7 @@ use crate::assets_api::tests::{
 };
 use crate::problem::ProblemType;
 use crate::server::AppState;
-use crate::test_support::{RegisteredAccount, expect_problem};
+use crate::test_support::{LoggedInAccount, expect_problem};
 
 /// `POST /v1/assets/{sha256}/media-links` as `token`: the status, the
 /// `Location`, and the body.
@@ -30,7 +30,7 @@ async fn mint(state: &AppState, sha256: &str, token: &str) -> (StatusCode, Optio
 }
 
 /// A media link for `sha256` that `account` minted, read back as JSON.
-async fn minted(state: &AppState, sha256: &str, account: &RegisteredAccount) -> Value {
+async fn minted(state: &AppState, sha256: &str, account: &LoggedInAccount) -> Value {
     let (status, location, text) = mint(state, sha256, &account.token).await;
     assert_eq!(status, StatusCode::CREATED, "{text}");
     let body: Value = serde_json::from_str(&text).unwrap();
@@ -249,7 +249,8 @@ async fn a_media_link_reads_only_for_its_own_account() {
     let (fixture, alice) = crate::test_support::fixture_with_account().await;
     let state = &fixture.state;
     let bob =
-        crate::test_support::register_via_api(state, "bob", crate::test_support::PASSWORD).await;
+        crate::test_support::add_account_and_log_in(state, "bob", crate::test_support::PASSWORD)
+            .await;
     let seeded = seed_attachment_with_preview(state, alice.account_id).await;
     let sha = &seeded.with_preview;
     // Bob holds the very same file in his own store.
@@ -392,14 +393,14 @@ async fn a_malformed_media_link_is_refused() {
 }
 
 /// Only a person's Session mints a media link, because only a screen has a
-/// media element to put one in: an API token and the owner are refused, and
-/// an asset the account does not hold answers `404`.
+/// media element to put one in: an API token and the administrator are refused,
+/// and an asset the account does not hold answers `404`.
 #[tokio::test]
 async fn only_a_session_mints_a_media_link_for_an_asset_it_holds() {
     let fixture = crate::test_support::test_fixture().await;
     let state = &fixture.state;
-    let owner = crate::test_support::claim_as_owner(state, "keeper", "hunter2hunter2").await;
-    let user = crate::test_support::register_via_api(state, "user", "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(state, "hunter2hunter2").await;
+    let user = crate::test_support::add_account_and_log_in(state, "user", "hunter2hunter2").await;
     let seeded = seed_attachment_with_preview(state, user.account_id).await;
     let sha = &seeded.with_preview;
 
@@ -413,7 +414,7 @@ async fn only_a_session_mints_a_media_link_for_an_asset_it_holds() {
     let token = created["token"].as_str().unwrap();
     let (status, _location, text) = mint(state, sha, token).await;
     expect_problem(status, &text, ProblemType::InsufficientScope);
-    let (status, _location, text) = mint(state, sha, &owner.token).await;
+    let (status, _location, text) = mint(state, sha, &admin.token).await;
     expect_problem(status, &text, ProblemType::InsufficientScope);
 
     let unknown = Sha256::of_bytes(b"a file nobody stored");

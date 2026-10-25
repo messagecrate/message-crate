@@ -15,7 +15,7 @@ type ApiToken = components["schemas"]["ApiToken"];
 
 /**
  * An account's API tokens. The account's holder sees each masked secret and
- * renames and revokes; given no `onRename`, the table is the owner's view of
+ * renames and revokes; given no `onRename`, the table is the administrator's view of
  * another account's tokens, which shows no secret and only revokes.
  */
 export default function ApiTokensTable({

@@ -75,7 +75,7 @@ pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// attachment arrives at the speed a batch does
 /// (`docs/architecture/rules/http-api.md`, API-96).
 pub const MAX_PROXY_BODY_BYTES: usize = api_types::MAX_IMPORT_BATCH_BYTES;
-/// What a server's attachment size limit reads as until its owner sets one.
+/// What a server's attachment size limit reads as until its administrator sets one.
 /// A caller that uploads to a real server reads the limit from `GET /v1/server`
 /// and passes that; this is for tests.
 pub const DEFAULT_ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;

@@ -9,8 +9,8 @@ mod common;
 
 use serde_json::Value;
 
-use common::claim::claimed_with_account;
 use common::lines::{conversation_header, message_line};
+use common::setup::set_up_with_account;
 use common::upload::upload;
 use common::{empty_message_crate, listen, serve};
 
@@ -27,7 +27,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
     let (_server, address) = listen(&mut serve(&data_dir, &static_dir));
     let base = format!("http://{address}");
 
-    let token = claimed_with_account(&base).await.alice_token;
+    let token = set_up_with_account(&base).await.alice_token;
 
     let input = root.path().join("export");
     std::fs::create_dir_all(&input).unwrap();

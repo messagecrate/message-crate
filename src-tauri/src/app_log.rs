@@ -16,9 +16,9 @@
 //! left for it.
 //!
 //! A line names only paths inside Message Crate's own directories, and no
-//! phone's name. Why: the log is listed for the owner of any Message Crate
-//! the app signs in to, and a backup's path or a phone's name can name the
-//! person whose phone it is.
+//! phone's name. Why: the log is listed for the administrator of any Message
+//! Crate the app signs in to, and a backup's path or a phone's name can name
+//! the person whose phone it is.
 
 use std::fs::File;
 use std::io::Write as _;
