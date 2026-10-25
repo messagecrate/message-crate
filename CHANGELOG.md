@@ -1004,6 +1004,14 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-25: **Finishing an import holds up the rest of the server for
+  less time.** The duplicate check that runs when an import finishes
+  rewrote every message of the account before it hid the duplicates again.
+  It now touches only the messages it hid last time. On an account of about
+  636,000 messages the check takes about 9 s in place of 15 s, and about
+  75 s in place of 119 s on a computer five times slower, so a login or a
+  settings change made meanwhile waits less, and is turned away less often
+  as busy (#3256).
 - 2026-10-16: **A later iMazing export keeps a second reaction with the
   same emoji.** iMazing reactions keep only their emoji, so two people's 👍
   on one message looked alike. When an export holding Bob's 👍 was imported
