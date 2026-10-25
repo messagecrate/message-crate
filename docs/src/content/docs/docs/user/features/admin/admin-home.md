@@ -104,7 +104,7 @@ Below the Demo Account:
 | Column | Meaning |
 |---|---|
 | **User** | The username, with the account's display name under it when it has one. |
-| **Status** | **Administrator**, **Active**, or **Disabled**, with **No password** under it for an account that has no password: once the account is active, anyone who knows its username logs in with an empty one. The Demo Account has no password by design and is not marked. |
+| **Status** | **Administrator**, **Active**, or **Disabled**, with **No password** under it for an account that has no password: it can't log in until the administrator sets one. The Demo Account has no password by design and is not marked. |
 | **Last login** | The date and time of the last login, or **Never**. |
 
 The search bar at the top reads **Search accounts**.
@@ -117,7 +117,7 @@ The gear opens that account's settings.
 
 1. Select **Add account**. The **New account** form opens. Its **Profile** and **Storage** tabs can't be opened yet, because they belong to an account that exists.
 2. Enter a **Username**.
-3. Enter a **Password** and repeat it in **Confirm password**. The heading reads **Password (optional)**, because the form allows an account with no password. An account that holds real messages should have one. A password is at most 128 characters.
+3. Enter a **Password** and repeat it in **Confirm password**. The heading reads **Password (optional)**, because the form allows an account with no password, but an account with no password can't log in until the administrator sets one. A password is at most 128 characters.
 4. Select **Create**.
 
 The form reports **Invalid username.** when the username is already taken.
@@ -158,7 +158,7 @@ The account's holder sees the same status and permissions in their own **Setting
 **Change Password** has **New password** and **Confirm new password**.
 
 - **Change password** sets the new password.
-- **Reset password** removes the password, so the account logs in with an empty one.
+- **Reset password** removes the password, so the account can't log in until the administrator sets a new one.
 
 Neither one ends a Session the account has open, and neither makes the person choose a new password at the next login.
 The administrator doesn't see the old password and isn't asked for it.

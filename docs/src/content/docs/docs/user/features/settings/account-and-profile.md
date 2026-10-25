@@ -57,7 +57,7 @@ The server compares the two, and the form shows "New passwords do not match" whe
 A password has no minimum length.
 The longest password the server accepts is 128 characters.
 
-**Reset password** clears the password, so the account then logs in with an empty one.
+**Reset password** clears the password, so the account can't log in until the administrator sets a new one.
 The screen confirms with "Password reset. This account now has no password, and its API Tokens were revoked."
 A changed password is confirmed with "Password changed. This account's API Tokens were revoked."
 

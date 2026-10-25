@@ -18,13 +18,13 @@ function statusLabel(account: ManagedAccount): string {
 }
 
 /**
- * Whether the Status column marks the account as having no password, so that
- * once it is active anyone who knows its username logs in with an empty one.
- * A disabled account is marked too, because once enabled it logs in with an
- * empty password. The Demo Account is left out: it has no password by design
- * (ADR 0016).
+ * Whether the Status column marks the account as having no password. Such an
+ * account cannot log in until the administrator sets one, so the mark says why
+ * its holder is refused. A disabled account is marked too, because enabling it
+ * does not give it a password. The Demo Account is left out: it has no
+ * password by design and logs in without one (ADR 0016).
  */
-function loginNeedsNoPassword(account: ManagedAccount): boolean {
+function hasNoPassword(account: ManagedAccount): boolean {
   return !account.has_password && !account.is_demo;
 }
 
@@ -41,7 +41,7 @@ function matches(account: ManagedAccount, needle: string): boolean {
  *
  * A row carries a username, a preferred name, a status and the last login.
  * The status of an account with no password says so under it, so the administrator
- * sees every account open to an empty password.
+ * sees every account that cannot log in until it is given one.
  * The gear at the left of a row, shown while the pointer is in the row, opens
  * the account's Settings, which is where the rest is: the app it connects with
  * under Profile, what it holds under Storage, and its password, status and
@@ -106,7 +106,7 @@ export function AdminAccountsPanel({ filter = "" }: { filter?: string }) {
                   </td>
                   <td className={account.disabled ? tdClass : tdMutedClass}>
                     <div>{statusLabel(account)}</div>
-                    {loginNeedsNoPassword(account) ? (
+                    {hasNoPassword(account) ? (
                       <div className="text-[0.75rem] text-warn-soft-text">No password</div>
                     ) : null}
                   </td>
