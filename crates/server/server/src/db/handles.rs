@@ -543,6 +543,9 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
         ),
     };
     let country_unknown = country_unknown_sql();
+    // The two service names go into the text rather than as binds, because
+    // the two branches above number their binds differently. Both are fixed
+    // words with no quote in them.
     let whatsapp = IdentityService::Whatsapp.as_str();
     let text_message = IdentityService::TextMessage.as_str();
     let sql = format!(
