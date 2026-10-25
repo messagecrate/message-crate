@@ -29,8 +29,8 @@ export const EMAIL_LABEL = "Email";
  * the import sources of its messages (`display_service_label` in
  * `crates/server/server/src/db/conversations.rs`), as `SMS/MMS`, `imessage`,
  * `WhatsApp`, or the one source's id. So the source ids that carry nothing
- * but texts are listed too. `imazing` and `openextract` are not, because an
- * iMazing export can hold WhatsApp chats.
+ * but texts are listed too. (`sms-backup-restore` never arrives alone: the
+ * server sends it as `SMS/MMS`.)
  */
 const TEXT_MESSAGE_WORDS: ReadonlySet<string> = new Set([
   "imessage",
@@ -39,10 +39,18 @@ const TEXT_MESSAGE_WORDS: ReadonlySet<string> = new Set([
   "mms",
   "sms/mms",
   "rcs",
-  "sms-backup-restore",
   "sms-backup-plus",
   "go-sms-pro",
+  "openextract",
 ]);
+
+/**
+ * Words that name no service: `unknown`, and `imazing`, the source id of a
+ * backup that holds texts and WhatsApp chats alike, so the id says nothing
+ * about which. A one-to-one conversation sent with one of these takes its
+ * participant's service instead.
+ */
+const NO_SERVICE_WORDS: ReadonlySet<string> = new Set(["unknown", "imazing"]);
 
 function isIdentityService(word: string): word is IdentityService {
   return Object.hasOwn(IDENTITY_SERVICE_LABELS, word);
@@ -52,13 +60,13 @@ function isIdentityService(word: string): word is IdentityService {
  * The screen name of a service word, the one map every screen reads: a
  * service the server takes for an identity, a word that is Text Message, or
  * `email`. Any other word keeps its own spelling with its first letter
- * capitalized, such as `Signal`. Null for an empty word or `unknown`, which
- * name no service.
+ * capitalized, such as `Signal`. Null for an empty word or one of
+ * `NO_SERVICE_WORDS`, which name no service.
  */
 export function serviceLabel(service: string | null | undefined): string | null {
   const trimmed = (service ?? "").trim();
   const word = trimmed.toLowerCase();
-  if (!word || word === "unknown") return null;
+  if (!word || NO_SERVICE_WORDS.has(word)) return null;
   if (isIdentityService(word)) return IDENTITY_SERVICE_LABELS[word];
   if (TEXT_MESSAGE_WORDS.has(word)) return IDENTITY_SERVICE_LABELS.text_message;
   if (word === "email") return EMAIL_LABEL;

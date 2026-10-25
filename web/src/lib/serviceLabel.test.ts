@@ -46,6 +46,8 @@ describe("conversationServiceLabel", () => {
       ["WhatsApp", "WhatsApp"],
       ["sms-backup-plus", "Text Message"],
       ["go-sms-pro", "Text Message"],
+      ["openextract", "Text Message"],
+      ["imazing", null],
       ["unknown", null],
     ];
     for (const [service, label] of cases) {
@@ -56,6 +58,16 @@ describe("conversationServiceLabel", () => {
   it("calls a one-to-one conversation of two sources after its participant's WhatsApp service", () => {
     const conv = conversation({
       service: "unknown",
+      participants: [participant({ name: "Ada Lovelace", service: "whatsapp" })],
+    });
+    expect(conversationServiceLabel(conv)).toBe("WhatsApp");
+  });
+
+  it("calls a one-to-one iMazing conversation after its participant's service", () => {
+    // An iMazing export holds texts and WhatsApp chats alike, so its source
+    // id names no service.
+    const conv = conversation({
+      service: "imazing",
       participants: [participant({ name: "Ada Lovelace", service: "whatsapp" })],
     });
     expect(conversationServiceLabel(conv)).toBe("WhatsApp");
