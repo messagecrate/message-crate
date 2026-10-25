@@ -106,7 +106,7 @@ pub(super) async fn load_address_book(
         account_id,
         content,
         mode,
-        Some(AuditActor::Holder),
+        address_book::Record::As(AuditActor::Holder),
         chrono::Utc::now(),
     )
     .await?;

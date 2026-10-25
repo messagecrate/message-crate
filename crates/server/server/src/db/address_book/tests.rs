@@ -162,7 +162,7 @@ async fn refused(conn: &mut SqliteConnection, text: &str, mode: LoadMode) -> Vec
         ACCOUNT,
         text,
         mode,
-        None,
+        Record::Not,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -178,7 +178,7 @@ async fn loaded(conn: &mut SqliteConnection, text: &str, mode: LoadMode) -> Load
         ACCOUNT,
         text,
         mode,
-        None,
+        Record::Not,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -1524,7 +1524,7 @@ async fn s4_6_a_number_without_its_plus_keeps_the_real_identity() {
         ACCOUNT,
         &file(&[&row]),
         LoadMode::Edit,
-        None,
+        Record::Not,
         crate::test_support::fixed_instant(),
     )
     .await;
@@ -1888,7 +1888,7 @@ async fn a_write_that_commits_while_the_load_reads_does_not_fail_it() {
             ACCOUNT,
             &text,
             LoadMode::Append,
-            None,
+            Record::Not,
             crate::test_support::fixed_instant(),
         ),
     )
