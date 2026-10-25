@@ -6,9 +6,11 @@ import { useSetContactGroupMembers } from "../hooks/useSetContactGroupMembers";
 import {
   actionText,
   EMPTY_HISTORY,
+  groupOp,
   type HistoryAction,
   type HistoryContact,
   type HistoryDirection,
+  type HistoryEntry,
   type HistoryEvent,
   type HistoryStacks,
   historyReducer,
@@ -58,17 +60,28 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   const generation = useRef(0);
   /** Set while a run is in flight; a second press while it runs does nothing. */
   const running = useRef(false);
+  /**
+   * The stacks as of the last event, ahead of the render that shows them, so
+   * a key repeat or a second press that arrives before that render still
+   * reads the entry the first one left on top.
+   */
+  const stacksRef = useRef<HistoryStacks>(EMPTY_HISTORY);
+  /** Counts pushes, so a run can tell that a new action landed while it was in flight. */
+  const pushes = useRef(0);
   const setGroupMembers = useSetContactGroupMembers();
 
   useResetOnChange([accountId], () => {
     generation.current += 1;
+    stacksRef.current = EMPTY_HISTORY;
     setStacks(EMPTY_HISTORY);
     setToast(null);
     setReport(null);
   });
 
   const apply = useCallback((event: HistoryEvent) => {
-    setStacks((s) => historyReducer(s, event));
+    if (event.type === "push") pushes.current += 1;
+    stacksRef.current = historyReducer(stacksRef.current, event);
+    setStacks(stacksRef.current);
   }, []);
 
   const showToast = useCallback((text: string, undoable: boolean) => {
@@ -98,7 +111,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
           failedCount: action.contacts.length - went.length,
         };
       }
-      const op = direction === "do" ? action.op : action.op === "add" ? "remove" : "add";
+      const op = groupOp(action, direction);
       const went = [];
       for (const change of action.changes) {
         const ids = change.contacts.map((c) => c.id);
@@ -164,43 +177,41 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   const undoEntry = stacks.undo.at(-1) ?? null;
   const redoEntry = stacks.redo.at(-1) ?? null;
 
-  const undo = useCallback(
-    () =>
+  /**
+   * Undo the entry on top of the undo stack, or redo the one on top of the
+   * redo stack. A run that went through moves the entry to the other stack,
+   * unless a new action landed meanwhile: the linear model then has nothing
+   * to redo, so the entry leaves both stacks. A run that failed in part drops
+   * the entry and says what happened in the banner.
+   */
+  const step = useCallback(
+    (from: "undo" | "redo") =>
       exclusive(async (gen) => {
-        if (!undoEntry) return;
-        const { action } = undoEntry;
-        const outcome = await run({ action, direction: "undo" });
+        const entry: HistoryEntry | undefined = stacksRef.current[from].at(-1);
+        if (!entry) return;
+        const { action } = entry;
+        const direction = from === "undo" ? "undo" : "do";
+        const pushesBefore = pushes.current;
+        const outcome = await run({ action, direction });
         if (gen !== generation.current) return;
         if (outcome.failedCount === 0) {
-          apply({ type: "undone", id: undoEntry.id });
-          showToast(undoneText(action), false);
+          const moved = pushes.current === pushesBefore;
+          apply(
+            moved
+              ? { type: from === "undo" ? "undone" : "redone", id: entry.id }
+              : { type: "drop", id: entry.id },
+          );
+          showToast(from === "undo" ? undoneText(action) : actionText(action), false);
           return;
         }
-        apply({ type: "drop", id: undoEntry.id });
+        apply({ type: "drop", id: entry.id });
         setToast(null);
-        setReport(partialFailureText(action, "undo", outcome.doneCount, outcome.failedCount));
+        setReport(partialFailureText(action, direction, outcome.doneCount, outcome.failedCount));
       }),
-    [apply, exclusive, run, showToast, undoEntry],
+    [apply, exclusive, run, showToast],
   );
-
-  const redo = useCallback(
-    () =>
-      exclusive(async (gen) => {
-        if (!redoEntry) return;
-        const { action } = redoEntry;
-        const outcome = await run({ action, direction: "do" });
-        if (gen !== generation.current) return;
-        if (outcome.failedCount === 0) {
-          apply({ type: "redone", id: redoEntry.id });
-          showToast(actionText(action), false);
-          return;
-        }
-        apply({ type: "drop", id: redoEntry.id });
-        setToast(null);
-        setReport(partialFailureText(action, "do", outcome.doneCount, outcome.failedCount));
-      }),
-    [apply, exclusive, run, showToast, redoEntry],
-  );
+  const undo = useCallback(() => step("undo"), [step]);
+  const redo = useCallback(() => step("redo"), [step]);
 
   const clear = useCallback(() => {
     apply({ type: "clear" });

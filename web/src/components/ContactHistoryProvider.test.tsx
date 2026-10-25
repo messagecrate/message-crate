@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useClearContactHistory, useContactHistory } from "../hooks/useContactHistory";
 import { ApiError } from "../lib/api";
 import { restoreContact, trashContact } from "../lib/serverApi";
+import { act } from "../test/act";
+import { deferred } from "../test/deferred";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { setupUser } from "../test/user";
@@ -47,6 +49,30 @@ function Harness() {
       </button>
       <button type="button" onClick={() => void history.redo()}>
         Redo
+      </button>
+      <button
+        type="button"
+        onClick={async () => {
+          // One render's undo, called twice, as a held Ctrl+Z does before the
+          // screen draws the first one's result.
+          const { undo } = history;
+          await undo();
+          await undo();
+        }}
+      >
+        Undo twice
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          history.push({
+            kind: "group",
+            op: "add",
+            changes: [{ group: "Family", contacts: [ada] }],
+          })
+        }
+      >
+        Add Ada to Family
       </button>
       <button type="button" onClick={clear}>
         Delete for good
@@ -164,7 +190,7 @@ describe("ContactHistoryProvider", () => {
 
     expect(restoreMock).toHaveBeenCalledTimes(3);
     expect(screen.getByTestId("report")).toHaveTextContent(
-      "Restored 2 contacts; 1 is no longer in the Trash",
+      "Restored 2 contacts. 1 is no longer in the Trash.",
     );
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
@@ -205,5 +231,35 @@ describe("ContactHistoryProvider", () => {
     );
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
     expect(toast()).toBeNull();
+  });
+
+  it("undoes the next entry down when one render's undo runs twice", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Delete three" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Delete Mother" }));
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Undo twice" }));
+    await settle();
+    expect(restoreMock.mock.calls.map(([id]) => id)).toEqual([1, 1, 2, 3]);
+    expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
+  });
+
+  it("has nothing to redo when a new action lands while an undo is in flight", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Delete Mother" }));
+    await settle();
+
+    const restored = deferred<void>();
+    restoreMock.mockReturnValue(restored.promise);
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await user.click(screen.getByRole("button", { name: "Add Ada to Family" }));
+    await act(async () => restored.resolve());
+    await settle();
+
+    expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
   });
 });
