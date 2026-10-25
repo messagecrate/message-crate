@@ -976,6 +976,8 @@ through its own query cache rather than the browser's.
 
 ## Protective headers
 
+### API-70 Every answer carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`
+
 Every answer, the website's built files as well as `/v1`, `/health` and the
 OpenAPI UI, carries `Content-Security-Policy`, `X-Content-Type-Options:
 nosniff` and `Referrer-Policy: no-referrer`, unless the route sets the header

@@ -416,7 +416,7 @@ fn uri_with_hidden_values(uri: &axum::http::Uri) -> String {
 }
 
 /// The `Content-Security-Policy` on every answer (#2073). Each directive's
-/// reason is in `docs/architecture/rules/http-api.md`, "Protective headers".
+/// reason is in `docs/architecture/rules/http-api.md`, API-70.
 pub(crate) const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; \
      style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; \
      media-src 'self' blob: http: https:; connect-src 'self' http: https:; \
