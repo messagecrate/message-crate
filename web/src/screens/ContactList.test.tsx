@@ -708,6 +708,26 @@ describe("ContactList", () => {
       expect(restoreMock).not.toHaveBeenCalled();
     });
 
+    it("undoes with Ctrl+Z while focus is in the docked contact pane", async () => {
+      const user = setupUser();
+      render(
+        <aside role="dialog" aria-label="Alice">
+          <button type="button">Edit name</button>
+        </aside>,
+      );
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+      await settle();
+
+      await user.click(screen.getByRole("button", { name: "Edit name" }));
+      await user.keyboard("{Control>}z{/Control}");
+      await settle();
+      expect(restoreMock).toHaveBeenCalledWith(1);
+    });
+
     it("leaves Ctrl+Z alone while the Delete Contacts dialog is open", async () => {
       const user = setupUser();
       renderList();

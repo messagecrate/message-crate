@@ -106,6 +106,11 @@ function contactMatchesFilter(c: Contact, filter: string): boolean {
   return matchingHandles(c.addresses, filter).length > 0;
 }
 
+/** `row` as `contacts` holds it now, or null when the list no longer holds it. */
+function liveRow(row: Contact, contacts: readonly Contact[]): Contact | null {
+  return contacts.find((c) => c.id === row.id) ?? null;
+}
+
 /** A contact as an Undo entry records it: its id and the label the toast names it by. */
 function historyContact(c: Contact): HistoryContact {
   return { id: Number(c.id), label: contactLabelText(c.name, c.addresses) };
@@ -303,7 +308,7 @@ export default function ContactList({
       targetContacts.length > 0
         ? targetContacts
         : assignTargetsRef.current
-            .map((c) => contacts.find((x) => x.id === c.id) ?? null)
+            .map((c) => liveRow(c, contacts))
             .filter((c): c is Contact => c !== null),
     [targetContacts, contacts],
   );
@@ -361,11 +366,11 @@ export default function ContactList({
       if (targets.length === 0) return Promise.resolve(null);
       const ids = targets.map((c) => Number(c.id));
       const key = name.toLowerCase();
-      // The live row, not the one the ref kept: a toggle patches `contacts`,
-      // and the ref's rows predate it while the menu's contact is filtered out.
+      // The live row, as `assignTargets` reads it: the ref's rows predate
+      // any toggle made while the menu's contact is filtered out.
       const changed = targets.filter((c) => {
-        const live = contacts.find((x) => x.id === c.id) ?? c;
-        return (live.groups ?? []).some((g) => g.toLowerCase() === key) !== enable;
+        const row = liveRow(c, contacts) ?? c;
+        return (row.groups ?? []).some((g) => g.toLowerCase() === key) !== enable;
       });
       // A refused write puts the chips back in the mutation's onError, and the
       // chips going back is the report, so there is nothing to handle here.

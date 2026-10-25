@@ -14,7 +14,9 @@ function keepKeysFrom(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return true;
-  return target.closest('[role="dialog"], [role="menu"], [data-mc-overlay]') !== null;
+  // A modal (ModalShell marks its overlay) or a popover menu, but not the
+  // docked contact pane, which is a dialog beside the list rather than over it.
+  return target.closest("[data-mc-modal], [data-mc-overlay], [role='menu']") !== null;
 }
 
 /**
