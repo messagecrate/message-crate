@@ -56,7 +56,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   const [report, setReport] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nextId = useRef(1);
-  /** Changes with the account, so a run that settles after the change records nothing. */
+  /** Changes with the account and on `clear`, so a run that settles after either records nothing. */
   const generation = useRef(0);
   /** Set while a run is in flight; a second press while it runs does nothing. */
   const running = useRef(false);
@@ -179,10 +179,10 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
 
   /**
    * Undo the entry on top of the undo stack, or redo the one on top of the
-   * redo stack. A run that went through moves the entry to the other stack,
-   * unless a new action landed meanwhile: the linear model then has nothing
-   * to redo, so the entry leaves both stacks. A run that failed in part drops
-   * the entry and says what happened in the banner.
+   * redo stack. A run that went through moves the entry to the other stack.
+   * An undo that a new action overtook leaves both stacks instead, because
+   * the linear model has nothing to redo after a new action. A run that
+   * failed in part drops the entry and says what happened in the banner.
    */
   const step = useCallback(
     (from: "undo" | "redo") =>
@@ -195,13 +195,14 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         const outcome = await run({ action, direction });
         if (gen !== generation.current) return;
         if (outcome.failedCount === 0) {
-          const moved = pushes.current === pushesBefore;
-          apply(
-            moved
-              ? { type: from === "undo" ? "undone" : "redone", id: entry.id }
-              : { type: "drop", id: entry.id },
-          );
-          showToast(from === "undo" ? undoneText(action) : actionText(action), false);
+          const overtaken = pushes.current !== pushesBefore;
+          if (from === "redo") apply({ type: "redone", entry });
+          // An undo that a new action overtook leaves nothing to redo.
+          else apply(overtaken ? { type: "drop", id: entry.id } : { type: "undone", id: entry.id });
+          // The newer action's toast, with its Undo, stays.
+          if (!overtaken) {
+            showToast(from === "undo" ? undoneText(action) : actionText(action), false);
+          }
           return;
         }
         apply({ type: "drop", id: entry.id });
@@ -214,6 +215,9 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   const redo = useCallback(() => step("redo"), [step]);
 
   const clear = useCallback(() => {
+    // A run in flight records nothing once it settles: what it would record
+    // may lean on what the delete for good just removed.
+    generation.current += 1;
     apply({ type: "clear" });
     setToast(null);
   }, [apply]);

@@ -43,8 +43,12 @@ export type HistoryEvent =
   | { type: "push"; entry: HistoryEntry }
   /** The entry's undo went through: it moves to the redo stack. */
   | { type: "undone"; id: number }
-  /** The entry's redo went through: it moves back to the undo stack. */
-  | { type: "redone"; id: number }
+  /**
+   * The entry's redo went through: it goes back on top of the undo stack,
+   * even when a new action meanwhile cleared the redo stack it came from,
+   * because the redo was an action too.
+   */
+  | { type: "redone"; entry: HistoryEntry }
   /** The entry's undo or redo failed in part: it leaves both stacks. */
   | { type: "drop"; id: number }
   /** A delete for good, or a change of account: nothing can be undone or redone. */
@@ -66,14 +70,11 @@ export function historyReducer(state: HistoryStacks, event: HistoryEvent): Histo
       if (!entry) return state;
       return { undo: state.undo.filter((e) => e !== entry), redo: [...state.redo, entry] };
     }
-    case "redone": {
-      const entry = state.redo.find((e) => e.id === event.id);
-      if (!entry) return state;
+    case "redone":
       return {
-        undo: capped([...state.undo, entry]),
-        redo: state.redo.filter((e) => e !== entry),
+        undo: capped([...state.undo.filter((e) => e.id !== event.entry.id), event.entry]),
+        redo: state.redo.filter((e) => e.id !== event.entry.id),
       };
-    }
     case "drop":
       return {
         undo: state.undo.filter((e) => e.id !== event.id),

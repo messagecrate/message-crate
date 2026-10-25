@@ -262,4 +262,24 @@ describe("ContactHistoryProvider", () => {
 
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
   });
+
+  it("puts a redo back on the undo stack, and keeps the newer toast, when a new action lands during it", async () => {
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Delete Mother" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+
+    const trashed = deferred<void>();
+    trashMock.mockReturnValue(trashed.promise);
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await user.click(screen.getByRole("button", { name: "Add Ada to Family" }));
+    await act(async () => trashed.resolve());
+    await settle();
+
+    expect(screen.getByTestId("undo")).toHaveTextContent("can undo");
+    expect(toast()).toHaveTextContent("Added Ada to Family");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+  });
 });

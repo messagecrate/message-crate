@@ -38,8 +38,17 @@ describe("historyReducer", () => {
     s = historyReducer(s, { type: "undone", id: 2 });
     expect(ids(s.undo)).toEqual([1]);
     expect(ids(s.redo)).toEqual([2]);
-    s = historyReducer(s, { type: "redone", id: 2 });
+    s = historyReducer(s, { type: "redone", entry: entry(2) });
     expect(ids(s.undo)).toEqual([1, 2]);
+    expect(s.redo).toEqual([]);
+  });
+
+  it("puts a redone entry back on the undo stack after a newer action", () => {
+    let s = pushAll([1]);
+    s = historyReducer(s, { type: "undone", id: 1 });
+    s = pushAll([2], s);
+    s = historyReducer(s, { type: "redone", entry: entry(1) });
+    expect(ids(s.undo)).toEqual([2, 1]);
     expect(s.redo).toEqual([]);
   });
 
