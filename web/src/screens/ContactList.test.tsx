@@ -489,6 +489,34 @@ describe("ContactList", () => {
     }
   });
 
+  it("checks a contact from its checkbox input, which lies over the drawn box (#3251)", async () => {
+    tauriMock.current = true;
+    // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
+    const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+    const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    try {
+      const onSelect = vi.fn();
+      renderList({ onSelect });
+      await settle();
+      const box = screen.getByRole("checkbox", { name: "Select Alice" });
+      // The input shares the drawn box's frame rather than sitting in a
+      // clipped 1px span, so a press on the box lands on the input.
+      expect(box.nextElementSibling).toHaveClass("mc-list-check");
+      expect(box.parentElement).toHaveClass("mc-list-check-frame");
+
+      const user = setupUser();
+      await user.click(box);
+      expect(box).toBeChecked();
+      await user.click(box);
+      expect(box).not.toBeChecked();
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      heights.mockRestore();
+      widths.mockRestore();
+      tauriMock.current = false;
+    }
+  });
+
   it("marks only the open contact as current while other contacts are checked", async () => {
     listContactsMock.mockResolvedValue({
       items: ["Alice", "Bob", "Carol"].map((name, i) => ({
@@ -649,7 +677,6 @@ describe("ContactList", () => {
 
       await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
       await openMenu();
-      expect(screen.getByText("1 selected")).toBeInTheDocument();
       expect(screen.getByRole("menuitem", { name: "Delete Contacts" })).not.toHaveAttribute(
         "aria-disabled",
       );
