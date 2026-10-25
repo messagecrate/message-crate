@@ -147,7 +147,9 @@ change and a URL has to be renamed to match.
 A verb is legal only as a sub-resource of a member, and only when the action is
 not a field write: it crosses a state machine, touches rows other than the
 addressed one, or has no field to write. `setup`, `complete`, `cancel`,
-`discard`, `trash` and `restore` pass. Setting a run's progress marker does
+`discard`, `trash` and `restore` pass. `setup` is spelled as the noun because
+Setup is the product's word for the act (`CONTEXT.md`), and the noun names
+that one act as well as a verb would. Setting a run's progress marker does
 not; that is `PATCH /v1/imports/{id} {stage}`. A verb that merely spells an
 HTTP method never passes: deleting an account is `DELETE /v1/accounts/{id}`.
 
