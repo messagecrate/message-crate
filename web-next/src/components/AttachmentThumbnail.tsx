@@ -43,12 +43,23 @@ export function ThumbnailPlaceholder({
 }
 
 /**
- * Whether loading `src` failed, and the ref and error handler that tell. A row
- * can name a Thumbnail whose file the media pass found damaged, so the thread
- * learns of it only when the load fails, as in `web/`'s `useThumbnail`. The
- * failure belongs to the `src` that failed: a new `src` is tried again.
+ * A Thumbnail `<img>`, inside a link to `href` when one is given, or
+ * `fallback` once loading `src` has failed. A row can name a Thumbnail whose
+ * file the media pass found damaged, so the thread learns of it only when the
+ * load fails, as in `web/`'s `useThumbnail`. The failure belongs to the `src`
+ * that failed: a new `src` is tried again.
  */
-function useImageFailed(src: string) {
+function ThumbnailImage({
+  src,
+  alt,
+  href,
+  fallback,
+}: {
+  src: string;
+  alt: string;
+  href?: string;
+  fallback: React.ReactNode;
+}) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const ref = useRef<HTMLImageElement>(null);
 
@@ -59,25 +70,8 @@ function useImageFailed(src: string) {
     if (el?.complete && el.naturalWidth === 0) setFailedSrc(src);
   }, [src]);
 
-  return {
-    failed: failedSrc === src,
-    ref,
-    onError: () => setFailedSrc(src),
-  };
-}
-
-function ThumbnailImg({
-  src,
-  alt,
-  ref,
-  onError,
-}: {
-  src: string;
-  alt: string;
-  ref: React.Ref<HTMLImageElement>;
-  onError: () => void;
-}) {
-  return (
+  if (failedSrc === src) return fallback;
+  const img = (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       ref={ref}
@@ -85,9 +79,15 @@ function ThumbnailImg({
       alt={alt}
       loading="lazy"
       decoding="async"
-      onError={onError}
+      onError={() => setFailedSrc(src)}
       className="max-h-64 max-w-full rounded-lg"
     />
+  );
+  if (!href) return img;
+  return (
+    <a href={href} className="block w-fit" target="_blank" rel="noreferrer">
+      {img}
+    </a>
   );
 }
 
@@ -105,17 +105,13 @@ export function AttachmentThumbnail({
   url: string;
   thumbnailUrl: string;
 }) {
-  const { failed, ref, onError } = useImageFailed(thumbnailUrl);
-  if (failed) return <ThumbnailPlaceholder attachment={attachment} url={url} />;
   return (
-    <a href={url} className="block w-fit" target="_blank" rel="noreferrer">
-      <ThumbnailImg
-        src={thumbnailUrl}
-        alt={attachment.originalName ?? "attachment"}
-        ref={ref}
-        onError={onError}
-      />
-    </a>
+    <ThumbnailImage
+      src={thumbnailUrl}
+      alt={attachment.originalName ?? "attachment"}
+      href={url}
+      fallback={<ThumbnailPlaceholder attachment={attachment} url={url} />}
+    />
   );
 }
 
@@ -124,7 +120,5 @@ export function AttachmentThumbnail({
  * out, and the notice under it still says why the attachment does not open.
  */
 export function NoticeThumbnail({ src, alt }: { src: string; alt: string }) {
-  const { failed, ref, onError } = useImageFailed(src);
-  if (failed) return null;
-  return <ThumbnailImg src={src} alt={alt} ref={ref} onError={onError} />;
+  return <ThumbnailImage src={src} alt={alt} fallback={null} />;
 }

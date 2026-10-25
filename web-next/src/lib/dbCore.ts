@@ -4,6 +4,10 @@ import Database from "better-sqlite3";
 import { inferHandleType, normalizeHandle, type IdentityType } from "./handleKind";
 import { formatPhoneDisplay } from "./phoneE164";
 import { ensureDbParentDir } from "./paths";
+import type { components } from "./vault/types.generated";
+
+/** A service an identity is on, as `/v1` and the handles table name it. */
+export type IdentityService = components["schemas"]["IdentityService"];
 
 const g = globalThis as unknown as {
   __mvReadonlyDb?: Database.Database | null;
@@ -251,7 +255,7 @@ export function preferredHandleTypeOf(
 }
 
 /** The Text Message service, as the handles table names it: the service a lookup uses unless told another. */
-export const TEXT_MESSAGE_SERVICE = "text_message";
+export const TEXT_MESSAGE_SERVICE: IdentityService = "text_message";
 
 /**
  * Resolve raw handles to handle ids for one platform service, dropping raws
@@ -262,7 +266,7 @@ export function handleIdsForRaws(
   db: Database.Database,
   accountId: string,
   raws: string[],
-  service = TEXT_MESSAGE_SERVICE,
+  service: IdentityService = TEXT_MESSAGE_SERVICE,
 ): number[] {
   const seen = new Map<string, { type: IdentityType; normalized: string }>();
   for (const raw of raws) {

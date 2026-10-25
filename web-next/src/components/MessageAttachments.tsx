@@ -143,7 +143,9 @@ export function MessageAttachments({
                 url={url}
                 thumbnailUrl={thumbnailUrl}
               />
-            ) : null;
+            ) : (
+              <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />
+            );
           case "placeholder":
             return <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />;
           case "link":
