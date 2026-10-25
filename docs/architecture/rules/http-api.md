@@ -1658,7 +1658,7 @@ between pages move the offsets, so pages skipped or repeated messages and
   client steps `offset` by `limit` until it reaches `total`, never by the
   items it got, and never stops on a short or empty page.
 
-### API-119 An account has at most one running Export Run, which a new one replaces and an hour with no page read closes
+### API-119 An account has at most one running Export Run: a new one replaces it, and an hour with no page read closes it
 
 An account has at most one running Export Run, held by a partial unique
 index on `exports(account_id) WHERE status = 'running'`, as for Import Runs.
