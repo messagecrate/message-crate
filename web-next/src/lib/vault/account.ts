@@ -72,7 +72,7 @@ export async function settingsAccount(): Promise<SettingsAccount> {
     noPassword: !profile.has_password,
     hasApiToken: false,
     isDemo: profile.is_demo,
-    isAdmin: profile.is_owner,
+    isAdmin: profile.is_admin,
     preferredName: profile.preferred_name ?? null,
     displayName: ownerDisplayName(profile),
     phones: profile.phones.map((phone) => phone.address),
