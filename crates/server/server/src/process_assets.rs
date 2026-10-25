@@ -320,11 +320,10 @@ pub async fn run(
 ) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
     let account_ids = match opts.account {
-        // No caller names the administrator today: the command line passes
-        // no account, and `reset-demo` names the Demo Account. The full walk
-        // leaves the administrator out (`list_account_ids`), and a caller
-        // that names it is refused the same way, rather than walked into a
-        // warning that its assets directory is missing.
+        // The administrator holds no attachments: the full walk leaves it
+        // out (`list_account_ids`), and an `account` naming it is refused
+        // rather than walked into a warning that its assets directory is
+        // missing.
         Some(account_id) if account_profile::is_admin(account_id) => {
             bail!("the administrator holds no attachments, so there is nothing to process")
         }
