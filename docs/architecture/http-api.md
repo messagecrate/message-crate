@@ -161,7 +161,7 @@ security scheme, so every operation says which it accepts.
 
 | Credential | Made by | Reaches |
 |---|---|---|
-| **Session** | `POST /v1/session` with a username and password | Everything the account may do: browse, import, export, delete, as its permissions allow. The administrator's Session reaches accounts, server settings and the log, and no messages. |
+| **Session** | `POST /v1/session` with a username and password, or `POST /v1/server/setup` for the administrator's first one | Everything the account may do: browse, import, export, delete, as its permissions allow. The administrator's Session reaches accounts, server settings and the log, and no messages. |
 | **API token** | The account, with `import` or `export` scopes capped by its own | The Import and Export pipelines, and asset reads under `export`. Never browsing, never deletion, never the administrator. |
 | **Media Link** | `POST /v1/assets/{sha256}/media-links` from a Session | One asset, its Preview and Thumbnail, for an hour or until its Session ends, without a header, so a media element can stream it. |
 

@@ -80,10 +80,10 @@ It takes the password that way, not on the command line, because a command line 
 It prints **Administrator password set. Log in as admin.** and ends every Session the administrator had open.
 On a Message Crate still in setup it sets the first password instead, and prints **Message Crate set up. Log in as admin.**
 
-### There is no Create Account on the login card
+### Making a new account
 
 Only the administrator creates accounts, with **Add account** under [User Accounts](/docs/user/features/admin/admin-home/#add-an-account).
-The login card offers **Login** only, and no setting lets anyone create their own account.
+The login card has no way to make an account, and no setting lets anyone create their own account.
 
 ## Desktop app
 

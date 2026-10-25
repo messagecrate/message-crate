@@ -1024,11 +1024,12 @@ security scheme with its scopes, so every route says which it accepts.
 ### API-72 A Session carries the account's own permissions and ends after 7 days unused or 30 days from the login
 
 A **Session** is one per logged-in account or administrator, made by
-`POST /v1/session` and ended by `DELETE /v1/session`. It carries the
-account's own permissions: `import`, `export`, `delete`. The administrator's session
+`POST /v1/session`, or by `POST /v1/server/setup` for the administrator's
+first one, and ended by `DELETE /v1/session`. It carries the account's own
+permissions: `import`, `export`, `delete`. The administrator's Session
 carries none of those and reaches only the accounts collection, the server
-settings and the installation's storage totals, because the administrator holds no
-messages. It also reads the country list (`GET /v1/phone-countries`),
+settings and the installation's storage totals, because the administrator
+holds no messages. It also reads the country list (`GET /v1/phone-countries`),
 because the administrator picks the country of a number on an account it
 manages. The OpenAPI document marks each route the administrator's Session
 reaches with the `admin` scope on the `session` scheme.

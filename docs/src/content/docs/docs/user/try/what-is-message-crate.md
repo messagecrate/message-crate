@@ -4,7 +4,7 @@ description: Message Crate reads conversations out of phone backups and makes th
 ---
 
 Message Crate pulls conversations out of phone backups and makes them searchable.
-It runs on a computer its owner controls.
+It runs on a computer the person controls.
 Nothing is sent to a Message Crate cloud service, because there isn't one.
 
 ## Three pieces

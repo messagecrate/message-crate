@@ -31,7 +31,8 @@ pub struct Permissions {
 }
 
 impl Permissions {
-    /// Everything allowed. The default for an account the administrator creates.
+    /// Everything allowed. The default for an account the administrator
+    /// creates.
     pub const fn all() -> Self {
         Self {
             import: true,

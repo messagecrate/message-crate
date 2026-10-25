@@ -35,8 +35,8 @@ export const authCardClass =
 export const authCardBodyClass = "flex min-h-0 flex-1 flex-col";
 
 /**
- * Action row pinned to the bottom of the frame: the primary action does not
- * move when switching between the Login and Create Account tabs. Profile
+ * Action row pinned to the bottom of the frame: the primary action lands in
+ * the same place on the Set Up card as on the Login card. Profile
  * setup uses the same pinned footer for its own submit and back button, so
  * the action still lands in the same place on that screen too — it just
  * carries more below it there.

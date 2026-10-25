@@ -48,7 +48,7 @@ The row of `admin` reads zero, because the administrator holds no messages.
 **Server Settings** holds the attachment size limit, the space the Staging Directory takes on this computer in the desktop app, the Demo Account, and three facts about the server.
 
 Only the administrator creates accounts, under [User Accounts](#user-accounts).
-No setting lets anyone else make one, and the login screen offers **Login** only.
+No setting lets anyone else make one, and the login card has no way to make an account.
 
 ### Attachment size limit
 

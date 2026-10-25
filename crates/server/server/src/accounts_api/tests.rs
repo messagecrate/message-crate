@@ -26,7 +26,8 @@ fn member(id: i64) -> String {
 
 /// The administrator reads any row, an account reads its own, and an account
 /// addressing another's is refused. The refusal is the same whether the
-/// other row exists or not; only the administrator learns that an id is absent.
+/// other row exists or not; only the administrator learns that an id is
+/// absent.
 #[tokio::test]
 async fn the_admin_reaches_every_row_and_an_account_reaches_its_own() {
     let fixture = test_fixture().await;
