@@ -2748,23 +2748,10 @@ async fn address_book_entries(
     fixture: &TestFixture,
     account: &LoggedInAccount,
 ) -> Vec<crate::db::audit_trail::AuditEntry> {
-    use crate::db::audit_trail::{AuditAction, Scope, page};
-    let mut conn = fixture.conn().await;
-    let (entries, _) = page(
-        &mut conn,
-        Scope::Account(account.account_id),
-        100,
-        0,
-        chrono::Utc::now(),
-    )
-    .await
-    .unwrap();
-    let mut loads: Vec<_> = entries
-        .into_iter()
-        .filter(|e| e.action == AuditAction::AddressBookLoaded)
-        .collect();
-    loads.reverse();
-    loads
+    use crate::db::audit_trail::AuditAction;
+    fixture
+        .audit_entries(account.account_id, &[AuditAction::AddressBookLoaded])
+        .await
 }
 
 /// The names of `account`'s contacts, sorted.

@@ -631,22 +631,13 @@ async fn a_file_imported_from_two_sources_counts_once_in_storage() {
 /// conversation for good.
 #[tokio::test]
 async fn emptying_an_empty_trash_writes_no_audit_trail_entry() {
-    use crate::db::audit_trail::{AuditAction, Scope, page};
+    use crate::db::audit_trail::AuditAction;
     let (fixture, alice) = fixture_with_account().await;
     let emptied = || async {
-        let mut conn = fixture.conn().await;
-        let (items, _) = page(
-            &mut conn,
-            Scope::Account(alice.account_id),
-            100,
-            0,
-            chrono::Utc::now(),
-        )
-        .await
-        .unwrap();
-        items
+        fixture
+            .audit_entries(alice.account_id, &[AuditAction::TrashEmptied])
+            .await
             .into_iter()
-            .filter(|e| e.action == AuditAction::TrashEmptied)
             .map(|e| (e.conversations, e.contacts))
             .collect::<Vec<_>>()
     };
@@ -668,27 +659,17 @@ async fn contact_entries(
     fixture: &TestFixture,
     account: &LoggedInAccount,
 ) -> Vec<crate::db::audit_trail::AuditEntry> {
-    use crate::db::audit_trail::{AuditAction, Scope, page};
-    let mut conn = fixture.conn().await;
-    let (mut items, _) = page(
-        &mut conn,
-        Scope::Account(account.account_id),
-        100,
-        0,
-        chrono::Utc::now(),
-    )
-    .await
-    .unwrap();
-    items.retain(|e| {
-        matches!(
-            e.action,
-            AuditAction::ContactsTrashed
-                | AuditAction::ContactsRestored
-                | AuditAction::ContactDeleted
+    use crate::db::audit_trail::AuditAction;
+    fixture
+        .audit_entries(
+            account.account_id,
+            &[
+                AuditAction::ContactsTrashed,
+                AuditAction::ContactsRestored,
+                AuditAction::ContactDeleted,
+            ],
         )
-    });
-    items.reverse();
-    items
+        .await
 }
 
 /// Delete Contacts and its Undo are one request each, and each is one
