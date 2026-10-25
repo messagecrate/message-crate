@@ -76,7 +76,7 @@ export type ImportJobFormValues = AttachmentChoices & {
    * to it. Not a field the person fills in: a new run reads it from
    * `GET /v1/server` before Staging, and it is stored with the run in the
    * form snapshot, so a resume uses the number the run was staged and
-   * reviewed against even when the owner has changed the limit since.
+   * reviewed against even when the administrator has changed the limit since.
    */
   assetMaxBytes?: number;
 };

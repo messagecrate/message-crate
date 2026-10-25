@@ -3,10 +3,10 @@ import ApiTokensTable from "./ApiTokensTable";
 import { useManagedApiTokens } from "./useApiTokens";
 
 /**
- * The API Tokens of an account the owner opened from User Accounts. The owner
+ * The API Tokens of an account the administrator opened from User Accounts. The administrator
  * sees each token's name, permissions and use, and revokes one that has
  * leaked. Making and renaming a token stay with the account's holder, and the
- * owner never sees any part of a token's secret.
+ * administrator never sees any part of a token's secret.
  */
 export function ManagedApiTokensSection({ accountId }: { accountId: number }) {
   const { tokens, loadError, busy, actionError, revokeTarget, setRevokeTarget, revoke } =

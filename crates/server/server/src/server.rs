@@ -160,7 +160,8 @@ impl AssetState {
     }
 }
 
-/// The Demo Account build the owner started, and what writes its bundle.
+/// The Demo Account build the administrator started, and what writes its
+/// bundle.
 #[derive(Debug, Clone)]
 pub(crate) struct DemoState {
     /// The build, if one is running or the last one failed. One per server:
@@ -181,10 +182,10 @@ impl Default for DemoState {
 }
 
 /// What SQLite answered when the server asked for write-ahead logging as it
-/// opened the database ([`OpenDb::wal_error`]), which
-/// `GET /v1/server/settings` reports to the owner: the error SQLite gave, or
-/// `None` when it gave none, because it turned write-ahead logging on or kept
-/// another mode without an error.
+/// opened the database ([`OpenDb::wal_error`]), which `GET /v1/server/settings`
+/// reports to the administrator: the error SQLite gave, or `None` when it gave
+/// none, because it turned write-ahead logging on or kept another mode without
+/// an error.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WalError(pub(crate) Option<Arc<str>>);
 
@@ -293,9 +294,10 @@ impl<T: Serialize> IntoResponse for Created<T> {
     }
 }
 
-/// The routes a stranger may call, with a small body limit so password
-/// hashing cannot be fed huge requests. `POST /v1/accounts` is among them:
-/// the owner's creation shares the route, and a small body is all it needs.
+/// The routes that hash a password, with a small body limit so password
+/// hashing cannot be fed huge requests: logging in and setting up the
+/// server, which a stranger may call, and `POST /v1/accounts`, the
+/// administrator's creation, for which a small body is all it needs.
 fn limited_auth_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
     let (router, spec) = crate::openapi::public_openapi().split_for_parts();
     (

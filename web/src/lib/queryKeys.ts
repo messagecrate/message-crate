@@ -17,8 +17,8 @@
  */
 
 /**
- * Whose Audit Trail a page is: every account's (`"all"`, the owner's), the
- * logged-in account's own (`"own"`), one account the owner has opened
+ * Whose Audit Trail a page is: every account's (`"all"`, the administrator's), the
+ * logged-in account's own (`"own"`), one account the administrator has opened
  * (`"account:<id>"`), or one deleted account's (`"deleted:<id>"`). A live
  * account and a deleted one with the same number never share a key, because
  * the kind leads it.
@@ -140,23 +140,23 @@ export const keys = {
     identities: ["account-profile", "identities"] as const,
   },
   apiTokens: { all: ["api-tokens"] as const },
-  /** The accounts the owner manages. */
-  ownerAccounts: {
-    all: ["owner-accounts"] as const,
-    /** One account the owner has opened. */
-    member: (accountId: number) => ["owner-accounts", accountId] as const,
-    storage: (accountId: number) => ["owner-accounts", accountId, "storage"] as const,
-    identities: (accountId: number) => ["owner-accounts", accountId, "identities"] as const,
-    /** The account's API tokens, as the owner sees them: no masked secret. */
-    apiTokens: (accountId: number) => ["owner-accounts", accountId, "api-tokens"] as const,
+  /** The accounts the administrator manages. */
+  adminAccounts: {
+    all: ["admin-accounts"] as const,
+    /** One account the administrator has opened. */
+    member: (accountId: number) => ["admin-accounts", accountId] as const,
+    storage: (accountId: number) => ["admin-accounts", accountId, "storage"] as const,
+    identities: (accountId: number) => ["admin-accounts", accountId, "identities"] as const,
+    /** The account's API tokens, as the administrator sees them: no masked secret. */
+    apiTokens: (accountId: number) => ["admin-accounts", accountId, "api-tokens"] as const,
     /** One page of the account's Import Runs. Under `storage`, like the run it opens. */
     imports: (accountId: number, page: number) =>
-      ["owner-accounts", accountId, "storage", "imports", page] as const,
+      ["admin-accounts", accountId, "storage", "imports", page] as const,
     /** One page of the account's Export Runs. */
     exports: (accountId: number, page: number) =>
-      ["owner-accounts", accountId, "storage", "exports", page] as const,
+      ["admin-accounts", accountId, "storage", "exports", page] as const,
     importDetail: (accountId: number, id: number | null) =>
-      ["owner-accounts", accountId, "storage", "import", String(id)] as const,
+      ["admin-accounts", accountId, "storage", "import", String(id)] as const,
   },
   imports: {
     all: ["imports"] as const,
@@ -174,7 +174,7 @@ export const keys = {
   /** Pages of an Audit Trail, by whose it is (`AuditTrailKey`). */
   auditTrail: {
     page: (whose: AuditTrailKey, page: number) => ["audit-trail", whose, page] as const,
-    /** The deleted accounts the owner can narrow the Audit Trail to. */
+    /** The deleted accounts the administrator can narrow the Audit Trail to. */
     deletedAccounts: ["audit-trail", "deleted-accounts"] as const,
   },
   serverSettings: { all: ["server-settings"] as const },

@@ -92,11 +92,7 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             ApiError::DemoAccountProtected("x".into()),
             StatusCode::FORBIDDEN,
         ),
-        (ApiError::NotTheOwner("x".into()), StatusCode::FORBIDDEN),
-        (
-            ApiError::RegistrationClosed("x".into()),
-            StatusCode::FORBIDDEN,
-        ),
+        (ApiError::NotTheAdmin("x".into()), StatusCode::FORBIDDEN),
         (
             ApiError::InsufficientScope("x".into()),
             StatusCode::FORBIDDEN,
@@ -234,8 +230,7 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
         ApiError::UsernameTaken,
         ApiError::NameTaken,
         ApiError::DemoAccountProtected,
-        ApiError::NotTheOwner,
-        ApiError::RegistrationClosed,
+        ApiError::NotTheAdmin,
         ApiError::InsufficientScope,
         ApiError::AccountDisabled,
         ApiError::StateConflict,
@@ -327,7 +322,8 @@ async fn a_write_that_meets_a_held_write_lock_answers_database_busy() {
     let fixture =
         crate::test_support::test_fixture_with_busy_timeout(std::time::Duration::ZERO).await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2")
+            .await;
     let server = crate::test_support::serve(&fixture.state).await;
     let mut writer = fixture.conn().await;
     sqlx::query(crate::db::engine::BEGIN_IMMEDIATE_SQL)

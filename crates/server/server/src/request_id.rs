@@ -96,7 +96,7 @@ mod tests {
 
     /// Work a request starts in a task or a thread of its own reads the
     /// request's id, so an Audit Trail entry it writes carries the id its log
-    /// lines carry: the owner's Demo Account build deletes the old Demo
+    /// lines carry: the administrator's Demo Account build deletes the old Demo
     /// Account in a task of its own (#2276).
     #[tokio::test]
     async fn spawned_work_reads_the_id_of_the_request_that_started_it() {

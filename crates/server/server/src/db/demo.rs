@@ -151,7 +151,7 @@ pub async fn tables(conn: &mut SqliteConnection) -> Result<Vec<Table>> {
 
 /// Pass every row of `table` that is not one of `demo`'s to `add`, as one
 /// line of text, in a fixed order: the rows of every other account, the
-/// owner's among them, and the rows that belong to no account, such as
+/// administrator's among them, and the rows that belong to no account, such as
 /// `server_settings`. A row belongs to the account in its `account_id`
 /// column, or, for a table without one, to the account of the row a
 /// `NOT NULL` foreign key points at; a row whose account column is NULL,

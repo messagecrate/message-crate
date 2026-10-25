@@ -9,19 +9,19 @@ import { sectionTitleClass } from "./profileStyles";
 
 /**
  * Change an account's password: the logged-in account's own, or, given
- * `managedAccountId`, one the owner has opened from User Accounts.
+ * `managedAccountId`, one the administrator has opened from User Accounts.
  *
  * One form for both. Two copies of a password form would be two places for
  * the confirmation rule and the token rotation to drift apart.
  *
  * A user account may have no password, so Settings offers Reset password, which clears it.
- * The owner must keep one, so its own Settings pass `canReset={false}`.
- * They also pass `requireCurrent`: the owner's account reaches every other, so
+ * The administrator must keep one, so its own Settings pass `canReset={false}`.
+ * They also pass `requireCurrent`: the administrator's account reaches every other, so
  * the server asks for the password being replaced before it changes it.
  *
  * An account's own change, or a reset, also deletes every API Token the
  * account holds (`change_password_on_conn` on the server), so the message
- * says so. The owner setting another account's password leaves that
+ * says so. The administrator setting another account's password leaves that
  * account's tokens alone.
  */
 export function ChangePasswordSection({
@@ -56,7 +56,7 @@ export function ChangePasswordSection({
         // Changing the password rotates the session, so the old token is dead.
         if (res.token) updateToken(res.token);
       } else {
-        // Someone else's password: the owner's own session is untouched.
+        // Someone else's password: the administrator's own session is untouched.
         await setAccountPassword(managedAccountId, body);
       }
     },

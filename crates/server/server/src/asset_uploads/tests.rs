@@ -346,7 +346,7 @@ fn start_rejects_over_max_bytes() {
     assert!(err.to_string().contains("server limit"));
 }
 
-/// The limit is the owner's and is never moved. A configured part size
+/// The limit is the administrator's and is never moved. A configured part size
 /// above it is brought down to it; one below it is used as configured.
 #[test]
 fn a_part_is_never_larger_than_the_limit() {

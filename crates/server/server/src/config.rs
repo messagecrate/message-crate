@@ -61,7 +61,7 @@ fn known_keys<T>(name: &str, section: Section<T>) -> Result<T> {
     if name == "server" && section.unknown.contains_key("asset_max_bytes") {
         bail!(
             "[server] asset_max_bytes is not a config key. The attachment size limit is a \
-             Server Setting: the owner changes it on the Server Settings screen. Remove the line."
+             Server Setting: the administrator changes it on the Server Settings screen. Remove the line."
         );
     }
     if !section.unknown.is_empty() {
@@ -151,10 +151,10 @@ pub struct ServerConfig {
     #[serde(default = "default_server_bind")]
     pub bind: String,
     /// Largest multipart part, in bytes. Default
-    /// `asset_uploads::DEFAULT_PART_SIZE`. The part size a client is
-    /// told is this or the attachment size limit, whichever is smaller. The
-    /// limit is a Server Setting the owner changes in the app and has no key
-    /// in this file.
+    /// `asset_uploads::DEFAULT_PART_SIZE`. The part size a client is told is
+    /// this or the attachment size limit, whichever is smaller. The limit is a
+    /// Server Setting the administrator changes in the app and has no key in
+    /// this file.
     #[serde(default = "default_asset_part_size")]
     pub asset_part_size: usize,
     /// Seconds a request body may go with no byte arriving before the server

@@ -162,7 +162,7 @@ describe("describeExportRun", () => {
     messages_delivered: 3,
   } as const;
 
-  it("tells the owner which form the scope took and nothing of what it asked for", () => {
+  it("tells the administrator which form the scope took and nothing of what it asked for", () => {
     expect(describeExportRun({ ...run, scope_kind: "everything" })).toBe("Everything");
     expect(describeExportRun({ ...run, scope_kind: "query" })).toBe("A search");
     expect(describeExportRun({ ...run, scope_kind: "selection" })).toBe("Picked by hand");
@@ -175,8 +175,8 @@ describe("describeExportRun", () => {
   });
 });
 
-describe("toImportSummaryView for the owner", () => {
-  it("reads the counts the owner is given, and lists no issues", () => {
+describe("toImportSummaryView for the administrator", () => {
+  it("reads the counts the administrator is given, and lists no issues", () => {
     const view = toImportSummaryView({
       id: 1,
       source: "imessage-ios",
@@ -224,7 +224,7 @@ describe("importBackup", () => {
     expect(importBackup(accountImportRun())).toEqual({ file: null, takenAt: null });
   });
 
-  it("gives the owner nothing of another account's backup", () => {
+  it("gives the administrator nothing of another account's backup", () => {
     expect(
       importBackup({
         id: 1,

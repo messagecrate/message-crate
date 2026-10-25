@@ -91,7 +91,7 @@ Message Crate is designed for anyone who wants to back up, read, and search thei
 ### As A User
 
 The best way to get started is to follow the [User Guide](https://messagecrate.app/docs/user/try/what-is-message-crate/) and try the demo.
-From there you can continue to run Message Crate locally or [self-host](https://messagecrate.app/docs/user/features/owner/run-with-docker/) it with Docker.
+From there you can continue to run Message Crate locally or [self-host](https://messagecrate.app/docs/user/features/admin/run-with-docker/) it with Docker.
 
 ### As A Developer
 

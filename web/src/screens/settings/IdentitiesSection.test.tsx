@@ -125,7 +125,7 @@ describe("IdentitiesSection", () => {
     expect(within(row).getAllByText("—").length).toBeGreaterThanOrEqual(5);
   });
 
-  it("speaks of the account holder when the owner is looking, and asks for that account", () => {
+  it("speaks of the account holder when the administrator is looking, and asks for that account", () => {
     render(<IdentitiesSection profile={profile} managedAccountId={101} />);
     expect(screen.getByRole("heading", { name: "Identities" })).toBeInTheDocument();
     expect(

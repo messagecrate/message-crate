@@ -165,7 +165,7 @@ export function auditEntry(
 }
 
 /**
- * An active account that is not the owner or the Demo Account, with a
+ * An active account that is not the administrator or the Demo Account, with a
  * password, no messages, and every optional field `null` or empty.
  */
 export function account(
@@ -182,7 +182,7 @@ export function account(
     emails: [],
     has_password: true,
     is_demo: false,
-    is_owner: false,
+    is_admin: false,
     last_login_at: null,
     message_count: 0,
     must_set_up_profile: false,

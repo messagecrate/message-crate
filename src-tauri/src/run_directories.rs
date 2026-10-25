@@ -1131,7 +1131,7 @@ mod tests {
     #[test]
     fn an_account_s_staged_bytes_are_its_own_runs_and_the_whole_is_every_run() {
         // #3087: Settings shows an account the space its own Import Runs take
-        // on this computer, and the owner the space every run takes.
+        // on this computer, and the administrator the space every run takes.
         let scratch = Scratch::new();
         let mine = scratch.directories.create("whatsapp", NOW).unwrap();
         let theirs = scratch.directories.create("whatsapp", NOW).unwrap();
@@ -1156,9 +1156,9 @@ mod tests {
 
     #[test]
     fn the_whole_staging_directory_is_everything_in_it_and_runs_kept_elsewhere() {
-        // The owner's total is the whole Staging Directory, a file the person
-        // left in it included, and a run still staged under an earlier
-        // setting.
+        // The administrator's total is the whole Staging Directory, a file
+        // the person left in it included, and a run still staged under an
+        // earlier setting.
         let scratch = Scratch::new();
         let earlier = tempfile::tempdir().unwrap();
         scratch

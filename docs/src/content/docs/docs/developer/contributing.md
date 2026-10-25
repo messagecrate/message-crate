@@ -119,7 +119,7 @@ Later sessions, start with no flags so `data/` stays. With no database yet, the 
 
 `--reset` wipes `data/` and starts empty (no sample inbox): it runs `create-database` first, because the server adds the Demo Account only to a database that does not exist yet. Don't combine `--reset` and `--reset-demo`. `--sqlweb` works with any of these.
 
-`--reset` alone leaves Message Crate **unclaimed**, so the first screen is Create Owner. Add `--owner` to claim it as `admin`/`admin` instead and land on the login. `--reset-demo` seeds the Demo Account and no owner, so it also leaves Message Crate unclaimed unless `--owner` is added.
+`--reset` alone leaves Message Crate in **setup**, so the first screen is Set Up. Add `--admin` to set the administrator's password to `admin` instead and land on the login. `--reset-demo` seeds the Demo Account and sets no administrator password, so it also leaves Message Crate in setup unless `--admin` is added.
 
 ### Open the website (terminal 2)
 
@@ -129,7 +129,7 @@ Install the frontend packages once, then start the Vite UI. Vite is the local we
 cd web && npm ci && npm run dev
 ```
 
-Open **http://localhost:5173**. Press **Explore Demo Account** on the login card. That account holds invented messages. It may export and use the Trash; it may not import or delete for good, so testing an import needs an account of its own (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). `./scripts/run-dev.sh --reset-demo` puts it back. With `--owner`, logging in as `admin` with the password `admin` reaches the same Message Crate as its owner, which manages accounts and reads no messages.
+Open **http://localhost:5173**. Press **Explore Demo Account** on the login card. That account holds invented messages. It may export and use the Trash; it may not import or delete for good, so testing an import needs an account of its own (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). `./scripts/run-dev.sh --reset-demo` puts it back. With `--admin`, logging in as `admin` with the password `admin` reaches the same Message Crate as its administrator, which manages accounts and reads no messages.
 
 Later sessions, skip `npm ci` unless `web/package-lock.json` changed.
 

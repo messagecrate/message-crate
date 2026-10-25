@@ -60,8 +60,8 @@ function placeholderRows(profile: AccountProfile): Identity[] {
  * The account's own identities: the addresses whose messages are the account
  * holder's. Import uses them to decide which messages belong to the holder.
  *
- * Given `managedAccountId`, they are an account's the owner opened from
- * User Accounts, and the owner adds and removes them as the holder does.
+ * Given `managedAccountId`, they are an account's the administrator opened from
+ * User Accounts, and the administrator adds and removes them as the holder does.
  */
 export function IdentitiesSection({
   profile,
@@ -86,7 +86,7 @@ export function IdentitiesSection({
   // counts, so the table never waits on a fetch and never shows a number
   // that is not the server's.
   const identitiesKey = managed
-    ? keys.ownerAccounts.identities(managedAccountId)
+    ? keys.adminAccounts.identities(managedAccountId)
     : keys.accountProfile.identities;
   const fetchIdentities = (signal: AbortSignal) =>
     listAccountIdentities({ signal }, managedAccountId);

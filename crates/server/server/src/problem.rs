@@ -125,12 +125,9 @@ problem_types! {
     /// The demo account refuses a destructive operation.
     DemoAccountProtected => ("demo-account-protected", FORBIDDEN, "Demo account protected")
         from ApiError::DemoAccountProtected(_),
-    /// The account is not the owner.
-    NotTheOwner => ("not-the-owner", FORBIDDEN, "Not the owner")
-        from ApiError::NotTheOwner(_),
-    /// The server does not let strangers create their own account.
-    RegistrationClosed => ("registration-closed", FORBIDDEN, "Registration closed")
-        from ApiError::RegistrationClosed(_),
+    /// The account is not the administrator.
+    NotTheAdmin => ("not-the-admin", FORBIDDEN, "Not the administrator")
+        from ApiError::NotTheAdmin(_),
     /// The token is valid but lacks the scope the route needs.
     InsufficientScope => ("insufficient-scope", FORBIDDEN, "Insufficient scope")
         from ApiError::InsufficientScope(_),
@@ -188,7 +185,7 @@ impl ProblemType {
     /// because a run of them is what a password guesser or an API token that
     /// lost its rights looks like, and for `database-busy`, because a run of
     /// it says the server has more work than its database keeps up with.
-    /// The owner's Logs panel opens at warnings and up. Every other refusal
+    /// The administrator's Logs panel opens at warnings and up. Every other refusal
     /// is logged at `INFO`.
     #[must_use]
     pub fn refusal_is_a_warning(self) -> bool {
@@ -217,7 +214,7 @@ For an import batch, a line that is JSON and breaks a rule of the conversation f
 For an import batch, `line` carries the line of the request body that could not be read, counted from 1 with blank lines included. It is a line of the batch, not of any file: a client that packed the batch from several files turns it into the file and line it came from.".to_string(),
             Self::UnsupportedMediaType => "The request's `Content-Type` is absent or not one this route accepts. An import body is `application/x-ndjson` or `application/jsonl`; a JSON route takes `application/json`. Send the right header with the same body.".to_string(),
             Self::PayloadTooLarge => format!(
-                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, a vCard file sent to `POST /v1/contacts/vcard-address-book` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
+                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the administrator sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/setup` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, a vCard file sent to `POST /v1/contacts/vcard-address-book` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the administrator raise the limit.",
                 byte_size(crate::limits::MAX_AUTH_BODY_BYTES),
                 byte_size(crate::limits::MAX_JSON_BODY_BYTES),
                 byte_size(crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES),
@@ -225,21 +222,20 @@ For an import batch, `line` carries the line of the request body that could not 
                 byte_size(api_types::MAX_IMPORT_BATCH_BYTES),
                 byte_size(crate::limits::MAX_REQUEST_BODY_BYTES),
             ),
-            Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the owner whether the account is disabled. The server waits about a second before it answers each refused attempt, so a wrong password costs a moment before the next try. That wait is not protection for a Message Crate reachable from the internet: that is the job of the proxy in front of it.".to_string(),
+            Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the administrator's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the administrator whether the account is disabled. The server waits about a second before it answers each refused attempt, so a wrong password costs a moment before the next try. That wait is not protection for a Message Crate reachable from the internet: that is the job of the proxy in front of it.".to_string(),
             Self::AuthenticationRequired => "The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. Log in again, or issue a new API token, and send the new token.\n\n\
 Every `401 Unauthorized` answer carries `WWW-Authenticate: Bearer realm=\"message-crate\"`. When the request sent a Bearer token and the server refused it, the challenge adds `error=\"invalid_token\"`.".to_string(),
             Self::UsernameTaken => "The username already belongs to an account on this server. Usernames are compared ignoring case. `demo` belongs to the Demo Account even while that account is absent. Pick another.".to_string(),
             Self::NameTaken => "A Contact Group, Message Tag or Saved Search with this name already exists for the account. Names are compared ignoring case. Pick another, or rename the existing one.".to_string(),
-            Self::DemoAccountProtected => "The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed. `detail` says what it refused. Log in as another account, or run `reset-demo` on the server to restore the Demo Data. The owner can also delete the Demo Account.".to_string(),
-            Self::NotTheOwner => "This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do. Ask the owner to do it, or to give you what you need.".to_string(),
-            Self::RegistrationClosed => "This Message Crate does not let visitors create their own account: its owner has not opened registration, or nobody has claimed it yet. Ask the owner for an account.".to_string(),
-            Self::InsufficientScope => "The credential was accepted but may not do this. An API token carries import and export permissions and never a logged-in session's full access; an account may be restricted from import, export or deletion by the owner. Use a session, a token with the right scope, or ask the owner.".to_string(),
-            Self::AccountDisabled => "The account exists but the owner has disabled it, so an API token it already has may not act. Disabling the account also ended its Session, so a Session token it held answers `authentication-required`. A login to a disabled account answers `invalid-credentials` instead, so a refused login does not tell a guesser that the password was right. Ask the owner to enable it.".to_string(),
+            Self::DemoAccountProtected => "The Demo Account refuses this operation, because it exists to be looked at and reset rather than changed. `detail` says what it refused. Log in as another account, or run `reset-demo` on the server to restore the Demo Data. The administrator can also delete the Demo Account.".to_string(),
+            Self::NotTheAdmin => "This route belongs to the administrator: creating accounts, changing server settings, or anything else only the administrator may do. Ask the administrator to do it, or to give you what you need.".to_string(),
+            Self::InsufficientScope => "The credential was accepted but may not do this. An API token carries import and export permissions and never a logged-in session's full access; an account may be restricted from import, export or deletion by the administrator. Use a session, a token with the right scope, or ask the administrator.".to_string(),
+            Self::AccountDisabled => "The account exists but the administrator has disabled it, so an API token it already has may not act. Disabling the account also ended its Session, so a Session token it held answers `authentication-required`. A login to a disabled account answers `invalid-credentials` instead, so a refused login does not tell a guesser that the password was right. Ask the administrator to enable it.".to_string(),
             Self::SearchQueryInvalid => "The search language refused the query. `detail` names the word and the list it was used on; `word` carries the word, and `did_you_mean` a word the language does have when one is close. The query language is documented in the search reference.".to_string(),
-            Self::StateConflict => "The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. `detail` says which. Read the resource's current state and choose the operation it allows.".to_string(),
+            Self::StateConflict => "The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate whose administrator already has a password, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own, a contact merge that names a contact in the Trash or one holding one of the account's own identities, or an undo of a contact merge that is not the account's most recent. `detail` says which. Read the resource's current state and choose the operation it allows.".to_string(),
             Self::IdentityExists => "The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number. `detail` names that identity and who holds it, and `holder` says the same for a program: `{\"kind\": \"contact\", \"contact_id\": …, \"name\": …}` for a contact (the name is empty for a contact with no name), `{\"kind\": \"account\"}` for one of the account's own identities, or `{\"kind\": \"nobody\"}`. Nothing changed. To join the two, send the same request again with `merge` set to `true`: every conversation, message and reaction of the number written without its `+` moves to the identity that holds the `+` form, and a one-to-one conversation with each becomes one. A number on a contact whose `+` form is one of the account's own identities is never joined from the contact: `PATCH /v1/contacts/{id}` answers `409 Conflict` (`state-conflict`) for it, and `PATCH /v1/accounts/{id}` joins it once the number is one of the account's identities too.".to_string(),
             Self::AssetUploadInvalid => "Something about the upload does not match what the server expected: the bytes do not hash to the claimed SHA-256, a part number is out of range or a part the wrong length, or a completion names parts that never arrived. `detail` says which. Start the upload again. An upload id that names no upload answers `not-found`, and a server that cannot store the file answers `500`.".to_string(),
-            Self::NotFound => "No resource at that address exists for this account. An id that belongs to another account answers this too, so an unknown id and a forbidden one look the same, with one exception: the `{id}` of `/v1/accounts/{id}` itself. A caller who is neither the owner nor the account it names gets `403 Forbidden` there, whether or not the account exists. An id nested under it, such as another account's API token, still answers this.".to_string(),
+            Self::NotFound => "No resource at that address exists for this account. An id that belongs to another account answers this too, so an unknown id and a forbidden one look the same, with one exception: the `{id}` of `/v1/accounts/{id}` itself. A caller who is neither the administrator nor the account it names gets `403 Forbidden` there, whether or not the account exists. An id nested under it, such as another account's API token, still answers this.".to_string(),
             Self::MethodNotAllowed => "The path exists but does not take this method. The OpenAPI document lists each route's methods.".to_string(),
             Self::NotAcceptable => "The request's `Accept` header named nothing this route can produce. Every `/v1` route but the five that answer a file (the asset download, its preview, its thumbnail, the address book export and a file of the server's log) answers `application/json`, and a failure `application/problem+json`; send `Accept: application/json`, `*/*`, or no `Accept` at all.".to_string(),
             Self::MediaLinkInvalid => format!(
@@ -305,8 +301,7 @@ pub mod openapi {
         UsernameTaken,
         NameTaken,
         DemoAccountProtected,
-        NotTheOwner,
-        RegistrationClosed,
+        NotTheAdmin,
         SearchQueryInvalid,
         StateConflict,
         IdentityExists,
@@ -356,7 +351,7 @@ mod tests {
     }
 
     /// A busy database is logged at `WARN`, so a run of them shows in the
-    /// owner's Logs panel, while a server told to stop is routine (#2084).
+    /// administrator's Logs panel, while a server told to stop is routine (#2084).
     #[test]
     fn a_busy_database_is_a_warning_and_a_stopping_server_is_not() {
         assert!(ProblemType::DatabaseBusy.refusal_is_a_warning());

@@ -65,10 +65,8 @@ pub enum ApiError {
     NameTaken(String),
     /// `403 Forbidden`: the demo account refuses a destructive operation.
     DemoAccountProtected(String),
-    /// `403 Forbidden`: the route belongs to the owner.
-    NotTheOwner(String),
-    /// `403 Forbidden`: the server does not let strangers create their own account.
-    RegistrationClosed(String),
+    /// `403 Forbidden`: the route belongs to the administrator.
+    NotTheAdmin(String),
     /// `403 Forbidden`: the credential is valid but lacks the scope the route needs.
     InsufficientScope(String),
     /// `403 Forbidden`: the account may not log in or act.
@@ -171,8 +169,7 @@ impl ApiError {
             | Self::UsernameTaken(m)
             | Self::NameTaken(m)
             | Self::DemoAccountProtected(m)
-            | Self::NotTheOwner(m)
-            | Self::RegistrationClosed(m)
+            | Self::NotTheAdmin(m)
             | Self::InsufficientScope(m)
             | Self::AccountDisabled(m)
             | Self::StateConflict(m)

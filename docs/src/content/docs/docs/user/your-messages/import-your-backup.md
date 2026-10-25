@@ -4,7 +4,7 @@ description: Point the desktop app's Import form at the backup, an iPhone's back
 ---
 
 This step reads the phone's backup, an iPhone's backup directory or an SMS Backup & Restore `.xml` file, and stores its messages in the Message Crate.
-It happens in the desktop app, logged in as the account made in [Create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/).
+It happens in the desktop app, logged in as the account made in [Set up the administrator and create an account](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/).
 
 ## Open Import
 
@@ -12,7 +12,7 @@ In the left panel, under **Messages**, select **Import**.
 
 ![The Import form with iMessage and iPhone backup selected](../../../../../assets/user-guide/import-form.png)
 
-The Owner's login doesn't show **Import**, because the Owner holds no messages.
+The administrator's login doesn't show **Import**, because the administrator holds no messages.
 
 ## Fill in the form
 
@@ -87,12 +87,12 @@ The Demo Account has done its job once real messages are in.
 Deleting it is optional. It holds nothing real, and nothing in it mixes with another account.
 While it exists, anyone who reaches the server can open it from the login screen.
 
-1. Log out, and log in as the Owner.
+1. Log out, and log in as `admin`.
 2. On **User Accounts**, select **demo**.
 3. Open **Danger zone** and select **Delete account**.
 4. Confirm with **Delete account**.
 
 The **Explore Demo Account** button leaves the login screen.
-The Owner brings the Demo Account back under [Server Settings](/docs/user/features/owner/owner-home/#demo-account) with **Add Demo Account**.
+The administrator brings the Demo Account back under [Server Settings](/docs/user/features/admin/admin-home/#demo-account) with **Add Demo Account**.
 
 Next: [Where to go next](/docs/user/your-messages/where-to-go-next/).

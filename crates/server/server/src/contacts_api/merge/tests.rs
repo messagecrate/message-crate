@@ -8,7 +8,7 @@ use crate::db::contact_merges::MAX_MERGED_CONTACTS;
 use crate::db::handles::upsert_handle_row;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, conversation_header, expect_problem, fixture_with_account,
+    LoggedInAccount, TestFixture, conversation_header, expect_problem, fixture_with_account,
     get_status, import_jsonl_text, message_line, post_json, post_json_raw,
 };
 
@@ -119,7 +119,7 @@ async fn import_records(conn: &mut SqliteConnection, contact_id: i64) -> Vec<(i6
 /// Merge `from` into `target` and answer the merged contact.
 async fn merge(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     target: i64,
     from: &[i64],
 ) -> serde_json::Value {
@@ -135,7 +135,7 @@ async fn merge(
 /// Undo the merge into `target` and answer the target.
 async fn unmerge(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     target: i64,
 ) -> serde_json::Value {
     post_json(
@@ -148,7 +148,7 @@ async fn unmerge(
 }
 
 /// The ids the Contacts list shows, in its order.
-async fn listed(fixture: &TestFixture, account: &RegisteredAccount) -> Vec<i64> {
+async fn listed(fixture: &TestFixture, account: &LoggedInAccount) -> Vec<i64> {
     let page: serde_json::Value =
         crate::test_support::get_json(&fixture.state, "/v1/contacts", &account.token).await;
     page["items"]

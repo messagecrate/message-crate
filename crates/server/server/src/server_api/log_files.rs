@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`: the
-//! server's log files, listed and downloaded whole, the owner's alone
-//! (`docs/architecture/rules/server-log.md`).
+//! server's log files, listed and downloaded whole, the administrator's
+//! alone (`docs/architecture/rules/server-log.md`).
 
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use tokio::io::AsyncReadExt as _;
 
 use crate::api_error::ApiError;
-use crate::auth::Owner;
+use crate::auth::Admin;
 use crate::config::Config;
 use crate::extract::{Json, Path, Query};
 use crate::logging::{LogFile, list_files, log_dir, log_file_path};
@@ -29,12 +29,12 @@ pub(crate) struct ListLogFilesQuery {
 ///
 /// The server writes to the newest, and starts the next before a line would
 /// carry it past 50 MB. It keeps 5, and deletes the oldest when one more
-/// starts. The owner's alone.
+/// starts. The administrator's alone.
 #[utoipa::path(
     get,
     path = "/v1/server/log-files",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     params(
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
         ("offset" = Option<usize>, Query, description = "Rows to skip")
@@ -45,7 +45,7 @@ pub(crate) struct ListLogFilesQuery {
 )]
 pub(crate) async fn list_log_files(
     State(cfg): State<Arc<Config>>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Query(query): Query<ListLogFilesQuery>,
 ) -> Result<Json<Page<LogFile>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
@@ -58,12 +58,12 @@ pub(crate) async fn list_log_files(
 ///
 /// The answer is `text/plain`, an attachment named for the file. The newest
 /// file is answered as it stood when the download started; lines written
-/// while it downloads are in the next one. The owner's alone.
+/// while it downloads are in the next one. The administrator's alone.
 #[utoipa::path(
     get,
     path = "/v1/server/log-files/{id}",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     params(("id" = i64, Path, description = "The file's id, from `GET /v1/server/log-files`")),
     responses(
         (
@@ -77,7 +77,7 @@ pub(crate) async fn list_log_files(
 )]
 pub(crate) async fn get_log_file(
     State(cfg): State<Arc<Config>>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Path(id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let not_found = || ApiError::NotFound(format!("the server's log has no file {id}"));

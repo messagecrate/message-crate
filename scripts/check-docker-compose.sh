@@ -8,18 +8,17 @@
 # Both Compose files drop every Linux capability, set no-new-privileges and
 # make the root filesystem read-only (#2178). This script checks that both
 # carry the same settings, that both publish the server on 127.0.0.1 alone
-# (#2063), that the container Compose starts has them, and
-# that the server still works under them: the health check passes, the Demo
-# Account logs in, and an account the owner creates imports a conversation
-# with a video, waits for the media pass to make its Thumbnail and Preview,
-# and exports it again (#2658). Last, it stops the stack and checks the
-# server exited on its own within the stop_grace_period both files set,
-# rather than being killed by Docker (#2122). A server that writes outside
-# /app/data or /tmp at start, during an import, in the media pass or during
-# an export fails here rather than in a self-hoster's container. The
-# conversation is
-# tests/fixtures/docker-compose-check/conversation.jsonl, and its video is
-# the server's own test fixture crates/server/server/tests/fixtures/media/hevc.mov,
+# (#2063), that the container Compose starts has them, and that the server
+# still works under them: the health check passes, the Demo Account logs in,
+# and an account the administrator creates imports a conversation with a
+# video, waits for the media pass to make its Thumbnail and Preview, and
+# exports it again (#2658). Last, it stops the stack and checks the server
+# exited on its own within the stop_grace_period both files set, rather than
+# being killed by Docker (#2122). A server that writes outside /app/data or
+# /tmp at start, during an import, in the media pass or during an export
+# fails here rather than in a self-hoster's container. The conversation is
+# tests/fixtures/docker-compose-check/conversation.jsonl, and its video is the
+# server's own test fixture crates/server/server/tests/fixtures/media/hevc.mov,
 # an HEVC video, which needs both a Thumbnail and a Preview.
 #
 # --website also runs scripts/check-served-website.sh against the stack: the
@@ -112,7 +111,7 @@ fi
 # Both files publish the server to the host's loopback alone, as the
 # `docker run` command in Run Message Crate with Docker does (#2063). A
 # port published on every interface reaches the whole network over plain
-# HTTP before the installer has claimed the Message Crate. Run on another
+# HTTP before the installer has set up the Message Crate. Run on another
 # machine says how to publish it on the network.
 for file in docker/compose.yml docker/compose.release.yml; do
   open_ports="$(docker compose -f "${file}" config --format json |
@@ -175,21 +174,22 @@ if [[ "${username}" != "demo" ]]; then
   failures=$((failures + 1))
 fi
 
-# Before the import below, which claims the Message Crate.
+# Before the import below, which sets up the Message Crate.
 if [[ "${WEBSITE}" == "true" ]] && ! ./scripts/check-served-website.sh "${BASE}"; then
   failures=$((failures + 1))
 fi
 
 # What a self-hoster's container does after it starts, under the same
 # read-only root filesystem: an import with an attachment, the media pass,
-# and an export. The Demo Account may not import, so the owner claims the
-# Message Crate and creates an account for it.
+# and an export. The Demo Account may not import, so the check sets up
+# the Message Crate with the administrator's password, and the
+# administrator creates an account for it.
 FIXTURE_JSONL="tests/fixtures/docker-compose-check/conversation.jsonl"
 FIXTURE_VIDEO="crates/server/server/tests/fixtures/media/hevc.mov"
 # The fingerprint the conversation names. The server refuses the upload
 # when the video's bytes do not match it.
 VIDEO_SHA="$(jq -r 'select(.attachments) | .attachments[].digest_sha256' "${FIXTURE_JSONL}")"
-OWNER_PASSWORD="Compose-Check-Owner-7q2Lx9Vb"
+ADMIN_PASSWORD="Compose-Check-Admin-7q2Lx9Vb"
 READER_PASSWORD="Compose-Check-Reader-3kN8wZr4"
 
 # One call to the server: METHOD PATH [curl arguments...]. Prints the body,
@@ -216,10 +216,10 @@ api() {
 # The import, media pass and export. Each step stops at its first failure,
 # so a later step never reports a failure the earlier one caused.
 import_media_export() {
-  local owner reader import_id export_id attachment state
-  owner="$(api POST /v1/server/claim -H 'Content-Type: application/json' \
-    -d "{\"username\":\"keeper\",\"password\":\"${OWNER_PASSWORD}\"}" | jq -r .token)" || return 1
-  api POST /v1/accounts -H "Authorization: Bearer ${owner}" -H 'Content-Type: application/json' \
+  local admin reader import_id export_id attachment state
+  admin="$(api POST /v1/server/setup -H 'Content-Type: application/json' \
+    -d "{\"password\":\"${ADMIN_PASSWORD}\"}" | jq -r .token)" || return 1
+  api POST /v1/accounts -H "Authorization: Bearer ${admin}" -H 'Content-Type: application/json' \
     -d "{\"username\":\"reader\",\"password\":\"${READER_PASSWORD}\"}" >/dev/null || return 1
   reader="$(api POST /v1/session -H 'Content-Type: application/json' \
     -d "{\"username\":\"reader\",\"password\":\"${READER_PASSWORD}\"}" | jq -r .token)" || return 1

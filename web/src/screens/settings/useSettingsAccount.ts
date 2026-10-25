@@ -9,8 +9,8 @@ import { getAccount, getAccountProfile, updateAccount } from "../../lib/serverAp
  * The account a Settings screen is about.
  *
  * With no id it is the logged-in account, from the entry every other screen
- * reads. With an id it is an account the owner has opened from User
- * Accounts, read from the same `/v1/accounts/{id}` row under the owner's list
+ * reads. With an id it is an account the administrator has opened from User
+ * Accounts, read from the same `/v1/accounts/{id}` row under the administrator's list
  * entry, so a change to the list refreshes it.
  */
 export function useSettingsAccount(managedAccountId?: number): {
@@ -21,7 +21,7 @@ export function useSettingsAccount(managedAccountId?: number): {
   const { data, isPending, error } = useRouteQuery(
     managedAccountId === undefined
       ? keys.accountProfile.all
-      : keys.ownerAccounts.member(managedAccountId),
+      : keys.adminAccounts.member(managedAccountId),
     (signal) =>
       managedAccountId === undefined
         ? getAccountProfile({ signal })
@@ -32,7 +32,7 @@ export function useSettingsAccount(managedAccountId?: number): {
 
 /**
  * Change the name, time zone or identities of the account a Settings screen
- * is about: the logged-in one, or one the owner opened.
+ * is about: the logged-in one, or one the administrator opened.
  *
  * The server answers with the account as it now stands, which goes into the
  * entry the screen reads, and the account's cache is marked stale once the
@@ -46,7 +46,7 @@ export function useUpdateSettingsProfile(
   const managed = useRouteMutation<AccountProfile, Error, AccountProfileChange>({
     mutationFn: (body) => updateAccount(managedAccountId ?? 0, body),
     onSuccess: (profile) => {
-      cache.set(keys.ownerAccounts.member(profile.account_id), profile);
+      cache.set(keys.adminAccounts.member(profile.account_id), profile);
     },
   });
   return managedAccountId === undefined ? own : managed;

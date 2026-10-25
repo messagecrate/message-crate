@@ -34,7 +34,7 @@ export default function LoginForm({
       }
       const url = serverUrl.trim();
       // Re-sync the API client with the address this form is showing, the
-      // same as `CreateAccountForm` — `connect()` on the login card can
+      // same as `SetupForm` — `connect()` on the login card can
       // leave the client pointed at a bad host while the form still holds
       // the good address.
       setBaseUrl(url);

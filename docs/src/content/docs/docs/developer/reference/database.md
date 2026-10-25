@@ -241,7 +241,7 @@ Removing the identity again puts them back. The rule is CONTACT-48 in
 
 ## How storage sizes are measured
 
-The owner's Dashboard reports what the database takes on disk. Every
+The administrator's Dashboard reports what the database takes on disk. Every
 figure is measured from the database. The queries are in
 `crates/server/server/src/db/storage.rs`.
 

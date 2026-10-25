@@ -7,15 +7,15 @@ use ir::IdentityType;
 use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
-    expect_problem_response, fixture_with_account, get_raw, get_status, post_json, post_json_raw,
-    post_status, register_via_api, stored_time, test_fixture,
+    ConversationRow, LoggedInAccount, MessageRow, TestFixture, add_account_and_log_in,
+    expect_problem, expect_problem_response, fixture_with_account, get_raw, get_status, post_json,
+    post_json_raw, post_status, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
 /// A fixture, a logged-in account, and `handles` linked as contacts (one
 /// contact per phone, named `Contact 0`, `Contact 1`, ...).
-async fn contacts_fixture_with_handles(handles: &[&str]) -> (TestFixture, RegisteredAccount) {
+async fn contacts_fixture_with_handles(handles: &[&str]) -> (TestFixture, LoggedInAccount) {
     let (fixture, account) = fixture_with_account().await;
     if !handles.is_empty() {
         let mut conn = fixture.state.db.acquire().await.unwrap();
@@ -34,7 +34,7 @@ async fn contacts_fixture_with_handles(handles: &[&str]) -> (TestFixture, Regist
 
 /// A fixture, a logged-in account, and one contact linked to `handle` that
 /// is then trashed.
-async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, RegisteredAccount) {
+async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, LoggedInAccount) {
     let (fixture, account) = fixture_with_account().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     let contact_id =
@@ -51,8 +51,8 @@ async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, Reg
 /// A second logged-in account in the same server, with `handle` linked to
 /// one of its contacts. Used to prove `/v1/contacts/unmatched-identities` is scoped to
 /// the calling account rather than the whole database.
-async fn account_with_handle(fixture: &TestFixture, handle: &str) -> RegisteredAccount {
-    let account = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+async fn account_with_handle(fixture: &TestFixture, handle: &str) -> LoggedInAccount {
+    let account = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     insert_contact_with_handle(&mut conn, account.account_id, "Other", handle).await;
     account
@@ -2620,7 +2620,7 @@ const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,service,identity,grou
 /// `POST /v1/contacts` with a `text/csv` body.
 async fn load_address_book(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     query: &str,
     body: impl Into<reqwest::Body>,
 ) -> (StatusCode, String) {
@@ -2638,7 +2638,7 @@ async fn load_address_book(
 /// the answer a file, and the body.
 async fn get_address_book(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     body: serde_json::Value,
     accept: Option<&str>,
 ) -> (StatusCode, String, String, String) {
@@ -3252,7 +3252,7 @@ async fn trashed_contact_row_count(conn: &mut SqliteConnection, account_id: i64,
 /// A logged-in account with one named contact on `+15550100`, in one
 /// conversation (id 1) holding two messages, and already in the trash.
 /// Returns the account and the contact's id.
-async fn trashed_contact_fixture() -> (TestFixture, RegisteredAccount, i64) {
+async fn trashed_contact_fixture() -> (TestFixture, LoggedInAccount, i64) {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
     let mut conn = fixture.conn().await;
     insert_one_to_one_conversation(
@@ -3366,7 +3366,7 @@ async fn contact_delete_refuses_a_contact_that_is_not_in_the_trash() {
 #[tokio::test]
 async fn contact_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_contact_fixture().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     let (status, text) =
         crate::test_support::delete_raw(&fixture.state, "/v1/contacts/999999", &alice.token).await;
@@ -3555,7 +3555,8 @@ async fn contact_trash_404s_for_another_accounts_contact() {
         crate::test_support::get_json(&fixture.state, "/v1/contacts", &alice.token).await;
     let alice_contact_id = alice_list["items"][0]["id"].as_i64().unwrap();
 
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     // Bob trashing Alice's contact id must 404, not 403 — a 403 would
     // confirm the id exists in someone else's account.
@@ -3591,7 +3592,8 @@ async fn contact_restore_404s_for_another_accounts_contact() {
         .unwrap();
     drop(conn);
 
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     let (status, text) = post_json_raw(
         &fixture.state,
@@ -3648,7 +3650,7 @@ async fn an_address_book_load_on_the_demo_account_is_refused() {
         // An Unknown: no name, one identity.
         insert_contact_with_handle(&mut conn, demo, "", "+15555550123").await
     };
-    let visitor = RegisteredAccount {
+    let visitor = LoggedInAccount {
         account_id: demo,
         username: "demo".into(),
         token,
@@ -3884,7 +3886,7 @@ async fn mutate_committed(
 /// the body.
 async fn get_vcard_address_book(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     query: &str,
     body: &str,
     accept: Option<&str>,
@@ -3996,7 +3998,7 @@ async fn a_vcard_conversion_refuses_a_name_in_a_charset_it_cannot_read() {
 async fn literal_contact_routes_are_not_captured_by_the_id_route() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let user = register_via_api(&state, "contact-routes", "hunter2hunter2").await;
+    let user = add_account_and_log_in(&state, "contact-routes", "hunter2hunter2").await;
 
     assert_eq!(
         get_status(&state, "/v1/contacts", &user.token).await,

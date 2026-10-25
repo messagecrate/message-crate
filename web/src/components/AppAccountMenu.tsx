@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useAuth } from "../hooks/useAuth";
-import { useIsOwner } from "../hooks/useIsOwner";
+import { useIsAdmin } from "../hooks/useIsAdmin";
 import { focusRingClass } from "../lib/uiStyles";
 import { GearIcon, LogOutIcon, PersonIcon } from "./icons";
 import PlainButton from "./PlainButton";
@@ -21,9 +21,9 @@ export default function AppAccountMenu() {
   const location = useLocation();
   const { logout, accountId } = useAuth();
   const { profile } = useAccountProfile();
-  // The owner's Settings are its own row in User Accounts; every other account has /settings.
-  const { isOwner } = useIsOwner();
-  const settingsPath = isOwner ? `/owner/accounts/${accountId}` : "/settings";
+  // The administrator's Settings are its own row in User Accounts; every other account has /settings.
+  const { isAdmin } = useIsAdmin();
+  const settingsPath = isAdmin ? `/admin/accounts/${accountId}` : "/settings";
   const settingsActive = location.pathname.startsWith(settingsPath);
 
   const username = profile?.username ?? "";

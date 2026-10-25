@@ -14,7 +14,7 @@ What follows depends on what else there is to bring in.
 | WhatsApp, on Android or iPhone | [WhatsApp](/docs/user/import-sources/whatsapp/). Advanced: it needs a separate program and, on Android, a decryption key. |
 | An old backup from SMS Backup+, GO SMS Pro, iMazing, or OpenExtract | [Old backups](/docs/user/import-sources/old-backups/) |
 | A second phone | [Back up the phone](/docs/user/your-messages/back-up-an-iphone/) and [import the backup](/docs/user/your-messages/import-your-backup/) again, into the same account |
-| Another person's messages | A new account for that person, added by the Owner as in [Add an account](/docs/user/your-messages/create-the-owner-and-an-account/#add-an-account). That person then imports their own backup. |
+| Another person's messages | A new account for that person, added by the administrator as in [Add an account](/docs/user/your-messages/set-up-the-administrator-and-create-an-account/#add-an-account). That person then imports their own backup. |
 
 ## Using what is there
 
@@ -36,16 +36,16 @@ The connection is plain HTTP, so anyone on the same network can read what is sen
 ## Host it with Docker
 
 A Message Crate that is on at all hours, or that lives on a home server, runs in Docker instead of inside the app.
-[Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/) starts one, and the desktop app connects to it for importing.
-[Run on another machine](/docs/user/features/owner/run-on-another-machine/) covers a server on a second computer.
+[Run Message Crate with Docker](/docs/user/features/admin/run-with-docker/) starts one, and the desktop app connects to it for importing.
+[Run on another machine](/docs/user/features/admin/run-on-another-machine/) covers a server on a second computer.
 
 A Message Crate in Docker starts empty of real messages: the backups are imported again into it.
 
 ## Running the Message Crate
 
-- [Owner Home](/docs/user/features/owner/owner-home/) is where accounts and server settings are managed.
-- [Update](/docs/user/features/owner/update/) moves the Message Crate to a new version.
-- [Troubleshooting](/docs/user/features/owner/troubleshooting/) lists the common failures.
+- [Admin Home](/docs/user/features/admin/admin-home/) is where accounts and server settings are managed.
+- [Update](/docs/user/features/admin/update/) moves the Message Crate to a new version.
+- [Troubleshooting](/docs/user/features/admin/troubleshooting/) lists the common failures.
 
 The messages live in `data` in the Message Crate Directory, which **Settings → System → Open Message Crate directory** opens.
 A copy of `data`, made while the app is closed, is the backup of the Message Crate.

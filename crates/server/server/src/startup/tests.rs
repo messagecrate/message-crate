@@ -300,7 +300,7 @@ fn docker_stop_waits_longer_than_the_drain() {
         longer(periods[0], compose);
     }
 
-    let docs = "docs/src/content/docs/docs/user/features/owner";
+    let docs = "docs/src/content/docs/docs/user/features/admin";
     let mut started = 0;
     for page in [
         "run-with-docker.md",
@@ -351,7 +351,7 @@ fn user_guide_docker_run_commands_limit_the_container() {
         "--read-only",
         "--tmpfs /tmp",
     ];
-    let docs = "docs/src/content/docs/docs/user/features/owner";
+    let docs = "docs/src/content/docs/docs/user/features/admin";
     let mut started = 0;
     for page in [
         "run-with-docker.md",

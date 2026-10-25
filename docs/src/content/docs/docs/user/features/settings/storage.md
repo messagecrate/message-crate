@@ -7,7 +7,7 @@ The **Storage** tab of **Settings** describes what one account holds and how it 
 Nothing on it can be changed.
 It has four sections, in this order: **Usage**, **Import history**, **Export history**, and **Largest attachments**.
 
-The Owner's own Settings has no **Storage** tab, because the Owner holds no messages.
+The administrator's own Settings has no **Storage** tab, because the administrator holds no messages.
 
 ## Usage
 
@@ -45,7 +45,7 @@ Six figures follow: **Started**, **Finished**, **Messages**, **Attachments**, **
 The date comes from the backup itself: an iPhone backup's own date, the date an SMS Backup & Restore file records, or the date its files were last written where the backup records none.
 When the run read two backups, it shows the later.
 "The backup does not say when it was made" appears for a backup that records no date.
-The owner, reading another account's runs, does not see this line.
+The administrator, reading another account's runs, does not see this line.
 
 A list of four steps comes next, each with the time it took: **Parse backup**, **Attachments**, **Preparing messages**, and **Upload to Message Crate**.
 
@@ -83,9 +83,9 @@ A contact with no name yet is listed as `(unknown)`.
 A run that touched no contact reads "This import changed no contacts."
 
 **Log** closes the record in the desktop app on the computer that ran the import.
-**Open this run's log** shows the run's log under it, newest line first, with **Show**, **Search the log**, and **Download** as on Owner Home's [Logs](/docs/user/features/owner/owner-home/#logs).
+**Open this run's log** shows the run's log under it, newest line first, with **Show**, **Search the log**, and **Download** as on Admin Home's [Logs](/docs/user/features/admin/admin-home/#logs).
 The log stays on that computer, so a browser, or the desktop app on another computer, shows no **Log**.
-An account sees its own runs' logs, and the Owner sees every run's.
+An account sees its own runs' logs, and the administrator sees every run's.
 
 How a run proceeds is covered in [Import](/docs/user/features/messages/import/).
 
@@ -133,15 +133,15 @@ An account with no attachments of known size sees **No attachments with sizes ye
 
 Attachments themselves are covered in [Attachments and media](/docs/user/features/messages/attachments-and-media/).
 
-## What the Owner reads
+## What the administrator reads
 
-The Owner reads another account's **Storage** tab from [Owner Home](/docs/user/features/owner/owner-home/).
+The administrator reads another account's **Storage** tab from [Admin Home](/docs/user/features/admin/admin-home/).
 Two parts are held back, because they say who the account talks to.
 The **Contacts** part of an Import Run's record gives the two counts without the list.
 **Largest attachments** has no **Conversation** column.
 
-The Owner's view of an Import Run's record has one part the account's own does not: **Thumbnails and Previews**, between **Contacts** and **Log**.
-It lists the run's attachments whose Thumbnail or Preview the server could not make, so the Owner can see which files a damaged backup or a slow computer left without them.
+The administrator's view of an Import Run's record has one part the account's own does not: **Thumbnails and Previews**, between **Contacts** and **Log**.
+It lists the run's attachments whose Thumbnail or Preview the server could not make, so the administrator can see which files a damaged backup or a slow computer left without them.
 The server makes them after the run's data arrives, so the part fills in once the server has tried.
 
 A line first says how many of the attachments the run wrote have no Thumbnail or Preview, such as **2 of 212 attachments have no Thumbnail or Preview**.
@@ -159,6 +159,6 @@ A table then counts them by kind of failure, with one column for **No Thumbnail*
 Under the counts, each such attachment is listed with its **Name**, **Type** and **Size**, and under **Thumbnail** and **Preview** the kind of failure and the reason the server recorded, or a dash for a version that was made or that the attachment does not need.
 A run whose attachments all got what they need reads "No attachment of this import is missing a Thumbnail or Preview the server tried to make."
 
-The list names each attachment as a file, by the metadata the Owner may read.
-The Owner never sees the attachment, its Thumbnail or its Preview, nor the message or conversation it belongs to.
+The list names each attachment as a file, by the metadata the administrator may read.
+The administrator never sees the attachment, its Thumbnail or its Preview, nor the message or conversation it belongs to.
 Nothing on the part tries again: the server tries a file again only when someone runs `message-crate-server process-assets`.

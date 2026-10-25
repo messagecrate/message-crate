@@ -14,7 +14,7 @@ import { isTauri } from "../../../lib/tauriCheck";
 /**
  * An Import Run's log, from the run's row in Settings → Storage. The log
  * stays on the computer that ran the import, so only the desktop app on that
- * computer offers it, and only to the account that ran the run and the owner
+ * computer offers it, and only to the account that ran the run and the administrator
  * (#1665). Anywhere else this shows nothing.
  */
 export default function ImportRunLog({ importRunId }: { importRunId: number }) {

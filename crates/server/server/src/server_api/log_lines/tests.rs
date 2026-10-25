@@ -1,13 +1,13 @@
-//! `GET /v1/server/log-lines` through the router: the owner reads the
+//! `GET /v1/server/log-lines` through the router: the administrator reads the
 //! newest lines first, filters them by level and text, and pages older ones
-//! from a line's id (`docs/architecture/rules/server-log.md`). Who may call it is
-//! the credential matrix's to check.
+//! from a line's id (`docs/architecture/rules/server-log.md`). Who may call it
+//! is the credential matrix's to check.
 
 use serde_json::Value;
 
 use crate::problem::ProblemType;
 use crate::test_support::{
-    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, small_log_files, test_fixture,
+    PASSWORD, expect_problem, get_json, get_raw, log_in_as_admin, small_log_files, test_fixture,
     write_log_line as write,
 };
 
@@ -24,19 +24,20 @@ fn numbers(page: &Value) -> Vec<u64> {
         .collect()
 }
 
-/// The owner reads the newest lines first, each with its id, time, level and
-/// text, and pages older ones from the last line's id until none is left.
+/// The administrator reads the newest lines first, each with its id, time,
+/// level and text, and pages older ones from the last line's id until none is
+/// left.
 #[tokio::test]
-async fn the_owner_reads_the_newest_lines_first_and_pages_older_ones() {
+async fn the_admin_reads_the_newest_lines_first_and_pages_older_ones() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let files = small_log_files(state);
     for n in 0..10 {
         write(&files, n, "INFO", "finished processing request");
     }
 
-    let first: Value = get_json(state, "/v1/server/log-lines?limit=4", &owner.token).await;
+    let first: Value = get_json(state, "/v1/server/log-lines?limit=4", &admin.token).await;
     assert_eq!(numbers(&first), [9, 8, 7, 6]);
     assert_eq!(first["limit"], 4);
     assert_eq!(first["has_more"], true);
@@ -51,7 +52,7 @@ async fn the_owner_reads_the_newest_lines_first_and_pages_older_ones() {
         let page: Value = get_json(
             state,
             &format!("/v1/server/log-lines?limit=4&after={after}"),
-            &owner.token,
+            &admin.token,
         )
         .await;
         seen.extend(numbers(&page));
@@ -67,10 +68,10 @@ async fn the_owner_reads_the_newest_lines_first_and_pages_older_ones() {
 /// whose text holds it, ignoring case. The two together keep the lines that
 /// pass both.
 #[tokio::test]
-async fn the_owner_filters_lines_by_level_and_text() {
+async fn the_admin_filters_lines_by_level_and_text() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let files = small_log_files(state);
     write(&files, 0, "ERROR", "internal server error");
     write(&files, 1, "WARN", "the import could not finish");
@@ -78,7 +79,7 @@ async fn the_owner_filters_lines_by_level_and_text() {
     write(&files, 3, "DEBUG", "import detail");
 
     let read = |query: &'static str| {
-        let token = owner.token.clone();
+        let token = admin.token.clone();
         async move {
             let page: Value =
                 get_json(state, &format!("/v1/server/log-lines?{query}"), &token).await;
@@ -99,13 +100,13 @@ async fn the_owner_filters_lines_by_level_and_text() {
 async fn a_level_or_line_id_that_breaks_a_rule_is_a_422() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
 
     for query in ["level=loud", "after=-1", "limit=0", "limit=501"] {
         let (status, text) = get_raw(
             state,
             &format!("/v1/server/log-lines?{query}"),
-            &owner.token,
+            &admin.token,
         )
         .await;
         expect_problem(status, &text, ProblemType::ValidationFailed);

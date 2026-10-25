@@ -3,7 +3,7 @@
 #
 #   ./scripts/run-dev.sh                 # keep existing data/; Demo Account if none
 #   ./scripts/run-dev.sh --reset         # wipe data/, start empty
-#   ./scripts/run-dev.sh --reset --owner # wipe data/, claim the Message Crate as admin/admin
+#   ./scripts/run-dev.sh --reset --admin # wipe data/, set the administrator's password to admin
 #   ./scripts/run-dev.sh --reset-demo    # wipe data/, seed sample inbox
 #   ./scripts/run-dev.sh --reset-demo --large  # the large sample inbox (about 613,000 messages)
 #   ./scripts/run-dev.sh --sqlweb        # SQLite browser on http://127.0.0.1:8081
@@ -18,7 +18,7 @@
 # after Rust changes.
 #
 # Writes config/config.toml from the example only when the file is missing.
-# --owner refuses to run unless that config binds a loopback address, so the
+# --admin refuses to run unless that config binds a loopback address, so the
 # well-known admin/admin password is never reachable from another machine.
 set -euo pipefail
 
@@ -34,19 +34,19 @@ RESET=0
 SQLWEB=0
 SQLWEB_PID=""
 RELEASE=0
-OWNER=0
+ADMIN=0
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--reset | --reset-demo [--large]] [--owner] [--sqlweb] [--release]
+Usage: $(basename "$0") [--reset | --reset-demo [--large]] [--admin] [--sqlweb] [--release]
 
   --reset       Wipe data/ and start with an empty Message Crate
   --reset-demo  Wipe data/ and seed the sample inbox (about 54,000 messages)
   --large       With --reset-demo, seed about 613,000 messages instead
-  --owner       Claim the Message Crate as admin/admin. Combine with --reset
-                for an empty claimed Message Crate; without it, --reset
-                or --reset-demo leaves it unclaimed so the Create Owner
-                screen is reachable. Refused unless ${CONFIG} binds
+  --admin       Set the administrator's password to admin. Combine with
+                --reset for an empty Message Crate that is ready; without
+                it, --reset or --reset-demo leaves it in setup so the Set
+                Up screen is reachable. Refused unless ${CONFIG} binds
                 127.0.0.1, localhost or [::1], written as one
                 bind = "..." line under [server].
   --sqlweb      Start sqlite-web on http://127.0.0.1:8081 (needs sqlite_web on PATH)
@@ -58,14 +58,15 @@ Examples:
       Keep data/ as it is and serve. With no database yet, the server
       adds the Demo Account as any new Message Crate does.
   ./scripts/$(basename "$0") --reset
-      Empty, unclaimed Message Crate: the web UI opens on Create Owner
-  ./scripts/$(basename "$0") --reset --owner
+      Empty Message Crate in setup: the web UI opens on Set Up
+  ./scripts/$(basename "$0") --reset --admin
       Empty Message Crate, log in as admin / admin
-  ./scripts/$(basename "$0") --owner
-      Claim the existing Message Crate as admin / admin (warns and carries on
-      if it is already claimed)
+  ./scripts/$(basename "$0") --admin
+      Set the administrator's password to admin on the existing Message
+      Crate, ending the administrator's sessions if the administrator
+      already had a password
   ./scripts/$(basename "$0") --reset-demo
-      Sample inbox, unclaimed: press Explore Demo Account on the login card
+      Sample inbox in setup: press Explore Demo Account on the login card
   ./scripts/$(basename "$0") --reset-demo --release --sqlweb
       Sample inbox on the optimized binary, with the SQLite browser on
       http://127.0.0.1:8081
@@ -77,7 +78,7 @@ while [[ $# -gt 0 ]]; do
     --reset) RESET=1 ;;
     --reset-demo) DEMO=1 ;;
     --large) SIZE=large ;;
-    --owner) OWNER=1 ;;
+    --admin) ADMIN=1 ;;
     --release) RELEASE=1 ;;
     --sqlweb) SQLWEB=1 ;;
     -h | --help)
@@ -141,28 +142,28 @@ config_bind() {
   echo "${value}"
 }
 
-# Prints why --owner is refused, what to write instead, and exits.
-refuse_owner() {
-  echo "error: --owner sets the password admin/admin, but $1" >&2
+# Prints why --admin is refused, what to write instead, and exits.
+refuse_admin() {
+  echo "error: --admin sets the password admin/admin, but $1" >&2
   echo "       Write bind = \"127.0.0.1:<port>\", \"localhost:<port>\" or \"[::1]:<port>\"" >&2
-  echo "       on one line under [server], or leave out --owner and create the owner" >&2
-  echo "       in the web UI." >&2
+  echo "       on one line under [server], or leave out --admin and set the" >&2
+  echo "       administrator's password in the web UI." >&2
   exit 1
 }
 
-# --owner sets a password everyone knows, so it is refused when the server
+# --admin sets a password everyone knows, so it is refused when the server
 # would listen on an address other machines can reach. TOML can spell the
 # key in ways config_bind does not read (a dotted key, an inline table, a
 # quoted header or key, an escape sequence), so when config_bind finds
 # nothing, a bind key in any of those forms, or any \u or \U escape outside
 # a comment, is refused rather than guessed at.
-require_loopback_bind_for_owner() {
+require_loopback_bind_for_admin() {
   local bind host
   bind="$(config_bind)"
   if [[ -z "${bind}" ]]; then
     if grep -Eq '^[^#]*(^|[[:space:].{,"'\''])bind["'\'']?[[:space:]]*=' "${CONFIG}" \
       || grep -Eq '^[^#]*\\[uU]' "${CONFIG}"; then
-      refuse_owner "the [server] bind in ${CONFIG} is written in a form this script cannot read."
+      refuse_admin "the [server] bind in ${CONFIG} is written in a form this script cannot read."
     fi
     # The server's default when [server] bind is absent: default_server_bind
     # in crates/server/server/src/config.rs. Change the two together.
@@ -176,7 +177,7 @@ require_loopback_bind_for_owner() {
   fi
   case "${host}" in
     127.0.0.1 | localhost | ::1) ;;
-    *) refuse_owner "${CONFIG} binds ${bind}, which other machines can reach." ;;
+    *) refuse_admin "${CONFIG} binds ${bind}, which other machines can reach." ;;
   esac
 }
 
@@ -238,9 +239,9 @@ if [[ ! -f "${CONFIG}" ]]; then
   write_host_dev_config
 fi
 
-# Checked before anything is wiped, so a refused --owner leaves data/ as it is.
-if [[ "${OWNER}" -eq 1 ]]; then
-  require_loopback_bind_for_owner
+# Checked before anything is wiped, so a refused --admin leaves data/ as it is.
+if [[ "${ADMIN}" -eq 1 ]]; then
+  require_loopback_bind_for_admin
 fi
 
 if [[ "${RESET}" -eq 1 || "${DEMO}" -eq 1 ]]; then
@@ -256,21 +257,21 @@ elif [[ "${RESET}" -eq 1 ]]; then
   # The server adds the Demo Account to a database that does not exist yet,
   # so an empty start means creating the database first.
   server_cli create-database --config "${CONFIG}"
-  echo "Empty data/ (claim the Message Crate in the web UI, or pass --owner)."
+  echo "Empty data/ (set the administrator's password in the web UI, or pass --admin)."
 elif [[ ! -f data/messagecrate.db ]]; then
   echo "No database yet: the server adds the Demo Account on start (pass --reset for an empty Message Crate)."
 else
   echo "Database present; leaving it in place."
 fi
 
-# Claiming is separate from seeding: --reset alone leaves the Message Crate
-# unclaimed, which is the only way to reach the Create Owner screen in dev.
-if [[ "${OWNER}" -eq 1 ]]; then
-  echo "Claiming the Message Crate as admin/admin…"
-  # The password goes in on standard input: create-owner takes none as an
-  # argument, because `ps` would show it.
-  printf 'admin\n' | server_cli create-owner --config "${CONFIG}" --username admin \
-    || echo "create-owner did not set the owner, perhaps because this Message Crate is already claimed, so it is left as it is"
+# Setting the password is separate from seeding: --reset alone leaves the
+# Message Crate in setup, which is the only way to reach the Set Up screen in
+# dev.
+if [[ "${ADMIN}" -eq 1 ]]; then
+  echo "Setting the administrator's password to admin…"
+  # The password goes in on standard input: set-admin-password takes none as
+  # an argument, because `ps` would show it.
+  printf 'admin\n' | server_cli set-admin-password --config "${CONFIG}" || echo "set-admin-password did not set the password, so this Message Crate is left as it is"
 fi
 
 echo
