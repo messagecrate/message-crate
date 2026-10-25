@@ -36,7 +36,14 @@ CREATE TABLE IF NOT EXISTS accounts (
     can_delete INTEGER NOT NULL DEFAULT 1,
     -- RFC 3339 UTC instant of the last successful login (login, setting up
     -- the administrator); NULL until the account has logged in once.
-    last_login_at TEXT
+    last_login_at TEXT,
+    -- How many row writes have changed what the cross-source dedupe reads
+    -- for the account, counted by the dedupe_input triggers at the end of
+    -- messages.sql. Only its changes mean anything: the dedupe reads it
+    -- before it works out the flags and again once it holds the write lock
+    -- (docs/architecture/rules/contacts-identities-and-messages.md,
+    -- CONTACT-56).
+    dedupe_input_writes INTEGER NOT NULL DEFAULT 0
 );
 
 -- Handles that mean “me” when matching message participants.

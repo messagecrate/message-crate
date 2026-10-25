@@ -82,6 +82,26 @@ pub async fn sources_in_import_order(
     Ok(rows.into_iter().map(|row| row.source).collect())
 }
 
+/// How many row writes have changed what the dedupe reads for the account
+/// (`accounts.dedupe_input_writes`, which the `dedupe_input` triggers in
+/// `messages.sql` count); `None` for an account with no row. Two reads
+/// that give the same count saw the same messages, conversations,
+/// participants, attachments and identities.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn dedupe_input_writes(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<Option<i64>> {
+    sqlx::query_scalar("SELECT dedupe_input_writes FROM accounts WHERE id = $1")
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("read the count of writes to what the account's dedupe reads")
+}
+
 // ── Content keys ─────────────────────────────────────────────────────────
 
 /// One production message that needs a content fingerprint, as
@@ -244,37 +264,6 @@ pub async fn content_key_inputs(
         group_handles,
         shas_by_msg,
     }))
-}
-
-/// The content key stored for each of the account's messages that has one.
-///
-/// # Errors
-///
-/// Returns an error when the query fails.
-pub async fn stored_content_keys(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<HashMap<i64, String>> {
-    #[derive(sqlx::FromRow)]
-    struct Row {
-        id: i64,
-        content_key: String,
-    }
-    Ok(sqlx::query_as::<_, Row>(
-        r"
-        SELECT m.id, m.content_key
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.account_id = $1 AND m.content_key IS NOT NULL
-        ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await
-    .context("read the account's stored content keys")?
-    .into_iter()
-    .map(|row| (row.id, row.content_key))
-    .collect())
 }
 
 /// Clear the content key of the messages `ids`.
@@ -518,6 +507,12 @@ pub async fn attachment_digests(
 /// The `(loser, winner)` duplicate flag of each of the account's hidden
 /// messages.
 ///
+/// The full dedupe reads them with the write lock held, to write only the
+/// flags that changed (CONTACT-56), so the read must not cost a pass over
+/// the account. `EXPLAIN QUERY PLAN` shows SQLite searching
+/// `ix_messages_duplicate_of`, which indexes only the flagged rows, so the
+/// statement finds them without reading the rest (#3256).
+///
 /// # Errors
 ///
 /// Returns an error when the query fails.
@@ -545,39 +540,6 @@ pub async fn duplicate_flags(
     .into_iter()
     .map(|row| (row.id, row.duplicate_of))
     .collect())
-}
-
-/// Show every message of the account: clear each duplicate flag.
-///
-/// Only the rows that carry a flag are written. Clearing an empty flag
-/// changes nothing, and the hidden copies are a small part of an account, so
-/// writing every row held the write lock for seconds on a large account
-/// (#3256). `EXPLAIN QUERY PLAN` shows SQLite searching
-/// `ix_messages_duplicate_of`, which indexes only the flagged rows, so the
-/// statement finds them without reading the rest.
-///
-/// # Errors
-///
-/// Returns an error when the update fails.
-pub async fn clear_account_duplicate_flags(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<()> {
-    sqlx::query(
-        r"
-        UPDATE messages
-        SET duplicate_of = NULL
-        WHERE duplicate_of IS NOT NULL
-          AND conversation_id IN (
-            SELECT id FROM conversations WHERE account_id = $1
-          )
-        ",
-    )
-    .bind(account_id)
-    .execute(&mut *conn)
-    .await
-    .context("clear the account's duplicate flags")?;
-    Ok(())
 }
 
 /// Clear the duplicate flag of the messages `ids`.

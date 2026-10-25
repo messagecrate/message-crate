@@ -374,7 +374,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
         "Importing 1 JSONL file",
         "Writing the import's 1 message",
         "The import finished in",
-        "Hiding exact duplicates",
+        "Finding exact duplicates",
     ] {
         assert!(
             log.lines()

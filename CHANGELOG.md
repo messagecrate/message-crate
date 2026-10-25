@@ -1013,6 +1013,15 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-25: **Finishing an import no longer holds up the rest of the
+  server.** The duplicate check that runs when an import finishes now works
+  out which messages to hide first, and only then makes other changes wait
+  while it saves what changed. On an account of about 636,000 messages,
+  other changes waited about 9 s for it, and about 75 s on a computer five
+  times slower. They now wait about a hundredth of a second, and a tenth on
+  the slower computer, so a login or a settings change made meanwhile is no
+  longer turned away as busy. The check itself takes about a quarter less
+  time (#3263).
 - 2026-10-24: **Finishing an import holds up the rest of the server for
   less time.** The duplicate check that runs when an import finishes
   rewrote every message of the account before it hid the duplicates again.

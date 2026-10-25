@@ -333,7 +333,8 @@ async fn assert_current_schema_contract(conn: &mut SqliteConnection) {
             "can_import",
             "can_export",
             "can_delete",
-            "last_login_at"
+            "last_login_at",
+            "dedupe_input_writes"
         ]
     );
     assert_eq!(
