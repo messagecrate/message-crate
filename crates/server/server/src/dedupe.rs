@@ -2,7 +2,7 @@
 //!
 //! This module sequences the dedupe, hashes the content keys, picks the copy
 //! shown, says how far it is and keeps the counts. Its statements are in
-//! `crate::db::dedupe` (`docs/architecture/rules/http-api.md`, "Code").
+//! `crate::db::dedupe` (`docs/architecture/rules/http-api.md`, API-131).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Instant;

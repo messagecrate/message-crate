@@ -8,7 +8,7 @@
 //!
 //! `imports_api::staging` fills the tables and `imports_api::promote` runs
 //! the promotion. Those stages sequence the statements, log them and keep
-//! the counts, and hold no SQL (`docs/architecture/rules/http-api.md`, "Code").
+//! the counts, and hold no SQL (`docs/architecture/rules/http-api.md`, API-131).
 //! A promotion statement reads a staging table and writes a production one
 //! in the same `INSERT ... SELECT`, and it lives here rather than with the
 //! production table, because the staging tables have no reader but the

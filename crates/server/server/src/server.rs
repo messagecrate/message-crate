@@ -46,7 +46,7 @@ use crate::request_body::BodyTimeLimits;
 /// `State<SqlitePool>`, `State<Arc<Config>>`, or one of the sub-states the
 /// [`FromRef`] implementations below cut from it, so a handler that reads
 /// only the database does not depend on the Demo Account build or the media
-/// queue (`docs/architecture/rules/http-api.md`, "Code").
+/// queue (`docs/architecture/rules/http-api.md`, API-133).
 #[derive(Debug, Clone)]
 pub struct AppState {
     /// Loaded configuration.
