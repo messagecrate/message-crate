@@ -137,12 +137,30 @@ pub struct DedupeStats {
     pub near_flagged: u64,
 }
 
-/// Refresh the content keys, clear prior flags, then soft-hide cross-source
-/// duplicates and the whole-second twins of a message one source holds with
-/// milliseconds too, all in one transaction.
+/// How many times [`dedupe_cross_source`] works out the flags without the
+/// write lock before it works them out with the lock held, when each time a
+/// write to the account's messages landed while it read them.
+const UNLOCKED_ATTEMPTS: usize = 3;
+
+/// Refresh the content keys, then soft-hide cross-source duplicates and the
+/// whole-second twins of a message one source holds with milliseconds too.
+///
+/// The keys and flags are worked out without the write lock, then the lock
+/// is taken and only the keys and flags that differ from the stored ones
+/// are written, in one transaction. A write to what the pass reads that
+/// landed in between, which `accounts.dedupe_input_writes` counts, makes
+/// the pass work them out again; after [`UNLOCKED_ATTEMPTS`] such attempts
+/// it works them out with the lock held, so it always ends
+/// (`docs/architecture/rules/contacts-identities-and-messages.md`,
+/// CONTACT-60).
 ///
 /// The copy shown is the first by [`rank`]. Optional `source_priority`
 /// overrides the order of the sources (tests); `None` loads it from the DB.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails or the hashing task panics; the
+/// stored keys and flags are then as they were.
 pub async fn dedupe_cross_source(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -150,76 +168,219 @@ pub async fn dedupe_cross_source(
     near_window_secs: i64,
     progress: Progress,
 ) -> Result<DedupeStats> {
-    // One write transaction for the whole run: the flags are cleared and set
-    // again, so a pass that fails after the clearing would otherwise leave
-    // every duplicate in the account shown until the next successful run. It
-    // holds the write lock from the first read, so an import that commits
-    // while the keys are hashed waits instead of failing the pass.
+    let pass = Pass {
+        account_id,
+        source_priority,
+        near_window_secs,
+        progress,
+    };
+    dedupe_cross_source_between(conn, &pass, async || {}).await
+}
+
+/// One run of [`dedupe_cross_source`]: its account and settings.
+#[derive(Clone, Copy)]
+struct Pass<'a> {
+    account_id: i64,
+    source_priority: Option<&'a [String]>,
+    near_window_secs: i64,
+    progress: Progress,
+}
+
+/// [`dedupe_cross_source`], calling `before_lock` after each attempt
+/// without the lock has worked out the flags and before it takes the lock,
+/// so a test can land a write there.
+async fn dedupe_cross_source_between(
+    conn: &mut SqliteConnection,
+    pass: &Pass<'_>,
+    mut before_lock: impl AsyncFnMut(),
+) -> Result<DedupeStats> {
+    for _ in 0..UNLOCKED_ATTEMPTS {
+        let read_at = db::dedupe_input_writes(conn, pass.account_id).await?;
+        let plan = plan_dedupe(conn, pass).await?;
+        before_lock().await;
+        let mut tx = begin_write(conn).await?;
+        let locked = Instant::now();
+        if db::dedupe_input_writes(&mut tx, pass.account_id).await? == read_at {
+            let stats = apply_plan(&mut tx, pass, plan).await?;
+            tx.commit().await?;
+            say_lock_held(pass.progress, locked);
+            return Ok(stats);
+        }
+        drop(tx);
+        pass.progress.say(
+            "The account's messages changed while the duplicates were worked out; \
+             working them out again…",
+        );
+    }
+    pass.progress
+        .say("Working out the duplicates with the write lock held, so nothing changes meanwhile…");
     let mut tx = begin_write(conn).await?;
+    let locked = Instant::now();
+    let plan = plan_dedupe(&mut tx, pass).await?;
+    let stats = apply_plan(&mut tx, pass, plan).await?;
+    tx.commit().await?;
+    say_lock_held(pass.progress, locked);
+    Ok(stats)
+}
+
+/// Say how long the pass held the write lock, from `locked`, when it took
+/// the lock, to its commit.
+fn say_lock_held(progress: Progress, locked: Instant) {
+    progress.say(format_args!(
+        "Held the write lock {:.2} s",
+        locked.elapsed().as_secs_f64()
+    ));
+}
+
+/// What one pass works out before it writes anything.
+struct Plan {
+    /// The `(message id, content key)` pairs that differ from the stored keys.
+    keys: Vec<(i64, String)>,
+    /// The duplicate flag of every message the pass hides, as
+    /// `loser → winner`.
+    flags: HashMap<i64, i64>,
+    /// The counts the pass reports; `keys_filled` is `keys.len()`.
+    stats: DedupeStats,
+}
+
+/// Work out the content keys and the duplicate flags of the account as the
+/// pass would set them, writing nothing.
+///
+/// The keys are computed again for every message, and both passes read
+/// each message's key as the pass would leave it: the new key where one
+/// was computed, the stored one otherwise.
+async fn plan_dedupe(conn: &mut SqliteConnection, pass: &Pass<'_>) -> Result<Plan> {
+    let Pass {
+        account_id,
+        source_priority,
+        near_window_secs,
+        progress,
+    } = *pass;
     let owned_priority;
     let priority = if let Some(p) = source_priority {
         p
     } else {
-        owned_priority = db::sources_in_import_order(&mut tx, account_id).await?;
+        owned_priority = db::sources_in_import_order(conn, account_id).await?;
         owned_priority.as_slice()
     };
-    let mut stats = DedupeStats::default();
     let prio: HashMap<&str, usize> = priority
         .iter()
         .enumerate()
         .map(|(i, s)| (s.as_str(), i))
         .collect();
     let started = Instant::now();
-    let exact_hidden: HashSet<i64>;
+    let mut stats = DedupeStats::default();
 
-    {
-        progress.say("Refreshing the content keys that match the same message across sources…");
-        stats.keys_filled = refresh_content_keys(&mut tx, account_id, progress).await?;
-        db::clear_account_duplicate_flags(&mut tx, account_id).await?;
-        progress.say(format_args!(
-            "Wrote {} in {:.1} s",
-            words(stats.keys_filled, "1 content key", "{n} content keys"),
-            started.elapsed().as_secs_f64()
-        ));
+    progress.say("Working out the content keys that match the same message across sources…");
+    let computed: HashMap<i64, String> = content_keys(conn, KeyScope::All, account_id, progress)
+        .await?
+        .into_iter()
+        .collect();
+    let mut rows = db::near_message_rows(conn, account_id, NearRows::All).await?;
+    let mut shas_by_msg = db::attachment_digests(conn, account_id).await?;
+    let mut keys: Vec<(i64, String)> = Vec::new();
+    for row in &mut rows {
+        if let Some(key) = computed.get(&row.id)
+            && *key != row.content_key
+        {
+            keys.push((row.id, key.clone()));
+            row.content_key.clone_from(key);
+        }
     }
+    drop(computed);
+    keys.sort_unstable();
+    stats.keys_filled = keys.len() as u64;
+    progress.say(format_args!(
+        "Found {} to write, {:.1} s in all",
+        words(stats.keys_filled, "1 content key", "{n} content keys"),
+        started.elapsed().as_secs_f64()
+    ));
 
-    {
-        progress.say("Hiding exact duplicates, the messages that share a content key…");
-        let (groups, flags) = flag_exact_content_key_dupes(&mut tx, account_id, &prio).await?;
-        stats.exact_groups = groups;
-        stats.exact_flagged = flags.len() as u64;
-        exact_hidden = flags.into_iter().map(|(loser, _)| loser).collect();
-        progress.say(format_args!(
-            "Found {} and hid {}, {:.1} s in all",
-            words(
-                stats.exact_groups,
-                "1 group of exact duplicates",
-                "{n} groups of exact duplicates"
-            ),
-            words(stats.exact_flagged, "1 message", "{n} messages"),
-            started.elapsed().as_secs_f64()
-        ));
+    progress.say("Finding exact duplicates, the messages that share a content key…");
+    let mut by_key: HashMap<String, Vec<Cand>> = HashMap::new();
+    for row in rows.iter().filter(|row| !row.content_key.is_empty()) {
+        by_key
+            .entry(row.content_key.clone())
+            .or_default()
+            .push(Cand {
+                id: row.id,
+                source: row.source.clone(),
+                attachment_count: shas_by_msg.get(&row.id).map_or(0, |shas| shas.len() as i64),
+                whole_seconds: is_whole_seconds(row.id, &row.time_precision)?,
+                run_messages: row.run_messages,
+            });
     }
+    let (groups, exact) = exact_flags_of(by_key, &prio);
+    stats.exact_groups = groups;
+    stats.exact_flagged = exact.len() as u64;
+    let exact_hidden: HashSet<i64> = exact.iter().map(|&(loser, _)| loser).collect();
+    progress.say(format_args!(
+        "Found {} and {} to hide, {:.1} s in all",
+        words(
+            stats.exact_groups,
+            "1 group of exact duplicates",
+            "{n} groups of exact duplicates"
+        ),
+        words(stats.exact_flagged, "1 message", "{n} messages"),
+        started.elapsed().as_secs_f64()
+    ));
 
-    {
-        progress.say(format_args!(
-            "Flagging near duplicates, sent within {near_window_secs} s of each other…"
-        ));
-        stats.near_flagged =
-            flag_near_time_dupes(&mut tx, account_id, &prio, near_window_secs, &exact_hidden)
-                .await?;
-        progress.say(format_args!(
-            "Flagged {}, {:.1} s in all",
-            words(
-                stats.near_flagged,
-                "1 near duplicate",
-                "{n} near duplicates"
-            ),
-            started.elapsed().as_secs_f64()
-        ));
+    progress.say(format_args!(
+        "Finding near duplicates, sent within {near_window_secs} s of each other…"
+    ));
+    let by_conversation = near_rows_by_conversation(rows, &mut shas_by_msg, &exact_hidden)?;
+    let near = cluster_near_dupes(by_conversation, &prio, near_window_secs);
+    stats.near_flagged = near.len() as u64;
+    progress.say(format_args!(
+        "Found {}, {:.1} s in all",
+        words(
+            stats.near_flagged,
+            "1 near duplicate",
+            "{n} near duplicates"
+        ),
+        started.elapsed().as_secs_f64()
+    ));
+
+    // The near-time pass leaves out what the exact pass hid, so no message
+    // is in both; were one in both, the near-time flag would win, as it did
+    // when each pass wrote its own.
+    let flags = exact.into_iter().chain(near).collect();
+    Ok(Plan { keys, flags, stats })
+}
+
+/// Write `plan` in the transaction `tx`, which holds the write lock: the
+/// content keys that changed, then the duplicate flags that differ from the
+/// stored ones. A stored flag the plan does not set is cleared, and a flag
+/// it sets that is not stored, or stored behind another message, is
+/// written. Every other row is left as it is.
+async fn apply_plan(tx: &mut WriteTx<'_>, pass: &Pass<'_>, plan: Plan) -> Result<DedupeStats> {
+    let conn: &mut SqliteConnection = tx;
+    let progress = pass.progress;
+    let Plan { keys, flags, stats } = plan;
+    if !keys.is_empty() {
+        write_content_keys_saying(conn, &keys, progress).await?;
     }
-    tx.commit().await?;
-
+    let stored = db::duplicate_flags(conn, pass.account_id).await?;
+    let shown: Vec<i64> = stored
+        .keys()
+        .filter(|id| !flags.contains_key(id))
+        .copied()
+        .collect();
+    let hidden: Vec<(i64, i64)> = flags
+        .into_iter()
+        .filter(|(loser, winner)| stored.get(loser) != Some(winner))
+        .collect();
+    if !shown.is_empty() {
+        db::clear_duplicate_flags(conn, &shown).await?;
+    }
+    if !hidden.is_empty() {
+        db::write_duplicate_flags(conn, "_dedupe_flags", &hidden).await?;
+    }
+    progress.say(format_args!(
+        "Showed {} that were hidden, and hid {} or moved them behind another copy",
+        words(shown.len() as u64, "1 message", "{n} messages"),
+        words(hidden.len() as u64, "1 message", "{n} messages"),
+    ));
     Ok(stats)
 }
 
@@ -345,21 +506,6 @@ pub async fn fill_missing_content_keys(
     recompute_content_keys(conn, KeyScope::Missing, account_id, progress).await
 }
 
-/// Recompute every content key of the account and write the ones that differ
-/// from what is stored. Returns how many were written.
-///
-/// A key is first written at import, but a later append import can add
-/// attachments to a message the database already holds, or participants to a
-/// group, and both are part of the key. A key left as it was stops matching
-/// the same message from another source.
-async fn refresh_content_keys(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    progress: Progress,
-) -> Result<u64> {
-    recompute_content_keys(conn, KeyScope::All, account_id, progress).await
-}
-
 /// Compute and store content keys for the account's messages in `scope`.
 /// Returns how many were written.
 ///
@@ -372,33 +518,29 @@ async fn recompute_content_keys(
     account_id: i64,
     progress: Progress,
 ) -> Result<u64> {
-    let Some(inputs) = db::content_key_inputs(conn, account_id, scope).await? else {
-        return Ok(0);
-    };
-    progress.say(format_args!(
-        "Hashing the content keys of {}…",
-        words(inputs.rows.len() as u64, "1 message", "{n} messages")
-    ));
-    let keys =
-        crate::request_id::spawn_blocking_in_current_span(move || hash_content_keys(&inputs))
-            .await
-            .context("content-key hash task panicked")?;
-    let keys = if scope != KeyScope::All {
-        keys
-    } else {
-        let stored = db::stored_content_keys(conn, account_id).await?;
-        keys.into_iter()
-            .filter(|(id, key)| stored.get(id) != Some(key))
-            .collect()
-    };
+    let keys = content_keys(conn, scope, account_id, progress).await?;
     if keys.is_empty() {
         return Ok(0);
     }
+    write_content_keys_saying(conn, &keys, progress).await?;
+    Ok(keys.len() as u64)
+}
+
+/// Write the `(message id, content key)` pairs `keys` onto the messages,
+/// saying how far the write is at each multiple of
+/// [`CONTENT_KEY_WRITE_LOG_EVERY`] it passes, and when it is done.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+async fn write_content_keys_saying(
+    conn: &mut SqliteConnection,
+    keys: &[(i64, String)],
+    progress: Progress,
+) -> Result<()> {
     let total = keys.len();
     let mut previous = 0usize;
-    db::write_content_keys(conn, &keys, |written| {
-        // Say how far the write is at each multiple of the log interval it
-        // passes, and when it is done.
+    db::write_content_keys(conn, keys, |written| {
         if written == total
             || written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY
         {
@@ -406,8 +548,31 @@ async fn recompute_content_keys(
         }
         previous = written;
     })
-    .await?;
-    Ok(keys.len() as u64)
+    .await
+}
+
+/// The `(message id, content key)` of each of the account's messages in
+/// `scope` whose time parses, computed from what is stored and not written.
+///
+/// # Errors
+///
+/// Returns an error when a query fails or the hashing task panics.
+async fn content_keys(
+    conn: &mut SqliteConnection,
+    scope: KeyScope<'_>,
+    account_id: i64,
+    progress: Progress,
+) -> Result<Vec<(i64, String)>> {
+    let Some(inputs) = db::content_key_inputs(conn, account_id, scope).await? else {
+        return Ok(Vec::new());
+    };
+    progress.say(format_args!(
+        "Hashing the content keys of {}…",
+        words(inputs.rows.len() as u64, "1 message", "{n} messages")
+    ));
+    crate::request_id::spawn_blocking_in_current_span(move || hash_content_keys(&inputs))
+        .await
+        .context("content-key hash task panicked")
 }
 
 /// One copy of a message, with what decides whether it is the copy shown
@@ -434,26 +599,8 @@ fn is_whole_seconds(id: i64, time_precision: &str) -> Result<bool> {
         == ir::TimePrecision::Seconds)
 }
 
-/// Hide the messages that share a fingerprint with a preferred-source twin,
-/// keeping as many as one source holds (see [`exact_group_flags`]), and
-/// each whole-second message whose own source holds it with milliseconds
-/// too (see [`content_key_group_flags`]). Returns the groups in which a
-/// message was hidden, and the `(loser, winner)` pairs.
-async fn flag_exact_content_key_dupes(
-    tx: &mut WriteTx<'_>,
-    account_id: i64,
-    prio: &HashMap<&str, usize>,
-) -> Result<(u64, Vec<(i64, i64)>)> {
-    let conn: &mut SqliteConnection = tx;
-    let (groups, flags) = exact_flags(conn, account_id, prio).await?;
-    if !flags.is_empty() {
-        db::write_duplicate_flags(conn, "_pass_a_flags", &flags).await?;
-    }
-    Ok((groups, flags))
-}
-
-/// The exact pass over every message of the account with a content key,
-/// as though none were hidden: the groups in which a message would be
+/// The exact pass over every message of the account with a stored content
+/// key, as though none were hidden: the groups in which a message would be
 /// hidden, and the `(loser, winner)` pairs. Nothing is written.
 async fn exact_flags(
     conn: &mut SqliteConnection,
@@ -470,7 +617,19 @@ async fn exact_flags(
             run_messages: row.run_messages,
         });
     }
+    Ok(exact_flags_of(by_key, prio))
+}
 
+/// The exact pass over the copies `by_key`, grouped by content key: hide
+/// the messages that share a fingerprint with a preferred-source twin,
+/// keeping as many as one source holds (see [`exact_group_flags`]), and
+/// each whole-second message whose own source holds it with milliseconds
+/// too (see [`content_key_group_flags`]). Returns the groups in which a
+/// message is hidden, and the `(loser, winner)` pairs.
+fn exact_flags_of(
+    by_key: HashMap<String, Vec<Cand>>,
+    prio: &HashMap<&str, usize>,
+) -> (u64, Vec<(i64, i64)>) {
     let mut flags: Vec<(i64, i64)> = Vec::new(); // (loser_id, winner_id)
     let mut groups = 0u64;
     for cands in by_key.into_values() {
@@ -480,7 +639,7 @@ async fn exact_flags(
         }
         flags.extend(group_flags);
     }
-    Ok((groups, flags))
+    (groups, flags)
 }
 
 /// The `(loser, winner)` pairs of the messages that share one content key.
@@ -628,29 +787,10 @@ impl NearRow {
     }
 }
 
-/// Flag messages that match one from another source within `window_secs` on chat,
-/// direction, sender, and body or attachments, leaving out those the exact
-/// pass hid (`exact_hidden`). Returns how many were flagged.
-async fn flag_near_time_dupes(
-    tx: &mut WriteTx<'_>,
-    account_id: i64,
-    prio: &HashMap<&str, usize>,
-    window_secs: i64,
-    exact_hidden: &HashSet<i64>,
-) -> Result<u64> {
-    let conn: &mut SqliteConnection = tx;
-    let by_conversation = load_near_rows(conn, account_id, NearRows::All, exact_hidden).await?;
-    let flags = cluster_near_dupes(by_conversation, prio, window_secs);
-    if flags.is_empty() {
-        return Ok(0);
-    }
-    db::write_duplicate_flags(conn, "_pass_b_flags", &flags).await?;
-    Ok(flags.len() as u64)
-}
-
 /// The messages of the account in `rows` that are not in `hidden`, with
-/// their attachment fingerprints, grouped by conversation. Two queries and
-/// the grouping happen here so the clustering does no per-message lookups.
+/// their attachment fingerprints, grouped by conversation, for the
+/// near-time pass. Two queries and the grouping happen here so the
+/// clustering does no per-message lookups.
 async fn load_near_rows(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -659,7 +799,17 @@ async fn load_near_rows(
 ) -> Result<HashMap<i64, Vec<NearRow>>> {
     let msg_rows = db::near_message_rows(conn, account_id, rows).await?;
     let mut shas_by_msg = db::attachment_digests(conn, account_id).await?;
+    near_rows_by_conversation(msg_rows, &mut shas_by_msg, hidden)
+}
 
+/// The rows of `msg_rows` that are not in `hidden` and whose time parses,
+/// with their attachment digests taken from `shas_by_msg`, grouped by
+/// conversation.
+fn near_rows_by_conversation(
+    msg_rows: Vec<db::NearMessageRow>,
+    shas_by_msg: &mut HashMap<i64, Vec<String>>,
+    hidden: &HashSet<i64>,
+) -> Result<HashMap<i64, Vec<NearRow>>> {
     let mut by_conversation: HashMap<i64, Vec<NearRow>> = HashMap::new();
     for row in msg_rows {
         if hidden.contains(&row.id) {
