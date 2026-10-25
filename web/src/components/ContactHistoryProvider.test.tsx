@@ -4,7 +4,12 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useClearContactHistory, useContactHistory } from "../hooks/useContactHistory";
 import { ApiError } from "../lib/api";
-import { restoreContact, trashContact } from "../lib/serverApi";
+import {
+  listContactGroups,
+  restoreContact,
+  trashContact,
+  updateContactGroupMembers,
+} from "../lib/serverApi";
 import { act } from "../test/act";
 import { deferred } from "../test/deferred";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
@@ -30,6 +35,8 @@ vi.mock("../lib/serverApi", () => ({
 
 const trashMock = vi.mocked(trashContact);
 const restoreMock = vi.mocked(restoreContact);
+const listGroupsMock = vi.mocked(listContactGroups);
+const updateMembersMock = vi.mocked(updateContactGroupMembers);
 
 const mother = { id: 1, label: "Mother" };
 const ada = { id: 2, label: "Ada" };
@@ -73,6 +80,22 @@ function Harness() {
         }
       >
         Add Ada to Family
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          history.push({
+            kind: "group",
+            op: "remove",
+            changes: [
+              { group: "Family", contacts: [ada] },
+              { group: "Work", contacts: [ada] },
+              { group: "Club", contacts: [ada] },
+            ],
+          })
+        }
+      >
+        Take Ada out of three
       </button>
       <button type="button" onClick={clear}>
         Delete for good
@@ -192,6 +215,34 @@ describe("ContactHistoryProvider", () => {
     expect(screen.getByTestId("report")).toHaveTextContent(
       "Restored 2 contacts. 1 is no longer in the Trash.",
     );
+    expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
+    expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
+    expect(toast()).toBeNull();
+  });
+
+  it("names each Contact Group that refused an undo, with the server's reason", async () => {
+    listGroupsMock.mockResolvedValue([
+      { id: 10, name: "Family" },
+      { id: 11, name: "Work" },
+      { id: 12, name: "Club" },
+    ] as unknown as Awaited<ReturnType<typeof listContactGroups>>);
+    updateMembersMock.mockImplementation(async (id) => {
+      if (id === 10) throw new ApiError(404, "contact group not found");
+      if (id === 12) throw new ApiError(503, "the database is busy");
+      return { added: 1, removed: 0 };
+    });
+    const user = setupUser();
+    renderHarness();
+    await user.click(screen.getByRole("button", { name: "Take Ada out of three" }));
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+
+    expect(updateMembersMock.mock.calls.map(([id]) => id)).toEqual([10, 11, 12]);
+    expect(screen.getByTestId("report").textContent?.split("\n")).toEqual([
+      "Added Ada to 1 of 3 Contact Groups.",
+      "Could not add Ada to Family: contact group not found",
+      "Could not add Ada to Club: the database is busy",
+    ]);
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
     expect(toast()).toBeNull();

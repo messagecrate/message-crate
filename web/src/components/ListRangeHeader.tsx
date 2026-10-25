@@ -35,7 +35,10 @@ export default function ListRangeHeader({
   actions?: ReactNode;
   /** The Select all box; a list without one leaves it out. */
   selectAll?: SelectAllBox;
-  /** A problem with an action on the list, shown under the toolbar when Select all has none. */
+  /**
+   * A problem with an action on the list, shown under the toolbar when Select
+   * all has none. Each line of it is drawn on a line of its own.
+   */
   alert?: string | null;
 }) {
   const activitySuffix = listActivitySuffix(refreshing, filling);
@@ -68,7 +71,7 @@ export default function ListRangeHeader({
       {problem ? (
         <p
           role="alert"
-          className="shrink-0 border-b border-border px-3 py-1.5 text-[0.75rem] text-danger"
+          className="shrink-0 border-b border-border px-3 py-1.5 text-[0.75rem] whitespace-pre-line text-danger"
         >
           {problem}
         </p>

@@ -3,12 +3,13 @@ import {
   actionMenuName,
   actionText,
   EMPTY_HISTORY,
+  groupFailureText,
   HISTORY_LIMIT,
   type HistoryAction,
   type HistoryEntry,
   type HistoryStacks,
   historyReducer,
-  partialFailureText,
+  trashFailureText,
   undoneText,
 } from "./contactHistory";
 
@@ -124,12 +125,32 @@ describe("the words", () => {
   });
 
   it("says what a partial restore did and did not do", () => {
-    const action: HistoryAction = { kind: "trash", contacts: three };
-    expect(partialFailureText(action, "undo", 2, 1)).toBe(
+    expect(trashFailureText("undo", 2, 1)).toBe(
       "Restored 2 contacts. 1 is no longer in the Trash.",
     );
-    expect(partialFailureText(action, "do", 1, 2)).toBe(
-      "Moved 1 contact to Trash. 2 could not be moved.",
+    expect(trashFailureText("do", 1, 2)).toBe("Moved 1 contact to Trash. 2 could not be moved.");
+  });
+
+  it("names each refused Contact Group on a line of its own, with its reason", () => {
+    const ada = { id: 2, label: "Ada" };
+    expect(
+      groupFailureText(
+        "add",
+        [{ group: "Work", contacts: [mother, ada] }],
+        [
+          { group: "Family", contacts: [mother], reason: "contact group not found" },
+          { group: "Club", contacts: [mother, ada], reason: "the server did not answer" },
+        ],
+      ),
+    ).toBe(
+      [
+        "Added 2 contacts to 1 of 3 Contact Groups.",
+        "Could not add Mother to Family: contact group not found",
+        "Could not add 2 contacts to Club: the server did not answer",
+      ].join("\n"),
     );
+    expect(
+      groupFailureText("remove", [], [{ group: "Family", contacts: [mother], reason: "busy" }]),
+    ).toBe("Could not remove Mother from Family: busy");
   });
 });

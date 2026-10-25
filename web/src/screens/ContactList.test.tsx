@@ -790,6 +790,53 @@ describe("ContactList", () => {
       expect(screen.getByRole("status")).toHaveTextContent("Added Alice to Family");
     });
 
+    it("says why an undo's Contact Group was refused, and shows the server's groups after it", async () => {
+      // What the server holds for Alice. The undo's add is refused, and by
+      // then someone else has put her in Work, which neither the optimistic
+      // chips nor the snapshot taken before the request know about.
+      let aliceGroups = ["Family"];
+      listContactsMock.mockImplementation(
+        async () =>
+          ({
+            items: [
+              { id: 1, name: "Alice", identity_count: 1, addresses: [], groups: aliceGroups },
+            ],
+            total: 1,
+            limit: 200,
+            offset: 0,
+          }) as unknown as Awaited<ReturnType<typeof listContacts>>,
+      );
+      listContactGroupsMock.mockResolvedValue([
+        { id: 10, name: "Family" },
+        { id: 11, name: "Work" },
+      ]);
+      updateMembersMock.mockImplementation(async (_id, patch) => {
+        if (patch.remove.length > 0) {
+          aliceGroups = [];
+          return { added: 0, removed: 1 };
+        }
+        aliceGroups = ["Work"];
+        throw new ApiError(404, "contact group not found");
+      });
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+      await user.click(screen.getByRole("checkbox", { name: "Family" }));
+      await settle();
+      await user.keyboard("{Escape}");
+
+      await chooseAction("Undo Remove from Contact Group");
+      await settle();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not add Alice to Family: contact group not found",
+      );
+      await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+      expect(screen.getByRole("checkbox", { name: "Family" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Work" })).toBeChecked();
+    });
+
     it("says why an export failed in the list's banner", async () => {
       exportMock.mockRejectedValue(new Error("the search has a word Contacts does not know"));
       renderList();

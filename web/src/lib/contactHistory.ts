@@ -141,28 +141,53 @@ export function actionMenuName(action: HistoryAction): string {
 }
 
 /**
- * What the error banner says when some of an entry's requests failed.
- * `done` and `failed` count contacts for a trash entry and groups for a
- * group entry, because a membership change is one request per group.
+ * What the error banner says when some of a trash entry's requests failed.
+ * `done` and `failed` count contacts.
  */
-export function partialFailureText(
-  action: HistoryAction,
+export function trashFailureText(
   direction: HistoryDirection,
   done: number,
   failed: number,
 ): string {
-  if (action.kind === "trash") {
-    const doneWords = done === 1 ? "1 contact" : `${done} contacts`;
-    if (direction === "undo") {
-      const verb = failed === 1 ? "is" : "are";
-      return `Restored ${doneWords}. ${failed} ${verb} no longer in the Trash.`;
-    }
-    return `Moved ${doneWords} to Trash. ${failed} could not be moved.`;
+  const doneWords = done === 1 ? "1 contact" : `${done} contacts`;
+  if (direction === "undo") {
+    const verb = failed === 1 ? "is" : "are";
+    return `Restored ${doneWords}. ${failed} ${verb} no longer in the Trash.`;
   }
-  const op = groupOp(action, direction);
-  const contacts = who(groupContacts(action.changes));
-  const groups = whichGroups(action.changes);
-  const what = op === "add" ? `add ${contacts} to ${groups}` : `remove ${contacts} from ${groups}`;
-  if (done === 0) return `Could not ${what}.`;
-  return `Could not ${what}. ${failed} of ${done + failed} Contact Groups refused the change.`;
+  return `Moved ${doneWords} to Trash. ${failed} could not be moved.`;
+}
+
+/** A Contact Group whose membership request was refused, and the reason given for it. */
+export type RefusedGroupChange = GroupChange & { reason: string };
+
+/**
+ * What the error banner says when some of a group entry's requests failed:
+ * one line per refused Contact Group, ending in the reason it was refused,
+ * so a Contact Group deleted meanwhile and a lost connection read
+ * differently (#3252). A first line counts the Contact Groups that went
+ * through, when any did. `op` is the request that was sent, already turned
+ * around for an undo (`groupOp`).
+ */
+export function groupFailureText(
+  op: "add" | "remove",
+  done: readonly GroupChange[],
+  refused: readonly RefusedGroupChange[],
+): string {
+  const lines: string[] = [];
+  if (done.length > 0) {
+    const contacts = who(groupContacts(done));
+    const groups = `${done.length} of ${done.length + refused.length} Contact Groups`;
+    lines.push(
+      op === "add" ? `Added ${contacts} to ${groups}.` : `Removed ${contacts} from ${groups}.`,
+    );
+  }
+  for (const change of refused) {
+    const contacts = who(change.contacts);
+    const what =
+      op === "add"
+        ? `add ${contacts} to ${change.group}`
+        : `remove ${contacts} from ${change.group}`;
+    lines.push(`Could not ${what}: ${change.reason}`);
+  }
+  return lines.join("\n");
 }
