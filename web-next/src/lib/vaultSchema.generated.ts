@@ -39,7 +39,14 @@ CREATE TABLE IF NOT EXISTS accounts (
     can_delete INTEGER NOT NULL DEFAULT 1,
     -- RFC 3339 UTC instant of the last successful login (login, setting up
     -- the administrator); NULL until the account has logged in once.
-    last_login_at TEXT
+    last_login_at TEXT,
+    -- How many row writes have changed what the cross-source dedupe reads
+    -- for the account, counted by the dedupe_input triggers at the end of
+    -- messages.sql. Only its changes mean anything: the dedupe reads it
+    -- before it works out the flags and again once it holds the write lock
+    -- (docs/architecture/rules/contacts-identities-and-messages.md,
+    -- CONTACT-60).
+    dedupe_input_writes INTEGER NOT NULL DEFAULT 0
 );
 
 -- Handles that mean “me” when matching message participants.
@@ -927,6 +934,106 @@ CREATE TABLE IF NOT EXISTS export_messages (
 
 CREATE INDEX IF NOT EXISTS ix_export_messages_message
     ON export_messages (message_id);
+
+-- Count every row write to what the cross-source dedupe reads on the
+-- account's row (accounts.dedupe_input_writes). The dedupe works out its
+-- flags without the write lock, then takes the lock and applies them only
+-- when the count is the one it read before it started, so no write it did
+-- not see has landed in between
+-- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-60).
+-- The dedupe reads messages, their conversations, participants and
+-- attachments, the identities (handles) they name, and the account's own
+-- identities (account_handles). An UPDATE trigger names the columns it
+-- reads, so a write to any other column, such as the media pass's to an
+-- attachment's Preview, counts nothing. messages.duplicate_of is not among
+-- them: the dedupe reads the stored flags again under the lock. A
+-- trigger counts a write that leaves a value as it was too, which only
+-- costs the dedupe a run again.
+CREATE TRIGGER IF NOT EXISTS messages_dedupe_input_ai AFTER INSERT ON messages BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = NEW.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS messages_dedupe_input_ad AFTER DELETE ON messages BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = OLD.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS messages_dedupe_input_au
+AFTER UPDATE OF conversation_id, account_id, source, timestamp, time_precision,
+    is_from_me, sender_handle_id, body, content_key, import_id
+ON messages BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id IN (OLD.account_id, NEW.account_id);
+END;
+CREATE TRIGGER IF NOT EXISTS conversations_dedupe_input_ai AFTER INSERT ON conversations BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = NEW.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS conversations_dedupe_input_ad AFTER DELETE ON conversations BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = OLD.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS conversations_dedupe_input_au
+AFTER UPDATE OF account_id, chat_handle_id, conversation_type ON conversations BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id IN (OLD.account_id, NEW.account_id);
+END;
+CREATE TRIGGER IF NOT EXISTS participants_dedupe_input_ai AFTER INSERT ON participants BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = (SELECT account_id FROM conversations WHERE id = NEW.conversation_id);
+END;
+CREATE TRIGGER IF NOT EXISTS participants_dedupe_input_ad AFTER DELETE ON participants BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = (SELECT account_id FROM conversations WHERE id = OLD.conversation_id);
+END;
+CREATE TRIGGER IF NOT EXISTS participants_dedupe_input_au
+AFTER UPDATE OF conversation_id, handle_id ON participants BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id IN (
+        SELECT account_id FROM conversations
+        WHERE id IN (OLD.conversation_id, NEW.conversation_id)
+    );
+END;
+CREATE TRIGGER IF NOT EXISTS attachments_dedupe_input_ai AFTER INSERT ON attachments BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = (SELECT account_id FROM messages WHERE id = NEW.message_id);
+END;
+CREATE TRIGGER IF NOT EXISTS attachments_dedupe_input_ad AFTER DELETE ON attachments BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = (SELECT account_id FROM messages WHERE id = OLD.message_id);
+END;
+CREATE TRIGGER IF NOT EXISTS attachments_dedupe_input_au
+AFTER UPDATE OF message_id, sha256 ON attachments BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id IN (
+        SELECT account_id FROM messages WHERE id IN (OLD.message_id, NEW.message_id)
+    );
+END;
+CREATE TRIGGER IF NOT EXISTS handles_dedupe_input_ai AFTER INSERT ON handles BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = NEW.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS handles_dedupe_input_ad AFTER DELETE ON handles BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = OLD.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS handles_dedupe_input_au
+AFTER UPDATE OF account_id, normalized, handle_type ON handles BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id IN (OLD.account_id, NEW.account_id);
+END;
+CREATE TRIGGER IF NOT EXISTS account_handles_dedupe_input_ai AFTER INSERT ON account_handles BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = NEW.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS account_handles_dedupe_input_ad AFTER DELETE ON account_handles BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id = OLD.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS account_handles_dedupe_input_au
+AFTER UPDATE OF account_id, handle_id ON account_handles BEGIN
+    UPDATE accounts SET dedupe_input_writes = dedupe_input_writes + 1
+    WHERE id IN (OLD.account_id, NEW.account_id);
+END;
 `;
 
 export const STAGING_DDL = `-- Import scratch copy of conversations; cleared/promoted per account during import.

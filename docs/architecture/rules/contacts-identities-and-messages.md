@@ -786,11 +786,12 @@ a copy whose text no longer matches, where no search finds it
 
 `POST /v1/imports/{id}/batches` stores its messages and leaves the dedupe to
 the run's end, so the duplicates a run brings are shown while it is open.
-Why: each dedupe works over the whole account and holds the write lock, so
-one after every batch made an import of many batches into a large account
-rehash the account once per batch, while every other write waited. No dedupe
-scoped to a batch gives the full one's result, because the rank in CONTACT-41
-reads the open run's growing message count and the account's source order
+Why: each dedupe works over the whole account, so one after every batch
+makes an import of many batches into a large account rehash the account once
+per batch, and each dedupe still takes the write lock to write what changed
+(CONTACT-60). No dedupe scoped to a batch gives the full one's result,
+because the rank in CONTACT-41 reads the open run's growing message count
+and the account's source order
 ([#2040](https://github.com/messagecrate/message-crate/issues/2040)).
 
 ## CONTACT-41 Which copy is shown
@@ -1264,3 +1265,74 @@ name or a link the person can see and change back on the same screen.
 Rejected: one entry per contact for a bulk change, which buries one action
 under hundreds of rows; and entries for every edit, which would bury the
 deletions they exist to show (#3241).
+
+## CONTACT-60 The dedupe works out its flags without the write lock, and writes only what changed
+
+The full dedupe (CONTACT-39) reads the account and works out every content
+key and every duplicate flag without holding the write lock (`plan_dedupe`
+in `dedupe.rs`). It then takes the lock and checks that nothing it read has
+changed. When nothing has, it writes only the content keys and flags that
+differ from the stored ones, in one transaction (`apply_plan`): it clears
+each stored flag it no longer sets, and writes each flag that is new or
+points at another message. Every other row is left as it is.
+
+What it checks is `accounts.dedupe_input_writes`, a count that triggers in
+`schema/sql/messages.sql` raise on each row written to what the dedupe reads
+for that account: a message, conversation, participant, attachment or
+identity added, removed or changed, and an identity added to or taken off
+the account's own. A trigger on an update names only the columns the dedupe
+reads, so a Preview or Thumbnail the media pass makes, a login and another
+account's import count nothing. The dedupe reads the count before its first
+read and again once it holds the lock. The stored flags are read under the
+lock, so a write to `duplicate_of` is not counted. That read names
+`ix_messages_duplicate_of` with `INDEXED BY` (`duplicate_flags` in
+`db/dedupe.rs`), so it reads only the flagged rows even on a new database
+with no `ANALYZE` statistics, where SQLite would otherwise read every
+message of the account through its conversations, under the lock
+([#3256](https://github.com/messagecrate/message-crate/issues/3256)).
+
+When the count has moved, the pass writes nothing, lets the lock go, and
+works the keys and flags out again from the start. After three attempts that
+each saw a write, it works them out a fourth time with the lock held from its
+first read, so it always ends.
+
+Why: the reads are most of the pass, and every other writer, a login
+included, waits 15 seconds for the lock before it answers `database-busy`
+(`http-api.md`, API-60). On the large Demo Account (636,594 messages, 8,450
+hidden) the pass held the lock about 9 s on a fast machine and about 75 s on
+a CPU slowed five times. Working the flags out first holds it 0.01 s on the
+fast machine and 0.1 s on the slow one for a run that changes no flag, and
+about 1 s on the fast machine for one that rewrites 61,168 content keys and
+shows 1,222 hidden copies. Working them out again is rare: no batch of the
+account's own run can land while the run ends, because `end_run` holds the
+account's import lock, so the count moves only for a person's edit of the
+same account, such as deleting messages for good or giving a phone number
+its country, or for one of the server's own commands
+([#3256](https://github.com/messagecrate/message-crate/issues/3256),
+[#3263](https://github.com/messagecrate/message-crate/issues/3263)).
+
+Turned down:
+
+- A count of the account's messages with their highest id. It misses every
+  change in place, and each of these changes a content key: an edited text,
+  an attachment given its file, a participant added to a group, a phone
+  number given its country.
+- SQLite's `PRAGMA data_version`, which moves on every commit by another
+  connection. The media pass commits once per Asset, so a run that ends
+  while an earlier run's media pass works would never apply what it worked
+  out without the lock, and would hold the lock for the whole pass every
+  time.
+- Reading again under the lock what the pass read, and comparing. Those
+  reads are the time the change takes out from under the lock.
+- Raising the count in each writer's code instead of in triggers. A writer
+  added later without it would let a pass apply flags worked out from rows
+  that changed under it, and nothing would say so. A trigger costs about
+  0.3 µs for each message row an import writes: 600,000 inserts took 0.38 s
+  with one and 0.19 s without, which is about 12 ms of the 1.8 s a full
+  16 MiB batch holds the lock.
+- Failing the completion when the count moved, so the client completes
+  again. The pass can always end by holding the lock from its first read,
+  and a failed completion is an error the person sees.
+- Clearing every flag of the account and writing them all again. That
+  writes each hidden copy twice under the lock on every run, though most
+  runs change few flags.

@@ -1253,13 +1253,14 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     assert_eq!(duplicate_of(&mut conn, first).await, None);
 }
 
-/// Clearing an account's duplicate flags leaves none of its messages hidden,
-/// and leaves another account's flags as they were.
+/// A pass shows each message of the account that a stored flag hides and
+/// the pass does not, and leaves another account's flags as they were.
 ///
-/// The statement writes only the rows that carry a flag (#3256), and must
-/// still clear every flagged row of the account and no row of another.
+/// The pass writes only the flags that differ from the stored ones
+/// (CONTACT-60), so a stale flag is shown by clearing it alone. The three
+/// copies here come from one source, so the pass keeps every one of them.
 #[tokio::test]
-async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
+async fn a_pass_shows_the_accounts_stale_copies_and_no_other_accounts() {
     const OTHER_ACCOUNT_ID: i64 = 8;
     let (pool, _dir) = engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
@@ -1292,11 +1293,10 @@ async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
     .insert(&mut conn)
     .await;
 
-    let mut tx = begin_write(&mut conn).await.unwrap();
-    db::clear_account_duplicate_flags(&mut tx, TEST_ACCOUNT_ID)
+    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
         .await
         .unwrap();
-    tx.commit().await.unwrap();
+    assert_eq!((stats.exact_flagged, stats.near_flagged), (0, 0));
 
     let flagged: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM messages WHERE account_id = $1 AND duplicate_of IS NOT NULL",
@@ -1316,10 +1316,10 @@ async fn clearing_the_flags_shows_every_message_of_the_account_and_no_other() {
 /// A copy hidden by one pass shows again after the next pass once it stops
 /// matching its twin.
 ///
-/// Each pass clears the flags it set last time before it sets them again, so
-/// a copy that no longer pairs is shown. Here the second copy gains a photo
-/// the first lacks, so their content keys differ. Narrowing the clearing to
-/// the flagged rows (#3256) must still reach the twin's flag.
+/// A pass clears each stored flag it does not set again, so a copy that no
+/// longer pairs is shown. Here the second copy gains a photo the first
+/// lacks, so their content keys differ. Writing only the flags that differ
+/// from the stored ones (CONTACT-60) must still reach the twin's flag.
 #[tokio::test]
 async fn a_hidden_copy_shows_again_after_the_pass_once_it_stops_matching() {
     let (pool, _dir) = engine::test_pool().await;
@@ -1520,24 +1520,30 @@ async fn a_received_note_to_yourself_a_second_apart_pairs_across_the_link_of_its
     assert_eq!(duplicate_of(&mut conn, after_link).await, Some(before_link));
 }
 
-/// A dedupe that fails part way leaves the duplicates it found last time
-/// hidden.
+/// A dedupe that fails part way leaves the content keys and duplicate flags
+/// as the last pass left them.
 ///
-/// Dedupe clears every flag and sets them again. If the clearing is committed
-/// on its own and a later pass then fails, every duplicate in the account
-/// shows twice until the next successful run. The failure is forced by
-/// creating, on the same connection, a temp table under the name a pass
-/// writes its flags to but with the wrong columns; a temp table belongs to
-/// one connection.
+/// Under the write lock a pass writes the content keys that changed, clears
+/// the stored flags it does not set again, then writes the flags it sets.
+/// If what it wrote before a failure were committed, a copy whose stale
+/// flag it cleared would show, and the flag it meant to set would be
+/// missing, until the next successful run. Here the second pass has all
+/// three to do: the near-time twin's text changes, so its key changes and
+/// its flag is stale, and a third source's copy of the exact twin arrives
+/// with no key and no flag. The failure is forced by creating, on the same
+/// connection, a temp table under the name the pass writes the keys or the
+/// flags through but with the wrong columns; a temp table belongs to one
+/// connection.
 #[tokio::test]
-async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
-    for broken_table in ["_pass_a_flags", "_pass_b_flags"] {
+async fn a_failed_dedupe_keeps_the_previous_keys_and_flags() {
+    for broken_table in ["_content_keys", "_dedupe_flags"] {
         let (pool, _dir) = engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         setup_account(&mut conn).await;
         let peer = conversation(&mut conn, "+14075550106", "one-to-one").await;
         let mut ids = Vec::new();
-        // An exact twin (same second) and a near-time twin (one second apart).
+        // An exact twin (same second) and a near-time twin (one second
+        // apart), then a third source's copy of the exact twin.
         for (source, guid, timestamp, body) in [
             ("go-sms-pro", "a-1", "2015-03-12T18:04:22Z", "Running late"),
             (
@@ -1572,6 +1578,32 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
             .await
             .unwrap();
         assert_eq!((stats.exact_flagged, stats.near_flagged), (1, 1));
+        let before = dedupe_snapshot(&mut conn).await;
+
+        let mut tx = begin_write(&mut conn).await.unwrap();
+        sqlx::query("UPDATE messages SET body = 'Almost there' WHERE id = $1")
+            .bind(ids[3])
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let third = MessageRow {
+            source: "imessage",
+            guid: Some("c-1".into()),
+            timestamp: stored_time("2015-03-12T18:04:22Z"),
+            is_from_me: true,
+            sender_handle_id: None,
+            body: Some("Running late"),
+            ..MessageRow::new(TEST_ACCOUNT_ID, peer)
+        }
+        .insert(&mut conn)
+        .await;
+        let expected = dedupe_snapshot(&mut conn).await;
+        assert_eq!(
+            before.len() + 1,
+            expected.len(),
+            "{broken_table}: the third copy is the one new row"
+        );
 
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "CREATE TEMP TABLE {broken_table} (id BIGINT)"
@@ -1587,15 +1619,22 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
             .unwrap();
 
         assert_eq!(
-            duplicate_of(&mut conn, ids[1]).await,
-            Some(ids[0]),
-            "{broken_table}: the exact twin stays hidden"
+            dedupe_snapshot(&mut conn).await,
+            expected,
+            "{broken_table}: every key and flag is as the last pass left it"
         );
         assert_eq!(
             duplicate_of(&mut conn, ids[3]).await,
             Some(ids[2]),
             "{broken_table}: the near-time twin stays hidden"
         );
+
+        let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+            .await
+            .unwrap();
+        assert_eq!((stats.exact_flagged, stats.near_flagged), (2, 0));
+        assert_eq!(duplicate_of(&mut conn, ids[3]).await, None);
+        assert_eq!(duplicate_of(&mut conn, third).await, Some(ids[0]));
     }
 }
 
@@ -2425,4 +2464,346 @@ async fn the_second_shown_place_goes_to_the_copy_ranked_first() {
     );
     assert_eq!(duplicate_of(&mut conn, a1).await, Some(b));
     assert_eq!(duplicate_of(&mut conn, a2).await, Some(b));
+}
+
+// ---------------------------------------------------------------------------
+// The flags are worked out without the write lock (CONTACT-60).
+// ---------------------------------------------------------------------------
+
+/// The pass of `dedupe_cross_source` for the test account, with the window
+/// the tests above use.
+fn test_pass() -> Pass<'static> {
+    Pass {
+        account_id: TEST_ACCOUNT_ID,
+        source_priority: None,
+        near_window_secs: 2,
+        progress: Progress::Log,
+    }
+}
+
+/// "Running late", sent by the account at 2015-03-12T18:04:22.000Z in
+/// `setup_db`'s conversation, as `source` wrote it under `guid`.
+fn running_late(source: &'static str, guid: &str) -> MessageRow<'static> {
+    MessageRow {
+        source,
+        guid: Some(guid.into()),
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
+        is_from_me: true,
+        body: Some("Running late"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, 1)
+    }
+}
+
+/// The account's count of writes to what the dedupe reads.
+async fn input_writes(conn: &mut SqliteConnection, account_id: i64) -> i64 {
+    db::dedupe_input_writes(conn, account_id)
+        .await
+        .unwrap()
+        .expect("the account has a row")
+}
+
+/// Every kind of write to what the dedupe reads counts on the account whose
+/// messages it changes, and on no other account, and a write to anything
+/// else counts nothing. A write the count missed would let a pass apply
+/// flags worked out from rows that changed under it.
+#[tokio::test]
+async fn every_write_to_what_the_dedupe_reads_counts_on_its_account_alone() {
+    const OTHER_ACCOUNT_ID: i64 = 8;
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_account(&mut conn).await;
+    crate::test_support::insert_account_with_id(&mut conn, OTHER_ACCOUNT_ID, "other").await;
+    let peer = conversation(&mut conn, "+14075550106", "one-to-one").await;
+    let spare = conversation(&mut conn, "+14075550107", "one-to-one").await;
+    let member = handle(&mut conn, "+14075550108").await;
+    let own = handle(&mut conn, "+14075550109").await;
+    let message = MessageRow {
+        conversation_id: peer,
+        ..running_late("imessage", "m-1")
+    }
+    .insert(&mut conn)
+    .await;
+    let copy = MessageRow {
+        conversation_id: peer,
+        ..running_late("go-sms-pro", "m-2")
+    }
+    .insert(&mut conn)
+    .await;
+    add_attachment(&mut conn, message, "sha-photo").await;
+    let attachment: i64 = sqlx::query_scalar("SELECT id FROM attachments WHERE message_id = $1")
+        .bind(message)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+
+    let counted = [
+        (
+            "a message is added",
+            format!(
+                "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp,
+                     time_precision, is_from_me, sort_order)
+                 VALUES ({peer}, {TEST_ACCOUNT_ID}, 'imessage', 'm-3',
+                     '2020-01-01T00:00:00.000Z', 'milliseconds', 0, 0)"
+            ),
+        ),
+        (
+            "a message's text changes",
+            format!("UPDATE messages SET body = 'On my way' WHERE id = {message}"),
+        ),
+        (
+            "a message's time changes",
+            format!(
+                "UPDATE messages SET timestamp = '2015-03-12T18:04:23.000Z' WHERE id = {message}"
+            ),
+        ),
+        (
+            "a message's sender changes",
+            format!("UPDATE messages SET sender_handle_id = {member} WHERE id = {message}"),
+        ),
+        (
+            "a message's content key changes",
+            format!("UPDATE messages SET content_key = 'key' WHERE id = {message}"),
+        ),
+        (
+            "a message moves to another conversation",
+            format!("UPDATE messages SET conversation_id = {spare} WHERE id = {copy}"),
+        ),
+        (
+            "an attachment is added",
+            format!("INSERT INTO attachments (message_id, sha256) VALUES ({copy}, 'sha-new')"),
+        ),
+        (
+            "an attachment's file changes",
+            format!("UPDATE attachments SET sha256 = 'sha-other' WHERE id = {attachment}"),
+        ),
+        (
+            "an attachment is removed",
+            format!("DELETE FROM attachments WHERE id = {attachment}"),
+        ),
+        (
+            "a participant is added",
+            format!(
+                "INSERT INTO participants (conversation_id, handle_id) VALUES ({peer}, {member})"
+            ),
+        ),
+        (
+            "a participant is removed",
+            format!("DELETE FROM participants WHERE conversation_id = {peer}"),
+        ),
+        (
+            "an identity is added",
+            format!(
+                "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
+                 VALUES ({TEST_ACCOUNT_ID}, 'ann@example.com', 'ann@example.com', 'email',
+                     'text_message')"
+            ),
+        ),
+        (
+            "an identity's address changes",
+            format!("UPDATE handles SET normalized = '+14075550110' WHERE id = {member}"),
+        ),
+        (
+            "an identity becomes the account's",
+            format!(
+                "INSERT INTO account_handles (account_id, handle_id)
+                 VALUES ({TEST_ACCOUNT_ID}, {own})"
+            ),
+        ),
+        (
+            "an identity stops being the account's",
+            format!("DELETE FROM account_handles WHERE handle_id = {own}"),
+        ),
+        (
+            "a conversation's kind changes",
+            format!("UPDATE conversations SET conversation_type = 'group' WHERE id = {peer}"),
+        ),
+        (
+            "a message is removed",
+            format!("DELETE FROM messages WHERE id = {copy}"),
+        ),
+        (
+            "a conversation is removed",
+            format!("DELETE FROM conversations WHERE id = {spare}"),
+        ),
+        (
+            "an identity is removed",
+            format!("DELETE FROM handles WHERE id = {own}"),
+        ),
+    ];
+    let not_counted = [
+        (
+            "a message's subject changes",
+            format!("UPDATE messages SET subject = 'Dinner' WHERE id = {message}"),
+        ),
+        (
+            "a message's duplicate flag changes",
+            format!("UPDATE messages SET duplicate_of = NULL WHERE id = {message}"),
+        ),
+        (
+            "an attachment's Preview is made",
+            format!(
+                "UPDATE attachments SET preview_sha256 = 'sha-preview' WHERE message_id = {message}"
+            ),
+        ),
+        (
+            "the account logs in",
+            format!(
+                "UPDATE accounts SET last_login_at = '2026-10-25T00:00:00Z'
+                 WHERE id = {TEST_ACCOUNT_ID}"
+            ),
+        ),
+    ];
+    for (counts, cases) in [(true, &counted[..]), (false, &not_counted[..])] {
+        for (what, sql) in cases {
+            let before = input_writes(&mut conn, TEST_ACCOUNT_ID).await;
+            let other_before = input_writes(&mut conn, OTHER_ACCOUNT_ID).await;
+            let mut tx = begin_write(&mut conn).await.unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(sql.clone()))
+                .execute(&mut *tx)
+                .await
+                .unwrap_or_else(|e| panic!("{what}: {e}"));
+            tx.commit().await.unwrap();
+            assert_eq!(
+                input_writes(&mut conn, TEST_ACCOUNT_ID).await > before,
+                counts,
+                "{what}: whether the write counts"
+            );
+            assert_eq!(
+                input_writes(&mut conn, OTHER_ACCOUNT_ID).await,
+                other_before,
+                "{what}: another account's count stays"
+            );
+        }
+    }
+}
+
+/// A copy that lands after the pass read the account and before it took the
+/// write lock is seen: the pass works the flags out again and hides it.
+/// Applied as they were first worked out, the flags would leave the new
+/// copy shown until the next Import Run ends.
+#[tokio::test]
+async fn a_copy_that_lands_before_the_lock_makes_the_pass_work_the_flags_out_again() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let first = running_late("go-sms-pro", "g1").insert(&mut conn).await;
+    let mut other = pool.acquire().await.unwrap();
+    let mut attempts = 0;
+    let mut second = None;
+    let stats = dedupe_cross_source_between(&mut conn, &test_pass(), async || {
+        attempts += 1;
+        if attempts == 1 {
+            second = Some(
+                running_late("sms-backup-plus", "g2")
+                    .insert(&mut other)
+                    .await,
+            );
+        }
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(attempts, 2, "the pass works the flags out a second time");
+    assert_eq!(stats.exact_flagged, 1);
+    assert_eq!(
+        duplicate_of(&mut conn, second.expect("the copy landed")).await,
+        Some(first)
+    );
+}
+
+/// When a write lands before the lock on every attempt without it, the pass
+/// works the flags out with the lock held, so it ends and sees every write.
+#[tokio::test]
+async fn a_pass_that_keeps_seeing_writes_works_the_flags_out_under_the_lock() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let first = running_late("go-sms-pro", "g1").insert(&mut conn).await;
+    let mut other = pool.acquire().await.unwrap();
+    let sources = ["sms-backup-plus", "imessage", "whatsapp"];
+    let mut copies = Vec::new();
+    let stats = dedupe_cross_source_between(&mut conn, &test_pass(), async || {
+        let source = sources[copies.len()];
+        let guid = format!("copy-{}", copies.len());
+        copies.push(running_late(source, &guid).insert(&mut other).await);
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(copies.len(), UNLOCKED_ATTEMPTS);
+    assert_eq!(stats.exact_flagged, 3, "every copy is seen");
+    for copy in copies {
+        assert_eq!(duplicate_of(&mut conn, copy).await, Some(first));
+    }
+}
+
+/// A write that changes nothing the pass reads, here another account's new
+/// message and this account's message subject, lands before the lock, and
+/// the pass applies its flags without working them out again.
+#[tokio::test]
+async fn a_write_to_nothing_the_pass_reads_does_not_make_it_work_again() {
+    const OTHER_ACCOUNT_ID: i64 = 8;
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let first = running_late("go-sms-pro", "g1").insert(&mut conn).await;
+    let second = running_late("sms-backup-plus", "g2")
+        .insert(&mut conn)
+        .await;
+    crate::test_support::insert_account_with_id(&mut conn, OTHER_ACCOUNT_ID, "other").await;
+    let other_handle = handle_of(&mut conn, OTHER_ACCOUNT_ID, "+14075550107").await;
+    let other_peer = ConversationRow::new(OTHER_ACCOUNT_ID, other_handle)
+        .insert(&mut conn)
+        .await;
+    let mut other = pool.acquire().await.unwrap();
+    let mut attempts = 0;
+    let stats = dedupe_cross_source_between(&mut conn, &test_pass(), async || {
+        attempts += 1;
+        MessageRow::new(OTHER_ACCOUNT_ID, other_peer)
+            .insert(&mut other)
+            .await;
+        let mut tx = begin_write(&mut other).await.unwrap();
+        sqlx::query("UPDATE messages SET subject = 'Dinner' WHERE id = $1")
+            .bind(first)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(attempts, 1, "the flags are applied as first worked out");
+    assert_eq!(stats.exact_flagged, 1);
+    assert_eq!(duplicate_of(&mut conn, second).await, Some(first));
+}
+
+/// The stored flags the pass reads with the write lock held are found
+/// through `ix_messages_duplicate_of`, which indexes only the flagged rows,
+/// so the read costs the hidden copies and not a pass over the account. The
+/// test database has no `ANALYZE` statistics, as a new Message Crate has
+/// none, and without `INDEXED BY` SQLite then reads every message of the
+/// account through its conversations, under the lock, on every completed
+/// Import Run (#3256).
+#[tokio::test]
+async fn the_stored_flags_are_read_through_the_partial_index() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let plan: Vec<String> = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "EXPLAIN QUERY PLAN {}",
+        db::DUPLICATE_FLAGS_SQL
+    )))
+    .bind(TEST_ACCOUNT_ID)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap()
+    .iter()
+    .map(|row| sqlx::Row::get::<String, _>(row, 3))
+    .collect();
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("SEARCH m USING INDEX ix_messages_duplicate_of")),
+        "{plan:?}"
+    );
 }
