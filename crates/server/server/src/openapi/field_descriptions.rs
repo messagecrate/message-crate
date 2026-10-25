@@ -1,5 +1,5 @@
 //! A field's description sits on the field (`docs/architecture/rules/http-api.md`,
-//! "The reference").
+//! API-122).
 //!
 //! utoipa writes the doc comment of a field typed by a schema of its own
 //! beside that schema's `$ref`. For a required field the `$ref` is the

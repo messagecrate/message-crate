@@ -1,5 +1,5 @@
 //! The parts of the reference no handler writes by hand
-//! (`docs/architecture/rules/http-api.md`, "The reference").
+//! (`docs/architecture/rules/http-api.md`, API-121).
 //!
 //! An operation's error responses are built here from what it takes: the
 //! credential brings `401` and `403`, a body brings `400`, `413`, `415` and

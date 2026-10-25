@@ -265,7 +265,7 @@ Any route that reads or writes the database can answer this, so no route in the 
 /// or `415` for one that takes a body, are added by
 /// `crate::openapi::shared_parts`, which also files each type named here
 /// under its status and builds the one problem response for it
-/// (`docs/architecture/rules/http-api.md`, "The reference").
+/// (`docs/architecture/rules/http-api.md`, API-121).
 pub mod openapi {
     use std::collections::BTreeMap;
 
