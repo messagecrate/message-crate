@@ -68,6 +68,34 @@ fn import_args(config: &Path, input: &Path) -> ImportArgs {
     }
 }
 
+/// `create-database` makes a database that holds the administrator, `admin`
+/// with no password, and no Demo Account: only `serve` on a new database and
+/// `reset-demo` add that.
+#[tokio::test]
+async fn create_database_makes_admin_and_no_demo_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = server_config(dir.path());
+    run_create_database(CreateDatabaseArgs {
+        config: config.clone(),
+    })
+    .await
+    .unwrap();
+
+    let opened = open(&config).await;
+    let mut conn = opened.conn().await.unwrap();
+    let accounts: Vec<(i64, String, Option<String>)> =
+        sqlx::query_as("SELECT id, username, password_hash FROM accounts ORDER BY id")
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(
+        accounts,
+        vec![(account_profile::ADMIN_ACCOUNT_ID, "admin".to_string(), None)]
+    );
+    drop(conn);
+    opened.close().await;
+}
+
 /// `set-admin-password` sets the first password on a Message Crate in
 /// setup and replaces it on a ready one, from the same command.
 #[tokio::test]
