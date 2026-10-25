@@ -504,14 +504,24 @@ pub async fn attachment_digests(
 
 // ── Duplicate flags ──────────────────────────────────────────────────────
 
+/// The statement of [`duplicate_flags`], the account bound as `$1`.
+pub(crate) const DUPLICATE_FLAGS_SQL: &str = r"
+        SELECT m.id, m.duplicate_of
+        FROM messages m INDEXED BY ix_messages_duplicate_of
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE c.account_id = $1 AND m.duplicate_of IS NOT NULL
+        ";
+
 /// The `(loser, winner)` duplicate flag of each of the account's hidden
 /// messages.
 ///
 /// The full dedupe reads them with the write lock held, to write only the
 /// flags that changed (CONTACT-57), so the read must not cost a pass over
-/// the account. `EXPLAIN QUERY PLAN` shows SQLite searching
-/// `ix_messages_duplicate_of`, which indexes only the flagged rows, so the
-/// statement finds them without reading the rest (#3256).
+/// the account. `INDEXED BY` holds SQLite to `ix_messages_duplicate_of`,
+/// which indexes only the flagged rows, so the statement finds them without
+/// reading the rest (#3256). Without it, a database with no `ANALYZE`
+/// statistics, such as a new one, reads every message of the account
+/// through its conversations instead.
 ///
 /// # Errors
 ///
@@ -525,21 +535,14 @@ pub async fn duplicate_flags(
         id: i64,
         duplicate_of: i64,
     }
-    Ok(sqlx::query_as::<_, Row>(
-        r"
-        SELECT m.id, m.duplicate_of
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.account_id = $1 AND m.duplicate_of IS NOT NULL
-        ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await
-    .context("read the account's duplicate flags")?
-    .into_iter()
-    .map(|row| (row.id, row.duplicate_of))
-    .collect())
+    Ok(sqlx::query_as::<_, Row>(DUPLICATE_FLAGS_SQL)
+        .bind(account_id)
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the account's duplicate flags")?
+        .into_iter()
+        .map(|row| (row.id, row.duplicate_of))
+        .collect())
 }
 
 /// Clear the duplicate flag of the messages `ids`.

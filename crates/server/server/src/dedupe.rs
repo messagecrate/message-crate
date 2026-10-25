@@ -358,19 +358,7 @@ async fn apply_plan(tx: &mut WriteTx<'_>, pass: &Pass<'_>, plan: Plan) -> Result
     let progress = pass.progress;
     let Plan { keys, flags, stats } = plan;
     if !keys.is_empty() {
-        let total = keys.len();
-        let mut previous = 0usize;
-        db::write_content_keys(conn, &keys, |written| {
-            // Say how far the write is at each multiple of the log interval it
-            // passes, and when it is done.
-            if written == total
-                || written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY
-            {
-                progress.say(format_args!("Wrote {written} of {total} content keys"));
-            }
-            previous = written;
-        })
-        .await?;
+        write_content_keys(conn, &keys, progress).await?;
     }
     let stored = db::duplicate_flags(conn, pass.account_id).await?;
     let shown: Vec<i64> = stored
@@ -389,7 +377,7 @@ async fn apply_plan(tx: &mut WriteTx<'_>, pass: &Pass<'_>, plan: Plan) -> Result
         db::write_duplicate_flags(conn, "_dedupe_flags", &hidden).await?;
     }
     progress.say(format_args!(
-        "Showed {} hidden before and hid {} shown before or behind another",
+        "Showed {} that were hidden, and hid {} or moved them behind another copy",
         words(shown.len() as u64, "1 message", "{n} messages"),
         words(hidden.len() as u64, "1 message", "{n} messages"),
     ));
@@ -534,11 +522,25 @@ async fn recompute_content_keys(
     if keys.is_empty() {
         return Ok(0);
     }
+    write_content_keys(conn, &keys, progress).await?;
+    Ok(keys.len() as u64)
+}
+
+/// Write the `(message id, content key)` pairs `keys` onto the messages,
+/// saying how far the write is at each multiple of
+/// [`CONTENT_KEY_WRITE_LOG_EVERY`] it passes, and when it is done.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+async fn write_content_keys(
+    conn: &mut SqliteConnection,
+    keys: &[(i64, String)],
+    progress: Progress,
+) -> Result<()> {
     let total = keys.len();
     let mut previous = 0usize;
-    db::write_content_keys(conn, &keys, |written| {
-        // Say how far the write is at each multiple of the log interval it
-        // passes, and when it is done.
+    db::write_content_keys(conn, keys, |written| {
         if written == total
             || written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY
         {
@@ -546,8 +548,7 @@ async fn recompute_content_keys(
         }
         previous = written;
     })
-    .await?;
-    Ok(keys.len() as u64)
+    .await
 }
 
 /// The `(message id, content key)` of each of the account's messages in

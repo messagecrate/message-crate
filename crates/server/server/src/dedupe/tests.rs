@@ -2777,3 +2777,33 @@ async fn a_write_to_nothing_the_pass_reads_does_not_make_it_work_again() {
     assert_eq!(stats.exact_flagged, 1);
     assert_eq!(duplicate_of(&mut conn, second).await, Some(first));
 }
+
+/// The stored flags the pass reads with the write lock held are found
+/// through `ix_messages_duplicate_of`, which indexes only the flagged rows,
+/// so the read costs the hidden copies and not a pass over the account. The
+/// test database has no `ANALYZE` statistics, as a new Message Crate has
+/// none, and without `INDEXED BY` SQLite then reads every message of the
+/// account through its conversations, under the lock, on every completed
+/// Import Run (#3256).
+#[tokio::test]
+async fn the_stored_flags_are_read_through_the_partial_index() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let plan: Vec<String> = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "EXPLAIN QUERY PLAN {}",
+        db::DUPLICATE_FLAGS_SQL
+    )))
+    .bind(TEST_ACCOUNT_ID)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap()
+    .iter()
+    .map(|row| sqlx::Row::get::<String, _>(row, 3))
+    .collect();
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("SEARCH m USING INDEX ix_messages_duplicate_of")),
+        "{plan:?}"
+    );
+}
