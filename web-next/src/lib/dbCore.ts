@@ -259,7 +259,7 @@ export function handleIdsForRaws(
   db: Database.Database,
   accountId: string,
   raws: string[],
-  service = "phone",
+  service = "text_message",
 ): number[] {
   const seen = new Map<string, { type: IdentityType; normalized: string }>();
   for (const raw of raws) {

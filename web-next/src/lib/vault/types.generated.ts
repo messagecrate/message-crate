@@ -265,7 +265,7 @@ export interface paths {
          *     The owner may, on any account. The account itself may with a
          *     session that carries the `delete` permission, and confirms in the body.
          *     An API token is refused whatever its scopes: permanent deletion is a
-         *     person's act (`docs/architecture/http-api.md`, "Credentials and reach").
+         *     person's act (`docs/architecture/rules/http-api.md`, API-83).
          */
         delete: operations["delete_account_messages"];
         options?: never;
@@ -1112,8 +1112,8 @@ export interface paths {
          *
          *     The stage is a field of the run, so moving it is a `PATCH` of the run
          *     rather than a `POST` to a `stage` sub-resource: a path segment names a
-         *     resource, and `stage` is not one (`docs/architecture/http-api.md`,
-         *     "Naming a route"). The answer is the run itself, the same shape
+         *     resource, and `stage` is not one (`docs/architecture/rules/http-api.md`,
+         *     API-12). The answer is the run itself, the same shape
          *     `GET /v1/imports/{id}` returns, so a caller reads one record wherever it
          *     asks.
          */
@@ -1319,11 +1319,11 @@ export interface paths {
         /**
          * One message by id, in the shape the Messages list gives each row.
          * @description Read-only. A message is never written through this route: an import
-         *     writes messages, and trashing is a conversation operation
-         *     (`docs/architecture/http-api.md`, "Methods"). The id is enough: an id
-         *     names one message, and a lookup by id does not depend on how it was
-         *     found, so the route returns any message of the caller's account, one in
-         *     a trashed conversation and a duplicate included, and takes no `q`.
+         *     writes messages, and trashing is a conversation operation. The id is
+         *     enough: an id names one message, and a lookup by id does not depend on how
+         *     it was found, so the route returns any message of the caller's account,
+         *     one in a trashed conversation and a duplicate included, and takes no `q`
+         *     (`docs/architecture/rules/http-api.md`, API-20).
          *     Another account's message is `404`.
          */
         get: operations["get_message"];
@@ -1826,8 +1826,8 @@ export interface components {
             /** @description The number, normalized: E.164 when it parses as one. */
             address: string;
             /**
-             * @description The services the number is an identity under, `phone` (Text Message)
-             *     before `whatsapp`. Never empty.
+             * @description The services the number is an identity under, `text_message` (Text
+             *     Message) before `whatsapp`. Never empty.
              */
             services: components["schemas"]["IdentityService"][];
         };
@@ -1868,10 +1868,10 @@ export interface components {
              */
             address: string;
             /**
-             * @description The service to link it on; the phone service when omitted. The
+             * @description The service to link it on; Text Message when omitted. The
              *     address's shape picks the identity's type among those the service
-             *     carries: an address with an `@` is an email address on the phone
-             *     service, and `other` on WhatsApp.
+             *     carries: an address with an `@` is an email address on Text
+             *     Message, and `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -2943,8 +2943,8 @@ export interface components {
             text: string | null;
         };
         /**
-         * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
-         *     "Runs"). The list decides which search words the query may use and what
+         * @description Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,
+         *     API-117). The list decides which search words the query may use and what
          *     the run hands over.
          * @enum {string}
          */
@@ -3000,8 +3000,8 @@ export interface components {
             total_bytes: number;
         };
         /**
-         * @description What an Export Run asked for, stored as given (`docs/architecture/http-api.md`,
-         *     "Runs"). One of three forms: everything the account holds, a query in the
+         * @description What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,
+         *     API-116). One of three forms: everything the account holds, a query in the
          *     search language, or conversations and messages picked by hand.
          */
         ExportScope: {
@@ -3136,7 +3136,7 @@ export interface components {
              *     same terms: the three message counts add up to all of its messages.
              */
             orphaned_messages: number;
-            /** @description `phone`, `email`, or `whatsapp`. */
+            /** @description `text_message`, `email`, or `whatsapp`. */
             service: string;
             /**
              * @description When the identity's oldest message was sent, or null when there is
@@ -3176,13 +3176,14 @@ export interface components {
         };
         /**
          * @description The service an identity is on, as a request names it and the profile
-         *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
-         *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
+         *     reports it: `text_message` or `whatsapp`. `text_message` is Text Message,
+         *     which carries SMS, MMS, iMessage and RCS, and reaches an email address
+         *     through iMessage.
          *     The address's shape picks the identity's type among those the service
          *     carries, so an address with an `@` is `other` on WhatsApp.
          * @enum {string}
          */
-        IdentityService: "phone" | "whatsapp";
+        IdentityService: "text_message" | "whatsapp";
         /** @description One contact an import run touched, and what the run did to it. */
         ImportContact: {
             /**
@@ -3386,7 +3387,7 @@ export interface components {
          *     its issues and notes. A run may record any number of either, so a page
          *     that carried them would have no bound on its size; `GET /v1/imports/{id}`
          *     answers them (#1559,
-         *     `docs/architecture/http-api.md`, "Lists").
+         *     `docs/architecture/rules/http-api.md`, API-44).
          */
         ImportRunSummary: {
             /**
@@ -3537,7 +3538,7 @@ export interface components {
             /**
              * @description The service the address is on. The address's shape picks the
              *     identity's type among those the service carries: an address with an
-             *     `@` is an email address on the phone service, and `other` on
+             *     `@` is an email address on Text Message, and `other` on
              *     WhatsApp, such as an internal id `123456789012345@lid`.
              */
             service: components["schemas"]["IdentityService"];
@@ -3562,7 +3563,7 @@ export interface components {
          *     Not a `Page`: the log is written while it is read, so a count and an
          *     offset from the newest line would move under the reader, and counting a
          *     250 MB log for every page is the cost a line's id saves
-         *     (`docs/architecture/http-api.md`, "Lists").
+         *     (`docs/architecture/rules/http-api.md`, API-51).
          */
         ListLogLinesResponse: {
             /**
@@ -3578,7 +3579,7 @@ export interface components {
         /**
          * @description One page of the Messages list and how the server read its search: the
          *     four keys of every page, and `search`, the one key a page carries beside
-         *     them (`docs/architecture/http-api.md`, "Lists").
+         *     them (`docs/architecture/rules/http-api.md`, API-41).
          */
         ListMessagesResponse: {
             /** @description The rows on this page. */
@@ -3978,7 +3979,7 @@ export interface components {
          *     the list answers for it, and the attachments the run wrote whose
          *     Thumbnail or Preview the server's media pass could not make, with why. A
          *     run may write any number of them, so the list leaves them out
-         *     (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
+         *     (`docs/architecture/rules/http-api.md`, API-45). Each is named by its file
          *     name, type and size, which the owner may read
          *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"); never by its message, its conversation, or its bytes.
@@ -4727,7 +4728,7 @@ export interface components {
                  *     same terms: the three message counts add up to all of its messages.
                  */
                 orphaned_messages: number;
-                /** @description `phone`, `email`, or `whatsapp`. */
+                /** @description `text_message`, `email`, or `whatsapp`. */
                 service: string;
                 /**
                  * @description When the identity's oldest message was sent, or null when there is
@@ -5371,7 +5372,7 @@ export interface components {
         };
         /**
          * @description An RFC 7807 problem document: the body of every failure the server answers,
-         *     served as `application/problem+json` (`docs/architecture/http-api.md`).
+         *     served as `application/problem+json` (`docs/architecture/rules/http-api.md`).
          *
          *     `type` is the URL of the page describing this kind of failure, one page per
          *     type, or `about:blank` for an internal error. A validation failure carries
@@ -5445,7 +5446,7 @@ export interface components {
             address: string;
             /**
              * @description The service the identity is on. When omitted, the identity is found on
-             *     the phone service first, then WhatsApp.
+             *     Text Message first, then WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -5712,7 +5713,7 @@ export interface components {
             merge?: boolean;
             /**
              * @description The service the identity is on. When omitted, the identity is found
-             *     on the phone service first, then WhatsApp.
+             *     on Text Message first, then WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -5779,7 +5780,7 @@ export interface components {
             /**
              * @description The service the address is on. The identity is found as the type
              *     the address takes there: an address with an `@` is an email address
-             *     on the phone service, and `other` on WhatsApp.
+             *     on Text Message, and `other` on WhatsApp.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -5844,7 +5845,7 @@ export interface components {
             /**
              * @description The service of the new address. The previous address is found on
              *     its own service whatever this names: on the named service first when
-             *     it is there under more than one, else the phone service, then
+             *     it is there under more than one, else Text Message, then
              *     WhatsApp. When omitted, the new address takes the service of the
              *     previous one. The new address's shape picks its type among those the
              *     service carries, so an address with an `@` is `other` on WhatsApp.

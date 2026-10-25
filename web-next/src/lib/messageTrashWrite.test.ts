@@ -14,10 +14,10 @@ function testDb(): Database.Database {
     INSERT INTO accounts (id, username) VALUES (101, 'a'), (102, 'b');
     INSERT INTO handles (id, account_id, raw, normalized, handle_type, service)
       VALUES
-        (1, 101, '+15555550123', '+15555550123', 'phone', 'phone'),
-        (2, 101, 'chat-group', 'chat-group', 'other', 'phone'),
-        (3, 102, 'chat-other', 'chat-other', 'other', 'phone'),
-        (4, 101, '+15555550199', '+15555550199', 'phone', 'phone');
+        (1, 101, '+15555550123', '+15555550123', 'phone', 'text_message'),
+        (2, 101, 'chat-group', 'chat-group', 'other', 'text_message'),
+        (3, 102, 'chat-other', 'chat-other', 'other', 'text_message'),
+        (4, 101, '+15555550199', '+15555550199', 'phone', 'text_message');
     INSERT INTO contacts (id, account_id, preferred_name) VALUES (10, 101, 'Pat');
     INSERT INTO contact_handles (account_id, handle_id, contact_id)
       VALUES (101, 1, 10);

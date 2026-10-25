@@ -19,7 +19,7 @@ export function resolveHandleId(
   accountId: string,
   raw: string,
   handleType: IdentityType,
-  service = "phone",
+  service = "text_message",
 ): number {
   const trimmed = raw.trim();
   if (!trimmed) throw new Error("handle required");
@@ -52,7 +52,7 @@ export function handleIdForRaw(
   accountId: string,
   raw: string,
   handleType?: IdentityType,
-  service = "phone",
+  service = "text_message",
 ): number | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;

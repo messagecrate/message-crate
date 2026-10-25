@@ -4,10 +4,11 @@ import {
   isImageMime,
   type MediaVariant,
   noPreviewNote,
-  noThumbnailNote,
   threadDrawing,
 } from "@/lib/attachmentMedia";
 import type { AttachmentRow } from "@/lib/types";
+
+import { AttachmentThumbnail, ThumbnailPlaceholder } from "./AttachmentThumbnail";
 
 function isVideoMime(mime: string | null): boolean {
   return Boolean(mime?.startsWith("video/"));
@@ -110,42 +111,6 @@ function NoPreviewNotice({
   );
 }
 
-/**
- * A picture with no Thumbnail yet, or one the server could not make: its name
- * in the Thumbnail's place, with why under it when the server says, opening
- * `url` (the original, or the Preview when that is the version that opens)
- * on click, as `web/`'s `AttachmentThumbnail` does. The thread never fetches
- * those bytes itself (`docs/architecture/rules/media.md`, MEDIA-5).
- */
-function ThumbnailPlaceholder({
-  attachment,
-  url,
-}: {
-  attachment: AttachmentRow;
-  url: string;
-}) {
-  const label = attachment.originalName?.trim() || "Attachment";
-  const note = noThumbnailNote(attachment);
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Open ${label}`}
-      className="flex h-[200px] w-[200px] flex-col rounded-lg border border-border bg-hover px-3 text-center text-[12px] opacity-90 hover:opacity-100"
-    >
-      <span className="flex min-h-0 flex-1 items-center justify-center overflow-hidden break-all">
-        {label}
-      </span>
-      {note ? (
-        <span title={note} className="mb-2 line-clamp-2 shrink-0 break-words text-[11px] opacity-80">
-          {note}
-        </span>
-      ) : null}
-    </a>
-  );
-}
-
 export function MessageAttachments({
   source,
   attachments,
@@ -177,22 +142,12 @@ export function MessageAttachments({
             );
           case "thumbnail":
             return (
-              <a
+              <AttachmentThumbnail
                 key={a.id}
-                href={url}
-                className="block w-fit"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={thumbnailUrl ?? undefined}
-                  alt={a.originalName ?? "attachment"}
-                  loading="lazy"
-                  decoding="async"
-                  className="max-h-64 max-w-full rounded-lg"
-                />
-              </a>
+                attachment={a}
+                url={url}
+                thumbnailUrl={thumbnailUrl}
+              />
             );
           case "placeholder":
             return <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />;
