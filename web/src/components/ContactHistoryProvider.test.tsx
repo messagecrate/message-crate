@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useClearContactHistory, useContactHistory } from "../hooks/useContactHistory";
-import { ApiError } from "../lib/api";
+import { ApiError, noAnswerError } from "../lib/api";
 import {
   listContactGroups,
   restoreContact,
@@ -228,7 +228,8 @@ describe("ContactHistoryProvider", () => {
     ] as unknown as Awaited<ReturnType<typeof listContactGroups>>);
     updateMembersMock.mockImplementation(async (id) => {
       if (id === 10) throw new ApiError(404, "contact group not found");
-      if (id === 12) throw new ApiError(503, "the database is busy");
+      // A lost connection, as the client reports a request no server answered.
+      if (id === 12) throw noAnswerError();
       return { added: 1, removed: 0 };
     });
     const user = setupUser();
@@ -241,7 +242,7 @@ describe("ContactHistoryProvider", () => {
     expect(screen.getByTestId("report").textContent?.split("\n")).toEqual([
       "Added Ada to 1 of 3 Contact Groups.",
       "Could not add Ada to Family: contact group not found",
-      "Could not add Ada to Club: the database is busy",
+      `Could not add Ada to Club: ${noAnswerError().message}`,
     ]);
     expect(screen.getByTestId("undo")).toHaveTextContent("nothing to undo");
     expect(screen.getByTestId("redo")).toHaveTextContent("nothing to redo");
