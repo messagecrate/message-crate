@@ -270,6 +270,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-24: **Text Message has its own name inside Message Crate.** The
+  service the screens call Text Message was stored and sent under the word
+  for a phone number, which every phone number on it also carries. It is now
+  stored and sent as `text_message`. Nothing on screen changes. The database
+  format changed: an existing Message Crate is rebuilt empty on first start
+  and its messages must be imported again (#3086).
 - 2026-10-24: **The Import form checks its fields as you type.** Max FPS
   takes a whole number from 1 to 240 and Minimum Video File Size one from 1
   to 1,048,576 megabytes; either can stay empty, which keeps each video's
@@ -1004,6 +1010,14 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-24: **Finishing an import holds up the rest of the server for
+  less time.** The duplicate check that runs when an import finishes
+  rewrote every message of the account before it hid the duplicates again.
+  It now touches only the messages hidden as duplicates. On an account of about
+  636,000 messages the check takes about 9 s in place of 15 s, and about
+  75 s in place of 119 s on a computer five times slower, so a login or a
+  settings change made meanwhile waits less, and is turned away less often
+  as busy (#3256).
 - 2026-10-16: **A later iMazing export keeps a second reaction with the
   same emoji.** iMazing reactions keep only their emoji, so two people's 👍
   on one message looked alike. When an export holding Bob's 👍 was imported
@@ -1513,6 +1527,11 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-25: **The conversation list names WhatsApp as the identities
+  table does.** A one-to-one WhatsApp conversation imported from two
+  sources showed the word `whatsapp` in lower case where the identities
+  table said WhatsApp. Both screens now read one list of service names
+  (#3262).
 - 2026-10-16: **WhatsApp, Instagram and SMS messages show their
   reactions.** Only Apple Messages and Discord messages drew the reactions
   left on them. A WhatsApp, Instagram or SMS message, and an iMazing message
@@ -1619,6 +1638,18 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-25: **A Contact Group or Message Tag that is gone is named in
+  full.** A change to a Contact Group deleted meanwhile was refused as
+  "Group not found", and one to a Message Tag as "Tag not found". They now
+  read "Contact Group not found" and "Message Tag not found". A name already
+  taken reads "Contact Group already exists" or "Message Tag already
+  exists" the same way (#3264).
+- 2026-10-24: **Undo of a Contact Group change says why it was refused.**
+  When Undo or Redo of a Contact Group change on the Contacts list was
+  refused for some Contact Groups, the line above the list said only how
+  many. It now names each of those Contact Groups on a line of its own with
+  the reason, so a Contact Group deleted meanwhile reads differently from a
+  lost connection (#3252).
 - 2026-10-16: **A vCard name in another character set converts as written.**
   Convert a vCard file reads a name in the character set the card names,
   such as Shift_JIS from a Japanese Android phone, or Windows-1252, whose €
@@ -1688,6 +1719,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-25: **A request that lists the answers it accepts on two lines
+  is answered.** A program talking to the server can send the kinds of
+  answer it accepts over several lines, and some programs and proxies do.
+  The server read only the first line, so a request whose first line named
+  only web pages was turned away even when a later line accepted the
+  server's answer. It now reads every line as one list (#3236).
 - 2026-10-16: **A download nobody reads no longer holds the server.** A
   client that stopped reading an answer part-way, such as a browser tab that
   hung mid-download, kept its connection, and the export file or attachment
@@ -2015,6 +2052,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-24: A program that adds or reads identities through your Message
+  Crate's HTTP API must name Text Message `text_message` where it named it
+  `phone`. The server refuses `phone` as a service (#3086).
 - 2026-10-16: A conversation file written by an earlier build is refused
   when you import it. Read the backup again with this build to write a file
   the import takes (#3094).

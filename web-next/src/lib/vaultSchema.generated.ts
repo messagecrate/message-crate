@@ -574,7 +574,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     -- The latest message time of the copy that gave group_title, in the form
     -- messages.timestamp holds; NULL with no title, or when that copy had no
     -- messages. A merge compares an incoming copy's latest message with it
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-37).
     group_title_at TEXT,
     -- Path or name of the source file this thread came from.
     source_file TEXT NOT NULL,
@@ -644,7 +644,7 @@ CREATE TABLE IF NOT EXISTS messages (
     -- the time, decides: a millisecond time can end in .000. Within one
     -- source, a 'seconds' message is the duplicate of one that matches it in
     -- everything else with 'milliseconds' in the same second
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-42).
     time_precision TEXT NOT NULL CHECK (time_precision IN ('seconds', 'milliseconds')),
     -- 1 = sent by the account holder; 0 = received from someone else.
     is_from_me INTEGER NOT NULL,
@@ -688,7 +688,7 @@ CREATE TABLE IF NOT EXISTS messages (
     -- made, in the form timestamp holds; NULL when no copy's file said. A
     -- later import's copy from a later backup replaces its mark and text;
     -- one from an earlier backup changes neither
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-38).
     backup_taken_at TEXT,
     -- The mark a copy from a file without a backup date gave the message,
     -- as \`deletion\`; NULL for none. It outlasts every later copy without a
@@ -774,14 +774,14 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- it tried: what ffmpeg said about the file, with the paths it named
     -- made relative to the account's originals directory and the pass's
     -- work directory, or a phrase of the server's when ffmpeg did not read
-    -- the file (\`docs/architecture/media.md\` rule 4). Never written beside
+    -- the file (\`docs/architecture/rules/media.md\` MEDIA-4). Never written beside
     -- a Preview that works. NULL while the row names a Preview that works,
     -- once the original is decided to be shown as it is, and until a try has
     -- failed.
     preview_not_made_reason TEXT,
     -- The kind of failure \`preview_not_made_reason\` describes, so the owner's
     -- view of an Import Run can count the failures by kind without reading
-    -- ffmpeg's words. \`docs/architecture/media.md\` says what each kind means.
+    -- ffmpeg's words. \`docs/architecture/rules/media.md\` says what each kind means.
     -- Set and cleared with the reason.
     preview_not_made_kind TEXT CHECK (preview_not_made_kind IN (
         'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
@@ -789,7 +789,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     )),
     -- 1 when every browser shows the stored original as it is, so a viewer
     -- opens it and it gets no Preview (\`media::browser_shows\`,
-    -- \`docs/architecture/media.md\` rule 2). The server's media pass decides
+    -- \`docs/architecture/rules/media.md\` MEDIA-2). The server's media pass decides
     -- it, and only an MP4 is opened to read its codec. 0 when it is not
     -- shown as it is. NULL until the pass has decided, which the \`/v1\`
     -- Attachment answers as not shown as it is; the pass plans an original
@@ -948,7 +948,7 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     -- The latest message time of the copy that gave group_title, in the form
     -- staging_messages.timestamp holds; NULL with no title, or when that copy had no
     -- messages. A merge compares an incoming copy's latest message with it
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-37).
     group_title_at TEXT,
     -- Path or name of the source file this thread came from.
     source_file TEXT NOT NULL,
@@ -1020,7 +1020,7 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     -- the form timestamp holds; NULL when no copy's file said. Between two
     -- copies of one message from one source, the copy from the later backup
     -- decides its deletion mark and text
-    -- (docs/architecture/contacts-identities-and-messages.md).
+    -- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-38).
     backup_taken_at TEXT,
     -- The mark a copy from a file without a backup date gave this row, as
     -- \`messages.undated_deletion\`; NULL for none (#1989).
@@ -1155,7 +1155,7 @@ CREATE TABLE IF NOT EXISTS handles (
     normalized_note TEXT,
     -- Shape of the identity: 'phone' | 'email' | 'username' | 'other'.
     handle_type TEXT NOT NULL,
-    -- Platform identity: 'phone' | 'whatsapp' (not per-message SMS/iMessage/RCS).
+    -- Platform identity: 'text_message' | 'whatsapp' (not per-message SMS/iMessage/RCS).
     service TEXT NOT NULL,
     -- What made this row: 'address_book' (an address book load), 'import',
     -- or 'user'. Whatever made it, an identity taken off its contact is

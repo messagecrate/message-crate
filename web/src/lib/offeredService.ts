@@ -1,32 +1,33 @@
 import type { components } from "./serverApi.types";
+import { EMAIL_LABEL, IDENTITY_SERVICE_LABELS, serviceLabel } from "./serviceLabel";
 
 /**
  * A service offered wherever an identity is added: setup, the account
  * profile, and the contact drawer. `email` is offered on its own; the server
- * takes it as `phone` (`serverService`).
+ * takes it as `text_message` (`serverService`).
  */
-export type OfferedService = "phone" | "email" | "whatsapp";
+export type OfferedService = "text_message" | "email" | "whatsapp";
 
 export const OFFERED_SERVICES = [
-  "phone",
+  "text_message",
   "email",
   "whatsapp",
 ] as const satisfies readonly OfferedService[];
 
-/** The service the server takes for an identity: `phone` or `whatsapp`. */
+/** The service the server takes for an identity: `text_message` or `whatsapp`. */
 export type ServerService = components["schemas"]["IdentityService"];
 
 /**
  * The service the server takes for an identity offered on `service`. An email
- * address is on the phone service, where iMessage reaches it; the server types
+ * address is on Text Message, where iMessage reaches it; the server types
  * an identity by its address, never by its service, and refuses `email` as a
  * service.
  */
 export function serverService(service: OfferedService): ServerService {
   switch (service) {
-    case "phone":
+    case "text_message":
     case "email":
-      return "phone";
+      return "text_message";
     case "whatsapp":
       return "whatsapp";
   }
@@ -35,7 +36,7 @@ export function serverService(service: OfferedService): ServerService {
 /**
  * The service an identity the server lists is on, or undefined when the list
  * names none the server takes. The list names an email address `email`, its
- * type; one a person added is on the phone service.
+ * type; one a person added is on Text Message.
  */
 export function listedServerService(service: string | null | undefined): ServerService | undefined {
   const known = OFFERED_SERVICES.find((candidate) => candidate === service);
@@ -48,13 +49,18 @@ export const EXAMPLE_PHONE = "+1 555-555-0119";
 /**
  * The services an identity can be on, offered wherever one is added: setup,
  * the account profile, and the contact drawer. Each carries the example shown
- * in an empty field, on the same line as its service. The phone services take
- * `EXAMPLE_PHONE`, the web app's one phone example; change it there.
+ * in an empty field, on the same line as its service. Text Message and
+ * WhatsApp take `EXAMPLE_PHONE`, the web app's one phone example; change it
+ * there.
  */
 export const OFFERED_SERVICE_OPTIONS = [
-  { value: "phone", label: "Text Message", placeholder: EXAMPLE_PHONE },
-  { value: "email", label: "Email", placeholder: "you@example.com" },
-  { value: "whatsapp", label: "WhatsApp", placeholder: EXAMPLE_PHONE },
+  {
+    value: "text_message",
+    label: IDENTITY_SERVICE_LABELS.text_message,
+    placeholder: EXAMPLE_PHONE,
+  },
+  { value: "email", label: EMAIL_LABEL, placeholder: "you@example.com" },
+  { value: "whatsapp", label: IDENTITY_SERVICE_LABELS.whatsapp, placeholder: EXAMPLE_PHONE },
 ] as const satisfies ReadonlyArray<{
   value: OfferedService;
   label: string;
@@ -135,29 +141,18 @@ export function inferService(handle: string, service: string | null | undefined)
   if (service?.trim()) return service.trim().toLowerCase();
   const h = handle.trim();
   if (h.includes("@") && !h.startsWith("@")) return "email";
-  if (/^\+?\d[\d\s().-]{6,}$/.test(h)) return "phone";
+  if (/^\+?\d[\d\s().-]{6,}$/.test(h)) return "text_message";
   return "unknown";
 }
 
-/** Label shown in the handles table Service column. */
+/**
+ * Label shown in the identities table's Service column: the name
+ * `serviceLabel` gives the listed service, or the one guessed from the
+ * address when the list names none, and `—` when neither names a service.
+ */
 export function formatOfferedServiceLabel(
   handle: string,
   service: string | null | undefined,
 ): string {
-  const lower = inferService(handle, service);
-  if (lower === "whatsapp") return "WhatsApp";
-  if (
-    lower === "phone" ||
-    lower === "sms" ||
-    lower === "mms" ||
-    lower === "sms/mms" ||
-    lower === "imessage" ||
-    lower === "ios" ||
-    lower === "rcs"
-  ) {
-    return "Text Message";
-  }
-  if (lower === "email") return "Email";
-  if (lower === "unknown") return "—";
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
+  return serviceLabel(inferService(handle, service)) ?? "—";
 }

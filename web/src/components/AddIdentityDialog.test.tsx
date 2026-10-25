@@ -49,7 +49,7 @@ describe("AddIdentityDialog", () => {
     await user.clear(screen.getByRole("textbox", { name: "Identity" }));
     await fill(user, screen.getByRole("textbox", { name: "Identity" }), "sam");
     await user.click(screen.getByRole("button", { name: "Add" }));
-    expect(onConfirm).toHaveBeenLastCalledWith({ address: "sam", service: "phone" });
+    expect(onConfirm).toHaveBeenLastCalledWith({ address: "sam", service: "text_message" });
   });
 
   it("refuses a value under Email that is not an address, before asking anyone", async () => {
@@ -73,7 +73,7 @@ describe("AddIdentityDialog", () => {
     render(
       <AddIdentityDialog
         open
-        existing={[{ address: "+15555550100", service: "phone" }]}
+        existing={[{ address: "+15555550100", service: "text_message" }]}
         onClose={() => {}}
         onConfirm={onConfirm}
       />,

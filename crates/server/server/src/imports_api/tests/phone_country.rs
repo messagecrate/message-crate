@@ -308,7 +308,7 @@ async fn picking_the_country_of_an_own_identity_gives_it_its_plus_form() {
         state,
         &path,
         &account.token,
-        serde_json::json!({ "identities": [{ "address": NATIONAL, "service": "phone" }] }),
+        serde_json::json!({ "identities": [{ "address": NATIONAL, "service": "text_message" }] }),
     )
     .await;
     let listed: serde_json::Value =
@@ -420,7 +420,7 @@ async fn a_contact_s_number_joins_an_own_identity_on_my_identities_only() {
         crate::test_support::register_via_api(&fixture.state, "self", "hunter2hunter2").await;
     let state = &fixture.state;
     let path = format!("/v1/accounts/{}", account.account_id);
-    let link = |address: &str| serde_json::json!({ "identities": [{ "address": address, "service": "phone" }] });
+    let link = |address: &str| serde_json::json!({ "identities": [{ "address": address, "service": "text_message" }] });
     let _: serde_json::Value = patch_json(state, &path, &account.token, link(FULL)).await;
     import_with_country(state, &account.token, None, one_to_one(NATIONAL, "m1")).await;
     let contact = contact_of(state, "07700900123").await;
@@ -608,8 +608,8 @@ async fn picking_the_country_finds_the_own_number_keyed_by_the_digits() {
         &path,
         &account.token,
         serde_json::json!({ "identities": [
-            { "address": FULL, "service": "phone" },
-            { "address": "07700900123", "service": "phone" },
+            { "address": FULL, "service": "text_message" },
+            { "address": "07700900123", "service": "text_message" },
         ]}),
     )
     .await;
@@ -635,7 +635,7 @@ async fn picking_the_country_finds_the_own_number_keyed_by_the_digits() {
     assert_eq!(addresses, [FULL]);
 }
 
-/// Link the account's own number written `address`, on the phone service.
+/// Link the account's own number written `address`, on Text Message.
 async fn link_own(
     state: &crate::server::AppState,
     account: &crate::test_support::RegisteredAccount,
@@ -645,7 +645,7 @@ async fn link_own(
         state,
         &format!("/v1/accounts/{}", account.account_id),
         &account.token,
-        serde_json::json!({ "identities": [{ "address": address, "service": "phone" }] }),
+        serde_json::json!({ "identities": [{ "address": address, "service": "text_message" }] }),
     )
     .await;
 }

@@ -61,7 +61,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
     let mut conn = fixture.state.db.acquire().await.unwrap();
     let member: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550135', '+15555550135', 'phone', 'phone') RETURNING id",
+         VALUES ($1, '+15555550135', '+15555550135', 'phone', 'text_message') RETURNING id",
     )
     .bind(alice.account_id)
     .fetch_one(&mut *conn)

@@ -1,13 +1,18 @@
 import {
   attachmentMedia,
+  isHeld,
+  isImageMime,
   type MediaVariant,
   noPreviewNote,
+  threadDrawing,
 } from "@/lib/attachmentMedia";
 import type { AttachmentRow } from "@/lib/types";
 
-function isImageMime(mime: string | null): boolean {
-  return Boolean(mime?.startsWith("image/"));
-}
+import {
+  AttachmentThumbnail,
+  NoticeThumbnail,
+  ThumbnailPlaceholder,
+} from "./AttachmentThumbnail";
 
 function isVideoMime(mime: string | null): boolean {
   return Boolean(mime?.startsWith("video/"));
@@ -82,16 +87,7 @@ function NoPreviewNotice({
   const note = noPreviewNote(attachment);
   return (
     <div className="flex max-w-xs flex-col gap-1.5">
-      {thumbnailUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={thumbnailUrl}
-          alt={label}
-          loading="lazy"
-          decoding="async"
-          className="max-h-64 max-w-full rounded-lg"
-        />
-      ) : null}
+      {thumbnailUrl ? <NoticeThumbnail src={thumbnailUrl} alt={label} /> : null}
       <div
         role="note"
         className="flex flex-col gap-1 rounded-lg border border-dashed border-border bg-hover px-3 py-2.5 text-[12px]"
@@ -124,68 +120,47 @@ export function MessageAttachments({
   return (
     <div className={`${hasBody ? "mt-2" : ""} space-y-1.5`}>
       {attachments.map((a) => {
-        const { full, url, mimeType, thumbnailUrl } = attachmentMedia(
-          source,
-          a,
-          mediaVariant(),
-        );
-        if (url && full === "none") {
-          return (
-            <NoPreviewNotice
-              key={a.id}
-              attachment={a}
-              url={url}
-              thumbnailUrl={thumbnailUrl}
-            />
-          );
+        const media = attachmentMedia(source, a, mediaVariant());
+        if (!isHeld(media)) {
+          return <MissingMediaPlaceholder key={a.id} attachment={a} />;
         }
-        if (url && thumbnailUrl) {
-          return (
-            <a
-              key={a.id}
-              href={url}
-              className="block w-fit"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={thumbnailUrl}
-                alt={a.originalName ?? "attachment"}
-                loading="lazy"
-                decoding="async"
-                className="max-h-64 max-w-full rounded-lg"
+        const { url, thumbnailUrl } = media;
+        switch (threadDrawing(media)) {
+          case "notice":
+            return (
+              <NoPreviewNotice
+                key={a.id}
+                attachment={a}
+                url={url}
+                thumbnailUrl={thumbnailUrl}
               />
-            </a>
-          );
+            );
+          case "thumbnail":
+            return thumbnailUrl ? (
+              <AttachmentThumbnail
+                key={a.id}
+                attachment={a}
+                url={url}
+                thumbnailUrl={thumbnailUrl}
+              />
+            ) : (
+              <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />
+            );
+          case "placeholder":
+            return <ThumbnailPlaceholder key={a.id} attachment={a} url={url} />;
+          case "link":
+            return (
+              <a
+                key={a.id}
+                href={url}
+                className="block text-[12px] underline opacity-90"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {a.originalName ?? url}
+              </a>
+            );
         }
-        if (url && isImageMime(mimeType)) {
-          return (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={a.id}
-              src={url}
-              alt={a.originalName ?? "attachment"}
-              loading="lazy"
-              decoding="async"
-              className="max-h-64 max-w-full rounded-lg"
-            />
-          );
-        }
-        if (url) {
-          return (
-            <a
-              key={a.id}
-              href={url}
-              className="block text-[12px] underline opacity-90"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {a.originalName ?? url}
-            </a>
-          );
-        }
-        return <MissingMediaPlaceholder key={a.id} attachment={a} />;
       })}
     </div>
   );

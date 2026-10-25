@@ -36,7 +36,7 @@ pub enum MembershipError {
     BadRequest(String),
     /// A member id this account does not hold; carries the sentence naming it.
     NotFound(String),
-    /// The set itself is missing; carries its label (`"tag"` / `"group"`).
+    /// The set itself is missing; carries its label (`"Message Tag"` / `"Contact Group"`).
     SetNotFound(&'static str),
     /// Another set of the account has the name; carries the sentence naming
     /// it.
@@ -74,10 +74,9 @@ pub struct MembershipSpec {
     pub member_column: &'static str,
     /// Table members must exist in (`conversations` / `contacts`).
     pub member_table: &'static str,
-    /// Singular label used in error messages (`"tag"` / `"group"`).
+    /// What every message about the set calls it (`"Message Tag"` /
+    /// `"Contact Group"`), the product name the screens show.
     pub label: &'static str,
-    /// What a reserved-name message calls the set (`"tag"` / `"Contact Group"`).
-    pub reserved_label: &'static str,
     /// Member label used in error messages (`"conversation"` / `"contact"`).
     pub member_label: &'static str,
     /// Names that must not be created.
@@ -100,8 +99,7 @@ pub fn tag_spec() -> &'static MembershipSpec {
         name_column: "tag_id",
         member_column: "conversation_id",
         member_table: "conversations",
-        label: "tag",
-        reserved_label: "Message Tag",
+        label: "Message Tag",
         member_label: "conversation",
         reserved: &[
             "home",
@@ -140,8 +138,7 @@ pub fn group_spec() -> &'static MembershipSpec {
         name_column: "group_id",
         member_column: "contact_id",
         member_table: "contacts",
-        label: "group",
-        reserved_label: "Contact Group",
+        label: "Contact Group",
         member_label: "contact",
         reserved: &[
             "home",
@@ -265,7 +262,7 @@ fn reserved_error(spec: &MembershipSpec, name: &str) -> String {
             return (*message).to_string();
         }
     }
-    format!("\"{}\" is a reserved {}", name.trim(), spec.reserved_label)
+    format!("\"{}\" is a reserved {}", name.trim(), spec.label)
 }
 
 /// Trim and validate a set name: not blank and within the cap every

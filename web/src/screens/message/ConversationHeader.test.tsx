@@ -44,7 +44,7 @@ const PROFILE = {
   last_login_at: null,
   preferred_name: "Me",
   time_zone: "UTC",
-  phones: [{ address: "+15550100", services: ["phone" as const] }],
+  phones: [{ address: "+15550100", services: ["text_message" as const] }],
   emails: [],
   is_owner: false,
   disabled: false,

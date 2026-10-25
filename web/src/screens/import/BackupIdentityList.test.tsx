@@ -66,14 +66,14 @@ describe("BackupIdentityList", () => {
     expect(screen.getByRole("button", { name: "Add to profile" })).toBeInTheDocument();
   });
 
-  it("sends the value and its service to onAdd", async () => {
+  it("sends the value to onAdd", async () => {
     const onAdd = vi.fn().mockResolvedValue(undefined);
     render(
       <BackupIdentityList identities={["owner@example.com"]} profile={profile} onAdd={onAdd} />,
     );
     const user = setupUser();
     await user.click(screen.getByRole("button", { name: "Add to profile" }));
-    expect(onAdd).toHaveBeenCalledWith("owner@example.com", "email");
+    expect(onAdd).toHaveBeenCalledWith("owner@example.com");
   });
 
   it("states the fact when the backup records no identities", () => {

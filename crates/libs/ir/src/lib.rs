@@ -368,19 +368,20 @@ impl Transport {
 ///
 /// [`Self::label`] gives the name the app shows for each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum IdentityService {
-    /// Phone platform (SMS/iMessage/RCS are transports, not platforms).
-    Phone,
+    /// Text Message. SMS, MMS, iMessage and RCS are its transports, not
+    /// services.
+    TextMessage,
     /// WhatsApp platform.
     Whatsapp,
 }
 
 impl IdentityService {
-    /// Lowercase storage id (`phone` / `whatsapp`).
+    /// Storage id (`text_message` / `whatsapp`).
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Phone => "phone",
+            Self::TextMessage => "text_message",
             Self::Whatsapp => "whatsapp",
         }
     }
@@ -388,7 +389,7 @@ impl IdentityService {
     /// The service's name as the app shows it: "Text Message" or "WhatsApp".
     pub fn label(self) -> &'static str {
         match self {
-            Self::Phone => "Text Message",
+            Self::TextMessage => "Text Message",
             Self::Whatsapp => "WhatsApp",
         }
     }
@@ -397,10 +398,10 @@ impl IdentityService {
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "whatsapp" | "wa" => Self::Whatsapp,
-            // Everything else, including the phone-platform aliases (`phone`,
-            // `sms`, `mms`, `imessage`, `ios`, `rcs`, `text message`), is the
-            // phone platform: SMS/iMessage/RCS are transports, not platforms.
-            _ => Self::Phone,
+            // Everything else, including the transport names (`sms`, `mms`,
+            // `imessage`, `ios`, `rcs`) and `text message`, is Text Message:
+            // SMS/iMessage/RCS are transports, not services.
+            _ => Self::TextMessage,
         }
     }
 
@@ -415,9 +416,12 @@ impl IdentityService {
     /// someone decides whether it is carried.
     pub fn carries(self, kind: IdentityType) -> bool {
         match (self, kind) {
-            (Self::Phone, IdentityType::Phone | IdentityType::Email | IdentityType::Other)
+            (
+                Self::TextMessage,
+                IdentityType::Phone | IdentityType::Email | IdentityType::Other,
+            )
             | (Self::Whatsapp, IdentityType::Phone | IdentityType::Other) => true,
-            (Self::Phone, IdentityType::Username)
+            (Self::TextMessage, IdentityType::Username)
             | (Self::Whatsapp, IdentityType::Email | IdentityType::Username) => false,
         }
     }
@@ -445,7 +449,7 @@ impl IdentityService {
             | Transport::Signal
             | Transport::Telegram
             | Transport::Slack
-            | Transport::Unknown => Self::Phone,
+            | Transport::Unknown => Self::TextMessage,
         }
     }
 }
@@ -1055,9 +1059,8 @@ mod identity_service_tests {
     use super::IdentityService;
 
     #[test]
-    fn parse_phone_aliases() {
+    fn parse_text_message_aliases() {
         for s in [
-            "phone",
             "SMS",
             "imessage",
             "rcs",
@@ -1065,7 +1068,11 @@ mod identity_service_tests {
             "Text message",
             "text_message",
         ] {
-            assert_eq!(IdentityService::parse(s), IdentityService::Phone, "{s}");
+            assert_eq!(
+                IdentityService::parse(s),
+                IdentityService::TextMessage,
+                "{s}"
+            );
         }
     }
 
@@ -1145,7 +1152,7 @@ mod storage_id_round_trip_tests {
 
     #[test]
     fn identity_service() {
-        for v in [IdentityService::Phone, IdentityService::Whatsapp] {
+        for v in [IdentityService::TextMessage, IdentityService::Whatsapp] {
             assert_eq!(IdentityService::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
@@ -1212,10 +1219,10 @@ mod service_carries_tests {
     /// Every `(service, type)` pair and whether the service carries it;
     /// [`IdentityService::carries`] says why.
     const TABLE: [(IdentityService, IdentityType, bool); 8] = [
-        (IdentityService::Phone, IdentityType::Phone, true),
-        (IdentityService::Phone, IdentityType::Email, true),
-        (IdentityService::Phone, IdentityType::Username, false),
-        (IdentityService::Phone, IdentityType::Other, true),
+        (IdentityService::TextMessage, IdentityType::Phone, true),
+        (IdentityService::TextMessage, IdentityType::Email, true),
+        (IdentityService::TextMessage, IdentityType::Username, false),
+        (IdentityService::TextMessage, IdentityType::Other, true),
         (IdentityService::Whatsapp, IdentityType::Phone, true),
         (IdentityService::Whatsapp, IdentityType::Email, false),
         (IdentityService::Whatsapp, IdentityType::Username, false),

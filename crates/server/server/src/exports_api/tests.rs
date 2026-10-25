@@ -392,7 +392,7 @@ async fn a_selection_refuses_ids_the_account_does_not_hold_naming_them() {
     let mut conn = fixture.conn().await;
     let bob_handle: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES (102, '+1777', '+1777', 'phone', 'phone') RETURNING id",
+         VALUES (102, '+1777', '+1777', 'phone', 'text_message') RETURNING id",
     )
     .fetch_one(&mut *conn)
     .await
@@ -1344,7 +1344,7 @@ async fn a_run_returns_the_owner_address_of_each_message() {
     let mut conn = fixture.conn().await;
     let owner: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, 'me@example.com', 'me@example.com', 'email', 'phone') RETURNING id",
+         VALUES ($1, 'me@example.com', 'me@example.com', 'email', 'text_message') RETURNING id",
     )
     .bind(alice.account_id)
     .fetch_one(&mut *conn)

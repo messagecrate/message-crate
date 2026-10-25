@@ -59,7 +59,7 @@ flowchart TD
   keeps its digits as written when the run states none: it is never read as
   a US number by default (#1676).
 - iMessage, SMS, MMS and RCS are all text messages, so one number is one
-  identity with the service `phone`. The same number on WhatsApp is a second
+  identity with the service `text_message`. The same number on WhatsApp is a second
   identity with the service `whatsapp`.
 - An import names a contact only when the contact has no name, whatever made
   it: an earlier import, an address book load, or the person. A name a person
@@ -225,8 +225,8 @@ The code is `create_contact` and `propose_name` in
 A row that leaves `service` and `identity` both blank lists no
 identity. That is how a contact with no identity is written.
 
-`service` names the service: `Text Message` and `Email` are the `phone`
-service, and `WhatsApp` is `whatsapp`.
+`service` names the service: `Text Message` and `Email` are the
+`text_message` service, and `WhatsApp` is `whatsapp`.
 An identity written exactly as Message Crate already keys it on that service
 is accepted as it stands, with the type it was stored with, so an exported
 file always loads back.

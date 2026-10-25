@@ -123,7 +123,7 @@ describe("fresh vault schema", () => {
     );
     db.prepare(
       `INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-       VALUES (?, '+15555550100', '+15555550100', 'phone', 'phone')`,
+       VALUES (?, '+15555550100', '+15555550100', 'phone', 'text_message')`,
     ).run(ACCOUNT_ID);
     const handleId = Number(
       db

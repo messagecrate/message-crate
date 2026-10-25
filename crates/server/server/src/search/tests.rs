@@ -169,7 +169,7 @@ pub(crate) async fn named_participant(conn: &mut SqliteConnection, conversation:
         account,
         alias,
         ir::IdentityType::Other,
-        Some("phone"),
+        Some("text_message"),
     )
     .await
     .unwrap();

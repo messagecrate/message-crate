@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { attachmentMedia, noPreviewNote } from "./attachmentMedia";
+import {
+  attachmentMedia,
+  isHeld,
+  noPreviewNote,
+  noThumbnailNote,
+  threadDrawing,
+} from "./attachmentMedia";
 import type { AttachmentRow } from "./types";
 
 const SHA = "a".repeat(64);
@@ -19,6 +25,7 @@ function row(over: Partial<AttachmentRow> = {}): AttachmentRow {
     previewNotMadeReason: null,
     thumbnailMimeType: null,
     thumbnailAssetsPath: null,
+    thumbnailNotMadeReason: null,
     shownAsIs: true,
     ...over,
   };
@@ -112,5 +119,53 @@ describe("attachmentMedia", () => {
     assert.equal(media.full, "original");
     assert.equal(media.url, `/api/assets/sms/${SHA}`);
     assert.equal(media.thumbnailUrl, null);
+  });
+});
+
+describe("threadDrawing", () => {
+  function drawing(over: Partial<AttachmentRow>, variant: "converted" | "original" = "converted") {
+    const media = attachmentMedia("imessage", row(over), variant);
+    assert.ok(isHeld(media));
+    return threadDrawing(media);
+  }
+
+  it("draws a picture's Thumbnail once the server has made one", () => {
+    assert.equal(
+      drawing({ thumbnailMimeType: "image/jpeg", thumbnailAssetsPath: SHA }),
+      "thumbnail",
+    );
+  });
+
+  it("draws a placeholder, never the original, for a picture with no Thumbnail yet", () => {
+    assert.equal(drawing({}), "placeholder");
+  });
+
+  it("draws a placeholder for a picture whose Thumbnail could not be made", () => {
+    assert.equal(drawing({ thumbnailNotMadeReason: "Invalid data" }), "placeholder");
+  });
+
+  it("draws a placeholder, never the original, with the original variant", () => {
+    assert.equal(
+      drawing({ thumbnailMimeType: "image/jpeg", thumbnailAssetsPath: SHA }, "original"),
+      "placeholder",
+    );
+  });
+
+  it("links a file that is not a picture", () => {
+    assert.equal(drawing({ mimeType: "application/pdf", originalName: "a.pdf" }), "link");
+  });
+
+  it("says why when the attachment opens in no version", () => {
+    assert.equal(drawing({ mimeType: "image/heic", shownAsIs: false }), "notice");
+  });
+});
+
+describe("noThumbnailNote", () => {
+  it("says why no Thumbnail could be made, in web's words", () => {
+    assert.equal(
+      noThumbnailNote(row({ thumbnailNotMadeReason: "Invalid data" })),
+      "No Thumbnail could be made: Invalid data",
+    );
+    assert.equal(noThumbnailNote(row()), null);
   });
 });

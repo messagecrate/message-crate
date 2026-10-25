@@ -213,7 +213,9 @@ pub(crate) async fn no_store_unless_set(
 /// (`docs/architecture/rules/http-api.md`). Narrow on purpose: only when the header is present and none of
 /// its members is `application/json`, `application/problem+json`,
 /// `application/*` or `*/*`. A missing `Accept` is a request for JSON, which
-/// is what every one of the server's own clients sends.
+/// is what every one of the server's own clients sends. An `Accept` sent on
+/// several field lines is one comma-separated list (RFC 9110, section 5.3),
+/// so every line is read, and a line that is not visible ASCII is skipped.
 ///
 /// Applied to the `/v1` routes only, through `route_layer`; the static app,
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
@@ -233,16 +235,20 @@ pub(crate) async fn require_json_acceptable(
     {
         return next.run(request).await;
     }
-    if let Some(accept) = request
+    let lines: Vec<&str> = request
         .headers()
-        .get(header::ACCEPT)
-        .and_then(|v| v.to_str().ok())
-        && !accepts_json(accept)
-    {
-        return ApiError::NotAcceptable(format!(
-            "this route answers application/json, and Accept was {accept}"
-        ))
-        .into_response();
+        .get_all(header::ACCEPT)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect();
+    if !lines.is_empty() {
+        let accept = lines.join(", ");
+        if !accepts_json(&accept) {
+            return ApiError::NotAcceptable(format!(
+                "this route answers application/json, and Accept was {accept}"
+            ))
+            .into_response();
+        }
     }
     next.run(request).await
 }

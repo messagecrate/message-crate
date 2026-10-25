@@ -21,7 +21,6 @@ export const messageTags = createNameCollection({
   },
   key: keys.messageTags.all,
   chips: [{ key: keys.conversations.lists, field: "tags", shape: "pages" }],
-  label: "tag",
   forName: forTag,
   reserved: reservedNames.messageTag,
 });

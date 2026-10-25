@@ -59,7 +59,7 @@ describe("contactsVcfImport preview/commit", () => {
       ensureVaultSchema(db);
       db.prepare(
         `INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES (?, ?, ?, 'phone', 'phone')`,
+         VALUES (?, ?, ?, 'phone', 'text_message')`,
       ).run(acct, phone, phone);
       const handleId = Number(
         db
@@ -228,7 +228,7 @@ END:VCARD
       ensureVaultSchema(db);
       db.prepare(
         `INSERT INTO handles (account_id, raw, normalized, normalized_note, handle_type, service)
-         VALUES (?, ?, ?, ?, 'phone', 'phone')`,
+         VALUES (?, ?, ?, ?, 'phone', 'text_message')`,
       ).run(
         accountId,
         "020 7946 0000",

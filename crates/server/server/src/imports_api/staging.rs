@@ -295,7 +295,7 @@ struct IncomingSender<'a> {
     /// with no address, when it recorded either. Typed by
     /// [`HandleValue::handle_type_on`].
     value: Option<&'a HandleValue>,
-    /// Service the message arrived on: `phone` or `whatsapp`.
+    /// Service the message arrived on: `text_message` or `whatsapp`.
     service: IdentityService,
     /// The country the file names for the sender's identity, which a phone
     /// number written without its `+` code is read in before the run's.
@@ -816,7 +816,7 @@ fn conversation_service<'a>(
     }) {
         IdentityService::Whatsapp
     } else {
-        IdentityService::Phone
+        IdentityService::TextMessage
     }
 }
 

@@ -11,7 +11,7 @@ const ACCOUNT_B: i64 = 8;
 async fn insert_conversation(conn: &mut SqliteConnection, account_id: i64) -> i64 {
     sqlx::query(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'phone')",
+         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'text_message')",
     )
     .bind(account_id)
     .execute(&mut *conn)
@@ -307,7 +307,7 @@ async fn purge_account_clears_only_that_accounts_trash() {
 async fn insert_conversation_on(conn: &mut SqliteConnection, account_id: i64, raw: &str) -> i64 {
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
+         VALUES ($1, $2, $2, 'phone', 'text_message') RETURNING id",
     )
     .bind(account_id)
     .bind(raw)

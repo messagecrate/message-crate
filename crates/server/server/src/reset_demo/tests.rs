@@ -1158,7 +1158,7 @@ async fn seed_reset_test_account(conn: &mut SqliteConnection, account_id: i64, g
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (
             account_id, raw, normalized, handle_type, service
-         ) VALUES ($1, $2, $2, 'username', 'phone')
+         ) VALUES ($1, $2, $2, 'username', 'text_message')
          RETURNING id",
     )
     .bind(account_id)
@@ -1707,7 +1707,7 @@ fn read_generated_address_book(bundle: &Path) -> BTreeMap<String, BookContact> {
         // The file states no type: every identity the demo lists is a phone
         // number, on Text Message or on WhatsApp.
         let service = match &record[2] {
-            "Text Message" => "phone",
+            "Text Message" => "text_message",
             "WhatsApp" => "whatsapp",
             other => panic!("the demo address book lists the service {other:?}"),
         };
@@ -1926,7 +1926,7 @@ async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (
             account_id, raw, normalized, handle_type, service
-         ) VALUES ($1, '+15555550100', '+15555550100', 'phone', 'phone')
+         ) VALUES ($1, '+15555550100', '+15555550100', 'phone', 'text_message')
          RETURNING id",
     )
     .bind(DEMO_ACCOUNT_ID)
@@ -2818,7 +2818,7 @@ async fn seed_bulky_demo(db: &Path) {
         .expect("seed the previous demo account");
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'phone')
+         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'text_message')
          RETURNING id",
     )
     .bind(DEMO_ACCOUNT_ID)
@@ -2960,7 +2960,7 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
         .expect("seed the demo account");
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'phone')
+         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'text_message')
          RETURNING id",
     )
     .bind(DEMO_ACCOUNT_ID)

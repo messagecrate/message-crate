@@ -12,7 +12,7 @@ afterEach(cleanup);
 const rows: IdentityRow[] = [
   {
     address: "+15555550100",
-    service: "phone",
+    service: "text_message",
     start_date: "2020-01-01T12:00:00Z",
     end_date: "2020-02-03T12:00:00Z",
     conversations: 2,
@@ -279,7 +279,7 @@ describe("IdentityTable dates", () => {
     // 20:00 on 31 December 2024 in Los Angeles.
     const late: IdentityRow = {
       address: "+15555550100",
-      service: "phone",
+      service: "text_message",
       start_date: "2025-01-01T04:00:00Z",
       end_date: "2025-01-01T04:00:00Z",
       conversations: 1,
