@@ -669,7 +669,7 @@ describe("ContactList", () => {
       await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
       await chooseAction("Delete Contacts");
 
-      expect(screen.getByRole("dialog", { name: "Move Alice to Trash?" })).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "Move 1 contact to Trash?" })).toBeInTheDocument();
       expect(trashMock).not.toHaveBeenCalled();
       await user.click(screen.getByRole("button", { name: "Move to Trash" }));
       await settle();
@@ -703,6 +703,23 @@ describe("ContactList", () => {
       await settle();
 
       await user.click(screen.getByRole("textbox", { name: "Search" }));
+      await user.keyboard("{Control>}z{/Control}");
+      await settle();
+      expect(restoreMock).not.toHaveBeenCalled();
+    });
+
+    it("leaves Ctrl+Z alone while the Delete Contacts dialog is open", async () => {
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+      await settle();
+
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
       await user.keyboard("{Control>}z{/Control}");
       await settle();
       expect(restoreMock).not.toHaveBeenCalled();

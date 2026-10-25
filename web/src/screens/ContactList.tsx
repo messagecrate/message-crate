@@ -361,9 +361,12 @@ export default function ContactList({
       if (targets.length === 0) return Promise.resolve(null);
       const ids = targets.map((c) => Number(c.id));
       const key = name.toLowerCase();
-      const changed = targets.filter(
-        (c) => (c.groups ?? []).some((g) => g.toLowerCase() === key) !== enable,
-      );
+      // The live row, not the one the ref kept: a toggle patches `contacts`,
+      // and the ref's rows predate it while the menu's contact is filtered out.
+      const changed = targets.filter((c) => {
+        const live = contacts.find((x) => x.id === c.id) ?? c;
+        return (live.groups ?? []).some((g) => g.toLowerCase() === key) !== enable;
+      });
       // A refused write puts the chips back in the mutation's onError, and the
       // chips going back is the report, so there is nothing to handle here.
       return setGroupMembers
@@ -374,7 +377,7 @@ export default function ContactList({
           () => null,
         );
     },
-    [setGroupMembers.mutateAsync],
+    [setGroupMembers.mutateAsync, contacts],
   );
 
   const recordMembership = history.push;
@@ -467,8 +470,8 @@ export default function ContactList({
     setCheckedIds(new Set());
   };
   const deleteTitle =
-    deleteTargets.length === 1 && deleteTargets[0]
-      ? `Move ${contactLabelText(deleteTargets[0].name, deleteTargets[0].addresses)} to Trash?`
+    deleteTargets.length === 1
+      ? "Move 1 contact to Trash?"
       : `Move ${deleteTargets.length} contacts to Trash?`;
 
   const scope =
