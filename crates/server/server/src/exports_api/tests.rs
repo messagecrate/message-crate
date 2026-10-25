@@ -5,9 +5,9 @@ use crate::paging::{PageParams, SortKey};
 use crate::problem::ProblemType;
 use crate::test_support::{
     ConversationRow, MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture,
-    claim_as_owner, delete_status, expect_problem, fixture_with_account, get_json, get_raw,
-    get_status, patch_status, post_created_json, post_json, post_json_raw, post_status,
-    register_via_api, seed_conversation, stored_time, test_fixture,
+    add_account_and_log_in, delete_status, expect_problem, fixture_with_account, get_json, get_raw,
+    get_status, log_in_as_admin, patch_status, post_created_json, post_json, post_json_raw,
+    post_status, seed_conversation, stored_time, test_fixture,
 };
 use api_types::ExportQueryList;
 use axum::http::StatusCode;
@@ -863,7 +863,7 @@ async fn creating_a_run_records_the_scope_the_tool_and_the_counts() {
 #[tokio::test]
 async fn a_scope_the_server_cannot_honor_is_refused_and_no_run_is_recorded() {
     let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&fixture.state, bob.account_id).await;
     let mut conn = fixture.conn().await;
     let bobs_conversation: i64 =
@@ -976,7 +976,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
 #[tokio::test]
 async fn a_run_belongs_to_its_account() {
     let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let id = run["id"].as_i64().unwrap();
 
@@ -1648,7 +1648,7 @@ async fn an_export_run_for_a_deleted_account_brings_no_account_back() {
     crate::db::account_profile::delete_account(
         &mut conn,
         alice.account_id,
-        crate::db::audit_trail::AuditActor::Owner,
+        crate::db::audit_trail::AuditActor::Admin,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -1874,8 +1874,8 @@ async fn a_page_past_the_end_counts_as_a_page_read() {
 async fn export_endpoint_honors_can_export_flag() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "export-guard-keeper", "hunter2hunter2").await;
-    let user = register_via_api(&state, "export-guard-user", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let user = add_account_and_log_in(&state, "export-guard-user", "hunter2hunter2").await;
 
     assert_eq!(
         patch_status(

@@ -6,13 +6,13 @@ use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
-    delete_json_raw, delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
-    expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
-    log_in, log_in_raw, login_status, message_line, patch_failure, patch_json, patch_json_raw,
-    post_created_json, post_json_raw, post_logged_out, post_raw, post_status,
-    post_status_logged_out, put_json, put_json_raw, put_raw, put_status, register_via_api,
-    seed_conversation, seed_one_message, stored_time, test_fixture,
+    SeedConversation, SeedMessage, add_account_and_log_in, attachment, conversation_header,
+    delete_json, delete_json_raw, delete_json_with_body, delete_raw, delete_status,
+    delete_status_with_body, expect_problem, expect_problem_for, fixture_with_account, get_json,
+    get_raw, get_status, log_in, log_in_as_admin, log_in_raw, login_status, message_line,
+    patch_failure, patch_json, patch_json_raw, post_created_json, post_json_raw, post_logged_out,
+    post_raw, post_status, put_json, put_json_raw, put_raw, put_status, seed_conversation,
+    seed_one_message, stored_time, test_fixture,
 };
 use ir::IdentityType;
 
@@ -31,9 +31,9 @@ fn member(id: i64) -> String {
 async fn the_owner_reaches_every_row_and_an_account_reaches_its_own() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let by_owner: Account = get_json(&state, &member(bob.account_id), &owner.token).await;
     assert_eq!(by_owner.username, "bob");
@@ -41,10 +41,10 @@ async fn the_owner_reaches_every_row_and_an_account_reaches_its_own() {
     assert_eq!(own.username, "bob");
     // Alice does not read Bob's row.
     let (status, text) = get_raw(&state, &member(bob.account_id), &alice.token).await;
-    expect_problem(status, &text, ProblemType::NotTheOwner);
+    expect_problem(status, &text, ProblemType::NotTheAdmin);
 
     let (status, text) = get_raw(&state, &member(424_242), &alice.token).await;
-    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotTheOwner);
+    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotTheAdmin);
     let (status, text) = get_raw(&state, &member(424_242), &owner.token).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 }
@@ -56,7 +56,7 @@ async fn the_owner_reaches_every_row_and_an_account_reaches_its_own() {
 async fn api_tokens_never_resolve_to_the_owner() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
     let auth = crate::auth::resolve_auth_on_conn(
@@ -89,7 +89,7 @@ async fn api_tokens_never_resolve_to_the_owner() {
 async fn the_owner_holds_no_message_permissions() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
     let auth = crate::auth::resolve_auth_on_conn(
@@ -120,9 +120,9 @@ async fn the_owner_holds_no_message_permissions() {
 async fn the_owner_sees_every_account_but_no_messages() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let _alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-    let _bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let _alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
+    let _bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let body: crate::paging::Page<Account> = get_json(&state, "/v1/accounts", &owner.token).await;
 
@@ -138,14 +138,14 @@ async fn the_owner_sees_every_account_but_no_messages() {
 async fn the_owner_leads_the_account_list() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let _alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let _alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
 
     let body: crate::paging::Page<Account> = get_json(&state, "/v1/accounts", &owner.token).await;
 
     assert_eq!(body.total, 2);
     let usernames: Vec<&str> = body.items.iter().map(|a| a.username.as_str()).collect();
-    assert_eq!(usernames, ["keeper", "alice"]);
+    assert_eq!(usernames, ["admin", "alice"]);
     assert_eq!(body.items[0].account_id, account_profile::ADMIN_ACCOUNT_ID);
     assert!(body.items[0].is_owner);
     assert!(!body.items[1].is_owner);
@@ -158,7 +158,7 @@ async fn the_owner_leads_the_account_list() {
 async fn the_owners_entry_reports_no_permissions() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
     let body: crate::paging::Page<Account> = get_json(&state, "/v1/accounts", &owner.token).await;
 
@@ -213,8 +213,8 @@ async fn account_rows_carry_no_message_content_fields() {
     // the wire.
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
     seed_one_message(&state, alice.account_id).await;
 
     let body: serde_json::Value = get_json(&state, "/v1/accounts", &owner.token).await;
@@ -238,7 +238,7 @@ async fn account_rows_carry_no_message_content_fields() {
 async fn a_created_account_logs_in_with_the_password_the_owner_chose() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
     let (location, created): (String, serde_json::Value) = post_created_json(
         &state,
@@ -249,9 +249,8 @@ async fn a_created_account_logs_in_with_the_password_the_owner_chose() {
     .await;
     let id = created["account_id"].as_i64().unwrap();
     assert_eq!(location, member(id));
-    assert_eq!(
-        created.get("token"),
-        Some(&serde_json::Value::Null),
+    assert!(
+        created.get("token").is_none(),
         "the owner's creation opens no session: {created}"
     );
     assert_eq!(created["username"], "carol");
@@ -275,7 +274,7 @@ async fn a_created_account_logs_in_with_the_password_the_owner_chose() {
 async fn the_owner_creates_accounts_with_a_short_password_or_none() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
     for body in [
         serde_json::json!({ "username": "carol" }),
@@ -311,7 +310,7 @@ fn expect_cap_refusal(field: &str, status: StatusCode, text: &str, what: &str) {
 async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let cap = crate::credentials::MAX_PASSWORD_CHARS;
     assert_eq!(cap, 128);
     let refused = |status: StatusCode, text: &str, what: &str| {
@@ -375,7 +374,7 @@ async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
 async fn a_current_password_over_the_cap_is_refused_by_its_own_name() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let over = "a".repeat(crate::credentials::MAX_PASSWORD_CHARS + 1);
 
     let (status, text) = put_json_raw(
@@ -391,7 +390,7 @@ async fn a_current_password_over_the_cap_is_refused_by_its_own_name() {
     .await;
     expect_cap_refusal("current_password", status, &text, "a change");
 
-    let carol = register_via_api(&state, "carol", "hunter2hunter2").await;
+    let carol = add_account_and_log_in(&state, "carol", "hunter2hunter2").await;
     let (status, text) = delete_json_raw(
         &state,
         &member(carol.account_id),
@@ -402,47 +401,54 @@ async fn a_current_password_over_the_cap_is_refused_by_its_own_name() {
     expect_cap_refusal("current_password", status, &text, "a deletion");
 }
 
-/// A stranger's registration answers the new row and the Session the server
-/// opened on it, so the person is logged in on creation. It never grants
-/// anything beyond an ordinary account: the owner is claimed at a fixed id,
-/// never promoted from whoever arrived first.
+/// The administrator's creation answers the new row and opens no Session on
+/// it: the account's holder logs in with the password the administrator
+/// picked. It never grants anything beyond an ordinary account, and an
+/// account that names neither a display name nor a handle owes profile
+/// setup.
 #[tokio::test]
-async fn a_stranger_is_logged_in_on_creation_and_never_becomes_the_owner() {
-    let (fixture, first) = fixture_with_account().await;
-    let state = fixture.state.clone();
-
-    let second = register_via_api(&state, "bob", "hunter2hunter2").await;
-    assert_ne!(first.account_id, account_profile::ADMIN_ACCOUNT_ID);
-    assert_ne!(second.account_id, account_profile::ADMIN_ACCOUNT_ID);
-
-    let own: Account = get_json(&state, &member(first.account_id), &first.token).await;
-    assert_eq!(
-        own.username, "alice",
-        "the token from creation reads the row"
-    );
-    assert!(
-        own.must_set_up_profile,
-        "an account registered with no name and no handle still owes setup"
-    );
-
-    let mut conn = state.db.acquire().await.unwrap();
-    assert!(
-        !account_profile::admin_has_password(&mut conn)
-            .await
-            .unwrap(),
-        "registering accounts does not claim the server"
-    );
-}
-
-/// A registration that named the account leaves nothing to set up.
-#[tokio::test]
-async fn a_registration_that_names_the_account_owes_no_profile_setup() {
+async fn the_admin_creates_an_account_and_opens_no_session_on_it() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
+    let admin = log_in_as_admin(&state, "hunter2hunter2").await;
 
-    let status = post_status_logged_out(
+    let (location, created): (String, serde_json::Value) = post_created_json(
         &state,
         "/v1/accounts",
+        &admin.token,
+        serde_json::json!({ "username": "alice", "password": "Alice-Pw-3kN8wZr4" }),
+    )
+    .await;
+    let account_id = created["account_id"].as_i64().unwrap();
+    assert_eq!(location, member(account_id));
+    assert_ne!(account_id, account_profile::ADMIN_ACCOUNT_ID);
+    assert!(
+        created.get("token").is_none(),
+        "the administrator's creation opens no Session: {created}"
+    );
+    assert_eq!(created["must_set_up_profile"], true, "{created}");
+
+    let alice = log_in(&state, "alice", "Alice-Pw-3kN8wZr4").await;
+    let own: Account = get_json(
+        &state,
+        &member(account_id),
+        alice["token"].as_str().unwrap(),
+    )
+    .await;
+    assert_eq!(own.username, "alice");
+}
+
+/// A creation that named the account leaves nothing to set up.
+#[tokio::test]
+async fn a_creation_that_names_the_account_owes_no_profile_setup() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let admin = log_in_as_admin(&state, "hunter2hunter2").await;
+
+    let status = post_status(
+        &state,
+        "/v1/accounts",
+        &admin.token,
         serde_json::json!({
             "username": "sam",
             "password": "hunter2hunter2",
@@ -465,45 +471,31 @@ async fn a_registration_that_names_the_account_owes_no_profile_setup() {
     assert!(!auth.must_set_up_profile);
 }
 
-/// A closed server admits nobody the owner has not admitted, and a logged-in
-/// account is not the owner: creating accounts for others is the owner's.
+/// Creating an account is the administrator's alone: a request with no
+/// credential needs one, and a logged-in account is not the administrator.
 #[tokio::test]
-async fn a_closed_server_and_an_ordinary_session_are_both_refused() {
+async fn no_credential_and_an_ordinary_session_are_both_refused() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-    {
-        let mut conn = state.db.acquire().await.unwrap();
-        server_settings::set_public_registration(&mut conn, false)
-            .await
-            .unwrap();
-    }
+    let _admin = log_in_as_admin(&state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
 
     let body = serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" });
-    // Two types, because the remedies differ: a stranger asks the owner for
-    // an account, and an account asking for another is not the owner.
     let (status, text) = post_logged_out(&state, "/v1/accounts", body.clone()).await;
-    expect_problem(status, &text, ProblemType::RegistrationClosed);
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
     let (status, text) =
         crate::test_support::post_json_raw(&state, "/v1/accounts", &alice.token, body).await;
-    expect_problem(status, &text, ProblemType::NotTheOwner);
+    expect_problem(status, &text, ProblemType::NotTheAdmin);
 }
 
-/// #2231: a closed server refuses a stranger before it hashes the password,
-/// so a refused registration costs no Argon2 work. The password here is too
+/// #2231: a request with no credential is refused before the server hashes
+/// the password, so a refusal costs no Argon2 work. The password here is too
 /// long to hash, and hashing refuses it as a validation problem: a server
-/// that hashed first would answer that, not that registration is closed.
+/// that hashed first would answer that, not that a credential is needed.
 #[tokio::test]
-async fn a_closed_server_refuses_before_it_hashes_the_password() {
+async fn no_credential_is_refused_before_the_password_is_hashed() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    {
-        let mut conn = state.db.acquire().await.unwrap();
-        server_settings::set_public_registration(&mut conn, false)
-            .await
-            .unwrap();
-    }
 
     let too_long = "x".repeat(crate::credentials::MAX_PASSWORD_CHARS + 1);
     let (status, text) = post_logged_out(
@@ -512,7 +504,7 @@ async fn a_closed_server_refuses_before_it_hashes_the_password() {
         serde_json::json!({ "username": "stranger", "password": too_long }),
     )
     .await;
-    expect_problem(status, &text, ProblemType::RegistrationClosed);
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 }
 
 /// The username is the collection's key, taken once.
@@ -520,20 +512,22 @@ async fn a_closed_server_refuses_before_it_hashes_the_password() {
 async fn a_taken_username_is_a_conflict() {
     let (fixture, _alice) = fixture_with_account().await;
     let state = fixture.state.clone();
+    let admin = log_in_as_admin(&state, "Admin-Pw-7q2Lx9Vb").await;
 
     // Usernames are compared ignoring case, which the problem page says out
-    // loud. A comparison that stopped ignoring it would let "ALICE" register
+    // loud. A comparison that stopped ignoring it would let "ALICE" be made
     // beside "alice" and leave one of the two unreachable at login, because
     // the lookup is the same comparison.
     for taken in ["alice", "ALICE", "Alice"] {
-        let (status, text) = post_logged_out(
+        let (status, text) = post_json_raw(
             &state,
             "/v1/accounts",
+            &admin.token,
             serde_json::json!({ "username": taken, "password": "otherpassword" }),
         )
         .await;
         expect_problem_for(
-            &format!("registering {taken}"),
+            &format!("creating {taken}"),
             status,
             &text,
             ProblemType::UsernameTaken,
@@ -545,7 +539,7 @@ async fn a_taken_username_is_a_conflict() {
         StatusCode::CREATED,
         "the original account must still hold the name"
     );
-    // A refused registration must not have replaced the password.
+    // A refused creation must not have replaced the password.
     let (status, text) = log_in_raw(&state, "alice", "otherpassword").await;
     expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
@@ -871,7 +865,9 @@ async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
             "phone",
         ),
     ] {
-        let (status, text) = post_logged_out(&fixture.state, "/v1/accounts", body).await;
+        let admin = log_in_as_admin(&fixture.state, "Admin-Pw-7q2Lx9Vb").await;
+        let (status, text) =
+            post_json_raw(&fixture.state, "/v1/accounts", &admin.token, body).await;
         let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
         assert!(
             problem.sentence().starts_with(&format!("{field}: ")),
@@ -886,8 +882,8 @@ async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
 async fn an_account_does_not_set_its_own_flags() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let path = member(bob.account_id);
 
     // An account does not set its flags.
@@ -913,7 +909,7 @@ async fn an_account_does_not_set_its_own_flags() {
 async fn the_owner_sets_a_managed_accounts_profile() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let (_, created): (String, serde_json::Value) = post_created_json(
         &state,
         "/v1/accounts",
@@ -963,7 +959,7 @@ async fn the_owner_sets_a_managed_accounts_profile() {
 async fn two_accounts_can_each_hold_the_same_email_address() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     for username in ["carol", "dave"] {
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -999,7 +995,7 @@ async fn two_accounts_can_each_hold_the_same_email_address() {
 async fn the_owner_sets_each_profile_field_on_its_own() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let (_, created): (String, serde_json::Value) = post_created_json(
         &state,
         "/v1/accounts",
@@ -1098,7 +1094,7 @@ async fn the_display_name_is_left_alone_when_absent_and_cleared_by_null_or_blank
 async fn a_phone_given_at_creation_is_linked_to_the_account() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let (_, created): (String, serde_json::Value) = post_created_json(
         &state,
         "/v1/accounts",
@@ -1125,8 +1121,8 @@ async fn a_phone_given_at_creation_is_linked_to_the_account() {
 async fn the_owner_clears_a_permission_and_it_takes_effect() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let row: Account = patch_json(
         &state,
@@ -1160,8 +1156,8 @@ async fn the_owner_clears_a_permission_and_it_takes_effect() {
 async fn disabling_an_account_ends_its_session_for_good() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let path = member(bob.account_id);
 
     for disabled in [true, false] {
@@ -1193,7 +1189,7 @@ async fn disabling_an_account_ends_its_session_for_good() {
 async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let own = member(account_profile::ADMIN_ACCOUNT_ID);
 
     let row: Account = get_json(&state, &own, &owner.token).await;
@@ -1220,7 +1216,7 @@ async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
 
     // And the refusals changed nothing: the owner still logs in.
     assert_eq!(
-        login_status(&state, "keeper", "hunter2hunter2").await,
+        login_status(&state, "admin", "hunter2hunter2").await,
         StatusCode::CREATED
     );
 }
@@ -1229,7 +1225,7 @@ async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
 async fn owner_routes_on_a_missing_account_are_404() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let missing = member(424_242);
 
     let (status, text) = patch_json_raw(
@@ -1263,23 +1259,23 @@ async fn owner_routes_on_a_missing_account_are_404() {
 // Last login
 // ---------------------------------------------------------------------------
 
-/// Registering and logging in both stamp the account; an account the owner
-/// made and nobody has used yet carries no stamp; and the owner setting a
+/// Logging in stamps the account; an account the owner made and nobody has
+/// used yet carries no stamp; and the owner setting a
 /// password does not count as that account logging in.
 #[tokio::test]
 async fn last_login_follows_sessions_being_opened() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
-    let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
     let row: Account = get_json(&state, &member(alice.account_id), &owner.token).await;
-    let registered_at = row
+    let logged_in_at = row
         .last_login_at
-        .expect("registering opens a session, so it is a login");
+        .expect("alice logged in, so she carries a stamp");
     assert!(
-        chrono::DateTime::parse_from_rfc3339(&registered_at).is_ok(),
-        "RFC 3339: {registered_at}"
+        chrono::DateTime::parse_from_rfc3339(&logged_in_at).is_ok(),
+        "RFC 3339: {logged_in_at}"
     );
 
     let (_, created): (String, serde_json::Value) = post_created_json(
@@ -1325,8 +1321,8 @@ async fn last_login_follows_sessions_being_opened() {
 async fn the_owner_sets_a_password_and_nothing_else_changes() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let path = member(bob.account_id);
 
     assert_eq!(
@@ -1364,7 +1360,7 @@ async fn the_owner_sets_a_password_and_nothing_else_changes() {
 async fn an_account_changes_its_own_password() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
 
     let (_, created): (String, serde_json::Value) = post_created_json(
         &state,
@@ -1403,7 +1399,7 @@ async fn an_account_changes_its_own_password() {
 async fn the_owner_changes_their_own_password_with_the_current_one() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
 
     // The session alone does not change the owner's password.
@@ -1432,7 +1428,7 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
     expect_problem(status, &text, ProblemType::InvalidCredentials);
     // A refused change leaves the password as it was. Logging in opens a new
     // session, so the change that follows uses its token.
-    let login = log_in(&state, "keeper", "hunter2hunter2").await;
+    let login = log_in(&state, "admin", "hunter2hunter2").await;
 
     let _changed: ReplaceAccountPasswordResponse = put_json(
         &state,
@@ -1443,10 +1439,10 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
     .await;
 
     assert_eq!(
-        login_status(&state, "keeper", "keeperschoice").await,
+        login_status(&state, "admin", "keeperschoice").await,
         StatusCode::CREATED
     );
-    let (status, text) = log_in_raw(&state, "keeper", "hunter2hunter2").await;
+    let (status, text) = log_in_raw(&state, "admin", "hunter2hunter2").await;
     expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
@@ -1458,7 +1454,7 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
 async fn a_password_change_is_checked_in_a_fixed_order() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
 
     // No current password at all: the owner's own needs one.
@@ -1535,12 +1531,12 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
 
     // Nothing above changed anything.
     assert_eq!(
-        login_status(&state, "keeper", "hunter2hunter2").await,
+        login_status(&state, "admin", "hunter2hunter2").await,
         StatusCode::CREATED
     );
 
     // A user account sends no current password, but its pair must still agree.
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let (status, text) = put_json_raw(
         &state,
         &format!("{}/password", member(bob.account_id)),
@@ -1561,7 +1557,7 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
 async fn the_owner_cannot_clear_their_own_password() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
 
     let (status, text) = put_json_raw(
@@ -1579,7 +1575,7 @@ async fn the_owner_cannot_clear_their_own_password() {
 
     // The refusal stored nothing: the old password still logs in. That opens
     // a new session, so the next change uses its token.
-    let login = log_in(&state, "keeper", "hunter2hunter2").await;
+    let login = log_in(&state, "admin", "hunter2hunter2").await;
     let _changed: ReplaceAccountPasswordResponse = put_json(
         &state,
         &path,
@@ -1588,7 +1584,7 @@ async fn the_owner_cannot_clear_their_own_password() {
     )
     .await;
     assert_eq!(
-        login_status(&state, "keeper", "k").await,
+        login_status(&state, "admin", "k").await,
         StatusCode::CREATED
     );
 }
@@ -1600,8 +1596,8 @@ async fn the_owner_cannot_clear_their_own_password() {
 async fn a_user_password_can_be_cleared_by_the_account_or_the_owner() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let path = format!("{}/password", member(bob.account_id));
 
     let _cleared: ReplaceAccountPasswordResponse = put_json(
@@ -1626,7 +1622,7 @@ async fn a_user_password_can_be_cleared_by_the_account_or_the_owner() {
     .await;
     assert_eq!(login_status(&state, "bob", "b").await, StatusCode::CREATED);
 
-    let owner = log_in(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in(&state, "admin", "hunter2hunter2").await;
     let status = put_status(
         &state,
         &path,
@@ -1649,7 +1645,7 @@ async fn a_user_password_can_be_cleared_by_the_account_or_the_owner() {
 async fn the_account_says_whether_it_has_a_password() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let status = post_status(
         &state,
         "/v1/accounts",
@@ -1709,9 +1705,9 @@ async fn the_account_says_whether_it_has_a_password() {
 async fn deleting_one_accounts_messages_leaves_the_others_alone() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     seed_one_message(&state, alice.account_id).await;
     seed_one_message(&state, bob.account_id).await;
 
@@ -1742,9 +1738,9 @@ async fn deleting_one_accounts_messages_leaves_the_others_alone() {
 async fn deleting_messages_removes_the_accounts_attachment_files_and_only_those() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     seed_one_message(&state, alice.account_id).await;
 
     let paths = &state.cfg.paths;
@@ -2039,8 +2035,8 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
 async fn the_owner_deletes_any_account_outright() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let victim = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let victim = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     seed_one_message(&state, victim.account_id).await;
     let demo = fixture.demo_account().await;
 
@@ -2055,11 +2051,7 @@ async fn the_owner_deletes_any_account_outright() {
 
     let body: crate::paging::Page<Account> = get_json(&state, "/v1/accounts", &owner.token).await;
     let left: Vec<&str> = body.items.iter().map(|a| a.username.as_str()).collect();
-    assert_eq!(
-        left,
-        ["keeper"],
-        "both are gone, and only the owner is left"
-    );
+    assert_eq!(left, ["admin"], "both are gone, and only the owner is left");
     let (status, text) = log_in_raw(&state, "bob", "hunter2hunter2").await;
     expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
@@ -2070,8 +2062,8 @@ async fn the_owner_deletes_any_account_outright() {
 async fn a_directory_that_cannot_be_removed_still_answers_no_content() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let victim = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let victim = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     // A file where the account's directory belongs makes `remove_dir_all` fail
     // whoever runs the test, root included.
     let data_dir = &state.cfg.paths.data_dir;
@@ -2094,7 +2086,7 @@ async fn a_directory_that_cannot_be_removed_still_answers_no_content() {
 async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuses() {
     let (fixture, alice) = fixture_with_account().await;
     let state = fixture.state.clone();
-    let _bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let _bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let path = member(alice.account_id);
 
     // No body: nothing confirmed and no password.
@@ -2153,8 +2145,8 @@ async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuse
 async fn an_account_without_the_delete_permission_cannot_delete_itself() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     seed_one_message(&state, bob.account_id).await;
     fixture.turn_off_delete(bob.account_id).await;
     let path = member(bob.account_id);
@@ -2208,7 +2200,7 @@ async fn an_account_without_the_delete_permission_cannot_delete_itself() {
 async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let (demo, demo_token) = fixture.demo_account_session().await;
     let path = member(demo);
 
@@ -2364,8 +2356,8 @@ async fn the_demo_account_refuses_imports_and_deletes_whatever_its_permission_ro
 #[tokio::test]
 async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_identity() {
     let fixture = test_fixture().await;
-    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let account = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
+    let account = add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2").await;
     let path = format!("{}/identities", member(account.account_id));
     let empty: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
     assert_eq!(
@@ -2543,8 +2535,8 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
 #[tokio::test]
 async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
     let fixture = test_fixture().await;
-    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let account = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
+    let account = add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2").await;
     let path = format!("{}/storage", member(account.account_id));
     let empty: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
     assert_eq!(
@@ -3019,8 +3011,8 @@ async fn the_account_carries_a_time_zone_and_refuses_an_unknown_one() {
 async fn the_account_list_shows_the_app_each_account_connects_with() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let server = crate::test_support::serve(&state).await;
     let status = server
@@ -3047,8 +3039,8 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
     );
     assert_eq!(row("bob").app_build.as_deref(), Some("0.8.0+1234abcd"));
     // The owner's own requests here named no app.
-    assert_eq!(row("keeper").app, None);
-    assert_eq!(row("keeper").app_build, None);
+    assert_eq!(row("admin").app, None);
+    assert_eq!(row("admin").app_build, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -3062,8 +3054,8 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
 #[tokio::test]
 async fn the_owner_and_the_account_read_the_same_import_and_export_runs() {
     let fixture = test_fixture().await;
-    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2").await;
     let base = member(alice.account_id);
 
     let (_, import): (String, serde_json::Value) = post_created_json(
@@ -3151,9 +3143,9 @@ async fn the_owner_and_the_account_read_the_same_import_and_export_runs() {
 #[tokio::test]
 async fn an_import_run_is_a_404_under_another_account() {
     let fixture = test_fixture().await;
-    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let (_, import): (String, serde_json::Value) = post_created_json(
         &fixture.state,
         "/v1/imports",
@@ -3184,8 +3176,8 @@ async fn an_import_run_is_a_404_under_another_account() {
 #[tokio::test]
 async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
     let fixture = test_fixture().await;
-    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2").await;
     let base = member(alice.account_id);
 
     let (_, import): (String, serde_json::Value) = post_created_json(
@@ -3263,8 +3255,8 @@ async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
 #[tokio::test]
 async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview() {
     let fixture = test_fixture().await;
-    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let alice = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
+    let alice = add_account_and_log_in(&fixture.state, "alice", "hunter2hunter2").await;
     let base = member(alice.account_id);
     let mut runs = Vec::new();
     for _ in 0..2 {
@@ -3440,7 +3432,7 @@ async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview
 async fn a_wrong_current_password_for_the_owners_change_waits_and_never_locks_out() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
     let change = |current: &str| {
         serde_json::json!({

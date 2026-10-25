@@ -7,8 +7,8 @@ use crate::imports_api::dto::ListImportsQuery;
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    claim_as_owner, expect_problem, get_raw, get_status, patch_status, post_json_raw,
-    register_via_api,
+    add_account_and_log_in, expect_problem, get_raw, get_status, log_in_as_admin, patch_status,
+    post_json_raw,
 };
 use axum::http::StatusCode;
 
@@ -345,7 +345,8 @@ async fn run_state(
 #[tokio::test]
 async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() {
     let (fixture, alice) = crate::test_support::fixture_with_account().await;
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let bobs_run = start_run(
         &fixture.state,
         &bob.token,
@@ -1211,8 +1212,8 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
 async fn import_endpoint_honors_can_import_flag() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "import-guard-keeper", "hunter2hunter2").await;
-    let user = register_via_api(&state, "import-guard-user", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let user = add_account_and_log_in(&state, "import-guard-user", "hunter2hunter2").await;
 
     assert_eq!(
         patch_status(

@@ -7,8 +7,8 @@ use sqlx::SqliteConnection;
 use crate::db::{account_profile, imports};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
-    fixture_with_account, register_via_api, seed_one_message, stored_time, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, TestFixture, add_account_and_log_in,
+    expect_problem, fixture_with_account, seed_one_message, stored_time, test_fixture,
 };
 
 /// A newest-first page — the default ordering, which is what most of these
@@ -1477,7 +1477,7 @@ async fn conversation_detail_404s_for_another_accounts_conversation() {
         crate::test_support::get_json(&state, "/v1/conversations", &alice.token).await;
     let alice_conversation_id = alice_list["items"][0]["id"].as_i64().unwrap();
 
-    let bob = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
+    let bob = crate::test_support::add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&state, bob.account_id).await;
 
     // Bob asking for Alice's conversation id must 404, not 403 — a 403
@@ -1696,7 +1696,7 @@ async fn conversation_trash_404s_for_another_accounts_conversation() {
         crate::test_support::get_json(&state, "/v1/conversations", &alice.token).await;
     let alice_conversation_id = alice_list["items"][0]["id"].as_i64().unwrap();
 
-    let bob = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
+    let bob = crate::test_support::add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&state, bob.account_id).await;
 
     // Bob trashing Alice's conversation id must 404, not 403 — a 403
@@ -1735,7 +1735,7 @@ async fn conversation_restore_404s_for_another_accounts_conversation() {
         .unwrap();
     drop(conn);
 
-    let bob = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
+    let bob = crate::test_support::add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&state, bob.account_id).await;
 
     let (status, text) = crate::test_support::post_json_raw(
@@ -1894,7 +1894,8 @@ async fn conversation_delete_refuses_a_conversation_that_is_not_in_the_trash() {
 #[tokio::test]
 async fn conversation_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_conversation_fixture().await;
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     let (status, text) =
         crate::test_support::delete_raw(&fixture.state, "/v1/conversations/999999", &alice.token)
@@ -2565,7 +2566,8 @@ async fn conversation_messages_404s_for_an_unknown_id() {
 #[tokio::test]
 async fn conversation_messages_404s_for_another_accounts_conversation() {
     let (fixture, _alice, alice_conversation_id) = conversation_messages_fixture().await;
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&fixture.state, bob.account_id).await;
 
     let (status, text) = crate::test_support::get_raw(
@@ -2686,7 +2688,7 @@ async fn conversation_sources_count_each_backup_and_its_share_of_unique_messages
 #[tokio::test]
 async fn conversation_sources_404s_for_another_accounts_conversation_and_an_unknown_id() {
     let (fixture, alice, conversation_id) = sources_fixture().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     seed_one_message(&fixture.state, bob.account_id).await;
 
     // A 403 would confirm the id exists in someone else's account.

@@ -445,7 +445,7 @@ async fn a_valid_token_under_another_scheme_answers_401() {
 async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let created = {
         let mut conn = fixture.conn().await;
         api_tokens::create_api_token(

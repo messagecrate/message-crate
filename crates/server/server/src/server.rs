@@ -293,9 +293,10 @@ impl<T: Serialize> IntoResponse for Created<T> {
     }
 }
 
-/// The routes a stranger may call, with a small body limit so password
-/// hashing cannot be fed huge requests. `POST /v1/accounts` is among them:
-/// the owner's creation shares the route, and a small body is all it needs.
+/// The routes that hash a password, with a small body limit so password
+/// hashing cannot be fed huge requests: logging in and setting up the
+/// server, which a stranger may call, and `POST /v1/accounts`, the
+/// administrator's creation, for which a small body is all it needs.
 fn limited_auth_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
     let (router, spec) = crate::openapi::public_openapi().split_for_parts();
     (

@@ -197,8 +197,8 @@ mod tests {
 
     use crate::problem::ProblemType;
     use crate::test_support::{
-        delete_status, expect_problem, fixture_with_account, get_json, get_raw, get_status,
-        patch_failure, patch_json, post_created_json, post_json_raw, register_via_api,
+        add_account_and_log_in, delete_status, expect_problem, fixture_with_account, get_json,
+        get_raw, get_status, patch_failure, patch_json, post_created_json, post_json_raw,
     };
 
     #[tokio::test]
@@ -297,7 +297,7 @@ mod tests {
     async fn another_accounts_saved_search_answers_404_to_get() {
         let (fixture, user) = fixture_with_account().await;
         let state = fixture.state.clone();
-        let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+        let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
         let (location, _): (String, serde_json::Value) = post_created_json(
             &state,
             "/v1/saved-searches",

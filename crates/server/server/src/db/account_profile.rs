@@ -410,8 +410,8 @@ pub async fn update_password_hash(
 }
 
 /// Record that the account logged in at `now`. Called by every route that
-/// opens a Session for a person: login, claiming the server, and
-/// registering. Rotating a token on a password change is not a login.
+/// opens a Session for a person: login and setting up the server.
+/// Rotating a token on a password change is not a login.
 pub async fn record_login(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -1208,7 +1208,7 @@ mod tests {
         delete_account(
             &mut conn,
             bob,
-            crate::db::audit_trail::AuditActor::Owner,
+            crate::db::audit_trail::AuditActor::Admin,
             crate::test_support::fixed_instant(),
         )
         .await
@@ -1221,7 +1221,7 @@ mod tests {
         delete_account(
             &mut conn,
             carol,
-            crate::db::audit_trail::AuditActor::Owner,
+            crate::db::audit_trail::AuditActor::Admin,
             crate::test_support::fixed_instant(),
         )
         .await
@@ -1229,7 +1229,7 @@ mod tests {
         delete_account(
             &mut conn,
             alice,
-            crate::db::audit_trail::AuditActor::Owner,
+            crate::db::audit_trail::AuditActor::Admin,
             crate::test_support::fixed_instant(),
         )
         .await

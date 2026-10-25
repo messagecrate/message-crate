@@ -174,7 +174,7 @@ mod tests {
     use super::*;
     use crate::problem::ProblemType;
     use crate::test_support::{
-        claim_as_owner, expect_problem, expect_problem_for, get_raw, get_status, log_in_raw,
+        expect_problem, expect_problem_for, get_raw, get_status, log_in_as_admin, log_in_raw,
         login_status, test_fixture,
     };
 
@@ -216,7 +216,7 @@ mod tests {
     async fn resetting_the_owner_password_signs_out_the_sessions_it_opened() {
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+        let owner = log_in_as_admin(&state, "hunter2hunter2").await;
         assert_eq!(
             get_status(&state, "/v1/session", &owner.token).await,
             StatusCode::OK

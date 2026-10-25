@@ -3,9 +3,9 @@ use axum::http::{StatusCode, header};
 use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
+    RegisteredAccount, SeedConversation, SeedMessage, add_account_and_log_in, delete_status,
     expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
-    log_in, log_in_raw, post_created_json, post_json_raw, put_status, register_via_api,
+    log_in, log_in_as_admin, log_in_raw, post_created_json, post_json_raw, put_status,
     seed_conversation, serve, stored_time, test_fixture,
 };
 
@@ -197,7 +197,7 @@ async fn a_disabled_account_can_still_log_out() {
 async fn a_session_read_refuses_an_account_parameter() {
     let (fixture, alice) = fixture_with_account().await;
     let state = fixture.state.clone();
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let (status, text) = crate::test_support::get_raw(
         &state,
@@ -247,7 +247,7 @@ async fn seed_source(state: &crate::server::AppState, account_id: i64, source: &
 async fn a_session_lists_the_account_sources_oldest_first() {
     let (fixture, alice) = fixture_with_account().await;
     let state = fixture.state.clone();
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let body: serde_json::Value = get_json(&state, "/v1/session", &alice.token).await;
     assert_eq!(body["sources"], serde_json::json!([]), "no imports yet");
@@ -512,8 +512,8 @@ async fn a_second_login_replaces_the_first_session() {
 async fn an_owner_password_reset_leaves_the_session_browsing() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
 
     let status = put_status(
         &state,

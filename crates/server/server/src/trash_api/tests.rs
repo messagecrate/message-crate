@@ -3,9 +3,9 @@ use axum::http::StatusCode;
 use crate::db::trash::{Trashable, move_to_trash};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
-    conversation_header, delete_raw, delete_status, expect_problem, fake_sha256,
-    fixture_with_account, get_json, get_raw, get_status, message_line, register_via_api,
+    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
+    attach_stored_file, attachment, conversation_header, delete_raw, delete_status, expect_problem,
+    fake_sha256, fixture_with_account, get_json, get_raw, get_status, message_line,
     seed_conversation, stored_time,
 };
 
@@ -146,7 +146,7 @@ async fn empty_trash_deletes_trashed_conversations_and_forgets_trashed_contacts(
 #[tokio::test]
 async fn empty_trash_leaves_another_accounts_trash_alone() {
     let (fixture, alice) = fixture_with_account().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let bobs = seed(&fixture, &bob, "+15550101").await;
     trash(&fixture, &bob, Trashable::Conversation(bobs)).await;
 

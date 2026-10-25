@@ -589,13 +589,13 @@ fn the_reference_states_the_password_cap() {
     assert_eq!(
         found,
         [
-            "ClaimServerRequest.password",
             "CreateAccountRequest.password",
             "CreateSessionRequest.password",
             "DeleteAccountRequest.current_password",
             "ReplaceAccountPasswordRequest.current_password",
             "ReplaceAccountPasswordRequest.password",
             "ReplaceAccountPasswordRequest.password_confirmation",
+            "SetUpServerRequest.password",
         ],
         "every password field a request sends"
     );

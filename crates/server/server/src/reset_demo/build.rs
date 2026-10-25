@@ -278,7 +278,7 @@ pub async fn build_demo_account(
             &db,
             &work.path().join("bundle"),
             BuildBy {
-                actor: AuditActor::Owner,
+                actor: AuditActor::Admin,
                 record_with_size: None,
             },
             &stop,

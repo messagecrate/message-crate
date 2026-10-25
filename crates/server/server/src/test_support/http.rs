@@ -1,5 +1,5 @@
 //! Requests against the real app over HTTP: [`serve`] starts it, and the
-//! helpers here register and log in, issue one request with each verb, and
+//! helpers here add accounts and log in, issue one request with each verb, and
 //! check the problem body of a failed one.
 
 use axum::http::StatusCode;
@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use super::http_client;
 use crate::server::{AppState, http_app};
 
-/// An account created through the API, with its session token.
+/// An account a test added, with a live session token for it.
 pub struct RegisteredAccount {
     /// The new account's id.
     pub account_id: i64,
@@ -159,65 +159,69 @@ fn decode<T: DeserializeOwned>(what: &str, text: &str) -> T {
         .unwrap_or_else(|e| panic!("{what} answered a body that does not decode ({e}): {text}"))
 }
 
-/// Register an account as a stranger, `POST /v1/accounts` with no
-/// credential, and return it with the live session token the server opens on
-/// it. Asserts the `201 Created` and the `Location` naming the new row.
-pub async fn register_via_api(
+/// Create an account the way the administrator's `POST /v1/accounts` does,
+/// with no display name and no phone, then log in as it through
+/// `POST /v1/session` and return it with the live session token.
+///
+/// The account is written to the database rather than through the route,
+/// because the route takes the administrator's Session and opening one would
+/// end the Session a test may already hold for `admin`.
+pub async fn add_account_and_log_in(
     state: &AppState,
     username: &str,
     password: &str,
 ) -> RegisteredAccount {
-    let server = serve(state).await;
-    let response = server
-        .post("/v1/accounts")
-        .json(&serde_json::json!({ "username": username, "password": password }))
-        .send()
+    let hash = crate::credentials::hash_password(password).expect("hash the account password");
+    let mut conn = state.db.acquire().await.expect("acquire to add an account");
+    let mut tx = crate::db::begin_write(&mut conn)
         .await
-        .unwrap();
-    let (location, body): (_, serde_json::Value) =
-        created(&format!("registering {username}"), response).await;
-    let account_id = body["account_id"].as_i64().unwrap();
-    assert_eq!(
-        location.as_deref(),
-        Some(format!("/v1/accounts/{account_id}").as_str()),
-        "registering must answer Location: /v1/accounts/{{id}}"
-    );
+        .expect("begin the account write");
+    let account_id =
+        crate::db::account_profile::insert_account(&mut tx, username, Some(&hash), None)
+            .await
+            .unwrap_or_else(|e| panic!("add account {username}: {e:#}"));
+    crate::db::account_profile::set_must_set_up_profile(&mut tx, account_id, true)
+        .await
+        .expect("mark the account as owing profile setup");
+    crate::db::audit_trail::record(
+        &mut tx,
+        &crate::db::audit_trail::NewEntry::about(
+            crate::db::audit_trail::AuditAction::AccountCreated,
+            crate::db::audit_trail::AuditActor::Admin,
+            (account_id, username),
+        ),
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("record the account's creation");
+    tx.commit().await.expect("commit the account write");
+    drop(conn);
+
+    let body = log_in(state, username, password).await;
     RegisteredAccount {
         account_id,
-        username: body["username"].as_str().unwrap().to_string(),
-        token: body["token"]
-            .as_str()
-            .unwrap_or_else(|| panic!("a stranger's registration must open a session: {body}"))
-            .to_string(),
+        username: username.to_string(),
+        token: body["token"].as_str().unwrap().to_string(),
     }
 }
 
-/// Give the administrator's row, which the database is made with, the
-/// password `password`, then log in as `admin`. `_username` is not used:
-/// the administrator's username is always [`ADMIN_USERNAME`].
-///
-/// [`ADMIN_USERNAME`]: crate::db::account_profile::ADMIN_USERNAME
-pub async fn claim_as_owner(
-    state: &AppState,
-    _username: &str,
-    password: &str,
-) -> RegisteredAccount {
-    let hash = crate::credentials::hash_password(password).expect("hash the owner password");
-    let mut conn = state.db.acquire().await.expect("acquire for claim");
+/// Give the administrator `password` and log in as `admin`, as setup does.
+pub async fn log_in_as_admin(state: &AppState, password: &str) -> RegisteredAccount {
+    let hash = crate::credentials::hash_password(password).expect("hash the admin password");
+    let mut conn = state.db.acquire().await.expect("acquire for setup");
     crate::db::account_profile::update_password_hash(
         &mut conn,
         crate::db::account_profile::ADMIN_ACCOUNT_ID,
         Some(&hash),
     )
     .await
-    .expect("set the administrator's password");
+    .expect("set the admin password");
     drop(conn);
 
-    let username = crate::db::account_profile::ADMIN_USERNAME;
-    let body = log_in(state, username, password).await;
+    let body = log_in(state, crate::db::account_profile::ADMIN_USERNAME, password).await;
     RegisteredAccount {
         account_id: crate::db::account_profile::ADMIN_ACCOUNT_ID,
-        username: username.to_string(),
+        username: crate::db::account_profile::ADMIN_USERNAME.to_string(),
         token: body["token"].as_str().unwrap().to_string(),
     }
 }
@@ -481,7 +485,7 @@ pub async fn put_json_raw(
 }
 
 /// POST a JSON body with no credential at all, returning only the status.
-/// For the routes a stranger calls: creating an account, claiming the server.
+/// For the routes a stranger calls: logging in, setting up the server.
 pub async fn post_status_logged_out(
     state: &AppState,
     path: &str,

@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::logging::log_dir;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, serve, small_log_files,
+    PASSWORD, expect_problem, get_json, get_raw, log_in_as_admin, serve, small_log_files,
     test_fixture, write_log_line as write,
 };
 
@@ -19,7 +19,7 @@ use crate::test_support::{
 async fn the_owner_lists_the_files_and_downloads_one_whole() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
     let files = small_log_files(state);
     for n in 0..6 {
         write(&files, n, "INFO", "finished processing request");
@@ -62,7 +62,7 @@ async fn the_owner_lists_the_files_and_downloads_one_whole() {
 async fn a_file_the_log_does_not_hold_is_a_404() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
     write(&small_log_files(state), 0, "INFO", "one line");
 
     for id in ["99", "0"] {

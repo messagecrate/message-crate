@@ -39,13 +39,13 @@ pub use fixture::{
     test_fixture_with_busy_timeout,
 };
 pub use http::{
-    RegisteredAccount, TestServer, claim_as_owner, delete_json, delete_json_raw,
+    RegisteredAccount, TestServer, add_account_and_log_in, delete_json, delete_json_raw,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
     expect_internal_problem, expect_problem, expect_problem_for, expect_problem_response, get_json,
-    get_raw, get_status, location, log_in, log_in_raw, login_status, patch_failure, patch_json,
-    patch_json_raw, patch_status, post_created_json, post_json, post_json_raw, post_logged_out,
-    post_raw, post_status, post_status_logged_out, problem, put_json, put_json_raw, put_raw,
-    put_status, register_via_api, serve, serve_router,
+    get_raw, get_status, location, log_in, log_in_as_admin, log_in_raw, login_status,
+    patch_failure, patch_json, patch_json_raw, patch_status, post_created_json, post_json,
+    post_json_raw, post_logged_out, post_raw, post_status, post_status_logged_out, problem,
+    put_json, put_json_raw, put_raw, put_status, serve, serve_router,
 };
 pub use import_runs::{complete_import_run, post_import_batch, start_import_run};
 pub use imports::{

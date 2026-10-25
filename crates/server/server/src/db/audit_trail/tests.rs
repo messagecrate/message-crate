@@ -88,7 +88,7 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
     account_profile::delete_account(
         &mut conn,
         account,
-        AuditActor::Owner,
+        AuditActor::Admin,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -353,7 +353,7 @@ async fn deleting_an_account_ends_its_live_session() {
     account_profile::delete_account(
         &mut conn,
         account,
-        AuditActor::Owner,
+        AuditActor::Admin,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -372,7 +372,7 @@ async fn deleting_an_account_ends_its_live_session() {
         .filter(|item| item.action == AuditAction::SessionEnded)
         .map(|item| (item.reason, item.actor))
         .collect();
-    assert_eq!(ended, [(Some(AuditReason::Revoked), AuditActor::Owner)]);
+    assert_eq!(ended, [(Some(AuditReason::Revoked), AuditActor::Admin)]);
 }
 
 /// An entry says its account has been deleted from the account's deletion,
@@ -428,7 +428,7 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
         &mut conn,
         &NewEntry {
             username: Some("carol"),
-            ..NewEntry::about_no_account(AuditAction::RegistrationOpened, AuditActor::Owner)
+            ..NewEntry::about_no_account(AuditAction::AssetLimitChanged, AuditActor::Admin)
         },
         crate::test_support::fixed_instant(),
     )
@@ -448,7 +448,7 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
     account_profile::delete_account(
         &mut conn,
         alice,
-        AuditActor::Owner,
+        AuditActor::Admin,
         crate::test_support::fixed_instant(),
     )
     .await
@@ -628,7 +628,7 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
         account_profile::delete_account(
             &mut conn,
             account,
-            AuditActor::Owner,
+            AuditActor::Admin,
             crate::test_support::fixed_instant()
         )
         .await

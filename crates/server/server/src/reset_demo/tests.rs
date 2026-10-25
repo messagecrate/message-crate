@@ -417,7 +417,7 @@ async fn reset_check_refuses_a_prepared_database_that_changed_another_accounts_r
             "saved_searches (active rows=1, prepared rows=1)",
         ),
         (
-            "UPDATE server_settings SET public_registration = 1",
+            "UPDATE server_settings SET asset_max_bytes = 2048",
             "server_settings (active rows=1, prepared rows=1)",
         ),
         // A row whose account was deleted belongs to no account, and is
@@ -2150,10 +2150,11 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
         &text,
         crate::problem::ProblemType::InvalidCredentials,
     );
-    // A reset writes the Demo Account and no owner: the Message Crate is
-    // still there to be claimed, and says the Demo Account is in it.
+    // A reset writes the Demo Account and leaves the administrator without a
+    // password: the Message Crate is still in setup, and says the Demo
+    // Account is in it.
     let server: serde_json::Value = crate::test_support::get_json(&state, "/v1/server", "").await;
-    assert_eq!(server["state"], "unclaimed");
+    assert_eq!(server["state"], "setup");
     assert_eq!(server["demo_account"], true);
 }
 
@@ -2742,7 +2743,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         &cfg,
         &build.db,
         DEMO_ACCOUNT_ID,
-        AuditActor::Owner,
+        AuditActor::Admin,
         Progress::Log,
         NonZeroU32::MIN,
         async || {
@@ -3145,7 +3146,7 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
     let (pool, mut conn) = test_db(&db).await;
     crate::db::audit_trail::record_demo_build(
         &mut conn,
-        AuditActor::Owner,
+        AuditActor::Admin,
         DemoDataSize::Medium,
         chrono::Utc::now(),
     )
@@ -3157,7 +3158,7 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
         &pool,
         &bundle,
         BuildBy {
-            actor: AuditActor::Owner,
+            actor: AuditActor::Admin,
             record_with_size: None,
         },
         &AtomicBool::new(false),
@@ -3177,9 +3178,9 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
     let [owner_reset, owner_deleted, command_reset, command_deleted] = entries.as_slice() else {
         panic!("two resets, each before its deletion: {entries:#?}");
     };
-    assert_deletion(owner_deleted, "owner");
+    assert_deletion(owner_deleted, "admin");
     assert_deletion(command_deleted, "command_line");
-    assert_reset_filed_with(owner_reset, owner_deleted, "owner", "medium");
+    assert_reset_filed_with(owner_reset, owner_deleted, "admin", "medium");
     assert_reset_filed_with(command_reset, command_deleted, "command_line", "large");
 }
 

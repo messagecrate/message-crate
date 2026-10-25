@@ -76,7 +76,7 @@ pub(crate) async fn list_phone_countries(
 #[cfg(test)]
 mod tests {
     use crate::paging::Page;
-    use crate::test_support::{claim_as_owner, get_json, test_fixture};
+    use crate::test_support::{get_json, log_in_as_admin, test_fixture};
 
     /// The owner picks the country of a managed account's number from that
     /// account's Profile tab (`set_identity_country` on
@@ -85,7 +85,7 @@ mod tests {
     #[tokio::test]
     async fn the_owner_reads_the_country_list() {
         let fixture = test_fixture().await;
-        let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
+        let owner = log_in_as_admin(&fixture.state, "hunter2hunter2").await;
 
         let page: Page<serde_json::Value> = get_json(
             &fixture.state,

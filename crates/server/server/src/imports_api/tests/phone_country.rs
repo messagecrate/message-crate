@@ -109,7 +109,7 @@ async fn phone_identities(state: &crate::server::AppState) -> Vec<String> {
 async fn both_spellings_are_one_person_in_a_run_that_states_the_country() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "uk", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "uk", "hunter2hunter2").await;
     import_with_country(
         &fixture.state,
         &account.token,
@@ -132,7 +132,7 @@ async fn both_spellings_are_one_person_in_a_run_that_states_the_country() {
 async fn both_spellings_stay_two_identities_when_no_country_is_stated() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "us", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "us", "hunter2hunter2").await;
     import_with_country(
         &fixture.state,
         &account.token,
@@ -153,7 +153,7 @@ async fn both_spellings_stay_two_identities_when_no_country_is_stated() {
 async fn an_unknown_phone_country_is_refused() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "zz", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "zz", "hunter2hunter2").await;
     let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/imports",
@@ -184,7 +184,7 @@ async fn contact_of(state: &crate::server::AppState, normalized: &str) -> i64 {
 async fn picking_the_country_on_the_contacts_screen_merges_the_two() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "pick", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "pick", "hunter2hunter2").await;
     let state = &fixture.state;
     import_with_country(state, &account.token, None, both_spellings(NATIONAL, FULL)).await;
     assert_eq!(conversations_and_members(state).await, (2, 3));
@@ -246,7 +246,8 @@ async fn picking_the_country_on_the_contacts_screen_merges_the_two() {
 async fn picking_the_country_of_a_number_no_one_else_holds_gives_it_its_plus_form() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "alone", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "alone", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let body = format!(
         "{}\n{}\n",
@@ -276,7 +277,8 @@ async fn picking_the_country_of_a_number_no_one_else_holds_gives_it_its_plus_for
 async fn a_short_code_has_no_country_to_pick() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "short", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "short", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let body = format!(
         "{}\n{}\n",
@@ -301,7 +303,7 @@ async fn a_short_code_has_no_country_to_pick() {
 async fn picking_the_country_of_an_own_identity_gives_it_its_plus_form() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "own", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "own", "hunter2hunter2").await;
     let state = &fixture.state;
     let path = format!("/v1/accounts/{}", account.account_id);
     let _: serde_json::Value = patch_json(
@@ -336,7 +338,8 @@ async fn picking_the_country_of_an_own_identity_gives_it_its_plus_form() {
 async fn a_merge_brings_the_plus_form_to_the_contact_that_picked_the_country() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "named", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "named", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let body = format!(
         "{}\n{}\n{}\n{}\n",
@@ -417,7 +420,7 @@ fn one_to_one_from(source: &str, chat: &str, guid: &str) -> String {
 async fn a_contact_s_number_joins_an_own_identity_on_my_identities_only() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "self", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "self", "hunter2hunter2").await;
     let state = &fixture.state;
     let path = format!("/v1/accounts/{}", account.account_id);
     let link = |address: &str| serde_json::json!({ "identities": [{ "address": address, "service": "phone" }] });
@@ -481,7 +484,8 @@ async fn a_contact_s_number_joins_an_own_identity_on_my_identities_only() {
 async fn a_merge_keys_again_every_message_of_a_group_whose_member_changed() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "group", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "group", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let other = "+447700900456";
     let group = |source: &str, chat: &str, member: &str| {
@@ -516,7 +520,8 @@ async fn a_merge_keys_again_every_message_of_a_group_whose_member_changed() {
 async fn a_merge_with_a_trashed_conversation_keeps_the_live_one_live() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "trash", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "trash", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let body = format!("{}{}", one_to_one(NATIONAL, "m1"), one_to_one(FULL, "m2"));
     import_with_country(state, &account.token, None, body).await;
@@ -551,7 +556,7 @@ async fn a_merge_with_a_trashed_conversation_keeps_the_live_one_live() {
 async fn picking_the_country_finds_the_number_keyed_by_the_digits_on_a_contact() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "both", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "both", "hunter2hunter2").await;
     let state = &fixture.state;
     import_with_country(
         state,
@@ -593,7 +598,8 @@ async fn picking_the_country_finds_the_number_keyed_by_the_digits_on_a_contact()
 async fn picking_the_country_finds_the_own_number_keyed_by_the_digits() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "ownboth", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "ownboth", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     import_with_country(
         state,
@@ -675,7 +681,8 @@ async fn pick_own_and_merge(
 async fn an_own_number_merges_when_both_numbers_have_a_one_to_one_conversation() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "both11", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "both11", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let body = format!("{}{}", one_to_one(NATIONAL, "m1"), one_to_one(FULL, "m2"));
     import_with_country(state, &account.token, None, body).await;
@@ -703,7 +710,8 @@ async fn an_own_number_merges_when_both_numbers_have_a_one_to_one_conversation()
 async fn an_own_number_merge_keys_again_the_groups_of_the_plus_form() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "ownkeys", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "ownkeys", "hunter2hunter2")
+            .await;
     let state = &fixture.state;
     let token = &account.token;
     let (ann, bob) = ("+447700900456", "+447700900789");

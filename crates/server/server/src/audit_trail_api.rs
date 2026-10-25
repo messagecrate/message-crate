@@ -101,7 +101,7 @@ pub(crate) async fn audit_trail_page(
     ),
     responses(
         (status = 200, body = Page<AuditEntry>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_audit_trail(
@@ -131,7 +131,7 @@ pub(crate) async fn list_audit_trail(
     ),
     responses(
         (status = 200, body = Page<DeletedAccount>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_deleted_accounts(

@@ -348,15 +348,9 @@ impl Shared {
     pub(super) async fn build() -> Self {
         let fixture = crate::test_support::test_fixture().await;
         let mut conn = fixture.conn().await;
-        account_profile::insert_account_at(
-            &mut conn,
-            ADMIN_ACCOUNT_ID,
-            "keeper",
-            Some(password_hash()),
-            None,
-        )
-        .await
-        .unwrap();
+        account_profile::update_password_hash(&mut conn, ADMIN_ACCOUNT_ID, Some(password_hash()))
+            .await
+            .unwrap();
         let owner_session = insert_account_session_token(
             &mut conn,
             ADMIN_ACCOUNT_ID,
@@ -786,10 +780,12 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
         ("post", "/v1/session") => {
             json(json!({ "username": format!("alice-{n}"), "password": PASSWORD }))
         }
-        ("post", "/v1/server/claim") => {
-            json(json!({ "username": "usurper", "password": PASSWORD }))
-        }
-        ("patch", "/v1/server/settings") => json(json!({ "public_registration": true })),
+        ("post", "/v1/server/setup") => json(json!({ "password": PASSWORD })),
+        // The limit the server already holds, so the call changes nothing the
+        // other calls' uploads are held to.
+        ("patch", "/v1/server/settings") => json(json!({
+            "asset_max_bytes": crate::db::server_settings::DEFAULT_ASSET_MAX_BYTES
+        })),
         // A size the server does not build, so the call gets past the guard
         // and stops at validation, and no Demo Account build starts.
         ("put", "/v1/server/demo-account") => json(json!({ "size": "tiny" })),
@@ -989,17 +985,13 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         .collect();
     assert_eq!(outcomes, BTreeSet::from(["accepted".to_string()]));
 
-    let stranger_or_owner = op(
-        "post",
-        "/v1/accounts",
-        json!([{}, { "session": ["owner"] }]),
-    );
+    let create_account = op("post", "/v1/accounts", json!([{ "session": ["owner"] }]));
     assert_eq!(
-        stranger_or_owner.expected(Credential::Owner),
+        create_account.expected(Credential::Owner),
         Expected::Accepted
     );
     assert_eq!(
-        stranger_or_owner.expected(Credential::Session),
+        create_account.expected(Credential::Session),
         Expected::Refused
     );
 }

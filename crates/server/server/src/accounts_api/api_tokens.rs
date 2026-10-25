@@ -145,7 +145,7 @@ pub struct UpdateApiTokenRequest {
     ),
     responses(
         (status = 200, body = crate::paging::Page<ApiToken>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn list_api_tokens(
@@ -214,7 +214,7 @@ fn as_shown_to(
     ),
     responses(
         (status = 200, body = ApiToken),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn get_api_token(
@@ -323,7 +323,7 @@ pub async fn create_api_token(
     ),
     responses(
         (status = 204, description = "Token deleted"),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn delete_api_token(
@@ -492,7 +492,8 @@ mod tests {
         let fixture = crate::test_support::test_fixture().await;
         let state = fixture.state.clone();
         let account =
-            crate::test_support::register_via_api(&state, "token-owner", "hunter2hunter2").await;
+            crate::test_support::add_account_and_log_in(&state, "token-owner", "hunter2hunter2")
+                .await;
 
         let collection = format!("/v1/accounts/{}/api-tokens", account.account_id);
         let (status, text) = crate::test_support::post_json_raw(
@@ -564,13 +565,14 @@ mod tests {
     #[tokio::test]
     async fn the_owner_lists_an_accounts_tokens_without_their_hints() {
         use crate::test_support::{
-            claim_as_owner, get_json, get_status, post_created_json, register_via_api, test_fixture,
+            add_account_and_log_in, get_json, get_status, log_in_as_admin, post_created_json,
+            test_fixture,
         };
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-        let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+        let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+        let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
         let alices = format!("/v1/accounts/{}/api-tokens", alice.account_id);
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -621,15 +623,15 @@ mod tests {
     async fn the_owner_revokes_an_accounts_token() {
         use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_status, expect_problem, get_raw, get_status, post_created_json,
-            register_via_api, test_fixture,
+            add_account_and_log_in, delete_status, expect_problem, get_raw, get_status,
+            log_in_as_admin, post_created_json, test_fixture,
         };
         use axum::http::StatusCode;
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-        let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+        let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+        let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
         let alices = format!("/v1/accounts/{}/api-tokens", alice.account_id);
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -661,15 +663,15 @@ mod tests {
     async fn only_the_account_itself_makes_and_renames_its_tokens() {
         use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_raw, expect_problem, expect_problem_for, get_raw,
-            patch_json_raw, post_created_json, post_json_raw, register_via_api, test_fixture,
+            add_account_and_log_in, delete_raw, expect_problem, expect_problem_for, get_raw,
+            log_in_as_admin, patch_json_raw, post_created_json, post_json_raw, test_fixture,
         };
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-        let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-        let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+        let owner = log_in_as_admin(&state, "hunter2hunter2").await;
+        let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
+        let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
         let alices = format!("/v1/accounts/{}/api-tokens", alice.account_id);
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -703,14 +705,14 @@ mod tests {
             "bob listing alice's tokens",
             status,
             &text,
-            ProblemType::NotTheOwner,
+            ProblemType::NotTheAdmin,
         );
         let (status, text) = delete_raw(&state, &one, &bob.token).await;
         expect_problem_for(
             "bob revoking alice's token",
             status,
             &text,
-            ProblemType::NotTheOwner,
+            ProblemType::NotTheAdmin,
         );
         let secret = created["token"].as_str().unwrap();
         let (status, text) = get_raw(&state, &alices, secret).await;

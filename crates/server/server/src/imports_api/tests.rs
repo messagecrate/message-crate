@@ -140,7 +140,8 @@ async fn importer() -> (
 ) {
     let fixture = crate::test_support::test_fixture().await;
     let account =
-        crate::test_support::register_via_api(&fixture.state, "importer", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&fixture.state, "importer", "hunter2hunter2")
+            .await;
     let state = fixture.state.clone();
     (state, fixture, account.token)
 }

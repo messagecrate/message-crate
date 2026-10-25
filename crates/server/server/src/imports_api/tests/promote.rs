@@ -459,7 +459,8 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
 #[tokio::test]
 async fn a_replace_run_deletes_only_its_own_sources_old_messages() {
     let (state, _fixture, token) = importer().await;
-    let other = crate::test_support::register_via_api(&state, "other", "hunter2hunter2").await;
+    let other =
+        crate::test_support::add_account_and_log_in(&state, "other", "hunter2hunter2").await;
 
     import_one_batch(
         &state,

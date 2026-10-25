@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::problem::ProblemType;
 use crate::test_support::{
-    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, small_log_files, test_fixture,
+    PASSWORD, expect_problem, get_json, get_raw, log_in_as_admin, small_log_files, test_fixture,
     write_log_line as write,
 };
 
@@ -30,7 +30,7 @@ fn numbers(page: &Value) -> Vec<u64> {
 async fn the_owner_reads_the_newest_lines_first_and_pages_older_ones() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
     let files = small_log_files(state);
     for n in 0..10 {
         write(&files, n, "INFO", "finished processing request");
@@ -70,7 +70,7 @@ async fn the_owner_reads_the_newest_lines_first_and_pages_older_ones() {
 async fn the_owner_filters_lines_by_level_and_text() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
     let files = small_log_files(state);
     write(&files, 0, "ERROR", "internal server error");
     write(&files, 1, "WARN", "the import could not finish");
@@ -99,7 +99,7 @@ async fn the_owner_filters_lines_by_level_and_text() {
 async fn a_level_or_line_id_that_breaks_a_rule_is_a_422() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
 
     for query in ["level=loud", "after=-1", "limit=0", "limit=501"] {
         let (status, text) = get_raw(

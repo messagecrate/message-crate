@@ -104,7 +104,7 @@ pub fn require_owner(auth: &AuthIdentity) -> Result<(), ApiError> {
     if auth.is_owner() {
         return Ok(());
     }
-    Err(ApiError::NotTheOwner(
+    Err(ApiError::NotTheAdmin(
         "this endpoint requires the owner's session".into(),
     ))
 }

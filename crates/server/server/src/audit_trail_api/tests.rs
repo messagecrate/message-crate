@@ -6,9 +6,9 @@ use serde_json::{Value, json};
 
 use crate::problem::ProblemType;
 use crate::test_support::{
-    PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
-    log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve, test_fixture,
-    with_trigger_lifted,
+    PASSWORD, add_account_and_log_in, delete_status, expect_problem, expect_problem_for, get_json,
+    get_raw, log_in, log_in_as_admin, log_in_raw, patch_status, post_created_json, serve,
+    test_fixture, with_trigger_lifted,
 };
 use api_types::{APP_HEADER, APP_VERSION_HEADER};
 
@@ -53,8 +53,8 @@ async fn log_in_from(
 async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let _: (String, Value) = post_created_json(
         state,
         "/v1/exports",
@@ -84,7 +84,7 @@ async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
             "logged_in"
         ]
     );
-    assert_eq!(items[0]["actor"], "owner");
+    assert_eq!(items[0]["actor"], "admin");
     assert_eq!(items[0]["account_id"], alice.account_id);
     assert_eq!(items[0]["username"], "alice");
     assert_eq!(items[0]["permissions_removed"], json!(["export"]));
@@ -92,9 +92,9 @@ async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
     assert_eq!(items[1]["actor"], "holder");
     assert_eq!(items[1]["credential"], "session");
     assert_eq!(items[1]["scope_kind"], "everything");
-    assert_eq!(items[3]["actor"], "anonymous");
-    assert_eq!(items[4]["username"], "keeper");
-    assert_eq!(items[4]["actor"], "owner");
+    assert_eq!(items[3]["actor"], "admin");
+    assert_eq!(items[4]["username"], "admin");
+    assert_eq!(items[4]["actor"], "admin");
 }
 
 /// An account reads every entry about itself, the owner's changes to it
@@ -103,9 +103,9 @@ async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
 async fn an_account_reads_its_own_entries_including_the_owners_changes() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
-    let bob = register_via_api(state, "bob", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
+    let bob = add_account_and_log_in(state, "bob", PASSWORD).await;
     assert_eq!(
         patch_status(
             state,
@@ -123,7 +123,7 @@ async fn an_account_reads_its_own_entries_including_the_owners_changes() {
         actions(&items),
         ["permissions_changed", "logged_in", "account_created"]
     );
-    assert_eq!(items[0]["actor"], "owner");
+    assert_eq!(items[0]["actor"], "admin");
     assert!(
         items.iter().all(|item| item["username"] == "alice"),
         "only alice's entries: {items:?}"
@@ -132,9 +132,9 @@ async fn an_account_reads_its_own_entries_including_the_owners_changes() {
     assert_eq!(trail(state, &own, &owner.token).await, items);
 
     let (status, text) = get_raw(state, &own, &bob.token).await;
-    expect_problem(status, &text, ProblemType::NotTheOwner);
+    expect_problem(status, &text, ProblemType::NotTheAdmin);
     let (status, text) = get_raw(state, "/v1/audit-trail", &alice.token).await;
-    expect_problem(status, &text, ProblemType::NotTheOwner);
+    expect_problem(status, &text, ProblemType::NotTheAdmin);
 }
 
 /// A login on the desktop while the website is logged in takes the account's
@@ -144,8 +144,8 @@ async fn an_account_reads_its_own_entries_including_the_owners_changes() {
 async fn a_desktop_login_records_the_website_session_as_replaced() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     log_in_from(state, "alice", "website", "0.10.0+aaaa1111").await;
     let desktop = log_in_from(state, "alice", "desktop", "0.10.0+bbbb2222").await;
     assert_eq!(
@@ -183,8 +183,8 @@ async fn a_desktop_login_records_the_website_session_as_replaced() {
 async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let (status, text) = log_in_raw(state, "  Nobody-Here  ", "guess").await;
     expect_problem_for(
         "an unknown username",
@@ -250,8 +250,8 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
 async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let (_, run): (String, Value) = post_created_json(
         state,
         "/v1/exports",
@@ -284,9 +284,9 @@ async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
         assert_eq!(item["username"], "alice", "{item}");
         assert_eq!(item["account_id"], Value::Null, "{item}");
     }
-    assert_eq!(items[0]["actor"], "owner");
+    assert_eq!(items[0]["actor"], "admin");
     assert_eq!(items[1]["reason"], "revoked");
-    assert_eq!(items[1]["actor"], "owner");
+    assert_eq!(items[1]["actor"], "admin");
     assert_eq!(items[2]["id"], run["id"]);
     assert_eq!(items[2]["scope_kind"], "query");
     assert_eq!(items[2]["scope_list"], "messages");
@@ -306,10 +306,10 @@ async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
 async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let first = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let first = add_account_and_log_in(state, "alice", PASSWORD).await;
     delete_account(state, first.account_id, &owner.token).await;
-    let second = register_via_api(state, "Alice", PASSWORD).await;
+    let second = add_account_and_log_in(state, "Alice", PASSWORD).await;
     let (_, run): (String, Value) = post_created_json(
         state,
         "/v1/exports",
@@ -320,7 +320,7 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     delete_account(state, second.account_id, &owner.token).await;
     let (status, text) = log_in_raw(state, "alice", "guess").await;
     expect_problem(status, &text, ProblemType::InvalidCredentials);
-    let _third = register_via_api(state, "alice", PASSWORD).await;
+    let _third = add_account_and_log_in(state, "alice", PASSWORD).await;
 
     let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &owner.token).await;
     assert_eq!(deleted["total"], 2);
@@ -378,10 +378,10 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     let (status, text) = get_raw(
         state,
         "/v1/audit-trail/deleted-accounts",
-        &register_via_api(state, "carol", PASSWORD).await.token,
+        &add_account_and_log_in(state, "carol", PASSWORD).await.token,
     )
     .await;
-    expect_problem(status, &text, ProblemType::NotTheOwner);
+    expect_problem(status, &text, ProblemType::NotTheAdmin);
 }
 
 /// Delete the account `id` as the owner.
@@ -398,7 +398,7 @@ async fn delete_account(state: &crate::server::AppState, id: i64, owner_token: &
 async fn a_run_started_by_a_deleted_api_token_still_names_it() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let tokens = format!("/v1/accounts/{}/api-tokens", alice.account_id);
     let (location, created): (String, Value) = post_created_json(
         state,
@@ -445,8 +445,8 @@ async fn a_run_started_by_a_deleted_api_token_still_names_it() {
 async fn a_session_that_ran_out_reads_as_expired() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     // Registered on 1 January 2000, so the Session ran out on 31 January
     // 2000, long before any day this test runs on.
     let registered = "2000-01-01T00:00:00+00:00";
@@ -487,8 +487,8 @@ async fn a_session_that_ran_out_reads_as_expired() {
 async fn the_owners_changes_to_an_account_are_recorded() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let account = format!("/v1/accounts/{}", alice.account_id);
     for body in [
         json!({ "disabled": true }),
@@ -527,7 +527,7 @@ async fn the_owners_changes_to_an_account_are_recorded() {
             "account_disabled"
         ]
     );
-    assert!(items[..5].iter().all(|item| item["actor"] == "owner"));
+    assert!(items[..5].iter().all(|item| item["actor"] == "admin"));
     assert_eq!(items[3]["reason"], "revoked");
     assert_eq!(items[0]["conversations"], 0);
 }
@@ -539,8 +539,8 @@ async fn the_owners_changes_to_an_account_are_recorded() {
 async fn an_entry_carries_the_id_of_the_request_that_wrote_it() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let owner = log_in_as_admin(state, PASSWORD).await;
+    let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let server = serve(state).await;
     let login = server
         .post("/v1/session")

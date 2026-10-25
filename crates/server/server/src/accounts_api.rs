@@ -37,7 +37,7 @@ use crate::db::handles::{self, ApiIdentityService, Identity};
 use crate::db::permissions::Permission;
 use crate::db::storage::{self, Scope};
 use crate::db::{WriteTx, begin_write};
-use crate::db::{account_profile, imports, server_settings, session_tokens};
+use crate::db::{account_profile, imports, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
 use crate::imports_api::dto::{ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary};
@@ -195,7 +195,7 @@ impl Reach {
     /// holder on their own.
     pub(crate) fn actor(self) -> AuditActor {
         match self {
-            Self::Owner | Self::OwnersOwn => AuditActor::Owner,
+            Self::Owner | Self::OwnersOwn => AuditActor::Admin,
             Self::Own => AuditActor::Holder,
         }
     }
@@ -232,7 +232,7 @@ pub(crate) async fn require_account_reach(
     }
     match admits {
         Admits::NobodyElse(refusal) => Err(ApiError::InsufficientScope(refusal.into())),
-        Admits::Owner if !auth.is_owner() => Err(ApiError::NotTheOwner(format!(
+        Admits::Owner if !auth.is_owner() => Err(ApiError::NotTheAdmin(format!(
             "account {target} is not yours, and only the owner reaches other accounts"
         ))),
         Admits::Owner => {
@@ -314,31 +314,23 @@ pub struct CreateAccountRequest {
     pub phone: Option<String>,
 }
 
-/// The account that was created, and the Session a stranger's registration
-/// opens on it. The owner's creation opens no session, so `token` is `null`.
+/// The account that was created. Creating it opens no Session on it.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountResponse {
     /// The new account.
     #[serde(flatten)]
     pub account: Account,
-    /// Session token to send as `Authorization: Bearer …`. `null` unless a
-    /// stranger registered, because only they are logged in on creation.
-    pub token: Option<String>,
 }
 
-/// Create an account.
+/// Create an account, as the administrator.
 ///
-/// The owner may always: the owner picks the first password, and the
-/// account holder keeps it until they change it under Settings. A stranger
-/// with no credential may while registration is open, and is logged in on
-/// creation. Registering is the only self-service door, shut unless the
-/// owner has opened it; an unclaimed Message Crate is shut too, because its
-/// first act is being claimed, not being joined.
+/// The administrator picks the first password, and the account holder keeps
+/// it until they change it under Settings.
 #[utoipa::path(
     post,
     path = "/v1/accounts",
     tag = "Accounts",
-    security((), ("session" = ["owner"])),
+    security(("session" = ["owner"])),
     request_body = CreateAccountRequest,
     responses(
         (
@@ -346,26 +338,15 @@ pub struct CreateAccountResponse {
             body = CreateAccountResponse,
             headers(("Location" = String, description = "Path of the new account"))
         ),
-        crate::problem::openapi::RegistrationClosed,
         crate::problem::openapi::UsernameTaken
     )
 )]
 pub async fn create_account(
     State(db): State<SqlitePool>,
-    auth: Option<AuthIdentity>,
-    headers: axum::http::HeaderMap,
+    Owner(_auth): Owner,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<Created<CreateAccountResponse>, ApiError> {
     let username = require_valid_username(&req.username)?;
-    let by_owner = match &auth {
-        Some(auth) if auth.is_owner() => true,
-        Some(_) => {
-            return Err(ApiError::NotTheOwner(
-                "only the owner creates accounts for others; a stranger creates their own with no credential while registration is open".into(),
-            ));
-        }
-        None => false,
-    };
 
     let preferred_name = req
         .preferred_name
@@ -380,13 +361,6 @@ pub async fn create_account(
         .transpose()?
         .and_then(ir::nonempty);
 
-    // A stranger is refused on a closed server before the password is hashed,
-    // so a refusal costs no Argon2 work. This read takes no lock, so the
-    // owner may close registration before the write transaction below
-    // begins: the check inside that transaction is the one that decides.
-    if !by_owner {
-        require_registration_open(&mut *db.acquire().await?).await?;
-    }
     // Hashed before a connection is taken for the write, so neither a pooled
     // connection nor the write lock is held for the length of an Argon2 hash.
     let password_hash = hash_user_password(req.password.as_deref().unwrap_or("")).await?;
@@ -396,14 +370,9 @@ pub async fn create_account(
     // The insert, the phone, and the profile-setup mark land together: a
     // failure between them would leave an account that owes profile setup
     // without being marked for it. The write transaction takes the write
-    // lock before the registration and username checks, so the owner cannot
-    // close registration between the check and the insert, and two
-    // registrations of one name cannot both pass the check and then race to
-    // the insert.
+    // lock before the username check, so two creations of one name cannot
+    // both pass the check and then race to the insert.
     let mut tx = begin_write(&mut conn).await?;
-    if !by_owner {
-        require_registration_open(&mut tx).await?;
-    }
     require_username_free(&mut tx, &username).await?;
     let account_id = account_profile::insert_account(
         &mut tx,
@@ -425,29 +394,16 @@ pub async fn create_account(
     if preferred_name.is_none() && phone.is_none() {
         account_profile::set_must_set_up_profile(&mut tx, account_id, true).await?;
     }
-    let actor = if by_owner {
-        AuditActor::Owner
-    } else {
-        AuditActor::Anonymous
-    };
-    let now = Utc::now();
     audit_trail::record(
         &mut tx,
-        &NewEntry::about(AuditAction::AccountCreated, actor, (account_id, &username)),
-        now,
+        &NewEntry::about(
+            AuditAction::AccountCreated,
+            AuditActor::Admin,
+            (account_id, &username),
+        ),
+        Utc::now(),
     )
     .await?;
-    let token = if by_owner {
-        None
-    } else {
-        // Registering opens a Session, so it is the account's first login.
-        let app = crate::auth::connecting_app(&headers);
-        let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref(), now)
-            .await
-            .map_err(ApiError::Internal)?;
-        account_profile::record_login(&mut tx, account_id, now).await?;
-        Some(token)
-    };
     tx.commit().await?;
 
     let account = load_account(&mut conn, account_id).await?.ok_or_else(|| {
@@ -455,19 +411,8 @@ pub async fn create_account(
     })?;
     Ok(Created {
         location: format!("/v1/accounts/{account_id}"),
-        body: CreateAccountResponse { account, token },
+        body: CreateAccountResponse { account },
     })
-}
-
-/// Refuse a stranger's registration while the owner has registration closed.
-async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), ApiError> {
-    if server_settings::load(conn).await?.public_registration {
-        Ok(())
-    } else {
-        Err(ApiError::RegistrationClosed(
-            "this Message Crate does not accept new accounts; ask its owner for one".into(),
-        ))
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -483,7 +428,7 @@ async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), Ap
     params(("id" = i64, Path, description = "Account id")),
     responses(
         (status = 200, body = Account),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn get_account(
@@ -801,14 +746,14 @@ async fn apply_flags(
         audit_trail::record_about(
             conn,
             action,
-            AuditActor::Owner,
+            AuditActor::Admin,
             account_id,
             Details::default(),
             now,
         )
         .await?;
         if disabled {
-            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Owner, now)
+            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Admin, now)
                 .await?;
         }
     }
@@ -836,7 +781,7 @@ async fn apply_flags(
         audit_trail::record_about(
             conn,
             AuditAction::PermissionsChanged,
-            AuditActor::Owner,
+            AuditActor::Admin,
             account_id,
             details,
             now,
@@ -863,7 +808,7 @@ async fn apply_flags(
     request_body = UpdateAccountRequest,
     responses(
         (status = 200, body = Account),
-        crate::problem::openapi::NotTheOwner,
+        crate::problem::openapi::NotTheAdmin,
         crate::problem::openapi::DemoAccountProtected,
         crate::problem::openapi::IdentityExists
     )
@@ -965,7 +910,7 @@ pub struct DeleteAccountRequest {
         (status = 204, description = "Account deleted"),
         crate::problem::openapi::InvalidCredentials,
         crate::problem::openapi::DemoAccountProtected,
-        crate::problem::openapi::NotTheOwner,
+        crate::problem::openapi::NotTheAdmin,
         crate::problem::openapi::StateConflict
     )
 )]
@@ -1136,7 +1081,7 @@ pub struct ReplaceAccountPasswordResponse {
         (status = 200, description = "Own password changed; the rotated session token", body = ReplaceAccountPasswordResponse),
         (status = 204, description = "Password set by the owner"),
         crate::problem::openapi::InvalidCredentials,
-        crate::problem::openapi::NotTheOwner,
+        crate::problem::openapi::NotTheAdmin,
         crate::problem::openapi::DemoAccountProtected
     )
 )]
@@ -1202,7 +1147,7 @@ pub async fn replace_account_password(
             audit_trail::record_about(
                 &mut tx,
                 AuditAction::PasswordSet,
-                AuditActor::Owner,
+                AuditActor::Admin,
                 target,
                 Details::default(),
                 now,
@@ -1343,7 +1288,7 @@ pub(crate) struct AccountStorage {
     params(("id" = i64, Path, description = "Account id")),
     responses(
         (status = 200, body = AccountStorage),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn get_account_storage(
@@ -1393,7 +1338,7 @@ pub(crate) async fn get_account_storage(
     ),
     responses(
         (status = 200, body = Page<Identity>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_identities(
@@ -1479,7 +1424,7 @@ pub(crate) enum AccountExportRuns {
     ),
     responses(
         (status = 200, body = AccountImportRuns),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_imports(
@@ -1513,7 +1458,7 @@ pub(crate) async fn list_account_imports(
     ),
     responses(
         (status = 200, body = AccountImportRun),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn get_account_import(
@@ -1551,7 +1496,7 @@ pub(crate) async fn get_account_import(
     ),
     responses(
         (status = 200, body = AccountExportRuns),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_exports(
@@ -1587,7 +1532,7 @@ pub(crate) async fn list_account_exports(
     ),
     responses(
         (status = 200, body = Page<crate::db::audit_trail::AuditEntry>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub(crate) async fn list_account_audit_trail(

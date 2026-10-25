@@ -78,10 +78,6 @@ pub enum AuditAction {
     TrashEmptied,
     /// The account was deleted.
     AccountDeleted,
-    /// The owner let strangers create accounts.
-    RegistrationOpened,
-    /// The owner stopped strangers creating accounts.
-    RegistrationClosed,
     /// The owner changed the attachment size limit; `asset_max_bytes` is the
     /// new limit.
     AssetLimitChanged,
@@ -127,8 +123,6 @@ impl AuditAction {
             Self::ConversationDeleted => "conversation_deleted",
             Self::TrashEmptied => "trash_emptied",
             Self::AccountDeleted => "account_deleted",
-            Self::RegistrationOpened => "registration_opened",
-            Self::RegistrationClosed => "registration_closed",
             Self::AssetLimitChanged => "asset_limit_changed",
             Self::DemoAccountAdded => "demo_account_added",
             Self::DemoAccountReset => "demo_account_reset",
@@ -151,12 +145,12 @@ impl AuditAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditActor {
-    /// The owner, through Message Crate.
-    Owner,
+    /// The administrator, through Message Crate.
+    Admin,
     /// The account's own holder: the person logged in to it, or a program
     /// holding one of its API tokens.
     Holder,
-    /// A command run on the server, such as `reset-owner-password` or
+    /// A command run on the server, such as `set-admin-password` or
     /// `reset-demo`.
     CommandLine,
     /// The server's first start on a new database, which adds the Demo
@@ -165,8 +159,7 @@ pub enum AuditActor {
     /// The server on its own: removing a Demo Account build that failed, or
     /// a session running out.
     Server,
-    /// Someone at the login card, before any login: a refused login, or a
-    /// stranger creating an account.
+    /// Someone at the login card, before any login: a refused login.
     Anonymous,
 }
 
@@ -174,7 +167,7 @@ impl AuditActor {
     /// The value as the database spells it.
     fn as_str(self) -> &'static str {
         match self {
-            Self::Owner => "owner",
+            Self::Admin => "admin",
             Self::Holder => "holder",
             Self::CommandLine => "command_line",
             Self::StartUp => "start_up",
@@ -185,7 +178,7 @@ impl AuditActor {
 
     fn parse(value: &str) -> Self {
         match value {
-            "owner" => Self::Owner,
+            "admin" => Self::Admin,
             "holder" => Self::Holder,
             "command_line" => Self::CommandLine,
             "start_up" => Self::StartUp,
@@ -194,12 +187,12 @@ impl AuditActor {
         }
     }
 
-    /// The person logged in to `account_id` acting on it: the owner on the
-    /// owner's account, its holder on any other.
+    /// The person logged in to `account_id` acting on it: the administrator
+    /// on the administrator's account, its holder on any other.
     #[must_use]
     pub fn logged_in_as(account_id: i64) -> Self {
         if account_profile::is_admin(account_id) {
-            Self::Owner
+            Self::Admin
         } else {
             Self::Holder
         }

@@ -576,10 +576,10 @@ async fn an_asset_put_then_get_returns_the_same_bytes() {
 async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    let owner =
-        crate::test_support::claim_as_owner(&state, "asset-read-keeper", "hunter2hunter2").await;
+    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let user =
-        crate::test_support::register_via_api(&state, "asset-read-user", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&state, "asset-read-user", "hunter2hunter2")
+            .await;
 
     let bytes: Vec<u8> = b"a photo".to_vec();
     let sha = Sha256::of_bytes(&bytes);
@@ -1041,7 +1041,7 @@ async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
     state.assets.part_size = 16;
-    let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
     let start = format!("/v1/assets/{sha}/uploads");
@@ -1100,7 +1100,7 @@ async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
 async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
-    let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
@@ -1143,7 +1143,7 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
     state.assets.part_size = 16;
-    let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let server = crate::test_support::serve(&state).await;
 
@@ -2289,12 +2289,12 @@ async fn a_head_of_a_preview_or_a_thumbnail_takes_any_accept() {
 async fn a_preview_is_read_under_the_same_rule_as_the_original() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    let owner =
-        crate::test_support::claim_as_owner(&state, "preview-keeper", "hunter2hunter2").await;
+    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let user =
-        crate::test_support::register_via_api(&state, "preview-user", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&state, "preview-user", "hunter2hunter2").await;
     let other =
-        crate::test_support::register_via_api(&state, "preview-other", "hunter2hunter2").await;
+        crate::test_support::add_account_and_log_in(&state, "preview-other", "hunter2hunter2")
+            .await;
     let seeded = seed_attachment_with_preview(&state, user.account_id).await;
     let path = format!("/v1/assets/{}/preview", seeded.with_preview);
 

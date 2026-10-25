@@ -431,8 +431,9 @@ async fn accept_is_checked_on_v1_json_routes_only() {
 async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let importer = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
+    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let importer =
+        crate::test_support::add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
@@ -443,12 +444,12 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
 
     // The login body is over 20 bytes and is not an attachment. `log_in`
     // asserts the `201 Created`.
-    let session = crate::test_support::log_in(&state, "keeper", "hunter2hunter2").await;
+    let session = crate::test_support::log_in(&state, "admin", "hunter2hunter2").await;
     let changed: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
         session["token"].as_str().unwrap(),
-        serde_json::json!({ "asset_max_bytes": 20, "public_registration": true }),
+        serde_json::json!({ "asset_max_bytes": 20 }),
     )
     .await;
     assert_eq!(changed["asset_max_bytes"], 20);

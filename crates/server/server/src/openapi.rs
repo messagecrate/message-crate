@@ -43,7 +43,7 @@ use crate::server::AppState;
         (name = "Message tags", description = "Tags on conversations"),
         (name = "Saved searches", description = "Queries in the search language, saved under a name"),
         (name = "Search", description = "The words the search language accepts"),
-        (name = "Server", description = "The state of this Message Crate: claiming it, and what a logged-out visitor may do")
+        (name = "Server", description = "The state of this Message Crate: setting it up, and what a logged-out visitor may do")
     )
 )]
 /// OpenAPI document definition assembled from the utoipa-annotated handlers.
@@ -110,14 +110,15 @@ impl Modify for BearerAddon {
     }
 }
 
-/// The routes a stranger may call: creating an account, logging in, and
-/// reading or claiming the server. Served behind a small body limit.
+/// The routes behind a small body limit: logging in, reading or setting up
+/// the server, which a stranger may call, and the administrator's creating
+/// an account.
 pub fn public_openapi() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(crate::accounts_api::create_account))
         .routes(routes!(crate::session_api::create_session))
         .routes(routes!(crate::server_api::get_server))
-        .routes(routes!(crate::server_api::claim_server))
+        .routes(routes!(crate::server_api::set_up_server))
 }
 
 /// `/health`, the one route outside `/v1`. Kept apart from [`api_openapi`]

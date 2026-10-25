@@ -116,10 +116,6 @@ CREATE TABLE IF NOT EXISTS account_prefs (
 CREATE TABLE IF NOT EXISTS server_settings (
     -- Always 1: a Message Crate has one settings record.
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    -- 1 = anyone reaching the server may create their own account; 0 = only
-    -- the administrator creates accounts. Off until the administrator turns
-    -- it on.
-    public_registration INTEGER NOT NULL DEFAULT 0,
     -- The attachment size limit: the largest asset the server accepts, in
     -- bytes. 512 MiB until the administrator sets it.
     asset_max_bytes BIGINT NOT NULL DEFAULT 536870912

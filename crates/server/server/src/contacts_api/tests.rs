@@ -7,9 +7,9 @@ use ir::IdentityType;
 use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
-    expect_problem_response, fixture_with_account, get_raw, get_status, post_json, post_json_raw,
-    post_status, register_via_api, stored_time, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, TestFixture, add_account_and_log_in,
+    expect_problem, expect_problem_response, fixture_with_account, get_raw, get_status, post_json,
+    post_json_raw, post_status, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -52,7 +52,7 @@ async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, Reg
 /// one of its contacts. Used to prove `/v1/contacts/unmatched-identities` is scoped to
 /// the calling account rather than the whole database.
 async fn account_with_handle(fixture: &TestFixture, handle: &str) -> RegisteredAccount {
-    let account = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let account = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     insert_contact_with_handle(&mut conn, account.account_id, "Other", handle).await;
     account
@@ -3343,7 +3343,7 @@ async fn contact_delete_refuses_a_contact_that_is_not_in_the_trash() {
 #[tokio::test]
 async fn contact_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_contact_fixture().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     let (status, text) =
         crate::test_support::delete_raw(&fixture.state, "/v1/contacts/999999", &alice.token).await;
@@ -3532,7 +3532,8 @@ async fn contact_trash_404s_for_another_accounts_contact() {
         crate::test_support::get_json(&fixture.state, "/v1/contacts", &alice.token).await;
     let alice_contact_id = alice_list["items"][0]["id"].as_i64().unwrap();
 
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     // Bob trashing Alice's contact id must 404, not 403 — a 403 would
     // confirm the id exists in someone else's account.
@@ -3568,7 +3569,8 @@ async fn contact_restore_404s_for_another_accounts_contact() {
         .unwrap();
     drop(conn);
 
-    let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob =
+        crate::test_support::add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
 
     let (status, text) = post_json_raw(
         &fixture.state,
@@ -3973,7 +3975,7 @@ async fn a_vcard_conversion_refuses_a_name_in_a_charset_it_cannot_read() {
 async fn literal_contact_routes_are_not_captured_by_the_id_route() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let user = register_via_api(&state, "contact-routes", "hunter2hunter2").await;
+    let user = add_account_and_log_in(&state, "contact-routes", "hunter2hunter2").await;
 
     assert_eq!(
         get_status(&state, "/v1/contacts", &user.token).await,
