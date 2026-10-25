@@ -853,12 +853,13 @@ because no setup needs others: a working client sends its headers at once.
 
 ### API-64 At most 256 connections are open at once
 
-At most 256 connections are open at once (`MAX_CONNECTIONS` there). The
-next one is accepted once one of them closes, and waits with the operating
-system until then. 256 is far above what a few browser tabs and the
-desktop app's Upload open together, and under the 1024 open files a Linux
-process gets by default, which the connections share with the database and
-the upload files.
+At most 256 connections are open at once (`MAX_CONNECTIONS` in
+`crates/server/server/src/connections.rs`). The next one is accepted once one
+of them closes, and waits with the operating system until then. 256 is far
+above what a few browser tabs and the desktop app's Upload open together, and
+under the 1024 open files a Linux process gets by default, which the
+connections share with the database and the upload files. API-63's "Why" is
+the reason for the cap too, and for its being fixed in the code.
 
 Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
 in place of the cap on connections. A connection that never sends its
