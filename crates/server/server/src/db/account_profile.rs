@@ -566,25 +566,53 @@ pub fn is_demo_account(account_id: i64) -> bool {
     account_id == DEMO_ACCOUNT_ID
 }
 
-/// Stable id for the owner. There is one owner or none, and this id
-/// is what makes "one" structural: there is no flag to set, no second owner to
-/// create, and nothing to promote. A database holding no row at this id is
-/// unclaimed. See `docs/adr/0008-the-owner-holds-no-messages.md`.
-pub const OWNER_ACCOUNT_ID: i64 = 1;
+/// Stable id for the administrator. There is exactly one, and this id is
+/// what makes "one" structural: there is no flag to set, no second
+/// administrator to create, and nothing to promote. The row is written when
+/// the database is made ([`insert_admin_row_if_missing`]), so it always
+/// exists; a Message Crate whose administrator has no password yet is in
+/// setup. See `docs/adr/0008-the-administrator-holds-no-messages.md`.
+pub const ADMIN_ACCOUNT_ID: i64 = 1;
 
-/// True when `account_id` is the owner.
-pub fn is_server_owner(account_id: i64) -> bool {
-    account_id == OWNER_ACCOUNT_ID
+/// The administrator's username. Fixed here and never read from the row,
+/// like [`DEMO_USERNAME`], so every Message Crate logs its administrator in
+/// as `admin` and no other account can take the name.
+pub const ADMIN_USERNAME: &str = "admin";
+
+/// True when `account_id` is the administrator.
+pub fn is_admin(account_id: i64) -> bool {
+    account_id == ADMIN_ACCOUNT_ID
 }
 
-/// True when there is an owner: this Message Crate is claimed.
-pub async fn is_claimed(conn: &mut SqliteConnection) -> Result<bool> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE id = $1")
-        .bind(OWNER_ACCOUNT_ID)
-        .fetch_one(&mut *conn)
-        .await
-        .context("check whether the owner's account exists")?;
-    Ok(count > 0)
+/// True when the administrator has a password: this Message Crate is ready.
+/// False while it is in setup.
+pub async fn admin_has_password(conn: &mut SqliteConnection) -> Result<bool> {
+    let hash: Option<Option<String>> =
+        sqlx::query_scalar("SELECT password_hash FROM accounts WHERE id = $1")
+            .bind(ADMIN_ACCOUNT_ID)
+            .fetch_optional(&mut *conn)
+            .await
+            .context("read whether the administrator has a password")?;
+    Ok(matches!(hash, Some(Some(hash)) if !hash.is_empty()))
+}
+
+/// Write the administrator's row at [`ADMIN_ACCOUNT_ID`] when it is not
+/// there: username `admin`, no password, and 0 for the three permission
+/// columns, because [`load_account_auth`] gives the administrator none from
+/// its id and the row must not say otherwise. `ensure_schema` calls this, so
+/// the row exists in every Message Crate database.
+pub async fn insert_admin_row_if_missing(conn: &mut SqliteConnection) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO accounts (id, username, password_hash, can_import, can_export, can_delete)
+         VALUES ($1, $2, NULL, 0, 0, 0)
+         ON CONFLICT(id) DO NOTHING",
+    )
+    .bind(ADMIN_ACCOUNT_ID)
+    .bind(ADMIN_USERNAME)
+    .execute(&mut *conn)
+    .await
+    .context("write the administrator's row")?;
+    Ok(())
 }
 
 /// An account's disabled flag, whether its holder still owes profile setup,
@@ -631,7 +659,7 @@ pub async fn load_account_auth(
     Ok(row.map(|row| AccountAuth {
         disabled: row.disabled != 0,
         must_set_up_profile: row.must_set_up_profile != 0,
-        permissions: if is_server_owner(account_id) {
+        permissions: if is_admin(account_id) {
             crate::db::permissions::Permissions::none()
         } else if is_demo_account(account_id) {
             DEMO_ACCOUNT_PERMISSIONS
@@ -913,7 +941,7 @@ pub async fn account_ids_page(
         "SELECT id FROM accounts \
          ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, username LIMIT $2 OFFSET $3",
     )
-    .bind(OWNER_ACCOUNT_ID)
+    .bind(ADMIN_ACCOUNT_ID)
     .bind(limit as i64)
     .bind(i64::try_from(offset)?)
     .fetch_all(&mut *conn)
@@ -933,7 +961,7 @@ pub async fn insert_account(
 ) -> Result<i64> {
     // The id is chosen here rather than by the database's own generator,
     // because that generator would hand out 1 on an empty table, and 1 is
-    // the owner. Ids below `FIRST_GENERATED_ACCOUNT_ID` belong to the accounts
+    // the administrator. Ids below `FIRST_GENERATED_ACCOUNT_ID` belong to the accounts
     // the server makes itself; every other account takes the next id above
     // both that floor and the highest id the table has ever held. The column
     // is AUTOINCREMENT, so `sqlite_sequence` keeps that high mark after the
@@ -952,16 +980,16 @@ pub async fn insert_account(
 }
 
 /// The first id [`insert_account`] hands out. Everything below it is reserved
-/// for accounts the server makes itself: [`OWNER_ACCOUNT_ID`] and
+/// for accounts the server makes itself: [`ADMIN_ACCOUNT_ID`] and
 /// [`DEMO_ACCOUNT_ID`].
 pub const FIRST_GENERATED_ACCOUNT_ID: i64 = 100;
 
-/// Insert an account at a fixed id: the owner at [`OWNER_ACCOUNT_ID`], and a
-/// test's chosen row.
+/// Insert an account at a fixed id, such as a test's chosen row.
 ///
-/// The owner's row holds 0 for `can_import`, `can_export` and `can_delete`,
-/// because [`load_account_auth`] gives the owner none of the three from its
-/// id, and the row must not say otherwise to someone reading the database.
+/// The administrator's row holds 0 for `can_import`, `can_export` and
+/// `can_delete`, because [`load_account_auth`] gives the administrator none
+/// of the three from its id, and the row must not say otherwise to someone
+/// reading the database.
 /// Every other row holds 1 for all three.
 pub async fn insert_account_at(
     conn: &mut SqliteConnection,
@@ -970,7 +998,7 @@ pub async fn insert_account_at(
     password_hash: Option<&str>,
     preferred_name: Option<&str>,
 ) -> Result<()> {
-    let granted = i32::from(!is_server_owner(id));
+    let granted = i32::from(!is_admin(id));
     sqlx::query(
         "INSERT INTO accounts (id, username, password_hash, preferred_name,
                                can_import, can_export, can_delete)
@@ -1150,10 +1178,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(first, FIRST_GENERATED_ACCOUNT_ID);
-        // The owner and the demo account still fit below it afterwards.
-        insert_account_at(&mut conn, OWNER_ACCOUNT_ID, "owner", None, None)
-            .await
-            .unwrap();
+        // The demo account still fits below it afterwards, beside the
+        // administrator's row the database was made with.
         insert_account_at(&mut conn, DEMO_ACCOUNT_ID, "demo", None, None)
             .await
             .unwrap();
@@ -1478,20 +1504,18 @@ mod tests {
         );
     }
 
-    /// [`insert_account_at`] writes 0 to the owner's import, export and
-    /// delete columns and 1 to every other account's.
+    /// The administrator's row, written with the database, holds 0 in its
+    /// import, export and delete columns, and [`insert_account`] writes 1 to
+    /// every other account's.
     #[tokio::test]
-    async fn the_owner_row_holds_no_permission_and_other_rows_hold_all_three() {
+    async fn the_admin_row_holds_no_permission_and_other_rows_hold_all_three() {
         let fixture = crate::test_support::test_fixture().await;
         let mut conn = fixture.conn().await;
-        insert_account_at(&mut conn, OWNER_ACCOUNT_ID, "owner", None, None)
-            .await
-            .unwrap();
         let alice = insert_account(&mut conn, "alice", None, None)
             .await
             .unwrap();
         let stored = crate::test_support::stored_permissions;
-        assert_eq!(stored(&mut conn, OWNER_ACCOUNT_ID).await, (0, 0, 0));
+        assert_eq!(stored(&mut conn, ADMIN_ACCOUNT_ID).await, (0, 0, 0));
         assert_eq!(stored(&mut conn, alice).await, (1, 1, 1));
     }
 }

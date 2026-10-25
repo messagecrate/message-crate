@@ -14,7 +14,7 @@
 use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
-use super::account_profile::OWNER_ACCOUNT_ID;
+use super::account_profile::ADMIN_ACCOUNT_ID;
 
 /// Which rows a count covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,7 +212,7 @@ pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountT
         bytes_of("m.body"),
         bytes_of("m.subject"),
     )))
-    .bind(OWNER_ACCOUNT_ID)
+    .bind(ADMIN_ACCOUNT_ID)
     .fetch_all(&mut *conn)
     .await
     .context("count each account's messages and text bytes")

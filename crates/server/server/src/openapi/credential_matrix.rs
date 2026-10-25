@@ -28,7 +28,7 @@ use std::sync::OnceLock;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
-use crate::db::account_profile::{self, AccountFlags, OWNER_ACCOUNT_ID};
+use crate::db::account_profile::{self, ADMIN_ACCOUNT_ID, AccountFlags};
 use crate::db::api_tokens::create_api_token;
 use crate::db::permissions::Permissions;
 use crate::db::session_tokens::insert_account_session_token;
@@ -350,7 +350,7 @@ impl Shared {
         let mut conn = fixture.conn().await;
         account_profile::insert_account_at(
             &mut conn,
-            OWNER_ACCOUNT_ID,
+            ADMIN_ACCOUNT_ID,
             "keeper",
             Some(password_hash()),
             None,
@@ -359,7 +359,7 @@ impl Shared {
         .unwrap();
         let owner_session = insert_account_session_token(
             &mut conn,
-            OWNER_ACCOUNT_ID,
+            ADMIN_ACCOUNT_ID,
             crate::test_support::routed_credential_instant(),
         )
         .await

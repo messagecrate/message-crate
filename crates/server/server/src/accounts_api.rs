@@ -138,7 +138,7 @@ async fn load_account(
         phones: profile.phones,
         emails: profile.emails,
         is_demo: account_profile::is_demo_account(account_id),
-        is_owner: account_profile::is_server_owner(account_id),
+        is_owner: account_profile::is_admin(account_id),
         disabled: auth.disabled,
         must_set_up_profile: auth.must_set_up_profile,
         has_password: has_password(password_hash.as_deref()),
@@ -985,7 +985,7 @@ pub async fn delete_account(
         ));
     }
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
-    if account_profile::is_server_owner(target) {
+    if account_profile::is_admin(target) {
         return Err(ApiError::validation("the owner cannot be deleted"));
     }
     if reach.is_own() {
@@ -1179,7 +1179,7 @@ pub async fn replace_account_password(
     }
 
     // The owner must have a password; a user account may have none.
-    let new_hash = if account_profile::is_server_owner(target) {
+    let new_hash = if account_profile::is_admin(target) {
         Some(hash_owner_password(&req.password).await?)
     } else {
         hash_user_password(&req.password).await?

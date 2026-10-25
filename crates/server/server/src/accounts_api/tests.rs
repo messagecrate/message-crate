@@ -146,7 +146,7 @@ async fn the_owner_leads_the_account_list() {
     assert_eq!(body.total, 2);
     let usernames: Vec<&str> = body.items.iter().map(|a| a.username.as_str()).collect();
     assert_eq!(usernames, ["keeper", "alice"]);
-    assert_eq!(body.items[0].account_id, account_profile::OWNER_ACCOUNT_ID);
+    assert_eq!(body.items[0].account_id, account_profile::ADMIN_ACCOUNT_ID);
     assert!(body.items[0].is_owner);
     assert!(!body.items[1].is_owner);
 }
@@ -407,8 +407,8 @@ async fn a_stranger_is_logged_in_on_creation_and_never_becomes_the_owner() {
     let state = fixture.state.clone();
 
     let second = register_via_api(&state, "bob", "hunter2hunter2").await;
-    assert_ne!(first.account_id, account_profile::OWNER_ACCOUNT_ID);
-    assert_ne!(second.account_id, account_profile::OWNER_ACCOUNT_ID);
+    assert_ne!(first.account_id, account_profile::ADMIN_ACCOUNT_ID);
+    assert_ne!(second.account_id, account_profile::ADMIN_ACCOUNT_ID);
 
     let own: Account = get_json(&state, &member(first.account_id), &first.token).await;
     assert_eq!(
@@ -422,7 +422,9 @@ async fn a_stranger_is_logged_in_on_creation_and_never_becomes_the_owner() {
 
     let mut conn = state.db.acquire().await.unwrap();
     assert!(
-        !account_profile::is_claimed(&mut conn).await.unwrap(),
+        !account_profile::admin_has_password(&mut conn)
+            .await
+            .unwrap(),
         "registering accounts does not claim the server"
     );
 }
@@ -1206,7 +1208,7 @@ async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let own = member(account_profile::OWNER_ACCOUNT_ID);
+    let own = member(account_profile::ADMIN_ACCOUNT_ID);
 
     let row: Account = get_json(&state, &own, &owner.token).await;
     assert!(row.is_owner, "the owner reads its own row");

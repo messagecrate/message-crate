@@ -192,28 +192,31 @@ pub async fn register_via_api(
     }
 }
 
-/// Claim the test server: create its owner directly, then log in as them.
+/// Give the administrator's row, which the database is made with, the
+/// password `password`, then log in as `admin`. `_username` is not used:
+/// the administrator's username is always [`ADMIN_USERNAME`].
 ///
-/// The row goes in through `insert_account_at` at the well-known owner id,
-/// exactly as `create-owner` does it from a shell; `server_api`'s own tests
-/// cover `POST /v1/server/claim`.
-pub async fn claim_as_owner(state: &AppState, username: &str, password: &str) -> RegisteredAccount {
+/// [`ADMIN_USERNAME`]: crate::db::account_profile::ADMIN_USERNAME
+pub async fn claim_as_owner(
+    state: &AppState,
+    _username: &str,
+    password: &str,
+) -> RegisteredAccount {
     let hash = crate::credentials::hash_password(password).expect("hash the owner password");
     let mut conn = state.db.acquire().await.expect("acquire for claim");
-    crate::db::account_profile::insert_account_at(
+    crate::db::account_profile::update_password_hash(
         &mut conn,
-        crate::db::account_profile::OWNER_ACCOUNT_ID,
-        username,
+        crate::db::account_profile::ADMIN_ACCOUNT_ID,
         Some(&hash),
-        None,
     )
     .await
-    .expect("insert the owner");
+    .expect("set the administrator's password");
     drop(conn);
 
+    let username = crate::db::account_profile::ADMIN_USERNAME;
     let body = log_in(state, username, password).await;
     RegisteredAccount {
-        account_id: crate::db::account_profile::OWNER_ACCOUNT_ID,
+        account_id: crate::db::account_profile::ADMIN_ACCOUNT_ID,
         username: username.to_string(),
         token: body["token"].as_str().unwrap().to_string(),
     }

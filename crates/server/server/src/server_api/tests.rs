@@ -233,7 +233,7 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     );
     let body: serde_json::Value = response.json().await.unwrap();
 
-    assert_eq!(body["account_id"], account_profile::OWNER_ACCOUNT_ID);
+    assert_eq!(body["account_id"], account_profile::ADMIN_ACCOUNT_ID);
     assert_eq!(body["username"], "keeper");
 
     // The token it hands back is the owner's session, usable at once.
@@ -324,7 +324,7 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
     crate::test_support::insert_account_with_id(
         &mut other,
-        account_profile::OWNER_ACCOUNT_ID,
+        account_profile::ADMIN_ACCOUNT_ID,
         "keeper",
     )
     .await;
@@ -341,7 +341,7 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
 
     let mut conn = state.db.acquire().await.unwrap();
     let owner: String = sqlx::query_scalar("SELECT username FROM accounts WHERE id = $1")
-        .bind(account_profile::OWNER_ACCOUNT_ID)
+        .bind(account_profile::ADMIN_ACCOUNT_ID)
         .fetch_one(&mut *conn)
         .await
         .unwrap();
@@ -640,16 +640,24 @@ async fn claiming_the_server_creates_exactly_one_owner() {
     let state = fixture.state.clone();
 
     let mut conn = state.db.acquire().await.unwrap();
-    assert!(!account_profile::is_claimed(&mut conn).await.unwrap());
+    assert!(
+        !account_profile::admin_has_password(&mut conn)
+            .await
+            .unwrap()
+    );
     drop(conn);
 
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    assert_eq!(owner.account_id, account_profile::OWNER_ACCOUNT_ID);
+    assert_eq!(owner.account_id, account_profile::ADMIN_ACCOUNT_ID);
 
     let mut conn = state.db.acquire().await.unwrap();
-    assert!(account_profile::is_claimed(&mut conn).await.unwrap());
+    assert!(
+        account_profile::admin_has_password(&mut conn)
+            .await
+            .unwrap()
+    );
     let owners: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE id = $1")
-        .bind(account_profile::OWNER_ACCOUNT_ID)
+        .bind(account_profile::ADMIN_ACCOUNT_ID)
         .fetch_one(&mut *conn)
         .await
         .unwrap();
@@ -673,7 +681,7 @@ async fn the_claimed_owner_row_holds_no_permission() {
 
     let mut conn = state.db.acquire().await.unwrap();
     assert_eq!(
-        crate::test_support::stored_permissions(&mut conn, account_profile::OWNER_ACCOUNT_ID).await,
+        crate::test_support::stored_permissions(&mut conn, account_profile::ADMIN_ACCOUNT_ID).await,
         (0, 0, 0)
     );
 }

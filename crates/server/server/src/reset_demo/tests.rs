@@ -390,7 +390,7 @@ async fn reset_check_refuses_a_prepared_database_with_more_non_demo_messages() {
         .to_string();
 
     assert!(
-        error.contains("accounts (active rows=1, prepared rows=2)"),
+        error.contains("accounts (active rows=2, prepared rows=3)"),
         "the error names the accounts table and both counts: {error}"
     );
 }
@@ -1302,7 +1302,7 @@ async fn the_snapshot_of_a_missing_database_is_an_empty_database_with_the_schema
         .fetch_one(&mut *conn)
         .await
         .expect("count accounts");
-    assert_eq!(accounts, 0);
+    assert_eq!(accounts, 1, "only the administrator's row");
     close_test_db(pool, conn).await;
 }
 
@@ -2047,7 +2047,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     {
         let (pool, mut conn) = test_db(&db).await;
         assert!(
-            !account_profile::is_claimed(&mut conn)
+            !account_profile::admin_has_password(&mut conn)
                 .await
                 .expect("read claim state"),
             "this Message Crate starts unclaimed"
@@ -2067,7 +2067,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
 
     let (pool, mut conn) = test_db(&db).await;
     assert!(
-        !account_profile::is_claimed(&mut conn)
+        !account_profile::admin_has_password(&mut conn)
             .await
             .expect("read claim state"),
         "a reset writes no owner, so the Message Crate is still there to be claimed"
@@ -2191,14 +2191,19 @@ fn the_not_done_line_names_each_count_and_is_silent_at_zero() {
     );
 }
 
-/// The number of accounts and of the demo account's conversations in the
+/// The number of accounts other than the administrator, whose row every
+/// database is made with, and of the demo account's conversations in the
 /// database `cfg` names.
 async fn accounts_and_demo_conversations(cfg: &Config) -> (i64, i64) {
     let pool = engine::open_pool_for_path(&cfg.paths.db)
         .await
         .expect("open the database");
     let mut conn = pool.acquire().await.expect("acquire");
-    let accounts = count(&mut conn, "SELECT COUNT(*) FROM accounts").await;
+    let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE id <> $1")
+        .bind(crate::db::account_profile::ADMIN_ACCOUNT_ID)
+        .fetch_one(&mut *conn)
+        .await
+        .expect("count accounts other than the administrator");
     let conversations: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM conversations WHERE account_id = $1")
             .bind(DEMO_ACCOUNT_ID)
@@ -2246,7 +2251,7 @@ async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
         .expect("open the database");
     let mut conn = pool.acquire().await.expect("acquire");
     assert!(
-        !account_profile::is_claimed(&mut conn)
+        !account_profile::admin_has_password(&mut conn)
             .await
             .expect("read claim state"),
         "a first start leaves the Message Crate unclaimed"

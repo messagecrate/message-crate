@@ -1,11 +1,11 @@
--- Login account (web UI + API owner).
+-- Login account (web UI + API).
 CREATE TABLE IF NOT EXISTS accounts (
     -- Account id. Ids below 100 are reserved for accounts the server makes
-    -- itself: the owner is 1 and the demo account 2. Every other account takes
-    -- the next id above both that range and the highest id the table has ever
-    -- held. AUTOINCREMENT keeps that high mark in sqlite_sequence, so a
-    -- deleted account's id, and any directory of its files left behind, never
-    -- passes to a new account.
+    -- itself: the administrator is 1 and the demo account 2. Every other
+    -- account takes the next id above both that range and the highest id the
+    -- table has ever held. AUTOINCREMENT keeps that high mark in
+    -- sqlite_sequence, so a deleted account's id, and any directory of its
+    -- files left behind, never passes to a new account.
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     -- Login user id; unique case-insensitively.
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -23,10 +23,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- 1 = the account holder has not set up their profile yet, so the session
     -- owes profile setup before it goes anywhere; cleared on the first save.
     must_set_up_profile INTEGER NOT NULL DEFAULT 0,
-    -- The three permissions below never decide the owner's or the Demo
-    -- Account's permissions, which come from their ids. Their rows agree with
-    -- what the server grants: the owner's holds 0 for all three, and the Demo
-    -- Account's holds 1 for export alone.
+    -- The three permissions below never decide the administrator's or the
+    -- Demo Account's permissions, which come from their ids. Their rows agree
+    -- with what the server grants: the administrator's holds 0 for all three,
+    -- and the Demo Account's holds 1 for export alone.
     -- 1 = may call the import endpoints.
     can_import INTEGER NOT NULL DEFAULT 1,
     -- 1 = may call the export endpoints.
@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- 1 = may destroy message data for good (delete from the trash, empty it,
     -- and delete the account's messages).
     can_delete INTEGER NOT NULL DEFAULT 1,
-    -- RFC 3339 UTC instant of the last successful login (login, claiming
-    -- Message Crate, or registering); NULL until the account has logged in once.
+    -- RFC 3339 UTC instant of the last successful login (login, setting up
+    -- the administrator); NULL until the account has logged in once.
     last_login_at TEXT
 );
 
@@ -112,15 +112,16 @@ CREATE TABLE IF NOT EXISTS account_prefs (
 );
 
 -- Settings that belong to the whole Message Crate rather than to one account. Exactly
--- one row, so the owner reads and writes it without an id.
+-- one row, so the administrator reads and writes it without an id.
 CREATE TABLE IF NOT EXISTS server_settings (
     -- Always 1: a Message Crate has one settings record.
     id INTEGER PRIMARY KEY CHECK (id = 1),
     -- 1 = anyone reaching the server may create their own account; 0 = only
-    -- the owner creates accounts. Off until the owner turns it on.
+    -- the administrator creates accounts. Off until the administrator turns
+    -- it on.
     public_registration INTEGER NOT NULL DEFAULT 0,
     -- The attachment size limit: the largest asset the server accepts, in
-    -- bytes. 512 MiB until the owner sets it.
+    -- bytes. 512 MiB until the administrator sets it.
     asset_max_bytes BIGINT NOT NULL DEFAULT 536870912
 );
 
@@ -435,21 +436,20 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- What happened: logged_in, session_ended, login_refused,
     -- account_created, account_disabled, account_enabled, password_set,
     -- permissions_changed, messages_deleted, conversation_deleted,
-    -- trash_emptied, account_deleted, registration_opened,
-    -- registration_closed, asset_limit_changed, demo_account_added,
-    -- demo_account_reset, api_token_created, api_token_deleted,
-    -- address_book_loaded, address_book_exported or export_run_closed.
+    -- trash_emptied, account_deleted, asset_limit_changed,
+    -- demo_account_added, demo_account_reset, api_token_created,
+    -- api_token_deleted, address_book_loaded, address_book_exported or
+    -- export_run_closed.
     action TEXT NOT NULL,
-    -- Who acted: owner, holder (the account's own holder), command_line
+    -- Who acted: admin, holder (the account's own holder), command_line
     -- (a server command), start_up (the server's first start, which adds
     -- the Demo Account to a new database), server (the server on its own),
     -- or anonymous (someone at the login card).
     actor TEXT NOT NULL,
     -- The account the entry is about (`accounts.id`). NULL when it is about
-    -- no account (a refused login for an unknown username, opening or closing
-    -- registration, changing the attachment size limit, adding the Demo
-    -- Account, a Demo Account build by `reset-demo` or the first start) or
-    -- once the account is deleted.
+    -- no account (a refused login for an unknown username, changing the
+    -- attachment size limit, adding the Demo Account, a Demo Account build by
+    -- `reset-demo` or the first start) or once the account is deleted.
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     -- That account's username when the entry was written; for a refused
     -- login, the username as typed, trimmed and cut to 128 characters.

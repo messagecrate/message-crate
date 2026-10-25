@@ -123,7 +123,7 @@ pub struct ClaimServerRequest {
 
 /// Read this Message Crate's state on an existing connection.
 async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState, ApiError> {
-    if !account_profile::is_claimed(conn).await? {
+    if !account_profile::admin_has_password(conn).await? {
         return Ok(ServerState::Unclaimed);
     }
     let settings = server_settings::load(conn).await?;
@@ -203,7 +203,7 @@ pub async fn claim_server(
     // racing for an unclaimed Message Crate must not both believe they won
     // it, and the second waits for the first and then finds the owner.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    if account_profile::is_claimed(&mut tx).await? {
+    if account_profile::admin_has_password(&mut tx).await? {
         return Err(ApiError::StateConflict(
             "this Message Crate already has an owner".into(),
         ));
@@ -212,7 +212,7 @@ pub async fn claim_server(
     let now = Utc::now();
     account_profile::insert_account_at(
         &mut tx,
-        account_profile::OWNER_ACCOUNT_ID,
+        account_profile::ADMIN_ACCOUNT_ID,
         &username,
         Some(&password_hash),
         None,
@@ -224,21 +224,21 @@ pub async fn claim_server(
         &crate::db::audit_trail::NewEntry::about(
             crate::db::audit_trail::AuditAction::AccountCreated,
             crate::db::audit_trail::AuditActor::Owner,
-            (account_profile::OWNER_ACCOUNT_ID, &username),
+            (account_profile::ADMIN_ACCOUNT_ID, &username),
         ),
         now,
     )
     .await?;
     let token = crate::db::session_tokens::open_session(
         &mut tx,
-        account_profile::OWNER_ACCOUNT_ID,
+        account_profile::ADMIN_ACCOUNT_ID,
         &username,
         crate::auth::connecting_app(&headers).as_ref(),
         now,
     )
     .await
     .map_err(ApiError::Internal)?;
-    account_profile::record_login(&mut tx, account_profile::OWNER_ACCOUNT_ID, now).await?;
+    account_profile::record_login(&mut tx, account_profile::ADMIN_ACCOUNT_ID, now).await?;
     tx.commit().await?;
 
     // The claim makes the owner's Session, and that is the resource it names.
@@ -246,7 +246,7 @@ pub async fn claim_server(
         location: "/v1/session".to_string(),
         body: crate::session_api::CreateSessionResponse {
             token,
-            account_id: account_profile::OWNER_ACCOUNT_ID,
+            account_id: account_profile::ADMIN_ACCOUNT_ID,
             username,
         },
     })

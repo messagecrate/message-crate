@@ -240,7 +240,7 @@ mod tests {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-        assert_eq!(accounts, 0);
+        assert_eq!(accounts, 1, "only the administrator's row");
     }
 
     #[tokio::test]
@@ -475,14 +475,18 @@ mod tests {
             assert!(err.contains(&cfg.paths.db.display().to_string()), "{err}");
             assert!(err.contains("Stop that server"), "{err}");
         }
-        assert_eq!(account_count(&cfg).await, 1, "the database is as it was");
+        assert_eq!(
+            account_count(&cfg).await,
+            2,
+            "the database is as it was (admin and alice)"
+        );
 
         drop(server);
         OpenDb::open(cfg.clone()).await.unwrap().close().await;
         assert_eq!(
             account_count(&cfg).await,
-            0,
-            "rebuilt once no server holds it"
+            1,
+            "rebuilt once no server holds it, with only the administrator's row"
         );
     }
 
@@ -501,7 +505,11 @@ mod tests {
             .unwrap()
             .close()
             .await;
-        assert_eq!(account_count(&cfg).await, 0);
+        assert_eq!(
+            account_count(&cfg).await,
+            1,
+            "rebuilt with only the administrator's row"
+        );
         OpenDb::open(cfg.clone()).await.unwrap().close().await;
     }
 

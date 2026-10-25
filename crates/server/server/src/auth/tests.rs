@@ -78,7 +78,10 @@ async fn a_request_never_rebuilds_the_database() {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    assert_eq!(accounts, 1, "the request left the database as it was");
+    assert_eq!(
+        accounts, 2,
+        "the request left the database as it was (admin and alice)"
+    );
     let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(&mut *conn)
         .await
@@ -447,7 +450,7 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
         let mut conn = fixture.conn().await;
         api_tokens::create_api_token(
             &mut conn,
-            account_profile::OWNER_ACCOUNT_ID,
+            account_profile::ADMIN_ACCOUNT_ID,
             "by hand",
             Permissions::all(),
             None,

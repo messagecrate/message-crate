@@ -612,9 +612,7 @@ async fn resolve_auth_and_expiry_move(
     // permissions. An API token never does, whichever account issued it, so
     // no token can reach what the owner reaches.
     let capability = match credential {
-        Credential::Session if account_profile::is_server_owner(account_id) => {
-            AuthCapability::Owner
-        }
+        Credential::Session if account_profile::is_admin(account_id) => AuthCapability::Owner,
         Credential::Session => AuthCapability::Session {
             permissions: auth.permissions,
         },

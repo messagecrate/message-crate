@@ -198,7 +198,7 @@ impl AuditActor {
     /// owner's account, its holder on any other.
     #[must_use]
     pub fn logged_in_as(account_id: i64) -> Self {
-        if account_profile::is_server_owner(account_id) {
+        if account_profile::is_admin(account_id) {
             Self::Owner
         } else {
             Self::Holder

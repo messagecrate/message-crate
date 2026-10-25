@@ -122,9 +122,13 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
 
     let opened = open(&config).await;
     let mut conn = opened.conn().await.unwrap();
-    assert!(account_profile::is_claimed(&mut conn).await.unwrap());
+    assert!(
+        account_profile::admin_has_password(&mut conn)
+            .await
+            .unwrap()
+    );
     assert_eq!(
-        account_profile::username_for_account(&mut conn, account_profile::OWNER_ACCOUNT_ID)
+        account_profile::username_for_account(&mut conn, account_profile::ADMIN_ACCOUNT_ID)
             .await
             .unwrap(),
         Some("Owner".to_string())

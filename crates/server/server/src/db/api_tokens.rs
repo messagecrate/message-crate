@@ -135,7 +135,7 @@ pub async fn lookup_account_for_api_token(
             // owner's account written by hand or restored with a database is
             // refused here as well, before its use is recorded, so every
             // caller treats it as a token the server never issued.
-            if disabled != 0 || super::account_profile::is_server_owner(account_id) {
+            if disabled != 0 || super::account_profile::is_admin(account_id) {
                 return Ok(None);
             }
             if let Some(exp) = expires_at.as_deref() {

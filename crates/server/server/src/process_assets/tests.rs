@@ -1097,6 +1097,16 @@ async fn a_stopped_run_fails_and_converts_nothing_more() {
 #[tokio::test]
 async fn a_database_without_accounts_is_an_error() {
     let (opened, _dir) = open_db().await;
+    // Every database is made with the administrator's row; remove it to
+    // reach a database with no account at all.
+    let mut conn = opened.conn().await.unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query("DELETE FROM accounts")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    drop(conn);
 
     let err = run(
         &opened,
@@ -1989,9 +1999,13 @@ async fn account_ids_come_from_the_table_or_else_from_the_data_directories() {
     assert_eq!(list_account_ids(&mut conn, &data).await.unwrap(), [7, 12]);
 
     // A table with rows in it is the answer, and the directories are ignored.
+    // The administrator's row is there from the moment the schema is made.
     schema::ensure_schema(&mut conn).await.unwrap();
     seed_account(&mut conn, 5).await;
-    assert_eq!(list_account_ids(&mut conn, &data).await.unwrap(), [5]);
+    assert_eq!(
+        list_account_ids(&mut conn, &data).await.unwrap(),
+        [crate::db::account_profile::ADMIN_ACCOUNT_ID, 5]
+    );
 }
 
 #[tokio::test]
