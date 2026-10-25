@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
-import { NOT_SIGNED_IN } from "./accountContext";
 import { redirectWhenSignedOut } from "./serverAccount";
 import { SESSION_ENDED_PATH } from "./sessionEnded";
-import { VaultError, vaultJson } from "./vault/client";
+import { NOT_SIGNED_IN, VaultError, vaultJson } from "./vault/client";
 
 /** The URL a `redirect()` error sends the browser to. */
 function redirectTarget(err: unknown): string | null {

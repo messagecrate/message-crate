@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   attachmentMedia,
+  isHeld,
   noPreviewNote,
   noThumbnailNote,
   threadDrawing,
@@ -124,8 +125,8 @@ describe("attachmentMedia", () => {
 describe("threadDrawing", () => {
   function drawing(over: Partial<AttachmentRow>, variant: "converted" | "original" = "converted") {
     const media = attachmentMedia("imessage", row(over), variant);
-    assert.ok(media.url);
-    return threadDrawing({ ...media, url: media.url });
+    assert.ok(isHeld(media));
+    return threadDrawing(media);
   }
 
   it("draws a picture's Thumbnail once the server has made one", () => {

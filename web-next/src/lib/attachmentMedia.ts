@@ -110,22 +110,27 @@ export function isImageMime(mime: string | null): boolean {
  * - `placeholder`: a picture with no Thumbnail yet, or one the server could
  *   not make, and every picture with the `original` variant, which never
  *   reads a Thumbnail. The thread draws its name, and
- *   {@link noThumbnailNote} when there is one, and the version that opens
- *   opens on click, as `web/`'s `AttachmentThumbnail` does: a conversation
- *   never fetches an original while scrolling
+ *   {@link noThumbnailNote} when there is one, and a click opens `url` (the
+ *   original, or the Preview), as `web/`'s `AttachmentThumbnail` does: a
+ *   conversation never fetches an original while scrolling
  *   (`docs/architecture/rules/media.md`, MEDIA-5).
  * - `link`: any other file, as a link to the version that opens.
  */
 export type ThreadDrawing = "notice" | "thumbnail" | "placeholder" | "link";
 
+/** An attachment's media whose bytes the server holds: it has a `url`. */
+export type HeldMedia = AttachmentMedia & { url: string };
+
 /**
- * Pick what the thread draws for an attachment, from {@link attachmentMedia}
- * with a `url`. One with no `url` has no bytes on the server, and the thread
- * says it is missing.
+ * Whether the server holds the attachment's bytes. One it does not is drawn
+ * as missing.
  */
-export function threadDrawing(
-  media: AttachmentMedia & { url: string },
-): ThreadDrawing {
+export function isHeld(media: AttachmentMedia): media is HeldMedia {
+  return media.url !== null;
+}
+
+/** Pick what the thread draws for an attachment whose bytes the server holds. */
+export function threadDrawing(media: HeldMedia): ThreadDrawing {
   if (media.full === "none") return "notice";
   if (media.thumbnailUrl) return "thumbnail";
   if (isImageMime(media.mimeType)) return "placeholder";

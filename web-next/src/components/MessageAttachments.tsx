@@ -1,5 +1,6 @@
 import {
   attachmentMedia,
+  isHeld,
   isImageMime,
   type MediaVariant,
   noPreviewNote,
@@ -160,9 +161,11 @@ export function MessageAttachments({
     <div className={`${hasBody ? "mt-2" : ""} space-y-1.5`}>
       {attachments.map((a) => {
         const media = attachmentMedia(source, a, mediaVariant());
+        if (!isHeld(media)) {
+          return <MissingMediaPlaceholder key={a.id} attachment={a} />;
+        }
         const { url, thumbnailUrl } = media;
-        if (!url) return <MissingMediaPlaceholder key={a.id} attachment={a} />;
-        switch (threadDrawing({ ...media, url })) {
+        switch (threadDrawing(media)) {
           case "notice":
             return (
               <NoPreviewNotice
