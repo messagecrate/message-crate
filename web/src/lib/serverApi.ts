@@ -100,9 +100,9 @@ function accountPath(accountId: number): string {
  * `/v1/accounts/{id}` for the logged-in account.
  *
  * The server has no `/v1/account` singleton: an account reads and writes its
- * own row in the same collection the administrator manages, addressed by the id the
- * session carries. Logged out, there is no such row, and asking for one is a
- * bug in the caller rather than a request worth sending.
+ * own row in the same collection the administrator manages, addressed by the
+ * id the session carries. Logged out, there is no such row, and asking for
+ * one is a bug in the caller rather than a request worth sending.
  */
 function ownAccountPath(): string {
   const id = getAccountId();
@@ -140,7 +140,10 @@ export function getServerState(opts?: RequestOptions): Promise<Server> {
   return apiClient.get<Server>("/v1/server", opts);
 }
 
-/** Set the administrator's password on a Message Crate in setup. Returns the administrator's session. */
+/**
+ * Set the administrator's password on a Message Crate in setup. Returns the administrator's
+ * session.
+ */
 export function setUpServer(
   body: Schema["SetUpServerRequest"],
 ): Promise<Schema["CreateSessionResponse"]> {
@@ -149,12 +152,15 @@ export function setUpServer(
 
 // ── The accounts collection ─────────────────────────────────────────────────
 //
-// One collection for the administrator and for each account: the administrator reaches
-// every row, an account reaches its own. The functions Admin Home calls take
-// the account id; the ones Settings calls address the logged-in
-// account through `ownAccountPath`.
+// One collection for the administrator and for each account: the
+// administrator reaches every row, an account reaches its own. The functions
+// Admin Home calls take the account id; the ones Settings calls address the
+// logged-in account through `ownAccountPath`.
 
-/** Every account of this Message Crate, for the administrator: the administrator's own first, then the rest by username. */
+/**
+ * Every account of this Message Crate, for the administrator: the administrator's own first, then
+ * the rest by username.
+ */
 export function listAccounts(opts?: RequestOptions): Promise<Schema["Account"][]> {
   return readEveryPage<Schema["Page_Account"]>("/v1/accounts", opts);
 }
@@ -172,7 +178,9 @@ export function getAccount(accountId: number, opts?: RequestOptions): Promise<Sc
   return apiClient.get<Schema["Account"]>(accountPath(accountId), opts);
 }
 
-/** Change an account's disabled flag or its import, export and delete grants, as the administrator. */
+/**
+ * Change an account's disabled flag or its import, export and delete grants, as the administrator.
+ */
 export function updateAccount(
   accountId: number,
   body: Schema["UpdateAccountRequest"],
@@ -188,12 +196,16 @@ export function setAccountPassword(
   return apiClient.put<void>(`${accountPath(accountId)}/password`, body);
 }
 
-/** Delete an account as the administrator: its login, profile, contacts, and every message it owns. */
+/**
+ * Delete an account as the administrator: its login, profile, contacts, and every message it owns.
+ */
 export function deleteAccountById(accountId: number): Promise<void> {
   return apiClient.delete<void>(accountPath(accountId), undefined, LONG_CALL);
 }
 
-/** Destroy one account's messages as the administrator. The account, its contacts and login survive. */
+/**
+ * Destroy one account's messages as the administrator. The account, its contacts and login survive.
+ */
 export function deleteAccountMessages(accountId: number): Promise<unknown> {
   return apiClient.delete<unknown>(`${accountPath(accountId)}/messages`, undefined, LONG_CALL);
 }
@@ -317,7 +329,10 @@ function accountBase(accountId?: number): string {
   return accountId === undefined ? ownAccountPath() : accountPath(accountId);
 }
 
-/** Every identity of an account with the messages held at each: the logged-in one, or as the administrator the one named. */
+/**
+ * Every identity of an account with the messages held at each: the logged-in one, or as the
+ * administrator the one named.
+ */
 export function listAccountIdentities(
   opts?: RequestOptions,
   accountId?: number,
@@ -405,7 +420,10 @@ export function listDeletedAccounts(opts?: RequestOptions): Promise<DeletedAccou
   return readEveryPage<Schema["Page_DeletedAccount"]>("/v1/audit-trail/deleted-accounts", opts);
 }
 
-/** One account's Audit Trail, newest first: the logged-in one, or as the administrator the one named. */
+/**
+ * One account's Audit Trail, newest first: the logged-in one, or as the administrator the one
+ * named.
+ */
 export function listAccountAuditTrail(
   params: AuditTrailParams,
   opts?: RequestOptions,
@@ -434,7 +452,9 @@ export function deleteAllMessages(
 // lists and revokes them; the administrator lists and revokes them too, so it can end
 // a leaked one, and its list carries no `token_hint`.
 
-/** An account's API tokens, every page: the logged-in one's, or as the administrator the one named. */
+/**
+ * An account's API tokens, every page: the logged-in one's, or as the administrator the one named.
+ */
 export function listApiTokens(
   opts?: RequestOptions,
   accountId?: number,
@@ -456,7 +476,9 @@ export function renameApiToken(
   return apiClient.patch<Schema["ApiToken"]>(`${ownAccountPath()}/api-tokens/${id}`, body);
 }
 
-/** Revoke one API token: the logged-in account's, or as the administrator one of the account named. */
+/**
+ * Revoke one API token: the logged-in account's, or as the administrator one of the account named.
+ */
 export function deleteApiToken(id: number, accountId?: number): Promise<void> {
   return apiClient.delete<void>(`${accountBase(accountId)}/api-tokens/${id}`);
 }

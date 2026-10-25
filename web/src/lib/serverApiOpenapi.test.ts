@@ -125,7 +125,7 @@ const EXERCISED: Record<string, () => unknown> = {
   getServerState: () => serverApi.getServerState(),
   setUpServer: () => serverApi.setUpServer({ password: "hunter2hunter2" }),
   getServerSettings: () => serverApi.getServerSettings(),
-  updateServerSettings: () => serverApi.updateServerSettings({ public_registration: true }),
+  updateServerSettings: () => serverApi.updateServerSettings({ asset_max_bytes: 1024 }),
   getServerStorage: () => serverApi.getServerStorage(),
   getDemoAccount: () => serverApi.getDemoAccount(),
   listServerLogLines: () =>

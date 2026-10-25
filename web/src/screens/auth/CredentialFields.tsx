@@ -7,10 +7,9 @@ import TextField from "../../components/TextField";
 type FieldState = { value: string; onChange: (value: string) => void };
 
 /**
- * The username and password fields of the forms that sign in or create an
- * account: Login, Set Up, and the administrator's New Account. Set Up passes
- * no `username`, because the administrator's username is fixed, and shows no
- * Username field.
+ * The username and password fields of the two sign-in forms: Login and Set
+ * Up. Set Up passes no `username`, because the administrator's username is
+ * fixed, and shows no Username field.
  *
  * `autoComplete` says which password this is. `current-password` is a login,
  * so a password manager offers to fill it. `new-password` is one being chosen,

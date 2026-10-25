@@ -597,7 +597,7 @@ describe("LoginScreen", () => {
     // below. Two hosts, two answers, so this test is about the one thing it
     // names: applying the address that was typed. Which probe wins when both
     // answer is the next test's subject.
-    // Healthy, and open, so the card offers the two tabs this test looks for.
+    // Healthy, and ready, so the card offers the login form this test looks for.
     serveAt((address) =>
       address.startsWith("http://127.0.0.1:8080") ? { state: "ready" } : "down",
     );

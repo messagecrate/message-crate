@@ -17,7 +17,7 @@ import { sectionTitleClass } from "./profileStyles";
  * they are not here. Create opens the new account's Settings, where they are.
  *
  * The checks and the request are `useCreateAccountForm`'s. The server opens
- * no session for the account it creates, so the owner stays logged in.
+ * no session for the account it creates, so the administrator stays logged in.
  */
 export function NewAccountPanel() {
   const navigate = useNavigate();
