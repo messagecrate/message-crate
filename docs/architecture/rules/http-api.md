@@ -16,11 +16,11 @@ section that has none yet is cited by the section's title in quotes:
 changes. A rule that stops holding is removed, and its id is not reused.
 
 This file states what every route must do. The generated reference (see
-[The reference](#the-reference)) states what each route does today. Where the
-two differ, an open issue names the routes still to change; this file never
-lists that work itself. A change to a rule is made here, in the same pull
-request as the code when the code changes with it. Why the rules live here and
-not in `docs/adr/`: `docs/adr/0011-the-http-interface-has-one-rules-document.md`.
+API-120) states what each route does today. Where the two differ, an open issue
+names the routes still to change; this file never lists that work itself. A
+change to a rule is made here, in the same pull request as the code when the
+code changes with it. Why the rules live here and not in `docs/adr/`:
+`docs/adr/0011-the-http-interface-has-one-rules-document.md`.
 
 ## Identifiers
 
@@ -966,7 +966,7 @@ How: `with_server_layers` in `server.rs` puts one layer,
 added later is covered without remembering to. The layer sets the header only
 when the answer has none. The OpenAPI document states the rule once, in its
 description, as it does for `405 Method Not Allowed`, and the walk over every
-operation checks it (see [The reference](#the-reference)).
+operation checks it (see API-125).
 
 Rejected: `private` for every answer. It still lets the browser write message
 text and a Session token to its disk cache, and the web app fetches afresh
@@ -1685,9 +1685,13 @@ killed app left.
 
 ## The reference
 
+### API-120 The reference is generated from the handlers and checked in
+
 The generated reference, `docs/src/assets/openapi.json`, is produced from the
 handlers by `message-crate-server dump-openapi` and checked in; a test fails
 when the two differ, and CI checks the web app's generated types against it.
+
+### API-121 An operation's error responses are built from shared parts, never written by hand
 
 An operation's error responses are built from shared parts, never written out
 by hand. The credential a route accepts brings its `401 Unauthorized` and
@@ -1703,11 +1707,16 @@ own description, because it answers a method no operation has. The handler adds
 only what is its own, such as `409 Conflict` for a run in the wrong state, by
 naming the problem type (`crate::problem::openapi`). Every error response is
 declared as `application/problem+json`, names the problem types it can carry
-(in its description and in `x-problem-types`), and has a description. The first
-sentence of a handler's doc comment is the operation's summary, and the rest is
-its description.
+(in its description and in `x-problem-types`), and has a description.
 Why: every mismatch between the reference and the handlers that the September
 2026 review found was in a hand-written list.
+
+### API-122 An operation's summary is the first sentence of its handler's doc comment
+
+The first sentence of a handler's doc comment is the operation's summary, and
+the rest is its description.
+
+### API-123 A field's description sits on the field
 
 A field's description sits on the field. utoipa writes the doc comment of an
 optional field typed by a schema of its own inside the `oneOf` branch beside
@@ -1718,6 +1727,8 @@ Why: openapi-typescript reads no description inside a branch, so the web app's
 generated type for such a field carried no doc, while the same field made
 required kept it.
 
+### API-124 Every field has a description
+
 Every field has a description, written from the doc comment on its Rust
 field, and a document rule fails on a field with none. The tag of an
 internally tagged enum, such as `ExportScope.kind`, is the one field no Rust
@@ -1726,6 +1737,8 @@ form's tag names that form and the others.
 Why: in October 2026, 59 fields of the reference had no description, and a
 reader of the reference or of the web app's generated types had only the
 field's name to go on.
+
+### API-125 A rule that can be checked by walking every operation is checked that way, by one test
 
 A rule that can be checked by walking every operation in the document is
 checked that way, by one test, as `openapi/credential_matrix.rs` checks every
@@ -1741,6 +1754,8 @@ success answer required and every one of them in what the route answers
 but those of an operation that lists its own (API-69), kebab-case paths and the
 nesting depth. Why: a rule checked one route at a time is checked on the routes
 someone remembered.
+
+### API-126 The shared failures are checked by calling each operation into them
 
 The shared failures are checked by calling each operation into them, and the
 status and problem type the server answers must be ones the document lists.

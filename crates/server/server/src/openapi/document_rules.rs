@@ -1,12 +1,12 @@
 //! Every rule of `docs/architecture/rules/http-api.md` that can be checked by
 //! walking the OpenAPI document, checked over every operation in it
-//! ("The reference": a rule checked one route at a time is checked on the
-//! routes someone remembered).
+//! (API-125: a rule checked one route at a time is checked on the
+//! routes someone remembered; the calls are API-126).
 //!
 //! Part of it reads the document: the page shape and paging parameters of every
 //! list, every property of a success answer required, a `Location` on every
 //! `201`, a `404` on every path with an id, no body
-//! on the success of a `HEAD`, one-sentence summaries, declared tags,
+//! on the success of a `HEAD`, one-sentence summaries (API-122), declared tags,
 //! kebab-case paths and the nesting depth. The rest calls every operation
 //! through the router, on the credential matrix's fixture: with no credential
 //! it must answer `401` with a `WWW-Authenticate` challenge, and so must a
