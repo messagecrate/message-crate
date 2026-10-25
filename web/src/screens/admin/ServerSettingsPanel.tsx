@@ -1,6 +1,5 @@
 import { useId, useState } from "react";
 import Button from "../../components/Button";
-import Checkbox from "../../components/Checkbox";
 import { textInputClass } from "../../components/TextField";
 import { useRouteCache, useRouteMutation } from "../../hooks/useRouteQuery";
 import { useServerInfo } from "../../hooks/useServerInfo";
@@ -21,23 +20,17 @@ function megabytes(bytes: number): string {
 /**
  * Settings that belong to the whole Message Crate rather than to one account.
  *
- * Public registration is off on a fresh Message Crate, so it admits nobody
- * its owner has not admitted until the owner decides otherwise. The
- * attachment size limit is the largest file the server accepts as an
- * attachment; it lives nowhere but here. The Demo
- * Account is added or reset here. Under them the server states which code it runs and which schema its database
- * carries: the Build, and the Schema Fingerprint as the number the server
- * stamps into the database and names in its startup warning. Last is the
- * journal mode the database runs in, `wal` unless the server could not turn
- * write-ahead logging on.
+ * The administrator sets them here. The attachment size limit is the largest
+ * file the server accepts as an attachment; it lives nowhere but here. The
+ * Demo Account is added or reset here. Under them the server states which
+ * code it runs and which schema its database carries: the Build, and the
+ * Schema Fingerprint as the number the server stamps into the database and
+ * names in its startup warning. Last is the journal mode the database runs
+ * in, `wal` unless the server could not turn write-ahead logging on.
  */
 export function ServerSettingsPanel() {
   const cache = useRouteCache();
   const { data, isPending, error } = useServerSettings();
-  const save = useRouteMutation({
-    mutationFn: (public_registration: boolean) => updateServerSettings({ public_registration }),
-    onSuccess: (settings) => cache.set(keys.serverSettings.all, settings),
-  });
   const saveLimit = useRouteMutation({
     mutationFn: (asset_max_bytes: number) => updateServerSettings({ asset_max_bytes }),
     onSuccess: (settings) => {
@@ -45,7 +38,7 @@ export function ServerSettingsPanel() {
       setLimitDraft(null);
     },
   });
-  // What the owner has typed and not yet saved; null shows the limit in force.
+  // What the administrator has typed and not yet saved; null shows the limit in force.
   const [limitDraft, setLimitDraft] = useState<string | null>(null);
   const limitId = useId();
   const info = useServerInfo();
@@ -79,25 +72,6 @@ export function ServerSettingsPanel() {
       <p className="mt-[0.35rem] text-[0.875rem] text-muted">
         How this Message Crate behaves, whoever is logged in.
       </p>
-
-      <div className="mt-4 rounded-xl border border-border bg-elevated p-4">
-        <Checkbox
-          checked={data?.public_registration === true}
-          disabled={save.isPending}
-          onChange={(checked) => save.mutate(checked)}
-        >
-          Let anyone who can reach this server create their own account
-        </Checkbox>
-        <p className="mt-2 text-[0.75rem] text-muted">
-          Off: you create every account yourself, and the login screen offers only Login. On: the
-          login screen also offers Create Account.
-        </p>
-        {save.error ? (
-          <p className="mt-2 text-[0.813rem] text-danger" role="alert">
-            {errorLine(save.error, "Could not save.")}
-          </p>
-        ) : null}
-      </div>
 
       <form
         className="mt-4 rounded-xl border border-border bg-elevated p-4"

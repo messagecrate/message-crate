@@ -7,7 +7,7 @@ import type { ServerStorage } from "./types";
  * What the whole database holds: attachment bytes over the four counts. No
  * message, contact or conversation is named here; the per-account breakdown
  * is each account's Storage tab under User Accounts
- * (`docs/adr/0008-the-owner-holds-no-messages.md`).
+ * (`docs/adr/0008-the-administrator-holds-no-messages.md`).
  */
 export function ContentsSection({ storage }: { storage: ServerStorage }) {
   return (

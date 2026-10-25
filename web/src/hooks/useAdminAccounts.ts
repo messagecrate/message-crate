@@ -10,10 +10,10 @@ import {
 import type { components } from "../lib/serverApi.types";
 import { useRouteCache, useRouteMutation, useRouteQuery } from "./useRouteQuery";
 
-/** One account as the owner sees it: the same row the account itself reads. */
+/** One account as the administrator sees it: the same row the account itself reads. */
 export type ManagedAccount = components["schemas"]["Account"];
 
-/** The flags the owner can change on one account. */
+/** The flags the administrator can change on one account. */
 export type ManagedAccountChanges = Partial<
   Pick<ManagedAccount, "disabled" | "can_import" | "can_export" | "can_delete">
 >;
@@ -34,7 +34,7 @@ export function useUpdateAccount(): UseMutationResult<
   return useRouteMutation<ManagedAccount, Error, { id: number; changes: ManagedAccountChanges }>({
     mutationFn: ({ id, changes }) => updateAccount(id, changes),
     onSuccess: (account) => {
-      cache.set(keys.ownerAccounts.member(account.account_id), account);
+      cache.set(keys.adminAccounts.member(account.account_id), account);
     },
   });
 }
@@ -48,16 +48,16 @@ export function useDeleteAccountMessages(): UseMutationResult<unknown, Error, nu
 }
 
 /**
- * The owner's view of every account. The table changes nothing: a
+ * The administrator's view of every account. The table changes nothing: a
  * password, status, permissions and the deletions are in the account's
  * Settings, which the account's gear opens, and a new account starts there too.
  */
-export function useOwnerAccounts() {
+export function useAdminAccounts() {
   const {
     data,
     isPending: loading,
     error: loadError,
-  } = useRouteQuery(keys.ownerAccounts.all, fetchAccounts);
+  } = useRouteQuery(keys.adminAccounts.all, fetchAccounts);
 
   return {
     accounts: data ?? [],

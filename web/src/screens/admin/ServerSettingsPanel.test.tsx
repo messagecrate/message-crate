@@ -43,7 +43,6 @@ function renderPanel() {
 beforeEach(() => {
   getServerSettings.mockReset();
   getServerSettings.mockResolvedValue({
-    public_registration: false,
     asset_max_bytes: 512 * MIB,
     journal: { mode: "wal", wal_error: null },
   });
@@ -72,7 +71,6 @@ describe("ServerSettingsPanel attachment size limit", () => {
   it("offers no save for a limit that is not a whole number of hundredths of a megabyte", async () => {
     // 0.333 MB, which the field shows rounded to 0.33.
     getServerSettings.mockResolvedValue({
-      public_registration: false,
       asset_max_bytes: 349_176,
       journal: { mode: "wal", wal_error: null },
     });
@@ -83,9 +81,8 @@ describe("ServerSettingsPanel attachment size limit", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
-  it("saves the number the owner types as bytes, and leaves registration out of the request", async () => {
+  it("saves the number the administrator types as bytes", async () => {
     updateServerSettings.mockResolvedValue({
-      public_registration: false,
       asset_max_bytes: 100 * MIB,
       journal: { mode: "wal", wal_error: null },
     });
@@ -142,7 +139,7 @@ describe("ServerSettingsPanel attachment size limit", () => {
 });
 
 describe("ServerSettingsPanel Staging Directory", () => {
-  // #3087: the owner sees how much space the whole Staging Directory takes,
+  // #3087: the administrator sees how much space the whole Staging Directory takes,
   // every account's Import Runs included, on the computer running the
   // desktop app.
   it("says how much space the whole Staging Directory takes on this computer", async () => {

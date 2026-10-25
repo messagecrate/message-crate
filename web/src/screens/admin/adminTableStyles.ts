@@ -1,5 +1,5 @@
 /**
- * The look Owner Home's tables share: User Accounts and the Dashboard's
+ * The look Admin Home's tables share: User Accounts and the Dashboard's
  * Messages by account. Written once so the two cannot drift apart.
  */
 

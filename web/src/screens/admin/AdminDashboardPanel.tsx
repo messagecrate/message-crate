@@ -9,14 +9,14 @@ import { MessagesByAccountSection } from "./dashboard/MessagesByAccountSection";
 /**
  * The Dashboard: a column of headed sections about the whole Message Crate.
  *
- * The owner administers the Message Crate, and administering it starts with knowing
+ * The administrator administers the Message Crate, and administering it starts with knowing
  * how much it holds and where the disk goes. Every section reads the one
  * storage query, so the page shows one loading line and one error line. The
  * figures are counts and bytes and nothing else: no message, contact or
  * conversation is named here, and an account appears only as a username
- * beside numbers (`docs/adr/0008-the-owner-holds-no-messages.md`).
+ * beside numbers (`docs/adr/0008-the-administrator-holds-no-messages.md`).
  */
-export function OwnerDashboardPanel() {
+export function AdminDashboardPanel() {
   const { data, isPending, error } = useRouteQuery(keys.serverStorage.all, (signal) =>
     getServerStorage({ signal }),
   );

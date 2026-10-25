@@ -588,7 +588,7 @@ describe("SystemSection", () => {
     expect(
       screen.getByRole("link", { name: "Import can't find wtsexporter" }).getAttribute("href"),
     ).toBe(
-      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+      "https://messagecrate.app/docs/user/features/admin/troubleshooting/#import-cant-find-wtsexporter",
     );
   });
 

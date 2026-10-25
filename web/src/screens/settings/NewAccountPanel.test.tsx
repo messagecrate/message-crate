@@ -32,19 +32,19 @@ afterEach(() => {
 
 describe("NewAccountPanel", () => {
   it("marks User Accounts stale once the account is created", async () => {
-    // The owner's list was drawn before the account existed, and Back from
+    // The administrator's list was drawn before the account existed, and Back from
     // the new account's Settings goes to it.
-    const shown = [keys.ownerAccounts.all];
+    const shown = [keys.adminAccounts.all];
     const client = testQueryClient();
     seedEntries(client, 1, shown);
     createAccount.mockResolvedValue({ account_id: 102, username: "carol" });
     const user = setupUser();
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/owner/accounts/new"]}>
+        <MemoryRouter initialEntries={["/admin/accounts/new"]}>
           <Routes>
-            <Route path="/owner/accounts/new" element={<NewAccountPanel />} />
-            <Route path="/owner/accounts/102" element={<p>carol's Settings</p>} />
+            <Route path="/admin/accounts/new" element={<NewAccountPanel />} />
+            <Route path="/admin/accounts/102" element={<p>carol's Settings</p>} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,

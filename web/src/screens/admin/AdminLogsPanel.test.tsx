@@ -6,7 +6,7 @@ import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { installIntersectionObserver } from "../../test/intersectionObserver";
 import { authModule, Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
-import { OwnerLogsPanel } from "./OwnerLogsPanel";
+import { AdminLogsPanel } from "./AdminLogsPanel";
 
 const desktop = vi.hoisted(() => ({ on: true }));
 const listServerLogLines = vi.hoisted(() => vi.fn());
@@ -66,17 +66,17 @@ const DESKTOP_APP_LOG = {
 function renderPanel() {
   render(
     <Providers>
-      <OwnerLogsPanel />
+      <AdminLogsPanel />
     </Providers>,
   );
 }
 
-describe("OwnerLogsPanel", () => {
+describe("AdminLogsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     installIntersectionObserver();
     desktop.on = true;
-    getAccountProfile.mockResolvedValue({ is_owner: true });
+    getAccountProfile.mockResolvedValue({ is_admin: true });
     getServerState.mockResolvedValue({ id: HERE });
     listAccounts.mockResolvedValue([
       { account_id: 1, username: "root" },
@@ -104,11 +104,11 @@ describe("OwnerLogsPanel", () => {
 
     expect(screen.getByText("the server refused a login")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download server-000002.log" })).toBeInTheDocument();
-    // The owner reads every run log on this computer.
+    // The administrator reads every run log on this computer.
     expect(invokeListLogs).toHaveBeenCalledWith({
       messageCrateId: HERE,
       accountId: 1,
-      owner: true,
+      admin: true,
     });
 
     await user.click(screen.getByRole("button", { name: /Log$/ }));
@@ -117,7 +117,7 @@ describe("OwnerLogsPanel", () => {
 
     expect(screen.getByText("chat.jsonl failed: the server refused")).toBeInTheDocument();
     expect(invokeReadLogLines).toHaveBeenCalledWith(
-      { messageCrateId: HERE, accountId: 1, owner: true },
+      { messageCrateId: HERE, accountId: 1, admin: true },
       ALICE_RUN.name,
       expect.objectContaining({ level: "warn" }),
     );
@@ -142,7 +142,7 @@ describe("OwnerLogsPanel", () => {
 
     expect(screen.getByText("The server's processes will not end with it")).toBeInTheDocument();
     expect(invokeReadLogLines).toHaveBeenCalledWith(
-      { messageCrateId: HERE, accountId: 1, owner: true },
+      { messageCrateId: HERE, accountId: 1, admin: true },
       "desktop-app.log",
       expect.objectContaining({ level: "warn" }),
     );

@@ -80,20 +80,24 @@ describe("ImportExportRoute", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("explains, in place of the Import form, that the Owner has not allowed importing", () => {
+  it("explains, in place of the Import form, that the administrator has not allowed importing", () => {
     state.profile = { ...allowed, can_import: false };
     renderRoute("import");
     expect(screen.getByRole("heading", { name: "Import" })).toBeTruthy();
-    expect(screen.getByText(/The Owner has not allowed this account to import\./)).toBeTruthy();
+    expect(
+      screen.getByText(/The administrator has not allowed this account to import\./),
+    ).toBeTruthy();
     expect(screen.queryByText("the form")).toBeNull();
     expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   });
 
-  it("explains, in place of the Export form, that the Owner has not allowed exporting", () => {
+  it("explains, in place of the Export form, that the administrator has not allowed exporting", () => {
     state.profile = { ...allowed, can_export: false };
     renderRoute("export");
     expect(screen.getByRole("heading", { name: "Export" })).toBeTruthy();
-    expect(screen.getByText(/The Owner has not allowed this account to export\./)).toBeTruthy();
+    expect(
+      screen.getByText(/The administrator has not allowed this account to export\./),
+    ).toBeTruthy();
     expect(screen.queryByText("the form")).toBeNull();
   });
 
@@ -116,7 +120,9 @@ describe("ImportExportRoute", () => {
   it("gives the Demo Account the ordinary message on Export", () => {
     state.profile = { can_import: false, can_export: false, is_demo: true };
     renderRoute("export");
-    expect(screen.getByText(/The Owner has not allowed this account to export\./)).toBeTruthy();
+    expect(
+      screen.getByText(/The administrator has not allowed this account to export\./),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   });
 
@@ -126,7 +132,7 @@ describe("ImportExportRoute", () => {
     renderRoute("import");
     expect(screen.getByText("the form")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(
-      /The Owner has turned Import off for this account\./,
+      /The administrator has turned Import off for this account\./,
     );
     expect(screen.queryByRole("heading", { name: "Import" })).toBeNull();
   });
@@ -137,7 +143,9 @@ describe("ImportExportRoute", () => {
     renderRoute("import");
     expect(screen.getByText("the form")).toBeTruthy();
     act(() => importRunStore.set({ phase: "form" }));
-    expect(screen.getByText(/The Owner has not allowed this account to import\./)).toBeTruthy();
+    expect(
+      screen.getByText(/The administrator has not allowed this account to import\./),
+    ).toBeTruthy();
     expect(screen.queryByText("the form")).toBeNull();
   });
 
@@ -148,7 +156,9 @@ describe("ImportExportRoute", () => {
     state.accountId = 2;
     state.profile = { ...allowed, can_import: false };
     renderRoute("import");
-    expect(screen.getByText(/The Owner has not allowed this account to import\./)).toBeTruthy();
+    expect(
+      screen.getByText(/The administrator has not allowed this account to import\./),
+    ).toBeTruthy();
     expect(screen.queryByText("the form")).toBeNull();
   });
 

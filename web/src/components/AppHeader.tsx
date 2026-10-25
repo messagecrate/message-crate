@@ -41,7 +41,7 @@ const SEARCH_TARGETS: Record<
     advancedMode: AdvancedSearchMode | null;
   }
 > = {
-  // Owner Home filters the accounts table by username: no search words, no advanced form.
+  // Admin Home filters the accounts table by username: no search words, no advanced form.
   accounts: {
     scope: "account",
     list: null,
@@ -155,7 +155,7 @@ export default function AppHeader({
         </div>
       </header>
       <VersionNotice />
-      {/* Here, in the frame of the message shell and of Owner Home alike, so
+      {/* Here, in the frame of the message shell and of Admin Home alike, so
           it outlives the Settings screen a refused name was typed on. */}
       <NameRefusalNotice />
       {/* Here too, so whatever screen is open says that the desktop app's

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 /**
- * What the owner's deletions leave marked stale.
+ * What the administrator's deletions leave marked stale.
  *
  * Deleting an account or its messages changes what the whole database holds
  * (the Dashboard) and, for the Demo Account, the Demo Account card. Both kept
@@ -16,7 +16,7 @@ import { keys } from "../lib/queryKeys";
 import { deleteAccountById, deleteAccountMessages } from "../lib/serverApi";
 import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import { useDeleteAccount, useDeleteAccountMessages } from "./useOwnerAccounts";
+import { useDeleteAccount, useDeleteAccountMessages } from "./useAdminAccounts";
 
 vi.mock("./useAuth", () => authModule({ accountId: 1 }));
 
@@ -26,7 +26,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   deleteAccountMessages: vi.fn(),
 }));
 
-const shown = [keys.ownerAccounts.all, keys.serverStorage.all, keys.demoAccount.all];
+const shown = [keys.adminAccounts.all, keys.serverStorage.all, keys.demoAccount.all];
 
 let client = testQueryClient();
 
@@ -40,7 +40,7 @@ beforeEach(() => {
   seedEntries(client, 1, shown);
 });
 
-describe("the owner's deletions", () => {
+describe("the administrator's deletions", () => {
   it("deleting an account marks the account list, the Dashboard and the Demo Account stale", async () => {
     vi.mocked(deleteAccountById).mockResolvedValue(undefined);
     const { result } = renderHook(() => useDeleteAccount(), { wrapper });

@@ -40,7 +40,7 @@ export function DemoAccountCard() {
   const demo = useRouteQuery(keys.demoAccount.all, (signal) => getDemoAccount({ signal }), {
     refetchInterval: (query) => (query.state.data?.status === "building" ? BUILD_POLL_MS : false),
     // A build outlasts a glance at another tab, and the page should be right
-    // when the owner comes back to it.
+    // when the administrator comes back to it.
     refetchIntervalInBackground: true,
   });
   const [size, setSize] = useState<DemoDataSize>("medium");

@@ -1,7 +1,7 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
 import { formatBytes } from "../../../lib/formatBytes";
 import { tdClass, tdMutedClass } from "../../settings/apiTokensUtils";
-import { rowStripeClass, thClass, thSeparatorClass } from "../ownerTableStyles";
+import { rowStripeClass, thClass, thSeparatorClass } from "../adminTableStyles";
 import { DashboardSection } from "./DashboardSection";
 import type { ServerStorage } from "./types";
 
@@ -11,7 +11,7 @@ const numberCellClass = "whitespace-nowrap text-right";
 /**
  * One row per account: its username, how many messages it holds, how much
  * text they are, and the estimated share of the messages' storage. The
- * accounts come in the order the User Accounts table lists them: the owner
+ * accounts come in the order the User Accounts table lists them: the administrator
  * first, then by username. The totals row at the bottom carries the
  * whole-database figures, so the split can be seen to add up.
  *

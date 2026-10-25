@@ -84,7 +84,7 @@ export function AccountStagingUsage({ className }: { className: string }) {
 
 /**
  * The disk space the whole Staging Directory takes on this computer, for
- * the owner on Server Settings: every account's Import Runs, and anything
+ * the administrator on Server Settings: every account's Import Runs, and anything
  * else in it. Desktop app only.
  */
 export function AllStagingUsage() {

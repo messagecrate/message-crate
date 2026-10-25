@@ -5,13 +5,13 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClass,
 } from "../../components/Select";
+import { useAdminAccounts } from "../../hooks/useAdminAccounts";
 import {
   type AuditTrailOf,
   auditTrailKey,
   auditTrailOf,
   useDeletedAccounts,
 } from "../../hooks/useAuditTrail";
-import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { formatDateTime } from "../../lib/formatDate";
 import type { DeletedAccount } from "../../lib/serverApi";
 import AuditTrail from "../auditTrail/AuditTrail";
@@ -40,7 +40,7 @@ function deletedLabels(deleted: DeletedAccount[]) {
 }
 
 /**
- * Owner Home's Audit Trail: what each user did on this Message Crate, and
+ * Admin Home's Audit Trail: what each user did on this Message Crate, and
  * when, every account's entries and runs in one list, newest first.
  *
  * The account picker narrows the list to one account's entries, the ones
@@ -50,9 +50,9 @@ function deletedLabels(deleted: DeletedAccount[]) {
  *
  * An entry written in a request links to that request's lines in Logs.
  */
-export function OwnerAuditTrailPanel() {
+export function AdminAuditTrailPanel() {
   const [of, setOf] = useState<AuditTrailOf>({ kind: "all" });
-  const { accounts } = useOwnerAccounts();
+  const { accounts } = useAdminAccounts();
   const deleted = useDeletedAccounts();
 
   return (

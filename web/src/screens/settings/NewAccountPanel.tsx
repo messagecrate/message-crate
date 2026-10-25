@@ -9,7 +9,7 @@ import { sectionTitleClass } from "./profileStyles";
 
 /**
  * The Account section of an account that does not exist yet, which the
- * owner opens with Add account under User Accounts.
+ * administrator opens with Add account under User Accounts.
  *
  * It is laid out as `AccountSettingsPanel` is, with the two differences that
  * make it a new account's: the username can be typed, and the action is
@@ -38,9 +38,9 @@ export function NewAccountPanel() {
       // Settings draw from it at once instead of showing a loading state and
       // redrawing when the fetch lands. The request already marked the
       // account's cache stale, so User Accounts fetches the list again.
-      cache.set(keys.ownerAccounts.member(created.account_id), created);
+      cache.set(keys.adminAccounts.member(created.account_id), created);
       // `replace`, so Back from the account's Settings is User Accounts, not this form.
-      navigate(`/owner/accounts/${created.account_id}`, { replace: true });
+      navigate(`/admin/accounts/${created.account_id}`, { replace: true });
     },
   });
 

@@ -3,17 +3,17 @@ import Button from "../../components/Button";
 import { GearIcon } from "../../components/icons";
 import NavGlyphButton from "../../components/NavGlyphButton";
 import ScrollingTableCard from "../../components/ScrollingTableCard";
-import { type ManagedAccount, useOwnerAccounts } from "../../hooks/useOwnerAccounts";
+import { type ManagedAccount, useAdminAccounts } from "../../hooks/useAdminAccounts";
 import { formatDateTime } from "../../lib/formatDate";
 import { tdClass, tdMutedClass } from "../settings/apiTokensUtils";
-import { rowStripeClass, thClass, thSeparatorClass } from "./ownerTableStyles";
+import { rowStripeClass, thClass, thSeparatorClass } from "./adminTableStyles";
 
 /** Columns the table has, which the "no match" row spans. */
 const COLUMN_COUNT = 4;
 
 /** What the Status column reads for one account. */
 function statusLabel(account: ManagedAccount): string {
-  if (account.is_owner) return "Owner";
+  if (account.is_admin) return "Administrator";
   return account.disabled ? "Disabled" : "Active";
 }
 
@@ -37,10 +37,10 @@ function matches(account: ManagedAccount, needle: string): boolean {
 }
 
 /**
- * The accounts of this Message Crate, the owner's own first.
+ * The accounts of this Message Crate, the administrator's own first.
  *
  * A row carries a username, a preferred name, a status and the last login.
- * The status of an account with no password says so under it, so the owner
+ * The status of an account with no password says so under it, so the administrator
  * sees every account open to an empty password.
  * The gear at the left of a row, shown while the pointer is in the row, opens
  * the account's Settings, which is where the rest is: the app it connects with
@@ -49,9 +49,9 @@ function matches(account: ManagedAccount, needle: string): boolean {
  * disabled account stands out. Add account opens the same Settings for an
  * account that does not exist yet.
  */
-export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
+export function AdminAccountsPanel({ filter = "" }: { filter?: string }) {
   const navigate = useNavigate();
-  const { accounts, loading, loadError } = useOwnerAccounts();
+  const { accounts, loading, loadError } = useAdminAccounts();
 
   if (loading) return <p className="text-[0.875rem] text-muted">Loading accounts…</p>;
   if (loadError) return <p className="text-[0.875rem] text-danger">{loadError}</p>;
@@ -65,7 +65,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-text">User Accounts</h3>
         {/* A new account starts where an existing one is changed: its Settings. */}
-        <Button variant="secondary" size="xs" onClick={() => navigate("/owner/accounts/new")}>
+        <Button variant="secondary" size="xs" onClick={() => navigate("/admin/accounts/new")}>
           Add account
         </Button>
       </div>
@@ -92,7 +92,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                   <td className="w-6 py-2 pl-3 align-middle">
                     <NavGlyphButton
                       aria-label={`Settings for ${account.username}`}
-                      onClick={() => navigate(`/owner/accounts/${account.account_id}`)}
+                      onClick={() => navigate(`/admin/accounts/${account.account_id}`)}
                       className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     >
                       <GearIcon size={15} className="shrink-0" />

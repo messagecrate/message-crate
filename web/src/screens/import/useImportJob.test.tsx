@@ -557,7 +557,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("resumes an Upload without reading the server's current limit, since the directory holds the run's own", async () => {
-    // The owner changed the limit after this run was staged and reviewed.
+    // The administrator changed the limit after this run was staged and reviewed.
     // The files the person approved were measured against 7 MiB, the
     // number Staging recorded in the directory, which is where Upload reads it.
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });

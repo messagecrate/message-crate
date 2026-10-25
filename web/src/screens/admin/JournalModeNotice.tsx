@@ -1,7 +1,7 @@
 import { useServerSettings } from "./useServerSettings";
 
 /**
- * Says so on every Owner Home section when the database runs without
+ * Says so on every Admin Home section when the database runs without
  * write-ahead logging. The server asks for it on every start and goes on
  * without it when SQLite says no; then a reader waits for a writer, so every
  * page load waits while an import batch writes. Before this line, the only
@@ -15,7 +15,7 @@ import { useServerSettings } from "./useServerSettings";
  * write-ahead logging since. A mode the server cannot read with no error
  * from SQLite says nothing either way, so it shows nothing.
  *
- * The mode is the owner's to read, on the server settings, not on the state
+ * The mode is the administrator's to read, on the server settings, not on the state
  * route anyone may ask (#2703).
  */
 export function JournalModeNotice() {

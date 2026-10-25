@@ -46,7 +46,7 @@ const PROFILE = {
   time_zone: "UTC",
   phones: [{ address: "+15550100", services: ["phone" as const] }],
   emails: [],
-  is_owner: false,
+  is_admin: false,
   disabled: false,
   must_set_up_profile: false,
   has_password: true,

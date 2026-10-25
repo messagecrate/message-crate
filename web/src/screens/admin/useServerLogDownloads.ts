@@ -3,7 +3,7 @@ import { useRouteQuery } from "../../hooks/useRouteQuery";
 import { getServerLogFile, listServerLogFiles } from "../../lib/serverApi";
 
 /**
- * The files of the server's log, each a download, newest first. The owner's
+ * The files of the server's log, each a download, newest first. The administrator's
  * alone, like the lines.
  */
 export function useServerLogDownloads(): { downloads: LogDownload[]; error: Error | null } {

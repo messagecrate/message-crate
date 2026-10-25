@@ -100,9 +100,9 @@ describe("DemoAccountCard", () => {
   });
 
   it("marks User Accounts stale when a build ends, and not before", async () => {
-    // The build adds the Demo Account to the owner's list, which the server
+    // The build adds the Demo Account to the administrator's list, which the server
     // finishes on its own after the write that started it has settled.
-    const shown = [keys.ownerAccounts.all];
+    const shown = [keys.adminAccounts.all];
     const client = testQueryClient();
     seedEntries(client, 1, shown);
     getDemoAccount.mockResolvedValueOnce(building).mockResolvedValue(ready);

@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 /**
- * Which accounts the owner's User Accounts list marks as having no password.
+ * Which accounts the administrator's User Accounts list marks as having no password.
  *
  * An account with no password logs in with an empty one for anyone who knows
- * its username, and the list gave the owner no way to see which accounts
+ * its username, and the list gave the administrator no way to see which accounts
  * those were. A disabled account with no password is marked too: it cannot log
  * in while disabled, but once enabled it logs in with an empty password. The Demo Account has no
  * password by design, so it is not marked.
@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { account } from "../../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { authModule, Providers } from "../../test/providers";
-import { OwnerAccountsPanel } from "./OwnerAccountsPanel";
+import { AdminAccountsPanel } from "./AdminAccountsPanel";
 
 const listAccounts = vi.hoisted(() => vi.fn());
 
@@ -43,10 +43,10 @@ function rowOf(username: string): HTMLElement {
   return row;
 }
 
-describe("OwnerAccountsPanel", () => {
+describe("AdminAccountsPanel", () => {
   it("marks an account with no password, and not one with a password or the Demo Account", async () => {
     listAccounts.mockResolvedValue([
-      account({ account_id: 1, username: "admin", is_owner: true }),
+      account({ account_id: 1, username: "admin", is_admin: true }),
       account({ account_id: 2, username: "alice" }),
       account({ account_id: 3, username: "bob", has_password: false }),
       account({ account_id: 4, username: "carol", has_password: false, disabled: true }),
@@ -55,7 +55,7 @@ describe("OwnerAccountsPanel", () => {
     render(
       <Providers>
         <MemoryRouter>
-          <OwnerAccountsPanel />
+          <AdminAccountsPanel />
         </MemoryRouter>
       </Providers>,
     );

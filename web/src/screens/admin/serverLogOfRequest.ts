@@ -1,4 +1,4 @@
-/** The query parameter of `/owner/logs` that names a request whose lines to show. */
+/** The query parameter of `/admin/logs` that names a request whose lines to show. */
 export const REQUEST_PARAM = "request";
 
 /**
@@ -6,5 +6,5 @@ export const REQUEST_PARAM = "request";
  * where an Audit Trail entry's "View in log" goes (#3060).
  */
 export function serverLogOfRequest(requestId: string): string {
-  return `/owner/logs?${new URLSearchParams({ [REQUEST_PARAM]: requestId })}`;
+  return `/admin/logs?${new URLSearchParams({ [REQUEST_PARAM]: requestId })}`;
 }

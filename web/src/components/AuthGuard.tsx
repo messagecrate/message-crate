@@ -1,7 +1,7 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useAuth } from "../hooks/useAuth";
-import { useIsOwner } from "../hooks/useIsOwner";
+import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useNeedsProfileSetup } from "../hooks/useNeedsProfileSetup";
 import Button from "./Button";
 import LocalServerNotice from "./LocalServerNotice";
@@ -12,7 +12,7 @@ import LocalServerNotice from "./LocalServerNotice";
  */
 export function AuthGuard() {
   const { isAuthenticated } = useAuth();
-  const { isOwner, error: ownerError } = useIsOwner();
+  const { isAdmin, error: adminError } = useIsAdmin();
   const { needsSetup, loading, error: setupError } = useNeedsProfileSetup();
 
   if (!isAuthenticated) {
@@ -26,18 +26,18 @@ export function AuthGuard() {
     return null;
   }
 
-  // With no profile, neither the owner nor an account that owes its setup can
+  // With no profile, neither the administrator nor an account that owes its setup can
   // be told apart from an account that owes nothing, so none of the screens
   // below may render.
-  const error = ownerError || setupError;
+  const error = adminError || setupError;
   if (error) {
     return <ProfileLoadFailed error={error} />;
   }
 
-  // The owner holds no messages, so every route under this guard is empty for
-  // them. Owner Home is the whole of what they have.
-  if (isOwner) {
-    return <Navigate to="/owner" replace />;
+  // The administrator holds no messages, so every route under this guard is empty for
+  // them. Admin Home is the whole of what they have.
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
   }
 
   if (needsSetup) {

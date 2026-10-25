@@ -15,14 +15,14 @@ import PlainButton from "../components/PlainButton";
 import { useAuth } from "../hooks/useAuth";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { parseSelectKey } from "../lib/selectKey";
+import { AdminAccountsPanel } from "./admin/AdminAccountsPanel";
+import { AdminAuditTrailPanel } from "./admin/AdminAuditTrailPanel";
+import { AdminDashboardPanel } from "./admin/AdminDashboardPanel";
+import { AdminLogsPanel } from "./admin/AdminLogsPanel";
+import { JournalModeNotice } from "./admin/JournalModeNotice";
+import { ServerSettingsPanel } from "./admin/ServerSettingsPanel";
+import { REQUEST_PARAM } from "./admin/serverLogOfRequest";
 import { SettingsScreen } from "./lazySettingsScreen";
-import { JournalModeNotice } from "./owner/JournalModeNotice";
-import { OwnerAccountsPanel } from "./owner/OwnerAccountsPanel";
-import { OwnerAuditTrailPanel } from "./owner/OwnerAuditTrailPanel";
-import { OwnerDashboardPanel } from "./owner/OwnerDashboardPanel";
-import { OwnerLogsPanel } from "./owner/OwnerLogsPanel";
-import { ServerSettingsPanel } from "./owner/ServerSettingsPanel";
-import { REQUEST_PARAM } from "./owner/serverLogOfRequest";
 
 /** What the side panel lists, in its order. */
 const SECTIONS = ["dashboard", "settings", "accounts", "audit-trail", "logs"] as const;
@@ -43,26 +43,26 @@ function sectionLinkClass(active: boolean): string {
 }
 
 /**
- * Owner Home: where the owner lands at login and works from, the way
+ * Admin Home: where the administrator lands at login and works from, the way
  * any other account lands in Messages.
  *
  * The frame is the one every account sees: the header with the product name,
  * a search bar and the account button, over a side panel and a content pane.
- * What fills it is the owner's own. The owner has no conversations, no
+ * What fills it is the administrator's own. The administrator has no conversations, no
  * contacts, no import, no export and no trash, so the side panel lists
  * Dashboard, Server Settings, User Accounts, Audit Trail and Logs, and the
  * search bar filters the accounts table. Dashboard shows what the whole
  * database holds, Audit Trail what each user did and when, and Logs the
  * server's log and, in the desktop app, the Import Run logs on this computer.
  *
- * `/owner/accounts/{id}` is one account's Settings, the screen its holder
- * sees, opened from the gear in the account's row. The owner's own row
- * opens the owner's own Settings, which is also where the account button's
- * Settings goes. `/owner/accounts/new` is the same screen for an account that
+ * `/admin/accounts/{id}` is one account's Settings, the screen its holder
+ * sees, opened from the gear in the account's row. The administrator's own row
+ * opens the administrator's own Settings, which is also where the account button's
+ * Settings goes. `/admin/accounts/new` is the same screen for an account that
  * does not exist yet, which Add account opens in place of the table. See
- * `docs/adr/0008-the-owner-holds-no-messages.md`.
+ * `docs/adr/0008-the-administrator-holds-no-messages.md`.
  */
-export default function OwnerHome() {
+export default function AdminHome() {
   const { section: raw, accountId: rawAccountId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -82,13 +82,13 @@ export default function OwnerHome() {
   // Capped for this window as the message shell's panel is (#1718).
   const navMax = leftPanelWindowMaxWidth(useWindowWidth());
 
-  // `/owner` and any unknown section land on User Accounts, and the address
+  // `/admin` and any unknown section land on User Accounts, and the address
   // bar says so, so a reload comes back to the same place.
   if (!section) {
-    return <Navigate to="/owner/accounts" replace />;
+    return <Navigate to="/admin/accounts" replace />;
   }
 
-  // `new` in place of an id is the account the owner is adding.
+  // `new` in place of an id is the account the administrator is adding.
   const creatingAccount = section === "accounts" && rawAccountId === "new";
   // An id that is not a number names no account; the list is the way back.
   const openAccountId =
@@ -96,7 +96,7 @@ export default function OwnerHome() {
       ? Number(rawAccountId)
       : null;
   if (rawAccountId && openAccountId === null && !creatingAccount) {
-    return <Navigate to="/owner/accounts" replace />;
+    return <Navigate to="/admin/accounts" replace />;
   }
 
   const accountSearch = searchParams.get("q") || "";
@@ -104,7 +104,7 @@ export default function OwnerHome() {
   // The bar searches the accounts table, so typing anywhere else goes to it.
   const handleSearchChange = (q: string) => {
     if (section !== "accounts" || openAccountId !== null || creatingAccount) {
-      navigate(`/owner/accounts${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+      navigate(`/admin/accounts${q ? `?q=${encodeURIComponent(q)}` : ""}`);
       return;
     }
     // `replace`, so typing does not fill the history with one entry per keystroke.
@@ -121,7 +121,7 @@ export default function OwnerHome() {
       <JournalModeNotice />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
-          aria-label="Owner Home sections"
+          aria-label="Admin Home sections"
           className="flex h-full shrink-0 flex-col gap-0.5 overflow-auto border-r border-border bg-panel px-3 py-2"
           style={{ width: Math.min(navWidth, navMax) }}
         >
@@ -130,7 +130,7 @@ export default function OwnerHome() {
               key={id}
               aria-current={id === section ? "page" : undefined}
               className={sectionLinkClass(id === section)}
-              onPress={() => navigate(`/owner/${id}`)}
+              onPress={() => navigate(`/admin/${id}`)}
             >
               {SECTION_LABELS[id]}
             </PlainButton>
@@ -147,7 +147,7 @@ export default function OwnerHome() {
                 {openAccountId === null ? (
                   <SettingsScreen key="new" creating backToAccounts />
                 ) : (
-                  // The owner's own row is the owner's own Settings, not a managed account's.
+                  // The administrator's own row is the administrator's own Settings, not a managed account's.
                   <SettingsScreen
                     key={openAccountId}
                     backToAccounts
@@ -158,12 +158,12 @@ export default function OwnerHome() {
             </ErrorBoundary>
           ) : (
             <div className="max-w-[900px] p-6">
-              {section === "dashboard" && <OwnerDashboardPanel />}
+              {section === "dashboard" && <AdminDashboardPanel />}
               {section === "settings" && <ServerSettingsPanel />}
-              {section === "accounts" && <OwnerAccountsPanel filter={accountSearch} />}
-              {section === "audit-trail" && <OwnerAuditTrailPanel />}
+              {section === "accounts" && <AdminAccountsPanel filter={accountSearch} />}
+              {section === "audit-trail" && <AdminAuditTrailPanel />}
               {section === "logs" && (
-                <OwnerLogsPanel request={searchParams.get(REQUEST_PARAM) || undefined} />
+                <AdminLogsPanel request={searchParams.get(REQUEST_PARAM) || undefined} />
               )}
             </div>
           )}

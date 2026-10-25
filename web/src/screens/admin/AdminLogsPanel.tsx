@@ -12,9 +12,9 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClass,
 } from "../../components/Select";
+import { useAdminAccounts } from "../../hooks/useAdminAccounts";
 import { useDesktopLogs } from "../../hooks/useDesktopLogs";
 import { useLogReader } from "../../hooks/useLogReader";
-import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { errorLine } from "../../lib/apiErrorMessage";
 import type { LogEntry } from "../../lib/desktop/runLog";
 import { formatDateTime } from "../../lib/formatDate";
@@ -60,7 +60,7 @@ function runLogLabel(log: LogEntry, usernames: ReadonlyMap<number, string>): str
 }
 
 /**
- * Owner Home's Logs: the server's log, and in the desktop app the desktop
+ * Admin Home's Logs: the server's log, and in the desktop app the desktop
  * app's own log (#2185) and every Import Run log on this computer, whoever
  * ran the import (#1665). Both stay on this computer, so in a browser the
  * picker offers the server's log alone. Each log reads in the same viewer.
@@ -69,11 +69,11 @@ function runLogLabel(log: LogEntry, usernames: ReadonlyMap<number, string>): str
  * id in the search, so it shows that request's lines alone: an Audit Trail
  * entry's "View in log" opens it so (#3060).
  */
-export function OwnerLogsPanel({ request }: { request?: string } = {}) {
+export function AdminLogsPanel({ request }: { request?: string } = {}) {
   const [picked, setPicked] = useState(SERVER_KEY);
   const reader = useLogReader();
   const onComputer = useDesktopLogs(reader);
-  const { accounts } = useOwnerAccounts();
+  const { accounts } = useAdminAccounts();
   const usernames = new Map(accounts.map((account) => [account.account_id, account.username]));
   const serverDownloads = useServerLogDownloads();
 
