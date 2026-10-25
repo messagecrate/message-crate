@@ -198,6 +198,36 @@ impl From<ApiIdentityService> for IdentityService {
     }
 }
 
+/// What an identity is: a phone number, an email address, a username, or
+/// something else.
+// Published as `IdentityType`. The shared `ir::IdentityType` carries no
+// schema, and the `Api` prefix keeps the two apart in Rust
+// (docs/architecture/rules/http-api.md, API-130).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = IdentityType)]
+pub enum ApiIdentityType {
+    /// A phone number.
+    Phone,
+    /// An email address.
+    Email,
+    /// A username on a service.
+    Username,
+    /// Anything else, such as a name a backup gave with no address.
+    Other,
+}
+
+impl From<IdentityType> for ApiIdentityType {
+    fn from(kind: IdentityType) -> Self {
+        match kind {
+            IdentityType::Phone => Self::Phone,
+            IdentityType::Email => Self::Email,
+            IdentityType::Username => Self::Username,
+            IdentityType::Other => Self::Other,
+        }
+    }
+}
+
 /// The id of the `handles` row the account already holds for `raw` on
 /// `service`, matched by the address as written or by its key, if any.
 ///
@@ -431,8 +461,8 @@ pub struct Identity {
     /// The identity as the database stores it: E.164 for a number, lower case
     /// for an address.
     pub address: String,
-    /// The identity's type: `phone`, `email`, `username`, or `other`.
-    pub identity_type: String,
+    /// The identity's type.
+    pub identity_type: ApiIdentityType,
     /// `text_message`, `email`, or `whatsapp`.
     pub service: String,
     /// True for a phone number written without its `+` code whose country
@@ -595,7 +625,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
              }| {
                 Identity {
                     address: handle,
-                    identity_type: handle_type,
+                    identity_type: IdentityType::parse(&handle_type).into(),
                     service,
                     country_unknown,
                     start_date,

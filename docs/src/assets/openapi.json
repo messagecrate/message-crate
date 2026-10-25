@@ -6720,7 +6720,7 @@
           "Contacts"
         ],
         "summary": "Merge other contacts into this one.",
-        "description": "The contact in the path keeps its id, name and origin, and every contact\nin `from` moves into it: its identities, Contact Groups and Import Run\nrecords go to this contact, and it leaves every list. No conversation or\nmessage changes, because they are kept by identity. The merge can be\nundone with `POST /v1/contacts/{id}/unmerge` until the account's next\nmerge, which takes the contacts this one merged for good. A contact in\nthe Trash, or one holding one of the account's own identities, answers\n`409 Conflict`; the Demo Account is refused.",
+        "description": "The contact in the path keeps its id, name and origin, and every contact\nin `from` moves into it: its identities, Contact Groups and Import Run\nrecords go to this contact, and it leaves every list. No conversation or\nmessage changes, because they are kept by identity. The merge can be\nundone with `POST /v1/contacts/{id}/unmerge` until the account's next\nmerge, which deletes the contacts this one merged for good, so a merge\nneeds the `delete` permission. A contact in the Trash, or one holding one\nof the account's own identities, answers `409 Conflict`. A contact the\nlast merge took is no contact of the account's: in the path it is\n`404 Not Found`, and in `from` `422 Unprocessable Entity`.",
         "operationId": "merge_contact",
         "parameters": [
           {
@@ -6890,7 +6890,9 @@
         },
         "security": [
           {
-            "session": []
+            "session": [
+              "delete"
+            ]
           }
         ]
       }
@@ -7097,7 +7099,7 @@
           "Contacts"
         ],
         "summary": "Undo the account's most recent contact merge, which merged into this contact.",
-        "description": "Each merged contact comes back under its own id with its name, its\nContact Groups and its Import Run records, and with each identity it held\nthat is still on this contact; one moved elsewhere since stays there.\nThis contact keeps what was its own before the merge. A contact that was\nnot the target of the account's most recent merge answers\n`409 Conflict`.",
+        "description": "Each merged contact comes back under its own id with its name, its\nContact Groups and its Import Run records, and with each identity it held\nthat is still on this contact; one moved elsewhere since stays there.\nThis contact keeps what was its own before the merge. A contact that was\nnot the target of the account's most recent merge answers\n`409 Conflict`. `restored` names the contacts written back.",
         "operationId": "unmerge_contact",
         "parameters": [
           {
@@ -7117,7 +7119,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Contact"
+                  "$ref": "#/components/schemas/UnmergeContactResponse"
                 }
               }
             }
@@ -16417,8 +16419,8 @@
             "minimum": 0
           },
           "identity_type": {
-            "type": "string",
-            "description": "The identity's type: `phone`, `email`, `username`, or `other`."
+            "$ref": "#/components/schemas/IdentityType",
+            "description": "The identity's type."
           },
           "one_to_one_messages": {
             "type": "integer",
@@ -16515,6 +16517,16 @@
         "enum": [
           "text_message",
           "whatsapp"
+        ]
+      },
+      "IdentityType": {
+        "type": "string",
+        "description": "What an identity is: a phone number, an email address, a username, or\nsomething else.",
+        "enum": [
+          "phone",
+          "email",
+          "username",
+          "other"
         ]
       },
       "ImportContact": {
@@ -19225,8 +19237,8 @@
                   "minimum": 0
                 },
                 "identity_type": {
-                  "type": "string",
-                  "description": "The identity's type: `phone`, `email`, `username`, or `other`."
+                  "$ref": "#/components/schemas/IdentityType",
+                  "description": "The identity's type."
                 },
                 "one_to_one_messages": {
                   "type": "integer",
@@ -20747,6 +20759,28 @@
           "service": {
             "$ref": "#/components/schemas/IdentityService",
             "description": "The service the address is on. The identity is found as the type\nthe address takes there: an address with an `@` is an email address\non Text Message, and `other` on WhatsApp."
+          }
+        }
+      },
+      "UnmergeContactResponse": {
+        "type": "object",
+        "description": "The answer to `POST /v1/contacts/{id}/unmerge`.",
+        "required": [
+          "contact",
+          "restored"
+        ],
+        "properties": {
+          "contact": {
+            "$ref": "#/components/schemas/Contact",
+            "description": "The contact the others were merged into, as it now stands."
+          },
+          "restored": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The merged contacts written back, by id. A contact with no name\nwhose identities all moved elsewhere since the merge is left out:\nnothing could reach it, so it was not written back."
           }
         }
       },

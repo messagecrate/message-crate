@@ -7,12 +7,12 @@ use std::collections::HashSet;
 
 use crate::extract::{Json, Path as AxumPath};
 use axum::extract::State;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use super::{Contact, get_contact_detail};
 use crate::api_error::ApiError;
-use crate::auth::{FullAccess, refuse_for_demo_account};
+use crate::auth::{FullAccess, FullDeleteAccess};
 use crate::db::contact_merges::{self, MAX_MERGED_CONTACTS, MergeRefusal, UnmergeRefusal};
 
 /// Body for `POST /v1/contacts/{id}/merge`.
@@ -27,6 +27,17 @@ pub struct MergeContactRequest {
     // `MAX_MERGED_CONTACTS - 1`.
     #[schema(min_items = 1, max_items = 9)]
     pub from: Vec<i64>,
+}
+
+/// The answer to `POST /v1/contacts/{id}/unmerge`.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct UnmergeContactResponse {
+    /// The contact the others were merged into, as it now stands.
+    pub contact: Contact,
+    /// The merged contacts written back, by id. A contact with no name
+    /// whose identities all moved elsewhere since the merge is left out:
+    /// nothing could reach it, so it was not written back.
+    pub restored: Vec<i64>,
 }
 
 /// The `from` list's problem, if it has one.
@@ -60,32 +71,29 @@ fn check_from(target_id: i64, from: &[i64]) -> Result<(), ApiError> {
 /// records go to this contact, and it leaves every list. No conversation or
 /// message changes, because they are kept by identity. The merge can be
 /// undone with `POST /v1/contacts/{id}/unmerge` until the account's next
-/// merge, which takes the contacts this one merged for good. A contact in
-/// the Trash, or one holding one of the account's own identities, answers
-/// `409 Conflict`; the Demo Account is refused.
+/// merge, which deletes the contacts this one merged for good, so a merge
+/// needs the `delete` permission. A contact in the Trash, or one holding one
+/// of the account's own identities, answers `409 Conflict`. A contact the
+/// last merge took is no contact of the account's: in the path it is
+/// `404 Not Found`, and in `from` `422 Unprocessable Entity`.
 #[utoipa::path(
     post,
     path = "/v1/contacts/{id}/merge",
     tag = "Contacts",
-    security(("session" = [])),
+    security(("session" = ["delete"])),
     params(("id" = i64, Path, description = "The contact the others merge into")),
     request_body = MergeContactRequest,
     responses(
         (status = 200, body = Contact),
-        crate::problem::openapi::StateConflict,
-        crate::problem::openapi::DemoAccountProtected
+        crate::problem::openapi::StateConflict
     )
 )]
 pub(crate) async fn merge_contact(
     State(db): State<SqlitePool>,
-    FullAccess(auth): FullAccess,
+    FullDeleteAccess(auth): FullDeleteAccess,
     AxumPath(target_id): AxumPath<i64>,
     Json(body): Json<MergeContactRequest>,
 ) -> Result<Json<Contact>, ApiError> {
-    refuse_for_demo_account(
-        auth.account_id,
-        "contacts cannot be merged, because the next merge deletes the merged ones for good",
-    )?;
     check_from(target_id, &body.from)?;
     let mut conn = db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
@@ -128,7 +136,7 @@ pub(crate) async fn merge_contact(
 /// that is still on this contact; one moved elsewhere since stays there.
 /// This contact keeps what was its own before the merge. A contact that was
 /// not the target of the account's most recent merge answers
-/// `409 Conflict`.
+/// `409 Conflict`. `restored` names the contacts written back.
 #[utoipa::path(
     post,
     path = "/v1/contacts/{id}/unmerge",
@@ -136,7 +144,7 @@ pub(crate) async fn merge_contact(
     security(("session" = [])),
     params(("id" = i64, Path, description = "The contact the others were merged into")),
     responses(
-        (status = 200, body = Contact),
+        (status = 200, body = UnmergeContactResponse),
         crate::problem::openapi::StateConflict
     )
 )]
@@ -144,23 +152,26 @@ pub(crate) async fn unmerge_contact(
     State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     AxumPath(target_id): AxumPath<i64>,
-) -> Result<Json<Contact>, ApiError> {
+) -> Result<Json<UnmergeContactResponse>, ApiError> {
     let mut conn = db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    match contact_merges::unmerge(&mut tx, auth.account_id, target_id, chrono::Utc::now()).await? {
-        Ok(_) => {}
-        Err(UnmergeRefusal::TargetMissing) => return Err(ApiError::not_found("contact")),
-        Err(UnmergeRefusal::NotTheLastMerge) => {
-            return Err(ApiError::StateConflict(
-                "the account's most recent merge did not merge into this contact".into(),
-            ));
-        }
-    }
+    let restored =
+        match contact_merges::unmerge(&mut tx, auth.account_id, target_id, chrono::Utc::now())
+            .await?
+        {
+            Ok(restored) => restored,
+            Err(UnmergeRefusal::TargetMissing) => return Err(ApiError::not_found("contact")),
+            Err(UnmergeRefusal::NotTheLastMerge) => {
+                return Err(ApiError::StateConflict(
+                    "the account's most recent merge did not merge into this contact".into(),
+                ));
+            }
+        };
     let contact = get_contact_detail(&mut tx, auth.account_id, target_id)
         .await?
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("contact missing after an unmerge")))?;
     tx.commit().await?;
-    Ok(Json(contact))
+    Ok(Json(UnmergeContactResponse { contact, restored }))
 }
 
 #[cfg(test)]

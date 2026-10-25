@@ -254,7 +254,7 @@ async fn undo_brings_back_each_merged_contact_as_it_was_and_the_target_as_it_was
     drop(conn);
 
     merge(&fixture, &account, nicholas, &[nick]).await;
-    let target = unmerge(&fixture, &account, nicholas).await;
+    let target = unmerge(&fixture, &account, nicholas).await["contact"].clone();
     assert_eq!(target["groups"], serde_json::json!(["Family"]));
     assert_eq!(target["identities"].as_array().unwrap().len(), 1);
 
@@ -338,7 +338,8 @@ async fn undo_leaves_an_identity_the_person_moved_since_where_it_is() {
     .unwrap();
     drop(conn);
 
-    unmerge(&fixture, &account, ada).await;
+    let answer = unmerge(&fixture, &account, ada).await;
+    assert_eq!(answer["restored"], serde_json::json!([lovelace]));
     let mut conn = fixture.conn().await;
     assert_eq!(holder_of(&mut conn, a, "+15555550101").await, Some(grace));
     // Lovelace has a name, so she comes back though she has no identity.
@@ -391,6 +392,59 @@ async fn a_new_merge_makes_the_one_before_permanent() {
     )
     .await;
     expect_problem(status, &text, ProblemType::StateConflict);
+}
+
+/// A contact with no name whose identities all left the target since the
+/// merge has nothing to come back with, so it stays gone, and the undo's
+/// answer leaves it out.
+#[tokio::test]
+async fn undo_leaves_out_a_nameless_contact_with_nothing_left() {
+    let (fixture, account) = fixture_with_account().await;
+    let a = account.account_id;
+    let mut conn = fixture.conn().await;
+    let ada = contact(&mut conn, a, "Ada", "+15555550100", IdentityType::Phone).await;
+    let nameless = contact(&mut conn, a, "", "+15555550101", IdentityType::Phone).await;
+    let grace = contact(&mut conn, a, "Grace", "+15555550102", IdentityType::Phone).await;
+    drop(conn);
+
+    merge(&fixture, &account, ada, &[nameless]).await;
+    let mut conn = fixture.conn().await;
+    sqlx::query(
+        "UPDATE contact_handles SET contact_id = $1
+         WHERE handle_id = (SELECT id FROM handles WHERE normalized = '+15555550101')",
+    )
+    .bind(grace)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    drop(conn);
+
+    let answer = unmerge(&fixture, &account, ada).await;
+    assert_eq!(answer["restored"], serde_json::json!([]));
+    assert_eq!(answer["contact"]["id"], ada);
+    let mut conn = fixture.conn().await;
+    assert_eq!(name_of(&mut conn, nameless).await, None);
+}
+
+/// A merge deletes the previous merge's contacts for good, so an account
+/// the administrator kept from deleting may not merge.
+#[tokio::test]
+async fn an_account_without_the_delete_permission_merges_nothing() {
+    let (fixture, account) = fixture_with_account().await;
+    let a = account.account_id;
+    let mut conn = fixture.conn().await;
+    let ada = contact(&mut conn, a, "Ada", "+15555550100", IdentityType::Phone).await;
+    let grace = contact(&mut conn, a, "Grace", "+15555550101", IdentityType::Phone).await;
+    drop(conn);
+    fixture.turn_off_delete(a).await;
+    let (status, text) = post_json_raw(
+        &fixture.state,
+        &format!("/v1/contacts/{ada}/merge"),
+        &account.token,
+        serde_json::json!({ "from": [grace] }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 }
 
 /// `contacts.id` is never handed out twice, so a contact made while a merge

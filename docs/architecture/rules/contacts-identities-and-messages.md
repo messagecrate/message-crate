@@ -1120,9 +1120,15 @@ of CONTACT-20 joins two spellings of one number into one identity, and this
 merge joins people, whose identities stay distinct.
 
 A contact in the Trash, or one holding one of the account's own identities
-(CONTACT-48), is refused with `409 Conflict`, and nothing changes. The Demo
-Account is refused every merge, because the next merge deletes for good
-(`http-api.md`, API-84). A merge needs no permission beyond the Session.
+(CONTACT-48), is refused with `409 Conflict`, and nothing changes. A contact
+the last merge took is no contact of the account's any more: named as the
+target it answers `404 Not Found`, and named in `from` it is an id that
+names no row the caller holds, `422 Unprocessable Entity` (`http-api.md`,
+API-33). A merge needs the `delete` permission, and the Demo Account is
+refused every merge, because the next merge deletes for good
+(`http-api.md`, API-83 to API-85). Rejected: a merge with no permission
+beyond the Session, which let an account the administrator kept from
+deleting delete contacts for good by merging twice.
 
 The merge keeps what it took: each merged contact's row, the identities it
 held, the Contact Groups it was in and its Import Run records, beside what
@@ -1137,7 +1143,8 @@ identity it held that is still on the target; one the person moved
 elsewhere since stays there. The target keeps what was its own before the
 merge and loses what only the merge gave it. A contact with no name that
 gets no identity back stays gone, because nothing could reach it
-(CONTACT-1).
+(CONTACT-1). The undo answers the contacts it wrote back, so the screen says
+which came back and Redo merges only those.
 
 Why: a contact merge joins records the person picked, and nothing it moves
 is keyed by contact, so it can be taken back exactly. The dialog exists to
