@@ -208,6 +208,7 @@ function loadConversationMessages(
       previewNotMadeReason: string | null;
       thumbnailMimeType: string | null;
       thumbnailAssetsPath: string | null;
+      thumbnailNotMadeReason: string | null;
       shownAsIs: boolean;
     }>
   >();
@@ -250,6 +251,7 @@ function loadConversationMessages(
           previewNotMadeReason: null,
           thumbnailMimeType: null,
           thumbnailAssetsPath: null,
+          thumbnailNotMadeReason: null,
           shownAsIs: false,
         });
         attsByMsg.set(a.message_id, list);

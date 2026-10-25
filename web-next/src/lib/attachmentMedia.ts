@@ -85,3 +85,51 @@ export function noPreviewNote(a: AttachmentRow): string | null {
   const reason = a.previewNotMadeReason;
   return reason ? `No Preview could be made: ${reason}` : null;
 }
+
+/**
+ * What the thread says about a picture with no Thumbnail because the server
+ * tried to make one and could not, in the words of `noThumbnailNote` in
+ * `web/src/lib/attachmentMedia.ts` (MEDIA-4). `null` while no try has failed.
+ */
+export function noThumbnailNote(a: AttachmentRow): string | null {
+  const reason = a.thumbnailNotMadeReason;
+  return reason ? `No Thumbnail could be made: ${reason}` : null;
+}
+
+/**
+ * What the thread draws for one attachment:
+ *
+ * - `missing`: the server holds no bytes of it.
+ * - `notice`: it opens in no version (`full` is `none`), so the thread says
+ *   why and offers the original as a download.
+ * - `thumbnail`: its Thumbnail, which opens the full version on click.
+ * - `placeholder`: a picture with no Thumbnail yet, or one the server could
+ *   not make. The thread draws its name, and {@link noThumbnailNote} when
+ *   there is one, and the original opens on click, as `web/`'s
+ *   `AttachmentThumbnail` does: a conversation never fetches an original
+ *   while scrolling (`docs/architecture/rules/media.md`, MEDIA-5).
+ * - `original`: the picture itself, with the `original` variant only, which
+ *   never reads a Thumbnail.
+ * - `link`: any other file, as a link to the version that opens.
+ */
+export type ThreadDrawing =
+  | "missing"
+  | "notice"
+  | "thumbnail"
+  | "placeholder"
+  | "original"
+  | "link";
+
+/** Pick what the thread draws for an attachment, from {@link attachmentMedia}. */
+export function threadDrawing(
+  media: AttachmentMedia,
+  variant: MediaVariant,
+): ThreadDrawing {
+  if (!media.url) return "missing";
+  if (media.full === "none") return "notice";
+  if (media.thumbnailUrl) return "thumbnail";
+  if (media.mimeType?.startsWith("image/")) {
+    return variant === "original" ? "original" : "placeholder";
+  }
+  return "link";
+}
