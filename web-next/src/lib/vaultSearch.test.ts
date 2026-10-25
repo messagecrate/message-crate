@@ -42,7 +42,7 @@ describe("vault search + FTS", () => {
       const resolveHandle = (raw: string, handleType = "phone"): number => {
         db.prepare(
           `INSERT OR IGNORE INTO handles (account_id, raw, normalized, handle_type, service)
-           VALUES (?, ?, ?, ?, 'phone')`,
+           VALUES (?, ?, ?, ?, 'text_message')`,
         ).run(accountId, raw, raw, handleType);
         return Number(
           db
@@ -390,8 +390,8 @@ describe("vault search + FTS", () => {
       const db = new Database(dbPath());
       db.prepare(
         `INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES (?, '+15555550175', '+15555550175', 'phone', 'phone'),
-                (?, '+15555550174', '+15555550174', 'phone', 'phone')`,
+         VALUES (?, '+15555550175', '+15555550175', 'phone', 'text_message'),
+                (?, '+15555550174', '+15555550174', 'phone', 'text_message')`,
       ).run(accountId, accountId);
       const namelessHandleId = Number(
         db
