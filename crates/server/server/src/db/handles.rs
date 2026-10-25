@@ -151,30 +151,31 @@ pub fn check_service_carries(
 }
 
 /// The service an identity is on, as a request names it and the profile
-/// reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
-/// SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
+/// reports it: `text_message` or `whatsapp`. `text_message` is Text Message,
+/// which carries SMS, MMS, iMessage and RCS, and reaches an email address
+/// through iMessage.
 /// The address's shape picks the identity's type among those the service
 /// carries, so an address with an `@` is `other` on WhatsApp.
 //
-// Any other word is refused, naming the two. Read as `phone`, a misspelled
-// `whatsap` put an identity on Text Message without a word (#1630), and
-// `email` lived on as a second name for `phone` (#1631).
+// Any other word is refused, naming the two. Read as Text Message, a
+// misspelled `whatsap` put an identity on Text Message without a word
+// (#1630), and `email` lived on as a second name for Text Message (#1631).
 //
 // This is the HTTP API's enum; the OpenAPI reference publishes it as
 // `IdentityService`. `ir::IdentityService` is the conversation file's
 // enum of the same two services, whose `parse` reads every word but
-// `whatsapp` and `wa` as `phone`; the `From` impls below convert between the
+// `whatsapp` and `wa` as `text_message`; the `From` impls below convert between the
 // two. The `Api` prefix keeps the two apart in Rust, because one bare name
 // would mean either enum depending on a file's imports
 // (docs/architecture/rules/http-api.md, API-130).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 #[schema(as = IdentityService)]
 pub enum ApiIdentityService {
     /// Text Message: SMS, MMS, iMessage and RCS.
-    Phone,
+    TextMessage,
     /// WhatsApp.
     Whatsapp,
 }
@@ -182,7 +183,7 @@ pub enum ApiIdentityService {
 impl From<IdentityService> for ApiIdentityService {
     fn from(service: IdentityService) -> Self {
         match service {
-            IdentityService::Phone => Self::Phone,
+            IdentityService::TextMessage => Self::TextMessage,
             IdentityService::Whatsapp => Self::Whatsapp,
         }
     }
@@ -191,7 +192,7 @@ impl From<IdentityService> for ApiIdentityService {
 impl From<ApiIdentityService> for IdentityService {
     fn from(service: ApiIdentityService) -> Self {
         match service {
-            ApiIdentityService::Phone => Self::Phone,
+            ApiIdentityService::TextMessage => Self::TextMessage,
             ApiIdentityService::Whatsapp => Self::Whatsapp,
         }
     }
@@ -245,7 +246,7 @@ pub struct KeyedRow {
     pub raw: String,
     /// `phone`, `email`, `username` or `other`.
     pub handle_type: String,
-    /// `phone` or `whatsapp`.
+    /// `text_message` or `whatsapp`.
     pub service: String,
     /// The key it is matched under (`normalized`).
     #[sqlx(rename = "normalized")]
@@ -354,7 +355,7 @@ pub async fn upsert_handle_row_in(
         key: normalized,
         note,
     } = normalize_handle(raw, handle_type, country);
-    let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
+    let platform = IdentityService::parse(service.unwrap_or(IdentityService::TextMessage.as_str()));
     let service_str = platform.as_str();
     let inserted = sqlx::query(
         "INSERT INTO handles
@@ -404,7 +405,7 @@ pub async fn upsert_handle_row_cached(
 ) -> Result<(i64, bool, bool)> {
     let country = cache.country_for(stated);
     let normalized = normalize_handle(raw, handle_type, country).key;
-    let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
+    let platform = IdentityService::parse(service.unwrap_or(IdentityService::TextMessage.as_str()));
     let key = (
         account_id.to_string(),
         normalized,
@@ -430,7 +431,7 @@ pub struct Identity {
     /// The identity as the database stores it: E.164 for a number, lower case
     /// for an address.
     pub address: String,
-    /// `phone`, `email`, or `whatsapp`.
+    /// `text_message`, `email`, or `whatsapp`.
     pub service: String,
     /// True for a phone number written without its `+` code whose country
     /// nobody has stated: it is stored as the digits typed and matches no
@@ -547,7 +548,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
          SELECT h.normalized,
                 CASE WHEN h.handle_type = 'email' THEN 'email'
                      WHEN h.service = 'whatsapp' THEN 'whatsapp'
-                     ELSE 'phone' END AS service,
+                     ELSE 'text_message' END AS service,
                 {country_unknown} AS country_unknown,
                 (SELECT MIN(m.timestamp) {messages}) AS start_date,
                 (SELECT MAX(m.timestamp) {messages}) AS end_date,
@@ -662,7 +663,7 @@ mod tests {
     fn a_new_identity_is_refused_for_every_type_its_service_does_not_carry() {
         let refusals = [
             (
-                IdentityService::Phone,
+                IdentityService::TextMessage,
                 IdentityType::Username,
                 "x is a username, and Text Message carries no usernames",
             ),
@@ -678,7 +679,7 @@ mod tests {
             ),
         ];
         let mut refused = 0;
-        for service in [IdentityService::Phone, IdentityService::Whatsapp] {
+        for service in [IdentityService::TextMessage, IdentityService::Whatsapp] {
             for handle_type in [
                 IdentityType::Phone,
                 IdentityType::Email,
@@ -723,7 +724,7 @@ mod tests {
             TEST_ACCOUNT,
             "+15555550100",
             IdentityType::Phone,
-            Some("phone"),
+            Some("text_message"),
         )
         .await
         .unwrap();
@@ -736,7 +737,7 @@ mod tests {
             TEST_ACCOUNT,
             ambiguous,
             IdentityType::Phone,
-            Some("phone"),
+            Some("text_message"),
         )
         .await
         .unwrap();
@@ -747,7 +748,7 @@ mod tests {
             TEST_ACCOUNT,
             ambiguous,
             IdentityType::Phone,
-            Some("phone"),
+            Some("text_message"),
         )
         .await
         .unwrap();
@@ -773,7 +774,7 @@ mod tests {
             TEST_ACCOUNT,
             "+15555550100",
             IdentityType::Phone,
-            Some("phone"),
+            Some("text_message"),
             None,
         )
         .await
@@ -784,7 +785,7 @@ mod tests {
             TEST_ACCOUNT,
             "+15555550100",
             IdentityType::Phone,
-            Some("phone"),
+            Some("text_message"),
             None,
         )
         .await

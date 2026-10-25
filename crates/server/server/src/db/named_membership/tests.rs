@@ -16,7 +16,7 @@ async fn insert_contact(conn: &mut SqliteConnection, account: i64, name: &str) -
 async fn insert_conversation(conn: &mut SqliteConnection, account: i64, phone: &str) -> i64 {
     let handle: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
+         VALUES ($1, $2, $2, 'phone', 'text_message') RETURNING id",
     )
     .bind(account)
     .bind(phone)

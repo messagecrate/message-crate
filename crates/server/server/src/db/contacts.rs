@@ -224,7 +224,7 @@ pub async fn siblings_on_contact(
 /// value and handle type on a different platform service, already linked.
 ///
 /// One person's phone number arrives once as a text-message address
-/// (iMessage and SMS share the service `phone`) and again as a WhatsApp one;
+/// (iMessage and SMS share the service `text_message`) and again as a WhatsApp one;
 /// they are two `handles` rows and one person, so a link made for either is
 /// the answer for both.
 ///
@@ -377,7 +377,7 @@ pub async fn live_contact_exists(
 pub enum OnService {
     /// Only the row on this service.
     Only(IdentityService),
-    /// The row on this service when there is one, else the phone row, then
+    /// The row on this service when there is one, else the Text Message row, then
     /// WhatsApp, then anything else. `None` names no service to prefer.
     Preferring(Option<IdentityService>),
 }
@@ -420,7 +420,7 @@ pub async fn linked_handle_id(
            AND (NOT $5 OR h.service = $4)
          ORDER BY h.normalized = $3 DESC, CASE
              WHEN h.service = $4 THEN 0
-             WHEN h.service = 'phone' THEN 1
+             WHEN h.service = 'text_message' THEN 1
              WHEN h.service = 'whatsapp' THEN 2
              ELSE 3
          END

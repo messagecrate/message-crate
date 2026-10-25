@@ -21,7 +21,7 @@ vi.mock("../hooks/useAuth", () =>
 
 // The account's identities as the server lists them, each with its service; a
 // test sets them to what the owner added.
-type Service = "phone" | "email" | "whatsapp";
+type Service = "text_message" | "email" | "whatsapp";
 let identities: { address: string; service: Service }[] = [];
 
 vi.mock("../lib/serverApi", () => ({
@@ -129,7 +129,7 @@ describe("OnboardingScreen", () => {
 
   it("puts each identity the owner added in its own row, for the holder to change", async () => {
     identities = [
-      { address: "+15555550100", service: "phone" },
+      { address: "+15555550100", service: "text_message" },
       { address: "bob@example.com", service: "email" },
     ];
     render(<OnboardingScreen />);
@@ -144,7 +144,7 @@ describe("OnboardingScreen", () => {
   it("shows a number on Text Message and on WhatsApp as two rows, and does not block Continue", async () => {
     profile = { ...blankProfile, preferred_name: "Bob" };
     identities = [
-      { address: "+15555550123", service: "phone" },
+      { address: "+15555550123", service: "text_message" },
       { address: "+15555550123", service: "whatsapp" },
     ];
     const user = setupUser();
@@ -177,7 +177,7 @@ describe("OnboardingScreen", () => {
   });
 
   it("counts an identity the owner added, so another is not required", async () => {
-    identities = [{ address: "+15555550100", service: "phone" }];
+    identities = [{ address: "+15555550100", service: "text_message" }];
     render(<OnboardingScreen />);
     await settle();
     expect(rowValue(1)).toHaveValue("+15555550100");
@@ -191,8 +191,8 @@ describe("OnboardingScreen", () => {
   it("sends only what changed: an edited identity is unlinked and its new value linked", async () => {
     profile = { ...blankProfile, preferred_name: "Bob" };
     identities = [
-      { address: "+15555550100", service: "phone" },
-      { address: "+15555550101", service: "phone" },
+      { address: "+15555550100", service: "text_message" },
+      { address: "+15555550101", service: "text_message" },
     ];
     const user = setupUser();
     render(<OnboardingScreen />);
@@ -207,8 +207,8 @@ describe("OnboardingScreen", () => {
     expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({
-        identities: [{ address: "+1 555-555-0199", service: "phone" }],
-        remove_identities: [{ address: "+15555550100", service: "phone" }],
+        identities: [{ address: "+1 555-555-0199", service: "text_message" }],
+        remove_identities: [{ address: "+15555550100", service: "text_message" }],
       }),
     );
   });
@@ -216,8 +216,8 @@ describe("OnboardingScreen", () => {
   it("unlinks an identity whose row is removed", async () => {
     profile = { ...blankProfile, preferred_name: "Bob" };
     identities = [
-      { address: "+15555550100", service: "phone" },
-      { address: "+15555550101", service: "phone" },
+      { address: "+15555550100", service: "text_message" },
+      { address: "+15555550101", service: "text_message" },
     ];
     const user = setupUser();
     render(<OnboardingScreen />);
@@ -231,7 +231,7 @@ describe("OnboardingScreen", () => {
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({
         identities: [],
-        remove_identities: [{ address: "+15555550101", service: "phone" }],
+        remove_identities: [{ address: "+15555550101", service: "text_message" }],
       }),
     );
   });
@@ -239,10 +239,10 @@ describe("OnboardingScreen", () => {
   it("shows no more identities than the card has rows for, and leaves the rest alone", async () => {
     profile = { ...blankProfile, preferred_name: "Bob" };
     identities = [
-      { address: "+15555550100", service: "phone" },
-      { address: "+15555550101", service: "phone" },
-      { address: "+15555550102", service: "phone" },
-      { address: "+15555550103", service: "phone" },
+      { address: "+15555550100", service: "text_message" },
+      { address: "+15555550101", service: "text_message" },
+      { address: "+15555550102", service: "text_message" },
+      { address: "+15555550103", service: "text_message" },
       { address: "bob@example.com", service: "email" },
       { address: "b@example.com", service: "email" },
     ];

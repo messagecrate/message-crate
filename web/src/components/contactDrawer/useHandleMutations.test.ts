@@ -45,7 +45,7 @@ describe("useHandleMutations", () => {
   });
 
   it("names no service for an email address, which an import can store on WhatsApp", () => {
-    // Sent as `phone`, an email address stored on WhatsApp was not found on
+    // Sent as `text_message`, an email address stored on WhatsApp was not found on
     // the contact and could not be removed.
     expect(removalOf(row("ann@example.com", "email"))).toEqual({
       address: "ann@example.com",
@@ -60,12 +60,12 @@ describe("useHandleMutations", () => {
     });
   });
 
-  it("adds an email address on the phone service", () => {
+  it("adds an email address on Text Message", () => {
     const { result } = renderHook(() => useHandleMutations({ contactId: "7" }));
     act(() => result.current.confirmAdd({ address: "ann@example.com", service: "email" }));
     expect(nth(mutate.mock.calls, 0)[0].body.add_identity).toEqual({
       address: "ann@example.com",
-      service: "phone",
+      service: "text_message",
     });
   });
 });

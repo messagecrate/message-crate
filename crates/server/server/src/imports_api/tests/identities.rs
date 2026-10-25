@@ -194,7 +194,7 @@ async fn a_name_with_no_address_is_an_other_identity_on_each_service_and_one_con
     assert_eq!(
         identities,
         [
-            ("phone".to_string(), "Sarah Vale".to_string(), sarah),
+            ("text_message".to_string(), "Sarah Vale".to_string(), sarah),
             ("whatsapp".to_string(), "Sarah Vale".to_string(), sarah),
         ]
     );

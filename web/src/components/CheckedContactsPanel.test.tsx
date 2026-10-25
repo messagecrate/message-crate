@@ -220,7 +220,7 @@ describe("CheckedContactsPanel", () => {
       unknown: false,
       last_modified: "2024-01-01T00:00:00Z",
       identities: [
-        { ...shared, address: "+15550101", service: "phone" },
+        { ...shared, address: "+15550101", service: "text_message" },
         { ...shared, address: "sam@example.com", service: "email" },
       ],
       one_to_one_conversations: 0,

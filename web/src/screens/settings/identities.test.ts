@@ -4,7 +4,7 @@ import { type Identity, messagesPhrase } from "./identities";
 function identity(oneToOne: number, group: number, orphaned: number): Identity {
   return {
     address: "+15555550100",
-    service: "phone",
+    service: "text_message",
     country_unknown: false,
     start_date: null,
     end_date: null,

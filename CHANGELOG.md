@@ -270,6 +270,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-24: **Text Message has its own name inside Message Crate.** The
+  service the screens call Text Message was stored and sent under the word
+  for a phone number, which every phone number on it also carries. It is now
+  stored and sent as `text_message`. Nothing on screen changes. The database
+  format changed: an existing Message Crate is rebuilt empty on first start
+  and its messages must be imported again (#3086).
 - 2026-10-24: **The Import form checks its fields as you type.** Max FPS
   takes a whole number from 1 to 240 and Minimum Video File Size one from 1
   to 1,048,576 megabytes; either can stay empty, which keeps each video's
@@ -2015,6 +2021,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-24: A program that adds or reads identities through your Message
+  Crate's HTTP API must name Text Message `text_message` where it named it
+  `phone`. The server refuses `phone` as a service (#3086).
 - 2026-10-16: A conversation file written by an earlier build is refused
   when you import it. Read the backup again with this build to write a file
   the import takes (#3094).

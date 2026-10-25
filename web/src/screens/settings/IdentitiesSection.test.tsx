@@ -25,7 +25,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
 const profile = {
   account_id: 101,
   username: "bob",
-  phones: [{ address: "+15555550100", services: ["phone"] }],
+  phones: [{ address: "+15555550100", services: ["text_message"] }],
   emails: ["bob@example.com", "archer@example.com"],
 } as AccountProfile;
 
@@ -33,7 +33,7 @@ const profile = {
 const identities: Identity[] = [
   {
     address: "+15555550100",
-    service: "phone",
+    service: "text_message",
     start_date: "2020-01-01T12:00:00Z",
     end_date: "2020-02-03T12:00:00Z",
     conversations: 2,
@@ -164,7 +164,7 @@ describe("IdentitiesSection", () => {
     service,
   });
 
-  it("adds an email address on the phone service and closes the dialog when the identities list holds it", async () => {
+  it("adds an email address on Text Message and closes the dialog when the identities list holds it", async () => {
     const user = setupUser();
     serverLists(identities, (rows) => [...rows, listedWithNoMessages("new@example.com", "email")]);
     render(<IdentitiesSection profile={profile} />);
@@ -181,7 +181,7 @@ describe("IdentitiesSection", () => {
     // `email` is no service the server takes: an email address is on the
     // phone service, and the server types it by the address (#1631).
     expect(mutateAsync).toHaveBeenCalledWith({
-      identities: [{ address: "New@example.com", service: "phone" }],
+      identities: [{ address: "New@example.com", service: "text_message" }],
     });
     await settle();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -209,7 +209,7 @@ describe("IdentitiesSection", () => {
     ).toBeInTheDocument();
   });
 
-  it("removes an email address on the phone service and closes the dialog when the identities list no longer holds it", async () => {
+  it("removes an email address on Text Message and closes the dialog when the identities list no longer holds it", async () => {
     const user = setupUser();
     serverLists(identities, (rows) => rows.filter((row) => row.address !== "archer@example.com"));
     render(<IdentitiesSection profile={profile} />);
@@ -221,7 +221,7 @@ describe("IdentitiesSection", () => {
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     expect(mutateAsync).toHaveBeenCalledWith({
-      remove_identities: [{ address: "archer@example.com", service: "phone" }],
+      remove_identities: [{ address: "archer@example.com", service: "text_message" }],
     });
     await settle();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -248,7 +248,7 @@ describe("IdentitiesSection", () => {
 
   it("closes the dialog when a number the account holds is typed in its national form", async () => {
     const user = setupUser();
-    const london = listedWithNoMessages("+447700900123", "phone");
+    const london = listedWithNoMessages("+447700900123", "text_message");
     // The server stores `07700 900123` as the `+447700900123` it holds.
     serverLists([...identities, london], (rows) => rows);
     render(<IdentitiesSection profile={profile} />);
@@ -285,7 +285,7 @@ describe("IdentitiesSection", () => {
   // Neither a number nor an email address: the profile lists neither, and
   // the identities list names each with its service (#2738).
   const lid = listedWithNoMessages("123456789012345@lid", "whatsapp");
-  const sam = listedWithNoMessages("sam", "phone");
+  const sam = listedWithNoMessages("sam", "text_message");
 
   it.each([
     ["a WhatsApp internal id", lid, "Remove 123456789012345@lid (WhatsApp)"],
@@ -350,7 +350,7 @@ describe("IdentitiesSection", () => {
     const again = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(again).getByRole("button", { name: "Remove" }));
     expect(mutateAsync).toHaveBeenCalledWith({
-      remove_identities: [{ address: "+15555550100", service: "phone" }],
+      remove_identities: [{ address: "+15555550100", service: "text_message" }],
     });
   });
 
@@ -378,7 +378,7 @@ describe("IdentitiesSection", () => {
   // naming both services, and the identities list has a row for each.
   const both = {
     ...profile,
-    phones: [{ address: "+15555550100", services: ["phone", "whatsapp"] }],
+    phones: [{ address: "+15555550100", services: ["text_message", "whatsapp"] }],
   } as AccountProfile;
   const whatsapp: Identity = { ...nth(identities, 0), service: "whatsapp" };
 

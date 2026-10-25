@@ -179,7 +179,11 @@ export default function ImportScreen() {
     setIdentityAddError(null);
     try {
       const updated = await updateProfile.mutateAsync({
-        identities: [{ address: value, service: serverService(type) }],
+        // A backup's own address is on Text Message, a number and an email
+        // address alike: its type is not its service.
+        identities: [
+          { address: value, service: serverService(type === "email" ? "email" : "text_message") },
+        ],
       });
       if (!identityOnProfile(value, profileAddresses(updated))) {
         throw new Error("no-op add");

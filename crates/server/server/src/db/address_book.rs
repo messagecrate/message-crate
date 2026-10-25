@@ -75,7 +75,7 @@ impl FileService {
     /// The service the identity is stored on.
     fn service(self) -> IdentityService {
         match self {
-            Self::TextMessage | Self::Email => IdentityService::Phone,
+            Self::TextMessage | Self::Email => IdentityService::TextMessage,
             Self::Whatsapp => IdentityService::Whatsapp,
         }
     }
@@ -86,8 +86,8 @@ impl FileService {
     fn of(service: IdentityService, handle_type: IdentityType) -> Self {
         match (service, handle_type) {
             (IdentityService::Whatsapp, _) => Self::Whatsapp,
-            (IdentityService::Phone, IdentityType::Email) => Self::Email,
-            (IdentityService::Phone, _) => Self::TextMessage,
+            (IdentityService::TextMessage, IdentityType::Email) => Self::Email,
+            (IdentityService::TextMessage, _) => Self::TextMessage,
         }
     }
 
@@ -446,9 +446,9 @@ fn is_whatsapp_id(address: &str) -> bool {
 
 /// The `service` value the `handles` table stores, or `None` for any other
 /// text. Unlike [`IdentityService::parse`], which reads every unknown word as
-/// the phone platform, a row holding any other word is skipped.
+/// Text Message, a row holding any other word is skipped.
 fn parse_service(text: &str) -> Option<IdentityService> {
-    [IdentityService::Phone, IdentityService::Whatsapp]
+    [IdentityService::TextMessage, IdentityService::Whatsapp]
         .into_iter()
         .find(|s| s.as_str().eq_ignore_ascii_case(text))
 }

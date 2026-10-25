@@ -148,7 +148,7 @@ nobody ([#1141](https://github.com/messagecrate/message-crate/issues/1141)).
 Each service says which types it can carry, and within those the shape
 (`phone::Handle::parse`) picks one. WhatsApp carries phone numbers and its
 own internal ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`), which are `other`.
-The `phone` service carries phone numbers and email addresses, because
+Text Message (`text_message`) carries phone numbers and email addresses, because
 iMessage reaches an email address. Every service carries `other`, and neither
 carries a username. A shape the service cannot carry is never that type: an
 address with an `@` on WhatsApp is not an email address, however it looks,
@@ -207,7 +207,7 @@ recorded as `unknown` and stays on Text Message. The transport says how that
 one message traveled, not what its address is. So an address with an `@` is
 an `email` identity on Text Message whatever transport carried it. An
 email-to-text gateway such as `alerts@example.com` that writes over SMS is
-one `email` row on `phone`, on one contact. Why: one conversation holds both
+one `email` row on `text_message`, on one contact. Why: one conversation holds both
 transports, and identities of one address are linked only when their types
 are equal. Typed by transport, an address became `email` from a header or an
 iMessage and `other` from an SMS message. That made two identities on two
@@ -244,7 +244,7 @@ name, and the real contact's counts left the message out
 ## CONTACT-15 One number is one person on every service
 
 iMessage, SMS, MMS and RCS are all text messages, so a phone number that
-arrives over any of them is one `handles` row with the service `phone`. The
+arrives over any of them is one `handles` row with the service `text_message`. The
 same number on WhatsApp is a second row with the service `whatsapp`. When one
 of the two is on a contact, the other joins the same contact
 (`contact_id_of_sibling_handle`). Why: the rows differ only by service, and
@@ -461,15 +461,15 @@ same number as a sender as `phone`, and one that read the service typed
 `ada@example.com` added under iMessage as a phone number
 ([#1432](https://github.com/messagecrate/message-crate/issues/1432)).
 
-## CONTACT-24 A request names a service as `phone` or `whatsapp`, and nothing else
+## CONTACT-24 A request names a service as `text_message` or `whatsapp`, and nothing else
 
 A contact edit and an account's own identities take those two words and
-refuse any other, naming the two. An email address is on `phone`, where
-iMessage reaches it. Why: every other word was read as `phone`, so a
-misspelled `whatsap` put an identity on Text Message without a word
+refuse any other, naming the two. An email address is on `text_message`,
+where iMessage reaches it. Why: every other word was read as Text Message, so
+a misspelled `whatsap` put an identity on Text Message without a word
 ([#1630](https://github.com/messagecrate/message-crate/issues/1630)), and
-once the address decided the type, `email` was only a second name for `phone`
-([#1631](https://github.com/messagecrate/message-crate/issues/1631)).
+once the address decided the type, `email` was only a second name for Text
+Message ([#1631](https://github.com/messagecrate/message-crate/issues/1631)).
 
 ## CONTACT-25 Swapping a contact's identity finds the old one on its own service
 
@@ -522,7 +522,7 @@ directly.
 `service` takes `Text Message`, `Email` or `WhatsApp`, the words the screen
 where an identity is added offers (`OFFERED_SERVICE_OPTIONS` in
 `web/src/lib/offeredService.ts`), ignoring case, and never the stored values
-`phone` and `whatsapp`. A load types each row by CONTACT-9: the service
+`text_message` and `whatsapp`. A load types each row by CONTACT-9: the service
 decides which types are valid (`IdentityService::carries`) and the address's
 shape picks among them, as adding an identity on the screen does. `Email` is
 an email address on Text Message, and a row whose address is not one is
