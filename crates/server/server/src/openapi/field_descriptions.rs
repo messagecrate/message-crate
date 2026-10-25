@@ -1,5 +1,5 @@
 //! A field's description sits on the field (`docs/architecture/rules/http-api.md`,
-//! API-122).
+//! API-123).
 //!
 //! utoipa writes the doc comment of a field typed by a schema of its own
 //! beside that schema's `$ref`. For a required field the `$ref` is the
@@ -16,7 +16,7 @@
 //! The tag of an internally tagged enum (`#[serde(tag = "kind")]`), such as
 //! `ExportScope.kind`, is a field no Rust code declares, so it has no doc
 //! comment to carry. [`describe_tags`] writes its description from the tag's
-//! values and each form's own doc comment, the variant's.
+//! values and each form's own doc comment, the variant's (API-124).
 
 use utoipa::openapi::schema::{Object, Schema, SchemaType, Type};
 use utoipa::openapi::{OpenApi, RefOr};

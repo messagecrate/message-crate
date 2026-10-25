@@ -966,7 +966,7 @@ How: `with_server_layers` in `server.rs` puts one layer,
 added later is covered without remembering to. The layer sets the header only
 when the answer has none. The OpenAPI document states the rule once, in its
 description, as it does for `405 Method Not Allowed`, and the walk over every
-operation checks it (see API-124).
+operation checks it (see API-125).
 
 Rejected: `private` for every answer. It still lets the browser write message
 text and a Session token to its disk cache, and the web app fetches afresh
@@ -1707,13 +1707,16 @@ own description, because it answers a method no operation has. The handler adds
 only what is its own, such as `409 Conflict` for a run in the wrong state, by
 naming the problem type (`crate::problem::openapi`). Every error response is
 declared as `application/problem+json`, names the problem types it can carry
-(in its description and in `x-problem-types`), and has a description. The first
-sentence of a handler's doc comment is the operation's summary, and the rest is
-its description.
+(in its description and in `x-problem-types`), and has a description.
 Why: every mismatch between the reference and the handlers that the September
 2026 review found was in a hand-written list.
 
-### API-122 A field's description sits on the field
+### API-122 An operation's summary is the first sentence of its handler's doc comment
+
+The first sentence of a handler's doc comment is the operation's summary, and
+the rest is its description.
+
+### API-123 A field's description sits on the field
 
 A field's description sits on the field. utoipa writes the doc comment of an
 optional field typed by a schema of its own inside the `oneOf` branch beside
@@ -1724,7 +1727,7 @@ Why: openapi-typescript reads no description inside a branch, so the web app's
 generated type for such a field carried no doc, while the same field made
 required kept it.
 
-### API-123 Every field has a description
+### API-124 Every field has a description
 
 Every field has a description, written from the doc comment on its Rust
 field, and a document rule fails on a field with none. The tag of an
@@ -1735,7 +1738,7 @@ Why: in October 2026, 59 fields of the reference had no description, and a
 reader of the reference or of the web app's generated types had only the
 field's name to go on.
 
-### API-124 A rule that can be checked by walking every operation is checked that way, by one test
+### API-125 A rule that can be checked by walking every operation is checked that way, by one test
 
 A rule that can be checked by walking every operation in the document is
 checked that way, by one test, as `openapi/credential_matrix.rs` checks every
@@ -1752,7 +1755,7 @@ but those of an operation that lists its own (API-69), kebab-case paths and the
 nesting depth. Why: a rule checked one route at a time is checked on the routes
 someone remembered.
 
-### API-125 The shared failures are checked by calling each operation into them
+### API-126 The shared failures are checked by calling each operation into them
 
 The shared failures are checked by calling each operation into them, and the
 status and problem type the server answers must be ones the document lists.

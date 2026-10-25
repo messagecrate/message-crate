@@ -1,7 +1,7 @@
 //! Every rule of `docs/architecture/rules/http-api.md` that can be checked by
 //! walking the OpenAPI document, checked over every operation in it
-//! (API-124: a rule checked one route at a time is checked on the
-//! routes someone remembered).
+//! (API-125: a rule checked one route at a time is checked on the
+//! routes someone remembered; the calls are API-126).
 //!
 //! Part of it reads the document: the page shape and paging parameters of every
 //! list, every property of a success answer required, a `Location` on every
