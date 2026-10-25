@@ -100,7 +100,7 @@ function accountPath(accountId: number): string {
  * `/v1/accounts/{id}` for the logged-in account.
  *
  * The server has no `/v1/account` singleton: an account reads and writes its
- * own row in the same collection the owner manages, addressed by the id the
+ * own row in the same collection the administrator manages, addressed by the id the
  * session carries. Logged out, there is no such row, and asking for one is a
  * bug in the caller rather than a request worth sending.
  */
@@ -132,55 +132,47 @@ export function logout(opts?: RequestOptions): Promise<void> {
 // ── The server itself ────────────────────────────────────────────────────────
 
 /**
- * What state this Message Crate is in, for the screen a logged-out visitor sees.
- *
- * The server reports one value rather than the facts behind it, so the rule
- * joining "does an owner exist" to "is registration open" is stated once, on
- * the server. See `docs/adr/0008-the-owner-holds-no-messages.md`.
+ * What a logged-out visitor is offered: `setup` while the administrator has
+ * no password, `ready` after. One value from the server, so the rule is
+ * stated once. See `docs/adr/0008-the-administrator-holds-no-messages.md`.
  */
 export function getServerState(opts?: RequestOptions): Promise<Server> {
   return apiClient.get<Server>("/v1/server", opts);
 }
 
-/** Claim an unclaimed Message Crate by creating its owner. Returns their session. */
-export function claimServer(
-  body: Schema["ClaimServerRequest"],
+/** Set the administrator's password on a Message Crate in setup. Returns the administrator's session. */
+export function setUpServer(
+  body: Schema["SetUpServerRequest"],
 ): Promise<Schema["CreateSessionResponse"]> {
-  return apiClient.post<Schema["CreateSessionResponse"]>("/v1/server/claim", body);
+  return apiClient.post<Schema["CreateSessionResponse"]>("/v1/server/setup", body);
 }
 
 // ── The accounts collection ─────────────────────────────────────────────────
 //
-// One collection for the owner and for each account: the owner reaches
-// every row, an account reaches its own. The functions Owner Home calls take
+// One collection for the administrator and for each account: the administrator reaches
+// every row, an account reaches its own. The functions Admin Home calls take
 // the account id; the ones Settings calls address the logged-in
 // account through `ownAccountPath`.
 
-/** Every account of this Message Crate, for the owner: the owner's own first, then the rest by username. */
+/** Every account of this Message Crate, for the administrator: the administrator's own first, then the rest by username. */
 export function listAccounts(opts?: RequestOptions): Promise<Schema["Account"][]> {
   return readEveryPage<Schema["Page_Account"]>("/v1/accounts", opts);
 }
 
 /**
- * Create an account.
- *
- * Logged out, on an open Message Crate, this is registration: the server opens a
- * Session on the new account and answers its `token`. Logged in as the owner,
- * it creates an account whose holder must replace the password at first
- * login, and no session is opened.
+ * Create an account, as the administrator. Its holder must replace the
+ * password at first login, and no session is opened.
  */
-export function createAccount(
-  body: Schema["CreateAccountRequest"],
-): Promise<Schema["CreateAccountResponse"]> {
-  return apiClient.post<Schema["CreateAccountResponse"]>("/v1/accounts", body);
+export function createAccount(body: Schema["CreateAccountRequest"]): Promise<Schema["Account"]> {
+  return apiClient.post<Schema["Account"]>("/v1/accounts", body);
 }
 
-/** One account, as the owner: profile, flags, and how much it holds. */
+/** One account, as the administrator: profile, flags, and how much it holds. */
 export function getAccount(accountId: number, opts?: RequestOptions): Promise<Schema["Account"]> {
   return apiClient.get<Schema["Account"]>(accountPath(accountId), opts);
 }
 
-/** Change an account's disabled flag or its import, export and delete grants, as the owner. */
+/** Change an account's disabled flag or its import, export and delete grants, as the administrator. */
 export function updateAccount(
   accountId: number,
   body: Schema["UpdateAccountRequest"],
@@ -188,7 +180,7 @@ export function updateAccount(
   return apiClient.patch<Schema["Account"]>(accountPath(accountId), body);
 }
 
-/** Set another account's password as the owner, ending its sessions. */
+/** Set another account's password as the administrator, ending its sessions. */
 export function setAccountPassword(
   accountId: number,
   body: Schema["ReplaceAccountPasswordRequest"],
@@ -196,12 +188,12 @@ export function setAccountPassword(
   return apiClient.put<void>(`${accountPath(accountId)}/password`, body);
 }
 
-/** Delete an account as the owner: its login, profile, contacts, and every message it owns. */
+/** Delete an account as the administrator: its login, profile, contacts, and every message it owns. */
 export function deleteAccountById(accountId: number): Promise<void> {
   return apiClient.delete<void>(accountPath(accountId), undefined, LONG_CALL);
 }
 
-/** Destroy one account's messages as the owner. The account, its contacts and login survive. */
+/** Destroy one account's messages as the administrator. The account, its contacts and login survive. */
 export function deleteAccountMessages(accountId: number): Promise<unknown> {
   return apiClient.delete<unknown>(`${accountPath(accountId)}/messages`, undefined, LONG_CALL);
 }
@@ -214,7 +206,7 @@ export function getServerSettings(opts?: RequestOptions): Promise<Schema["Server
 /**
  * What the whole database holds, summed over every account: message,
  * conversation, contact and attachment counts, and attachment bytes. The
- * owner's, and counts only (`docs/adr/0008-the-owner-holds-no-messages.md`).
+ * administrator's, and counts only (`docs/adr/0008-the-administrator-holds-no-messages.md`).
  */
 export function getServerStorage(opts?: RequestOptions): Promise<Schema["ServerStorage"]> {
   return apiClient.get<Schema["ServerStorage"]>("/v1/server/storage", opts);
@@ -239,7 +231,7 @@ type LogFile = Schema["LogFile"];
 /**
  * A page of the server's log, newest first: the lines at `level` and more
  * severe, holding `text`, older than the line whose id is `after`. The
- * owner's alone (`docs/architecture/rules/server-log.md`).
+ * administrator's alone (`docs/architecture/rules/server-log.md`).
  */
 export function listServerLogLines(
   params: { level?: LogLevel; text?: string; after?: number; limit?: number },
@@ -309,7 +301,7 @@ export function deleteAccount(body: Schema["DeleteAccountRequest"]): Promise<voi
   return apiClient.delete<void>(ownAccountPath(), body, LONG_CALL);
 }
 
-/** How much an account holds: the logged-in one, or as the owner the one named. */
+/** How much an account holds: the logged-in one, or as the administrator the one named. */
 export function getAccountStorage(
   opts?: RequestOptions,
   accountId?: number,
@@ -319,13 +311,13 @@ export function getAccountStorage(
 
 // An account's import and export history, for its Storage screen. These are
 // not `/v1/imports` and `/v1/exports`: those are the pipelines' own routes and
-// ask for a permission, which the owner's session never carries.
+// ask for a permission, which the administrator's session never carries.
 
 function accountBase(accountId?: number): string {
   return accountId === undefined ? ownAccountPath() : accountPath(accountId);
 }
 
-/** Every identity of an account with the messages held at each: the logged-in one, or as the owner the one named. */
+/** Every identity of an account with the messages held at each: the logged-in one, or as the administrator the one named. */
 export function listAccountIdentities(
   opts?: RequestOptions,
   accountId?: number,
@@ -339,7 +331,7 @@ export type AccountRunListParams = { limit?: number; offset?: number };
 
 /**
  * An account's Import Runs, newest first: the logged-in one in full, or as the
- * owner the one named, each without what the run held.
+ * administrator the one named, each without what the run held.
  */
 export function listAccountImports(
   params: AccountRunListParams,
@@ -369,7 +361,7 @@ export function getAccountImport(
 
 /**
  * An account's Export Runs, newest first: the logged-in one in full, or as
- * the owner the one named, each without what the run asked for.
+ * the administrator the one named, each without what the run asked for.
  */
 export function listAccountExports(
   params: AccountRunListParams,
@@ -385,18 +377,18 @@ export function listAccountExports(
 /** Which page of an Audit Trail to read. Absent values are left off the URL. */
 export type AuditTrailParams = { limit?: number; offset?: number };
 
-/** A page of the owner's Audit Trail, or of one deleted account's. */
-export type OwnerAuditTrailParams = AuditTrailParams & { deleted_account_id?: number };
+/** A page of the administrator's Audit Trail, or of one deleted account's. */
+export type AdminAuditTrailParams = AuditTrailParams & { deleted_account_id?: number };
 
 /** A deleted account whose entries the Audit Trail keeps. */
 export type DeletedAccount = Schema["DeletedAccount"];
 
 /**
  * Every account's Audit Trail, newest first, or with `deleted_account_id`
- * one deleted account's entries and runs. The owner's alone.
+ * one deleted account's entries and runs. The administrator's alone.
  */
 export function listAuditTrail(
-  params: OwnerAuditTrailParams,
+  params: AdminAuditTrailParams,
   opts?: RequestOptions,
 ): Promise<Schema["Page_AuditEntry"]> {
   return apiClient.get<Schema["Page_AuditEntry"]>(
@@ -407,13 +399,13 @@ export function listAuditTrail(
 
 /**
  * Every deleted account whose entries the Audit Trail keeps, by username A
- * to Z and the latest deletion first, read in full. The owner's alone.
+ * to Z and the latest deletion first, read in full. The administrator's alone.
  */
 export function listDeletedAccounts(opts?: RequestOptions): Promise<DeletedAccount[]> {
   return readEveryPage<Schema["Page_DeletedAccount"]>("/v1/audit-trail/deleted-accounts", opts);
 }
 
-/** One account's Audit Trail, newest first: the logged-in one, or as the owner the one named. */
+/** One account's Audit Trail, newest first: the logged-in one, or as the administrator the one named. */
 export function listAccountAuditTrail(
   params: AuditTrailParams,
   opts?: RequestOptions,
@@ -439,10 +431,10 @@ export function deleteAllMessages(
 // ── API tokens ──────────────────────────────────────────────────────────────
 //
 // An account's tokens live under its own row. The account makes, renames,
-// lists and revokes them; the owner lists and revokes them too, so it can end
+// lists and revokes them; the administrator lists and revokes them too, so it can end
 // a leaked one, and its list carries no `token_hint`.
 
-/** An account's API tokens, every page: the logged-in one's, or as the owner the one named. */
+/** An account's API tokens, every page: the logged-in one's, or as the administrator the one named. */
 export function listApiTokens(
   opts?: RequestOptions,
   accountId?: number,
@@ -464,7 +456,7 @@ export function renameApiToken(
   return apiClient.patch<Schema["ApiToken"]>(`${ownAccountPath()}/api-tokens/${id}`, body);
 }
 
-/** Revoke one API token: the logged-in account's, or as the owner one of the account named. */
+/** Revoke one API token: the logged-in account's, or as the administrator one of the account named. */
 export function deleteApiToken(id: number, accountId?: number): Promise<void> {
   return apiClient.delete<void>(`${accountBase(accountId)}/api-tokens/${id}`);
 }

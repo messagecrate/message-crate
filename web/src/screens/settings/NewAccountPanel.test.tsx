@@ -37,7 +37,7 @@ describe("NewAccountPanel", () => {
     const shown = [keys.ownerAccounts.all];
     const client = testQueryClient();
     seedEntries(client, 1, shown);
-    createAccount.mockResolvedValue({ account_id: 102, username: "carol", token: null });
+    createAccount.mockResolvedValue({ account_id: 102, username: "carol" });
     const user = setupUser();
     render(
       <QueryClientProvider client={client}>

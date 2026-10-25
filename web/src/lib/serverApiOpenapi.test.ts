@@ -123,7 +123,7 @@ const EXERCISED: Record<string, () => unknown> = {
   getSession: () => serverApi.getSession(),
   logout: () => serverApi.logout(),
   getServerState: () => serverApi.getServerState(),
-  claimServer: () => serverApi.claimServer({ username: "matt", password: "hunter2hunter2" }),
+  setUpServer: () => serverApi.setUpServer({ password: "hunter2hunter2" }),
   getServerSettings: () => serverApi.getServerSettings(),
   updateServerSettings: () => serverApi.updateServerSettings({ public_registration: true }),
   getServerStorage: () => serverApi.getServerStorage(),
@@ -175,7 +175,7 @@ const EXERCISED: Record<string, () => unknown> = {
     serverApi.listAccountExports(every<serverApi.AccountRunListParams>({ limit: 50, offset: 50 })),
   listAuditTrail: () =>
     serverApi.listAuditTrail(
-      every<serverApi.OwnerAuditTrailParams>({ limit: 50, offset: 50, deleted_account_id: 9 }),
+      every<serverApi.AdminAuditTrailParams>({ limit: 50, offset: 50, deleted_account_id: 9 }),
     ),
   listDeletedAccounts: () => serverApi.listDeletedAccounts(),
   listAccountAuditTrail: () =>

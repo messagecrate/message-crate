@@ -423,7 +423,7 @@ export default function LoginScreen() {
 
               {/* The card waits for the server's own answer as well as for the
                   connection: which forms belong here is the server's to say, and
-                  showing a login to an unclaimed Message Crate would offer a door that
+                  showing a login to a Message Crate in setup would offer a door that
                   opens onto nothing. */}
               {localFailed && state !== "connected" ? (
                 <StartFailed status={localFailed} onRetry={retryLocalServer} />
@@ -439,11 +439,11 @@ export default function LoginScreen() {
                 />
               ) : state === "disconnected" ? (
                 // No server answered, so none has said which forms it offers.
-                // Login is the one every claimed Message Crate has, and it is shown
+                // Login is the one every ready Message Crate has, and it is shown
                 // disabled: a placeholder here would read as "still loading"
                 // for as long as the server stays down. The way on is Change
                 // server address, below.
-                <LocalAuthTabs serverUrl={address} serverState="closed" disabled />
+                <LocalAuthTabs serverUrl={address} serverState="ready" disabled />
               ) : (
                 <FormSkeleton />
               )}

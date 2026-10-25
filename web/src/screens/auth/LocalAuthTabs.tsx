@@ -1,28 +1,20 @@
-import { TabList, TabPanel, Tabs } from "react-aria-components";
-import Tab from "../../components/Tab";
-import ClaimForm from "./ClaimForm";
-import CreateAccountForm from "./CreateAccountForm";
 import LoginForm from "./LoginForm";
+import SetupForm from "./SetupForm";
 import type { ServerState } from "./useServerState";
 
-/** Login and Create Account share the strip in halves, in the card's 14px text. */
-const authTabClass = "flex-1 text-center text-[0.875rem]";
-
 /**
- * The ways into a Message Crate, which depend on what state it is in.
+ * The way into a Message Crate, which depends on what state it is in.
  *
- * An **unclaimed** Message Crate offers one thing: creating its owner. No login,
- * because no account exists to log into, and no Create Account, because a
- * Message Crate decides who may join it only once it has an owner to decide.
+ * A Message Crate in **setup** offers one thing: setting the password of
+ * `admin`, the administrator, who is made with the database. No login,
+ * because no account has a password to log in with yet.
  *
- * A **closed** Message Crate offers Login alone. An **open** one adds Create Account.
+ * A **ready** Message Crate offers Login alone. Accounts are created by the
+ * administrator, so there is no Create Account here.
  *
- * The server reports which of the three it is; nothing here recombines the
+ * The server reports which of the two it is; nothing here recombines the
  * facts behind that answer. See
- * `docs/adr/0008-the-owner-holds-no-messages.md`.
- *
- * Each panel keeps its own busy and error state, so switching tabs leaves the
- * other form's message behind.
+ * `docs/adr/0008-the-administrator-holds-no-messages.md`.
  */
 export default function LocalAuthTabs({
   serverUrl,
@@ -33,49 +25,17 @@ export default function LocalAuthTabs({
   serverState: ServerState;
   disabled?: boolean;
 }) {
-  // One thing to do, so no tab strip to choose between things.
-  if (serverState === "unclaimed") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <h2 className="mb-6 border-b border-border pb-2 text-center text-[0.875rem] font-medium text-text">
-          Create Owner
-        </h2>
-        <ClaimForm serverUrl={serverUrl} disabled={disabled} />
-      </div>
-    );
-  }
-
-  if (serverState === "closed") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <h2 className="mb-6 border-b border-border pb-2 text-center text-[0.875rem] font-medium text-text">
-          Login
-        </h2>
-        <LoginForm serverUrl={serverUrl} disabled={disabled} />
-      </div>
-    );
-  }
-
+  const setup = serverState === "setup";
   return (
-    <Tabs defaultSelectedKey="login" className="flex min-h-0 flex-1 flex-col">
-      <TabList
-        aria-label="Log in or create an account"
-        className="relative mb-6 flex border-b border-border"
-      >
-        <Tab id="login" className={authTabClass}>
-          Login
-        </Tab>
-        <Tab id="create" className={authTabClass}>
-          Create Account
-        </Tab>
-      </TabList>
-
-      <TabPanel id="login" className="flex min-h-0 flex-1 flex-col outline-none">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <h2 className="mb-6 border-b border-border pb-2 text-center text-[0.875rem] font-medium text-text">
+        {setup ? "Set Up" : "Login"}
+      </h2>
+      {setup ? (
+        <SetupForm serverUrl={serverUrl} disabled={disabled} />
+      ) : (
         <LoginForm serverUrl={serverUrl} disabled={disabled} />
-      </TabPanel>
-      <TabPanel id="create" className="flex min-h-0 flex-1 flex-col outline-none">
-        <CreateAccountForm serverUrl={serverUrl} disabled={disabled} />
-      </TabPanel>
-    </Tabs>
+      )}
+    </div>
   );
 }

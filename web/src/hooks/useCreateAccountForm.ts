@@ -5,26 +5,21 @@ import type { components } from "../lib/serverApi.types";
 import { useAsyncAction } from "./useAsyncAction";
 import { useRouteMutation } from "./useRouteQuery";
 
-/** What the server answers when it creates an account. */
-type CreatedAccount = components["schemas"]["CreateAccountResponse"];
+/** What the server answers when it creates an account: the new account's row. */
+type CreatedAccount = components["schemas"]["Account"];
 
 /**
  * Creating an account: a username, the password twice, the checks, and the
  * request.
  *
- * Two screens create accounts, and they look nothing alike: Create Account on
- * the Login screen of an open Message Crate, and the Account section of a new
- * account's Settings, which the owner opens from User Accounts. Both are
- * this, so the checks and the request are written once. What differs is what
- * follows, which `onCreated` holds: a stranger is logged in to the account,
- * and the owner is taken to its Settings.
+ * The administrator creates accounts from the Account section of a new
+ * account's Settings, opened from User Accounts. The server opens no session
+ * for the new account, so what follows is `onCreated`'s: the administrator is
+ * taken to the account's Settings.
  */
 export function useCreateAccountForm({
-  onBeforeCreate,
   onCreated,
 }: {
-  /** Runs once the fields pass, before the request: the Login screen points the app at the server here. */
-  onBeforeCreate?: () => void;
   /** Runs with the server's answer. The form stays busy until it settles, and shows what it throws. */
   onCreated: (created: CreatedAccount) => Promise<void> | void;
 }) {
@@ -32,9 +27,8 @@ export function useCreateAccountForm({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const { busy, error, run } = useAsyncAction();
-  // The owner's new account joins User Accounts and the storage counts, so
-  // the account's screens fetch again once the write settles. A stranger's
-  // registration on the Login screen has no account's screens yet.
+  // The new account joins User Accounts and the storage counts, so the
+  // account's screens fetch again once the write settles.
   const create = useRouteMutation({
     mutationFn: (body: Parameters<typeof createAccount>[0]) => createAccount(body),
   });
@@ -50,7 +44,6 @@ export function useCreateAccountForm({
       if (password !== confirmPassword) {
         throw new Error("Passwords do not match.");
       }
-      onBeforeCreate?.();
       let created: CreatedAccount;
       try {
         created = await create.mutateAsync({

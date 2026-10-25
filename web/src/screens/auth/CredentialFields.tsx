@@ -7,8 +7,10 @@ import TextField from "../../components/TextField";
 type FieldState = { value: string; onChange: (value: string) => void };
 
 /**
- * The username and password fields of the three sign-in forms: Login, Create
- * Account, and Create Owner.
+ * The username and password fields of the forms that sign in or create an
+ * account: Login, Set Up, and the administrator's New Account. Set Up passes
+ * no `username`, because the administrator's username is fixed, and shows no
+ * Username field.
  *
  * `autoComplete` says which password this is. `current-password` is a login,
  * so a password manager offers to fill it. `new-password` is one being chosen,
@@ -22,7 +24,8 @@ export default function CredentialFields({
   autoComplete,
   disabled = false,
 }: {
-  username: FieldState;
+  /** Without it, the form shows no Username field. */
+  username?: FieldState;
   password: FieldState;
   /** Without it, the form shows no Confirm Password field. */
   confirmPassword?: FieldState;
@@ -34,21 +37,21 @@ export default function CredentialFields({
 
   return (
     <>
-      <TextField
-        label="Username"
-        leadingIcon={<PersonIcon size={16} className="shrink-0" />}
-        value={username.value}
-        onChange={username.onChange}
-        name="username"
-        autoComplete="username"
-        isDisabled={disabled}
-      />
+      {username ? (
+        <TextField
+          label="Username"
+          leadingIcon={<PersonIcon size={16} className="shrink-0" />}
+          value={username.value}
+          onChange={username.onChange}
+          name="username"
+          autoComplete="username"
+          isDisabled={disabled}
+        />
+      ) : null}
 
-      {/* The same gap on every form, so the field does not shift under the
-          pointer when the Login and Create Account tabs are switched. */}
       <PasswordField
         label="Password"
-        className="mt-3.5"
+        className={username ? "mt-3.5" : undefined}
         leadingIcon={<LockIcon size={16} className="shrink-0" />}
         value={password.value}
         onChange={password.onChange}

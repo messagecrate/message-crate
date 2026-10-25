@@ -55,8 +55,6 @@ export function AppRoutes() {
     <Routes>
       {/* Public routes — an authenticated visitor goes to loggedInDestination */}
       <Route path="/login" element={isAuthenticated ? loggedInDestination : <LoginScreen />} />
-      {/* Registration is now the second tab of the login card, not its own screen. */}
-      <Route path="/register" element={<Navigate to="/login" replace />} />
       {/* Owner Home, outside the AuthGuard's message shell: the owner holds
           no messages, so none of what that shell frames exists for them. */}
       <Route

@@ -3,21 +3,21 @@ import AuthErrorFooter from "../../components/AuthErrorFooter";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { useAuth } from "../../hooks/useAuth";
 import { setBaseUrl } from "../../lib/api";
-import { claimServer } from "../../lib/serverApi";
+import { setUpServer } from "../../lib/serverApi";
 import CredentialFields from "./CredentialFields";
 import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
 import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**
- * Create the owner, which is the only thing an unclaimed Message Crate offers.
+ * Set the administrator's password, which is the only thing a Message Crate
+ * in setup offers.
  *
- * The owner manages accounts and holds no messages of their own, so this form
- * asks for a username and a password and nothing else: there is no profile to
- * set up, no time zone to pick, and no conversation list to arrive in. That is why it
- * finishes with "Create Owner" rather than the "Continue" the account
- * form uses — this step is the whole of it.
+ * The administrator is `admin`, made with the database, so there is no
+ * username to choose: this form asks for the password twice and nothing
+ * else. Submitting sets it and logs the person in as `admin`, who lands on
+ * Admin Home.
  */
-export default function ClaimForm({
+export default function SetupForm({
   serverUrl,
   disabled = false,
 }: {
@@ -25,7 +25,6 @@ export default function ClaimForm({
   disabled?: boolean;
 }) {
   const { login } = useAuth();
-  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const keep = useKeepLoggedIn();
@@ -35,18 +34,14 @@ export default function ClaimForm({
     event.preventDefault();
     if (busy || disabled) return;
     void run(async () => {
-      if (!username.trim()) {
-        throw new Error("Username is required.");
-      }
       // Only the mismatch is checked here. Length is the server's rule, so it
       // stays there rather than being restated and left to drift.
       if (password !== confirmPassword) {
         throw new Error("Passwords do not match.");
       }
-
       const url = serverUrl.trim();
       setBaseUrl(url);
-      const res = await claimServer({ username: username.trim(), password });
+      const res = await setUpServer({ password });
       await login(url, res.token, res.account_id, keep.lifetime);
     });
   };
@@ -54,21 +49,17 @@ export default function ClaimForm({
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
       <p className="mb-5 text-[0.875rem] leading-relaxed text-muted">
-        An owner is required to create and manage users.
+        Choose the password for admin, the administrator who creates and manages accounts.
       </p>
-
       <CredentialFields
-        username={{ value: username, onChange: setUsername }}
         password={{ value: password, onChange: setPassword }}
         autoComplete="new-password"
         confirmPassword={{ value: confirmPassword, onChange: setConfirmPassword }}
         disabled={disabled}
       />
-
       <KeepLoggedInSubmit choice={keep} disabled={busy || disabled}>
-        {busy ? "Creating…" : "Create Owner"}
+        {busy ? "Saving…" : "Continue"}
       </KeepLoggedInSubmit>
-
       <div className="mt-auto">
         <AuthErrorFooter error={error} className="h-16" />
       </div>
