@@ -68,7 +68,7 @@ export function ProfileDangerZone({
   // Trash too, so nothing on the Contacts list's Undo stack is kept (#3234).
   const removeOwnMessages = useRouteMutation({
     mutationFn: () => deleteAllMessagesRoute({ confirm: true }),
-    onSettled: clearContactHistory,
+    onSuccess: clearContactHistory,
   });
   const [dangerZoneOpen, setDangerZoneOpen] = useState(false);
   const [confirmDeleteMessagesOpen, setConfirmDeleteMessagesOpen] = useState(false);

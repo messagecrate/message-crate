@@ -23,7 +23,7 @@ import {
  * mutation over one server route.
  *
  * The three deletes for good clear the Contacts list's Undo and Redo stack
- * once they settle, because an undo restores from the Trash and what they
+ * once the server accepts them, because an undo restores from the Trash and what they
  * deleted is no longer there (#3234). Restore leaves the stack alone.
  */
 
@@ -34,7 +34,7 @@ export function useRestoreConversation(): UseMutationResult<void, Error, number>
 /** Permanently delete a trashed conversation. */
 export function useDeleteConversation(): UseMutationResult<void, Error, number> {
   const clearHistory = useClearContactHistory();
-  return useRouteMutation({ mutationFn: deleteConversation, onSettled: clearHistory });
+  return useRouteMutation({ mutationFn: deleteConversation, onSuccess: clearHistory });
 }
 
 export function useRestoreContact(): UseMutationResult<void, Error, string | number> {
@@ -47,7 +47,7 @@ export function useRestoreContact(): UseMutationResult<void, Error, string | num
  */
 export function useDeleteContact(): UseMutationResult<void, Error, string | number> {
   const clearHistory = useClearContactHistory();
-  return useRouteMutation({ mutationFn: deleteContact, onSettled: clearHistory });
+  return useRouteMutation({ mutationFn: deleteContact, onSuccess: clearHistory });
 }
 
 /**
@@ -57,5 +57,5 @@ export function useDeleteContact(): UseMutationResult<void, Error, string | numb
  */
 export function useEmptyTrash(): UseMutationResult<void, Error, void> {
   const clearHistory = useClearContactHistory();
-  return useRouteMutation({ mutationFn: emptyTrash, onSettled: clearHistory });
+  return useRouteMutation({ mutationFn: emptyTrash, onSuccess: clearHistory });
 }
