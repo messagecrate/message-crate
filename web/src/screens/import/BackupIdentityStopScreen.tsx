@@ -1,5 +1,5 @@
 import Button from "../../components/Button";
-import { type IdentityType, identityOnProfile } from "../../lib/backupIdentity";
+import { identityOnProfile } from "../../lib/backupIdentity";
 import BackupIdentityList from "./BackupIdentityList";
 
 /**
@@ -23,7 +23,7 @@ export default function BackupIdentityStopScreen({
 }: {
   identities: string[];
   profile: { phones: string[]; emails: string[] } | null;
-  onAdd: (value: string, type: IdentityType) => Promise<void>;
+  onAdd: (value: string) => Promise<void>;
   onContinue: () => void;
   onCancel: () => void;
   busy?: boolean;

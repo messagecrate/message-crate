@@ -247,19 +247,20 @@ Handle is the word in the database and the server code over it for the same
 thing; the conversation file and the HTTP API say identity. The shared enums are
 named for the file, `IdentityType` and `IdentityService`, and the server's
 handle code uses them under those names. The HTTP API's own enum is
-`ApiIdentityService`, published as `IdentityService`: it takes only `phone`
-and `whatsapp` and refuses any other word, where the shared enum reads any
-other word as `phone`.
+`ApiIdentityService`, published as `IdentityService`: it takes only
+`text_message` and `whatsapp` and refuses any other word, where the shared
+enum reads any other word as `text_message`.
 _Avoid_: Handle, Address, Number
 
 **Text Message**:
 The one service for a phone's own messages, carrying phone numbers and email
-addresses, `phone` in the database. An email address on Text Message means
-iMessage. SMS, MMS, RCS and iMessage are the transports a message took. A
-transport never changes what an identity is, so an `@` address is an email
-address on Text Message whatever transport carried it. A person's numbers and
-email addresses under Text Message therefore cover every way a text reaches
-them. WhatsApp is a separate service, where an `@` id is not an email address.
+addresses, `text_message` in the database and the HTTP API. An email address
+on Text Message means iMessage. SMS, MMS, RCS and iMessage are the transports
+a message took. A transport never changes what an identity is, so an `@`
+address is an email address on Text Message whatever transport carried it. A
+person's numbers and email addresses under Text Message therefore cover every
+way a text reaches them. WhatsApp is a separate service, where an `@` id is
+not an email address.
 _Avoid_: SMS (for the service), iMessage (for the service)
 
 **Participant**:
@@ -312,7 +313,8 @@ one of its identities: the import then discards the trashed contact together
 with every identity it had and makes a new contact from the backup, as a first
 import would. The trash is the only door to permanent
 deletion; something must be trashed before it can be deleted, one item at a
-time or all at once with Empty Trash.
+time or all at once with Empty Trash. The Trash exists so that trashing can
+be reversed, and Undo and Redo on the Contacts list are built on that.
 _Avoid_: Deleted, Archive, Hidden, Bin
 
 ### Logging in

@@ -76,6 +76,7 @@ export default function ModalShell({
   if (variant === "drawer") {
     return (
       <ModalOverlay
+        data-mc-modal=""
         isOpen={open}
         isDismissable={dismissable}
         isKeyboardDismissDisabled={!keyboardDismissable}
@@ -101,6 +102,9 @@ export default function ModalShell({
 
   return (
     <ModalOverlay
+      // Marks a modal for code that must leave keys to it, such as the
+      // Contacts list's Undo shortcuts.
+      data-mc-modal=""
       isOpen={open}
       isDismissable={dismissable}
       isKeyboardDismissDisabled={!keyboardDismissable}

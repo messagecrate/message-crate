@@ -18,7 +18,7 @@ function countryPick(target: { address: string; service: string | null } | null)
 describe("IdentityDialogs", () => {
   it("opens Pick country for the identity picked, and closes it through the pick", async () => {
     const user = setupUser();
-    const pick = countryPick({ address: "07700900123", service: "phone" });
+    const pick = countryPick({ address: "07700900123", service: "text_message" });
     render(
       <IdentityDialogs
         countryPick={pick}
@@ -47,7 +47,7 @@ describe("IdentityDialogs", () => {
         busy={false}
         adding
         addError="The server did not add that identity."
-        existing={[{ address: "+15555550119", service: "phone" }]}
+        existing={[{ address: "+15555550119", service: "text_message" }]}
         onCloseAdd={onCloseAdd}
         onConfirmAdd={onConfirmAdd}
       />,

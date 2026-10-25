@@ -13,7 +13,8 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
+import ContactHistoryProvider from "../components/ContactHistoryProvider";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
 import { ApiError } from "../lib/api";
@@ -36,6 +37,8 @@ vi.mock("../lib/serverApi", () => ({
   deleteContactGroup: vi.fn(),
   updateContactGroupMembers: vi.fn(),
   exportAddressBook: vi.fn(),
+  trashContact: vi.fn(),
+  restoreContact: vi.fn(),
 }));
 
 vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn().mockResolvedValue(true) }));
@@ -59,6 +62,8 @@ import {
   exportAddressBook,
   listContactGroups,
   listContacts,
+  restoreContact,
+  trashContact,
   updateContactGroupMembers,
 } from "../lib/serverApi";
 import { nth } from "../test/nth";
@@ -69,6 +74,8 @@ const listContactGroupsMock = vi.mocked(listContactGroups);
 const updateMembersMock = vi.mocked(updateContactGroupMembers);
 const exportMock = vi.mocked(exportAddressBook);
 const createGroupMock = vi.mocked(createContactGroup);
+const trashMock = vi.mocked(trashContact);
+const restoreMock = vi.mocked(restoreContact);
 
 /** True once the server has actually dropped Alice's Family membership. */
 let familyRemoved = false;
@@ -106,15 +113,24 @@ afterEach(() => {
   stopFakeClock();
 });
 
+/** Open the ⋯ menu and choose one of its items. */
+async function chooseAction(name: string) {
+  const user = setupUser();
+  await user.click(screen.getByRole("button", { name: "Contact actions" }));
+  await user.click(screen.getByRole("menuitem", { name }));
+}
+
 /** Renders the list inside the providers and panes it needs on the page. */
 function renderList(props: Partial<ComponentProps<typeof ContactList>> = {}) {
   return render(
     <Providers>
-      <RightToolbarProvider>
-        <RightPane>
-          <ContactList onSelect={() => {}} {...props} />
-        </RightPane>
-      </RightToolbarProvider>
+      <ContactHistoryProvider>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList onSelect={() => {}} {...props} />
+          </RightPane>
+        </RightToolbarProvider>
+      </ContactHistoryProvider>
     </Providers>,
   );
 }
@@ -203,7 +219,7 @@ describe("ContactList", () => {
     await settle();
     const rowCheckbox = screen.getByRole("checkbox", { name: "Select Alice" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    await chooseAction("Export Contacts");
     await settle();
     expect(saveFile).toHaveBeenCalledTimes(1);
     // The same search the list sends the server for this group.
@@ -211,7 +227,7 @@ describe("ContactList", () => {
 
     fireEvent.click(rowCheckbox);
     expect(rowCheckbox).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    await chooseAction("Export Contacts");
     await settle();
     expect(saveFile).toHaveBeenCalledTimes(2);
     expect(exportMock).toHaveBeenLastCalledWith({ ids: [1] });
@@ -323,11 +339,13 @@ describe("ContactList", () => {
 
     const page = (groupFilter: string | null) => (
       <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList groupFilter={groupFilter} onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
+        <ContactHistoryProvider>
+          <RightToolbarProvider>
+            <RightPane>
+              <ContactList groupFilter={groupFilter} onSelect={() => {}} />
+            </RightPane>
+          </RightToolbarProvider>
+        </ContactHistoryProvider>
       </Providers>
     );
     const listed = () =>
@@ -351,11 +369,13 @@ describe("ContactList", () => {
   describe("the search the server is asked", () => {
     const page = (filter: string, groupFilter: string | null = null) => (
       <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList filter={filter} groupFilter={groupFilter} onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
+        <ContactHistoryProvider>
+          <RightToolbarProvider>
+            <RightPane>
+              <ContactList filter={filter} groupFilter={groupFilter} onSelect={() => {}} />
+            </RightPane>
+          </RightToolbarProvider>
+        </ContactHistoryProvider>
       </Providers>
     );
 
@@ -444,12 +464,23 @@ describe("ContactList", () => {
     expect(screen.getByText("No contacts match this search")).toBeInTheDocument();
   });
 
-  it("checks a contact from its avatar in the desktop list without opening it", async () => {
-    tauriMock.current = true;
-    // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
-    const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
-    const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
-    try {
+  describe("in the desktop list", () => {
+    let heights: MockInstance;
+    let widths: MockInstance;
+    beforeEach(() => {
+      tauriMock.current = true;
+      // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
+      heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+      widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    });
+
+    afterEach(() => {
+      heights.mockRestore();
+      widths.mockRestore();
+      tauriMock.current = false;
+    });
+
+    it("checks a contact from its avatar without opening it", async () => {
       const onSelect = vi.fn();
       renderList({ onSelect });
       await settle();
@@ -462,11 +493,27 @@ describe("ContactList", () => {
 
       expect(box).toBeChecked();
       expect(onSelect).not.toHaveBeenCalled();
-    } finally {
-      heights.mockRestore();
-      widths.mockRestore();
-      tauriMock.current = false;
-    }
+    });
+
+    it("checks a contact from its checkbox input, which lies over the drawn box (#3251)", async () => {
+      const onSelect = vi.fn();
+      renderList({ onSelect });
+      await settle();
+      const box = screen.getByRole("checkbox", { name: "Select Alice" });
+      // The input shares the drawn box's frame rather than sitting in a
+      // clipped 1px span, so a press on the box lands on the input. jsdom
+      // does no hit testing, so these two lines are what guard that layout:
+      // the clicks below pass either way.
+      expect(box.nextElementSibling).toHaveClass("mc-list-check");
+      expect(box.parentElement).toHaveClass("mc-list-check-frame");
+
+      const user = setupUser();
+      await user.click(box);
+      expect(box).toBeChecked();
+      await user.click(box);
+      expect(box).not.toBeChecked();
+      expect(onSelect).not.toHaveBeenCalled();
+    });
   });
 
   it("marks only the open contact as current while other contacts are checked", async () => {
@@ -554,7 +601,7 @@ describe("ContactList", () => {
       await settle();
       expect(box).toBeChecked();
 
-      fireEvent.click(screen.getByRole("button", { name: "Export" }));
+      await chooseAction("Export Contacts");
       await settle();
       expect(exportMock).toHaveBeenCalled();
       const body = exportMock.mock.calls.at(-1)?.[0] as { ids?: number[] } | undefined;
@@ -593,6 +640,213 @@ describe("ContactList", () => {
       expect(box).not.toBeDisabled();
       expect(box).not.toBeChecked();
       expect(screen.getByRole("checkbox", { name: "Select Person 0001" })).not.toBeChecked();
+    });
+  });
+
+  describe("the ⋯ menu and Undo", () => {
+    beforeEach(() => {
+      trashMock.mockResolvedValue(undefined);
+      restoreMock.mockResolvedValue(undefined);
+      updateMembersMock.mockResolvedValue({ added: 1, removed: 1 });
+    });
+
+    async function openMenu() {
+      await setupUser().click(screen.getByRole("button", { name: "Contact actions" }));
+    }
+
+    it("names what Export and Delete act on, and offers Delete only for checked rows", async () => {
+      const user = setupUser();
+      renderList();
+      await settle();
+      await openMenu();
+      expect(screen.getByText("All contacts")).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "Delete Contacts" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      expect(screen.getByRole("menuitem", { name: "Undo" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      expect(screen.getByRole("menuitem", { name: "Redo" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      await user.keyboard("{Escape}");
+
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await openMenu();
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "Delete Contacts" })).not.toHaveAttribute(
+        "aria-disabled",
+      );
+    });
+
+    it("names a searched or grouped list This list", async () => {
+      renderList({ groupFilter: "Family" });
+      await settle();
+      await openMenu();
+      expect(screen.getByText("This list")).toBeInTheDocument();
+    });
+
+    it("moves the checked contacts to Trash after asking, and Ctrl+Z restores them", async () => {
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+
+      expect(screen.getByRole("dialog", { name: "Move 1 contact to Trash?" })).toBeInTheDocument();
+      expect(trashMock).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+      await settle();
+
+      expect(trashMock).toHaveBeenCalledWith(1);
+      expect(screen.getByRole("status")).toHaveTextContent("Moved Alice to Trash");
+      expect(screen.getByRole("checkbox", { name: "Select Alice" })).not.toBeChecked();
+      await openMenu();
+      expect(screen.getByRole("menuitem", { name: "Undo Delete Contacts" })).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+
+      await user.keyboard("{Control>}z{/Control}");
+      await settle();
+      expect(restoreMock).toHaveBeenCalledWith(1);
+      expect(screen.getByRole("status")).toHaveTextContent("Restored Alice");
+
+      await user.keyboard("{Control>}y{/Control}");
+      await settle();
+      expect(trashMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("status")).toHaveTextContent("Moved Alice to Trash");
+    });
+
+    it("leaves Ctrl+Z to a text field that has focus", async () => {
+      const user = setupUser();
+      render(<input aria-label="Search" />);
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+      await settle();
+
+      await user.click(screen.getByRole("textbox", { name: "Search" }));
+      await user.keyboard("{Control>}z{/Control}");
+      await settle();
+      expect(restoreMock).not.toHaveBeenCalled();
+    });
+
+    it("undoes with Ctrl+Z while focus is in the docked contact pane", async () => {
+      const user = setupUser();
+      render(
+        <aside role="dialog" aria-label="Alice">
+          <button type="button">Edit name</button>
+        </aside>,
+      );
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+      await settle();
+
+      await user.click(screen.getByRole("button", { name: "Edit name" }));
+      await user.keyboard("{Control>}z{/Control}");
+      await settle();
+      expect(restoreMock).toHaveBeenCalledWith(1);
+    });
+
+    it("leaves Ctrl+Z alone while the Delete Contacts dialog is open", async () => {
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+      await settle();
+
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await chooseAction("Delete Contacts");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await user.keyboard("{Control>}z{/Control}");
+      await settle();
+      expect(restoreMock).not.toHaveBeenCalled();
+    });
+
+    it("records a Contact Group change made from the list, and Undo sends the opposite", async () => {
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+      await user.click(screen.getByRole("checkbox", { name: "Family" }));
+      await settle();
+      expect(updateMembersMock).toHaveBeenLastCalledWith(10, { add: [], remove: [1] });
+      expect(screen.getByRole("status")).toHaveTextContent("Removed Alice from Family");
+      await user.keyboard("{Escape}");
+
+      await chooseAction("Undo Remove from Contact Group");
+      await settle();
+      expect(updateMembersMock).toHaveBeenLastCalledWith(10, { add: [1], remove: [] });
+      expect(screen.getByRole("status")).toHaveTextContent("Added Alice to Family");
+    });
+
+    it("says why an undo's Contact Group was refused, and shows the server's groups after it", async () => {
+      // What the server holds for Alice. The undo's add is refused, and by
+      // then someone else has put her in Work, which neither the optimistic
+      // chips nor the snapshot taken before the request know about.
+      let aliceGroups = ["Family"];
+      listContactsMock.mockImplementation(
+        async () =>
+          ({
+            items: [
+              { id: 1, name: "Alice", identity_count: 1, addresses: [], groups: aliceGroups },
+            ],
+            total: 1,
+            limit: 200,
+            offset: 0,
+          }) as unknown as Awaited<ReturnType<typeof listContacts>>,
+      );
+      listContactGroupsMock.mockResolvedValue([
+        { id: 10, name: "Family" },
+        { id: 11, name: "Work" },
+      ]);
+      updateMembersMock.mockImplementation(async (_id, patch) => {
+        if ((patch.remove ?? []).length > 0) {
+          aliceGroups = [];
+          return { added: 0, removed: 1 };
+        }
+        aliceGroups = ["Work"];
+        throw new ApiError(404, "contact group not found");
+      });
+      const user = setupUser();
+      renderList();
+      await settle();
+      await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
+      await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+      await user.click(screen.getByRole("checkbox", { name: "Family" }));
+      await settle();
+      await user.keyboard("{Escape}");
+
+      await chooseAction("Undo Remove from Contact Group");
+      await settle();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not add Alice to Family: contact group not found",
+      );
+      await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+      expect(screen.getByRole("checkbox", { name: "Family" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Work" })).toBeChecked();
+    });
+
+    it("says why an export failed in the list's banner", async () => {
+      exportMock.mockRejectedValue(new Error("the search has a word Contacts does not know"));
+      renderList();
+      await settle();
+      await chooseAction("Export Contacts");
+      await settle();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "The search has a word Contacts does not know",
+      );
+      expect(saveFile).not.toHaveBeenCalled();
     });
   });
 });

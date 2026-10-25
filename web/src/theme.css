@@ -374,9 +374,29 @@
 
   /*
    * Compact list checkbox: 14px box, check drawn inside instead of the OS glyph.
-   * `Checkbox.tsx` draws it as a span inside React Aria's label (`.mc-check`),
-   * which carries the state as data attributes; the input itself is hidden.
+   * `Checkbox.tsx` draws it as a span inside its label (`.mc-check`), which
+   * carries the state as data attributes. The input lies over the box, the
+   * same size and see-through, so a press on the box lands on the input
+   * itself (#3251).
    */
+  .mc-list-check-frame {
+    position: relative;
+    display: inline-grid;
+  }
+
+  /* Above the box, whose rotated check mark would otherwise paint over it. */
+  .mc-check-input {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+
   .mc-list-check {
     box-sizing: border-box;
     width: 0.875rem;
@@ -389,13 +409,13 @@
     place-content: center;
   }
 
-  .mc-check[data-selected] > .mc-list-check,
-  .mc-check[data-indeterminate] > .mc-list-check {
+  .mc-check[data-selected] .mc-list-check,
+  .mc-check[data-indeterminate] .mc-list-check {
     background-color: var(--accent);
     border-color: var(--accent);
   }
 
-  .mc-check[data-selected] > .mc-list-check::after {
+  .mc-check[data-selected] .mc-list-check::after {
     content: "";
     width: 0.35rem;
     height: 0.2rem;
@@ -405,19 +425,19 @@
     transform: rotate(-45deg);
   }
 
-  .mc-check[data-indeterminate] > .mc-list-check::after {
+  .mc-check[data-indeterminate] .mc-list-check::after {
     content: "";
     width: 0.4rem;
     height: 0;
     border-bottom: 1.5px solid var(--checkbox-check);
   }
 
-  .mc-check[data-disabled] > .mc-list-check {
+  .mc-check[data-disabled] .mc-list-check {
     opacity: 0.4;
   }
 
-  /* The box draws the focus ring the hidden input would have, as :focus-visible above does. */
-  .mc-check[data-focus-visible] > .mc-list-check {
+  /* The box draws the focus ring, as :focus-visible above does, because the input over it is see-through. */
+  .mc-check[data-focus-visible] .mc-list-check {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
   }

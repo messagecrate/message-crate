@@ -25,7 +25,7 @@ async fn an_import_creates_the_contact_with_the_backup_name() {
     let (mut conn, _pool, _dir) = account().await;
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550153', '+15555550153', 'phone', 'imessage') RETURNING id",
+         VALUES ($1, '+15555550153', '+15555550153', 'phone', 'text_message') RETURNING id",
     )
     .bind(TEST_ACCOUNT)
     .fetch_one(&mut *conn)
@@ -60,7 +60,7 @@ async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
     let (mut conn, _pool, _dir) = account().await;
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550160', '+15555550160', 'phone', 'imessage') RETURNING id",
+         VALUES ($1, '+15555550160', '+15555550160', 'phone', 'text_message') RETURNING id",
     )
     .bind(TEST_ACCOUNT)
     .fetch_one(&mut *conn)
@@ -227,7 +227,7 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
 async fn a_fresh_contact_takes_the_number_on_every_service() {
     let (mut conn, _pool, _dir) = account().await;
     let on_whatsapp = insert_handle(&mut conn, "+15555550165", "whatsapp").await;
-    let on_phone = insert_handle(&mut conn, "+15555550165", "phone").await;
+    let on_phone = insert_handle(&mut conn, "+15555550165", "text_message").await;
     let mut counts = ImportCounts::default();
     let old = ensure_contact_for_handle(
         &mut conn,
@@ -761,7 +761,7 @@ async fn a_second_spelling_does_not_rename_anyone() {
     let (mut conn, _pool, _dir) = account().await;
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550162', '+15555550162', 'phone', 'imessage') RETURNING id",
+         VALUES ($1, '+15555550162', '+15555550162', 'phone', 'text_message') RETURNING id",
     )
     .bind(TEST_ACCOUNT)
     .fetch_one(&mut *conn)
@@ -937,7 +937,7 @@ async fn sibling_contact_link_bumps_last_modified_only_on_insert() {
     .unwrap();
     let phone_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'phone') RETURNING id",
+         VALUES ($1, '+15555550100', '+15555550100', 'phone', 'text_message') RETURNING id",
     )
     .bind(TEST_ACCOUNT)
     .fetch_one(&mut *conn)

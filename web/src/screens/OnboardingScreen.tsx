@@ -73,7 +73,7 @@ interface HandleInput {
   service: OfferedService;
 }
 
-function newHandleRow(handle = "", service: OfferedService = "phone"): HandleInput {
+function newHandleRow(handle = "", service: OfferedService = "text_message"): HandleInput {
   return { id: newId(), handle, service };
 }
 
@@ -168,7 +168,7 @@ export default function OnboardingScreen() {
     const shown = listed
       .slice(0, MAX_ACCOUNT_ROWS)
       .map(({ address, service }) =>
-        newHandleRow(address, parseSelectKey(service, OFFERED_SERVICES) ?? "phone"),
+        newHandleRow(address, parseSelectKey(service, OFFERED_SERVICES) ?? "text_message"),
       );
     if (shown.length === 0) return;
     setHiddenIdentities(listed.length - shown.length);

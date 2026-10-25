@@ -85,7 +85,7 @@ async fn either_holds(conn: &mut SqliteConnection, word: &str) -> bool {
 async fn insert_handle(conn: &mut SqliteConnection, account_id: i64, raw: &str) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
+         VALUES ($1, $2, $2, 'phone', 'text_message') RETURNING id",
     )
     .bind(account_id)
     .bind(raw)

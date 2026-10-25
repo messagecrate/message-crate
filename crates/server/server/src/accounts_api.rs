@@ -443,7 +443,7 @@ pub struct LinkAccountIdentityRequest {
     pub address: String,
     /// The service the address is on. The address's shape picks the
     /// identity's type among those the service carries: an address with an
-    /// `@` is an email address on the phone service, and `other` on
+    /// `@` is an email address on Text Message, and `other` on
     /// WhatsApp, such as an internal id `123456789012345@lid`.
     pub service: ApiIdentityService,
 }
@@ -455,7 +455,7 @@ pub struct UnlinkAccountIdentityRequest {
     pub address: String,
     /// The service the address is on. The identity is found as the type
     /// the address takes there: an address with an `@` is an email address
-    /// on the phone service, and `other` on WhatsApp.
+    /// on Text Message, and `other` on WhatsApp.
     pub service: ApiIdentityService,
 }
 

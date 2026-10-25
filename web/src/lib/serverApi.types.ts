@@ -1824,8 +1824,8 @@ export interface components {
             /** @description The number, normalized: E.164 when it parses as one. */
             address: string;
             /**
-             * @description The services the number is an identity under, `phone` (Text Message)
-             *     before `whatsapp`. Never empty.
+             * @description The services the number is an identity under, `text_message` (Text
+             *     Message) before `whatsapp`. Never empty.
              */
             services: components["schemas"]["IdentityService"][];
         };
@@ -1866,10 +1866,10 @@ export interface components {
              */
             address: string;
             /**
-             * @description The service to link it on; the phone service when omitted. The
+             * @description The service to link it on; Text Message when omitted. The
              *     address's shape picks the identity's type among those the service
-             *     carries: an address with an `@` is an email address on the phone
-             *     service, and `other` on WhatsApp.
+             *     carries: an address with an `@` is an email address on Text
+             *     Message, and `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -3289,7 +3289,7 @@ export interface components {
              *     same terms: the three message counts add up to all of its messages.
              */
             orphaned_messages: number;
-            /** @description `phone`, `email`, or `whatsapp`. */
+            /** @description `text_message`, `email`, or `whatsapp`. */
             service: string;
             /**
              * @description When the identity's oldest message was sent, or null when there is
@@ -3329,13 +3329,14 @@ export interface components {
         };
         /**
          * @description The service an identity is on, as a request names it and the profile
-         *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
-         *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
+         *     reports it: `text_message` or `whatsapp`. `text_message` is Text Message,
+         *     which carries SMS, MMS, iMessage and RCS, and reaches an email address
+         *     through iMessage.
          *     The address's shape picks the identity's type among those the service
          *     carries, so an address with an `@` is `other` on WhatsApp.
          * @enum {string}
          */
-        IdentityService: "phone" | "whatsapp";
+        IdentityService: "text_message" | "whatsapp";
         /** @description One contact an import run touched, and what the run did to it. */
         ImportContact: {
             /**
@@ -3690,7 +3691,7 @@ export interface components {
             /**
              * @description The service the address is on. The address's shape picks the
              *     identity's type among those the service carries: an address with an
-             *     `@` is an email address on the phone service, and `other` on
+             *     `@` is an email address on Text Message, and `other` on
              *     WhatsApp, such as an internal id `123456789012345@lid`.
              */
             service: components["schemas"]["IdentityService"];
@@ -4861,7 +4862,7 @@ export interface components {
                  *     same terms: the three message counts add up to all of its messages.
                  */
                 orphaned_messages: number;
-                /** @description `phone`, `email`, or `whatsapp`. */
+                /** @description `text_message`, `email`, or `whatsapp`. */
                 service: string;
                 /**
                  * @description When the identity's oldest message was sent, or null when there is
@@ -5422,7 +5423,7 @@ export interface components {
             address: string;
             /**
              * @description The service the identity is on. When omitted, the identity is found on
-             *     the phone service first, then WhatsApp.
+             *     Text Message first, then WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -5684,7 +5685,7 @@ export interface components {
             merge?: boolean;
             /**
              * @description The service the identity is on. When omitted, the identity is found
-             *     on the phone service first, then WhatsApp.
+             *     on Text Message first, then WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -5760,7 +5761,7 @@ export interface components {
             /**
              * @description The service the address is on. The identity is found as the type
              *     the address takes there: an address with an `@` is an email address
-             *     on the phone service, and `other` on WhatsApp.
+             *     on Text Message, and `other` on WhatsApp.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -5825,7 +5826,7 @@ export interface components {
             /**
              * @description The service of the new address. The previous address is found on
              *     its own service whatever this names: on the named service first when
-             *     it is there under more than one, else the phone service, then
+             *     it is there under more than one, else Text Message, then
              *     WhatsApp. When omitted, the new address takes the service of the
              *     previous one. The new address's shape picks its type among those the
              *     service carries, so an address with an `@` is `other` on WhatsApp.

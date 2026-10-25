@@ -391,6 +391,26 @@ export function ExportIcon({ size, className, ...rest }: IconProps) {
   );
 }
 
+/** Arrow curving back to the left — undo. */
+export function UndoIcon({ size, className, ...rest }: IconProps) {
+  return (
+    <IconShell size={size} className={className} {...rest}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </IconShell>
+  );
+}
+
+/** Arrow curving forward to the right — redo. */
+export function RedoIcon({ size, className, ...rest }: IconProps) {
+  return (
+    <IconShell size={size} className={className} {...rest}>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+    </IconShell>
+  );
+}
+
 /** Open eye — the password is hidden, and pressing shows it. */
 export function EyeIcon({ size, className, ...rest }: IconProps) {
   return (

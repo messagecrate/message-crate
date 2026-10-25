@@ -80,7 +80,7 @@ const anAccount = account({
   username: "bob",
   preferred_name: "Bob Archer",
   time_zone: "America/New_York",
-  phones: [{ address: "+15555550100", services: ["phone"] }],
+  phones: [{ address: "+15555550100", services: ["text_message"] }],
   message_count: 1234,
   storage_bytes: 2048,
 });
@@ -152,7 +152,7 @@ beforeEach(() => {
   listAccountIdentities.mockResolvedValue([
     {
       address: "+15555550100",
-      service: "phone",
+      service: "text_message",
       start_date: "2020-01-01T00:00:00Z",
       end_date: "2020-02-03T00:00:00Z",
       conversations: 2,
@@ -780,7 +780,7 @@ describe("AdminHome", () => {
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
     await settle();
     expect(updateAccount).toHaveBeenCalledWith(101, {
-      remove_identities: [{ address: "+15555550100", service: "phone" }],
+      remove_identities: [{ address: "+15555550100", service: "text_message" }],
     });
     expect(screen.getByText("No identities yet")).toBeInTheDocument();
   });

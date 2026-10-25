@@ -239,8 +239,9 @@ pub async fn set_up_server(
 /// The server settings the administrator controls, with the database's journal
 /// beside them, which the administrator reads and cannot change.
 // The settings are the `db/` read's own struct, flattened in whole, so its
-// fields are written once (`docs/architecture/rules/http-api.md`, "Code"). Inline,
-// and `Api` in Rust, because the `db/` struct has the wire name too.
+// fields are written once (`docs/architecture/rules/http-api.md`, API-135).
+// Inline, and `Api` in Rust, because the `db/` struct has the wire name too
+// (API-130).
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(as = ServerSettings)]
 pub struct ApiServerSettings {

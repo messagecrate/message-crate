@@ -231,11 +231,11 @@ async fn a_refused_contact_edit_answers_422_with_the_persons_sentence() {
     .await;
 }
 
-/// A contact edit takes `phone` or `whatsapp` as a service and refuses any
-/// other word, naming the two. Every other word was read as `phone`, so a
+/// A contact edit takes `text_message` or `whatsapp` as a service and refuses any
+/// other word, naming the two. Every other word was read as Text Message, so a
 /// misspelled `whatsap` put the identity on Text Message without a word (#1630).
 #[tokio::test]
-async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
+async fn a_contact_edit_refuses_a_service_other_than_text_message_or_whatsapp() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     let ada =
@@ -243,7 +243,15 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
     drop(conn);
     let path = format!("/v1/contacts/{ada}");
 
-    for service in ["whatsap", "sms", "imessage", "email", "Phone", ""] {
+    for service in [
+        "whatsap",
+        "sms",
+        "imessage",
+        "email",
+        "phone",
+        "Text_Message",
+        "",
+    ] {
         for body in [
             serde_json::json!({
                 "add_identity": { "address": "+15555550135", "service": service }
@@ -270,7 +278,7 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
             assert!(
                 problem
                     .sentence()
-                    .contains("expected `phone` or `whatsapp`"),
+                    .contains("expected `text_message` or `whatsapp`"),
                 "{service:?}: {text}"
             );
         }
@@ -289,7 +297,7 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
             )
         })
         .collect();
-    assert_eq!(identities, [("+15555550100", "phone")], "{detail}");
+    assert_eq!(identities, [("+15555550100", "text_message")], "{detail}");
 }
 
 /// A contact's name is at most 200 characters and an identity address it
@@ -1284,7 +1292,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
         account,
         "+15555550123",
         IdentityType::Phone,
-        Some("phone"),
+        Some("text_message"),
     )
     .await
     .unwrap();
@@ -1397,7 +1405,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
         account,
         "+15555550123",
         IdentityType::Phone,
-        Some("phone"),
+        Some("text_message"),
     )
     .await
     .unwrap();
@@ -1478,7 +1486,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1529,7 +1537,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: detail.identities[0].address.clone(),
                     address: "sam@example.com".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 remove_identity: None,
                 set_identity_country: None,
@@ -1556,7 +1564,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "sam@example.com".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 set_identity_country: None,
             },
@@ -1629,13 +1637,25 @@ async fn a_handle_takes_its_type_from_its_service_and_address() {
 
     for (raw, service, expected) in [
         ("+15555550138", Some(ApiIdentityService::Whatsapp), "phone"),
-        ("+15555550139", Some(ApiIdentityService::Phone), "phone"),
+        (
+            "+15555550139",
+            Some(ApiIdentityService::TextMessage),
+            "phone",
+        ),
         ("+15555550140", None, "phone"),
-        ("tel:+15555550141", Some(ApiIdentityService::Phone), "phone"),
-        ("ada@example.com", Some(ApiIdentityService::Phone), "email"),
+        (
+            "tel:+15555550141",
+            Some(ApiIdentityService::TextMessage),
+            "phone",
+        ),
+        (
+            "ada@example.com",
+            Some(ApiIdentityService::TextMessage),
+            "email",
+        ),
         ("sam@example.com", None, "email"),
         ("sam", None, "other"),
-        ("sam.lee", Some(ApiIdentityService::Phone), "other"),
+        ("sam.lee", Some(ApiIdentityService::TextMessage), "other"),
         ("sam#1234", Some(ApiIdentityService::Whatsapp), "other"),
     ] {
         add_identity(&mut conn, account, contact_id, raw, service).await;
@@ -1668,7 +1688,7 @@ async fn a_contact_edit_types_a_new_at_address_by_its_service() {
             "add_identity": { "address": "123456789012345@lid", "service": "whatsapp" }
         }),
         serde_json::json!({
-            "add_identity": { "address": "sam@example.com", "service": "phone" }
+            "add_identity": { "address": "sam@example.com", "service": "text_message" }
         }),
         serde_json::json!({
             "add_identity": { "address": "+15555550170", "service": "whatsapp" }
@@ -1693,9 +1713,9 @@ async fn a_contact_edit_types_a_new_at_address_by_its_service() {
     let mut conn = fixture.state.db.acquire().await.unwrap();
     for (address, expected) in [
         ("123456789012345@lid", ("other", "whatsapp")),
-        ("sam@example.com", ("email", "phone")),
+        ("sam@example.com", ("email", "text_message")),
         ("222222222222222@lid", ("other", "whatsapp")),
-        ("sam.lee@example.com", ("email", "phone")),
+        ("sam.lee@example.com", ("email", "text_message")),
     ] {
         assert_eq!(
             handle_type_and_service(&mut conn, account.account_id, address).await,
@@ -1749,8 +1769,8 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
     );
 }
 
-/// Naming a linked number again on the phone service, by a swap to itself
-/// and by a second add, changes nothing: the number stays one row on `phone`,
+/// Naming a linked number again on Text Message, by a swap to itself
+/// and by a second add, changes nothing: the number stays one row on `text_message`,
 /// so the next import or edit that names it finds that row rather than adding
 /// a second one.
 #[tokio::test]
@@ -1764,7 +1784,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
         account,
         contact_id,
         "+15555550143",
-        Some(ApiIdentityService::Phone),
+        Some(ApiIdentityService::TextMessage),
     )
     .await;
 
@@ -1779,7 +1799,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: "+15555550143".into(),
                     address: "+15555550143".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 remove_identity: None,
                 set_identity_country: None,
@@ -1793,7 +1813,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
         account,
         contact_id,
         "+15555550143",
-        Some(ApiIdentityService::Phone),
+        Some(ApiIdentityService::TextMessage),
     )
     .await;
 
@@ -1805,7 +1825,10 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
     .fetch_all(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(rows, [("phone".to_string(), Some("phone".to_string()))]);
+    assert_eq!(
+        rows,
+        [("phone".to_string(), Some("text_message".to_string()))]
+    );
 }
 
 /// A contact holding only `+15555550100` on WhatsApp.
@@ -1888,7 +1911,7 @@ async fn contact_identities(
 
 /// With no service in the request, the new identity takes the service of the
 /// one it replaces: a WhatsApp contact stays on WhatsApp rather than moving
-/// onto the phone service and leaving its WhatsApp conversations Unknown.
+/// onto Text Message and leaving its WhatsApp conversations Unknown.
 #[tokio::test]
 async fn replacing_an_identity_with_no_service_keeps_its_service() {
     let fixture = test_fixture().await;
@@ -1906,7 +1929,7 @@ async fn replacing_an_identity_with_no_service_keeps_its_service() {
 
 /// A request that names a service replaces the identity on that service and
 /// puts the new one there, even when the contact holds the same number on
-/// the phone service, which a request with no service would pick first.
+/// Text Message, which a request with no service would pick first.
 #[tokio::test]
 async fn replacing_an_identity_under_a_service_uses_that_service() {
     let fixture = test_fixture().await;
@@ -1918,7 +1941,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
         account,
         contact_id,
         "+15555550100",
-        Some(ApiIdentityService::Phone),
+        Some(ApiIdentityService::TextMessage),
     )
     .await;
 
@@ -1933,7 +1956,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
     assert_eq!(
         contact_identities(&mut conn, account, contact_id).await,
         [
-            ("+15555550100".to_string(), "phone".to_string()),
+            ("+15555550100".to_string(), "text_message".to_string()),
             ("+15555550101".to_string(), "whatsapp".to_string()),
         ]
     );
@@ -1955,14 +1978,14 @@ async fn replacing_an_identity_under_another_service_moves_it_there() {
         account,
         contact_id,
         "+15555550102",
-        Some(ApiIdentityService::Phone),
+        Some(ApiIdentityService::TextMessage),
     )
     .await;
 
     assert!(matches!(answer, Ok(true)), "{answer:?}");
     assert_eq!(
         contact_identities(&mut conn, account, contact_id).await,
-        [("+15555550102".to_string(), "phone".to_string())]
+        [("+15555550102".to_string(), "text_message".to_string())]
     );
 }
 
@@ -2122,7 +2145,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -2146,7 +2169,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -2173,7 +2196,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(ApiIdentityService::Phone),
+                    service: Some(ApiIdentityService::TextMessage),
                 }),
                 set_identity_country: None,
             },

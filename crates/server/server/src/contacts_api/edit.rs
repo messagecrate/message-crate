@@ -232,7 +232,7 @@ impl ContactEditor<'_> {
         }
         let platform = add
             .service
-            .map_or(IdentityService::Phone, IdentityService::from);
+            .map_or(IdentityService::TextMessage, IdentityService::from);
         let handle_id = self.handle_row(raw, platform).await?;
         match self.claim(handle_id).await? {
             // Already linked: no address-book change.

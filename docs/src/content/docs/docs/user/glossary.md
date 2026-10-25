@@ -33,7 +33,7 @@ Short definitions of terms used in the User Guide. Command flags and vendor fiel
 
 **XML** — The SyncTech SMS Backup & Restore format (`smses.xml`), used by Android backup and restore tools.
 
-**Address Book** — Message Crate's own CSV file of contacts and their identities, one row per identity. **Export** on the Contacts screen writes it, and **Settings** loads it back after editing. [Contacts](/docs/user/features/contacts/contacts/#the-address-book) describes it. A phone's vCard (`.vcf`) file is not an Address Book and is never loaded, but **Convert a vCard file** under **Settings** writes an Address Book from one for editing.
+**Address Book** — Message Crate's own CSV file of contacts and their identities, one row per identity. **Export Contacts** on the Contacts list's ⋯ menu writes it, and **Settings** loads it back after editing. [Contacts](/docs/user/features/contacts/contacts/#the-address-book) describes it. A phone's vCard (`.vcf`) file is not an Address Book and is never loaded, but **Convert a vCard file** under **Settings** writes an Address Book from one for editing.
 
 **E.164** — The international phone number format, for example `+15555550100`.
 

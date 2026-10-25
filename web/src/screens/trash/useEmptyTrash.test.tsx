@@ -9,9 +9,11 @@
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import ContactHistoryProvider from "../../components/ContactHistoryProvider";
+import { useContactHistory } from "../../hooks/useContactHistory";
 import { keys } from "../../lib/queryKeys";
 import {
   deleteContact as deleteContactRoute,
@@ -20,7 +22,7 @@ import {
   restoreContact as restoreContactRoute,
   restoreConversation as restoreConversationRoute,
 } from "../../lib/serverApi";
-import { authModule, testQueryClient } from "../../test/providers";
+import { testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import {
   useDeleteContact,
@@ -30,7 +32,9 @@ import {
   useRestoreConversation,
 } from "./useEmptyTrash";
 
-vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
+vi.mock("../../hooks/useAuth", async () =>
+  (await import("../../test/providers")).authModule({ accountId: 7 }),
+);
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -39,6 +43,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   restoreContact: vi.fn(),
   deleteContact: vi.fn(),
   emptyTrash: vi.fn(),
+  trashContact: vi.fn(),
 }));
 
 const restoreConversation = vi.mocked(restoreConversationRoute);
@@ -167,5 +172,36 @@ describe("useEmptyTrash", () => {
 
     expect(emptyTrash).toHaveBeenCalledTimes(1);
     expect(fresh).toEqual([]);
+  });
+});
+
+describe("the Contacts list's Undo stack", () => {
+  function historyWrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={client}>
+        <ContactHistoryProvider>{children}</ContactHistoryProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it.each([
+    ["deleting a contact for good", () => useDeleteContact(), 7],
+    ["deleting a conversation for good", () => useDeleteConversation(), 7],
+    ["emptying the Trash", () => useEmptyTrash(), undefined],
+  ] as const)("is forgotten after %s, and kept after a restore", async (_name, useDelete, arg) => {
+    deleteContact.mockResolvedValue(undefined);
+    deleteConversation.mockResolvedValue(undefined);
+    emptyTrash.mockResolvedValue(undefined);
+    restoreContact.mockResolvedValue(undefined);
+    const { result } = renderHook(
+      () => ({ history: useContactHistory(), restore: useRestoreContact(), del: useDelete() }),
+      { wrapper: historyWrapper },
+    );
+    await act(() => result.current.history.deleteContacts([{ id: 7, label: "Mother" }]));
+    await act(() => result.current.restore.mutateAsync(9));
+    expect(result.current.history.undoEntry).not.toBeNull();
+
+    await act(() => (result.current.del.mutateAsync as (v: unknown) => Promise<void>)(arg));
+    expect(result.current.history.undoEntry).toBeNull();
   });
 });

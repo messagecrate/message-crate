@@ -2659,7 +2659,7 @@ describe("useImportJob wiring", () => {
     it("stops at identity_stop when nothing the backup sent from is on the profile", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
       setProfile({
-        phones: [{ address: "+15555550180", services: ["phone"] }],
+        phones: [{ address: "+15555550180", services: ["text_message"] }],
         emails: [],
       });
       const { result } = renderJob();
@@ -2676,7 +2676,7 @@ describe("useImportJob wiring", () => {
     it("continueAfterIdentityStop proceeds and sends the identities on the run", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
       setProfile({
-        phones: [{ address: "+15555550180", services: ["phone"] }],
+        phones: [{ address: "+15555550180", services: ["text_message"] }],
         emails: [],
       });
       const { result } = renderJob();
@@ -2708,7 +2708,7 @@ describe("useImportJob wiring", () => {
     it("proceeds without a stop when an identity matches, sending the list", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
       setProfile({
-        phones: [{ address: "+1 555 555 0110", services: ["phone"] }],
+        phones: [{ address: "+1 555 555 0110", services: ["text_message"] }],
         emails: [],
       });
       const { result } = renderJob();
@@ -3852,7 +3852,7 @@ describe("one desktop app, two accounts (#1085)", () => {
   it("does not offer account A's parked form to account B", async () => {
     invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
     setProfile({
-      phones: [{ address: "+15555550116", services: ["phone"] }],
+      phones: [{ address: "+15555550116", services: ["text_message"] }],
       emails: [],
     });
     const a = renderJob();

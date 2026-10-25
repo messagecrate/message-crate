@@ -22,6 +22,17 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-24: **A ⋯ menu on the Contacts list, with Undo and Redo.** The
+  loose **Export** link beside the sort button is now a ⋯ menu. Its header
+  says what it acts on: the checked contacts, the list a search or Contact
+  Group narrows, or all contacts. **Export Contacts** saves the address
+  book as before. **Delete Contacts** moves the checked contacts to the
+  Trash after asking, and Restore there brings them back. Deleting
+  contacts and changing their Contact Groups from the list can be undone
+  with **Undo** on the menu, the toast at the bottom of the window, or
+  Ctrl+Z (Cmd+Z on macOS), and redone with **Redo**, Ctrl+Shift+Z or
+  Ctrl+Y. The last 20 actions are kept until the page reloads, the account
+  logs out, or something is deleted for good (#3244, #3234).
 - 2026-10-16: **Open an Audit Trail entry's lines in the server's log.**
   Each entry on Admin Home's **Audit Trail** that a request made has a
   **View in log** link. It opens **Logs** on the server's log at every level
@@ -265,6 +276,12 @@ carry their date on the heading.
   account created without a password, or whose password was cleared, could
   log in with an empty one. It is now refused like any wrong password until
   the administrator sets a password for it under the account's Settings.
+- 2026-10-24: **Text Message has its own name inside Message Crate.** The
+  service the screens call Text Message was stored and sent under the word
+  for a phone number, which every phone number on it also carries. It is now
+  stored and sent as `text_message`. Nothing on screen changes. The database
+  format changed: an existing Message Crate is rebuilt empty on first start
+  and its messages must be imported again (#3086).
 - 2026-10-24: **The Import form checks its fields as you type.** Max FPS
   takes a whole number from 1 to 240 and Minimum Video File Size one from 1
   to 1,048,576 megabytes; either can stay empty, which keeps each video's
@@ -992,6 +1009,14 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-24: **Finishing an import holds up the rest of the server for
+  less time.** The duplicate check that runs when an import finishes
+  rewrote every message of the account before it hid the duplicates again.
+  It now touches only the messages hidden as duplicates. On an account of about
+  636,000 messages the check takes about 9 s in place of 15 s, and about
+  75 s in place of 119 s on a computer five times slower, so a login or a
+  settings change made meanwhile waits less, and is turned away less often
+  as busy (#3256).
 - 2026-10-16: **A later iMazing export keeps a second reaction with the
   same emoji.** iMazing reactions keep only their emoji, so two people's 👍
   on one message looked alike. When an export holding Bob's 👍 was imported
@@ -1607,6 +1632,12 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-24: **Undo of a Contact Group change says why it was refused.**
+  When Undo or Redo of a Contact Group change on the Contacts list was
+  refused for some Contact Groups, the line above the list said only how
+  many. It now names each of those Contact Groups on a line of its own with
+  the reason, so a Contact Group deleted meanwhile reads differently from a
+  lost connection (#3252).
 - 2026-10-16: **A vCard name in another character set converts as written.**
   Convert a vCard file reads a name in the character set the card names,
   such as Shift_JIS from a Japanese Android phone, or Windows-1252, whose €
@@ -1676,6 +1707,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-25: **A request that lists the answers it accepts on two lines
+  is answered.** A program talking to the server can send the kinds of
+  answer it accepts over several lines, and some programs and proxies do.
+  The server read only the first line, so a request whose first line named
+  only web pages was turned away even when a later line accepted the
+  server's answer. It now reads every line as one list (#3236).
 - 2026-10-16: **A download nobody reads no longer holds the server.** A
   client that stopped reading an answer part-way, such as a browser tab that
   hung mid-download, kept its connection, and the export file or attachment
@@ -2008,6 +2045,9 @@ carry their date on the heading.
   command; run `set-admin-password`. It reads the password from its input,
   for example `printf '%s\n' "$PASSWORD" | message-crate-server
   set-admin-password`; with `docker exec`, add `-it` to type it when asked.
+- 2026-10-24: A program that adds or reads identities through your Message
+  Crate's HTTP API must name Text Message `text_message` where it named it
+  `phone`. The server refuses `phone` as a service (#3086).
 - 2026-10-16: A conversation file written by an earlier build is refused
   when you import it. Read the backup again with this build to write a file
   the import takes (#3094).

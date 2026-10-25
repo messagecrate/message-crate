@@ -13796,7 +13796,7 @@
             "items": {
               "$ref": "#/components/schemas/IdentityService"
             },
-            "description": "The services the number is an identity under, `phone` (Text Message)\nbefore `whatsapp`. Never empty."
+            "description": "The services the number is an identity under, `text_message` (Text\nMessage) before `whatsapp`. Never empty."
           }
         }
       },
@@ -13860,7 +13860,7 @@
                 "type": "null"
               }
             ],
-            "description": "The service to link it on; the phone service when omitted. The\naddress's shape picks the identity's type among those the service\ncarries: an address with an `@` is an email address on the phone\nservice, and `other` on WhatsApp."
+            "description": "The service to link it on; Text Message when omitted. The\naddress's shape picks the identity's type among those the service\ncarries: an address with an `@` is an email address on Text\nMessage, and `other` on WhatsApp."
           }
         }
       },
@@ -16129,7 +16129,7 @@
           },
           "service": {
             "type": "string",
-            "description": "`phone`, `email`, or `whatsapp`."
+            "description": "`text_message`, `email`, or `whatsapp`."
           },
           "start_date": {
             "type": [
@@ -16206,9 +16206,9 @@
       },
       "IdentityService": {
         "type": "string",
-        "description": "The service an identity is on, as a request names it and the profile\nreports it: `phone` or `whatsapp`. `phone` is Text Message, which carries\nSMS, MMS, iMessage and RCS, and reaches an email address through iMessage.\nThe address's shape picks the identity's type among those the service\ncarries, so an address with an `@` is `other` on WhatsApp.",
+        "description": "The service an identity is on, as a request names it and the profile\nreports it: `text_message` or `whatsapp`. `text_message` is Text Message,\nwhich carries SMS, MMS, iMessage and RCS, and reaches an email address\nthrough iMessage.\nThe address's shape picks the identity's type among those the service\ncarries, so an address with an `@` is `other` on WhatsApp.",
         "enum": [
-          "phone",
+          "text_message",
           "whatsapp"
         ]
       },
@@ -16760,7 +16760,7 @@
           },
           "service": {
             "$ref": "#/components/schemas/IdentityService",
-            "description": "The service the address is on. The address's shape picks the\nidentity's type among those the service carries: an address with an\n`@` is an email address on the phone service, and `other` on\nWhatsApp, such as an internal id `123456789012345@lid`."
+            "description": "The service the address is on. The address's shape picks the\nidentity's type among those the service carries: an address with an\n`@` is an email address on Text Message, and `other` on\nWhatsApp, such as an internal id `123456789012345@lid`."
           }
         }
       },
@@ -18913,7 +18913,7 @@
                 },
                 "service": {
                   "type": "string",
-                  "description": "`phone`, `email`, or `whatsapp`."
+                  "description": "`text_message`, `email`, or `whatsapp`."
                 },
                 "start_date": {
                   "type": [
@@ -19900,7 +19900,7 @@
                 "type": "null"
               }
             ],
-            "description": "The service the identity is on. When omitted, the identity is found on\nthe phone service first, then WhatsApp."
+            "description": "The service the identity is on. When omitted, the identity is found on\nText Message first, then WhatsApp."
           }
         }
       },
@@ -20268,7 +20268,7 @@
                 "type": "null"
               }
             ],
-            "description": "The service the identity is on. When omitted, the identity is found\non the phone service first, then WhatsApp."
+            "description": "The service the identity is on. When omitted, the identity is found\non Text Message first, then WhatsApp."
           }
         }
       },
@@ -20417,7 +20417,7 @@
           },
           "service": {
             "$ref": "#/components/schemas/IdentityService",
-            "description": "The service the address is on. The identity is found as the type\nthe address takes there: an address with an `@` is an email address\non the phone service, and `other` on WhatsApp."
+            "description": "The service the address is on. The identity is found as the type\nthe address takes there: an address with an `@` is an email address\non Text Message, and `other` on WhatsApp."
           }
         }
       },
@@ -20532,7 +20532,7 @@
                 "type": "null"
               }
             ],
-            "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. The new address's shape picks its type among those the\nservice carries, so an address with an `@` is `other` on WhatsApp."
+            "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else Text Message, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. The new address's shape picks its type among those the\nservice carries, so an address with an `@` is `other` on WhatsApp."
           }
         }
       },

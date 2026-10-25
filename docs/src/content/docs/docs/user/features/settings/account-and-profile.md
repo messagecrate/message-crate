@@ -203,7 +203,7 @@ The administrator has no **My Identities** section, because the administrator ho
 
 ### Address book
 
-The Address Book is a CSV file of contacts, written by **Export** on the Contacts screen and loaded back here after editing.
+The Address Book is a CSV file of contacts, written by **Export Contacts** on the Contacts list's ⋯ menu and loaded back here after editing.
 
 **How to load it** offers **Append**, which adds and renames and removes nothing, and **Edit**, which also makes each contact in the file match its rows.
 **Choose a file** loads a `.csv` file of at most 8 MB.

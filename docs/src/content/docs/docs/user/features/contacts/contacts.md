@@ -140,6 +140,31 @@ Changing the search or opening a Contact Group unchecks every row, because the c
 The **Contact Groups** button in the toolbar puts the checked contacts, or the one open contact, in and out of groups.
 [Contact Groups](/docs/user/features/contacts/contact-groups/) describes it.
 
+## The actions menu
+
+The ⋯ button beside the sort button above the list opens the list's actions.
+Its first section is headed with what the actions work on: **2 selected** with rows checked, **This list** with a search or a Contact Group open, and **All contacts** otherwise.
+
+- **Export Contacts** saves the Address Book for those contacts ([Export the file](#export-the-file)).
+- **Delete Contacts** moves the checked contacts to the Trash, after asking, such as **Move 3 contacts to Trash?**. It is gray with no row checked. Nothing is deleted for good: **Restore** in the Trash brings a contact back.
+- **Undo** and **Redo** come last ([Undo and Redo](#undo-and-redo)).
+
+## Undo and Redo
+
+Moving contacts to the Trash with **Delete Contacts**, and putting contacts in or out of a Contact Group from the list, can be undone.
+After each one a message at the bottom of the window says what happened, such as **Moved 3 contacts to Trash**, with an **Undo** button.
+It goes after 20 seconds, on its ×, or when the next action replaces it.
+
+**Undo** and **Redo** on the ⋯ menu are named after the action they reverse or repeat, such as **Undo Delete Contacts**, and are gray when there is nothing to undo or redo.
+Ctrl+Z undoes, and Ctrl+Shift+Z or Ctrl+Y redoes.
+On macOS, Cmd takes the place of Ctrl.
+The keys work while the Contacts list is open and the cursor is not in a text field, so the search box keeps its own undo.
+They do nothing while a menu or a dialog such as **Move 3 contacts to Trash?** is open, so the list never changes under it.
+
+The last 20 actions are kept.
+They are forgotten when the page reloads, on logging out, and when anything is deleted for good, because an undo brings contacts back from the Trash.
+An undo that another window has made impossible, such as restoring a contact deleted for good there, says what it could and could not do above the list.
+
 ## What an import does to contacts
 
 An import makes a contact for every person it meets.
@@ -192,11 +217,10 @@ A phone's or Google Contacts' vCard file can start the same work: [Convert a vCa
 
 ### Export the file
 
-**Export** sits above the Contacts list, beside the sort menu.
-It writes the contacts the list is showing:
+**Export Contacts** on the ⋯ [actions menu](#the-actions-menu) above the Contacts list writes the contacts the list is showing:
 
 - With rows checked, the file holds the checked contacts.
-- With a search or a Contact Group open, the file holds the contacts that match. **Unknown** in the left panel followed by **Export** gives a file of every contact that still needs a name.
+- With a search or a Contact Group open, the file holds the contacts that match. **Unknown** in the left panel followed by **Export Contacts** gives a file of every contact that still needs a name.
 - With neither, the file holds every contact.
 
 The file is named `address-book.csv`.

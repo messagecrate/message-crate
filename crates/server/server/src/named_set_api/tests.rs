@@ -39,7 +39,7 @@ impl Kind {
             Kind::Tags => {
                 let handle_id: i64 = sqlx::query_scalar(
                     "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-                     VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
+                     VALUES ($1, $2, $2, 'phone', 'text_message') RETURNING id",
                 )
                 .bind(account_id)
                 .bind(format!("+1555{}", rand_suffix()))

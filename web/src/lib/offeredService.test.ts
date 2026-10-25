@@ -12,14 +12,18 @@ import {
 } from "./offeredService";
 
 describe("offeredService", () => {
-  it("lists phone, email, whatsapp for profile/onboarding", () => {
-    expect([...OFFERED_SERVICES]).toEqual(["phone", "email", "whatsapp"]);
-    expect(OFFERED_SERVICE_OPTIONS.map((o) => o.value)).toEqual(["phone", "email", "whatsapp"]);
+  it("lists text_message, email, whatsapp for profile/onboarding", () => {
+    expect([...OFFERED_SERVICES]).toEqual(["text_message", "email", "whatsapp"]);
+    expect(OFFERED_SERVICE_OPTIONS.map((o) => o.value)).toEqual([
+      "text_message",
+      "email",
+      "whatsapp",
+    ]);
   });
 
   it("infers email and phone from handle when service empty", () => {
     expect(inferService("a@example.com", null)).toBe("email");
-    expect(inferService("+1 (555) 555-0119", "")).toBe("phone");
+    expect(inferService("+1 (555) 555-0119", "")).toBe("text_message");
     expect(inferService("alice", null)).toBe("unknown");
   });
 
@@ -36,21 +40,21 @@ describe("offeredService", () => {
 });
 
 describe("serverService", () => {
-  it("sends an email address on the phone service, and WhatsApp as WhatsApp", () => {
-    expect(serverService("phone")).toBe("phone");
-    expect(serverService("email")).toBe("phone");
+  it("sends an email address on Text Message, and WhatsApp as WhatsApp", () => {
+    expect(serverService("text_message")).toBe("text_message");
+    expect(serverService("email")).toBe("text_message");
     expect(serverService("whatsapp")).toBe("whatsapp");
   });
 });
 
 describe("listedServerService", () => {
   it("reads the list's three services and names none for any other word", () => {
-    expect(listedServerService("phone")).toBe("phone");
-    expect(listedServerService("email")).toBe("phone");
+    expect(listedServerService("text_message")).toBe("text_message");
+    expect(listedServerService("email")).toBe("text_message");
     expect(listedServerService("whatsapp")).toBe("whatsapp");
-    // Read as phone, a word the server does not take would move or miss the
+    // Read as Text Message, a word the server does not take would move or miss the
     // identity without a word (#1630).
-    for (const word of ["sms", "whatsap", "unknown", "", null, undefined]) {
+    for (const word of ["phone", "sms", "whatsap", "unknown", "", null, undefined]) {
       expect(listedServerService(word)).toBeUndefined();
     }
   });
@@ -58,7 +62,7 @@ describe("listedServerService", () => {
 
 describe("identityPlaceholder", () => {
   it("gives each service its own example", () => {
-    expect(identityPlaceholder("phone")).toBe("+1 555-555-0119");
+    expect(identityPlaceholder("text_message")).toBe("+1 555-555-0119");
     expect(identityPlaceholder("email")).toBe("you@example.com");
     expect(identityPlaceholder("whatsapp")).toBe("+1 555-555-0119");
   });
@@ -70,19 +74,21 @@ describe("identityPlaceholder", () => {
   });
 
   it("calls a phone number what the contact drawer calls it", () => {
-    expect(OFFERED_SERVICE_OPTIONS.find((o) => o.value === "phone")?.label).toBe("Text Message");
+    expect(OFFERED_SERVICE_OPTIONS.find((o) => o.value === "text_message")?.label).toBe(
+      "Text Message",
+    );
   });
 });
 
 describe("identityValidationError", () => {
   it("passes an empty value, which is a row not filled in yet", () => {
-    expect(identityValidationError("phone", "")).toBeNull();
+    expect(identityValidationError("text_message", "")).toBeNull();
     expect(identityValidationError("email", "   ")).toBeNull();
   });
 
   it("accepts the separators people actually type in a number", () => {
-    expect(identityValidationError("phone", "+1 555-555-0119")).toBeNull();
-    expect(identityValidationError("phone", "(555) 555.0119")).toBeNull();
+    expect(identityValidationError("text_message", "+1 555-555-0119")).toBeNull();
+    expect(identityValidationError("text_message", "(555) 555.0119")).toBeNull();
     expect(identityValidationError("whatsapp", "+44 20 7946 0958")).toBeNull();
   });
 
@@ -91,9 +97,9 @@ describe("identityValidationError", () => {
     // of type other, and a short code as its digits (#2709), so refusing them
     // here only stops a person adding what an import already adds (#3090).
     expect(identityValidationError("whatsapp", "123456789012345@lid")).toBeNull();
-    expect(identityValidationError("phone", "sam")).toBeNull();
-    expect(identityValidationError("phone", "AMAZON")).toBeNull();
-    expect(identityValidationError("phone", "72975")).toBeNull();
+    expect(identityValidationError("text_message", "sam")).toBeNull();
+    expect(identityValidationError("text_message", "AMAZON")).toBeNull();
+    expect(identityValidationError("text_message", "72975")).toBeNull();
   });
 
   it("refuses a value longer than the server keeps, on every service", () => {
@@ -103,7 +109,7 @@ describe("identityValidationError", () => {
     expect(longest).toHaveLength(320);
     expect(identityValidationError("email", longest)).toBeNull();
     expect(identityValidationError("whatsapp", "😀".repeat(320))).toBeNull();
-    for (const service of ["phone", "whatsapp", "email"] as const) {
+    for (const service of ["text_message", "whatsapp", "email"] as const) {
       expect(identityValidationError(service, `${longest}x`)).toBe(
         "An identity can be at most 320 characters.",
       );
@@ -119,13 +125,13 @@ describe("identityValidationError", () => {
 
 describe("identityDuplicateKey", () => {
   it("has no key for a value with nothing to compare", () => {
-    expect(identityDuplicateKey("phone", "")).toBeNull();
+    expect(identityDuplicateKey("text_message", "")).toBeNull();
     expect(identityDuplicateKey("email", "   ")).toBeNull();
   });
 
   it("matches the same number however it was typed", () => {
-    expect(identityDuplicateKey("phone", "+1 (555) 555-0119")).toBe(
-      identityDuplicateKey("phone", "+15555550119"),
+    expect(identityDuplicateKey("text_message", "+1 (555) 555-0119")).toBe(
+      identityDuplicateKey("text_message", "+15555550119"),
     );
   });
 
@@ -136,7 +142,7 @@ describe("identityDuplicateKey", () => {
   });
 
   it("keeps the same number on two services apart, because that is two accounts", () => {
-    expect(identityDuplicateKey("phone", "+15555550119")).not.toBe(
+    expect(identityDuplicateKey("text_message", "+15555550119")).not.toBe(
       identityDuplicateKey("whatsapp", "+15555550119"),
     );
   });
@@ -144,8 +150,8 @@ describe("identityDuplicateKey", () => {
   it("does not fold a number written with and without its country code", () => {
     // Deliberate: guessing at country codes would let this refuse two numbers
     // that really are different.
-    expect(identityDuplicateKey("phone", "+1 555-555-0119")).not.toBe(
-      identityDuplicateKey("phone", "555-555-0119"),
+    expect(identityDuplicateKey("text_message", "+1 555-555-0119")).not.toBe(
+      identityDuplicateKey("text_message", "555-555-0119"),
     );
   });
 
@@ -160,7 +166,9 @@ describe("identityDuplicateKey", () => {
   });
 
   it("matches a sender name regardless of case", () => {
-    expect(identityDuplicateKey("phone", "AMAZON")).toBe(identityDuplicateKey("phone", "amazon"));
+    expect(identityDuplicateKey("text_message", "AMAZON")).toBe(
+      identityDuplicateKey("text_message", "amazon"),
+    );
   });
 
   it("separates two different accounts", () => {

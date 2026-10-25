@@ -28,8 +28,8 @@ pub struct AccountProfile {
 pub struct AccountPhone {
     /// The number, normalized: E.164 when it parses as one.
     pub address: String,
-    /// The services the number is an identity under, `phone` (Text Message)
-    /// before `whatsapp`. Never empty.
+    /// The services the number is an identity under, `text_message` (Text
+    /// Message) before `whatsapp`. Never empty.
     pub services: Vec<ApiIdentityService>,
 }
 
@@ -171,7 +171,7 @@ pub async fn is_account_identity(
 }
 
 /// The id of the account's own identity shown as `address` on `service`,
-/// or on the phone service first and then WhatsApp when `service` is `None`.
+/// or on Text Message first and then WhatsApp when `service` is `None`.
 /// A row keyed `address` comes before one only written that way, so a
 /// number whose country is unknown is found before the `+` form a run in a
 /// stated country gave the same digits.
@@ -190,12 +190,13 @@ pub async fn account_identity_id(
          JOIN handles h ON h.id = ah.handle_id
          WHERE ah.account_id = $1 AND (h.raw = $2 OR h.normalized = $2)
            AND ($3 IS NULL OR h.service = $3)
-         ORDER BY h.normalized = $2 DESC, CASE h.service WHEN 'phone' THEN 0 ELSE 1 END
+         ORDER BY h.normalized = $2 DESC, CASE h.service WHEN $4 THEN 0 ELSE 1 END
          LIMIT 1",
     )
     .bind(account_id)
     .bind(address.trim())
     .bind(service.map(IdentityService::as_str))
+    .bind(IdentityService::TextMessage.as_str())
     .fetch_optional(&mut *conn)
     .await
     .context("find the account's identity at an address")
@@ -1095,7 +1096,7 @@ mod tests {
             profile.phones,
             vec![AccountPhone {
                 address: "+15555550100".to_string(),
-                services: vec![ApiIdentityService::Phone],
+                services: vec![ApiIdentityService::TextMessage],
             }]
         );
     }
@@ -1326,7 +1327,7 @@ mod tests {
             loaded.phones,
             vec![AccountPhone {
                 address: "+15555550100".to_string(),
-                services: vec![ApiIdentityService::Phone],
+                services: vec![ApiIdentityService::TextMessage],
             }]
         );
         assert_eq!(
