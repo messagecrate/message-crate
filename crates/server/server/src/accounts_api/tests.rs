@@ -2502,6 +2502,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
         serde_json::json!([
             {
                 "address": "+15555550100",
+                "identity_type": "phone",
                 "service": "text_message",
                 "country_unknown": false,
                 "start_date": "2020-01-01T00:00:00.000Z",
@@ -2513,6 +2514,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
             },
             {
                 "address": "alice@example.com",
+                "identity_type": "email",
                 "service": "email",
                 "country_unknown": false,
                 "start_date": "2020-02-03T00:00:00.000Z",

@@ -15,6 +15,7 @@ vi.mock("../../hooks/useUpdateContact", () => ({
 function row(address: string, service: string): ContactHandle {
   return {
     address,
+    identity_type: service === "email" ? "email" : "phone",
     service,
     start_date: null,
     end_date: null,

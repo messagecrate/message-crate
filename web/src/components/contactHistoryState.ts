@@ -1,5 +1,10 @@
 import { createContext } from "react";
-import type { HistoryAction, HistoryContact, HistoryEntry } from "../lib/contactHistory";
+import type {
+  HistoryAction,
+  HistoryContact,
+  HistoryEntry,
+  MergedContact,
+} from "../lib/contactHistory";
 
 /** The toast after an action, an undo or a redo. A new `id` restarts its timer. */
 export type HistoryToast = {
@@ -24,6 +29,12 @@ export type ContactHistory = {
   push: (action: HistoryAction) => void;
   /** Move these contacts to the Trash one by one, and record the ones that went. */
   deleteContacts: (contacts: HistoryContact[]) => Promise<void>;
+  /**
+   * Merge `merged` into `target`, and record the merge when it went through.
+   * Answers what the server refused it with, or null when it went through or
+   * another run was already in flight.
+   */
+  mergeContacts: (target: HistoryContact, merged: MergedContact[]) => Promise<Error | null>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
   /** Forget every entry, as a delete for good does. */

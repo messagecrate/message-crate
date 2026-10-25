@@ -376,7 +376,7 @@ CREATE INDEX IF NOT EXISTS ix_export_messages_message
 -- flags without the write lock, then takes the lock and applies them only
 -- when the count is the one it read before it started, so no write it did
 -- not see has landed in between
--- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-57).
+-- (docs/architecture/rules/contacts-identities-and-messages.md, CONTACT-58).
 -- The dedupe reads messages, their conversations, participants and
 -- attachments, the identities (handles) they name, and the account's own
 -- identities (account_handles). An UPDATE trigger names the columns it

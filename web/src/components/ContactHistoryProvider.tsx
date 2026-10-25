@@ -17,11 +17,14 @@ import {
   type HistoryEvent,
   type HistoryStacks,
   historyReducer,
+  type MergedContact,
+  mergeFailureText,
+  notRestoredText,
   type RefusedGroupChange,
   trashFailureText,
   undoneText,
 } from "../lib/contactHistory";
-import { restoreContact, trashContact } from "../lib/serverApi";
+import { mergeContacts, restoreContact, trashContact, unmergeContacts } from "../lib/serverApi";
 import ContactHistoryToast from "./ContactHistoryToast";
 import {
   type ContactHistory,
@@ -35,7 +38,17 @@ type RunOutcome = {
   done: HistoryAction | null;
   /** What the error banner says about the requests that failed, or null when none did. */
   failure: string | null;
+  /** A sentence the toast adds after the words for `done`, or null. */
+  note: string | null;
 };
+
+/** Send Merge Contacts' merge for `action`, as it first ran and as its redo. */
+function sendMerge(action: Extract<HistoryAction, { kind: "merge" }>) {
+  return mergeContacts(
+    action.target.id,
+    action.merged.map((c) => c.id),
+  );
+}
 
 type RunVars = { action: HistoryAction; direction: HistoryDirection };
 
@@ -97,6 +110,28 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
   // show what the run did.
   const runMutation = useRouteMutation<RunOutcome, Error, RunVars>({
     mutationFn: async ({ action, direction }) => {
+      if (action.kind === "merge") {
+        // One request either way, and the server runs it whole or not at all.
+        try {
+          if (direction === "do") {
+            await sendMerge(action);
+            return { done: action, failure: null, note: null };
+          }
+          // A contact with no name and nothing left on the target is not
+          // written back, so the undo names only the ones the server restored.
+          const { restored } = await unmergeContacts(action.target.id);
+          const back = new Set(restored);
+          const merged = action.merged.filter((c) => back.has(c.id));
+          const gone = action.merged.length - merged.length;
+          return {
+            done: merged.length > 0 ? { ...action, merged } : null,
+            failure: null,
+            note: gone > 0 ? notRestoredText(gone) : null,
+          };
+        } catch (err) {
+          return { done: null, failure: mergeFailureText(direction, errorText(err)), note: null };
+        }
+      }
       if (action.kind === "trash") {
         const send = direction === "do" ? trashContact : restoreContact;
         const went: HistoryContact[] = [];
@@ -112,6 +147,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         return {
           done: went.length > 0 ? { kind: "trash", contacts: went } : null,
           failure: failed > 0 ? trashFailureText(direction, went.length, failed) : null,
+          note: null,
         };
       }
       const op = groupOp(action, direction);
@@ -133,10 +169,20 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
       return {
         done: went.length > 0 ? { ...action, changes: went } : null,
         failure: refused.length > 0 ? groupFailureText(op, went, refused) : null,
+        note: null,
       };
     },
   });
   const run = runMutation.mutateAsync;
+  // Merge Contacts sends its merge itself, so the dialog can show a refusal
+  // with the server's reason and stay open for another try.
+  const runMergeMutation = useRouteMutation<void, Error, Extract<HistoryAction, { kind: "merge" }>>(
+    {
+      mutationFn: async (action) => {
+        await sendMerge(action);
+      },
+    },
+  );
 
   /** Run `work` unless a run is already in flight, with `busy` set while it runs. */
   const exclusive = useCallback(async (work: (gen: number) => Promise<void>) => {
@@ -176,6 +222,26 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
     [apply, exclusive, run, showToast],
   );
 
+  const mergeContactsAction = useCallback(
+    async (target: HistoryContact, merged: MergedContact[]): Promise<Error | null> => {
+      let refusal: Error | null = null;
+      await exclusive(async (gen) => {
+        const action: HistoryAction = { kind: "merge", target, merged };
+        try {
+          await runMergeMutation.mutateAsync(action);
+        } catch (err) {
+          refusal = err instanceof Error ? err : new Error(String(err));
+          return;
+        }
+        if (gen !== generation.current) return;
+        apply({ type: "push", entry: { id: nextId.current++, action } });
+        showToast(actionText(action), true);
+      });
+      return refusal;
+    },
+    [apply, exclusive, runMergeMutation.mutateAsync, showToast],
+  );
+
   const undoEntry = stacks.undo.at(-1) ?? null;
   const redoEntry = stacks.redo.at(-1) ?? null;
 
@@ -198,12 +264,19 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
         if (gen !== generation.current) return;
         if (outcome.failure === null) {
           const overtaken = pushes.current !== pushesBefore;
+          // What the undo did is what Redo sends again: an unmerge that left
+          // a contact out redoes the merge without it.
+          const done = outcome.done;
           if (from === "redo") apply({ type: "redone", entry });
-          // An undo that a new action overtook leaves nothing to redo.
-          else apply(overtaken ? { type: "drop", id: entry.id } : { type: "undone", id: entry.id });
+          // An undo that a new action overtook, or that brought nothing
+          // back, leaves nothing to redo.
+          else if (overtaken || !done) apply({ type: "drop", id: entry.id });
+          else apply({ type: "undone", id: entry.id, action: done });
           // The newer action's toast, with its Undo, stays.
           if (!overtaken) {
-            showToast(from === "undo" ? undoneText(action) : actionText(action), false);
+            const words = from === "undo" ? (done ? undoneText(done) : null) : actionText(action);
+            const text = [words, outcome.note].filter(Boolean).join(". ");
+            showToast(text, false);
           }
           return;
         }
@@ -235,6 +308,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
       report,
       push,
       deleteContacts,
+      mergeContacts: mergeContactsAction,
       undo,
       redo,
       clear,
@@ -248,6 +322,7 @@ export default function ContactHistoryProvider({ children }: { children: ReactNo
       report,
       push,
       deleteContacts,
+      mergeContactsAction,
       undo,
       redo,
       clear,

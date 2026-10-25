@@ -324,7 +324,9 @@ one of its identities: the import then discards the trashed contact together
 with every identity it had and makes a new contact from the backup, as a first
 import would. The trash is the only door to permanent
 deletion; something must be trashed before it can be deleted, one item at a
-time or all at once with Empty Trash. The Trash exists so that trashing can
+time or all at once with Empty Trash. The one exception is a contact merge:
+the next merge deletes the contacts the one before merged, which by then hold
+nothing but their names. The Trash exists so that trashing can
 be reversed, and Undo and Redo on the Contacts list are built on that.
 _Avoid_: Deleted, Archive, Hidden, Bin
 

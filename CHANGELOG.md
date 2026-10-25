@@ -22,6 +22,17 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-25: **Merge Contacts.** When one person is on the Contacts list
+  two or more times, such as the iPhone contact, the Android one and an
+  Unknown WhatsApp number, check the rows and choose **Merge Contacts** on
+  the ⋯ menu. Pick the name the merged contact keeps; the dialog lists every
+  identity that moves to it. The merged contact keeps all their identities
+  and Contact Groups, and the other rows leave the list. Conversations stay
+  as they are. Up to 10 contacts merge at once. **Undo Merge Contacts** on
+  the menu brings them back as they were, until the next merge or a reload
+  of the page. The database format changed: an existing Message Crate is
+  rebuilt empty on first start and its messages must be imported again
+  (#3237).
 - 2026-10-24: **A ⋯ menu on the Contacts list, with Undo and Redo.** The
   loose **Export** link beside the sort button is now a ⋯ menu. Its header
   says what it acts on: the checked contacts, the list a search or Contact

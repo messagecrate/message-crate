@@ -114,7 +114,7 @@ pub(super) enum RunEnd {
 /// in the same order (slot, account, pool): the pass holds one pooled
 /// connection for as long as it takes, and the write lock while it writes
 /// what changed (`docs/architecture/rules/contacts-identities-and-messages.md`,
-/// CONTACT-57), and no batch of the run can land while the run ends. The
+/// CONTACT-58), and no batch of the run can land while the run ends. The
 /// run is checked first, so a request for a run that is not running is
 /// refused before the pass. Like a batch, it runs off the async workers,
 /// because hashing every content key again is CPU work. The task also does

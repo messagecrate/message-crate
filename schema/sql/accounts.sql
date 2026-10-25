@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- messages.sql. Only its changes mean anything: the dedupe reads it
     -- before it works out the flags and again once it holds the write lock
     -- (docs/architecture/rules/contacts-identities-and-messages.md,
-    -- CONTACT-57).
+    -- CONTACT-58).
     dedupe_input_writes INTEGER NOT NULL DEFAULT 0
 );
 
