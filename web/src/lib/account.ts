@@ -27,7 +27,7 @@ export function profileAddresses(profile: Pick<AccountProfile, "phones" | "email
 }
 
 /**
- * What nobody may change on an account, the owner included: each field is
+ * What nobody may change on an account, the administrator included: each field is
  * true when the server refuses that change for the account.
  *
  * Only the Demo Account has any. Every visitor shares it, so the server
@@ -47,9 +47,9 @@ type FixedSettings = {
   statusAndPermissions: boolean;
   /** Setting a password: the Demo Account never has one. */
   password: boolean;
-  /** Deleting every message for good, by the account or by the owner. */
+  /** Deleting every message for good, by the account or by the administrator. */
   deleteMessages: boolean;
-  /** The account deleting itself. The owner may still delete it. */
+  /** The account deleting itself. The administrator may still delete it. */
   deleteOwnAccount: boolean;
   /** Making an API token, which would outlive a visit to the Demo Account. */
   apiTokens: boolean;

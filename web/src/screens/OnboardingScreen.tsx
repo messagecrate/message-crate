@@ -136,10 +136,10 @@ export default function OnboardingScreen() {
   const [validationError, setValidationError] = useState("");
   const { busy, error, run } = useAsyncAction();
 
-  // The owner may have filled some of this in when making the account.
-  // What the owner set is shown for the holder to check and correct, once, and
+  // The administrator may have filled some of this in when making the account.
+  // What the administrator set is shown for the holder to check and correct, once, and
   // never over something the holder has already typed. A new account's zone is
-  // UTC until someone chooses one, so only another zone is the owner's choice.
+  // UTC until someone chooses one, so only another zone is the administrator's choice.
   const { profile } = useAccountProfile();
   const profileSeeded = useRef(false);
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function OnboardingScreen() {
     if (profile.time_zone !== DEFAULT_TIME_ZONE) setTimeZone(profile.time_zone);
   }, [profile]);
 
-  // Identities the owner added go into the rows themselves, each on its own
+  // Identities the administrator added go into the rows themselves, each on its own
   // service, as many as the card has room for; any beyond that are left as they
   // are, for Settings. They come from the account's identity list rather than
   // the profile's `phones`, which holds a number once per service and names no
@@ -275,7 +275,7 @@ export default function OnboardingScreen() {
       if (!token || !accountId) {
         throw new Error("Not logged in");
       }
-      // An identity the owner added that is no longer in its row, edited or
+      // An identity the administrator added that is no longer in its row, edited or
       // removed, is unlinked; the server unlinks before it links, so an edit is
       // the old value out and the new one in. Rows left as they were send nothing.
       const filled = handles.filter((h) => h.handle.trim());

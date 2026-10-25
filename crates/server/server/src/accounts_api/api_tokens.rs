@@ -1,11 +1,12 @@
 //! An account's named API tokens: `/v1/accounts/{id}/api-tokens`.
 //!
 //! The account itself makes, renames, lists, reads and revokes its tokens. The
-//! owner lists, reads and revokes them too, and makes and renames none: the
-//! owner must be able to end a credential that has leaked, and a token's label,
-//! permissions and last use are not message content. The owner never reads any
-//! part of a secret, so `token_hint` is `null` in what it is shown. A logged-in
-//! session is required; a token cannot mint, rename or revoke tokens.
+//! administrator lists, reads and revokes them too, and makes and renames none:
+//! the administrator must be able to end a credential that has leaked, and a
+//! token's label, permissions and last use are not message content. The
+//! administrator never reads any part of a secret, so `token_hint` is `null` in
+//! what it is shown. A logged-in session is required; a token cannot mint,
+//! rename or revoke tokens.
 
 use crate::extract::{Json, Path, Query};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
@@ -40,7 +41,8 @@ pub struct ApiToken {
     /// May call the export endpoints.
     pub can_export: bool,
     /// Masked secret for Settings (e.g. `mc-api-Sd..mE`). `null` when the
-    /// owner lists another account's tokens: the hint is part of the secret.
+    /// administrator lists another account's tokens: the hint is part of the
+    /// secret.
     pub token_hint: Option<String>,
     /// Creation time as a Unix-seconds string.
     pub created_at: String,
@@ -132,20 +134,21 @@ pub struct UpdateApiTokenRequest {
 
 /// List the account's named API tokens with their permissions and masked
 /// secrets. Each token's permissions are capped by the account's as they are
-/// now. The owner lists any account's tokens, without their masked secrets.
+/// now. The administrator lists any account's tokens, without their masked
+/// secrets.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/api-tokens",
     tag = "Accounts",
     security(("session" = [])),
     params(
-        ("id" = i64, Path, description = "Account id; the caller's own, or any for the owner"),
+        ("id" = i64, Path, description = "Account id; the caller's own, or any for the administrator"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, max 500"),
         ("offset" = Option<usize>, Query, description = "Page offset")
     ),
     responses(
         (status = 200, body = crate::paging::Page<ApiToken>),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn list_api_tokens(
@@ -155,7 +158,7 @@ pub async fn list_api_tokens(
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<ApiToken>>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Admin).await?;
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
 
     let rows = api_tokens::list_api_tokens(&mut conn, account_id).await?;
@@ -170,7 +173,7 @@ pub async fn list_api_tokens(
 
 /// The permissions of the account that holds the tokens, as they are on this
 /// request. They are read from the account's row, not from the caller, who
-/// may be the owner and holds none.
+/// may be the administrator and holds none.
 async fn holder_permissions(
     conn: &mut sqlx::SqliteConnection,
     account_id: i64,
@@ -180,10 +183,10 @@ async fn holder_permissions(
         .map_or_else(Permissions::none, |a| a.permissions))
 }
 
-/// A token as `reach` is shown it: what it may do now, its stored scopes
-/// capped by the holding account's permissions, so a permission the owner
-/// turned off after the token was made shows as off. The masked secret is
-/// shown only to the account that holds the token, never to the owner of
+/// A token as `reach` is shown it: what it may do now, its stored scopes capped
+/// by the holding account's permissions, so a permission the administrator
+/// turned off after the token was made shows as off. The masked secret is shown
+/// only to the account that holds the token, never to the administrator of
 /// another account: the hint is part of the secret.
 fn as_shown_to(
     reach: Reach,
@@ -201,20 +204,21 @@ fn as_shown_to(
 }
 
 /// Read one named API token as the list shows it: label, permissions, masked
-/// secret and last use. The secret itself is never answered again. The owner
-/// reads any account's token, without its masked secret, as its list does.
+/// secret and last use. The secret itself is never answered again. The
+/// administrator reads any account's token, without its masked secret, as its
+/// list does.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/api-tokens/{token_id}",
     tag = "Accounts",
     security(("session" = [])),
     params(
-        ("id" = i64, Path, description = "Account id; the caller's own, or any for the owner"),
+        ("id" = i64, Path, description = "Account id; the caller's own, or any for the administrator"),
         ("token_id" = i64, Path, description = "API token id")
     ),
     responses(
         (status = 200, body = ApiToken),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn get_api_token(
@@ -223,7 +227,7 @@ pub async fn get_api_token(
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<ApiToken>, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Admin).await?;
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
         .ok_or_else(|| ApiError::not_found("API token"))?;
@@ -310,20 +314,20 @@ pub async fn create_api_token(
 }
 
 /// Delete one named API token. Requests using it start failing on the next
-/// call. The owner revokes any account's token, so a leaked one can be ended
-/// without the account's help.
+/// call. The administrator revokes any account's token, so a leaked one can be
+/// ended without the account's help.
 #[utoipa::path(
     delete,
     path = "/v1/accounts/{id}/api-tokens/{token_id}",
     tag = "Accounts",
     security(("session" = [])),
     params(
-        ("id" = i64, Path, description = "Account id; the caller's own, or any for the owner"),
+        ("id" = i64, Path, description = "Account id; the caller's own, or any for the administrator"),
         ("token_id" = i64, Path, description = "API token id")
     ),
     responses(
         (status = 204, description = "Token deleted"),
-        crate::problem::openapi::NotTheOwner
+        crate::problem::openapi::NotTheAdmin
     )
 )]
 pub async fn delete_api_token(
@@ -332,7 +336,7 @@ pub async fn delete_api_token(
     LoggedIn(auth): LoggedIn,
 ) -> Result<axum::http::StatusCode, ApiError> {
     let mut conn = db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
+    let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Admin).await?;
     let token = api_tokens::list_api_tokens(&mut conn, account_id)
         .await?
         .into_iter()
@@ -492,7 +496,8 @@ mod tests {
         let fixture = crate::test_support::test_fixture().await;
         let state = fixture.state.clone();
         let account =
-            crate::test_support::register_via_api(&state, "token-owner", "hunter2hunter2").await;
+            crate::test_support::add_account_and_log_in(&state, "token-owner", "hunter2hunter2")
+                .await;
 
         let collection = format!("/v1/accounts/{}/api-tokens", account.account_id);
         let (status, text) = crate::test_support::post_json_raw(
@@ -557,20 +562,21 @@ mod tests {
         );
     }
 
-    /// The owner lists another account's tokens, each with its label,
+    /// The administrator lists another account's tokens, each with its label,
     /// permissions, creation and last use, and never with any part of the
     /// secret. The permissions shown are capped by that account's, not by
-    /// the owner's, who holds none.
+    /// the administrator's, who holds none.
     #[tokio::test]
-    async fn the_owner_lists_an_accounts_tokens_without_their_hints() {
+    async fn the_admin_lists_an_accounts_tokens_without_their_hints() {
         use crate::test_support::{
-            claim_as_owner, get_json, get_status, post_created_json, register_via_api, test_fixture,
+            add_account_and_log_in, get_json, get_status, log_in_as_admin, post_created_json,
+            test_fixture,
         };
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-        let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+        let admin = log_in_as_admin(&state, "hunter2hunter2").await;
+        let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
         let alices = format!("/v1/accounts/{}/api-tokens", alice.account_id);
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -586,7 +592,7 @@ mod tests {
             axum::http::StatusCode::OK
         );
 
-        let listed: serde_json::Value = get_json(&state, &alices, &owner.token).await;
+        let listed: serde_json::Value = get_json(&state, &alices, &admin.token).await;
         let item = &listed["items"][0];
         assert_eq!(item["id"], created["id"], "{listed}");
         assert_eq!(item["label"], "export", "{listed}");
@@ -597,17 +603,20 @@ mod tests {
         assert_eq!(
             item.get("token_hint"),
             Some(&serde_json::Value::Null),
-            "the owner never reads any part of a secret: {listed}"
+            "the administrator never reads any part of a secret: {listed}"
         );
 
         let own: serde_json::Value = get_json(&state, &alices, &alice.token).await;
         assert!(own["items"][0]["token_hint"].is_string(), "{own}");
 
         // One token read at its own path is shown as the list shows it, to
-        // the owner and to the account alike.
+        // the administrator and to the account alike.
         let one = format!("{alices}/{}", created["id"]);
-        let read: serde_json::Value = get_json(&state, &one, &owner.token).await;
-        assert_eq!(&read, item, "the owner reads the token as it lists it");
+        let read: serde_json::Value = get_json(&state, &one, &admin.token).await;
+        assert_eq!(
+            &read, item,
+            "the administrator reads the token as it lists it"
+        );
         let own_one: serde_json::Value = get_json(&state, &one, &alice.token).await;
         assert_eq!(
             own_one, own["items"][0],
@@ -615,21 +624,21 @@ mod tests {
         );
     }
 
-    /// The owner revokes another account's token, and the token is refused
-    /// from then on.
+    /// The administrator revokes another account's token, and the token is
+    /// refused from then on.
     #[tokio::test]
-    async fn the_owner_revokes_an_accounts_token() {
+    async fn the_admin_revokes_an_accounts_token() {
         use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_status, expect_problem, get_raw, get_status, post_created_json,
-            register_via_api, test_fixture,
+            add_account_and_log_in, delete_status, expect_problem, get_raw, get_status,
+            log_in_as_admin, post_created_json, test_fixture,
         };
         use axum::http::StatusCode;
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-        let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
+        let admin = log_in_as_admin(&state, "hunter2hunter2").await;
+        let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
         let alices = format!("/v1/accounts/{}/api-tokens", alice.account_id);
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -646,30 +655,30 @@ mod tests {
         );
 
         assert_eq!(
-            delete_status(&state, &format!("{alices}/{id}"), &owner.token).await,
+            delete_status(&state, &format!("{alices}/{id}"), &admin.token).await,
             StatusCode::NO_CONTENT
         );
         let (status, text) = get_raw(&state, "/v1/exports", token).await;
         expect_problem(status, &text, ProblemType::AuthenticationRequired);
     }
 
-    /// The owner sees and revokes; making and renaming stay with the
-    /// account, because a token is that account's credential and the owner
-    /// never holds a secret. Another account reaches none of it, and no
-    /// token reaches any token route.
+    /// The administrator sees and revokes; making and renaming stay with the
+    /// account, because a token is that account's credential and the
+    /// administrator never holds a secret. Another account reaches none of it,
+    /// and no token reaches any token route.
     #[tokio::test]
     async fn only_the_account_itself_makes_and_renames_its_tokens() {
         use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_raw, expect_problem, expect_problem_for, get_raw,
-            patch_json_raw, post_created_json, post_json_raw, register_via_api, test_fixture,
+            add_account_and_log_in, delete_raw, expect_problem, expect_problem_for, get_raw,
+            log_in_as_admin, patch_json_raw, post_created_json, post_json_raw, test_fixture,
         };
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
-        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-        let alice = register_via_api(&state, "alice", "hunter2hunter2").await;
-        let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+        let admin = log_in_as_admin(&state, "hunter2hunter2").await;
+        let alice = add_account_and_log_in(&state, "alice", "hunter2hunter2").await;
+        let bob = add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
         let alices = format!("/v1/accounts/{}/api-tokens", alice.account_id);
         let (_, created): (String, serde_json::Value) = post_created_json(
             &state,
@@ -680,7 +689,7 @@ mod tests {
         .await;
         let one = format!("{alices}/{}", created["id"]);
 
-        for (who, token) in [("bob", &bob.token), ("the owner", &owner.token)] {
+        for (who, token) in [("bob", &bob.token), ("the administrator", &admin.token)] {
             let (status, text) =
                 post_json_raw(&state, &alices, token, serde_json::json!({ "label": "x" })).await;
             expect_problem_for(
@@ -703,14 +712,14 @@ mod tests {
             "bob listing alice's tokens",
             status,
             &text,
-            ProblemType::NotTheOwner,
+            ProblemType::NotTheAdmin,
         );
         let (status, text) = delete_raw(&state, &one, &bob.token).await;
         expect_problem_for(
             "bob revoking alice's token",
             status,
             &text,
-            ProblemType::NotTheOwner,
+            ProblemType::NotTheAdmin,
         );
         let secret = created["token"].as_str().unwrap();
         let (status, text) = get_raw(&state, &alices, secret).await;
@@ -790,7 +799,7 @@ mod tests {
         );
     }
 
-    /// Turn `flags` on `account_id` as the owner would.
+    /// Turn `flags` on `account_id` as the administrator would.
     async fn set_flags(
         fixture: &crate::test_support::TestFixture,
         account_id: i64,
@@ -836,8 +845,8 @@ mod tests {
         assert_eq!(listed["items"][0]["can_export"], true, "{listed}");
     }
 
-    /// A permission the owner turns off after a token is made shows as off
-    /// in the list.
+    /// A permission the administrator turns off after a token is made shows as
+    /// off in the list.
     #[tokio::test]
     async fn the_token_list_follows_the_accounts_permissions_as_they_are_now() {
         use crate::db::account_profile::AccountFlags;

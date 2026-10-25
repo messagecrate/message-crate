@@ -7,7 +7,7 @@ This page is for people who compile Message Crate. It explains how to build a Do
 
 Everyday coding should just run on the local developer machine. Those steps are on [Contributing → Build and run](/docs/developer/contributing/#build-and-run).
 
-People who only want to run Message Crate, and who are not changing the code, should pull the published image. See [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server).
+People who only want to run Message Crate, and who are not changing the code, should pull the published image. See [Start a Message Crate](/docs/user/features/admin/run-with-docker/#start-the-server).
 
 Build a local image when the work is about the container itself. Examples:
 
@@ -21,9 +21,9 @@ A merge to `main` does not publish an image. CI only builds and pushes `bitrealm
 
 ## Two Compose files
 
-Docker Compose reads a YAML file and starts a container from it. This repository has two of those files. They both publish the server on port **8080** of `127.0.0.1`, so only the computer that runs Docker reaches it, as the `docker run` command in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server) does. [Run on another machine](/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network) says how to publish it on the network. They do not do the same thing.
+Docker Compose reads a YAML file and starts a container from it. This repository has two of those files. They both publish the server on port **8080** of `127.0.0.1`, so only the computer that runs Docker reaches it, as the `docker run` command in [Start a Message Crate](/docs/user/features/admin/run-with-docker/#start-the-server) does. [Run on another machine](/docs/user/features/admin/run-on-another-machine/#publish-the-server-on-the-network) says how to publish it on the network. They do not do the same thing.
 
-`docker/compose.yml` names an image that already exists: `bitrealm/message-crate:latest`. Compose downloads that image from Docker Hub. It does not compile this local checkout. That file is the sample for [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). Do not use that file from a local checkout if the goal is to test local code.
+`docker/compose.yml` names an image that already exists: `bitrealm/message-crate:latest`. Compose downloads that image from Docker Hub. It does not compile this local checkout. That file is the sample for [Start a Message Crate](/docs/user/features/admin/run-with-docker/#start-the-server). Do not use that file from a local checkout if the goal is to test local code.
 
 `docker/compose.release.yml` builds `docker/Dockerfile` from the files in this local checkout. The result is the same kind of image CI uploads to Docker Hub: a compiled server binary, the website copied into `static/`, and ffmpeg. After a code change, rebuild. The running container does not pick up edits on the local machine on its own.
 
@@ -40,7 +40,7 @@ The 10 seconds more leave time for the server to write its log and exit after it
 The documented `docker run` commands carry the same 40 seconds as `--stop-timeout 40`, and a test in the server's crate fails when a Compose file or one of those commands gives no more than the server's limit.
 
 A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, which catches a write at start.
-It then claims the Message Crate, creates an account, and imports one conversation with an HEVC video through `/v1`, because the Demo Account may not import.
+It then sets the administrator's password, creates an account, and imports one conversation with an HEVC video through `/v1`, because the Demo Account may not import.
 It waits for the media pass to make the video's Thumbnail and Preview, and runs an Export of everything the account holds, so a write made during an import, the media pass or an export fails it too.
 The conversation is `tests/fixtures/docker-compose-check/conversation.jsonl`, and the video is the server's test fixture `crates/server/server/tests/fixtures/media/hevc.mov`.
 Last, it stops the stack and fails when the server did not exit on its own, so a server that outlives the `stop_grace_period` and is killed by Docker fails it.
@@ -95,7 +95,7 @@ The file has three stages. Each stage is a temporary image. Only the last stage 
 
 1. **Website.** Node.js 24 installs `web/` dependencies and runs `npm run build`. The output is `web/dist`.
 2. **Server binary.** Rust 1.98.1, the version `rust-toolchain.toml` pins, compiles `message-crate-server` in release mode. The binary carries what it needs to generate Demo Data: the `demo-seed` crate, its two size settings, the Pride and Prejudice text, and the name lists.
-3. **Runtime.** Debian 12 (bookworm), `debian:bookworm-slim`, with no Node.js, gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. It runs as user and group 1000, named `app`. Its `HEALTHCHECK` runs `message-crate-server healthcheck` every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The command reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. `/health` answers `ok` only while the server can take a database connection and run a statement on it, so a server that runs but cannot reach its database reads unhealthy. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The module comment of `crates/server/server/src/healthcheck.rs` has the details.
+3. **Runtime.** Debian 12 (bookworm), `debian:bookworm-slim`, with no Node.js, gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. It runs as user and group 1000, named `app`. Its `HEALTHCHECK` runs `message-crate-server healthcheck` every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The command reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. `/health` answers `ok` only while the server can take a database connection and run a statement on it, so a server that runs but cannot reach its database reads unhealthy. A container whose command is not `serve`, such as `reset-demo` or `set-admin-password`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The module comment of `crates/server/server/src/healthcheck.rs` has the details.
 
 The build context is the **repository root**. `.dockerignore` decides what Docker sends into that context. It must ignore the live data directory at the repo root (`/data`) so a personal database is not copied into the image. It must not ignore `crates/server/demo-seed/data/`. That directory holds the Pride and Prejudice text and the name lists the server compiles in.
 
@@ -117,7 +117,7 @@ This is the usual local path. Compose compiles `docker/Dockerfile` and starts th
 docker compose -f docker/compose.release.yml up --build
 ```
 
-The server is at **http://127.0.0.1:8080**. On a data volume with no database, the server adds the Demo Account with the medium data set (about 54,000 messages) before it listens, and leaves Message Crate unclaimed. The first screen offers **Create Owner** and **Explore Demo Account**; the Demo Account has no password. There is no switch for this: a Message Crate started by Docker begins the same as any other.
+The server is at **http://127.0.0.1:8080**. On a data volume with no database, the server adds the Demo Account with the medium data set (about 54,000 messages) before it listens, and leaves Message Crate in setup. The first screen offers **Set Up** and **Explore Demo Account**; the Demo Account has no password. There is no switch for this: a Message Crate started by Docker begins the same as any other.
 
 The container's entrypoint only runs `serve`, and writes nothing. Arguments after the image name run another server command in its place, with the stack stopped.
 
@@ -234,13 +234,13 @@ That job is the Hub image. `docker/compose.release.yml` is the way to compile th
 
 ## Run the published image
 
-Pull and start `bitrealm/message-crate` from Docker Hub as described in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). That page gives the `docker run` command; `docker/compose.yml` in the repository is the Compose form of it, with the same limits, described under [Two Compose files](#two-compose-files). Upgrades that keep the existing database volume are on [Update](/docs/user/features/owner/update/).
+Pull and start `bitrealm/message-crate` from Docker Hub as described in [Start a Message Crate](/docs/user/features/admin/run-with-docker/#start-the-server). That page gives the `docker run` command; `docker/compose.yml` in the repository is the Compose form of it, with the same limits, described under [Two Compose files](#two-compose-files). Upgrades that keep the existing database volume are on [Update](/docs/user/features/admin/update/).
 
 ## Related
 
 - [Contributing](/docs/developer/contributing/#build-and-run)
 - [Release](/docs/developer/release/)
-- [Start a Message Crate](/docs/user/features/owner/run-with-docker/)
-- [Update](/docs/user/features/owner/update/)
+- [Start a Message Crate](/docs/user/features/admin/run-with-docker/)
+- [Update](/docs/user/features/admin/update/)
 - [HTTP API](/docs/developer/reference/api/)
 - [Config and accounts](/docs/developer/reference/config-and-accounts/)

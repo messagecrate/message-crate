@@ -13,8 +13,8 @@ const DEMO_USERNAME = "demo";
  *
  * The Demo Account has no password and can never be given one, so there is
  * nothing to type: the button logs in as it. Without the button a person
- * would have to learn the username from the documentation, and an unclaimed
- * Message Crate shows no login form to type it into. See
+ * would have to learn the username from the documentation, and a Message
+ * Crate in setup shows no login form to type it into. See
  * `docs/adr/0016-the-demo-account-is-fixed-not-configured.md`.
  */
 export default function ExploreDemoAccountButton({

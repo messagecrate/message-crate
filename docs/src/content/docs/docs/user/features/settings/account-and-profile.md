@@ -23,15 +23,15 @@ The desktop app shows no such box, because it logs out when its window closes.
 A Session also ends on its own after 7 days in which it isn't used, and 30 days after the login however much it is used.
 Each use within those 30 days starts the 7 days again, so an account in daily use is asked to log in once a month.
 
-## What the Owner sees
+## What the administrator sees
 
-The Owner's Settings has four tabs, **Account**, **Profile**, **Audit Trail**, and **Appearance**, under the heading **Settings for Owner**.
-**Storage**, **System**, and **Convert** are absent, because they concern messages and the Owner holds none.
+The administrator's Settings has four tabs, **Account**, **Profile**, **Audit Trail**, and **Appearance**, under the heading **Settings for Administrator**.
+**Storage**, **System**, and **Convert** are absent, because they concern messages and the administrator holds none.
 
-The Owner's **Account** tab holds **Username** and **Change Password** only.
-The Owner's **Profile** tab holds **Display Name** and **Time Zone** only.
+The administrator's **Account** tab holds **Username** and **Change Password** only.
+The administrator's **Profile** tab holds **Display Name** and **Time Zone** only.
 
-The Owner manages other accounts from [Owner Home](/docs/user/features/owner/owner-home/), not from this screen.
+The administrator manages other accounts from [Admin Home](/docs/user/features/admin/admin-home/), not from this screen.
 
 ## Account
 
@@ -45,8 +45,8 @@ The field is read-only.
 **Status** reads **Active** or **Disabled**.
 **Message Permissions** lists three checkboxes, **Import**, **Export**, and **Delete**, which cover messages and their attachments.
 
-The account holder reads both and changes neither, because the Owner sets them.
-The line under the checkboxes says so: "The owner sets your status and permissions."
+The account holder reads both and changes neither, because the administrator sets them.
+The line under the checkboxes says so: "The administrator sets your status and permissions."
 
 ### Change Password
 
@@ -66,10 +66,10 @@ Changing or resetting the password does two more things:
 - It replaces the account's Session. The screen that made the change stays logged in, and any other browser or desktop app logged in to the account must log in again.
 - It deletes every API Token the account holds, so each program using one needs a new token. The API Tokens table on the same tab empties at once.
 
-The Owner's form differs in three ways, because the Owner's account reaches every other account.
+The administrator's form differs in three ways, because the administrator's account reaches every other account.
 It asks for **Current password** first.
 It refuses a new password equal to the current one.
-It has no **Reset password**, because the Owner must have a password.
+It has no **Reset password**, because the administrator must have a password.
 
 On the `demo` account the form is disabled, because that account exists to be looked at and reset rather than changed.
 
@@ -109,10 +109,10 @@ A program using that token stops working at once.
 A token made on this screen expires 365 days after it is made.
 The **Expires** column shows that date.
 
-The Owner sees this table in the account's **User Settings**, without the **Token** column, and can revoke a token there so a leaked one can be ended.
-The Owner can't add or rename a token.
+The administrator sees this table in the account's **User Settings**, without the **Token** column, and can revoke a token there so a leaked one can be ended.
+The administrator can't add or rename a token.
 
-The Owner's own Settings have no **API Tokens** section, because a token reaches one account's messages and the Owner holds none.
+The administrator's own Settings have no **API Tokens** section, because a token reaches one account's messages and the administrator holds none.
 
 The Demo Account can't make an API Token, and the server refuses one.
 Every visitor shares the Demo Account, so a token would outlive the visit, and every later visitor could see it and revoke it.
@@ -143,14 +143,14 @@ Neither action can be undone.
 Both buttons are disabled on the `demo` account and carry the tooltip "Unavailable on the demo account".
 The server also refuses to delete the `demo` account.
 
-The Owner has no **Danger zone**, because the Owner holds no messages and can't be deleted.
+The administrator has no **Danger zone**, because the administrator holds no messages and can't be deleted.
 
 ## Profile
 
 ### Display Name
 
 **Display Name** is the account holder's name.
-The account menu shows it under the username, and the Owner's list of accounts shows it beside the username.
+The account menu shows it under the username, and the administrator's list of accounts shows it beside the username.
 It saves when you leave the field, press Enter, or move to another tab. There is no **Save** button.
 An empty field removes the name.
 
@@ -165,7 +165,7 @@ With nothing typed, the list opens with **This browser**, the zone the browser r
 Picking a row saves it.
 There is no **Save** button, and every date on screen changes to the new zone.
 
-On the Demo Account the display name and the time zone cannot be changed, by the account or by the Owner.
+On the Demo Account the display name and the time zone cannot be changed, by the account or by the administrator.
 Every visitor shares that account, so a change one visitor made would be what the next one finds.
 
 ### My Identities
@@ -199,7 +199,7 @@ The same number on **Text Message** and on **WhatsApp** counts as two Identities
 The trash button on a row removes that Identity after a confirmation.
 The confirmation states how many one-to-one and group messages will no longer be associated with the account.
 
-The Owner has no **My Identities** section, because the Owner holds no messages to match.
+The administrator has no **My Identities** section, because the administrator holds no messages to match.
 
 ### Address book
 

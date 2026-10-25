@@ -230,7 +230,7 @@ describe("Import history", () => {
     expect(made?.textContent).toBe("The backup does not say when it was made");
   });
 
-  it("shows the owner which attachments of a run have no Thumbnail or Preview, and why", async () => {
+  it("shows the administrator which attachments of a run have no Thumbnail or Preview, and why", async () => {
     const listed = {
       ...anImport(1),
       counts: {},
@@ -306,7 +306,7 @@ describe("Import history", () => {
     expect(getAccountImport).toHaveBeenCalledWith(1, expect.anything(), 3);
   });
 
-  it("tells the owner when no attachment of a run is missing a version", async () => {
+  it("tells the administrator when no attachment of a run is missing a version", async () => {
     const listed = { ...anImport(1), counts: {}, contacts_new: 0, contacts_changed: 0 };
     listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
     getAccountImport.mockResolvedValue({

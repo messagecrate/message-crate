@@ -161,16 +161,16 @@ security scheme, so every operation says which it accepts.
 
 | Credential | Made by | Reaches |
 |---|---|---|
-| **Session** | `POST /v1/session` with a username and password | Everything the account may do: browse, import, export, delete, as its permissions allow. The owner's Session reaches accounts, server settings and the log, and no messages. |
-| **API token** | The account, with `import` or `export` scopes capped by its own | The Import and Export pipelines, and asset reads under `export`. Never browsing, never deletion, never the owner. |
+| **Session** | `POST /v1/session` with a username and password, or `POST /v1/server/setup` for the administrator's first one | Everything the account may do: browse, import, export, delete, as its permissions allow. The administrator's Session reaches accounts, server settings and the log, and no messages. |
+| **API token** | The account, with `import` or `export` scopes capped by its own | The Import and Export pipelines, and asset reads under `export`. Never browsing, never deletion, never the administrator. |
 | **Media Link** | `POST /v1/assets/{sha256}/media-links` from a Session | One asset, its Preview and Thumbnail, for an hour or until its Session ends, without a header, so a media element can stream it. |
 
 The credential names the account. No route takes an account parameter. The
-owner holds no messages ([ADR 0008](../adr/0008-the-owner-holds-no-messages.md)),
-so routes split along that line: `/v1/accounts/{id}/...` is what the owner
+administrator holds no messages ([ADR 0008](../adr/0008-the-administrator-holds-no-messages.md)),
+so routes split along that line: `/v1/accounts/{id}/...` is what the administrator
 and the account both read, such as an account's import history as a record
 of runs, while `/v1/imports` and `/v1/exports` are the pipelines themselves,
-which need the permission the owner's Session never carries.
+which need the permission the administrator's Session never carries.
 
 ## Runs
 

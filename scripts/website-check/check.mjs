@@ -111,8 +111,8 @@ try {
     }
   });
 
-  // A new Message Crate has no owner, so the card offers Create Owner and,
-  // under it, the Demo Account. Its button logs in as "demo" with an empty
+  // A new Message Crate is in setup, so the card offers Set Up and, under
+  // it, the Demo Account. Its button logs in as "demo" with an empty
   // password, the request the login form would send.
   step = "load the login card";
   await page.goto(base);

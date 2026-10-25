@@ -10,9 +10,9 @@
 //!
 //! `serve` also writes every line to the server's log, rotating files in the
 //! Data Directory's `logs` directory ([`write_files_in`], [`LogFiles`]), which
-//! the owner reads through `GET /v1/server/log-lines` and
-//! `GET /v1/server/log-files`. Why files, why 5 of 50 MB and why the owner:
-//! `docs/architecture/rules/server-log.md`.
+//! the administrator reads through `GET /v1/server/log-lines` and
+//! `GET /v1/server/log-files`. Why files, why 5 of 50 MB and why the
+//! administrator: `docs/architecture/rules/server-log.md`.
 
 mod files;
 mod read;
@@ -93,8 +93,8 @@ fn log_panics() {
 }
 
 /// Write why the process ends with `error`. Once `serve` has opened the
-/// server's log, the line goes there at `ERROR`, with the error's whole
-/// chain, as well as to stderr, so the owner can read why a Message Crate
+/// server's log, the line goes there at `ERROR`, with the error's whole chain,
+/// as well as to stderr, so the administrator can read why a Message Crate
 /// would not start or why it stopped (#2079). Before then, in every other
 /// subcommand, and when `RUST_LOG` leaves out the `ERROR` line, it goes to
 /// stderr alone, as `fn main() -> Result<()>` would write it, so the reason

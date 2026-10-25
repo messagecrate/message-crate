@@ -213,8 +213,8 @@ pub async fn imessage_backup_identities(
 /// writes it, and every other line is dropped. Why: the Reader's other lines
 /// say how far it got, and one of them, "Decrypted iOS backup", names the
 /// phone, which usually names the person whose phone it is. The desktop
-/// app's log is offered to the owner of every Message Crate the app signs in
-/// to (`docs/architecture/rules/import-run-logs.md`, RUNLOG-4).
+/// app's log is offered to the administrator of every Message Crate the app
+/// signs in to (`docs/architecture/rules/import-run-logs.md`, RUNLOG-4).
 fn identity_check_log(
     backup: String,
     warn: impl Fn(&str) + Send + Sync + 'static,

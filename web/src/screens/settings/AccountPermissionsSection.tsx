@@ -1,6 +1,6 @@
 import Checkbox from "../../components/Checkbox";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
-import { type ManagedAccountChanges, useUpdateAccount } from "../../hooks/useOwnerAccounts";
+import { type ManagedAccountChanges, useUpdateAccount } from "../../hooks/useAdminAccounts";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { parseSelectKey } from "../../lib/selectKey";
@@ -19,8 +19,8 @@ const PERMISSIONS = [
 /**
  * An account's status and what it may do with messages.
  *
- * The owner sets all four, so they change only with `managedAccountId`,
- * on an account the owner opened from User Accounts. The account holder reads
+ * The administrator sets all four, so they change only with `managedAccountId`,
+ * on an account the administrator opened from User Accounts. The account holder reads
  * the same section with nothing in it to change.
  */
 export function AccountPermissionsSection({
@@ -31,7 +31,7 @@ export function AccountPermissionsSection({
   managedAccountId?: number;
 }) {
   const updateAccount = useUpdateAccount();
-  // Fixed on the Demo Account, for the owner too.
+  // Fixed on the Demo Account, for the administrator too.
   const fixed = fixedSettings(profile).statusAndPermissions;
   const managed = managedAccountId !== undefined && !fixed;
   // Not locked while a change is sent: the server answers in a moment, and
@@ -88,7 +88,7 @@ export function AccountPermissionsSection({
           <p className="m-0 text-[0.813rem] text-muted">
             {fixed
               ? "The Demo Account's status and permissions are fixed."
-              : "The owner sets your status and permissions."}
+              : "The administrator sets your status and permissions."}
           </p>
         )}
         {updateAccount.error ? (

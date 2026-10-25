@@ -3,17 +3,17 @@ use axum::http::StatusCode;
 
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, at_current_schema_version,
-    attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
-    message_line, register_via_api, seed_conversation, stored_time,
+    LoggedInAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
+    at_current_schema_version, attachment, conversation_header, expect_problem,
+    fixture_with_account, get_json, get_raw, message_line, seed_conversation, stored_time,
 };
 use ir::{Attachment, ImessageExtensions, Reaction, Transport};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
-async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
+async fn seeded() -> (TestFixture, LoggedInAccount, i64, i64) {
     let (fixture, alice) = fixture_with_account().await;
-    let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let direct = seed_conversation(
         &fixture.state,
         &SeedConversation {
@@ -623,7 +623,7 @@ fn lighthouse_file(deletion: Option<ir::Deletion>) -> String {
 }
 
 /// The guids `q` finds on the Messages list, oldest first.
-async fn found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> Vec<String> {
+async fn found(fixture: &TestFixture, account: &LoggedInAccount, q: &str) -> Vec<String> {
     let page: serde_json::Value = get_json(
         &fixture.state,
         &format!("/v1/messages?q={q}&sort=date"),
@@ -634,7 +634,7 @@ async fn found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> V
 }
 
 /// How many conversations `q` finds on the Conversations list.
-async fn conversations_found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> u64 {
+async fn conversations_found(fixture: &TestFixture, account: &LoggedInAccount, q: &str) -> u64 {
     let page: serde_json::Value = get_json(
         &fixture.state,
         &format!("/v1/conversations?q={q}"),
@@ -1376,7 +1376,7 @@ async fn the_copy_shown_takes_no_earlier_versions_from_a_conversation_in_the_tra
 
 /// Put the conversation of the message `guid` in the trash through the
 /// route the Trash button calls.
-async fn trash_conversation_of(fixture: &TestFixture, account: &RegisteredAccount, guid: &str) {
+async fn trash_conversation_of(fixture: &TestFixture, account: &LoggedInAccount, guid: &str) {
     let mut conn = fixture.conn().await;
     let conversation: i64 =
         sqlx::query_scalar("SELECT conversation_id FROM messages WHERE guid = $1")
@@ -1720,7 +1720,7 @@ async fn the_reply_count_takes_the_replies_that_quote_a_hidden_copy() {
 #[tokio::test]
 async fn one_message_is_read_by_id_and_only_by_the_account_that_owns_it() {
     let (fixture, alice, _direct, _group) = seeded().await;
-    let bob = register_via_api(&fixture.state, "carol", "hunter2hunter2").await;
+    let bob = add_account_and_log_in(&fixture.state, "carol", "hunter2hunter2").await;
     let page: serde_json::Value =
         get_json(&fixture.state, "/v1/messages?q=dentist", &alice.token).await;
     let id = page["items"][0]["id"].as_i64().unwrap();
@@ -1864,7 +1864,7 @@ fn texts(page: &serde_json::Value) -> Vec<&str> {
 
 /// One conversation whose best match for `dentist` is its oldest message, so
 /// relevance and date put the matches in different orders.
-async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
+async fn seeded_for_relevance() -> (TestFixture, LoggedInAccount) {
     let (fixture, alice) = fixture_with_account().await;
     seed_conversation(
         &fixture.state,

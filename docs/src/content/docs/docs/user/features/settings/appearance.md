@@ -4,7 +4,7 @@ description: What the Appearance tab of Settings changes, light or dark mode, th
 ---
 
 The **Appearance** tab of **Settings** sets the colors of the app.
-Every account sees it, the Owner included, in the browser and in the desktop app.
+Every account sees it, the administrator included, in the browser and in the desktop app.
 
 Every change saves as it is made.
 The choice is stored in the browser or desktop app, not in the account, so a second browser has its own.

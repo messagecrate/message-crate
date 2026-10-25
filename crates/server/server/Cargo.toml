@@ -40,8 +40,8 @@ ir = { workspace = true }
 phone = { workspace = true }
 rand = "0.10.2"
 rayon = "1.12.0"
-# The Owner's password typed at a terminal without echo, for `create-owner`
-# and `reset-owner-password` (#2094).
+# The administrator's password typed at a terminal without echo, for
+# `set-admin-password` (#2094).
 rpassword = "7.5.4"
 serde = { workspace = true }
 serde_json = { workspace = true }

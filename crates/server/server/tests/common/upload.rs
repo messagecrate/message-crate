@@ -9,7 +9,7 @@ use reqwest::Method;
 use reqwest::StatusCode;
 use serde_json::json;
 
-use super::claim::{call, json_body};
+use super::setup::{call, json_body};
 
 /// Upload every conversation file under `input` to `base` as `token`, into
 /// an Import Run of `source` the test starts and then completes. The

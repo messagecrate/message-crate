@@ -10,7 +10,7 @@ import { AuthGuard } from "./AuthGuard";
 const profileState = vi.hoisted(() => ({
   profile: null as {
     must_set_up_profile?: boolean;
-    is_owner?: boolean;
+    is_admin?: boolean;
   } | null,
   loading: false,
   error: "",
@@ -47,7 +47,7 @@ function renderGuard() {
         </Route>
         <Route path="/login" element={<div>login</div>} />
         <Route path="/onboarding" element={<div>onboarding</div>} />
-        <Route path="/owner" element={<div>owner home</div>} />
+        <Route path="/admin" element={<div>admin home</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -61,11 +61,11 @@ describe("AuthGuard", () => {
     expect(screen.getByText("onboarding")).toBeInTheDocument();
   });
 
-  it("sends the owner to Owner Home, not into the message shell", () => {
-    profileState.profile = { is_owner: true };
+  it("sends the administrator to Admin Home, not into the message shell", () => {
+    profileState.profile = { is_admin: true };
     renderGuard();
 
-    expect(screen.getByText("owner home")).toBeInTheDocument();
+    expect(screen.getByText("admin home")).toBeInTheDocument();
     expect(screen.queryByText("the messages")).not.toBeInTheDocument();
   });
 

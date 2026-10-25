@@ -4,7 +4,7 @@ import AuditTrailTable from "./AuditTrailTable";
 
 /**
  * One Audit Trail, read and shown: a loading line, the error, or the table
- * with its page control. Owner Home and Settings both show their trails
+ * with its page control. Admin Home and Settings both show their trails
  * through this, so the two read and say the same thing.
  */
 export default function AuditTrail({
@@ -14,9 +14,9 @@ export default function AuditTrail({
 }: {
   /** Whose Audit Trail to read. */
   of: AuditTrailOf;
-  /** Show the Account column: the owner's list of every account. */
+  /** Show the Account column: the administrator's list of every account. */
   showAccount: boolean;
-  /** Where an entry's request's lines in the server's log are read; Owner Home's alone. */
+  /** Where an entry's request's lines in the server's log are read; Admin Home's alone. */
   logHref?: (requestId: string) => string;
 }) {
   const trail = useAuditTrail(of);

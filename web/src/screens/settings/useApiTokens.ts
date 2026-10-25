@@ -182,8 +182,8 @@ export function useApiTokens() {
 }
 
 /**
- * Another account's API tokens, as the owner sees them: each token's label,
- * permissions and use, never its masked secret. The owner revokes a token
+ * Another account's API tokens, as the administrator sees them: each token's label,
+ * permissions and use, never its masked secret. The administrator revokes a token
  * here, to end one that has leaked, and makes and renames none.
  */
 export function useManagedApiTokens(accountId: number) {
@@ -192,7 +192,7 @@ export function useManagedApiTokens(accountId: number) {
     data,
     isPending: loading,
     error: loadError,
-  } = useRouteQuery(keys.ownerAccounts.apiTokens(accountId), (signal) =>
+  } = useRouteQuery(keys.adminAccounts.apiTokens(accountId), (signal) =>
     listApiTokens({ signal }, accountId),
   );
   const revokeToken = useRouteMutation({

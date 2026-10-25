@@ -17,7 +17,7 @@ the app is open: no background service, no start on boot.
 It is the same program the Docker image runs, started with `serve --data-dir
 --bind --static-dir` and no config file. A Message Crate behaves the same
 whichever way it was started: the same first start with the Demo Account, the
-same login card, the same Owner Home. The two differ only in what starts the
+same login card, the same Admin Home. The two differ only in what starts the
 server and where it listens.
 
 The port is 8080 in both, so there is one address to document and the app's
@@ -33,8 +33,8 @@ both builds share one app-data directory and a branch with another Schema
 Fingerprint would rebuild the installed app's database empty.
 Beside `data`, the app keeps `logs`, the Logs Directory: every Import Run's
 log, which the app never deletes, so it outlives the run's directory and the
-owner and the account that ran the run can read it there (#1552, #1665). Both
-move into the Message Crate Directory with #1053.
+administrator and the account that ran the run can read it there (#1552,
+#1665). Both move into the Message Crate Directory with #1053.
 
 The server listens on this computer only. A setting in the app opens it to
 the network, for a person who wants to read from a phone while the app is
@@ -163,7 +163,7 @@ limit of three restarts in ten minutes. The app tells the window when it
 starts the server again and why. For that start, a restart for the network
 setting, and a Retry after any failure, it tells the window when a Message
 Crate answers and when the start fails. The web app shows it across the top
-of the page, under the header of the message shell and of Owner Home, where a
+of the page, under the header of the message shell and of Admin Home, where a
 refused display name shows too (#2991), and above Profile Setup and the
 screen that says a profile could not be loaded. The login card shows the
 state itself. It reads

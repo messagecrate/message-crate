@@ -362,7 +362,7 @@ event it already has, such as a callback prop or a returned promise, for the
 test to await, or the test moves to Playwright. Polling doesn't help here:
 `waitFor` still races its timeout, and that race is the reason for this page.
 
-A screen that loads a lazy chunk of its own, such as Owner Home opening an
+A screen that loads a lazy chunk of its own, such as Admin Home opening an
 account's Settings, imports the chunk's module the first time it is shown.
 That first import reads files, which the fake clock doesn't drive. The test
 file imports the same module once before any test, on the real clock, so the

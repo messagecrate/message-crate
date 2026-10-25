@@ -1,6 +1,6 @@
 //! `GET /v1/server/log-lines`: the server's log lines, newest first, the
-//! owner's alone. The files are written by `crate::logging`, and read here
-//! a page at a time from the id of the last line the client holds
+//! administrator's alone. The files are written by `crate::logging`, and read
+//! here a page at a time from the id of the last line the client holds
 //! (`docs/architecture/rules/server-log.md`).
 
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use crate::api_error::ApiError;
-use crate::auth::Owner;
+use crate::auth::Admin;
 use crate::config::Config;
 use crate::extract::{Json, Query};
 use crate::logging::{LogLevel, LogLine, LogLinesQuery, log_dir, read_lines};
@@ -53,12 +53,12 @@ pub struct ListLogLinesResponse {
 /// and the more severe ones. `text` keeps the lines whose text, after the
 /// time and the level, holds it, ignoring case. A line never holds a
 /// password, a token, message text or a contact's name or identities. The
-/// owner's alone, because the log is about the whole installation.
+/// administrator's alone, because the log is about the whole installation.
 #[utoipa::path(
     get,
     path = "/v1/server/log-lines",
     tag = "Server",
-    security(("session" = ["owner"])),
+    security(("session" = ["admin"])),
     params(
         ("level" = Option<LogLevel>, Query, description = "Only lines at this level or more severe: `error`, `warn` (errors too), `info`, `debug`, `trace` (every line)"),
         ("text" = Option<String>, Query, description = "Only lines whose text, after the time and the level, holds this, ignoring case"),
@@ -71,7 +71,7 @@ pub struct ListLogLinesResponse {
 )]
 pub(crate) async fn list_log_lines(
     State(cfg): State<Arc<Config>>,
-    Owner(_auth): Owner,
+    Admin(_auth): Admin,
     Query(query): Query<ListLogLinesQuery>,
 ) -> Result<Json<ListLogLinesResponse>, ApiError> {
     let params = page_params(query.limit, None, DEFAULT_LIST_LIMIT, None)?;

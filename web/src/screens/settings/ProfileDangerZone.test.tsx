@@ -29,7 +29,7 @@ vi.mock("../../lib/importRun", async (importOriginal) => ({
 
 vi.mock("../../hooks/useAuth", () => authModule(() => ({ accountId: 7, logout })));
 
-vi.mock("../../hooks/useOwnerAccounts", () => ({
+vi.mock("../../hooks/useAdminAccounts", () => ({
   useDeleteAccount: () => ({ mutateAsync: vi.fn() }),
   useDeleteAccountMessages: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -243,7 +243,7 @@ describe("ProfileDangerZone", () => {
     expect(accountRunDirectories).not.toHaveBeenCalled();
   });
 
-  it("tells an account without the delete permission to ask the owner", async () => {
+  it("tells an account without the delete permission to ask the administrator", async () => {
     // The server refuses both deletes to such an account, and deleting the
     // account would delete its messages, so neither is offered.
     const user = setupUser();
@@ -262,12 +262,12 @@ describe("ProfileDangerZone", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
-    expect(screen.getByText(/Ask the owner/)).toBeInTheDocument();
+    expect(screen.getByText(/Ask the administrator/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete account" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete all messages" })).toBeDisabled();
   });
 
-  it("lets the owner delete an account that may not delete itself", async () => {
+  it("lets the administrator delete an account that may not delete itself", async () => {
     const user = setupUser();
     render(
       <QueryClientProvider client={testQueryClient()}>
@@ -285,7 +285,7 @@ describe("ProfileDangerZone", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
-    expect(screen.queryByText(/Ask the owner/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ask the administrator/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete account" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Delete all messages" })).toBeEnabled();
   });
@@ -347,7 +347,7 @@ describe("ProfileDangerZone", () => {
     }
   });
 
-  it("lets the owner delete an account that may not delete itself, but not empty it", async () => {
+  it("lets the administrator delete an account that may not delete itself, but not empty it", async () => {
     const user = setupUser();
     render(
       <QueryClientProvider client={testQueryClient()}>

@@ -188,9 +188,9 @@ no progress for `[server] transcode_stall_secs`, `ran_past_length` when it ran p
 file's length, `took_too_long` when a step that reads one frame or an audio
 conversion passed its limit, `original_missing`, or `server_problem` for anything else. A kind is
 set and cleared with its reason, which a `CHECK` on the table holds. The
-owner's read of one Import Run counts the run's attachments by kind and lists
+administrator's read of one Import Run counts the run's attachments by kind and lists
 them, each by file name, type and size with its reasons
-(`docs/architecture/rules/http-api.md`, API-91), so the owner sees
+(`docs/architecture/rules/http-api.md`, API-91), so the administrator sees
 which files of an import were left without a version and why, and can run
 `process-assets` to try again; nothing tries again on its own (#2636).
 The reason is what ffmpeg said about the file, with the paths it named made
@@ -253,7 +253,7 @@ The Media Stage compresses a video with HEVC first, and tries H.264 after a HEVC
 When H.264 stands in, the run says why HEVC failed once, as a warning: in the Import Run's log, and in the server's log for an import the server converts.
 The reason is everything ffmpeg wrote for the HEVC run, with each file ffmpeg was given written as `<input>` or `<output>` rather than by its path (`FfmpegFailed::without_files`).
 Why all of it: ffmpeg writes why an encoder would not open first, and the lines after it, such as that nothing was written, only follow from it.
-Why no path: ffmpeg names the files by their full paths, and the server's log holds only what the owner may see, which an attachment's file name is not (`docs/architecture/rules/server-log.md`, LOG-18).
+Why no path: ffmpeg names the files by their full paths, and the server's log holds only what the administrator may see, which an attachment's file name is not (`docs/architecture/rules/server-log.md`, LOG-18).
 
 A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
 The reason is why ffmpeg was stopped, or the line ffmpeg wrote that names the cause, with each file ffmpeg was given written as `<input>` or `<output>`.
@@ -291,7 +291,7 @@ does not stop goes on converting after the server has stopped, using the
 computer for work nothing will record.
 
 Why record the reason: with it only in the server's log, the account saw an
-attachment with no Preview and no explanation, and the owner found the reason
+attachment with no Preview and no explanation, and the administrator found the reason
 only by searching the log for the fingerprint (#2170).
 
 Why a phrase of the server's when ffmpeg did not read the file: a missing

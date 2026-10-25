@@ -324,7 +324,7 @@ describe("Contact Groups and Message Tags are addressed by id", () => {
 });
 
 describe("accounts are one collection", () => {
-  it("lists and creates on /v1/accounts, for the owner and for a stranger alike", async () => {
+  it("lists and creates on /v1/accounts, for the administrator and for a stranger alike", async () => {
     await listAccounts();
     expect(lastPath(get)).toBe("/v1/accounts");
     await createAccount({ username: "carol", password: "hunter2hunter2" });
@@ -365,16 +365,16 @@ describe("accounts are one collection", () => {
     expect(lastQuery(get)).toEqual({ limit: "50", offset: "100" });
   });
 
-  it("addresses another account by the id the owner names", async () => {
+  it("addresses another account by the id the administrator names", async () => {
     await updateAccount(12, { disabled: true });
     expect(patch).toHaveBeenCalledWith("/v1/accounts/12", { disabled: true });
     await setAccountPassword(12, {
-      password: "resetbytheowner",
-      password_confirmation: "resetbytheowner",
+      password: "resetbytheadmin",
+      password_confirmation: "resetbytheadmin",
     });
     expect(put).toHaveBeenCalledWith("/v1/accounts/12/password", {
-      password: "resetbytheowner",
-      password_confirmation: "resetbytheowner",
+      password: "resetbytheadmin",
+      password_confirmation: "resetbytheadmin",
     });
     await deleteAccountMessages(12);
     expect(del).toHaveBeenCalledWith("/v1/accounts/12/messages", undefined, LONG);
@@ -389,7 +389,7 @@ describe("accounts are one collection", () => {
     expect(post).toHaveBeenCalledWith("/v1/accounts/7/api-tokens", { label: "cli" });
   });
 
-  it("lists and revokes another account's API tokens as the owner", async () => {
+  it("lists and revokes another account's API tokens as the administrator", async () => {
     await listApiTokens(undefined, 12);
     expect(lastPath(get)).toBe("/v1/accounts/12/api-tokens");
     await deleteApiToken(3, 12);

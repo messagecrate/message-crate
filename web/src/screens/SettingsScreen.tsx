@@ -39,24 +39,24 @@ const TAB_LABELS: Record<SettingsTab, string> = {
 /** System, Convert and Appearance are this device's, not an account's. */
 const DEVICE_TABS: readonly SettingsTab[] = ["system", "convert", "appearance"];
 
-/** Tabs about messages, which the owner does not hold. */
-const OWNER_HIDDEN_TABS: readonly SettingsTab[] = ["storage", "system", "convert"];
+/** Tabs about messages, which the administrator does not hold. */
+const ADMIN_HIDDEN_TABS: readonly SettingsTab[] = ["storage", "system", "convert"];
 
 /**
  * Tabs this person can open, in display order.
  *
  * - Convert is a desktop-only tool: it runs `reexport` in the desktop
  *   process, so a browser visiting the website never sees it.
- * - An account the owner opened from User Accounts has the tabs that
- *   are the account's. The device tabs would change the owner's own browser,
- *   so they are in the owner's own Settings only.
- * - The owner holds no messages, so its own Settings have no Storage,
+ * - An account the administrator opened from User Accounts has the tabs that
+ *   are the account's. The device tabs would change the administrator's own browser,
+ *   so they are in the administrator's own Settings only.
+ * - The administrator holds no messages, so its own Settings have no Storage,
  *   and none of the tools that work on messages: System and Convert.
  */
-function visibleTabs(isDesktop: boolean, managed: boolean, isOwner: boolean): SettingsTab[] {
+function visibleTabs(isDesktop: boolean, managed: boolean, isAdmin: boolean): SettingsTab[] {
   return ALL_TABS.filter((id) => {
     if (managed && DEVICE_TABS.includes(id)) return false;
-    if (isOwner && !managed && OWNER_HIDDEN_TABS.includes(id)) return false;
+    if (isAdmin && !managed && ADMIN_HIDDEN_TABS.includes(id)) return false;
     if (id === "convert") return canUseConvert(isDesktop);
     return true;
   });
@@ -87,18 +87,18 @@ const NEW_ACCOUNT_DISABLED_TABS: readonly SettingsTab[] = ["profile", "storage",
 
 /**
  * Settings for the logged-in account, or, given `managedAccountId`, for an
- * account the owner opened from User Accounts. The same screen and the
- * same tabs either way, so the owner sees an account's settings laid out as
+ * account the administrator opened from User Accounts. The same screen and the
+ * same tabs either way, so the administrator sees an account's settings laid out as
  * the account holder does.
  *
- * Given `creating`, the account is one the owner is adding. It has the tabs a
- * managed account has, so the owner sees what the account will hold, but only
+ * Given `creating`, the account is one the administrator is adding. It has the tabs a
+ * managed account has, so the administrator sees what the account will hold, but only
  * Account opens: a profile and storage belong to an account that exists.
  * Creating it opens that account's Settings, with every tab.
  *
  * Given `backToAccounts`, the screen was opened from User Accounts and carries
  * a link back to it above the heading, which says whose Settings these are.
- * Owner Home sets it for every account it opens, the owner's own included.
+ * Admin Home sets it for every account it opens, the administrator's own included.
  */
 export default function SettingsScreen({
   managedAccountId,
@@ -122,7 +122,7 @@ export default function SettingsScreen({
   });
   const tabs = creating
     ? visibleTabs(isTauri(), true, false)
-    : visibleTabs(isTauri(), managed, profile?.is_owner === true);
+    : visibleTabs(isTauri(), managed, profile?.is_admin === true);
   const tab = creating ? "account" : tabFromSearchParam(searchParams.get("tab"), tabs);
 
   return (
@@ -130,7 +130,7 @@ export default function SettingsScreen({
       <header>
         {backToAccounts ? (
           <Link
-            to="/owner/accounts"
+            to="/admin/accounts"
             className="mb-2 inline-block text-[0.813rem] text-muted no-underline hover:text-text"
           >
             ← User Accounts
@@ -140,12 +140,12 @@ export default function SettingsScreen({
           {creating
             ? "New account"
             : managed
-              ? // Blank until the account is read, so the owner's wording never shows first.
+              ? // Blank until the account is read, so the administrator's wording never shows first.
                 profile
                 ? managedHeading(profile.username, profile.preferred_name)
                 : "\u00a0"
               : backToAccounts
-                ? "Settings for Owner"
+                ? "Settings for Administrator"
                 : "Settings"}
         </h2>
       </header>
