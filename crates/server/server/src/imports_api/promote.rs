@@ -11,6 +11,7 @@ use anyhow::{Result, bail};
 use sqlx::SqliteConnection;
 
 use crate::counts::words;
+use crate::db::conversations::{ConversationService, PromotedTransports};
 use crate::db::schema;
 use crate::db::staging;
 use crate::progress::Progress;
@@ -56,12 +57,14 @@ pub(super) async fn promote_append(
     tx: &mut SqliteConnection,
     mode: ImportMode,
     account_id: i64,
+    import_id: Option<i64>,
     wipe_sources: &[String],
     progress: Progress,
 ) -> Result<PromoteStats, PromoteError> {
     let mut promote = Promote {
         tx,
         account_id,
+        import_id,
         mode,
         stats: PromoteStats::default(),
         started: Instant::now(),
@@ -81,12 +84,37 @@ pub(super) async fn promote_append(
 struct Promote<'a> {
     tx: &'a mut SqliteConnection,
     account_id: i64,
+    /// The Import Run the promotion belongs to, named in its warnings;
+    /// `None` for the server's `import` command run without one.
+    import_id: Option<i64>,
     mode: ImportMode,
     stats: PromoteStats,
     /// When the promotion began, for the total in every phase's log line.
     started: Instant,
     /// Where each phase's line goes.
     progress: Progress,
+}
+
+/// Why a promotion that wrote `written` to a conversation made it
+/// `unknown`, as what the added messages' transports do in a warning's
+/// sentence; `None` when it did not:
+/// its added messages name one known service, and the earlier messages
+/// name the same one, none, or were `unknown` already (CONTACT-56).
+fn unknown_service_reason(written: &PromotedTransports) -> Option<String> {
+    let added = ConversationService::of_transports(written.added.iter().map(|(t, _)| t.as_deref()));
+    if added == ConversationService::Unknown {
+        return Some("do not name one known service".to_string());
+    }
+    if written.earlier.is_empty() {
+        return None;
+    }
+    let earlier = ConversationService::of_transports(written.earlier.iter().map(Option::as_deref));
+    (earlier != ConversationService::Unknown && earlier != added).then(|| {
+        format!(
+            "name another service than the conversation's earlier messages ({})",
+            earlier.as_str()
+        )
+    })
 }
 
 /// Messages are inserted in staging-id ranges this wide, so one statement never
@@ -110,6 +138,7 @@ impl Promote<'_> {
         self.promote_conversations().await?;
         self.promote_participants().await?;
         let messages_before = self.promote_messages().await?;
+        self.warn_of_unknown_services(messages_before).await?;
         let attachments_before = self.promote_attachments().await?;
         self.promote_tapbacks().await?;
         let versions_before = self.promote_earlier_versions(messages_before).await?;
@@ -300,6 +329,51 @@ impl Promote<'_> {
             ),
         );
         Ok(messages_before)
+    }
+
+    /// Write a warning for each conversation this promotion made `unknown`:
+    /// a message it added has a transport that could not be read, or the
+    /// messages it added name another service than the conversation's
+    /// earlier ones, or two services among themselves. The warning names the
+    /// conversation, the transports and sources of the added messages, and
+    /// the Import Run, so the exporter that wrote them can be looked into
+    /// (docs/architecture/rules/contacts-identities-and-messages.md,
+    /// CONTACT-56). A conversation that was `unknown` before and gets only
+    /// well-formed messages is not this run's fault, and gets no warning.
+    /// `messages_before` is the highest message id before the promotion.
+    async fn warn_of_unknown_services(&mut self, messages_before: i64) -> Result<()> {
+        let promoted = crate::db::conversations::transports_promoted_above(
+            self.tx,
+            self.account_id,
+            messages_before,
+        )
+        .await?;
+        let run = self.import_id.map_or_else(
+            || "an import with no Import Run".to_string(),
+            |run| format!("Import Run {run}"),
+        );
+        for (id, written) in promoted {
+            let Some(reason) = unknown_service_reason(&written) else {
+                continue;
+            };
+            let mut transports: Vec<&str> = written
+                .added
+                .iter()
+                .map(|(t, _)| t.as_deref().unwrap_or("none"))
+                .collect();
+            transports.sort_unstable();
+            transports.dedup();
+            let mut sources: Vec<&str> = written.added.iter().map(|(_, s)| s.as_str()).collect();
+            sources.sort_unstable();
+            sources.dedup();
+            self.progress.warn(format_args!(
+                "Conversation {id} is shown as Unknown, because {run} wrote messages from {} \
+                 to it whose transports ({}) {reason}",
+                sources.join(", "),
+                transports.join(", "),
+            ));
+        }
+        Ok(())
     }
 
     /// Skip per-row full-text search trigger work during the bulk inserts;

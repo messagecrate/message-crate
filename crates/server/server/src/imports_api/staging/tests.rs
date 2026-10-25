@@ -603,8 +603,8 @@ async fn a_whatsapp_conversation_is_on_whatsapp_whatever_its_source_is_named() {
     );
 }
 
-/// An incoming line from `sender` on a service the model does not know, as
-/// Apple Messages writes a message sent by satellite.
+/// An incoming line from `sender` whose transport the exporter could not
+/// read, as Apple Messages writes a `chat.db` row with no service.
 fn incoming_unknown_service(guid: &str, sender: &str) -> String {
     message_line(guid, "hi")
         .service(Transport::Unknown)
@@ -642,6 +642,69 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
     .await
     .unwrap();
     assert_eq!(contacts, 1, "both messages are from the one contact");
+}
+
+/// A promoted message whose transport could not be read leaves its
+/// conversation `unknown`, and the import writes a warning naming the
+/// conversation and the transports and source of what it added, so the
+/// exporter gets looked into. A conversation of known transports of one
+/// service gets none, and so does a later import that adds only well-formed
+/// messages to the `unknown` one (CONTACT-56).
+#[tokio::test]
+async fn promoting_a_message_of_unknown_transport_writes_a_warning() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let unknown = conversation_header("imessage", "+15555550101")
+        .participant("+15555550101", Some("Sam"))
+        .line()
+        + &incoming("g-unk-1", "+15555550101")
+        + &incoming_unknown_service("g-unk-2", "+15555550101");
+    let known = conversation_header("imessage", "+15555550102")
+        .participant("+15555550102", Some("Kim"))
+        .line()
+        + &incoming("g-known-1", "+15555550102");
+    // A later import of well-formed messages into the conversation that is
+    // already `unknown` is not at fault, so it is not named.
+    let later = conversation_header("imessage", "+15555550101")
+        .participant("+15555550101", Some("Sam"))
+        .line()
+        + &incoming("g-unk-3", "+15555550101");
+
+    let ((), lines) = crate::test_support::lines_written_by("warn", async {
+        import_one(&mut conn, "+15555550101.jsonl", &unknown)
+            .await
+            .unwrap();
+        import_one(&mut conn, "+15555550102.jsonl", &known)
+            .await
+            .unwrap();
+        import_one(&mut conn, "+15555550101.jsonl", &later)
+            .await
+            .unwrap();
+    })
+    .await;
+
+    let unknown_id: i64 = sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE h.raw = '+15555550101'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    let warnings: Vec<&str> = lines
+        .iter()
+        .filter(|l| l.text.contains("is shown as Unknown"))
+        .map(|l| l.text.as_str())
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].contains(&format!(
+            "Conversation {unknown_id} is shown as Unknown, because an import with no Import Run \
+             wrote messages from sms-backup-restore to it whose transports (imessage, unknown) \
+             do not name one known service"
+        )),
+        "{}",
+        warnings[0]
+    );
 }
 
 /// One number is one identity type whether it arrives as a sender or as a

@@ -166,7 +166,7 @@ Trash and out of it at once is `PATCH /v1/trash/contacts`, with the same
 `{add, remove}` lists of at most 10000 ids each. It answers the contacts of
 `add` now in the Trash as `trashed` and the ones it took out as
 `restored`. Why: Delete Contacts is one action, and the Audit Trail records
-it as one entry only when one request carries it ([CONTACT-57](contacts-identities-and-messages.md#contact-57-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
+it as one entry only when one request carries it ([CONTACT-58](contacts-identities-and-messages.md#contact-58-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
 Unlike a Contact Group's `add`, which API-34 refuses for an id the caller
 does not hold, an id the account does not hold is skipped in either list.
 Why: an Undo or Redo replays contacts chosen earlier, and one deleted since
@@ -230,7 +230,7 @@ format, and anything about how to apply it is a declared query parameter.
 `POST /v1/contacts` takes the address book as a `text/csv` body and
 `mode=append|edit`. The same route takes one contact typed by hand as an
 `application/json` body, answered `201 Created` with the contact
-([CONTACT-56](contacts-identities-and-messages.md#contact-56-new-contact-refuses-an-identity-another-contact-holds-and-offers-no-merge)),
+([CONTACT-57](contacts-identities-and-messages.md#contact-57-new-contact-refuses-an-identity-another-contact-holds-and-offers-no-merge)),
 and refuses `mode` with it. Any other `Content-Type` is
 `415 Unsupported Media Type`. Why: both bodies add contacts to the
 collection, which `POST` on the collection does (API-19), and the

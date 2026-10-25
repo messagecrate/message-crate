@@ -438,6 +438,20 @@ fn build_reactions(session: &MailSession, message: &Message) -> Vec<Reaction> {
     sortable.into_iter().map(|(_, _, _, r)| r).collect()
 }
 
+/// The service a row was sent on, as the protocol's `service` names it.
+/// `iMessageLite`, which the library reads as [`Service::Satellite`], is
+/// iMessage sent by satellite, so it is `iMessage`: written as `Satellite`,
+/// no reader knew the word, and the message's transport was unknown
+/// (#3277). A row with no service is empty, and any other service keeps the
+/// name `chat.db` gives it.
+fn service_name(service: &Service<'_>) -> String {
+    match service {
+        Service::Unknown => String::new(),
+        Service::Satellite => Service::iMessage.to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Chat id, roster and sender fields for one row.
 struct RowContext {
     conversation: ConversationRecord,
@@ -477,10 +491,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
             .and_then(|handle_id| sender(session, handle_id))
     };
 
-    let service = match message.service() {
-        Service::Unknown => String::new(),
-        other => other.to_string(),
-    };
+    let service = service_name(&message.service());
 
     RowContext {
         conversation,

@@ -765,7 +765,7 @@ pub struct ContactChange<'a> {
 /// in the change's own transaction, so a change made by Undo or Redo is
 /// recorded as the same change made by hand
 /// (`docs/architecture/rules/contacts-identities-and-messages.md`,
-/// CONTACT-57). Nothing is written when the account does not exist.
+/// CONTACT-58). Nothing is written when the account does not exist.
 ///
 /// No route writes `contacts_merged` or `contacts_unmerged` yet. The Merge
 /// Contacts routes (#3237) are to record them through here, with the contact

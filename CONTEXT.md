@@ -263,6 +263,17 @@ way a text reaches them. WhatsApp is a separate service, where an `@` id is
 not an email address.
 _Avoid_: SMS (for the service), iMessage (for the service)
 
+**Conversation service**:
+The service a conversation's messages were sent on, named from each message's
+transport and never from the backup it came from: `text_message` for SMS,
+MMS, RCS and iMessage, `whatsapp` for WhatsApp, the same words as an
+identity's service. The HTTP API publishes it as `ConversationService`, which
+also takes `discord`, `signal`, `telegram`, `slack` and `unknown`. A
+conversation's service is `unknown` when a message's transport could not be
+read or its messages name two services. That is a fault the import logs, and
+the screen shows it as Unknown. It is not the Unknown Contact Group.
+_Avoid_: Source (for the service), Platform
+
 **Participant**:
 Another person in a Conversation, as the account holder sees it. The account
 holder is never a participant: every conversation in an account is the holder's

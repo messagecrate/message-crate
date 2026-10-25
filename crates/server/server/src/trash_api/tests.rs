@@ -656,7 +656,7 @@ async fn contact_entries(
 
 /// Delete Contacts and its Undo are one request each, and each is one
 /// Audit Trail entry with the count and the ids of the contacts it moved. A
-/// request that moves nothing records nothing (CONTACT-57).
+/// request that moves nothing records nothing (CONTACT-58).
 #[tokio::test]
 async fn moving_contacts_to_and_out_of_the_trash_together_is_one_entry_each() {
     use crate::db::audit_trail::AuditAction;

@@ -86,8 +86,8 @@ async fn refused(
 
 /// A JSON body is one contact typed by hand: `201 Created`, its path in
 /// `Location`, the contact in the body with each identity typed by its
-/// service, and a `contact_added` entry naming it by id (CONTACT-56,
-/// CONTACT-57).
+/// service, and a `contact_added` entry naming it by id (CONTACT-57,
+/// CONTACT-58).
 #[tokio::test]
 async fn a_contact_typed_by_hand_is_created_with_its_identities_and_recorded() {
     let (fixture, account) = fixture_with_account().await;
@@ -171,7 +171,7 @@ async fn a_contact_with_a_name_and_no_identity_is_created_and_listed() {
 
 /// An identity another contact holds is refused with
 /// `422 Unprocessable Entity`, naming that contact, and nothing is created:
-/// no merge is offered (CONTACT-56). A nameless holder and one in the Trash
+/// no merge is offered (CONTACT-57). A nameless holder and one in the Trash
 /// are refused alike, each named as what it is.
 #[tokio::test]
 async fn an_identity_another_contact_holds_is_refused_naming_the_holder() {

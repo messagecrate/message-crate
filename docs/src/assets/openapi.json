@@ -15239,6 +15239,19 @@
           }
         }
       },
+      "ConversationService": {
+        "type": "string",
+        "description": "The service a conversation's messages were sent on: `text_message` (Text\nMessage: SMS, MMS, iMessage and RCS) or `whatsapp`, the two an identity\nis on (`IdentityService`); `discord`, `signal`, `telegram` or `slack`,\nwhich the conversation file names and no source reads today; or\n`unknown`, when a message's transport could not be read or the messages\nname two different services. `unknown` is never a default: each one is a\nfault, and the import that wrote it logs a warning.",
+        "enum": [
+          "text_message",
+          "whatsapp",
+          "discord",
+          "signal",
+          "telegram",
+          "slack",
+          "unknown"
+        ]
+      },
       "ConversationSource": {
         "type": "object",
         "description": "One backup source with message counts and share.",
@@ -15324,8 +15337,8 @@
             "description": "Participants with names and identities."
           },
           "service": {
-            "type": "string",
-            "description": "Platform service of the conversation, e.g. `imessage`."
+            "$ref": "#/components/schemas/ConversationService",
+            "description": "The service the conversation's messages were sent on, named from\neach message's own transport and never from the import it came from:\n`text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for\nWhatsApp. `unknown` when a message's transport could not be read, or\nwhen the messages name two different services."
           },
           "shown_title": {
             "type": [
@@ -18809,8 +18822,8 @@
                   "description": "Participants with names and identities."
                 },
                 "service": {
-                  "type": "string",
-                  "description": "Platform service of the conversation, e.g. `imessage`."
+                  "$ref": "#/components/schemas/ConversationService",
+                  "description": "The service the conversation's messages were sent on, named from\neach message's own transport and never from the import it came from:\n`text_message` for SMS, MMS, iMessage and RCS, `whatsapp` for\nWhatsApp. `unknown` when a message's transport could not be read, or\nwhen the messages name two different services."
                 },
                 "shown_title": {
                   "type": [
