@@ -15600,7 +15600,7 @@
       },
       "ExportQueryList": {
         "type": "string",
-        "description": "Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,\nAPI-115). The list decides which search words the query may use and what\nthe run hands over.",
+        "description": "Which list an Export Run's query is for (`docs/architecture/rules/http-api.md`,\nAPI-117). The list decides which search words the query may use and what\nthe run hands over.",
         "enum": [
           "conversations",
           "messages"
@@ -15758,7 +15758,7 @@
             }
           }
         ],
-        "description": "What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,\nAPI-114). One of three forms: everything the account holds, a query in the\nsearch language, or conversations and messages picked by hand."
+        "description": "What an Export Run asked for, stored as given (`docs/architecture/rules/http-api.md`,\nAPI-116). One of three forms: everything the account holds, a query in the\nsearch language, or conversations and messages picked by hand."
       },
       "ExportScopeKind": {
         "type": "string",
