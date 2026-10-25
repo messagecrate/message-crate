@@ -4,7 +4,7 @@
 
 use tempfile::TempDir;
 
-use super::{RegisteredAccount, add_account_and_log_in, insert_account_with_id, log_in};
+use super::{LoggedInAccount, add_account_and_log_in, insert_account_with_id, log_in};
 use crate::server::AppState;
 
 /// A server state plus its temp directory. Drop the `TempDir` last.
@@ -55,7 +55,7 @@ pub const PASSWORD: &str = "hunter2hunter2";
 
 /// A fixture with one account in it, `alice`, created as the administrator
 /// creates one and logged in: the fixture a route test starts from.
-pub async fn fixture_with_account() -> (TestFixture, RegisteredAccount) {
+pub async fn fixture_with_account() -> (TestFixture, LoggedInAccount) {
     let fixture = test_fixture().await;
     let account = add_account_and_log_in(&fixture.state, "alice", PASSWORD).await;
     (fixture, account)

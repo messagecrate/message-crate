@@ -47,13 +47,13 @@ async fn log_in_from(
     body["token"].as_str().unwrap().to_string()
 }
 
-/// The owner reads every account's entries in one list, newest first, runs
-/// included, and each says who acted on which account.
+/// The administrator reads every account's entries in one list, newest first,
+/// runs included, and each says who acted on which account.
 #[tokio::test]
-async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
+async fn the_admin_reads_every_accounts_entries_and_runs_newest_first() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let _: (String, Value) = post_created_json(
         state,
@@ -66,14 +66,14 @@ async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
         patch_status(
             state,
             &format!("/v1/accounts/{}", alice.account_id),
-            &owner.token,
+            &admin.token,
             json!({ "can_export": false }),
         )
         .await,
         StatusCode::OK
     );
 
-    let items = trail(state, "/v1/audit-trail", &owner.token).await;
+    let items = trail(state, "/v1/audit-trail", &admin.token).await;
     assert_eq!(
         actions(&items),
         [
@@ -97,20 +97,20 @@ async fn the_owner_reads_every_accounts_entries_and_runs_newest_first() {
     assert_eq!(items[4]["actor"], "admin");
 }
 
-/// An account reads every entry about itself, the owner's changes to it
-/// included, and nobody else's; only the owner reads the whole trail.
+/// An account reads every entry about itself, the administrator's changes to it
+/// included, and nobody else's; only the administrator reads the whole trail.
 #[tokio::test]
-async fn an_account_reads_its_own_entries_including_the_owners_changes() {
+async fn an_account_reads_its_own_entries_including_the_admins_changes() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let bob = add_account_and_log_in(state, "bob", PASSWORD).await;
     assert_eq!(
         patch_status(
             state,
             &format!("/v1/accounts/{}", alice.account_id),
-            &owner.token,
+            &admin.token,
             json!({ "can_delete": false }),
         )
         .await,
@@ -128,8 +128,8 @@ async fn an_account_reads_its_own_entries_including_the_owners_changes() {
         items.iter().all(|item| item["username"] == "alice"),
         "only alice's entries: {items:?}"
     );
-    // The owner reads the same entries under the account.
-    assert_eq!(trail(state, &own, &owner.token).await, items);
+    // The administrator reads the same entries under the account.
+    assert_eq!(trail(state, &own, &admin.token).await, items);
 
     let (status, text) = get_raw(state, &own, &bob.token).await;
     expect_problem(status, &text, ProblemType::NotTheAdmin);
@@ -144,7 +144,7 @@ async fn an_account_reads_its_own_entries_including_the_owners_changes() {
 async fn a_desktop_login_records_the_website_session_as_replaced() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     log_in_from(state, "alice", "website", "0.10.0+aaaa1111").await;
     let desktop = log_in_from(state, "alice", "desktop", "0.10.0+bbbb2222").await;
@@ -154,7 +154,7 @@ async fn a_desktop_login_records_the_website_session_as_replaced() {
     );
 
     let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);
-    let items = trail(state, &path, &owner.token).await;
+    let items = trail(state, &path, &admin.token).await;
     assert_eq!(
         actions(&items),
         [
@@ -172,7 +172,8 @@ async fn a_desktop_login_records_the_website_session_as_replaced() {
     assert_eq!(items[1]["app_build"], "0.10.0+bbbb2222");
     assert_eq!(items[2]["reason"], "replaced");
     assert_eq!(items[3]["app"], "website");
-    // Registering opened the first Session, which the website login replaced.
+    // Adding the account logged it in, and the website login replaced that
+    // Session.
     assert_eq!(items[4]["reason"], "replaced");
 }
 
@@ -183,7 +184,7 @@ async fn a_desktop_login_records_the_website_session_as_replaced() {
 async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let (status, text) = log_in_raw(state, "  Nobody-Here  ", "guess").await;
     expect_problem_for(
@@ -200,7 +201,7 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
         ProblemType::InvalidCredentials,
     );
 
-    let items = trail(state, "/v1/audit-trail", &owner.token).await;
+    let items = trail(state, "/v1/audit-trail", &admin.token).await;
     assert_eq!(items[0]["action"], "login_refused");
     assert_eq!(items[0]["reason"], "wrong_password");
     assert_eq!(items[0]["account_id"], alice.account_id);
@@ -234,7 +235,7 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     )
     .await;
     log_in(state, "alice", PASSWORD).await;
-    let items = trail(state, "/v1/audit-trail", &owner.token).await;
+    let items = trail(state, "/v1/audit-trail", &admin.token).await;
     let refused: Vec<&Value> = items
         .iter()
         .filter(|item| item["action"] == "login_refused")
@@ -250,7 +251,7 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
 async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let (_, run): (String, Value) = post_created_json(
         state,
@@ -263,13 +264,13 @@ async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
         delete_status(
             state,
             &format!("/v1/accounts/{}", alice.account_id),
-            &owner.token
+            &admin.token
         )
         .await,
         StatusCode::NO_CONTENT
     );
 
-    let items = trail(state, "/v1/audit-trail", &owner.token).await;
+    let items = trail(state, "/v1/audit-trail", &admin.token).await;
     assert_eq!(
         actions(&items[..5]),
         [
@@ -299,16 +300,16 @@ async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
     assert_eq!(kept, None, "the search text goes with the account");
 }
 
-/// The owner narrows the trail to one deleted account: its entries and
+/// The administrator narrows the trail to one deleted account: its entries and
 /// runs, and nothing of another account given the same username, deleted or
 /// live, nor the logins refused for the username once it was gone (#1554).
 #[tokio::test]
-async fn the_owner_narrows_the_trail_to_a_deleted_account() {
+async fn the_admin_narrows_the_trail_to_a_deleted_account() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let first = add_account_and_log_in(state, "alice", PASSWORD).await;
-    delete_account(state, first.account_id, &owner.token).await;
+    delete_account(state, first.account_id, &admin.token).await;
     let second = add_account_and_log_in(state, "Alice", PASSWORD).await;
     let (_, run): (String, Value) = post_created_json(
         state,
@@ -317,12 +318,12 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
         json!({ "scope": { "kind": "everything" } }),
     )
     .await;
-    delete_account(state, second.account_id, &owner.token).await;
+    delete_account(state, second.account_id, &admin.token).await;
     let (status, text) = log_in_raw(state, "alice", "guess").await;
     expect_problem(status, &text, ProblemType::InvalidCredentials);
     let _third = add_account_and_log_in(state, "alice", PASSWORD).await;
 
-    let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &owner.token).await;
+    let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &admin.token).await;
     assert_eq!(deleted["total"], 2);
     let deleted = deleted["items"].as_array().unwrap();
     assert_eq!(deleted[0]["username"], "Alice", "the latest deletion first");
@@ -333,7 +334,7 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
         "/v1/audit-trail?deleted_account_id={}",
         deleted[0]["id"].as_i64().unwrap()
     );
-    let page: Value = get_json(state, &path, &owner.token).await;
+    let page: Value = get_json(state, &path, &admin.token).await;
     let items = page["items"].as_array().unwrap();
     assert_eq!(
         actions(items),
@@ -357,7 +358,7 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
         "/v1/audit-trail?deleted_account_id={}",
         deleted[1]["id"].as_i64().unwrap()
     );
-    let first_items = trail(state, &path, &owner.token).await;
+    let first_items = trail(state, &path, &admin.token).await;
     assert_eq!(
         actions(&first_items),
         [
@@ -371,7 +372,7 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     let (status, text) = get_raw(
         state,
         "/v1/audit-trail?deleted_account_id=alice",
-        &owner.token,
+        &admin.token,
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -384,10 +385,10 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     expect_problem(status, &text, ProblemType::NotTheAdmin);
 }
 
-/// Delete the account `id` as the owner.
-async fn delete_account(state: &crate::server::AppState, id: i64, owner_token: &str) {
+/// Delete the account `id` as the administrator.
+async fn delete_account(state: &crate::server::AppState, id: i64, admin_token: &str) {
     assert_eq!(
-        delete_status(state, &format!("/v1/accounts/{id}"), owner_token).await,
+        delete_status(state, &format!("/v1/accounts/{id}"), admin_token).await,
         StatusCode::NO_CONTENT
     );
 }
@@ -445,7 +446,7 @@ async fn a_run_started_by_a_deleted_api_token_still_names_it() {
 async fn a_session_that_ran_out_reads_as_expired() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     // Registered on 1 January 2000, so the Session ran out on 31 January
     // 2000, long before any day this test runs on.
@@ -471,7 +472,7 @@ async fn a_session_that_ran_out_reads_as_expired() {
     .await;
 
     let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);
-    let items = trail(state, &path, &owner.token).await;
+    let items = trail(state, &path, &admin.token).await;
     assert_eq!(
         actions(&items),
         ["session_ended", "logged_in", "account_created"]
@@ -480,14 +481,14 @@ async fn a_session_that_ran_out_reads_as_expired() {
     assert_eq!(items[0]["at"], ran_out);
 }
 
-/// The owner's changes to an account are each recorded once, with what
+/// The administrator's changes to an account are each recorded once, with what
 /// changed: disabling, re-enabling, setting the password, and deleting its
 /// messages. A flag sent with the value it already has records nothing.
 #[tokio::test]
-async fn the_owners_changes_to_an_account_are_recorded() {
+async fn the_admins_changes_to_an_account_are_recorded() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let account = format!("/v1/accounts/{}", alice.account_id);
     for body in [
@@ -496,7 +497,7 @@ async fn the_owners_changes_to_an_account_are_recorded() {
         json!({ "disabled": false, "can_import": true }),
     ] {
         assert_eq!(
-            patch_status(state, &account, &owner.token, body).await,
+            patch_status(state, &account, &admin.token, body).await,
             StatusCode::OK
         );
     }
@@ -504,19 +505,19 @@ async fn the_owners_changes_to_an_account_are_recorded() {
         crate::test_support::put_status(
             state,
             &format!("{account}/password"),
-            &owner.token,
+            &admin.token,
             json!({ "password": "new-one", "password_confirmation": "new-one" }),
         )
         .await,
         StatusCode::NO_CONTENT
     );
     assert_eq!(
-        delete_status(state, &format!("{account}/messages"), &owner.token).await,
+        delete_status(state, &format!("{account}/messages"), &admin.token).await,
         StatusCode::OK
     );
 
-    // Disabling ended Alice's Session, so the owner reads her trail.
-    let items = trail(state, &format!("{account}/audit-trail"), &owner.token).await;
+    // Disabling ended Alice's Session, so the administrator reads her trail.
+    let items = trail(state, &format!("{account}/audit-trail"), &admin.token).await;
     assert_eq!(
         actions(&items[..5]),
         [
@@ -533,13 +534,13 @@ async fn the_owners_changes_to_an_account_are_recorded() {
 }
 
 /// An entry carries the id of the request that wrote it, the one in that
-/// response's `x-request-id`, so the owner finds the request's log line by
-/// it (#2276). Two requests leave two ids.
+/// response's `x-request-id`, so the administrator finds the request's log line
+/// by it (#2276). Two requests leave two ids.
 #[tokio::test]
 async fn an_entry_carries_the_id_of_the_request_that_wrote_it() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let alice = add_account_and_log_in(state, "alice", PASSWORD).await;
     let server = serve(state).await;
     let login = server
@@ -570,7 +571,7 @@ async fn an_entry_carries_the_id_of_the_request_that_wrote_it() {
         .to_string();
 
     let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);
-    let items = trail(state, &path, &owner.token).await;
+    let items = trail(state, &path, &admin.token).await;
     assert_eq!(actions(&items[..2]), ["session_ended", "logged_in"]);
     assert_eq!(items[0]["request_id"], logout_id.as_str());
     assert_eq!(items[1]["request_id"], login_id.as_str());

@@ -233,7 +233,7 @@ impl Drop for CancelOnDrop {
 }
 
 /// Build the Demo Account in the server's database `db` while the server is
-/// serving it: the Owner Home action. The account is removed and built again,
+/// serving it: the Admin Home action. The account is removed and built again,
 /// in the live database, and no other account is touched. Each source is
 /// imported in batches, each its own transaction, so another account's write
 /// waits for one batch at most. Returns the number of messages imported.
@@ -429,9 +429,9 @@ pub(super) struct BuildBy {
     /// the build's own entry.
     pub(super) actor: AuditActor,
     /// The set of Demo Data the build records itself with, right before the
-    /// wipe ([`audit_trail::record_demo_build`]): the `reset-demo` command
-    /// and the build on a new database do. `None` for the owner's build,
-    /// which the owner's request recorded already.
+    /// wipe ([`audit_trail::record_demo_build`]): the `reset-demo` command and
+    /// the build on a new database do. `None` for the administrator's build,
+    /// which the administrator's request recorded already.
     ///
     /// [`audit_trail::record_demo_build`]: crate::db::audit_trail::record_demo_build
     pub(super) record_with_size: Option<DemoDataSize>,

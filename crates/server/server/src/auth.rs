@@ -30,7 +30,7 @@ pub enum AuthCapability {
     /// Logged-in administrator. Carries no permissions at all, so every
     /// guard that asks for one refuses it and the administrator cannot
     /// reach message data.
-    /// See `docs/adr/0008-the-owner-holds-no-messages.md`.
+    /// See `docs/adr/0008-the-administrator-holds-no-messages.md`.
     Admin,
     /// Named API token. Already intersected with its account's permissions.
     ApiToken(Permissions),

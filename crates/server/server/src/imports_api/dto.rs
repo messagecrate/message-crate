@@ -517,10 +517,10 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
 
 /// An Import Run as the administrator's list of another account's runs answers
 /// it: its source, mode, times, outcome and counts, and nothing of what the
-/// backup held (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner
-/// may see"). The run's summary, its issues, its notes and its form say whom
-/// the account talks to, so they stay out, and a field reaches the
-/// administrator only by being added here.
+/// backup held (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What
+/// the administrator may see"). The run's summary, its issues, its notes and
+/// its form say whom the account talks to, so they stay out, and a field
+/// reaches the administrator only by being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct AdminImportRunSummary {
     /// Import Run id.
@@ -575,8 +575,9 @@ pub(crate) struct AdminImportRunSummary {
 /// may write any number of them, so the list leaves them out
 /// (`docs/architecture/rules/http-api.md`, API-45). Each is named by its file
 /// name, type and size, which the administrator may read
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may see");
-/// never by its message, its conversation, or its bytes.
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the
+/// administrator may see"); never by its message, its conversation, or its
+/// bytes.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct AdminImportRun {
     /// Everything the list answers for the run.

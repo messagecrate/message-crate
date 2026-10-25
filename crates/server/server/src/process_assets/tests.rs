@@ -1485,7 +1485,7 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
         assert_eq!(
             not_made_kinds(&mut conn, attachment_id).await,
             (missing.clone(), missing),
-            "the kind is recorded with the reason, for the owner's count"
+            "the kind is recorded with the reason, for the administrator's count"
         );
 
         fs::write(&original, bytes).unwrap();
@@ -2479,10 +2479,10 @@ fn an_ffmpeg_that_stalled_is_the_reason_no_version_was_made() {
     );
 }
 
-/// Each way ffmpeg is stopped is its own kind of failure, so the owner's view
-/// of an Import Run counts a looping damaged file apart from a hung encoder
-/// (#2636). A stall before any output and one partway are one kind: both
-/// stopped making progress.
+/// Each way ffmpeg is stopped is its own kind of failure, so the
+/// administrator's view of an Import Run counts a looping damaged file apart
+/// from a hung encoder (#2636). A stall before any output and one partway are
+/// one kind: both stopped making progress.
 #[test]
 fn each_way_ffmpeg_is_stopped_is_sorted_into_its_kind() {
     let wait = std::time::Duration::from_secs(120);

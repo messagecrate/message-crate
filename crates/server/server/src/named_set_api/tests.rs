@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    ConversationRow, RegisteredAccount, add_account_and_log_in, delete_raw, delete_status,
+    ConversationRow, LoggedInAccount, add_account_and_log_in, delete_raw, delete_status,
     expect_problem, expect_problem_for, get_json, get_raw, get_status, patch_failure, patch_json,
     patch_json_raw, post_created_json, post_json_raw, test_fixture,
 };
@@ -61,7 +61,7 @@ fn rand_suffix() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-async fn alice(state: &AppState) -> RegisteredAccount {
+async fn alice(state: &AppState) -> LoggedInAccount {
     add_account_and_log_in(state, "alice", "hunter2hunter2").await
 }
 

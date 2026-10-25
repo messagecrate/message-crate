@@ -576,7 +576,7 @@ async fn an_asset_put_then_get_returns_the_same_bytes() {
 async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let user =
         crate::test_support::add_account_and_log_in(&state, "asset-read-user", "hunter2hunter2")
             .await;
@@ -633,7 +633,7 @@ async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
         crate::test_support::patch_status(
             &state,
             &format!("/v1/accounts/{}", user.account_id),
-            &owner.token,
+            &admin.token,
             serde_json::json!({ "can_export": false }),
         )
         .await,
@@ -1033,15 +1033,15 @@ async fn the_upload_routes_read_a_stored_file_only_to_start_an_upload() {
 }
 
 /// The attachment size limit is read from the Server Settings on each upload:
-/// the owner lowers it, and the next upload over it is refused by the server
-/// that was already running, whether it is sent as one `PUT` or opened as a
-/// multipart upload. The same file was accepted a moment before.
+/// the administrator lowers it, and the next upload over it is refused by the
+/// server that was already running, whether it is sent as one `PUT` or opened
+/// as a multipart upload. The same file was accepted a moment before.
 #[tokio::test]
-async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
+async fn an_upload_over_the_limit_the_admin_just_set_is_refused() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
     state.assets.part_size = 16;
-    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
     let start = format!("/v1/assets/{sha}/uploads");
@@ -1056,7 +1056,7 @@ async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
-        &owner.token,
+        &admin.token,
         serde_json::json!({ "asset_max_bytes": 32 }),
     )
     .await;
@@ -1100,11 +1100,11 @@ async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
 async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
-    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
-        &owner.token,
+        &admin.token,
         serde_json::json!({ "asset_max_bytes": 40 }),
     )
     .await;
@@ -1134,16 +1134,16 @@ async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size()
     );
 }
 
-/// A multipart upload keeps the part size it started with. The owner lowers
-/// the attachment size limit to 10 bytes after a 40-byte upload has opened
-/// with 16-byte parts, and every remaining 16-byte part is still stored and
-/// the upload completes, because the limit holds from the next upload.
+/// A multipart upload keeps the part size it started with. The administrator
+/// lowers the attachment size limit to 10 bytes after a 40-byte upload has
+/// opened with 16-byte parts, and every remaining 16-byte part is still stored
+/// and the upload completes, because the limit holds from the next upload.
 #[tokio::test]
 async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
     state.assets.part_size = 16;
-    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let server = crate::test_support::serve(&state).await;
 
@@ -1153,7 +1153,7 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
-        &owner.token,
+        &admin.token,
         serde_json::json!({ "asset_max_bytes": 10 }),
     )
     .await;
@@ -1162,10 +1162,10 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     assert_eq!(outcome.served, bytes);
 }
 
-/// What `serve` reads as it starts: with a stored limit below the part size
-/// in the config file it gets working limits, not an error, so neither an
-/// owner's setting nor an edit to `asset_part_size` can leave a server that
-/// will not start.
+/// What `serve` reads as it starts: with a stored limit below the part size in
+/// the config file it gets working limits, not an error, so neither an
+/// administrator's setting nor an edit to `asset_part_size` can leave a server
+/// that will not start.
 #[tokio::test]
 async fn the_limits_serve_starts_with_never_fail_on_a_limit_below_the_part_size() {
     let (fixture, _user) = crate::test_support::fixture_with_account().await;
@@ -2284,12 +2284,12 @@ async fn a_head_of_a_preview_or_a_thumbnail_takes_any_accept() {
 /// A preview is the attachment's content as much as the original is, so it is
 /// read under the same rule: the account that holds it and nobody else, any
 /// session of that account, an API token only with the export scope, and
-/// never the owner (`docs/adr/0008`).
+/// never the administrator (`docs/adr/0008`).
 #[tokio::test]
 async fn a_preview_is_read_under_the_same_rule_as_the_original() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let user =
         crate::test_support::add_account_and_log_in(&state, "preview-user", "hunter2hunter2").await;
     let other =
@@ -2300,9 +2300,9 @@ async fn a_preview_is_read_under_the_same_rule_as_the_original() {
 
     let (status, text) = crate::test_support::get_raw(&state, &path, &other.token).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
-    let (status, text) = crate::test_support::get_raw(&state, &path, &owner.token).await;
+    let (status, text) = crate::test_support::get_raw(&state, &path, &admin.token).await;
     crate::test_support::expect_problem_for(
-        "the owner reading a preview",
+        "the administrator reading a preview",
         status,
         &text,
         crate::problem::ProblemType::InsufficientScope,
@@ -2343,7 +2343,7 @@ async fn a_preview_is_read_under_the_same_rule_as_the_original() {
         crate::test_support::patch_status(
             &state,
             &format!("/v1/accounts/{}", user.account_id),
-            &owner.token,
+            &admin.token,
             serde_json::json!({ "can_export": false }),
         )
         .await,

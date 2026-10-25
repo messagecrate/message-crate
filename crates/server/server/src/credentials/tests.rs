@@ -340,7 +340,7 @@ async fn change_password_transaction_rolls_back_every_credential() {
 
 /// The password length rules, at their edges.
 ///
-/// The owner must have a password and one character is enough. A user
+/// The administrator must have a password and one character is enough. A user
 /// account has no minimum at all: an empty password is an account with no
 /// password. Both share the maximum, the only thing stopping a megabyte of
 /// text reaching Argon2, which would hash it and make every login slow for
@@ -349,7 +349,7 @@ async fn change_password_transaction_rolls_back_every_credential() {
 /// The hashes are made and checked on the blocking thread pool, and the
 /// refusals must still come back as the `validation-failed` they were.
 #[tokio::test]
-async fn the_owner_needs_one_character_and_a_user_needs_none() {
+async fn the_admin_needs_one_character_and_a_user_needs_none() {
     assert!(
         matches!(
             hash_admin_password("").await,
@@ -357,12 +357,12 @@ async fn the_owner_needs_one_character_and_a_user_needs_none() {
         ),
         "an administrator with no password"
     );
-    let owner_hash = hash_admin_password("a")
+    let admin_hash = hash_admin_password("a")
         .await
         .expect("one character is the minimum");
-    assert!(verify_password(&owner_hash, "a"));
-    assert!(passwords_match(Some(&owner_hash), "a").await.unwrap());
-    assert!(!passwords_match(Some(&owner_hash), "b").await.unwrap());
+    assert!(verify_password(&admin_hash, "a"));
+    assert!(passwords_match(Some(&admin_hash), "a").await.unwrap());
+    assert!(!passwords_match(Some(&admin_hash), "b").await.unwrap());
 
     assert_eq!(
         hash_user_password("").await.expect("empty is allowed"),
@@ -390,10 +390,10 @@ async fn the_owner_needs_one_character_and_a_user_needs_none() {
     // refused.
     for letter in ["a", "é", "🔑"] {
         let at_limit = letter.repeat(MAX_PASSWORD_CHARS);
-        let owner_at_limit = hash_admin_password(&at_limit)
+        let admin_at_limit = hash_admin_password(&at_limit)
             .await
             .expect("exactly the limit is allowed");
-        assert!(verify_password(&owner_at_limit, &at_limit));
+        assert!(verify_password(&admin_at_limit, &at_limit));
         hash_user_password(&at_limit)
             .await
             .expect("exactly the limit is allowed");

@@ -1086,17 +1086,17 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
 #[error("missing original")]
 struct MissingOriginal;
 
-/// Why a version was not made, from `err`, the failure of making it: the
-/// kind of failure, which the owner's view of an Import Run counts, and the
+/// Why a version was not made, from `err`, the failure of making it: the kind
+/// of failure, which the administrator's view of an Import Run counts, and the
 /// reason as the `/v1` Attachment answers it. The reason is what ffmpeg said
-/// about the file, with each path under one of `dirs` made relative to it;
-/// why ffmpeg was stopped (it made no progress, ran past twice the file's
-/// length, or did not finish one frame in time); or a phrase of the
-/// server's when ffmpeg did not read the file. Nothing else of `err` is
-/// kept: its context names the original by its full path, and a missing
-/// ffmpeg's error names every directory the server looked in. The `dirs` are
-/// the account's originals directory and the pass's work directory, both
-/// under the data directory, so what is left names no file outside it.
+/// about the file, with each path under one of `dirs` made relative to it; why
+/// ffmpeg was stopped (it made no progress, ran past twice the file's length,
+/// or did not finish one frame in time); or a phrase of the server's when
+/// ffmpeg did not read the file. Nothing else of `err` is kept: its context
+/// names the original by its full path, and a missing ffmpeg's error names
+/// every directory the server looked in. The `dirs` are the account's originals
+/// directory and the pass's work directory, both under the data directory, so
+/// what is left names no file outside it.
 fn not_made(err: &anyhow::Error, dirs: &[&Path]) -> (NotMadeKind, String) {
     if let Some(failed) = err.downcast_ref::<media::FfmpegFailed>() {
         let said = dirs.iter().fold(failed.said().to_string(), |said, dir| {

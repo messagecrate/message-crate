@@ -29,7 +29,7 @@ pub struct OpenDb {
     pub db: SqlitePool,
     /// The error SQLite gave when the pool asked for write-ahead logging, in
     /// SQLite's words. `None` when it gave none. `GET /v1/server/settings`
-    /// reports it, so Owner Home can name the cause beside the journal mode.
+    /// reports it, so Admin Home can name the cause beside the journal mode.
     pub wal_error: Option<Arc<str>>,
 }
 

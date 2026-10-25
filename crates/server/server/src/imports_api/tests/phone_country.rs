@@ -644,7 +644,7 @@ async fn picking_the_country_finds_the_own_number_keyed_by_the_digits() {
 /// Link the account's own number written `address`, on the phone service.
 async fn link_own(
     state: &crate::server::AppState,
-    account: &crate::test_support::RegisteredAccount,
+    account: &crate::test_support::LoggedInAccount,
     address: &str,
 ) {
     let _: serde_json::Value = patch_json(
@@ -660,7 +660,7 @@ async fn link_own(
 /// Identities, merging into the identity holding its `+` form.
 async fn pick_own_and_merge(
     state: &crate::server::AppState,
-    account: &crate::test_support::RegisteredAccount,
+    account: &crate::test_support::LoggedInAccount,
 ) {
     let _: serde_json::Value = patch_json(
         state,

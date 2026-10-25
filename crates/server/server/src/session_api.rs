@@ -1,7 +1,7 @@
 //! The Session singleton: `POST`, `GET` and `DELETE /v1/session`.
 //!
-//! A Session is one per logged-in account or owner. Logging in creates it,
-//! reading it says which account the bearer token names, and logging out
+//! A Session is one per logged-in account or administrator. Logging in creates
+//! it, reading it says which account the bearer token names, and logging out
 //! ends it. The password rules it applies live in `credentials`.
 
 use axum::extract::State;
@@ -62,8 +62,8 @@ impl CreateSessionResponse {
     /// and record the login at `now`, unless the account is disabled or gone.
     /// `username` is the one the account's row holds.
     ///
-    /// The account is read under the write lock that opens the Session, so
-    /// an owner disabling it during the password check, whose write ends
+    /// The account is read under the write lock that opens the Session, so an
+    /// administrator disabling it during the password check, whose write ends
     /// every Session the account has, cannot be followed by a Session that
     /// outlives the disable and works again once the account is enabled
     /// (#2074).
@@ -283,7 +283,7 @@ async fn log_in(
     // A disabled account gets the answer every refused login gets. Its own
     // answer would come only after the right password, so a guesser would
     // learn which guess was right, and that password works again once the
-    // owner enables the account. The Audit Trail still says why.
+    // administrator enables the account. The Audit Trail still says why.
     match CreateSessionResponse::for_existing_account(
         &mut conn,
         account_id,

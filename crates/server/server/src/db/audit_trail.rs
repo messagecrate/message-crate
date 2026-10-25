@@ -2,11 +2,11 @@
 //!
 //! The record is three tables read as one list. `audit_entries` holds
 //! everything that has no record of its own: sessions, refused logins, the
-//! owner's and holders' changes to accounts, and the server closing an Export
-//! Run nobody closed. Import Runs and Export Runs stay in `imports` and
-//! `exports` and are not copied. [`page`] reads all three in
-//! time order, and adds a `session_ended` entry with the reason `expired` for
-//! each session that ran out with nothing to end it, so expiry needs no write.
+//! administrator's and holders' changes to accounts, and the server closing an
+//! Export Run nobody closed. Import Runs and Export Runs stay in `imports` and
+//! `exports` and are not copied. [`page`] reads all three in time order, and
+//! adds a `session_ended` entry with the reason `expired` for each session that
+//! ran out with nothing to end it, so expiry needs no write.
 //!
 //! An entry is written once. No route changes or deletes one; the only
 //! deletion is [`trim_refused_logins`], for refused logins as a username no
@@ -14,13 +14,13 @@
 //! account keeps its entries and runs ([`prepare_account_deletion`]).
 //! A password, a session token and an API token never enter the trail, and
 //! nothing here says what a message said or which conversation it was in
-//! (`docs/adr/0008-the-owner-holds-no-messages.md`,
+//! (`docs/adr/0008-the-administrator-holds-no-messages.md`,
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 //!
 //! An entry keeps the id of the request that wrote it
-//! ([`crate::request_id::current`]), so the owner finds that request's lines
-//! in the server's log by it. An entry written outside a request, by a server
-//! command or the first start's Demo Account build, keeps none (#2276).
+//! ([`crate::request_id::current`]), so the administrator finds that request's
+//! lines in the server's log by it. An entry written outside a request, by a
+//! server command or the first start's Demo Account build, keeps none (#2276).
 //!
 //! A refused login as a username no account holds keeps the username,
 //! trimmed, only when `require_valid_username` accepts it
@@ -62,13 +62,13 @@ pub enum AuditAction {
     LoginRefused,
     /// An account was made.
     AccountCreated,
-    /// The owner disabled the account.
+    /// The administrator disabled the account.
     AccountDisabled,
-    /// The owner re-enabled the account.
+    /// The administrator re-enabled the account.
     AccountEnabled,
     /// The account's password was set or changed.
     PasswordSet,
-    /// The owner changed the account's permissions.
+    /// The administrator changed the account's permissions.
     PermissionsChanged,
     /// Every message of the account was deleted for good.
     MessagesDeleted,
@@ -78,14 +78,14 @@ pub enum AuditAction {
     TrashEmptied,
     /// The account was deleted.
     AccountDeleted,
-    /// The owner changed the attachment size limit; `asset_max_bytes` is the
-    /// new limit.
+    /// The administrator changed the attachment size limit; `asset_max_bytes`
+    /// is the new limit.
     AssetLimitChanged,
-    /// The Demo Account was added where there was none: a build started, by
-    /// the owner, the `reset-demo` command, or the server's first start;
+    /// The Demo Account was added where there was none: a build started, by the
+    /// administrator, the `reset-demo` command, or the server's first start;
     /// `demo_data_size` is the set of Demo Data asked for.
     DemoAccountAdded,
-    /// The Demo Account was reset: a build started, by the owner or the
+    /// The Demo Account was reset: a build started, by the administrator or the
     /// `reset-demo` command, that removes it, with all it holds, and builds it
     /// again; `demo_data_size` is the set of Demo Data asked for.
     DemoAccountReset,
@@ -503,8 +503,8 @@ pub struct AuditEntry {
     /// The API token's label as it was then.
     pub api_token_label: Option<String>,
     /// The API token's masked hint as it was then, such as `mc-api-Sd..mE`.
-    /// Only on the entries about the reader's own account: the owner never
-    /// reads another account's.
+    /// Only on the entries about the reader's own account: the administrator
+    /// never reads another account's.
     pub api_token_hint: Option<String>,
     /// `permissions_changed`: permissions turned on.
     pub permissions_added: Option<Vec<Permission>>,
@@ -704,10 +704,10 @@ pub async fn record_about(
     Ok(())
 }
 
-/// Record that `actor` is building the Demo Account with the `size` set of
-/// Demo Data, before the build removes the Demo Account it replaces: the
-/// owner's build from Owner Home, the `reset-demo` command and the build
-/// `serve` runs on a new database all record it here, so every reset is
+/// Record that `actor` is building the Demo Account with the `size` set of Demo
+/// Data, before the build removes the Demo Account it replaces: the
+/// administrator's build from Admin Home, the `reset-demo` command and the
+/// build `serve` runs on a new database all record it here, so every reset is
 /// filed alike (#2977). It is stamped `now`.
 ///
 /// The entry is `demo_account_reset` about the Demo Account when there is
@@ -948,9 +948,9 @@ pub async fn record_refused_login(
     app: Option<&ConnectingApp>,
     now: DateTime<Utc>,
 ) -> Result<()> {
-    // The owner's Logs panel shows what the Audit Trail shows one account at
-    // a time. The line names the account by its id, never the username
-    // typed: the log holds ids and outcomes only
+    // The administrator's Logs panel shows what the Audit Trail shows one
+    // account at a time. The line names the account by its id, never the
+    // username typed: the log holds ids and outcomes only
     // (`docs/architecture/rules/server-log.md`).
     tracing::warn!(
         account_id = account.map(|(id, _)| id),
@@ -1076,7 +1076,7 @@ pub async fn prepare_account_deletion(
 /// Which entries a read covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
-    /// Every entry: the owner's Audit Trail.
+    /// Every entry: the administrator's Audit Trail.
     All,
     /// The entries about one account, whoever acted.
     Account(i64),

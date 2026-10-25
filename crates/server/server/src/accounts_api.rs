@@ -12,7 +12,7 @@
 //! accounts, so nothing here reads `messages.body`,
 //! `attachments.transcription`, or any other content column: a row carries who
 //! an account is, what it may do and how much it holds, never what it says. See
-//! `docs/adr/0008-the-owner-holds-no-messages.md`.
+//! `docs/adr/0008-the-administrator-holds-no-messages.md`.
 
 use std::sync::Arc;
 
@@ -1276,7 +1276,7 @@ pub(crate) struct AccountStorage {
 /// contact counts, and the 100 largest files. The administrator reads any
 /// account's; an account reads its own. The administrator is told each file's
 /// name, type and size and not the conversation it is in, which says who the
-/// account talks to (`docs/adr/0008-the-owner-holds-no-messages.md`).
+/// account talks to (`docs/adr/0008-the-administrator-holds-no-messages.md`).
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/storage",
@@ -1356,12 +1356,13 @@ pub(crate) async fn list_account_identities(
 // ---------------------------------------------------------------------------
 //
 // An account's history is metadata about it, so the administrator reads it as
-// well as the account (`docs/adr/0008-the-owner-holds-no-messages.md`, "What
-// the owner may see"). `/v1/imports` and `/v1/exports` are the import and
-// export pipelines' own routes and ask for a permission the administrator's
-// session never carries; these ask only who is calling. Which contacts a run
-// created is the holder's address book, so `/v1/imports/{id}/contacts` has no
-// twin here: the run's detail carries the counts.
+// well as the account (`docs/adr/0008-the-administrator-holds-no-messages.md`,
+// "What the administrator may see"). `/v1/imports` and `/v1/exports` are the
+// import and export pipelines' own routes and ask for a permission the
+// administrator's session never carries; these ask only who is calling. Which
+// contacts a run created is the holder's address book, so
+// `/v1/imports/{id}/contacts` has no twin here: the run's detail carries the
+// counts.
 //
 // The account reads its runs in full. The administrator reads each as an
 // `AdminImportRun` (in a list an `AdminImportRunSummary`) or an

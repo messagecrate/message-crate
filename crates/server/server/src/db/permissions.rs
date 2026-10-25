@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// One of the three permissions, by name: what the Audit Trail lists when the
-/// owner turns one on or off.
+/// administrator turns one on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {

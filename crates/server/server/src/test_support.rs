@@ -7,8 +7,8 @@
 //! - `http`: the HTTP helpers. They start the real app through [`serve`],
 //!   issue one request, read the whole response, and let the server drop;
 //!   [`serve_router`], which [`serve`] calls, is the one place that binds a
-//!   listener and spawns an app. Registering, logging in and the problem
-//!   body of a failed request are here too.
+//!   listener and spawns an app. Adding an account, logging in and the
+//!   problem body of a failed request are here too.
 //! - `seed`: rows and stored values written straight into the database or
 //!   the asset store.
 //! - `imports`: imports run on a connection, and the checks on what an
@@ -39,7 +39,7 @@ pub use fixture::{
     test_fixture_with_busy_timeout,
 };
 pub use http::{
-    RegisteredAccount, TestServer, add_account_and_log_in, delete_json, delete_json_raw,
+    LoggedInAccount, TestServer, add_account_and_log_in, delete_json, delete_json_raw,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
     expect_internal_problem, expect_problem, expect_problem_for, expect_problem_response, get_json,
     get_raw, get_status, location, log_in, log_in_as_admin, log_in_raw, login_status,

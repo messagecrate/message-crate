@@ -2030,9 +2030,10 @@ async fn the_wipe_removes_the_demo_rows_and_directory_and_leaves_other_accounts(
     );
 }
 
-/// A reset leaves an unclaimed Message Crate with no owner, where `demo` logs
-/// in with an empty password. It holds none of the previous demo's rows or
-/// files, and has deduped the new demo data across its sources (#780).
+/// A reset leaves a Message Crate still in setup, with no administrator's
+/// password, where `demo` logs in with an empty password. It holds none of the
+/// previous demo's rows or files, and has deduped the new demo data across its
+/// sources (#780).
 #[tokio::test]
 async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     let temp = tempfile::tempdir().expect("create test directory");
@@ -2049,8 +2050,8 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
         assert!(
             !account_profile::admin_has_password(&mut conn)
                 .await
-                .expect("read claim state"),
-            "this Message Crate starts unclaimed"
+                .expect("read whether setup is done"),
+            "this Message Crate starts in setup"
         );
         close_test_db(pool, conn).await;
     }
@@ -2069,8 +2070,8 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     assert!(
         !account_profile::admin_has_password(&mut conn)
             .await
-            .expect("read claim state"),
-        "a reset writes no owner, so the Message Crate is still there to be claimed"
+            .expect("read whether setup is done"),
+        "a reset sets no administrator's password, so the Message Crate is still in setup"
     );
     let previous_messages: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE guid = 'previous-demo-message'")
@@ -2216,12 +2217,12 @@ async fn accounts_and_demo_conversations(cfg: &Config) -> (i64, i64) {
     (accounts, conversations)
 }
 
-/// What `serve` does on a first start: a database that does not exist is
-/// new, seeding it leaves the Demo Account alone in an unclaimed Message
-/// Crate, and the database is then no longer new, so no later start seeds
-/// it again (#971).
+/// What `serve` does on a first start: a database that does not exist is new,
+/// seeding it leaves the Demo Account beside the administrator in a Message
+/// Crate still in setup, and the database is then no longer new, so no later
+/// start seeds it again (#971).
 #[tokio::test]
-async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
+async fn a_new_database_is_seeded_once_with_the_demo_account_beside_the_admin() {
     let temp = tempfile::tempdir().expect("create test directory");
     let mut cfg = crate::open_db::fresh_config(temp.path());
     cfg.paths.db = temp.path().join("new/directory/messagecrate.db");
@@ -2245,7 +2246,7 @@ async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
             .expect("read the seeded database")
     );
     let (accounts, conversations) = accounts_and_demo_conversations(&cfg).await;
-    assert_eq!(accounts, 1, "the Demo Account and no owner");
+    assert_eq!(accounts, 1, "the Demo Account beside the administrator");
     assert!(conversations >= 1);
     let pool = engine::open_pool_for_path(&cfg.paths.db)
         .await
@@ -2254,8 +2255,8 @@ async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
     assert!(
         !account_profile::admin_has_password(&mut conn)
             .await
-            .expect("read claim state"),
-        "a first start leaves the Message Crate unclaimed"
+            .expect("read whether setup is done"),
+        "a first start leaves the Message Crate in setup"
     );
     assert_eq!(
         account_profile::username_for_account(&mut conn, DEMO_ACCOUNT_ID)
@@ -2323,7 +2324,7 @@ async fn another_programs_sqlite_file_is_not_new_and_reset_demo_refuses_it() {
 
 /// Seeding that fails partway leaves no half-built Demo Account: the first
 /// source is imported, the second cannot be read, the unfinished database is
-/// removed, and the Message Crate starts empty and unclaimed.
+/// removed, and the Message Crate starts empty and in setup.
 #[tokio::test]
 async fn a_first_start_seed_that_fails_partway_leaves_no_demo_account() {
     let temp = tempfile::tempdir().expect("create test directory");
@@ -2447,10 +2448,10 @@ async fn a_generator_warning_under_serve_reaches_the_server_log() {
 }
 
 /// The Demo Account build `serve` runs on a new database says every step
-/// through `tracing`, so each line reaches the server's log and the owner's
-/// Logs panel, from the removal of an old Demo Account to the Previews and
-/// Thumbnails (#2018). That nothing reaches standard output instead is
-/// checked on the `serve` process, in `tests/server_log.rs`.
+/// through `tracing`, so each line reaches the server's log and the
+/// administrator's Logs panel, from the removal of an old Demo Account to the
+/// Previews and Thumbnails (#2018). That nothing reaches standard output
+/// instead is checked on the `serve` process, in `tests/server_log.rs`.
 #[tokio::test]
 async fn the_build_under_serve_says_every_step_in_the_server_log() {
     let temp = tempfile::tempdir().expect("create test directory");
@@ -3102,7 +3103,7 @@ fn assert_deletion(entry: &BuildEntry, actor: &str) {
 
 /// `reset-demo` on a database that holds a Demo Account records the reset,
 /// by the command and with its set of Demo Data, before it deletes the old
-/// account, as a reset from Owner Home does. The reset's entry is about the
+/// account, as a reset from Admin Home does. The reset's entry is about the
 /// Demo Account, so the deletion files it in that account's record (#2977).
 /// The check that the reset changed nothing outside the Demo Account
 /// accepts it, so the reset is installed.
@@ -3128,11 +3129,11 @@ async fn the_reset_demo_command_records_its_reset_before_the_deletion() {
     assert_reset_filed_with(reset, deleted, "command_line", "large");
 }
 
-/// A reset from Owner Home and a reset by `reset-demo` each leave their
+/// A reset from Admin Home and a reset by `reset-demo` each leave their
 /// entry in the record of the Demo Account they replaced, one beside the
 /// other, wherever the reset was started (#2977).
 #[tokio::test]
-async fn owner_home_and_reset_demo_file_their_resets_alike() {
+async fn admin_home_and_reset_demo_file_their_resets_alike() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     let data_dir = temp.path().join("data");
@@ -3141,8 +3142,8 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
     write_tiny_reset_bundle(&bundle);
     let cfg = test_config(&db, &data_dir);
 
-    // The Owner Home reset: the owner's request records the build, then the
-    // build runs in the live database.
+    // The Admin Home reset: the administrator's request records the build, then
+    // the build runs in the live database.
     let (pool, mut conn) = test_db(&db).await;
     crate::db::audit_trail::record_demo_build(
         &mut conn,
@@ -3151,7 +3152,7 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
         chrono::Utc::now(),
     )
     .await
-    .expect("record the owner's reset");
+    .expect("record the administrator's reset");
     drop(conn);
     build_from_bundle(
         &cfg,
@@ -3164,23 +3165,23 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
         &AtomicBool::new(false),
     )
     .await
-    .expect("the owner's reset builds");
+    .expect("the administrator's reset builds");
     pool.close().await;
-    checkpoint_and_clean_sidecars(&db, "after the owner's reset")
+    checkpoint_and_clean_sidecars(&db, "after the administrator's reset")
         .await
-        .expect("checkpoint the owner's reset");
+        .expect("checkpoint the administrator's reset");
 
     reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Large)
         .await
         .expect("the command's reset installs");
 
     let entries = audit_entries_of(&db).await;
-    let [owner_reset, owner_deleted, command_reset, command_deleted] = entries.as_slice() else {
+    let [admin_reset, admin_deleted, command_reset, command_deleted] = entries.as_slice() else {
         panic!("two resets, each before its deletion: {entries:#?}");
     };
-    assert_deletion(owner_deleted, "admin");
+    assert_deletion(admin_deleted, "admin");
     assert_deletion(command_deleted, "command_line");
-    assert_reset_filed_with(owner_reset, owner_deleted, "admin", "medium");
+    assert_reset_filed_with(admin_reset, admin_deleted, "admin", "medium");
     assert_reset_filed_with(command_reset, command_deleted, "command_line", "large");
 }
 

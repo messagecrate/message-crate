@@ -541,12 +541,12 @@ pub async fn delete_account_messages_batch(
 /// Stable id for the seeded demo account (`reset-demo`).
 pub const DEMO_ACCOUNT_ID: i64 = 2;
 
-/// What the Demo Account may do, known from its id and never read from its
-/// row: export, and neither import nor delete for good
+/// What the Demo Account may do, known from its id and never read from its row:
+/// export, and neither import nor delete for good
 /// (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
 /// [`load_account_auth`] answers it for the Demo Account, so the profile and
-/// the owner's account list report what the guards, which refuse the Demo
-/// Account by its id, enforce: a row changed by hand cannot make a screen
+/// the administrator's account list report what the guards, which refuse the
+/// Demo Account by its id, enforce: a row changed by hand cannot make a screen
 /// offer what the server refuses.
 pub const DEMO_ACCOUNT_PERMISSIONS: crate::db::permissions::Permissions =
     crate::db::permissions::Permissions {
@@ -630,12 +630,12 @@ pub struct AccountAuth {
 
 /// Load one account's authorization row. `None` when the account is gone.
 ///
-/// The owner's permissions and the Demo Account's are known from their ids
-/// and never read from their rows: the owner holds none
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`), and the Demo Account
-/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. [`insert_account_at`] writes 0 to the
-/// owner's three permission columns so its row agrees, but the id alone
-/// decides.
+/// The administrator's permissions and the Demo Account's are known from their
+/// ids and never read from their rows: the administrator holds none
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`), and the Demo
+/// Account holds [`DEMO_ACCOUNT_PERMISSIONS`]. [`insert_account_at`] writes 0
+/// to the administrator's three permission columns so its row agrees, but the
+/// id alone decides.
 pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -843,7 +843,7 @@ pub async fn set_preferred_name(
     Ok(())
 }
 
-/// The flags only the owner sets on an account. `None` leaves a flag
+/// The flags only the administrator sets on an account. `None` leaves a flag
 /// as it is.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AccountFlags {
@@ -926,7 +926,7 @@ pub async fn account_exists(conn: &mut SqliteConnection, account_id: i64) -> any
         .is_some())
 }
 
-/// One page of account ids: the owner's first, then the rest by
+/// One page of account ids: the administrator's first, then the rest by
 /// username.
 ///
 /// # Errors

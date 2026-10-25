@@ -113,7 +113,7 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// reads, so it skips the check. A part of a multipart upload
 /// ([`is_upload_part`]) skips it too, because its route holds the body to the
 /// part size the upload started with, and the limit as it is now would refuse
-/// every remaining part of an upload the owner lowered the limit under.
+/// every remaining part of an upload the administrator lowered the limit under.
 ///
 /// Every body is held to time as well as size, with the body time limits
 /// ([`BodyTimeLimits`]), so a client

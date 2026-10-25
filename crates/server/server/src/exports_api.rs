@@ -38,10 +38,10 @@ pub const MAX_SELECTION_IDS: usize = 500;
 
 /// An Export Run as the administrator reads it under another account: the form
 /// of its scope, its tool, times, outcome and counts
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may see").
-/// A query's text is a search over the account's messages, and a selection
-/// names its conversations, so neither is here, and a field reaches the
-/// administrator only by being added here.
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the
+/// administrator may see"). A query's text is a search over the account's
+/// messages, and a selection names its conversations, so neither is here, and a
+/// field reaches the administrator only by being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct AdminExportRun {
     /// Export Run id.

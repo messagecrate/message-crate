@@ -3,14 +3,14 @@ use axum::http::StatusCode;
 use crate::db::trash::{Trashable, move_to_trash};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
+    LoggedInAccount, SeedConversation, SeedMessage, TestFixture, add_account_and_log_in,
     attach_stored_file, attachment, conversation_header, delete_raw, delete_status, expect_problem,
     fake_sha256, fixture_with_account, get_json, get_raw, get_status, message_line,
     seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
-async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) -> i64 {
+async fn seed(fixture: &TestFixture, account: &LoggedInAccount, handle: &str) -> i64 {
     seed_conversation(
         &fixture.state,
         &SeedConversation {
@@ -31,7 +31,7 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
 }
 
 /// A named contact of `account`, returning its id.
-async fn seed_named_contact(fixture: &TestFixture, account: &RegisteredAccount, name: &str) -> i64 {
+async fn seed_named_contact(fixture: &TestFixture, account: &LoggedInAccount, name: &str) -> i64 {
     let mut conn = fixture.conn().await;
     sqlx::query_scalar(
         "INSERT INTO contacts (account_id, preferred_name, origin) VALUES ($1, $2, 'user') RETURNING id",
@@ -43,7 +43,7 @@ async fn seed_named_contact(fixture: &TestFixture, account: &RegisteredAccount, 
     .unwrap()
 }
 
-async fn trash(fixture: &TestFixture, account: &RegisteredAccount, target: Trashable) {
+async fn trash(fixture: &TestFixture, account: &LoggedInAccount, target: Trashable) {
     let mut conn = fixture.conn().await;
     assert!(
         move_to_trash(&mut conn, account.account_id, target)
@@ -178,7 +178,7 @@ async fn empty_trash_needs_the_delete_permission() {
 
 /// Start an Import Run for `imessage`, as an Upload does before it asks
 /// about any file, and return its id.
-async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
+async fn start_run(fixture: &TestFixture, account: &LoggedInAccount) -> i64 {
     crate::test_support::start_import_run(
         &fixture.state,
         &account.token,
@@ -435,7 +435,7 @@ fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
 /// Returns the status the file's `PUT` answered.
 async fn import_file_from(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     source: &str,
     handle: &str,
     bytes: &[u8],
@@ -488,7 +488,7 @@ fn stored_copies(dir: &std::path::Path, sha: &str) -> Vec<std::path::PathBuf> {
 /// The one conversation of `account` whose messages come from `source`.
 async fn conversation_of_source(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     source: &str,
 ) -> i64 {
     let mut conn = fixture.conn().await;

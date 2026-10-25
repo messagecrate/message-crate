@@ -12,7 +12,7 @@ use super::*;
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, attachment, conversation_header, expect_problem,
+    LoggedInAccount, TestFixture, attachment, conversation_header, expect_problem,
     fixture_with_account, message_line,
 };
 
@@ -59,7 +59,7 @@ fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
 
 /// Import the three files as an Upload does: start an Import Run, upload
 /// each file, send the batch that names them, and complete the run.
-async fn import_three(fixture: &TestFixture, alice: &RegisteredAccount) -> Imported {
+async fn import_three(fixture: &TestFixture, alice: &LoggedInAccount) -> Imported {
     let files: Vec<(&str, &str, Vec<u8>)> = FILES
         .iter()
         .map(|(name, mime)| (*name, *mime, fixture_bytes(name)))
@@ -78,7 +78,7 @@ async fn import_three(fixture: &TestFixture, alice: &RegisteredAccount) -> Impor
 /// does, and answer their fingerprints and the conversation that holds them.
 async fn import_files(
     fixture: &TestFixture,
-    alice: &RegisteredAccount,
+    alice: &LoggedInAccount,
     files: &[(&str, &str, Vec<u8>)],
 ) -> (Vec<String>, i64) {
     let state = &fixture.state;
@@ -118,7 +118,7 @@ async fn import_files(
 /// The attachments of the one message, as the conversation answers them.
 async fn attachments(
     state: &AppState,
-    alice: &RegisteredAccount,
+    alice: &LoggedInAccount,
     conversation_id: i64,
 ) -> Vec<serde_json::Value> {
     let page: serde_json::Value = crate::test_support::get_json(
@@ -895,11 +895,7 @@ enum Photo {
 /// One Import Run in Append mode of one message, `g-photo`, with the JPEG
 /// `photo.jpg` (ffmpeg's test pattern, made small) as `photo` says.
 /// Answers the JPEG's fingerprint.
-async fn import_photo_run(
-    fixture: &TestFixture,
-    alice: &RegisteredAccount,
-    photo: Photo,
-) -> String {
+async fn import_photo_run(fixture: &TestFixture, alice: &LoggedInAccount, photo: Photo) -> String {
     let state = &fixture.state;
     let bytes = fixture_bytes("photo.jpg");
     let sha = file_io::sha256_hex(&bytes);
@@ -1038,10 +1034,10 @@ fn a_file_a_later_run_fills_in_gets_its_thumbnail() {
 }
 
 /// A file ffmpeg cannot read gets no Thumbnail and no Preview, and the
-/// conversation answers why for each (`docs/architecture/rules/media.md`, MEDIA-4),
-/// in ffmpeg's words, so the viewer can say it rather than the owner
-/// searching the server's log. The words name no path outside the data
-/// directory: the original's and the work file's paths are made relative.
+/// conversation answers why for each (`docs/architecture/rules/media.md`,
+/// MEDIA-4), in ffmpeg's words, so the viewer can say it rather than the
+/// administrator searching the server's log. The words name no path outside the
+/// data directory: the original's and the work file's paths are made relative.
 /// A file made beside it carries no reason.
 #[test]
 fn a_file_ffmpeg_cannot_read_answers_why_it_has_no_versions() {

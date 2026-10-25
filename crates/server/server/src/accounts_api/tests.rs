@@ -159,8 +159,8 @@ async fn the_admin_leads_the_account_list() {
 
 /// The administrator holds no messages and no permissions (ADR 0008), so its
 /// entry in the list reports none, whatever its row says: the row's columns
-/// default to on, and the administrator's is written at claim without setting
-/// them.
+/// default to on, and the administrator's is written with the database
+/// without setting them.
 #[tokio::test]
 async fn the_admins_entry_reports_no_permissions() {
     let fixture = test_fixture().await;
@@ -789,7 +789,7 @@ async fn patching_with_an_unknown_time_zone_is_a_validation_failure() {
 }
 
 /// An account's display name is at most 200 characters and an identity
-/// address it links at most 320, on a change and on a registration alike,
+/// address it links at most 320, on a change and on a new account alike,
 /// and a body over either is refused whole. Both were stored at any length a
 /// JSON body could carry (#2183).
 #[tokio::test]

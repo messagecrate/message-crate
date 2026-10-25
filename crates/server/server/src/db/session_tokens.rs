@@ -598,12 +598,12 @@ pub async fn revoke_session_token(
 
 /// End the account's Session, if it has one, and record it as `revoked` by
 /// `actor`. Used by `set-admin-password`, the shell command for the
-/// administrator who has lost the password, so the old password's login ends with it;
-/// by deleting an account; by the owner disabling an account, so enabling it
-/// again does not bring back the old token; and by a Demo Account rebuild.
-/// The owner setting another account's password through `/v1` does not call
-/// this: that sets the password and nothing more, and the account's session
-/// carries on.
+/// administrator who has lost the password, so the old password's login ends
+/// with it; by deleting an account; by the administrator disabling an account,
+/// so enabling it again does not bring back the old token; and by a Demo
+/// Account rebuild. The administrator setting another account's password
+/// through `/v1` does not call this: that sets the password and nothing more,
+/// and the account's session carries on.
 ///
 /// It reads the Session and then writes, so it takes the caller's write
 /// transaction, and the end is recorded with whatever else the caller does,

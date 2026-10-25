@@ -435,14 +435,15 @@ async fn a_valid_token_under_another_scheme_answers_401() {
     assert_eq!(response.status().as_u16(), 401);
 }
 
-/// No API token acts as the owner (ADR 0008). The route that issues tokens
-/// refuses the owner, but a token row on the owner's account can still
-/// exist: written by hand, or carried over in a restored database. A request
-/// with it answers the same `401 Unauthorized` as a token the server never
-/// issued, on a route the owner's session reaches, on one an import reaches,
-/// and on logging out, and leaves no record of a use on the token.
+/// No API token acts as the administrator (ADR 0008). The route that issues
+/// tokens refuses the administrator, but a token row on the administrator's
+/// account can still exist: written by hand, or carried over in a restored
+/// database. A request with it answers the same `401 Unauthorized` as a token
+/// the server never issued, on a route the administrator's session reaches, on
+/// one an import reaches, and on logging out, and leaves no record of a use on
+/// the token.
 #[tokio::test]
-async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() {
+async fn an_api_token_on_the_admins_account_answers_401_like_an_unknown_token() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
     crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
@@ -454,7 +455,8 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
             "by hand",
             Permissions::all(),
             None,
-            // Live by the router's clock, so only the owner rule can refuse it.
+            // Live by the router's clock, so only the rule against the
+            // administrator's account can refuse it.
             crate::test_support::routed_credential_instant(),
         )
         .await
@@ -473,15 +475,15 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
         ("DELETE", "/v1/session"),
     ] {
         let (status, text) = send(method, path, &created.token).await;
-        let owners = expect_problem_for(
-            &format!("{method} {path} with a token on the owner's account"),
+        let on_admin = expect_problem_for(
+            &format!("{method} {path} with a token on the administrator's account"),
             status,
             &text,
             ProblemType::AuthenticationRequired,
         );
         let (status, text) = send(method, path, "mc-api-never-issued").await;
         let unknown = expect_problem(status, &text, ProblemType::AuthenticationRequired);
-        assert_eq!(owners.detail, unknown.detail, "{method} {path}");
+        assert_eq!(on_admin.detail, unknown.detail, "{method} {path}");
     }
 
     let last_used: Option<String> =

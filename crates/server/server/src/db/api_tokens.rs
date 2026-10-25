@@ -99,7 +99,7 @@ struct TokenAuthRow {
 /// Look up which account owns this API token Bearer value at `now`.
 /// On a successful match, sets `last_accessed_at` to `now`; a failed update
 /// is logged and does not reject the token. Tokens expired by `now`,
-/// disabled tokens, and a token on the owner's account are rejected.
+/// disabled tokens, and a token on the administrator's account are rejected.
 ///
 /// # Errors
 ///
@@ -129,12 +129,13 @@ pub async fn lookup_account_for_api_token(
             label,
             token_hint,
         }) => {
-            // No API token acts as the owner
-            // (`docs/adr/0008-the-owner-holds-no-messages.md`). The route
-            // that issues tokens refuses the owner, but a token row on the
-            // owner's account written by hand or restored with a database is
-            // refused here as well, before its use is recorded, so every
-            // caller treats it as a token the server never issued.
+            // No API token acts as the administrator
+            // (`docs/adr/0008-the-administrator-holds-no-messages.md`). The
+            // route that issues tokens refuses the administrator, but a token
+            // row on the administrator's account written by hand or restored
+            // with a database is refused here as well, before its use is
+            // recorded, so every caller treats it as a token the server never
+            // issued.
             if disabled != 0 || super::account_profile::is_admin(account_id) {
                 return Ok(None);
             }

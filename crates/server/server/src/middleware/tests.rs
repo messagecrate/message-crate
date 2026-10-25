@@ -421,23 +421,22 @@ async fn accept_is_checked_on_v1_json_routes_only() {
     assert_ne!(asset.status(), StatusCode::NOT_ACCEPTABLE);
 }
 
-/// The attachment size limit holds the attachment uploads and nothing else.
-/// An owner who sets it to 20 bytes can still log in and change the Server
-/// Settings, and an account can still post an import batch of a few
-/// kilobytes. Only an attachment of 21 bytes is refused. When the limit
-/// capped every body, the login itself answered `413` and nothing could
-/// raise the limit again.
+/// The attachment size limit holds the attachment uploads and nothing else. An
+/// administrator who sets it to 20 bytes can still log in and change the Server
+/// Settings, and an account can still post an import batch of a few kilobytes.
+/// Only an attachment of 21 bytes is refused. When the limit capped every body,
+/// the login itself answered `413` and nothing could raise the limit again.
 #[tokio::test]
 async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
-    let owner = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
+    let admin = crate::test_support::log_in_as_admin(&state, "hunter2hunter2").await;
     let importer =
         crate::test_support::add_account_and_log_in(&state, "bob", "hunter2hunter2").await;
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
-        &owner.token,
+        &admin.token,
         serde_json::json!({ "asset_max_bytes": 20 }),
     )
     .await;

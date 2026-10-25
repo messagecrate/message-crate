@@ -160,7 +160,8 @@ impl AssetState {
     }
 }
 
-/// The Demo Account build the owner started, and what writes its bundle.
+/// The Demo Account build the administrator started, and what writes its
+/// bundle.
 #[derive(Debug, Clone)]
 pub(crate) struct DemoState {
     /// The build, if one is running or the last one failed. One per server:
@@ -181,10 +182,10 @@ impl Default for DemoState {
 }
 
 /// What SQLite answered when the server asked for write-ahead logging as it
-/// opened the database ([`OpenDb::wal_error`]), which
-/// `GET /v1/server/settings` reports to the owner: the error SQLite gave, or
-/// `None` when it gave none, because it turned write-ahead logging on or kept
-/// another mode without an error.
+/// opened the database ([`OpenDb::wal_error`]), which `GET /v1/server/settings`
+/// reports to the administrator: the error SQLite gave, or `None` when it gave
+/// none, because it turned write-ahead logging on or kept another mode without
+/// an error.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WalError(pub(crate) Option<Arc<str>>);
 

@@ -1,7 +1,7 @@
-//! `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}` through
-//! the router: the owner lists the files and downloads one whole
-//! (`docs/architecture/rules/server-log.md`). Who may call them is the credential
-//! matrix's to check.
+//! `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}` through the
+//! router: the administrator lists the files and downloads one whole
+//! (`docs/architecture/rules/server-log.md`). Who may call them is the
+//! credential matrix's to check.
 
 use axum::http::StatusCode;
 use serde_json::Value;
@@ -13,19 +13,19 @@ use crate::test_support::{
     test_fixture, write_log_line as write,
 };
 
-/// The owner lists the files newest first and downloads one whole, as a
+/// The administrator lists the files newest first and downloads one whole, as a
 /// `text/plain` attachment named for the file.
 #[tokio::test]
-async fn the_owner_lists_the_files_and_downloads_one_whole() {
+async fn the_admin_lists_the_files_and_downloads_one_whole() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     let files = small_log_files(state);
     for n in 0..6 {
         write(&files, n, "INFO", "finished processing request");
     }
 
-    let page: Value = get_json(state, "/v1/server/log-files", &owner.token).await;
+    let page: Value = get_json(state, "/v1/server/log-files", &admin.token).await;
     let items = page["items"].as_array().unwrap();
     assert!(items.len() >= 2, "{page}");
     assert_eq!(page["total"], items.len());
@@ -42,7 +42,7 @@ async fn the_owner_lists_the_files_and_downloads_one_whole() {
     let server = serve(state).await;
     let response = server
         .get(&format!("/v1/server/log-files/{}", ids[0]))
-        .bearer_auth(&owner.token)
+        .bearer_auth(&admin.token)
         .send()
         .await
         .unwrap();
@@ -62,12 +62,12 @@ async fn the_owner_lists_the_files_and_downloads_one_whole() {
 async fn a_file_the_log_does_not_hold_is_a_404() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
-    let owner = log_in_as_admin(state, PASSWORD).await;
+    let admin = log_in_as_admin(state, PASSWORD).await;
     write(&small_log_files(state), 0, "INFO", "one line");
 
     for id in ["99", "0"] {
         let (status, text) =
-            get_raw(state, &format!("/v1/server/log-files/{id}"), &owner.token).await;
+            get_raw(state, &format!("/v1/server/log-files/{id}"), &admin.token).await;
         expect_problem(status, &text, ProblemType::NotFound);
     }
 }

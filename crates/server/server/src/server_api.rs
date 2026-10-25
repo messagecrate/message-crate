@@ -16,7 +16,7 @@
 //! These are the server's only unauthenticated routes besides logging in,
 //! and the first read routes that do not require a session: the entry screen
 //! cannot have one yet, which is the whole of the exception. See
-//! `docs/adr/0008-the-owner-holds-no-messages.md`.
+//! `docs/adr/0008-the-administrator-holds-no-messages.md`.
 
 use std::sync::Arc;
 
@@ -260,7 +260,7 @@ pub struct DatabaseJournal {
     /// request is answered. The server asks for `wal` on every start. Any
     /// other mode means it could not have it, as when another program held
     /// the database file, and then every page waits while an import writes.
-    /// Owner Home says so. `null` when the mode could not be read; the
+    /// Admin Home says so. `null` when the mode could not be read; the
     /// server's log says why.
     pub mode: Option<crate::db::engine::JournalMode>,
     /// The error SQLite gave when the server asked for write-ahead logging
@@ -403,8 +403,8 @@ pub struct ServerStorage {
     /// Bytes the full-text search index takes, measured, for the whole
     /// database. It is one shared structure, so there is no per-account figure.
     pub fts_bytes: i64,
-    /// Every account, including ones with no messages: the owner first, then
-    /// by username, as the User Accounts table lists them.
+    /// Every account, including ones with no messages: the administrator first,
+    /// then by username, as the User Accounts table lists them.
     pub accounts: Vec<AccountMessages>,
 }
 
@@ -425,12 +425,13 @@ pub struct AccountMessages {
 }
 
 /// Read what the database holds. The counts and the attachment bytes are summed
-/// over every account. The database, messages and full-text search sizes
-/// are measured on disk. Each account's share of message storage is an
-/// estimate from its share of text. Counts and totals only, never a name or
-/// a line of text (`docs/adr/0008-the-owner-holds-no-messages.md`,
-/// "What the owner may see"). The owner's, because the owner administers this
-/// Message Crate and nobody else holds more than their own account.
+/// over every account. The database, messages and full-text search sizes are
+/// measured on disk. Each account's share of message storage is an estimate
+/// from its share of text. Counts and totals only, never a name or a line of
+/// text (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the
+/// administrator may see"). The administrator's alone, because the
+/// administrator runs this Message Crate and nobody else holds more than their
+/// own account.
 #[utoipa::path(
     get,
     path = "/v1/server/storage",
@@ -491,7 +492,7 @@ pub enum DemoAccountStatus {
     Failed,
 }
 
-/// The Demo Account, as the owner manages it.
+/// The Demo Account, as the administrator manages it.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DemoAccount {
     /// Whether it exists, is being built, or failed to build.
@@ -858,9 +859,9 @@ pub async fn replace_demo_account(
     ))
 }
 
-/// Record the owner's build of the Demo Account in the Audit Trail, then end
-/// every Session of the Demo Account, so nobody is inside it while it is
-/// removed and built again ([`crate::db::audit_trail::record_demo_build`]).
+/// Record the administrator's build of the Demo Account in the Audit Trail,
+/// then end every Session of the Demo Account, so nobody is inside it while it
+/// is removed and built again ([`crate::db::audit_trail::record_demo_build`]).
 async fn record_build_and_end_demo_sessions(
     db: &SqlitePool,
     size: DemoDataSize,

@@ -4,7 +4,7 @@
 //! Three callers: `reset-demo`; `serve` on a database that does not exist
 //! yet ([`seed_new_database`]), which is how every new Message Crate starts
 //! with the Demo Account; and `PUT /v1/server/demo-account`
-//! ([`build_demo_account`]), the owner's rebuild on a running server.
+//! ([`build_demo_account`]), the administrator's rebuild on a running server.
 //!
 //! This module sequences each caller's run. The build every caller runs is
 //! in `build`, the files a reset and a seeding move in `snapshot`, the
@@ -124,8 +124,8 @@ pub async fn database_is_new(cfg: &Config) -> Result<bool> {
 ///
 /// A failure is reported and not returned: the unfinished database is
 /// removed and `serve` creates an empty one, so the Message Crate starts
-/// without the Demo Account, since a person can still claim it and import,
-/// and the owner can add the Demo Account later.
+/// without the Demo Account, since the administrator can still set it up
+/// and import, and can add the Demo Account later.
 pub async fn seed_new_database(cfg: &Config) {
     let size = DemoSize::Medium;
     tracing::info!(
@@ -167,7 +167,7 @@ where
 /// The `reset-demo` command's build from the bundle of the `size` set: build
 /// the new state in a prepared database next to the active one, recording
 /// the build in its Audit Trail as the command's before the deletion of the
-/// old Demo Account, as a reset from Owner Home is recorded, prove nothing
+/// old Demo Account, as a reset from Admin Home is recorded, prove nothing
 /// outside the demo account changed, then swap it in.
 async fn reset_prepared_bundle(
     cfg: &Config,

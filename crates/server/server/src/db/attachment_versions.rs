@@ -61,7 +61,8 @@ impl Version {
 
 /// The kind of failure that kept the server's media pass from making a
 /// Thumbnail or Preview. The reason beside it says the rest in words. The
-/// owner's view of an Import Run counts its attachments' failures by kind.
+/// administrator's view of an Import Run counts its attachments' failures by
+/// kind.
 #[derive(
     Debug,
     Clone,
@@ -95,7 +96,7 @@ pub enum NotMadeKind {
 }
 
 impl NotMadeKind {
-    /// Every kind, in the order the owner's view lists them.
+    /// Every kind, in the order the administrator's view lists them.
     pub const ALL: [Self; 6] = [
         Self::ConversionFailed,
         Self::Stalled,
@@ -634,9 +635,9 @@ pub struct NotMadeVersion {
 
 /// One attachment an Import Run wrote that has no Thumbnail or no Preview,
 /// because the media pass could not make it: the file's name, type and size,
-/// which the owner may read (`docs/adr/0008-the-owner-holds-no-messages.md`),
-/// and why each version was not made. Never its message, its conversation,
-/// or its bytes.
+/// which the administrator may read
+/// (`docs/adr/0008-the-administrator-holds-no-messages.md`), and why each
+/// version was not made. Never its message, its conversation, or its bytes.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
 pub struct NotMadeAttachment {
     /// Attachment id.

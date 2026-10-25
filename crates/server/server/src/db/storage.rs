@@ -1,11 +1,11 @@
 //! How much an account, or the whole database, holds: row counts, the bytes its
-//! attachments take, and what the database itself takes on disk. Every
-//! number here describes message data without being it, which is what lets
-//! the owner read them
-//! (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner
-//! may see"). The per-account and all-account figures come from the same
-//! queries with and without an account filter, so the total on Owner Home
-//! cannot drift from the numbers on an account's Storage tab.
+//! attachments take, and what the database itself takes on disk. Every number
+//! here describes message data without being it, which is what lets the
+//! administrator read them
+//! (`docs/adr/0008-the-administrator-holds-no-messages.md`, "What the
+//! administrator may see"). The per-account and all-account figures come from
+//! the same queries with and without an account filter, so the total on Admin
+//! Home cannot drift from the numbers on an account's Storage tab.
 //!
 //! The database sizes are measured, never estimated. The
 //! one estimate is each account's share of message storage, which is the
@@ -137,7 +137,7 @@ pub async fn attachment_bytes(conn: &mut SqliteConnection, scope: Scope) -> Resu
     Ok(n)
 }
 
-/// One account's share of the messages held, as the owner's Dashboard
+/// One account's share of the messages held, as the administrator's Dashboard
 /// lists it: an id, a username and numbers, nothing that names a person or a
 /// conversation.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -196,9 +196,9 @@ pub async fn messages_bytes(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(n)
 }
 
-/// Every account with its message count and text bytes, the owner first and
-/// then by username: the order the User Accounts table uses. An account with
-/// no messages is listed with zeros. Text is counted in bytes, not
+/// Every account with its message count and text bytes, the administrator first
+/// and then by username: the order the User Accounts table uses. An account
+/// with no messages is listed with zeros. Text is counted in bytes, not
 /// characters: `LENGTH` of text counts characters, so the text is cast to
 /// SQLite's `BLOB` type first.
 pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountText>> {

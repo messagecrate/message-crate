@@ -7,7 +7,7 @@ use sqlx::SqliteConnection;
 use crate::db::{account_profile, imports};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    ConversationRow, MessageRow, RegisteredAccount, TestFixture, add_account_and_log_in,
+    ConversationRow, LoggedInAccount, MessageRow, TestFixture, add_account_and_log_in,
     expect_problem, fixture_with_account, seed_one_message, stored_time, test_fixture,
 };
 
@@ -32,7 +32,7 @@ async fn list_conversations(
 }
 
 /// A fixture, a logged-in account, and one conversation holding one message.
-async fn conversations_fixture() -> (TestFixture, RegisteredAccount) {
+async fn conversations_fixture() -> (TestFixture, LoggedInAccount) {
     let (fixture, account) = fixture_with_account().await;
     seed_one_message(&fixture.state, account.account_id).await;
     (fixture, account)
@@ -1757,7 +1757,7 @@ async fn conversation_restore_404s_for_another_accounts_conversation() {
 
 /// A logged-in account with one conversation already in the trash,
 /// returning the account and the conversation's id.
-async fn trashed_conversation_fixture() -> (TestFixture, RegisteredAccount, i64) {
+async fn trashed_conversation_fixture() -> (TestFixture, LoggedInAccount, i64) {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     crate::test_support::seed_one_message(&fixture.state, user.account_id).await;
     let list: serde_json::Value =
@@ -1938,7 +1938,7 @@ async fn conversation_delete_needs_the_delete_permission() {
 /// A logged-in account and one conversation with no messages yet, for
 /// tests that seed their own message rows with specific timestamps and
 /// `sort_order`.
-async fn conversation_messages_fixture() -> (TestFixture, RegisteredAccount, i64) {
+async fn conversation_messages_fixture() -> (TestFixture, LoggedInAccount, i64) {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let mut conn = state.db.acquire().await.unwrap();
@@ -2270,7 +2270,7 @@ fn bodies(range: impl IntoIterator<Item = i64>) -> Vec<String> {
 /// One page of a conversation's messages, read with `query`.
 async fn read_messages(
     fixture: &TestFixture,
-    user: &RegisteredAccount,
+    user: &LoggedInAccount,
     conversation_id: i64,
     query: String,
 ) -> serde_json::Value {
@@ -2614,7 +2614,7 @@ async fn conversation_messages_reads_a_trashed_conversations_messages() {
 
 /// Alice's conversation holding two iMessage messages and two SMS messages,
 /// one of the SMS messages a duplicate of an iMessage one.
-async fn sources_fixture() -> (TestFixture, RegisteredAccount, i64) {
+async fn sources_fixture() -> (TestFixture, LoggedInAccount, i64) {
     use crate::test_support::{SeedConversation, SeedMessage, seed_conversation};
     let (fixture, alice) = fixture_with_account().await;
     let message = |source, timestamp, body| SeedMessage {

@@ -9,7 +9,7 @@ use super::http_client;
 use crate::server::{AppState, http_app};
 
 /// An account a test added, with a live session token for it.
-pub struct RegisteredAccount {
+pub struct LoggedInAccount {
     /// The new account's id.
     pub account_id: i64,
     /// The username it was created with.
@@ -170,7 +170,7 @@ pub async fn add_account_and_log_in(
     state: &AppState,
     username: &str,
     password: &str,
-) -> RegisteredAccount {
+) -> LoggedInAccount {
     let hash = crate::credentials::hash_password(password).expect("hash the account password");
     let mut conn = state.db.acquire().await.expect("acquire to add an account");
     let mut tx = crate::db::begin_write(&mut conn)
@@ -198,7 +198,7 @@ pub async fn add_account_and_log_in(
     drop(conn);
 
     let body = log_in(state, username, password).await;
-    RegisteredAccount {
+    LoggedInAccount {
         account_id,
         username: username.to_string(),
         token: body["token"].as_str().unwrap().to_string(),
@@ -208,7 +208,7 @@ pub async fn add_account_and_log_in(
 /// Give the administrator `password` and log in as `admin`. The password is
 /// written straight to the database, not through `POST /v1/server/setup`,
 /// so nothing is recorded in the Audit Trail for it.
-pub async fn log_in_as_admin(state: &AppState, password: &str) -> RegisteredAccount {
+pub async fn log_in_as_admin(state: &AppState, password: &str) -> LoggedInAccount {
     let hash = crate::credentials::hash_password(password).expect("hash the admin password");
     let mut conn = state.db.acquire().await.expect("acquire for setup");
     crate::db::account_profile::update_password_hash(
@@ -221,7 +221,7 @@ pub async fn log_in_as_admin(state: &AppState, password: &str) -> RegisteredAcco
     drop(conn);
 
     let body = log_in(state, crate::db::account_profile::ADMIN_USERNAME, password).await;
-    RegisteredAccount {
+    LoggedInAccount {
         account_id: crate::db::account_profile::ADMIN_ACCOUNT_ID,
         username: crate::db::account_profile::ADMIN_USERNAME.to_string(),
         token: body["token"].as_str().unwrap().to_string(),

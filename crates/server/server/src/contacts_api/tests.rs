@@ -7,7 +7,7 @@ use ir::IdentityType;
 use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    ConversationRow, MessageRow, RegisteredAccount, TestFixture, add_account_and_log_in,
+    ConversationRow, LoggedInAccount, MessageRow, TestFixture, add_account_and_log_in,
     expect_problem, expect_problem_response, fixture_with_account, get_raw, get_status, post_json,
     post_json_raw, post_status, stored_time, test_fixture,
 };
@@ -15,7 +15,7 @@ use axum::http::StatusCode;
 
 /// A fixture, a logged-in account, and `handles` linked as contacts (one
 /// contact per phone, named `Contact 0`, `Contact 1`, ...).
-async fn contacts_fixture_with_handles(handles: &[&str]) -> (TestFixture, RegisteredAccount) {
+async fn contacts_fixture_with_handles(handles: &[&str]) -> (TestFixture, LoggedInAccount) {
     let (fixture, account) = fixture_with_account().await;
     if !handles.is_empty() {
         let mut conn = fixture.state.db.acquire().await.unwrap();
@@ -34,7 +34,7 @@ async fn contacts_fixture_with_handles(handles: &[&str]) -> (TestFixture, Regist
 
 /// A fixture, a logged-in account, and one contact linked to `handle` that
 /// is then trashed.
-async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, RegisteredAccount) {
+async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, LoggedInAccount) {
     let (fixture, account) = fixture_with_account().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     let contact_id =
@@ -51,7 +51,7 @@ async fn contacts_fixture_with_trashed_handle(handle: &str) -> (TestFixture, Reg
 /// A second logged-in account in the same server, with `handle` linked to
 /// one of its contacts. Used to prove `/v1/contacts/unmatched-identities` is scoped to
 /// the calling account rather than the whole database.
-async fn account_with_handle(fixture: &TestFixture, handle: &str) -> RegisteredAccount {
+async fn account_with_handle(fixture: &TestFixture, handle: &str) -> LoggedInAccount {
     let account = add_account_and_log_in(&fixture.state, "bob", "hunter2hunter2").await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     insert_contact_with_handle(&mut conn, account.account_id, "Other", handle).await;
@@ -2597,7 +2597,7 @@ const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,service,identity,grou
 /// `POST /v1/contacts` with a `text/csv` body.
 async fn load_address_book(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     query: &str,
     body: impl Into<reqwest::Body>,
 ) -> (StatusCode, String) {
@@ -2615,7 +2615,7 @@ async fn load_address_book(
 /// the answer a file, and the body.
 async fn get_address_book(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     body: serde_json::Value,
     accept: Option<&str>,
 ) -> (StatusCode, String, String, String) {
@@ -3229,7 +3229,7 @@ async fn trashed_contact_row_count(conn: &mut SqliteConnection, account_id: i64,
 /// A logged-in account with one named contact on `+15550100`, in one
 /// conversation (id 1) holding two messages, and already in the trash.
 /// Returns the account and the contact's id.
-async fn trashed_contact_fixture() -> (TestFixture, RegisteredAccount, i64) {
+async fn trashed_contact_fixture() -> (TestFixture, LoggedInAccount, i64) {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
     let mut conn = fixture.conn().await;
     insert_one_to_one_conversation(
@@ -3627,7 +3627,7 @@ async fn an_address_book_load_on_the_demo_account_is_refused() {
         // An Unknown: no name, one identity.
         insert_contact_with_handle(&mut conn, demo, "", "+15555550123").await
     };
-    let visitor = RegisteredAccount {
+    let visitor = LoggedInAccount {
         account_id: demo,
         username: "demo".into(),
         token,
@@ -3863,7 +3863,7 @@ async fn mutate_committed(
 /// the body.
 async fn get_vcard_address_book(
     fixture: &TestFixture,
-    account: &RegisteredAccount,
+    account: &LoggedInAccount,
     query: &str,
     body: &str,
     accept: Option<&str>,
