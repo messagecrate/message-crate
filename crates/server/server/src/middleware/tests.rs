@@ -451,9 +451,10 @@ async fn accept_on_two_lines_is_read_as_one_list() {
         .unwrap();
     let status = refused.status();
     let text = refused.text().await.unwrap();
-    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotAcceptable);
-    assert!(
-        text.contains("text/html, text/plain"),
+    let problem = expect_problem(status, &text, ProblemType::NotAcceptable);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("this route answers application/json, and Accept was text/html, text/plain"),
         "the detail quotes both lines: {text}"
     );
 }
