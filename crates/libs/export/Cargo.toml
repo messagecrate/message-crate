@@ -24,7 +24,7 @@ sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-httpmock = "0.8"
+httpmock = "0.9"
 
 [lints]
 workspace = true

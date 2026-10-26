@@ -24,7 +24,7 @@ api-types = { version = "0.1.0", path = "../api-types" }
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 ir = { path = "../../libs/ir", features = ["testutil"] }
 tempfile = { workspace = true }
-httpmock = "0.8"
+httpmock = "0.9"
 
 [lints]
 workspace = true
