@@ -84,6 +84,30 @@ impl TestFixture {
         self.state.db.acquire().await.unwrap()
     }
 
+    /// The Audit Trail entries about `account_id` whose action is one of
+    /// `actions`, oldest first, among the account's newest 100 entries of
+    /// any action: enough for a test that writes fewer than that.
+    pub async fn audit_entries(
+        &self,
+        account_id: i64,
+        actions: &[crate::db::audit_trail::AuditAction],
+    ) -> Vec<crate::db::audit_trail::AuditEntry> {
+        use crate::db::audit_trail::{Scope, page};
+        let mut conn = self.conn().await;
+        let (mut entries, _) = page(
+            &mut conn,
+            Scope::Account(account_id),
+            100,
+            0,
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+        entries.retain(|e| actions.contains(&e.action));
+        entries.reverse();
+        entries
+    }
+
     /// The fixture's temp directory, for a test that needs a real path on disk.
     pub fn dir(&self) -> &std::path::Path {
         self.tmp.path()

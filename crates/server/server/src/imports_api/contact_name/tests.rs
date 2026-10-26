@@ -890,6 +890,7 @@ async fn an_import_names_a_nameless_contact_a_load_made() {
         TEST_ACCOUNT,
         text,
         LoadMode::Append,
+        crate::db::address_book::Recorded::Not,
         crate::test_support::fixed_instant(),
     )
     .await

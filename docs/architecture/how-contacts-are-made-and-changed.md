@@ -566,29 +566,29 @@ replaces contacts, one entry per action the person took, with a count and
 contact ids and never a name
 ([CONTACT-59](rules/contacts-identities-and-messages.md#contact-59-the-audit-trail-records-what-adds-removes-or-replaces-contacts-and-no-edit)).
 The route that makes the change writes the entry in the change's own
-transaction, so the two land together or not at all. The one exception
-today is an address book load, which writes its entry after the load's own
-transaction commits (#3310). Every entry in the table below goes through
+transaction, so the two land together or not at all. Every entry in the
+table below goes through
 `record_contact_change` in `crates/server/server/src/db/audit_trail.rs`,
 except `address_book_loaded` and `trash_emptied`, which go through
 `record_about` in the same file.
 
 | Entry | Written by | Holds |
 |---|---|---|
-| `address_book_loaded` | An address book load | The mode, and the counts of contacts made, changed and removed |
+| `address_book_loaded` | An address book load that changes a contact | The mode, and the counts of contacts made, changed and removed |
 | `contact_added` | New Contact | The new contact |
 | `contacts_trashed` | Delete Contacts, and the Undo of New Contact | The contacts moved to the Trash |
 | `contacts_restored` | The Undo of Delete Contacts, and the Redo of New Contact | The contacts taken out of the Trash |
 | `contact_deleted` | Deleting a contact for good, from the Trash | The contact |
-| `trash_emptied` | Empty Trash | The counts of conversations and contacts |
+| `trash_emptied` | Empty Trash, when the Trash holds something | The counts of conversations and contacts |
 | `contacts_merged` | Merge Contacts | The target, and the contacts merged into it |
 | `contacts_unmerged` | The Undo of Merge Contacts, when a contact comes back | The target, and the contacts written back |
 
-Moving a contact to the Trash that is already there, or an undo of a merge
-that brings no contact back, changes no contact and writes no entry. Empty
-Trash and an address book load write theirs even when they change nothing:
-an empty Trash gives `trash_emptied` counts of 0, and a file that matches
-the contacts row for row gives `address_book_loaded` counts of 0 (#3311).
+A request that changes nothing writes no entry: moving a contact to the
+Trash that is already there, an undo of a merge that brings no contact
+back, Empty Trash on a Trash that holds nothing, and an address book load
+that creates, changes and deletes no contact, such as the export loaded
+straight back. Empty Trash on a Trash that holds only conversations is
+still recorded, because it deletes them for good.
 Undo and Redo write no entry of their own, so each is recorded as the
 same change made by hand. An import of a backup is recorded as its Import
 Run, with no contact entry, and an edit in the contact drawer or a Contact

@@ -312,6 +312,7 @@ async fn an_edit_load_leaves_no_trace_of_an_identity_it_removed_or_a_name_it_rep
         ACCOUNT,
         &first,
         crate::db::address_book::LoadMode::Append,
+        crate::db::address_book::Recorded::Not,
         fixed_instant(),
     )
     .await
@@ -339,6 +340,7 @@ async fn an_edit_load_leaves_no_trace_of_an_identity_it_removed_or_a_name_it_rep
         ACCOUNT,
         &edited,
         crate::db::address_book::LoadMode::Edit,
+        crate::db::address_book::Recorded::Not,
         fixed_instant(),
     )
     .await

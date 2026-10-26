@@ -634,6 +634,7 @@ pub(super) async fn load_demo_address_book(
         account_id,
         &text,
         LoadMode::Append,
+        address_book::Recorded::Not,
         chrono::Utc::now(),
     )
     .await;
