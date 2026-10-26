@@ -75,7 +75,7 @@ ir = { path = "../crates/libs/ir", features = ["testutil"] }
 # `testutil` gives the lock a test holds while it names a Tools Directory,
 # and tells a test whether this account may read any file.
 media = { path = "../crates/libs/media", features = ["testutil"] }
-httpmock = "0.8"
+httpmock = "0.9"
 # Holds a test port with a socket that never listens (`local_server` tests).
 # `all` gives `set_reuse_port`, which those tests need on Apple systems.
 socket2 = { version = "0.6", features = ["all"] }
