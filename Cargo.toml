@@ -66,7 +66,7 @@ reqwest = { version = "0.12.25", default-features = false, features = ["rustls-t
 quick-xml = "0.42.0"
 thiserror = "2.0.19"
 mailparse = "0.18.0"
-mail-builder = "1.0.0"
+mail-builder = "2.0.0"
 
 [workspace.lints.rust]
 missing_docs = "warn"
