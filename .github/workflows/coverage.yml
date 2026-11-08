@@ -28,7 +28,7 @@ jobs:
         run: ./scripts/ci-apt-install.sh libfontconfig1-dev libxkbcommon-dev ffmpeg
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           tool: cargo-llvm-cov
 
